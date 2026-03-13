@@ -4,6 +4,11 @@ import { chunkMarkdown, normalizeMarkdown } from "../../src/modules/retrieval/do
 import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
+import { RetrievalPipelineService } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
+import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
+import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
+import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
+import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
 
 describe("edge cases", () => {
   it("normalizes short content into a single chunk", () => {
@@ -55,7 +60,7 @@ describe("edge cases", () => {
     });
 
     expect(result.status).toBe("fallback");
-    expect(result.effectiveQuery).toBe("What is it used for?");
+    expect(result.effectiveQuery).toBe("What is the session cookie used for?");
   });
 
   it("falls back to similarity ordering when rerank assistance errors", async () => {
@@ -93,5 +98,66 @@ describe("edge cases", () => {
 
     expect(result.status).toBe("fallback");
     expect(result.contexts[0]?.chunkId).toBe("c1");
+  });
+
+  it("relaxes strict retrieval thresholds when first-pass search returns no candidates", async () => {
+    const thresholdsSeen: number[] = [];
+    const service = new RetrievalPipelineService(
+      {
+        async getForAccount() {
+          return {
+            accountId: "a1",
+            queryRewriteEnabled: false,
+            rerankEnabled: false,
+            vectorTopK: 100,
+            similarityThreshold: 0.8,
+            rerankTopK: 20,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+      } as never,
+      {
+        async embedChunks() {
+          return [[1, 0, 0]];
+        },
+      } as never,
+      {
+        async search(input) {
+          thresholdsSeen.push(input.similarityThreshold);
+          if (input.similarityThreshold >= 0.8) {
+            return [];
+          }
+          return [
+            {
+              chunkId: "c1",
+              documentId: "d1",
+              title: "Rate Limits",
+              content: "The API allows 60 requests per minute.",
+              similarity: 0.61,
+            },
+          ];
+        },
+      },
+      new ConversationContextService(),
+      new QueryRewriteService(),
+      new CandidatePreparationService(),
+      new RerankService(),
+      new PromptContextSelectorService(),
+      new PromptBuilder(),
+      new RetrievalExecutionTelemetryService(),
+    );
+
+    const result = await service.run({
+      accountId: "a1",
+      query: "What is the API rate limit?",
+      history: [],
+    });
+
+    expect(thresholdsSeen).toContain(0.8);
+    expect(thresholdsSeen.some((value) => value < 0.8)).toBe(true);
+    expect(result.contexts).toHaveLength(1);
+    expect(result.diagnostics.candidateFallbackApplied).toBe(true);
+    expect(result.diagnostics.fallbackApplied).toBe(true);
   });
 });

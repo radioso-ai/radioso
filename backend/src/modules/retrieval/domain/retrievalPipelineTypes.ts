@@ -45,5 +45,6 @@ export interface RetrievalExecutionDiagnostics {
   rewrittenCandidateCount: number;
   normalizedCandidateCount: number;
   finalContextCount: number;
+  candidateFallbackApplied: boolean;
   fallbackApplied: boolean;
 }

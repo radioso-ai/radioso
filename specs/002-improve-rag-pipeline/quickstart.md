@@ -120,3 +120,21 @@ Observed live outcomes:
   - session-cookie follow-up: fallback answer, `0` citations on the recreated backend
 
 This means the branch improves structure, tests, and observability, but does not yet meet the intended live retrieval-quality outcome for strict profiles or reliable follow-up rescue.
+
+Follow-up isolated verification recorded on 2026-03-13 against `http://localhost:8091` using the worktree backend directly and a temporary `hivec_ragtest` database with matching `text-embedding-3-large` embeddings:
+
+- document ingest succeeded for all `10/10` documents
+- strict profile returned a grounded rate-limit answer with citations
+- strict follow-up returned a grounded session-cookie answer with citations
+- broad profile also returned grounded answers for both checks
+
+Observed isolated outcomes:
+
+- strict profile:
+  - rate-limit query: grounded answer, `3` citations including `Rate Limits`
+  - session-cookie follow-up: grounded answer, `3` citations including `Session Cookie`
+- broad profile:
+  - rate-limit query: grounded answer, `3` citations including `Rate Limits`
+  - session-cookie follow-up: grounded answer, `3` citations including `Session Cookie`
+
+This isolates the remaining operational issue to environment drift in the shared Docker stack: the local persistent database still uses `vector(1536)`, while this worktree branch expects `vector(3072)`. With a matching database and embedding model, the retrieval changes improve live known-answer and follow-up behavior materially.

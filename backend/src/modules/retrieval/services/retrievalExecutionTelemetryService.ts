@@ -8,10 +8,12 @@ export class RetrievalExecutionTelemetryService {
     rewrittenCandidateCount: number;
     normalizedCandidateCount: number;
     finalContextCount: number;
+    candidateFallbackApplied: boolean;
   }): RetrievalExecutionDiagnostics {
     return {
       ...input,
-      fallbackApplied: input.rewriteStatus === "fallback" || input.rerankStatus === "fallback",
+      fallbackApplied:
+        input.candidateFallbackApplied || input.rewriteStatus === "fallback" || input.rerankStatus === "fallback",
     };
   }
 }

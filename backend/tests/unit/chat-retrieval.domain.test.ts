@@ -80,7 +80,7 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.status).toBe("fallback");
-    expect(result.effectiveQuery).toBe("What is it used for?");
+    expect(result.effectiveQuery).toContain("session cookie");
   });
 
   it("deduplicates candidates across original and rewritten retrieval paths", () => {
@@ -143,6 +143,46 @@ describe("chat retrieval domain", () => {
     expect(result.status).toBe("applied");
     expect(result.contexts).toHaveLength(1);
     expect(result.contexts[0]?.chunkId).toBe("c2");
+  });
+
+  it("uses valid rerank scores even when some score rows are malformed", async () => {
+    const service = new RerankService({
+      async rerank() {
+        return [
+          { chunkId: "c1", relevanceScore: 0.3 },
+          { chunkId: "c2", relevanceScore: Number.NaN },
+        ];
+      },
+    });
+
+    const result = await service.rerank({
+      query: "rate limit",
+      enabled: true,
+      topK: 2,
+      contexts: [
+        {
+          chunkId: "c1",
+          documentId: "d1",
+          title: "Rate Limits",
+          content: "The API allows 60 requests per minute.",
+          similarity: 0.4,
+          retrievalSources: ["original"],
+          retrievalText: "Rate Limits The API allows 60 requests per minute.",
+        },
+        {
+          chunkId: "c2",
+          documentId: "d2",
+          title: "Troubleshooting",
+          content: "If no context is found, check the threshold.",
+          similarity: 0.9,
+          retrievalSources: ["original"],
+          retrievalText: "Troubleshooting If no context is found, check the threshold.",
+        },
+      ],
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.contexts[0]?.chunkId).toBe("c1");
   });
 
   it("limits final prompt contexts by token budget", () => {

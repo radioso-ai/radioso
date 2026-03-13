@@ -14,6 +14,7 @@ export interface RetrievalLogFields {
   rewrittenCandidateCount: number;
   normalizedCandidateCount: number;
   finalContextCount: number;
+  candidateFallbackApplied: boolean;
   fallbackApplied: boolean;
 }
 
@@ -31,6 +32,7 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
     typeof fields.rewrittenCandidateCount !== "number" ||
     typeof fields.normalizedCandidateCount !== "number" ||
     typeof fields.finalContextCount !== "number" ||
+    typeof fields.candidateFallbackApplied !== "boolean" ||
     typeof fields.fallbackApplied !== "boolean"
   ) {
     return undefined;
@@ -43,6 +45,7 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
     rewrittenCandidateCount: fields.rewrittenCandidateCount,
     normalizedCandidateCount: fields.normalizedCandidateCount,
     finalContextCount: fields.finalContextCount,
+    candidateFallbackApplied: fields.candidateFallbackApplied,
     fallbackApplied: fields.fallbackApplied,
   };
 };

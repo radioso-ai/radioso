@@ -40,8 +40,7 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
     });
 
     const content = response.choices[0]?.message?.content?.trim() ?? "[]";
-    const parsed = JSON.parse(content) as Array<{ chunkId: string; relevanceScore: number }>;
-    return parsed;
+    return parseRerankScores(content);
   }
 }
 
@@ -67,14 +66,15 @@ export class RerankService {
         contexts: input.contexts,
       });
 
-      if (!scores || scores.length === 0) {
+      const validScores = sanitizeScores(scores);
+      if (validScores.length === 0) {
         return {
           contexts: this.bySimilarity(input.contexts, input.topK),
           status: "fallback",
         };
       }
 
-      const byChunkId = new Map(scores.map((score) => [score.chunkId, score.relevanceScore]));
+      const byChunkId = new Map(validScores.map((score) => [score.chunkId, score.relevanceScore]));
       const ranked = [...input.contexts]
         .map((context) => ({
           ...context,
@@ -110,3 +110,51 @@ export class RerankService {
       }));
   }
 }
+
+const parseRerankScores = (content: string): Array<{ chunkId: string; relevanceScore: number }> => {
+  const normalized = content
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  const parsed = JSON.parse(normalized) as unknown;
+  if (Array.isArray(parsed)) {
+    return parsed as Array<{ chunkId: string; relevanceScore: number }>;
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const objectResult = parsed as { results?: unknown; scores?: unknown };
+    if (Array.isArray(objectResult.results)) {
+      return objectResult.results as Array<{ chunkId: string; relevanceScore: number }>;
+    }
+    if (Array.isArray(objectResult.scores)) {
+      return objectResult.scores as Array<{ chunkId: string; relevanceScore: number }>;
+    }
+  }
+
+  return [];
+};
+
+const sanitizeScores = (
+  scores?: Array<{ chunkId: string; relevanceScore: number }>,
+): Array<{ chunkId: string; relevanceScore: number }> => {
+  if (!scores) {
+    return [];
+  }
+
+  return scores
+    .filter((score): score is { chunkId: string; relevanceScore: number } => {
+      return Boolean(
+        score &&
+          typeof score.chunkId === "string" &&
+          score.chunkId.length > 0 &&
+          typeof score.relevanceScore === "number" &&
+          Number.isFinite(score.relevanceScore),
+      );
+    })
+    .map((score) => ({
+      chunkId: score.chunkId,
+      relevanceScore: Math.max(0, Math.min(1, score.relevanceScore)),
+    }));
+};

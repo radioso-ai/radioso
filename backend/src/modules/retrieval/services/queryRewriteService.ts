@@ -72,29 +72,21 @@ export class QueryRewriteService {
         contextMessages: input.contextWindow.selectedMessages,
       });
 
-      const rewrittenQuery = result?.rewrittenQuery.trim() ?? "";
-      if (!rewrittenQuery || rewrittenQuery === input.query) {
-        return this.skipped(input.query);
+      const rewrittenQuery = this.normalizeRewrite(result?.rewrittenQuery);
+      if (this.isUsableRewrite(input.query, rewrittenQuery)) {
+        return {
+          originalQuery: input.query,
+          rewrittenQuery,
+          effectiveQuery: rewrittenQuery,
+          rewriteApplied: true,
+          status: "applied",
+          confidence: result?.confidence ?? 0.5,
+        };
       }
 
-      return {
-        originalQuery: input.query,
-        rewrittenQuery,
-        effectiveQuery: rewrittenQuery,
-        rewriteApplied: true,
-        status: "applied",
-        confidence: result?.confidence ?? 0.5,
-      };
+      return this.heuristicFallback(input.query, input.contextWindow, "rewrite_unusable");
     } catch {
-      return {
-        originalQuery: input.query,
-        rewrittenQuery: input.query,
-        effectiveQuery: input.query,
-        rewriteApplied: false,
-        status: "fallback",
-        confidence: 0,
-        fallbackReason: "rewrite_failed",
-      };
+      return this.heuristicFallback(input.query, input.contextWindow, "rewrite_failed");
     }
   }
 
@@ -103,7 +95,7 @@ export class QueryRewriteService {
       return false;
     }
 
-    return REFERENTIAL_PATTERN.test(query) || query.trim().split(/\s+/).length <= 6;
+    return REFERENTIAL_PATTERN.test(query) || /^(and|also|what about)\b/i.test(query) || query.trim().split(/\s+/).length <= 8;
   }
 
   private skipped(query: string): RewrittenRetrievalQuery {
@@ -115,5 +107,107 @@ export class QueryRewriteService {
       status: "skipped",
       confidence: 0,
     };
+  }
+
+  private heuristicFallback(
+    query: string,
+    contextWindow: ConversationContextWindow,
+    reason: string,
+  ): RewrittenRetrievalQuery {
+    const heuristicRewrite = this.buildHeuristicRewrite(query, contextWindow);
+    if (!heuristicRewrite || heuristicRewrite === query) {
+      return {
+        originalQuery: query,
+        rewrittenQuery: query,
+        effectiveQuery: query,
+        rewriteApplied: false,
+        status: "fallback",
+        confidence: 0,
+        fallbackReason: reason,
+      };
+    }
+
+    return {
+      originalQuery: query,
+      rewrittenQuery: heuristicRewrite,
+      effectiveQuery: heuristicRewrite,
+      rewriteApplied: true,
+      status: "fallback",
+      confidence: 0.25,
+      fallbackReason: reason,
+    };
+  }
+
+  private buildHeuristicRewrite(query: string, contextWindow: ConversationContextWindow): string | null {
+    const contextSubject = this.extractContextSubject(contextWindow.selectedMessages);
+    if (!contextSubject) {
+      return null;
+    }
+
+    if (REFERENTIAL_PATTERN.test(query)) {
+      return this.replaceReferentialSubject(query, contextSubject);
+    }
+
+    return `${contextSubject} ${query}`.trim();
+  }
+
+  private extractContextSubject(messages: MessageRecord[]): string | null {
+    const recentUserMessage = [...messages]
+      .reverse()
+      .find((message) => message.role === "user" && message.content.trim().length > 0)?.content;
+
+    if (!recentUserMessage) {
+      return null;
+    }
+
+    const normalized = recentUserMessage
+      .trim()
+      .replace(/^tell me about\s+/i, "")
+      .replace(/^what is\s+/i, "")
+      .replace(/^explain\s+/i, "")
+      .replace(/^describe\s+/i, "")
+      .replace(/^can you explain\s+/i, "")
+      .replace(/[?.!]+$/g, "")
+      .trim();
+
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private replaceReferentialSubject(query: string, subject: string): string {
+    const loweredSubject = subject.replace(/^(the|a|an)\s+/i, "").trim();
+
+    return query
+      .replace(/\bit\b/i, `the ${loweredSubject}`)
+      .replace(/\bthis\b/i, `the ${loweredSubject}`)
+      .replace(/\bthat\b/i, `the ${loweredSubject}`)
+      .replace(/\bthey\b/i, loweredSubject)
+      .replace(/\bthem\b/i, loweredSubject)
+      .replace(/\btheir\b/i, `${loweredSubject}'s`)
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private normalizeRewrite(rewrittenQuery?: string): string {
+    return (rewrittenQuery ?? "")
+      .trim()
+      .replace(/^```(?:json)?/i, "")
+      .replace(/```$/i, "")
+      .replace(/^rewritten query:\s*/i, "")
+      .replace(/^query:\s*/i, "")
+      .replace(/^["']|["']$/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private isUsableRewrite(originalQuery: string, rewrittenQuery: string): boolean {
+    if (!rewrittenQuery || rewrittenQuery === originalQuery) {
+      return false;
+    }
+
+    if (rewrittenQuery.length > 300) {
+      return false;
+    }
+
+    return !/^(answer|the answer is|here('| i)?s)/i.test(rewrittenQuery);
   }
 }

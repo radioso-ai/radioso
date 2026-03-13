@@ -96,6 +96,7 @@ export class ChatService {
           conversationId: conversation.id,
           stream: input.stream,
           citationCount: retrieval.citations.length,
+          retrieval: retrieval.diagnostics,
         },
       });
 
@@ -109,7 +110,7 @@ export class ChatService {
         accountId: input.accountId,
         eventType: "chat.answer",
         eventStatus: "failure",
-        metadata: { stream: input.stream },
+        metadata: { stream: input.stream, stage: "chat.answer" },
       });
       throw error;
     }

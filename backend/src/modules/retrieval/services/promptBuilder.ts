@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { RetrievedChunk } from "../infra/vectorSearch.js";
+import type { FinalPromptContext } from "../domain/retrievalPipelineTypes.js";
 
 export interface PromptBuildResult {
   prompt: string;
@@ -7,7 +7,7 @@ export interface PromptBuildResult {
 }
 
 export class PromptBuilder {
-  build(input: { query: string; history: MessageRecord[]; contexts: RetrievedChunk[] }): PromptBuildResult {
+  build(input: { query: string; history: MessageRecord[]; contexts: FinalPromptContext[] }): PromptBuildResult {
     const historySection = input.history
       .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
       .join("\n");

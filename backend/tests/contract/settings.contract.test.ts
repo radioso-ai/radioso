@@ -26,6 +26,16 @@ describe("retrieval settings contract", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(response.status).toBe(200);
+    expect(Object.keys(response.body).sort()).toEqual([
+      "accountId",
+      "createdAt",
+      "queryRewriteEnabled",
+      "rerankEnabled",
+      "rerankTopK",
+      "similarityThreshold",
+      "updatedAt",
+      "vectorTopK",
+    ]);
     expect(response.body.vectorTopK).toBe(10);
   });
 
@@ -52,5 +62,15 @@ describe("retrieval settings contract", () => {
       similarityThreshold: 0.4,
       rerankTopK: 6,
     });
+    expect(Object.keys(response.body).sort()).toEqual([
+      "accountId",
+      "createdAt",
+      "queryRewriteEnabled",
+      "rerankEnabled",
+      "rerankTopK",
+      "similarityThreshold",
+      "updatedAt",
+      "vectorTopK",
+    ]);
   });
 });

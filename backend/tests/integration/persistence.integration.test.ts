@@ -35,7 +35,7 @@ describeIfDatabase("persistence integration", () => {
   });
 
   const embeddingOf = (axis: 0 | 1): number[] => {
-    const embedding = new Array<number>(3072).fill(0);
+    const embedding = new Array<number>(1536).fill(0);
     embedding[axis] = 1;
     return embedding;
   };

@@ -34,7 +34,7 @@ export const createTestEnv = (): Env => ({
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   OPENAI_API_KEY: "test-key",
   OPENAI_CHAT_MODEL: "gpt-5.2",
-  OPENAI_VECTOR_MODEL: "text-embedding-3-large",
+  OPENAI_VECTOR_MODEL: "text-embedding-3-small",
   SESSION_COOKIE_NAME: "hivec_session",
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
   SESSION_TTL_HOURS: 168,

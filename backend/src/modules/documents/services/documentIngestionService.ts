@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/services/auditService.js";
 import { chunkMarkdown, normalizeMarkdown } from "../../retrieval/domain/chunkingService.js";
-import type { EmbeddingService } from "../../retrieval/services/embeddingService.js";
+import { buildRetrievalText, type EmbeddingService } from "../../retrieval/services/embeddingService.js";
 import { notFound } from "../../../shared/domain/errors.js";
 
 export interface DocumentRecord {
@@ -113,7 +113,14 @@ export class DocumentIngestionService {
     try {
       const markdownContent = normalizeMarkdown(input.content);
       const chunks = chunkMarkdown(markdownContent);
-      const embeddings = await this.embeddingService.embedChunks(chunks.map((chunk) => chunk.content));
+      const embeddings = await this.embeddingService.embedChunks(
+        chunks.map((chunk) =>
+          buildRetrievalText({
+            title: input.title,
+            content: chunk.content,
+          }),
+        ),
+      );
       const persistedDocumentInput = {
         accountId: input.accountId,
         title: input.title,
@@ -128,7 +135,6 @@ export class DocumentIngestionService {
           })
         : await this.documentRepository.create(persistedDocumentInput);
       documentId = document.id;
-
       const persistedChunks: ChunkRecord[] = chunks.map((chunk, index) => ({
         id: randomUUID(),
         documentId: document.id,

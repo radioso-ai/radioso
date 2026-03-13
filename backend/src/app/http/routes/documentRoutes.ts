@@ -10,6 +10,10 @@ const documentSchema = z.object({
   content: z.string().min(1),
 });
 
+const documentParamsSchema = z.object({
+  documentId: z.string().uuid(),
+});
+
 export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
 
@@ -32,6 +36,33 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
         content: req.body.content,
       });
       res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:documentId", requireApiToken(dependencies), async (req, res, next) => {
+    try {
+      const { accountId } = res.locals as { accountId: string };
+      const { documentId } = documentParamsSchema.parse(req.params);
+      const document = await dependencies.documentIngestionService.getDocument(accountId, documentId);
+      res.status(200).json(document);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.put("/:documentId", requireApiToken(dependencies), validateBody(documentSchema), async (req, res, next) => {
+    try {
+      const { accountId } = res.locals as { accountId: string };
+      const { documentId } = documentParamsSchema.parse(req.params);
+      const result = await dependencies.documentIngestionService.update({
+        accountId,
+        documentId,
+        title: req.body.title,
+        content: req.body.content,
+      });
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

@@ -12,6 +12,22 @@ interface RegisterFormProps {
   onSwitchToLogin: () => void
 }
 
+const getErrorMessage = (error: unknown) => {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'error' in error &&
+    error.error &&
+    typeof error.error === 'object' &&
+    'message' in error.error &&
+    typeof error.error.message === 'string'
+  ) {
+    return error.error.message
+  }
+
+  return 'Registration failed. Please try again.'
+}
+
 export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
   const { login } = useAuth()
   const [email, setEmail] = useState('')
@@ -39,8 +55,8 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
     try {
       const response = await authApi.register({ email, password })
       await login(email, response.userId)
-    } catch (err: any) {
-      setError(err?.error?.message || 'Registration failed. Please try again.')
+    } catch (error) {
+      setError(getErrorMessage(error))
     } finally {
       setIsLoading(false)
     }

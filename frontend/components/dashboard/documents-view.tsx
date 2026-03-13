@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Check, FileText, Pencil, Plus, RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -16,11 +16,24 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination'
+import {
   type DocumentSummary,
   documentsApi,
 } from '@/lib/api'
 
 type EditorMode = 'create' | 'edit'
+const PAGE_SIZE = 100
+
+interface DocumentsViewProps {
+  selectedDocumentId?: string | null
+  onSelectedDocumentChange?: (documentId: string | null) => void
+}
 
 const EMPTY_FORM = {
   title: '',
@@ -35,8 +48,12 @@ const getRagLabel = (document: Pick<DocumentSummary, 'status' | 'ragStatus'>) =>
   return `RAG ${document.status === 'ready' ? 'pending' : document.status}`
 }
 
-export function DocumentsView() {
+export function DocumentsView({
+  selectedDocumentId = null,
+  onSelectedDocumentChange,
+}: DocumentsViewProps) {
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
+  const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -45,7 +62,7 @@ export function DocumentsView() {
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null)
   const [formValues, setFormValues] = useState(EMPTY_FORM)
 
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     try {
       const docs = await documentsApi.listDocuments()
       setDocuments(docs)
@@ -54,25 +71,29 @@ export function DocumentsView() {
     } finally {
       setIsLoading(false)
     }
-  }
-
-  useEffect(() => {
-    loadDocuments()
   }, [])
 
-  const resetEditor = () => {
+  useEffect(() => {
+    void loadDocuments()
+  }, [loadDocuments])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [documents.length])
+
+  const resetEditor = useCallback(() => {
     setEditorMode('create')
     setEditingDocumentId(null)
     setFormValues(EMPTY_FORM)
     setIsDocumentLoading(false)
-  }
+  }, [])
 
   const openCreateDialog = () => {
     resetEditor()
     setIsDialogOpen(true)
   }
 
-  const openEditDialog = async (documentId: string) => {
+  const openEditDialog = useCallback(async (documentId: string) => {
     setIsDialogOpen(true)
     setEditorMode('edit')
     setEditingDocumentId(documentId)
@@ -87,11 +108,40 @@ export function DocumentsView() {
     } catch (error) {
       console.error('Failed to load document:', error)
       setIsDialogOpen(false)
+      onSelectedDocumentChange?.(null)
       resetEditor()
     } finally {
       setIsDocumentLoading(false)
     }
-  }
+  }, [onSelectedDocumentChange, resetEditor])
+
+  useEffect(() => {
+    if (!selectedDocumentId) {
+      if (editorMode === 'edit' && isDialogOpen && !isSaving) {
+        setIsDialogOpen(false)
+        resetEditor()
+      }
+      return
+    }
+
+    if (
+      editorMode === 'edit' &&
+      editingDocumentId === selectedDocumentId &&
+      isDialogOpen
+    ) {
+      return
+    }
+
+    void openEditDialog(selectedDocumentId)
+  }, [
+    editingDocumentId,
+    editorMode,
+    isDialogOpen,
+    isSaving,
+    openEditDialog,
+    resetEditor,
+    selectedDocumentId,
+  ])
 
   const upsertDocument = async (documentId: string) => {
     const nextDocument = await documentsApi.getDocument(documentId)
@@ -106,6 +156,9 @@ export function DocumentsView() {
   const handleDialogChange = (open: boolean) => {
     setIsDialogOpen(open)
     if (!open && !isSaving) {
+      if (editorMode === 'edit') {
+        onSelectedDocumentChange?.(null)
+      }
       resetEditor()
     }
   }
@@ -127,6 +180,9 @@ export function DocumentsView() {
 
       await upsertDocument(response.documentId)
       setIsDialogOpen(false)
+      if (editorMode === 'edit') {
+        onSelectedDocumentChange?.(null)
+      }
       resetEditor()
     } catch (error) {
       console.error(`Failed to ${editingDocumentId ? 'update' : 'create'} document:`, error)
@@ -199,9 +255,23 @@ export function DocumentsView() {
     )
   }
 
+  const totalPages = Math.max(1, Math.ceil(documents.length / PAGE_SIZE))
+  const safeCurrentPage = Math.min(currentPage, totalPages)
+  const pageStart = (safeCurrentPage - 1) * PAGE_SIZE
+  const paginatedDocuments = documents.slice(pageStart, pageStart + PAGE_SIZE)
+  const pageEnd = Math.min(pageStart + paginatedDocuments.length, documents.length)
+
+  const goToPreviousPage = () => {
+    setCurrentPage((page) => Math.max(1, page - 1))
+  }
+
+  const goToNextPage = () => {
+    setCurrentPage((page) => Math.min(totalPages, page + 1))
+  }
+
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border px-6 py-4">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="shrink-0 flex items-center justify-between border-b border-border px-6 py-4">
         <div>
           <h1 className="text-lg font-medium text-foreground">Documents</h1>
           <p className="text-sm text-muted-foreground">Manage your knowledge base</p>
@@ -226,7 +296,7 @@ export function DocumentsView() {
         </DialogContent>
       </Dialog>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="min-h-0 flex-1 overflow-y-auto p-6">
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
             <Spinner className="h-6 w-6" />
@@ -246,41 +316,95 @@ export function DocumentsView() {
             </Button>
           </div>
         ) : (
-          <div className="grid max-w-3xl gap-3">
-            {documents.map((doc) => (
-              <button
-                key={doc.id}
-                type="button"
-                onClick={() => openEditDialog(doc.id)}
-                className="flex cursor-pointer items-center gap-4 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/20"
-              >
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-muted">
-                  <FileText className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="truncate font-medium text-foreground">{doc.title}</h3>
-                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+          <div className="w-full space-y-4">
+            <div className="grid w-full gap-3">
+              {paginatedDocuments.map((doc) => (
+                <button
+                  key={doc.id}
+                  type="button"
+                  onClick={() =>
+                    onSelectedDocumentChange
+                      ? onSelectedDocumentChange(doc.id)
+                      : void openEditDialog(doc.id)
+                  }
+                  className="flex w-full max-w-full cursor-pointer items-center gap-4 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/20"
+                >
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-muted">
+                    <FileText className="h-5 w-5 text-muted-foreground" />
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Updated {formatDate(doc.updatedAt)}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-1 text-sm">
-                  <div className="flex items-center gap-1 text-foreground">
-                    {doc.ragStatus === 'processed' ? (
-                      <Check className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 text-amber-500" />
-                    )}
-                    <span>{getRagLabel(doc)}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="truncate font-medium text-foreground" title={doc.title}>
+                        {doc.title}
+                      </h3>
+                      <Pencil className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Updated {formatDate(doc.updatedAt)}
+                    </p>
                   </div>
-                  <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    {doc.status}
-                  </span>
-                </div>
-              </button>
-            ))}
+                  <div className="flex flex-col items-end gap-1 text-sm">
+                    <div className="flex items-center gap-1 text-foreground">
+                      {doc.ragStatus === 'processed' ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4 text-amber-500" />
+                      )}
+                      <span>{getRagLabel(doc)}</span>
+                    </div>
+                    <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      {doc.status}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+            {documents.length > PAGE_SIZE && (
+              <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Showing {pageStart + 1}-{pageEnd} of {documents.length} documents
+                </p>
+                <Pagination className="mx-0 w-auto justify-start sm:justify-end">
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        href="#"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          goToPreviousPage()
+                        }}
+                        aria-disabled={safeCurrentPage === 1}
+                        className={
+                          safeCurrentPage === 1
+                            ? 'pointer-events-none opacity-50'
+                            : undefined
+                        }
+                      />
+                    </PaginationItem>
+                    <PaginationItem>
+                      <span className="px-3 text-sm text-muted-foreground">
+                        Page {safeCurrentPage} of {totalPages}
+                      </span>
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationNext
+                        href="#"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          goToNextPage()
+                        }}
+                        aria-disabled={safeCurrentPage === totalPages}
+                        className={
+                          safeCurrentPage === totalPages
+                            ? 'pointer-events-none opacity-50'
+                            : undefined
+                        }
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            )}
           </div>
         )}
       </div>

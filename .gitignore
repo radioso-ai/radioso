@@ -1,0 +1,25 @@
+.DS_Store
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Node artifacts
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local runtime data
+*.pid
+*.seed
+
+# Editor and OS files
+.idea/
+.vscode/

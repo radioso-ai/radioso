@@ -1,0 +1,57 @@
+name: hivec
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: hivec-postgres
+    environment:
+      POSTGRES_DB: hivec
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - hivec_postgres_data:/var/lib/postgresql/data
+      - ../backend/src/db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hivec"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  backend:
+    container_name: hivec-backend
+    build:
+      context: ../backend
+      dockerfile: ../infra/backend.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      NODE_ENV: production
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/hivec
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-dummy-openai-key}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-5.2}
+      OPENAI_VECTOR_MODEL: ${OPENAI_VECTOR_MODEL:-text-embedding-3-large}
+      SESSION_COOKIE_NAME: hivec_session
+      SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:-0123456789abcdef0123456789abcdef}
+      SESSION_TTL_HOURS: 168
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('node:http').get('http://127.0.0.1:8080/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  hivec_postgres_data:

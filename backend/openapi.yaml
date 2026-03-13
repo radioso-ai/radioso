@@ -1,0 +1,371 @@
+openapi: 3.1.0
+info:
+  title: Hivec Modular RAG API
+  version: 0.1.0
+  summary: Contract draft for the initial modular RAG backend
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: Auth
+  - name: Account
+  - name: Settings
+  - name: Documents
+  - name: Chat
+paths:
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new account
+      operationId: registerAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created and session established
+          headers:
+            Set-Cookie:
+              description: HttpOnly secure session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in an existing account
+      operationId: loginAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Session established
+          headers:
+            Set-Cookie:
+              description: HttpOnly secure session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/account/token:
+    get:
+      tags: [Account]
+      summary: Return the single active API token for the authenticated account
+      operationId: getAccountToken
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Token returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/settings/retrieval:
+    get:
+      tags: [Settings]
+      summary: Get retrieval settings for the authenticated account
+      operationId: getRetrievalSettings
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Retrieval settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Settings]
+      summary: Update retrieval settings for the authenticated account
+      operationId: updateRetrievalSettings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRetrievalSettingsRequest'
+      responses:
+        '200':
+          description: Updated retrieval settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/document/:
+    post:
+      tags: [Documents]
+      summary: Ingest a document for the authenticated account
+      operationId: createDocument
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentCreateRequest'
+      responses:
+        '201':
+          description: Document accepted and processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/chat/:
+    post:
+      tags: [Chat]
+      summary: Ask a retrieval-grounded question
+      operationId: createChatResponse
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Non-streaming answer or streaming event stream
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE stream containing incremental answer events
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: hivec_session
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: APIKey
+  responses:
+    BadRequest:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+    RegisterResponse:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    LoginResponse:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+    AccountTokenResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          pattern: '^sk_proj_[A-Za-z0-9]+$'
+    RetrievalSettings:
+      type: object
+      required:
+        - queryRewriteEnabled
+        - rerankEnabled
+        - vectorTopK
+        - similarityThreshold
+        - rerankTopK
+      properties:
+        queryRewriteEnabled:
+          type: boolean
+        rerankEnabled:
+          type: boolean
+        vectorTopK:
+          type: integer
+          minimum: 1
+          maximum: 300
+        similarityThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        rerankTopK:
+          type: integer
+          minimum: 1
+    UpdateRetrievalSettingsRequest:
+      allOf:
+        - $ref: '#/components/schemas/RetrievalSettings'
+    DocumentCreateRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        content:
+          type: string
+          minLength: 1
+    DocumentCreateResponse:
+      type: object
+      required: [documentId, status]
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [received, normalized, chunked, embedded, ready]
+    ChatRequest:
+      type: object
+      required: [query, stream]
+      properties:
+        query:
+          type: string
+          minLength: 1
+        stream:
+          type: boolean
+        conversationId:
+          type: string
+          format: uuid
+          description: Omit to start a new conversation
+    ChatResponse:
+      type: object
+      required: [conversationId, answer]
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+    Citation:
+      type: object
+      required: [documentId, chunkId]
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        chunkId:
+          type: string
+          format: uuid
+        title:
+          type: string
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string

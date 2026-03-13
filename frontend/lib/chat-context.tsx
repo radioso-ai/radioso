@@ -149,7 +149,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }))
 
       try {
-        await chatApi.streamChatResponse(
+        let didComplete = false
+
+        const completion = await chatApi.streamChatResponse(
           {
             query,
             stream: true,
@@ -176,10 +178,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               }))
             },
             onDone: (completion) => {
+              didComplete = true
               applyCompletion(accountId, assistantMessageId, completion)
             },
           },
         )
+
+        if (!didComplete) {
+          applyCompletion(accountId, assistantMessageId, {
+            conversationId: completion.conversationId,
+            citations: completion.citations ?? [],
+          })
+        }
       } catch (error) {
         const errorMessage = getErrorMessage(error)
 

@@ -1,0 +1,89 @@
+openapi: 3.1.0
+info:
+  title: Chat Route Citations Focused Contract
+  version: 1.0.0
+  description: >
+    Focused contract artifact for the frontend work. Public backend request and
+    response shapes remain unchanged. The frontend consumes the existing chat
+    JSON shape and SSE event stream while introducing account-scoped browser
+    routes.
+paths:
+  /api/v1/chat/:
+    post:
+      summary: Create a chat answer
+      description: >
+        Existing endpoint used by the frontend for both non-streaming and
+        streaming chat answers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query, stream]
+              properties:
+                query:
+                  type: string
+                stream:
+                  type: boolean
+                conversationId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Non-streaming answer or event stream
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversationId, answer]
+                properties:
+                  conversationId:
+                    type: string
+                    format: uuid
+                  answer:
+                    type: string
+                  citations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Citation'
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                streamedAnswer:
+                  summary: SSE event sequence
+                  value: |
+                    event: conversation
+                    data: {"conversationId":"uuid"}
+
+                    event: chunk
+                    data: {"text":"partial answer"}
+
+                    event: done
+                    data: {"citations":[{"documentId":"doc-1","chunkId":"chunk-1","title":"Doc title"}]}
+  /api/v1/document/{documentId}:
+    get:
+      summary: Load one account-scoped document
+      description: Existing endpoint used after a citation click resolves to a document route.
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Account-scoped document details
+components:
+  schemas:
+    Citation:
+      type: object
+      required: [documentId, chunkId]
+      properties:
+        documentId:
+          type: string
+        chunkId:
+          type: string
+        title:
+          type: string

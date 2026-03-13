@@ -175,6 +175,67 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v1/document/{documentId}:
+    get:
+      tags: [Documents]
+      summary: Get a document for the authenticated account
+      operationId: getDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Document returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Documents]
+      summary: Update and reprocess a document for the authenticated account
+      operationId: updateDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentCreateRequest'
+      responses:
+        '200':
+          description: Document updated and processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/v1/chat/:
     post:
       tags: [Chat]
@@ -338,7 +399,7 @@ components:
           enum: [received, normalized, chunked, embedded, ready]
     DocumentSummary:
       type: object
-      required: [id, title, status, createdAt]
+      required: [id, title, status, ragStatus, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -347,9 +408,23 @@ components:
           type: string
         status:
           type: string
+        ragStatus:
+          type: string
+          enum: [processed, pending]
         createdAt:
           type: string
           format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    DocumentDetails:
+      allOf:
+        - $ref: '#/components/schemas/DocumentSummary'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: string
     DocumentListResponse:
       type: object
       required: [documents]

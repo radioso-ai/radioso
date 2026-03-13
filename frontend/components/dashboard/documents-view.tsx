@@ -1,36 +1,49 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { Check, FileText, Pencil, Plus, RefreshCw } from 'lucide-react'
+
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
-import { documentsApi } from '@/lib/api'
-import { Plus, FileText, Check } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Spinner } from '@/components/ui/spinner'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  type DocumentSummary,
+  documentsApi,
+} from '@/lib/api'
 
-interface Document {
-  id: string
-  title: string
-  status: string
-  createdAt: string
+type EditorMode = 'create' | 'edit'
+
+const EMPTY_FORM = {
+  title: '',
+  content: '',
+}
+
+const getRagLabel = (document: Pick<DocumentSummary, 'status' | 'ragStatus'>) => {
+  if (document.ragStatus === 'processed' && document.status === 'ready') {
+    return 'RAG processed'
+  }
+
+  return `RAG ${document.status === 'ready' ? 'pending' : document.status}`
 }
 
 export function DocumentsView() {
-  const [documents, setDocuments] = useState<Document[]>([])
+  const [documents, setDocuments] = useState<DocumentSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isUploading, setIsUploading] = useState(false)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [content, setContent] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDocumentLoading, setIsDocumentLoading] = useState(false)
+  const [editorMode, setEditorMode] = useState<EditorMode>('create')
+  const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null)
+  const [formValues, setFormValues] = useState(EMPTY_FORM)
 
   const loadDocuments = async () => {
     try {
@@ -47,134 +60,226 @@ export function DocumentsView() {
     loadDocuments()
   }, [])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!title.trim() || !content.trim()) return
+  const resetEditor = () => {
+    setEditorMode('create')
+    setEditingDocumentId(null)
+    setFormValues(EMPTY_FORM)
+    setIsDocumentLoading(false)
+  }
 
-    setIsUploading(true)
+  const openCreateDialog = () => {
+    resetEditor()
+    setIsDialogOpen(true)
+  }
+
+  const openEditDialog = async (documentId: string) => {
+    setIsDialogOpen(true)
+    setEditorMode('edit')
+    setEditingDocumentId(documentId)
+    setIsDocumentLoading(true)
 
     try {
-      await documentsApi.createDocument({ title: title.trim(), content: content.trim() })
-      setTitle('')
-      setContent('')
-      setDialogOpen(false)
-      await loadDocuments()
+      const document = await documentsApi.getDocument(documentId)
+      setFormValues({
+        title: document.title,
+        content: document.content,
+      })
     } catch (error) {
-      console.error('Failed to create document:', error)
+      console.error('Failed to load document:', error)
+      setIsDialogOpen(false)
+      resetEditor()
     } finally {
-      setIsUploading(false)
+      setIsDocumentLoading(false)
     }
   }
 
-  const formatDate = (date: Date) => {
+  const upsertDocument = async (documentId: string) => {
+    const nextDocument = await documentsApi.getDocument(documentId)
+    setDocuments((currentDocuments) => {
+      const withoutCurrent = currentDocuments.filter((document) => document.id !== documentId)
+      return [nextDocument, ...withoutCurrent].sort(
+        (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+      )
+    })
+  }
+
+  const handleDialogChange = (open: boolean) => {
+    setIsDialogOpen(open)
+    if (!open && !isSaving) {
+      resetEditor()
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formValues.title.trim() || !formValues.content.trim()) return
+
+    setIsSaving(true)
+
+    try {
+      const payload = {
+        title: formValues.title.trim(),
+        content: formValues.content.trim(),
+      }
+      const response = editingDocumentId
+        ? await documentsApi.updateDocument(editingDocumentId, payload)
+        : await documentsApi.createDocument(payload)
+
+      await upsertDocument(response.documentId)
+      setIsDialogOpen(false)
+      resetEditor()
+    } catch (error) {
+      console.error(`Failed to ${editingDocumentId ? 'update' : 'create'} document:`, error)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const formatDate = (date: string) => {
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     }).format(new Date(date))
   }
 
+  const renderDialogBody = () => {
+    if (isDocumentLoading) {
+      return (
+        <div className="flex min-h-[240px] items-center justify-center">
+          <Spinner className="w-6 h-6" />
+        </div>
+      )
+    }
+
+    return (
+      <form onSubmit={handleSubmit} className="mt-4 flex max-h-[min(80vh,720px)] flex-col">
+        <div className="space-y-4 overflow-y-auto pr-1">
+          <div className="space-y-2">
+            <Label htmlFor="title">Title</Label>
+            <Input
+              id="title"
+              value={formValues.title}
+              onChange={(e) => setFormValues((current) => ({ ...current, title: e.target.value }))}
+              placeholder="Document title"
+              disabled={isSaving}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="content">Content</Label>
+            <Textarea
+              id="content"
+              value={formValues.content}
+              onChange={(e) => setFormValues((current) => ({ ...current, content: e.target.value }))}
+              placeholder="Paste your document content here..."
+              className="field-sizing-fixed min-h-[240px] max-h-[50vh] overflow-y-auto resize-y"
+              disabled={isSaving}
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2 border-t pt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => handleDialogChange(false)}
+            disabled={isSaving}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={isSaving || !formValues.title.trim() || !formValues.content.trim()}
+          >
+            {isSaving ? <Spinner className="mr-2" /> : null}
+            {editorMode === 'edit' ? 'Save Document' : 'Add Document'}
+          </Button>
+        </div>
+      </form>
+    )
+  }
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="border-b border-border px-6 py-4 flex items-center justify-between">
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between border-b border-border px-6 py-4">
         <div>
           <h1 className="text-lg font-medium text-foreground">Documents</h1>
           <p className="text-sm text-muted-foreground">Manage your knowledge base</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Document
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Document</DialogTitle>
-              <DialogDescription>
-                Add a new document to your knowledge base for retrieval.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-              <div className="space-y-2">
-                <Label htmlFor="title">Title</Label>
-                <Input
-                  id="title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Document title"
-                  disabled={isUploading}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="content">Content</Label>
-                <Textarea
-                  id="content"
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder="Paste your document content here..."
-                  className="min-h-[200px]"
-                  disabled={isUploading}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setDialogOpen(false)}
-                  disabled={isUploading}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isUploading || !title.trim() || !content.trim()}>
-                  {isUploading ? <Spinner className="mr-2" /> : null}
-                  Add Document
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button size="sm" onClick={openCreateDialog}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Document
+        </Button>
       </div>
+
+      <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
+        <DialogContent className="max-h-[90vh] sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editorMode === 'edit' ? 'Edit Document' : 'Add Document'}</DialogTitle>
+            <DialogDescription>
+              {editorMode === 'edit'
+                ? 'Update the document and re-run it through the RAG ingestion pipeline.'
+                : 'Add a new document to your knowledge base for retrieval.'}
+            </DialogDescription>
+          </DialogHeader>
+          {renderDialogBody()}
+        </DialogContent>
+      </Dialog>
 
       <div className="flex-1 overflow-y-auto p-6">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <Spinner className="w-6 h-6" />
+          <div className="flex h-full items-center justify-center">
+            <Spinner className="h-6 w-6" />
           </div>
         ) : documents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <FileText className="w-5 h-5 text-primary" />
+          <div className="flex h-full flex-col items-center justify-center text-center">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <FileText className="h-5 w-5 text-primary" />
             </div>
-            <h2 className="text-lg font-medium text-foreground mb-1">No documents yet</h2>
-            <p className="text-sm text-muted-foreground max-w-sm mb-4">
+            <h2 className="mb-1 text-lg font-medium text-foreground">No documents yet</h2>
+            <p className="mb-4 max-w-sm text-sm text-muted-foreground">
               Add documents to your knowledge base to start asking questions.
             </p>
-            <Button size="sm" onClick={() => setDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
+            <Button size="sm" onClick={openCreateDialog}>
+              <Plus className="mr-2 h-4 w-4" />
               Add your first document
             </Button>
           </div>
         ) : (
-          <div className="grid gap-3 max-w-3xl">
+          <div className="grid max-w-3xl gap-3">
             {documents.map((doc) => (
-              <div
+              <button
                 key={doc.id}
-                className="flex items-center gap-4 p-4 bg-card border border-border rounded-lg"
+                type="button"
+                onClick={() => openEditDialog(doc.id)}
+                className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/20"
               >
-                <div className="w-10 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                  <FileText className="w-5 h-5 text-muted-foreground" />
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-muted">
+                  <FileText className="h-5 w-5 text-muted-foreground" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-medium text-foreground truncate">{doc.title}</h3>
-                  <p className="text-sm text-muted-foreground">{formatDate(doc.createdAt)}</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="truncate font-medium text-foreground">{doc.title}</h3>
+                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Updated {formatDate(doc.updatedAt)}
+                  </p>
                 </div>
-                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span className="capitalize">{doc.status}</span>
+                <div className="flex flex-col items-end gap-1 text-sm">
+                  <div className="flex items-center gap-1 text-foreground">
+                    {doc.ragStatus === 'processed' ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 text-amber-500" />
+                    )}
+                    <span>{getRagLabel(doc)}</span>
+                  </div>
+                  <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    {doc.status}
+                  </span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}

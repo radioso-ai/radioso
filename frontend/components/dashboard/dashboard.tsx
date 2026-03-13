@@ -1,32 +1,25 @@
 'use client'
 
-import { useState } from 'react'
-import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
-import { AppSidebar } from './app-sidebar'
-import { ChatView } from './chat-view'
-import { DocumentsView } from './documents-view'
-import { SettingsView } from './settings-view'
-import { TokenView } from './token-view'
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
-type View = 'chat' | 'documents' | 'settings' | 'token'
+import { Spinner } from '@/components/ui/spinner'
+import { useAuth } from '@/lib/auth-context'
+import { buildAccountRoute } from '@/lib/dashboard-routes'
 
 export function Dashboard() {
-  const [currentView, setCurrentView] = useState<View>('chat')
+  const router = useRouter()
+  const { user, isBootstrapping } = useAuth()
+
+  useEffect(() => {
+    if (!isBootstrapping && user) {
+      router.replace(buildAccountRoute(user.userId, 'chat'))
+    }
+  }, [isBootstrapping, router, user])
 
   return (
-    <SidebarProvider>
-      <AppSidebar currentView={currentView} onViewChange={setCurrentView} />
-      <SidebarInset>
-        <header className="flex items-center h-12 px-4 border-b border-border md:hidden">
-          <SidebarTrigger />
-        </header>
-        <div className="flex-1 h-[calc(100vh-3rem)] md:h-screen">
-          {currentView === 'chat' && <ChatView />}
-          {currentView === 'documents' && <DocumentsView />}
-          {currentView === 'settings' && <SettingsView />}
-          {currentView === 'token' && <TokenView />}
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+    <div className="flex min-h-screen items-center justify-center">
+      <Spinner className="h-6 w-6" />
+    </div>
   )
 }

@@ -151,10 +151,145 @@ export interface ChatResponse {
   citations?: Citation[]
 }
 
+export interface ChatStreamConversation {
+  conversationId: string
+}
+
+export interface ChatStreamChunk {
+  text: string
+}
+
+export interface ChatStreamCompletion {
+  conversationId?: string
+  citations: Citation[]
+}
+
+interface ChatStreamHandlers {
+  onConversation?: (payload: ChatStreamConversation) => void
+  onChunk?: (payload: ChatStreamChunk) => void
+  onDone?: (payload: ChatStreamCompletion) => void
+}
+
 export interface ErrorResponse {
   error: {
     code: string
     message: string
+  }
+}
+
+const requireApiToken = () => {
+  const token = getStoredApiToken()
+
+  if (!token) {
+    throw {
+      error: {
+        code: "UNAUTHORIZED",
+        message: "Sign in again to continue.",
+      },
+    } satisfies ErrorResponse
+  }
+
+  return token
+}
+
+const parseSseEvent = (rawEvent: string) => {
+  const normalized = rawEvent.replaceAll('\r', '')
+  const lines = normalized.split('\n')
+  let eventName = 'message'
+  const dataLines: string[] = []
+
+  for (const line of lines) {
+    if (line.startsWith('event:')) {
+      eventName = line.slice(6).trim()
+      continue
+    }
+
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trim())
+    }
+  }
+
+  return {
+    eventName,
+    data: dataLines.join('\n'),
+  }
+}
+
+const streamChatEvents = async (
+  response: Response,
+  handlers: ChatStreamHandlers,
+): Promise<ChatResponse> => {
+  if (!response.body) {
+    throw new Error('Streaming response body was unavailable.')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let answer = ''
+  let conversationId = ''
+  let citations: Citation[] = []
+
+  const flushEvent = (rawEvent: string) => {
+    if (!rawEvent.trim()) {
+      return
+    }
+
+    const { eventName, data } = parseSseEvent(rawEvent)
+
+    if (!data) {
+      return
+    }
+
+    if (eventName === 'conversation') {
+      const payload = JSON.parse(data) as ChatStreamConversation
+      conversationId = payload.conversationId
+      handlers.onConversation?.(payload)
+      return
+    }
+
+    if (eventName === 'chunk') {
+      const payload = JSON.parse(data) as ChatStreamChunk
+      answer = `${answer}${payload.text}`
+      handlers.onChunk?.(payload)
+      return
+    }
+
+    if (eventName === 'done') {
+      const payload = JSON.parse(data) as { citations?: Citation[] }
+      citations = payload.citations ?? []
+      handlers.onDone?.({
+        conversationId,
+        citations,
+      })
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+
+    let delimiterIndex = buffer.indexOf('\n\n')
+
+    while (delimiterIndex !== -1) {
+      flushEvent(buffer.slice(0, delimiterIndex))
+      buffer = buffer.slice(delimiterIndex + 2)
+      delimiterIndex = buffer.indexOf('\n\n')
+    }
+
+    if (done) {
+      break
+    }
+  }
+
+  if (buffer.trim()) {
+    flushEvent(buffer)
+  }
+
+  return {
+    conversationId,
+    answer,
+    citations,
   }
 }
 
@@ -243,5 +378,41 @@ export const chatApi = {
       method: "POST",
       body: JSON.stringify(data),
     }, { withApiToken: true })
-  }
+  },
+
+  async streamChatResponse(
+    data: ChatRequest,
+    handlers: ChatStreamHandlers = {},
+  ): Promise<ChatResponse> {
+    const response = await fetch(`${API_BASE}/chat/`, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${requireApiToken()}`,
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    const contentType = response.headers.get("content-type") ?? ""
+
+    if (!contentType.includes("text/event-stream")) {
+      const payload = (await response.json()) as ChatResponse
+      handlers.onConversation?.({ conversationId: payload.conversationId })
+      if (payload.answer) {
+        handlers.onChunk?.({ text: payload.answer })
+      }
+      handlers.onDone?.({
+        conversationId: payload.conversationId,
+        citations: payload.citations ?? [],
+      })
+      return payload
+    }
+
+    return streamChatEvents(response, handlers)
+  },
 }

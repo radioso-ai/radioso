@@ -143,30 +143,26 @@ export class AuthService {
     const existing = await this.dependencies.accountTokenRepository.findByAccountId(accountId);
 
     if (existing) {
-      await this.dependencies.accountTokenRepository.touch(accountId, new Date());
-      await this.dependencies.auditService.record({
-        accountId,
-        eventType: "auth.token.read",
-        eventStatus: "success",
-      });
-      return { token: decryptSecret(existing.encryptedToken, this.dependencies.env.SESSION_COOKIE_SECRET) };
+      try {
+        const token = decryptSecret(existing.encryptedToken, this.dependencies.env.SESSION_COOKIE_SECRET);
+        await this.dependencies.accountTokenRepository.touch(accountId, new Date());
+        await this.dependencies.auditService.record({
+          accountId,
+          eventType: "auth.token.read",
+          eventStatus: "success",
+        });
+        return { token };
+      } catch {
+        await this.dependencies.auditService.record({
+          accountId,
+          eventType: "auth.token.read",
+          eventStatus: "failure",
+          metadata: { reason: "decrypt_failed" },
+        });
+      }
     }
 
-    const token = generateApiToken();
-    await this.dependencies.accountTokenRepository.save({
-      accountId,
-      tokenPrefix: tokenPrefix(),
-      tokenHash: sha256(token),
-      encryptedToken: encryptSecret(token, this.dependencies.env.SESSION_COOKIE_SECRET),
-    });
-
-    await this.dependencies.auditService.record({
-      accountId,
-      eventType: "auth.token.create",
-      eventStatus: "success",
-    });
-
-    return { token };
+    return this.issueAccountToken(accountId);
   }
 
   async getAccountTokenForSession(sessionToken: string): Promise<{ token: string }> {
@@ -184,6 +180,24 @@ export class AuthService {
 
     await this.dependencies.accountTokenRepository.touch(accountToken.accountId, new Date());
     return { accountId: accountToken.accountId };
+  }
+
+  private async issueAccountToken(accountId: string): Promise<{ token: string }> {
+    const token = generateApiToken();
+    await this.dependencies.accountTokenRepository.save({
+      accountId,
+      tokenPrefix: tokenPrefix(),
+      tokenHash: sha256(token),
+      encryptedToken: encryptSecret(token, this.dependencies.env.SESSION_COOKIE_SECRET),
+    });
+
+    await this.dependencies.auditService.record({
+      accountId,
+      eventType: "auth.token.create",
+      eventStatus: "success",
+    });
+
+    return { token };
   }
 
   private async createSessionCookie(accountId: string): Promise<string> {

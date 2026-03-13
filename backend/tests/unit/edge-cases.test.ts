@@ -63,6 +63,37 @@ describe("edge cases", () => {
     expect(result.effectiveQuery).toBe("What is the session cookie used for?");
   });
 
+  it("does not heuristic-rewrite a standalone short query against prior context", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        throw new Error("rewrite unavailable");
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "What is the API rate limit?",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [
+          {
+            id: "1",
+            conversationId: "c1",
+            accountId: "a1",
+            role: "user",
+            content: "Tell me about the session cookie",
+            createdAt: new Date(),
+          },
+        ],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("skipped");
+    expect(result.effectiveQuery).toBe("What is the API rate limit?");
+    expect(result.rewriteApplied).toBe(false);
+  });
+
   it("falls back to similarity ordering when rerank assistance errors", async () => {
     const service = new RerankService({
       async rerank() {

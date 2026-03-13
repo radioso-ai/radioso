@@ -220,6 +220,41 @@ describe("chat retrieval domain", () => {
     expect(result[0]?.chunkId).toBe("c1");
   });
 
+  it("skips an over-budget first chunk and keeps later chunks that fit", () => {
+    const service = new PromptContextSelectorService(20);
+
+    const result = service.select({
+      topK: 5,
+      contexts: [
+        {
+          chunkId: "c1",
+          documentId: "d1",
+          title: "A",
+          content: "x".repeat(200),
+          similarity: 0.95,
+          retrievalSources: ["original"],
+          retrievalText: "A oversized content",
+          relevanceScore: 0.99,
+          rerankPosition: 0,
+        },
+        {
+          chunkId: "c2",
+          documentId: "d2",
+          title: "B",
+          content: "fits",
+          similarity: 0.8,
+          retrievalSources: ["original"],
+          retrievalText: "B fits",
+          relevanceScore: 0.85,
+          rerankPosition: 1,
+        },
+      ],
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.chunkId).toBe("c2");
+  });
+
   it("builds prompts with contexts and citations", () => {
     const builder = new PromptBuilder();
     const result = builder.build({

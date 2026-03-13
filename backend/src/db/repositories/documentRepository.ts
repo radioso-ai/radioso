@@ -97,4 +97,24 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
     return mapDocument(row);
   }
+
+  async setStatus(input: {
+    documentId: string;
+    accountId: string;
+    status: string;
+    failureReason?: string | null;
+  }): Promise<DocumentRecord> {
+    const [row] = await this.database.query<DocumentRow>(
+      `UPDATE documents
+       SET status = $3,
+           failed_at = CASE WHEN $3 = 'failed' THEN NOW() ELSE NULL END,
+           failure_reason = CASE WHEN $3 = 'failed' THEN $4 ELSE NULL END,
+           updated_at = NOW()
+       WHERE id = $1 AND account_id = $2
+       RETURNING id, account_id, title, source_content, markdown_content, status, created_at, updated_at`,
+      [input.documentId, input.accountId, input.status, input.failureReason ?? null],
+    );
+
+    return mapDocument(row);
+  }
 }

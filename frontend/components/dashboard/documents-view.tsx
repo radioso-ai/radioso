@@ -147,16 +147,16 @@ export function DocumentsView() {
   const renderDialogBody = () => {
     if (isDocumentLoading) {
       return (
-        <div className="flex min-h-[240px] items-center justify-center">
+        <div className="flex flex-1 min-h-[240px] items-center justify-center">
           <Spinner className="w-6 h-6" />
         </div>
       )
     }
 
     return (
-      <form onSubmit={handleSubmit} className="mt-4 flex max-h-[min(80vh,720px)] flex-col">
-        <div className="space-y-4 overflow-y-auto pr-1">
-          <div className="space-y-2">
+      <form onSubmit={handleSubmit} className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+          <div className="space-y-2 flex-shrink-0">
             <Label htmlFor="title">Title</Label>
             <Input
               id="title"
@@ -166,19 +166,19 @@ export function DocumentsView() {
               disabled={isSaving}
             />
           </div>
-          <div className="space-y-2">
+          <div className="flex min-h-0 flex-1 flex-col space-y-2">
             <Label htmlFor="content">Content</Label>
             <Textarea
               id="content"
               value={formValues.content}
               onChange={(e) => setFormValues((current) => ({ ...current, content: e.target.value }))}
               placeholder="Paste your document content here..."
-              className="field-sizing-fixed min-h-[240px] max-h-[50vh] overflow-y-auto resize-y"
+              className="h-full min-h-[320px] flex-1 resize-none overflow-y-auto [field-sizing:fixed]"
               disabled={isSaving}
             />
           </div>
         </div>
-        <div className="mt-4 flex justify-end gap-2 border-t pt-4">
+        <div className="mt-4 flex flex-shrink-0 justify-end gap-2 border-t pt-4">
           <Button
             type="button"
             variant="outline"
@@ -213,7 +213,7 @@ export function DocumentsView() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
-        <DialogContent className="max-h-[90vh] sm:max-w-2xl">
+        <DialogContent className="flex h-[min(85vh,760px)] max-h-[85vh] flex-col overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editorMode === 'edit' ? 'Edit Document' : 'Add Document'}</DialogTitle>
             <DialogDescription>
@@ -252,7 +252,7 @@ export function DocumentsView() {
                 key={doc.id}
                 type="button"
                 onClick={() => openEditDialog(doc.id)}
-                className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/20"
+                className="flex cursor-pointer items-center gap-4 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/20"
               >
                 <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-muted">
                   <FileText className="h-5 w-5 text-muted-foreground" />

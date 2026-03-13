@@ -2,6 +2,7 @@ import { getEnv, type Env } from "../config/env.js";
 import { ChatService, OpenAIChatGateway } from "../../modules/chat/services/chatService.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { AccountTokenRepository } from "../../db/repositories/accountTokenRepository.js";
+import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { ChunkRepository } from "../../db/repositories/chunkRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { DocumentRepository } from "../../db/repositories/documentRepository.js";
@@ -30,7 +31,7 @@ import type { AppDependencies } from "./types.js";
 export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const logger = createLogger();
   const database = new Database(env.DATABASE_URL);
-  const auditService = new AuditService(logger);
+  const auditService = new AuditService(logger, new AuditEventRepository(database));
   const openai = new OpenAIClients(env.OPENAI_API_KEY, env.OPENAI_CHAT_MODEL, env.OPENAI_VECTOR_MODEL);
   const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
   const embeddingService = new EmbeddingService(new OpenAIEmbeddingGateway(openai.client, openai.vectorModel));

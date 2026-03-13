@@ -16,6 +16,19 @@ import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+
+const noopAuditRepository = {
+  async create() {
+    return {
+      id: randomUUID(),
+      accountId: null,
+      eventType: "",
+      eventStatus: "",
+      metadata: {},
+      createdAt: new Date(),
+    };
+  },
+};
 const describeIfDatabase = integrationDatabaseUrl ? describe : describe.skip;
 
 describeIfDatabase("persistence integration", () => {
@@ -132,7 +145,7 @@ describeIfDatabase("persistence integration", () => {
       documentRepository,
       chunkRepository,
       new EmbeddingService(embeddingGateway),
-      new AuditService(createLogger("silent")),
+      new AuditService(createLogger("silent"), noopAuditRepository),
     );
 
     const account = await accountRepository.create({
@@ -180,7 +193,7 @@ describeIfDatabase("persistence integration", () => {
     const logger = {
       info: vi.fn(),
     };
-    const auditService = new AuditService(logger as unknown as ReturnType<typeof createLogger>);
+    const auditService = new AuditService(logger as unknown as ReturnType<typeof createLogger>, noopAuditRepository);
 
     await auditService.record({
       accountId: randomUUID(),

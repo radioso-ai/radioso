@@ -175,6 +175,36 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       .filter((item) => item.accountId === accountId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
+
+  async findByIdAndAccountId(documentId: string, accountId: string): Promise<DocumentRecord | null> {
+    const item = this.items.get(documentId);
+    return item && item.accountId === accountId ? item : null;
+  }
+
+  async update(input: {
+    documentId: string;
+    accountId: string;
+    title: string;
+    sourceContent: string;
+    markdownContent: string;
+    status: string;
+  }): Promise<DocumentRecord> {
+    const existing = this.items.get(input.documentId);
+    if (!existing || existing.accountId !== input.accountId) {
+      throw new Error(`Document ${input.documentId} not found`);
+    }
+
+    const record: DocumentRecord = {
+      ...existing,
+      title: input.title,
+      sourceContent: input.sourceContent,
+      markdownContent: input.markdownContent,
+      status: input.status,
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
 }
 
 export class InMemoryChunkRepository implements ChunkRepositoryPort {

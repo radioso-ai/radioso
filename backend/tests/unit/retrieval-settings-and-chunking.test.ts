@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { chunkMarkdown } from "../../src/modules/retrieval/domain/chunkingService.js";
-import { validateRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
+import { defaultRetrievalSettings, validateRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
 
 describe("retrieval settings and chunking", () => {
   it("rejects invalid retrieval settings", () => {
@@ -22,5 +22,12 @@ describe("retrieval settings and chunking", () => {
 
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks[1].startOffset).toBeLessThan(chunks[0].endOffset);
+  });
+
+  it("uses a modestly broader default candidate pool", () => {
+    const defaults = defaultRetrievalSettings("account-1");
+
+    expect(defaults.vectorTopK).toBe(15);
+    expect(defaults.similarityThreshold).toBe(0.2);
   });
 });

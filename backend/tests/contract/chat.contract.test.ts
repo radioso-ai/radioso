@@ -92,4 +92,36 @@ describe("chat contract", () => {
     expect(Object.keys(second.body).sort()).toEqual(["answer", "citations", "conversationId"]);
     expect(second.body.conversationId).toBe(first.body.conversationId);
   });
+
+  it("refuses out-of-corpus questions when only low-similarity partial matches exist", async () => {
+    const { app } = createTestApp();
+    const token = await getBearerToken(app);
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Cooking Pasta", content: "This guide explains how to cook pasta successfully." });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: true,
+        vectorTopK: 80,
+        similarityThreshold: 0.8,
+        rerankTopK: 15,
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Can you cook Flan?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(Object.keys(response.body).sort()).toEqual(["answer", "citations", "conversationId"]);
+    expect(response.body.answer).toContain("could not find relevant information");
+    expect(response.body.citations).toEqual([]);
+  });
 });

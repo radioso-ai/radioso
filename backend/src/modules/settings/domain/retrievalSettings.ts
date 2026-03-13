@@ -23,7 +23,7 @@ export const defaultRetrievalSettings = (accountId: string): RetrievalSettingsRe
   accountId,
   queryRewriteEnabled: false,
   rerankEnabled: false,
-  vectorTopK: 10,
+  vectorTopK: 15,
   similarityThreshold: 0.2,
   rerankTopK: 5,
   createdAt: new Date(),

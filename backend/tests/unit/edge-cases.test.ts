@@ -131,7 +131,7 @@ describe("edge cases", () => {
     expect(result.contexts[0]?.chunkId).toBe("c1");
   });
 
-  it("relaxes strict retrieval thresholds when first-pass search returns no candidates", async () => {
+  it("keeps the configured retrieval threshold when first-pass search returns no candidates", async () => {
     const thresholdsSeen: number[] = [];
     const service = new RetrievalPipelineService(
       {
@@ -185,10 +185,9 @@ describe("edge cases", () => {
       history: [],
     });
 
-    expect(thresholdsSeen).toContain(0.8);
-    expect(thresholdsSeen.some((value) => value < 0.8)).toBe(true);
-    expect(result.contexts).toHaveLength(1);
-    expect(result.diagnostics.candidateFallbackApplied).toBe(true);
-    expect(result.diagnostics.fallbackApplied).toBe(true);
+    expect(thresholdsSeen).toEqual([0.8]);
+    expect(result.contexts).toHaveLength(0);
+    expect(result.diagnostics.candidateFallbackApplied).toBe(false);
+    expect(result.diagnostics.fallbackApplied).toBe(false);
   });
 });

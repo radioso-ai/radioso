@@ -20,9 +20,6 @@ export interface RetrievalPipelineResult {
   diagnostics: RetrievalExecutionDiagnostics;
 }
 
-const MIN_CANDIDATE_FLOOR = 3;
-const MIN_RELAXED_THRESHOLD = 0.2;
-
 export class RetrievalPipelineService {
   constructor(
     private readonly retrievalSettingsService: RetrievalSettingsService,
@@ -52,14 +49,12 @@ export class RetrievalPipelineService {
       contextWindow,
       enabled: settings.queryRewriteEnabled,
     });
-    const minimumCandidates = Math.min(settings.rerankTopK, MIN_CANDIDATE_FLOOR);
     const [originalEmbedding] = await this.embeddingService.embedChunks([input.query]);
     const originalSearch = await this.searchWithFallback({
       accountId: input.accountId,
       queryEmbedding: originalEmbedding ?? [],
       topK: settings.vectorTopK,
       similarityThreshold: settings.similarityThreshold,
-      minimumCandidates,
     });
     const originalContexts = originalSearch.contexts;
 
@@ -74,7 +69,6 @@ export class RetrievalPipelineService {
         queryEmbedding: rewrittenEmbedding ?? [],
         topK: settings.vectorTopK,
         similarityThreshold: settings.similarityThreshold,
-        minimumCandidates,
       });
     }
     const rewrittenContexts = rewrittenSearch.contexts;
@@ -122,51 +116,17 @@ export class RetrievalPipelineService {
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
-    minimumCandidates: number;
   }): Promise<{ contexts: RetrievedChunk[]; fallbackApplied: boolean }> {
-    const thresholdPlan = buildThresholdPlan(input.similarityThreshold);
-    const byChunkId = new Map<string, RetrievedChunk>();
-    let fallbackApplied = false;
-
-    for (let index = 0; index < thresholdPlan.length; index += 1) {
-      const threshold = thresholdPlan[index];
-      const rows = await this.vectorSearch.search({
-        accountId: input.accountId,
-        queryEmbedding: input.queryEmbedding,
-        topK: input.topK,
-        similarityThreshold: threshold,
-      });
-
-      for (const row of rows) {
-        const existing = byChunkId.get(row.chunkId);
-        if (!existing || row.similarity > existing.similarity) {
-          byChunkId.set(row.chunkId, row);
-        }
-      }
-
-      if (index > 0 && rows.length > 0) {
-        fallbackApplied = true;
-      }
-
-      if (byChunkId.size >= input.minimumCandidates || threshold <= MIN_RELAXED_THRESHOLD) {
-        break;
-      }
-    }
+    const rows = await this.vectorSearch.search({
+      accountId: input.accountId,
+      queryEmbedding: input.queryEmbedding,
+      topK: input.topK,
+      similarityThreshold: input.similarityThreshold,
+    });
 
     return {
-      contexts: [...byChunkId.values()].sort((left, right) => right.similarity - left.similarity).slice(0, input.topK),
-      fallbackApplied,
+      contexts: rows,
+      fallbackApplied: false,
     };
   }
 }
-
-const buildThresholdPlan = (similarityThreshold: number): number[] => {
-  const candidates = [
-    similarityThreshold,
-    Math.max(0.55, similarityThreshold - 0.15),
-    Math.max(0.35, similarityThreshold - 0.35),
-    MIN_RELAXED_THRESHOLD,
-  ];
-
-  return [...new Set(candidates.filter((value, index) => value <= similarityThreshold || index === 0))];
-};

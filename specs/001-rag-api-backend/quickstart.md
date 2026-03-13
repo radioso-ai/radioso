@@ -25,6 +25,7 @@ SESSION_COOKIE_SECRET=...
 ```
 
 Mirror non-secret placeholders in `/Users/dm/code/hivec/backend/.env.example`.
+`/Users/dm/code/hivec/infra/docker-compose.yml` also reads this same file and overrides only container-specific values such as `DATABASE_URL` and `NODE_ENV`.
 
 ## 3. Provision PostgreSQL
 

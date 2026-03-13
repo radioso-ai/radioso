@@ -1,12 +1,22 @@
 'use client'
 
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
 import { useAuth } from '@/lib/auth-context'
 import { AuthPage } from '@/components/auth/auth-page'
-import { Dashboard } from '@/components/dashboard/dashboard'
 import { Spinner } from '@/components/ui/spinner'
+import { buildAccountRoute } from '@/lib/dashboard-routes'
 
 export default function Home() {
-  const { isAuthenticated, isBootstrapping } = useAuth()
+  const router = useRouter()
+  const { user, isAuthenticated, isBootstrapping } = useAuth()
+
+  useEffect(() => {
+    if (!isBootstrapping && user) {
+      router.replace(buildAccountRoute(user.userId, 'chat'))
+    }
+  }, [isBootstrapping, router, user])
 
   if (isBootstrapping) {
     return (
@@ -20,5 +30,9 @@ export default function Home() {
     return <AuthPage />
   }
 
-  return <Dashboard />
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <Spinner className="h-6 w-6" />
+    </div>
+  )
 }

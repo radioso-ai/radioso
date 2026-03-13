@@ -1,44 +1,22 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Spinner } from '@/components/ui/spinner'
-import { chatApi, ChatResponse } from '@/lib/api'
 import { Send } from 'lucide-react'
+import { AssistantMessageContent } from './chat-citations'
+import { useChatSession } from '@/lib/chat-context'
 
-interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  citations?: ChatResponse['citations']
+interface ChatViewProps {
+  accountId: string
+  onOpenDocument: (documentId: string) => void
 }
 
-const getErrorMessage = (error: unknown) => {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'error' in error &&
-    error.error &&
-    typeof error.error === 'object' &&
-    'message' in error.error &&
-    typeof error.error.message === 'string'
-  ) {
-    return error.error.message
-  }
-
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-
-  return 'Sorry, something went wrong. Please try again.'
-}
-
-export function ChatView() {
-  const [messages, setMessages] = useState<Message[]>([])
+export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
   const [input, setInput] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [conversationId, setConversationId] = useState<string | undefined>()
+  const { messages, isLoading, sendMessage } = useChatSession(accountId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -47,49 +25,15 @@ export function ChatView() {
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages])
+  }, [isLoading, messages])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
 
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: input.trim()
-    }
-
-    setMessages(prev => [...prev, userMessage])
+    const nextInput = input.trim()
     setInput('')
-    setIsLoading(true)
-
-    try {
-      const response = await chatApi.createChatResponse({
-        query: userMessage.content,
-        stream: false,
-        conversationId
-      })
-
-      setConversationId(response.conversationId)
-
-      const assistantMessage: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: response.answer,
-        citations: response.citations
-      }
-
-      setMessages(prev => [...prev, assistantMessage])
-    } catch (error) {
-      const errorMessage: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: getErrorMessage(error)
-      }
-      setMessages(prev => [...prev, errorMessage])
-    } finally {
-      setIsLoading(false)
-    }
+    await sendMessage(nextInput)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -100,13 +44,13 @@ export function ChatView() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="border-b border-border px-6 py-4">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-border px-6 py-4">
         <h1 className="text-lg font-medium text-foreground">Chat</h1>
         <p className="text-sm text-muted-foreground">Ask questions about your documents</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="min-h-0 flex-1 overflow-y-auto p-6">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
@@ -118,7 +62,7 @@ export function ChatView() {
             </p>
           </div>
         ) : (
-          <div className="space-y-6 max-w-3xl mx-auto">
+          <div className="mx-auto max-w-3xl space-y-6">
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -131,34 +75,28 @@ export function ChatView() {
                       : 'bg-muted text-foreground'
                   }`}
                 >
-                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                  {message.citations && message.citations.length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-border/50">
-                      <p className="text-xs opacity-70 mb-1">Sources:</p>
-                      {message.citations.map((citation, i) => (
-                        <span key={i} className="text-xs opacity-70">
-                          {citation.title || `Document ${i + 1}`}
-                          {i < message.citations!.length - 1 && ', '}
-                        </span>
-                      ))}
-                    </div>
+                  {message.role === 'assistant' ? (
+                    message.status === 'streaming' && !message.content ? (
+                      <Spinner className="h-4 w-4" />
+                    ) : (
+                      <AssistantMessageContent
+                        content={message.content}
+                        citations={message.citations}
+                        onOpenDocument={onOpenDocument}
+                      />
+                    )
+                  ) : (
+                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                   )}
                 </div>
               </div>
             ))}
-            {isLoading && (
-              <div className="flex justify-start">
-                <div className="bg-muted rounded-lg px-4 py-3">
-                  <Spinner className="w-4 h-4" />
-                </div>
-              </div>
-            )}
             <div ref={messagesEndRef} />
           </div>
         )}
       </div>
 
-      <div className="border-t border-border p-4">
+      <div className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto flex gap-3">
           <Textarea
             value={input}

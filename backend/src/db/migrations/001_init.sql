@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS chunks (
   chunk_index INTEGER NOT NULL,
   content TEXT NOT NULL,
   token_count INTEGER,
-  embedding VECTOR(3072),
+  embedding VECTOR(1536),
   start_offset INTEGER,
   end_offset INTEGER,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

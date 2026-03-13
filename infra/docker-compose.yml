@@ -34,7 +34,7 @@ services:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/hivec
       OPENAI_API_KEY: ${OPENAI_API_KEY:-dummy-openai-key}
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-5.2}
-      OPENAI_VECTOR_MODEL: ${OPENAI_VECTOR_MODEL:-text-embedding-3-large}
+      OPENAI_VECTOR_MODEL: ${OPENAI_VECTOR_MODEL:-text-embedding-3-small}
       SESSION_COOKIE_NAME: hivec_session
       SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:-0123456789abcdef0123456789abcdef}
       SESSION_TTL_HOURS: 168
@@ -52,6 +52,19 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+
+  frontend:
+    container_name: hivec-frontend
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8080
+    ports:
+      - "3000:3000"
 
 volumes:
   hivec_postgres_data:

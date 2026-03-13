@@ -13,6 +13,16 @@ const documentSchema = z.object({
 export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
 
+  router.get("/", requireApiToken(dependencies), async (_req, res, next) => {
+    try {
+      const { accountId } = res.locals as { accountId: string };
+      const documents = await dependencies.documentIngestionService.listForAccount(accountId);
+      res.status(200).json({ documents });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/", requireApiToken(dependencies), validateBody(documentSchema), async (req, res, next) => {
     try {
       const { accountId } = res.locals as { accountId: string };

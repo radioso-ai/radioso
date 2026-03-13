@@ -169,6 +169,12 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     this.items.set(record.id, record);
     return record;
   }
+
+  async listByAccountId(accountId: string): Promise<DocumentRecord[]> {
+    return [...this.items.values()]
+      .filter((item) => item.accountId === accountId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
 }
 
 export class InMemoryChunkRepository implements ChunkRepositoryPort {

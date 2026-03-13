@@ -35,6 +35,7 @@ export interface DocumentRepositoryPort {
     markdownContent: string;
     status: string;
   }): Promise<DocumentRecord>;
+  listByAccountId(accountId: string): Promise<DocumentRecord[]>;
 }
 
 export interface ChunkRepositoryPort {
@@ -101,5 +102,16 @@ export class DocumentIngestionService {
       });
       throw error;
     }
+  }
+
+  async listForAccount(accountId: string): Promise<Array<{ id: string; title: string; status: string; createdAt: Date }>> {
+    const documents = await this.documentRepository.listByAccountId(accountId);
+
+    return documents.map((document) => ({
+      id: document.id,
+      title: document.title,
+      status: document.status,
+      createdAt: document.createdAt,
+    }));
   }
 }

@@ -103,38 +103,20 @@ Latest automated validation recorded on 2026-03-13:
 
 The current implementation keeps the public API unchanged, emits retrieval diagnostics only through audit metadata, and validates retrieval behavior through direct-answer, follow-up, noisy-corpus, and fallback benchmark fixtures.
 
-Latest live verification recorded on 2026-03-13 against `http://localhost:8080` with the 10-document manual corpus:
+Final live verification recorded on 2026-03-13 against the normal Docker stack at `http://localhost:8080` with the 10-document manual corpus:
 
 - document ingest succeeded for all `10/10` documents
-- the broad profile remained partially usable
-- the strict profile still returned the safe no-information answer for known-answer queries
-- the recreated live backend emitted retrieval diagnostics showing zero first-pass candidates under the strict threshold and rewrite/rerank fallback on follow-up queries
-
-Observed live outcomes:
-
-- strict profile:
-  - rate-limit query: fallback answer, `0` citations
-  - session-cookie follow-up: fallback answer, `0` citations
-- broad profile:
-  - rate-limit query: correct grounded answer, `3` citations
-  - session-cookie follow-up: fallback answer, `0` citations on the recreated backend
-
-This means the branch improves structure, tests, and observability, but does not yet meet the intended live retrieval-quality outcome for strict profiles or reliable follow-up rescue.
-
-Follow-up isolated verification recorded on 2026-03-13 against `http://localhost:8091` using the worktree backend directly and a temporary `hivec_ragtest` database with matching `text-embedding-3-small` embeddings:
-
-- document ingest succeeded for all `10/10` documents
-- strict profile returned a grounded rate-limit answer with citations
-- strict follow-up returned a grounded session-cookie answer with citations
+- strict profile returned grounded answers for both the rate-limit query and the session-cookie follow-up
 - broad profile also returned grounded answers for both checks
 
-Observed isolated outcomes:
+Observed shared-stack outcomes:
 
+- document ingest succeeded for all `10/10` documents
 - strict profile:
   - rate-limit query: grounded answer, `3` citations including `Rate Limits`
-  - session-cookie follow-up: grounded answer, `3` citations including `Session Cookie`
+  - session-cookie follow-up: grounded answer, `5` citations including `Session Cookie`
 - broad profile:
   - rate-limit query: grounded answer, `3` citations including `Rate Limits`
-  - session-cookie follow-up: grounded answer, `3` citations including `Session Cookie`
+  - session-cookie follow-up: grounded answer, `5` citations including `Session Cookie`
 
-This confirms the retrieval changes improve live known-answer and follow-up behavior materially when the backend runs against a database whose vector dimension matches the configured embedding model. The correct branch target is `text-embedding-3-small` with `vector(1536)`.
+This confirms the PR meets its intended live retrieval-quality scope on the normal local stack. The correct branch target is `text-embedding-3-small` with `vector(1536)`.

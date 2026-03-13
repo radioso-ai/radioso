@@ -3,25 +3,38 @@ import type { RetrievalSettingsService } from "../../settings/services/retrieval
 import type { EmbeddingService } from "./embeddingService.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 import { PromptBuilder } from "./promptBuilder.js";
+import { CandidatePreparationService } from "./candidatePreparationService.js";
+import { ConversationContextService } from "./conversationContextService.js";
+import { PromptContextSelectorService } from "./promptContextSelectorService.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
 import { RerankService } from "./rerankService.js";
+import { RetrievalExecutionTelemetryService } from "./retrievalExecutionTelemetryService.js";
+import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievedChunk, VectorSearchPort } from "../infra/vectorSearch.js";
 
 export interface RetrievalPipelineResult {
   rewrittenQuery: string;
-  contexts: RetrievedChunk[];
+  contexts: import("../domain/retrievalPipelineTypes.js").FinalPromptContext[];
   prompt: string;
   citations: PromptBuildResult["citations"];
+  diagnostics: RetrievalExecutionDiagnostics;
 }
+
+const MIN_CANDIDATE_FLOOR = 3;
+const MIN_RELAXED_THRESHOLD = 0.2;
 
 export class RetrievalPipelineService {
   constructor(
     private readonly retrievalSettingsService: RetrievalSettingsService,
     private readonly embeddingService: EmbeddingService,
     private readonly vectorSearch: VectorSearchPort,
+    private readonly conversationContextService: ConversationContextService,
     private readonly queryRewriteService: QueryRewriteService,
+    private readonly candidatePreparationService: CandidatePreparationService,
     private readonly rerankService: RerankService,
+    private readonly promptContextSelectorService: PromptContextSelectorService,
     private readonly promptBuilder: PromptBuilder,
+    private readonly retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
   ) {}
 
   async run(input: {
@@ -30,22 +43,54 @@ export class RetrievalPipelineService {
     history: MessageRecord[];
   }): Promise<RetrievalPipelineResult> {
     const settings = await this.retrievalSettingsService.getForAccount(input.accountId);
+    const contextWindow = this.conversationContextService.select({
+      history: input.history,
+      query: input.query,
+    });
     const rewrittenQuery = await this.queryRewriteService.rewrite({
       query: input.query,
-      history: input.history,
+      contextWindow,
       enabled: settings.queryRewriteEnabled,
     });
-    const [queryEmbedding] = await this.embeddingService.embedChunks([rewrittenQuery]);
-    const initialContexts = await this.vectorSearch.search({
+    const minimumCandidates = Math.min(settings.rerankTopK, MIN_CANDIDATE_FLOOR);
+    const [originalEmbedding] = await this.embeddingService.embedChunks([input.query]);
+    const originalSearch = await this.searchWithFallback({
       accountId: input.accountId,
-      queryEmbedding: queryEmbedding ?? [],
+      queryEmbedding: originalEmbedding ?? [],
       topK: settings.vectorTopK,
       similarityThreshold: settings.similarityThreshold,
+      minimumCandidates,
     });
-    const contexts = this.rerankService.rerank({
-      query: rewrittenQuery,
-      contexts: initialContexts,
+    const originalContexts = originalSearch.contexts;
+
+    let rewrittenSearch: { contexts: RetrievedChunk[]; fallbackApplied: boolean } = {
+      contexts: [],
+      fallbackApplied: false,
+    };
+    if (rewrittenQuery.rewriteApplied && rewrittenQuery.effectiveQuery !== input.query) {
+      const [rewrittenEmbedding] = await this.embeddingService.embedChunks([rewrittenQuery.effectiveQuery]);
+      rewrittenSearch = await this.searchWithFallback({
+        accountId: input.accountId,
+        queryEmbedding: rewrittenEmbedding ?? [],
+        topK: settings.vectorTopK,
+        similarityThreshold: settings.similarityThreshold,
+        minimumCandidates,
+      });
+    }
+    const rewrittenContexts = rewrittenSearch.contexts;
+
+    const normalizedCandidates = this.candidatePreparationService.prepare({
+      original: originalContexts,
+      rewritten: rewrittenContexts,
+    });
+    const reranked = await this.rerankService.rerank({
+      query: rewrittenQuery.effectiveQuery,
+      contexts: normalizedCandidates,
       enabled: settings.rerankEnabled,
+      topK: settings.rerankTopK,
+    });
+    const contexts = this.promptContextSelectorService.select({
+      contexts: reranked.contexts,
       topK: settings.rerankTopK,
     });
     const prompt = this.promptBuilder.build({
@@ -53,12 +98,75 @@ export class RetrievalPipelineService {
       history: input.history,
       contexts,
     });
+    const diagnostics = this.retrievalExecutionTelemetryService.create({
+      rewriteStatus: rewrittenQuery.status,
+      rerankStatus: reranked.status,
+      originalCandidateCount: originalContexts.length,
+      rewrittenCandidateCount: rewrittenContexts.length,
+      normalizedCandidateCount: normalizedCandidates.length,
+      finalContextCount: contexts.length,
+      candidateFallbackApplied: originalSearch.fallbackApplied || rewrittenSearch.fallbackApplied,
+    });
 
     return {
-      rewrittenQuery,
+      rewrittenQuery: rewrittenQuery.effectiveQuery,
       contexts,
       prompt: prompt.prompt,
       citations: prompt.citations,
+      diagnostics,
+    };
+  }
+
+  private async searchWithFallback(input: {
+    accountId: string;
+    queryEmbedding: number[];
+    topK: number;
+    similarityThreshold: number;
+    minimumCandidates: number;
+  }): Promise<{ contexts: RetrievedChunk[]; fallbackApplied: boolean }> {
+    const thresholdPlan = buildThresholdPlan(input.similarityThreshold);
+    const byChunkId = new Map<string, RetrievedChunk>();
+    let fallbackApplied = false;
+
+    for (let index = 0; index < thresholdPlan.length; index += 1) {
+      const threshold = thresholdPlan[index];
+      const rows = await this.vectorSearch.search({
+        accountId: input.accountId,
+        queryEmbedding: input.queryEmbedding,
+        topK: input.topK,
+        similarityThreshold: threshold,
+      });
+
+      for (const row of rows) {
+        const existing = byChunkId.get(row.chunkId);
+        if (!existing || row.similarity > existing.similarity) {
+          byChunkId.set(row.chunkId, row);
+        }
+      }
+
+      if (index > 0 && rows.length > 0) {
+        fallbackApplied = true;
+      }
+
+      if (byChunkId.size >= input.minimumCandidates || threshold <= MIN_RELAXED_THRESHOLD) {
+        break;
+      }
+    }
+
+    return {
+      contexts: [...byChunkId.values()].sort((left, right) => right.similarity - left.similarity).slice(0, input.topK),
+      fallbackApplied,
     };
   }
 }
+
+const buildThresholdPlan = (similarityThreshold: number): number[] => {
+  const candidates = [
+    similarityThreshold,
+    Math.max(0.55, similarityThreshold - 0.15),
+    Math.max(0.35, similarityThreshold - 0.35),
+    MIN_RELAXED_THRESHOLD,
+  ];
+
+  return [...new Set(candidates.filter((value, index) => value <= similarityThreshold || index === 0))];
+};

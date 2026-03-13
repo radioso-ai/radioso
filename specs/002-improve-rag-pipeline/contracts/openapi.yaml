@@ -1,0 +1,130 @@
+openapi: 3.1.0
+info:
+  title: Hivec Retrieval Quality Upgrade Contract
+  version: 0.1.0
+  summary: Focused contract excerpt for endpoints affected by the retrieval-quality upgrade
+paths:
+  /api/v1/settings/retrieval:
+    get:
+      summary: Read account retrieval settings
+      responses:
+        '200':
+          description: Retrieval settings returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+    put:
+      summary: Update account retrieval settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetrievalSettings'
+      responses:
+        '200':
+          description: Retrieval settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+  /api/v1/chat/:
+    post:
+      summary: Ask a retrieval-grounded question
+      description: |
+        Public request and response shapes remain unchanged for this feature.
+        The retrieval-quality upgrade strengthens internal rewrite, retrieval,
+        rerank, and context-selection behavior without changing the endpoint contract.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Answer returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+components:
+  schemas:
+    RetrievalSettings:
+      type: object
+      additionalProperties: false
+      required:
+        - accountId
+        - createdAt
+        - queryRewriteEnabled
+        - rerankEnabled
+        - vectorTopK
+        - similarityThreshold
+        - rerankTopK
+        - updatedAt
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        queryRewriteEnabled:
+          type: boolean
+        rerankEnabled:
+          type: boolean
+        vectorTopK:
+          type: integer
+          minimum: 1
+          maximum: 300
+        similarityThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        rerankTopK:
+          type: integer
+          minimum: 1
+        updatedAt:
+          type: string
+          format: date-time
+    ChatRequest:
+      type: object
+      additionalProperties: false
+      required: [query, stream]
+      properties:
+        query:
+          type: string
+          minLength: 1
+        stream:
+          type: boolean
+        conversationId:
+          type: string
+          format: uuid
+    ChatResponse:
+      type: object
+      additionalProperties: false
+      required: [conversationId, answer]
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+    Citation:
+      type: object
+      additionalProperties: false
+      required: [documentId, chunkId]
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        chunkId:
+          type: string
+          format: uuid
+        title:
+          type: string

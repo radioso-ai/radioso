@@ -4,6 +4,9 @@ export interface EmbeddingGateway {
   embedTexts(texts: string[]): Promise<number[][]>;
 }
 
+export const buildRetrievalText = (input: { title: string; content: string }): string =>
+  `Title: ${input.title}\n\n${input.content}`.trim();
+
 export class OpenAIEmbeddingGateway implements EmbeddingGateway {
   constructor(
     private readonly client: OpenAI,

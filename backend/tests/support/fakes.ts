@@ -21,7 +21,7 @@ import type {
 import type { MessageRecord, MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
 import type { RetrievalSettingsInput, RetrievalSettingsRecord } from "../../src/modules/settings/domain/retrievalSettings.js";
 import type { RetrievalSettingsRepositoryPort } from "../../src/modules/settings/services/retrievalSettingsService.js";
-import { AuditService } from "../../src/modules/audit/services/auditService.js";
+import { AuditService, type AuditEventInput } from "../../src/modules/audit/services/auditService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
 export class InMemoryAccountRepository implements AccountRepositoryPort {
@@ -290,4 +290,13 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
   }
 }
 
-export const createAuditService = (): AuditService => new AuditService(createLogger("silent"));
+export class InMemoryAuditService extends AuditService {
+  readonly events: AuditEventInput[] = [];
+
+  async record(event: AuditEventInput): Promise<void> {
+    this.events.push(event);
+    await super.record(event);
+  }
+}
+
+export const createAuditService = (): InMemoryAuditService => new InMemoryAuditService(createLogger("silent"));

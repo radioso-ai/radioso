@@ -6,6 +6,9 @@ export interface RetrievedChunk {
   title: string;
   content: string;
   similarity: number;
+  chunkIndex?: number;
+  startOffset?: number | null;
+  endOffset?: number | null;
 }
 
 export interface VectorSearchPort {
@@ -23,6 +26,9 @@ interface VectorSearchRow {
   title: string;
   content: string;
   similarity: number;
+  chunk_index: number;
+  start_offset: number | null;
+  end_offset: number | null;
 }
 
 export class PgVectorSearch implements VectorSearchPort {
@@ -39,6 +45,9 @@ export class PgVectorSearch implements VectorSearchPort {
               c.document_id,
               d.title,
               c.content,
+              c.chunk_index,
+              c.start_offset,
+              c.end_offset,
               1 - (c.embedding <=> $2::vector) AS similarity
        FROM chunks c
        JOIN documents d ON d.id = c.document_id
@@ -56,6 +65,9 @@ export class PgVectorSearch implements VectorSearchPort {
       title: row.title,
       content: row.content,
       similarity: Number(row.similarity),
+      chunkIndex: row.chunk_index,
+      startOffset: row.start_offset,
+      endOffset: row.end_offset,
     }));
   }
 }

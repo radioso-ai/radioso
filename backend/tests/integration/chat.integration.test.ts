@@ -2,6 +2,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { createTestApp } from "../support/testApp.js";
+import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
 
 describe("chat integration", () => {
   it("creates a new conversation and reuses it on follow-up questions", async () => {
@@ -20,6 +21,17 @@ describe("chat integration", () => {
       .post("/api/v1/document/")
       .set("Authorization", authorization)
       .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+      });
 
     const first = await request(app)
       .post("/api/v1/chat/")
@@ -98,5 +110,132 @@ describe("chat integration", () => {
 
     expect(firstChat.status).toBe(200);
     expect(secondChat.status).toBe(404);
+  });
+
+  it("returns grounded answers for strict and broad retrieval profiles", async () => {
+    const { app } = createTestApp();
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "profiles@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    for (const document of Object.values(retrievalFixtureDocuments)) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", authorization)
+        .send(document);
+    }
+
+    const strictSettings = await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: true,
+        vectorTopK: 100,
+        similarityThreshold: 0.8,
+        rerankTopK: 20,
+      });
+
+    const strictResponse = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        query: "What is the API rate limit and how long should a client wait before retrying?",
+        stream: false,
+      });
+
+    const broadSettings = await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: true,
+        vectorTopK: 100,
+        similarityThreshold: 0.2,
+        rerankTopK: 20,
+      });
+
+    const firstFollowUp = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        query: "Tell me about the session cookie",
+        stream: false,
+      });
+    const broadResponse = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: firstFollowUp.body.conversationId,
+        query: "What is it used for?",
+        stream: false,
+      });
+
+    expect(strictSettings.status).toBe(200);
+    expect(strictResponse.status).toBe(200);
+    expect(strictResponse.body.answer).not.toContain("could not find relevant information");
+    expect(strictResponse.body.citations[0]?.title).toBe("Rate Limits");
+
+    expect(broadSettings.status).toBe(200);
+    expect(broadResponse.status).toBe(200);
+    expect(broadResponse.body.answer).not.toContain("could not find relevant information");
+    expect(broadResponse.body.citations.some((citation: { title: string }) => citation.title === "Session Cookie")).toBe(
+      true,
+    );
+  });
+
+  it("records retrieval diagnostics for successful chats", async () => {
+    const { app, dependencies } = createTestApp();
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "diagnostics@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send(retrievalFixtureDocuments.sessionCookie);
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: true,
+        vectorTopK: 50,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        query: "Tell me about the session cookie",
+        stream: false,
+      });
+
+    const auditEvents = (dependencies.auditService as unknown as { events: Array<{ eventType: string; metadata?: Record<string, unknown> }> }).events;
+    const chatAudit = [...auditEvents].reverse().find((event) => event.eventType === "chat.answer");
+
+    expect(response.status).toBe(200);
+    expect(chatAudit?.metadata?.retrieval).toMatchObject({
+      rewriteStatus: expect.any(String),
+      rerankStatus: expect.any(String),
+      originalCandidateCount: expect.any(Number),
+      normalizedCandidateCount: expect.any(Number),
+      finalContextCount: expect.any(Number),
+    });
   });
 });

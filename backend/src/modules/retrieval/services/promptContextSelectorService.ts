@@ -14,8 +14,12 @@ export class PromptContextSelectorService {
 
     for (const context of input.contexts.slice(0, input.topK)) {
       const estimatedTokenCost = this.estimateTokenCost(context.content);
-      if (selected.length > 0 && consumed + estimatedTokenCost > this.tokenBudget) {
-        break;
+      if (estimatedTokenCost > this.tokenBudget) {
+        continue;
+      }
+
+      if (consumed + estimatedTokenCost > this.tokenBudget) {
+        continue;
       }
 
       consumed += estimatedTokenCost;

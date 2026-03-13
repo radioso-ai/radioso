@@ -49,6 +49,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
 
 const REFERENTIAL_PATTERN =
   /\b(it|its|that|those|these|they|them|their|he|she|him|her|this|one|ones)\b/i;
+const CONTINUATION_PATTERN = /^(and|also|what about|how about|what else about)\b/i;
 
 export class QueryRewriteService {
   constructor(private readonly gateway?: QueryRewriteGateway) {}
@@ -95,7 +96,7 @@ export class QueryRewriteService {
       return false;
     }
 
-    return REFERENTIAL_PATTERN.test(query) || /^(and|also|what about)\b/i.test(query) || query.trim().split(/\s+/).length <= 8;
+    return this.isFollowupStyleQuery(query);
   }
 
   private skipped(query: string): RewrittenRetrievalQuery {
@@ -114,6 +115,18 @@ export class QueryRewriteService {
     contextWindow: ConversationContextWindow,
     reason: string,
   ): RewrittenRetrievalQuery {
+    if (!this.isFollowupStyleQuery(query)) {
+      return {
+        originalQuery: query,
+        rewrittenQuery: query,
+        effectiveQuery: query,
+        rewriteApplied: false,
+        status: "fallback",
+        confidence: 0,
+        fallbackReason: reason,
+      };
+    }
+
     const heuristicRewrite = this.buildHeuristicRewrite(query, contextWindow);
     if (!heuristicRewrite || heuristicRewrite === query) {
       return {
@@ -136,6 +149,10 @@ export class QueryRewriteService {
       confidence: 0.25,
       fallbackReason: reason,
     };
+  }
+
+  private isFollowupStyleQuery(query: string): boolean {
+    return REFERENTIAL_PATTERN.test(query) || CONTINUATION_PATTERN.test(query);
   }
 
   private buildHeuristicRewrite(query: string, contextWindow: ConversationContextWindow): string | null {

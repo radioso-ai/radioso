@@ -58,6 +58,8 @@ services:
     build:
       context: ../frontend
       dockerfile: Dockerfile
+      args:
+        BACKEND_INTERNAL_URL: http://backend:8080
     depends_on:
       backend:
         condition: service_healthy

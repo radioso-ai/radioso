@@ -63,6 +63,7 @@ const request = async <T>(
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
+    cache: "no-store",
     headers,
     credentials: options.withSession ? "include" : init.credentials,
   });
@@ -119,7 +120,13 @@ export interface DocumentSummary {
   id: string
   title: string
   status: string
+  ragStatus: 'processed' | 'pending'
   createdAt: string
+  updatedAt: string
+}
+
+export interface DocumentDetails extends DocumentSummary {
+  content: string
 }
 
 export interface DocumentListResponse {
@@ -208,11 +215,24 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
+  async getDocument(documentId: string): Promise<DocumentDetails> {
+    return request<DocumentDetails>(`/document/${documentId}`, {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
   async listDocuments(): Promise<DocumentSummary[]> {
     const response = await request<DocumentListResponse>("/document/", {
       method: "GET",
     }, { withApiToken: true })
     return response.documents
+  },
+
+  async updateDocument(documentId: string, data: DocumentCreateRequest): Promise<DocumentCreateResponse> {
+    return request<DocumentCreateResponse>(`/document/${documentId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
   }
 }
 

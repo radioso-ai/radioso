@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { chunkMarkdown, normalizeMarkdown } from "../../src/modules/retrieval/domain/chunkingService.js";
+import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
+import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
 
 describe("edge cases", () => {
   it("normalizes short content into a single chunk", () => {
@@ -24,5 +26,72 @@ describe("edge cases", () => {
 
     expect(result.prompt).toContain("No retrieved context");
     expect(result.citations).toEqual([]);
+  });
+
+  it("falls back to the original query when rewrite assistance errors", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        throw new Error("rewrite unavailable");
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "What is it used for?",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [
+          {
+            id: "1",
+            conversationId: "c1",
+            accountId: "a1",
+            role: "user",
+            content: "Tell me about the session cookie",
+            createdAt: new Date(),
+          },
+        ],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("fallback");
+    expect(result.effectiveQuery).toBe("What is it used for?");
+  });
+
+  it("falls back to similarity ordering when rerank assistance errors", async () => {
+    const service = new RerankService({
+      async rerank() {
+        throw new Error("rerank unavailable");
+      },
+    });
+
+    const result = await service.rerank({
+      query: "rate limit",
+      enabled: true,
+      topK: 1,
+      contexts: [
+        {
+          chunkId: "c1",
+          documentId: "d1",
+          title: "Rate Limits",
+          content: "The API allows 60 requests per minute.",
+          similarity: 0.9,
+          retrievalSources: ["original"],
+          retrievalText: "Rate Limits The API allows 60 requests per minute.",
+        },
+        {
+          chunkId: "c2",
+          documentId: "d2",
+          title: "Troubleshooting",
+          content: "If no context is found, check the threshold.",
+          similarity: 0.1,
+          retrievalSources: ["rewritten"],
+          retrievalText: "Troubleshooting If no context is found, check the threshold.",
+        },
+      ],
+    });
+
+    expect(result.status).toBe("fallback");
+    expect(result.contexts[0]?.chunkId).toBe("c1");
   });
 });

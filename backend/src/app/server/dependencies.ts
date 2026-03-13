@@ -12,10 +12,14 @@ import { AuthService } from "../../modules/auth/services/authService.js";
 import { AuditService } from "../../modules/audit/services/auditService.js";
 import { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
 import { PgVectorSearch } from "../../modules/retrieval/infra/vectorSearch.js";
+import { CandidatePreparationService } from "../../modules/retrieval/services/candidatePreparationService.js";
+import { ConversationContextService } from "../../modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../modules/retrieval/services/promptBuilder.js";
-import { QueryRewriteService } from "../../modules/retrieval/services/queryRewriteService.js";
-import { RerankService } from "../../modules/retrieval/services/rerankService.js";
+import { PromptContextSelectorService } from "../../modules/retrieval/services/promptContextSelectorService.js";
+import { OpenAIQueryRewriteGateway, QueryRewriteService } from "../../modules/retrieval/services/queryRewriteService.js";
+import { OpenAISemanticRerankGateway, RerankService } from "../../modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../modules/retrieval/services/retrievalPipelineService.js";
+import { RetrievalExecutionTelemetryService } from "../../modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import { OpenAIEmbeddingGateway, EmbeddingService } from "../../modules/retrieval/services/embeddingService.js";
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import { Database } from "../../shared/infra/database.js";
@@ -40,9 +44,13 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     retrievalSettingsService,
     embeddingService,
     new PgVectorSearch(database),
-    new QueryRewriteService(),
-    new RerankService(),
+    new ConversationContextService(),
+    new QueryRewriteService(new OpenAIQueryRewriteGateway(openai.client, openai.chatModel)),
+    new CandidatePreparationService(),
+    new RerankService(new OpenAISemanticRerankGateway(openai.client, openai.chatModel)),
+    new PromptContextSelectorService(),
     new PromptBuilder(),
+    new RetrievalExecutionTelemetryService(),
   );
   const chatService = new ChatService(
     new ConversationRepository(database),

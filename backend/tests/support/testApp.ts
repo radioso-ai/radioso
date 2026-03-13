@@ -3,10 +3,14 @@ import type { Env } from "../../src/app/config/env.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
+import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
-import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
-import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
+import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
+import { QueryRewriteService, type QueryRewriteGateway } from "../../src/modules/retrieval/services/queryRewriteService.js";
+import { RerankService, type RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
+import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
@@ -67,7 +71,7 @@ export const createTestDependencies = (): AppDependencies => {
           continue;
         }
         for (const chunk of chunks) {
-          const score = keywordScore(chunk.content, currentQueryText);
+          const score = keywordScore(`${document.title} ${chunk.content}`, currentQueryText);
           if (score >= input.similarityThreshold) {
             rows.push({
               chunkId: chunk.id,
@@ -75,6 +79,9 @@ export const createTestDependencies = (): AppDependencies => {
               title: document.title,
               content: chunk.content,
               similarity: score,
+              chunkIndex: chunk.chunkIndex,
+              startOffset: chunk.startOffset,
+              endOffset: chunk.endOffset,
             });
           }
         }
@@ -89,14 +96,48 @@ export const createTestDependencies = (): AppDependencies => {
       return embeddingGateway.embedTexts(texts);
     },
   });
+  const queryRewriteGateway: QueryRewriteGateway = {
+    async rewrite(input) {
+      const lastUserContext =
+        [...input.contextMessages].reverse().find((message) => message.role === "user")?.content ?? "";
+      const normalizedContext = lastUserContext
+        .replace(/^tell me about\s+/i, "")
+        .replace(/^what is\s+/i, "")
+        .trim();
+
+      if (/used for/i.test(input.query) && normalizedContext.length > 0) {
+        return {
+          rewrittenQuery: `${normalizedContext} used for`.trim(),
+          confidence: 0.95,
+        };
+      }
+
+      return {
+        rewrittenQuery: `${lastUserContext} ${input.query}`.trim(),
+        confidence: 0.9,
+      };
+    },
+  };
+  const rerankGateway: RerankGateway = {
+    async rerank(input) {
+      return input.contexts.map((context) => ({
+        chunkId: context.chunkId,
+        relevanceScore: keywordScore(`${context.title} ${context.content}`, input.query),
+      }));
+    },
+  };
   const retrievalSettingsService = new RetrievalSettingsService(retrievalSettingsRepository, auditService);
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
     embeddingService,
     vectorSearch,
-    new QueryRewriteService(),
-    new RerankService(),
+    new ConversationContextService(),
+    new QueryRewriteService(queryRewriteGateway),
+    new CandidatePreparationService(),
+    new RerankService(rerankGateway),
+    new PromptContextSelectorService(),
     new PromptBuilder(),
+    new RetrievalExecutionTelemetryService(),
   );
   const chatGateway: ChatGateway = {
     async answer(input): Promise<string> {
@@ -146,17 +187,55 @@ const keywordScore = (content: string, query: string): number => {
     .toLowerCase()
     .split(/\W+/)
     .filter(Boolean);
+  const normalizedTerms = terms
+    .map((term) => term.replace(/(ing|ed|es|s)$/i, ""))
+    .filter((term) => term.length > 2)
+    .filter((term) => !STOP_WORDS.has(term));
 
-  if (terms.length === 0) {
+  if (normalizedTerms.length === 0) {
     return 0;
   }
 
   let matches = 0;
-  for (const term of terms) {
+  for (const term of normalizedTerms) {
     if (lowerContent.includes(term)) {
       matches += 1;
     }
   }
 
-  return matches / terms.length;
+  return matches / normalizedTerms.length;
 };
+
+const STOP_WORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "that",
+  "this",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "how",
+  "why",
+  "are",
+  "was",
+  "were",
+  "is",
+  "it",
+  "its",
+  "a",
+  "an",
+  "to",
+  "of",
+  "in",
+  "on",
+  "at",
+  "by",
+  "be",
+  "or",
+  "do",
+  "doe",
+]);

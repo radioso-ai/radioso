@@ -56,4 +56,45 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
     return rows.map(mapDocument);
   }
+
+  async findByIdAndAccountId(documentId: string, accountId: string): Promise<DocumentRecord | null> {
+    const [row] = await this.database.query<DocumentRow>(
+      `SELECT id, account_id, title, source_content, markdown_content, status, created_at, updated_at
+       FROM documents
+       WHERE id = $1 AND account_id = $2`,
+      [documentId, accountId],
+    );
+
+    return row ? mapDocument(row) : null;
+  }
+
+  async update(input: {
+    documentId: string;
+    accountId: string;
+    title: string;
+    sourceContent: string;
+    markdownContent: string;
+    status: string;
+  }): Promise<DocumentRecord> {
+    const [row] = await this.database.query<DocumentRow>(
+      `UPDATE documents
+       SET title = $3,
+           source_content = $4,
+           markdown_content = $5,
+           status = $6,
+           updated_at = NOW()
+       WHERE id = $1 AND account_id = $2
+       RETURNING id, account_id, title, source_content, markdown_content, status, created_at, updated_at`,
+      [
+        input.documentId,
+        input.accountId,
+        input.title,
+        input.sourceContent,
+        input.markdownContent,
+        input.status,
+      ],
+    );
+
+    return mapDocument(row);
+  }
 }

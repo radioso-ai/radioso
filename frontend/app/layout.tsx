@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/lib/auth-context'
+import { ChatProvider } from '@/lib/chat-context'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -41,7 +42,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
-            {children}
+            <ChatProvider>{children}</ChatProvider>
           </AuthProvider>
         </ThemeProvider>
         <Analytics />

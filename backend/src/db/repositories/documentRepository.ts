@@ -44,4 +44,16 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
     return mapDocument(row);
   }
+
+  async listByAccountId(accountId: string): Promise<DocumentRecord[]> {
+    const rows = await this.database.query<DocumentRow>(
+      `SELECT id, account_id, title, source_content, markdown_content, status, created_at, updated_at
+       FROM documents
+       WHERE account_id = $1
+       ORDER BY created_at DESC`,
+      [accountId],
+    );
+
+    return rows.map(mapDocument);
+  }
 }

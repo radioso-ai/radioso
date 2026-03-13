@@ -25,6 +25,8 @@ services:
     build:
       context: ../backend
       dockerfile: ../infra/backend.Dockerfile
+    env_file:
+      - ../backend/.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -32,11 +34,6 @@ services:
       PORT: 8080
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/hivec
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-dummy-openai-key}
-      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-5-mini}
-      OPENAI_VECTOR_MODEL: ${OPENAI_VECTOR_MODEL:-text-embedding-3-small}
-      SESSION_COOKIE_NAME: hivec_session
-      SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:-0123456789abcdef0123456789abcdef}
       SESSION_TTL_HOURS: 168
     ports:
       - "8080:8080"

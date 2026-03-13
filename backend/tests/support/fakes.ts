@@ -299,4 +299,16 @@ export class InMemoryAuditService extends AuditService {
   }
 }
 
-export const createAuditService = (): InMemoryAuditService => new InMemoryAuditService(createLogger("silent"));
+export const createAuditService = (): InMemoryAuditService =>
+  new InMemoryAuditService(createLogger("silent"), {
+    async create() {
+      return {
+        id: "audit-event",
+        accountId: null,
+        eventType: "",
+        eventStatus: "",
+        metadata: {},
+        createdAt: new Date(),
+      };
+    },
+  });

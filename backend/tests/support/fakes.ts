@@ -181,6 +181,26 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return item && item.accountId === accountId ? item : null;
   }
 
+  async setStatus(input: {
+    documentId: string;
+    accountId: string;
+    status: string;
+    failureReason?: string | null;
+  }): Promise<DocumentRecord> {
+    const existing = this.items.get(input.documentId);
+    if (!existing || existing.accountId !== input.accountId) {
+      throw new Error(`Document ${input.documentId} not found`);
+    }
+
+    const record: DocumentRecord = {
+      ...existing,
+      status: input.status,
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
   async update(input: {
     documentId: string;
     accountId: string;

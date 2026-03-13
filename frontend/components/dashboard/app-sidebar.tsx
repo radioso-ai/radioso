@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 import {
   Sidebar,
   SidebarContent,
@@ -33,12 +35,14 @@ import {
   ChevronUp,
   User,
 } from 'lucide-react'
-
-type View = 'chat' | 'documents' | 'settings' | 'token'
+import {
+  buildAccountRoute,
+  type DashboardSection,
+} from '@/lib/dashboard-routes'
 
 interface AppSidebarProps {
-  currentView: View
-  onViewChange: (view: View) => void
+  accountId: string
+  currentView: DashboardSection
 }
 
 const navItems = [
@@ -48,7 +52,7 @@ const navItems = [
   { id: 'token' as const, label: 'API Token', icon: Key },
 ]
 
-export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
+export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
   const { user, logout } = useAuth()
   const { theme, setTheme } = useTheme()
 
@@ -71,13 +75,11 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
             <SidebarMenu>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    onClick={() => onViewChange(item.id)}
-                    isActive={currentView === item.id}
-                    tooltip={item.label}
-                  >
-                    <item.icon className="w-4 h-4" />
-                    <span>{item.label}</span>
+                  <SidebarMenuButton asChild isActive={currentView === item.id} tooltip={item.label}>
+                    <Link href={buildAccountRoute(accountId, item.id)}>
+                      <item.icon className="w-4 h-4" />
+                      <span>{item.label}</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

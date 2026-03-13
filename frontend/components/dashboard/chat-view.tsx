@@ -14,6 +14,26 @@ interface Message {
   citations?: ChatResponse['citations']
 }
 
+const getErrorMessage = (error: unknown) => {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'error' in error &&
+    error.error &&
+    typeof error.error === 'object' &&
+    'message' in error.error &&
+    typeof error.error.message === 'string'
+  ) {
+    return error.error.message
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+
+  return 'Sorry, something went wrong. Please try again.'
+}
+
 export function ChatView() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -64,7 +84,7 @@ export function ChatView() {
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: 'Sorry, something went wrong. Please try again.'
+        content: getErrorMessage(error)
       }
       setMessages(prev => [...prev, errorMessage])
     } finally {

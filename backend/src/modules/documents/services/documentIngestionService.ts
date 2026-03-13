@@ -36,6 +36,12 @@ export interface DocumentRepositoryPort {
     markdownContent: string;
     status: string;
   }): Promise<DocumentRecord>;
+  setStatus(input: {
+    documentId: string;
+    accountId: string;
+    status: string;
+    failureReason?: string | null;
+  }): Promise<DocumentRecord>;
   findByIdAndAccountId(documentId: string, accountId: string): Promise<DocumentRecord | null>;
   listByAccountId(accountId: string): Promise<DocumentRecord[]>;
   update(input: {
@@ -102,22 +108,10 @@ export class DocumentIngestionService {
     content: string;
     documentId?: string;
   }): Promise<{ documentId: string; status: string }> {
+    let documentId: string | undefined;
+
     try {
       const markdownContent = normalizeMarkdown(input.content);
-      const persistedDocumentInput = {
-        accountId: input.accountId,
-        title: input.title,
-        sourceContent: input.content,
-        markdownContent,
-        status: "ready",
-      };
-      const document = input.documentId
-        ? await this.documentRepository.update({
-            documentId: input.documentId,
-            ...persistedDocumentInput,
-          })
-        : await this.documentRepository.create(persistedDocumentInput);
-
       const chunks = chunkMarkdown(markdownContent);
       const embeddings = await this.embeddingService.embedChunks(
         chunks.map((chunk) =>
@@ -127,6 +121,20 @@ export class DocumentIngestionService {
           }),
         ),
       );
+      const persistedDocumentInput = {
+        accountId: input.accountId,
+        title: input.title,
+        sourceContent: input.content,
+        markdownContent,
+        status: "pending",
+      };
+      const document = input.documentId
+        ? await this.documentRepository.update({
+            documentId: input.documentId,
+            ...persistedDocumentInput,
+          })
+        : await this.documentRepository.create(persistedDocumentInput);
+      documentId = document.id;
       const persistedChunks: ChunkRecord[] = chunks.map((chunk, index) => ({
         id: randomUUID(),
         documentId: document.id,
@@ -140,6 +148,12 @@ export class DocumentIngestionService {
       }));
 
       await this.chunkRepository.replaceForDocument(document.id, persistedChunks);
+      const readyDocument = await this.documentRepository.setStatus({
+        documentId: document.id,
+        accountId: input.accountId,
+        status: "ready",
+        failureReason: null,
+      });
       await this.auditService.record({
         accountId: input.accountId,
         eventType: input.documentId ? "document.update" : "document.ingest",
@@ -149,9 +163,17 @@ export class DocumentIngestionService {
 
       return {
         documentId: document.id,
-        status: document.status,
+        status: readyDocument.status,
       };
     } catch (error) {
+      if (documentId) {
+        await this.documentRepository.setStatus({
+          documentId,
+          accountId: input.accountId,
+          status: "failed",
+          failureReason: error instanceof Error ? error.message : "Unknown ingestion error",
+        });
+      }
       await this.auditService.record({
         accountId: input.accountId,
         eventType: input.documentId ? "document.update" : "document.ingest",

@@ -31,6 +31,8 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
       });
 
     const first = await request(app)
@@ -49,7 +51,7 @@ describe("chat integration", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(second.body.conversationId).toEqual(first.body.conversationId);
-    expect(second.body.answer).toContain("history:2");
+    expect(second.body.answer).toContain("Warmth:5");
   });
 
   it("returns a safe answer when no relevant chunks are found", async () => {
@@ -140,6 +142,8 @@ describe("chat integration", () => {
         vectorTopK: 100,
         similarityThreshold: 0.8,
         rerankTopK: 20,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
       });
 
     const strictResponse = await request(app)
@@ -159,6 +163,8 @@ describe("chat integration", () => {
         vectorTopK: 100,
         similarityThreshold: 0.2,
         rerankTopK: 20,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
       });
 
     const firstFollowUp = await request(app)
@@ -216,6 +222,8 @@ describe("chat integration", () => {
         vectorTopK: 50,
         similarityThreshold: 0.2,
         rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
       });
 
     const response = await request(app)
@@ -237,5 +245,85 @@ describe("chat integration", () => {
       normalizedCandidateCount: expect.any(Number),
       finalContextCount: expect.any(Number),
     });
+  });
+
+  it("applies persisted warmth settings to generated answers", async () => {
+    const { app } = createTestApp();
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "warmth@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 9,
+        citationDisplayEnabled: true,
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does the page explain?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain("Warmth:9");
+  });
+
+  it("omits citation metadata when citation display is disabled", async () => {
+    const { app } = createTestApp();
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "no-citations@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: false,
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does the page explain?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain("The page explains testing");
+    expect(response.body).not.toHaveProperty("citations");
+    expect(response.body).not.toHaveProperty("answerSegments");
   });
 });

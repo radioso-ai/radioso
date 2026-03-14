@@ -68,6 +68,7 @@ describe("chat service streaming", () => {
         type: "done",
         conversationId: expect.any(String),
         citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
+        answerSegments: [{ text: "full answer", citationIndices: [0] }],
       },
     ]);
 

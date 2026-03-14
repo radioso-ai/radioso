@@ -26,6 +26,9 @@ describe("edge cases", () => {
     const result = builder.build({
       query: "What happened?",
       history: [],
+      settings: {
+        warmthLevel: 5,
+      },
       contexts: [],
     });
 
@@ -143,6 +146,8 @@ describe("edge cases", () => {
             vectorTopK: 100,
             similarityThreshold: 0.8,
             rerankTopK: 20,
+            warmthLevel: 5,
+            citationDisplayEnabled: true,
             createdAt: new Date(),
             updatedAt: new Date(),
           };

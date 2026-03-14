@@ -12,7 +12,14 @@ describe("chat service streaming", () => {
       async run() {
         return {
           rewrittenQuery: "what does this page do",
-          contexts: [{ chunkId: "chunk-1" }],
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Intro",
+              content: "full answer",
+            },
+          ],
           prompt: "prompt text",
           citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
           diagnostics: {

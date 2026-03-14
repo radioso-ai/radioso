@@ -14,6 +14,7 @@ import {
   type AnswerSegment,
   type Citation,
   type ChatStreamCompletion,
+  type RetrievalInfo,
 } from '@/lib/api'
 
 export interface ChatMessage {
@@ -22,6 +23,7 @@ export interface ChatMessage {
   content: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  retrievalInfo?: RetrievalInfo
   status: 'complete' | 'streaming' | 'error'
 }
 
@@ -104,6 +106,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 ...message,
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
+                retrievalInfo: completion.retrievalInfo,
                 status: 'complete',
               }
             : message,

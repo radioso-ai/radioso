@@ -6,8 +6,11 @@ export class RetrievalExecutionTelemetryService {
     rerankStatus: RerankStatus;
     originalCandidateCount: number;
     rewrittenCandidateCount: number;
+    lexicalCandidateCount?: number;
     normalizedCandidateCount: number;
     finalContextCount: number;
+    parsedQuery?: import("../domain/structuredAttributes.js").ParsedQueryInterpretation;
+    appliedConstraints?: import("../domain/structuredAttributes.js").AppliedConstraint[];
     candidateFallbackApplied: boolean;
   }): RetrievalExecutionDiagnostics {
     return {

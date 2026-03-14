@@ -1,6 +1,18 @@
 import { badRequest } from "../../../shared/domain/errors.js";
 import { chunkingStrategyIds, type ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 
+export const attributeFamilyIds = ["date_point", "date_range", "money_value", "location"] as const;
+export type AttributeFamilyId = (typeof attributeFamilyIds)[number];
+
+export const attributeControlModes = ["boost_only", "hard_filter"] as const;
+export type AttributeControlMode = (typeof attributeControlModes)[number];
+
+export interface AttributeFamilyControl {
+  family: AttributeFamilyId;
+  enabled: boolean;
+  mode: AttributeControlMode;
+}
+
 export interface RetrievalSettingsRecord {
   accountId: string;
   queryRewriteEnabled: boolean;
@@ -11,6 +23,7 @@ export interface RetrievalSettingsRecord {
   warmthLevel: number;
   citationDisplayEnabled: boolean;
   chunkingStrategy: ChunkingStrategyId;
+  attributeControls: AttributeFamilyControl[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,7 +37,15 @@ export interface RetrievalSettingsInput {
   warmthLevel: number;
   citationDisplayEnabled: boolean;
   chunkingStrategy: ChunkingStrategyId;
+  attributeControls: AttributeFamilyControl[];
 }
+
+export const defaultAttributeControls = (): AttributeFamilyControl[] =>
+  attributeFamilyIds.map((family) => ({
+    family,
+    enabled: true,
+    mode: "boost_only",
+  }));
 
 export const defaultRetrievalSettings = (accountId: string): RetrievalSettingsRecord => ({
   accountId,
@@ -36,6 +57,7 @@ export const defaultRetrievalSettings = (accountId: string): RetrievalSettingsRe
   warmthLevel: 5,
   citationDisplayEnabled: true,
   chunkingStrategy: "fixed_window",
+  attributeControls: defaultAttributeControls(),
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -55,6 +77,31 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   }
   if (!chunkingStrategyIds.includes(input.chunkingStrategy)) {
     throw badRequest("chunkingStrategy must be a supported strategy");
+  }
+  if (!Array.isArray(input.attributeControls)) {
+    throw badRequest("attributeControls must be an array");
+  }
+
+  const seenFamilies = new Set<string>();
+  for (const control of input.attributeControls) {
+    if (!attributeFamilyIds.includes(control.family)) {
+      throw badRequest("attributeControls family must be supported");
+    }
+    if (seenFamilies.has(control.family)) {
+      throw badRequest("attributeControls must not contain duplicate families");
+    }
+    if (!attributeControlModes.includes(control.mode)) {
+      throw badRequest("attributeControls mode must be supported");
+    }
+    if (typeof control.enabled !== "boolean") {
+      throw badRequest("attributeControls enabled must be a boolean");
+    }
+
+    seenFamilies.add(control.family);
+  }
+
+  if (seenFamilies.size !== attributeFamilyIds.length) {
+    throw badRequest("attributeControls must include every supported family");
   }
 
   return input;

@@ -13,8 +13,10 @@ import { AuthService } from "../../modules/auth/services/authService.js";
 import { AuditService } from "../../modules/audit/services/auditService.js";
 import { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
+import { PgLexicalSearch } from "../../modules/retrieval/infra/lexicalSearch.js";
 import { PgVectorSearch } from "../../modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../modules/retrieval/services/candidatePreparationService.js";
+import { AttributeMatchScoringService } from "../../modules/retrieval/services/attributeMatchScoringService.js";
 import { ConversationContextService } from "../../modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../modules/retrieval/services/promptBuilder.js";
 import { PromptContextSelectorService } from "../../modules/retrieval/services/promptContextSelectorService.js";
@@ -57,9 +59,11 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     retrievalSettingsService,
     embeddingService,
     new PgVectorSearch(database),
+    new PgLexicalSearch(database),
     new ConversationContextService(),
     new QueryRewriteService(new OpenAIQueryRewriteGateway(openai.client, openai.chatModel)),
     new CandidatePreparationService(),
+    new AttributeMatchScoringService(),
     new RerankService(new OpenAISemanticRerankGateway(openai.client, openai.chatModel)),
     new PromptContextSelectorService(),
     new PromptBuilder(),

@@ -2,6 +2,7 @@ import type { Response } from "express";
 
 import type { AnswerSegment, ChatCitation } from "../../../modules/chat/services/answerPresentationService.js";
 import type { ChatStreamEvent } from "../../../modules/chat/services/chatService.js";
+import type { RetrievalInfo } from "../../../modules/retrieval/services/retrievalInfoPresenter.js";
 
 export const sendChatJson = (
   res: Response,
@@ -10,6 +11,7 @@ export const sendChatJson = (
     answer: string;
     citations?: ChatCitation[];
     answerSegments?: AnswerSegment[];
+    retrievalInfo: RetrievalInfo;
   },
 ): void => {
   res.status(200).json(payload);
@@ -52,7 +54,12 @@ export const sendChatSse = (
         continue;
       }
 
-      writeEvent("done", { citations: event.citations, answerSegments: event.answerSegments });
+      writeEvent("done", {
+        conversationId: event.conversationId,
+        citations: event.citations,
+        answerSegments: event.answerSegments,
+        retrievalInfo: event.retrievalInfo,
+      });
     }
 
     if (!res.writableEnded) {

@@ -10,7 +10,11 @@ import { QueryRewriteService } from "./queryRewriteService.js";
 import { RerankService } from "./rerankService.js";
 import { RetrievalExecutionTelemetryService } from "./retrievalExecutionTelemetryService.js";
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
+import { parseQueryConstraints } from "./queryConstraintParser.js";
+import { AttributeMatchScoringService } from "./attributeMatchScoringService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../infra/vectorSearch.js";
+import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
+import { HYBRID_RETRIEVAL_DEFAULTS } from "../domain/hybridRetrievalConfig.js";
 
 export interface RetrievalPipelineResult {
   rewrittenQuery: string;
@@ -29,9 +33,11 @@ export class RetrievalPipelineService {
     private readonly retrievalSettingsService: RetrievalSettingsService,
     private readonly embeddingService: EmbeddingService,
     private readonly vectorSearch: VectorSearchPort,
+    private readonly lexicalSearch: LexicalSearchPort,
     private readonly conversationContextService: ConversationContextService,
     private readonly queryRewriteService: QueryRewriteService,
     private readonly candidatePreparationService: CandidatePreparationService,
+    private readonly attributeMatchScoringService: AttributeMatchScoringService,
     private readonly rerankService: RerankService,
     private readonly promptContextSelectorService: PromptContextSelectorService,
     private readonly promptBuilder: PromptBuilder,
@@ -48,12 +54,19 @@ export class RetrievalPipelineService {
       history: input.history,
       query: input.query,
     });
+    const originalParsedQuery = parseQueryConstraints(input.query);
+    const originalSemanticQuery = originalParsedQuery.semanticQuery || input.query;
     const rewrittenQuery = await this.queryRewriteService.rewrite({
       query: input.query,
       contextWindow,
       enabled: settings.queryRewriteEnabled,
     });
-    const [originalEmbedding] = await this.embeddingService.embedChunks([input.query]);
+    const parsedQuery = rewrittenQuery.rewriteApplied
+      ? parseQueryConstraints(rewrittenQuery.effectiveQuery)
+      : originalParsedQuery;
+    const rewrittenSemanticQuery = parsedQuery.semanticQuery || rewrittenQuery.effectiveQuery;
+    const lexicalQuery = parsedQuery.lexicalQuery || rewrittenQuery.effectiveQuery;
+    const [originalEmbedding] = await this.embeddingService.embedChunks([originalSemanticQuery]);
     const originalSearch = await this.searchWithFallback({
       accountId: input.accountId,
       queryEmbedding: originalEmbedding ?? [],
@@ -67,7 +80,7 @@ export class RetrievalPipelineService {
       fallbackApplied: false,
     };
     if (rewrittenQuery.rewriteApplied && rewrittenQuery.effectiveQuery !== input.query) {
-      const [rewrittenEmbedding] = await this.embeddingService.embedChunks([rewrittenQuery.effectiveQuery]);
+      const [rewrittenEmbedding] = await this.embeddingService.embedChunks([rewrittenSemanticQuery]);
       rewrittenSearch = await this.searchWithFallback({
         accountId: input.accountId,
         queryEmbedding: rewrittenEmbedding ?? [],
@@ -76,14 +89,26 @@ export class RetrievalPipelineService {
       });
     }
     const rewrittenContexts = rewrittenSearch.contexts;
+    const lexicalContexts = await this.lexicalSearch.search({
+      accountId: input.accountId,
+      query: lexicalQuery,
+      topK: HYBRID_RETRIEVAL_DEFAULTS.lexicalTopK,
+    });
 
     const normalizedCandidates = this.candidatePreparationService.prepare({
       original: originalContexts,
       rewritten: rewrittenContexts,
+      lexical: lexicalContexts,
+    });
+    const mergedCandidates = normalizedCandidates.slice(0, HYBRID_RETRIEVAL_DEFAULTS.mergedCandidateCap);
+    const scoredCandidates = this.attributeMatchScoringService.apply({
+      candidates: mergedCandidates,
+      parsedQuery,
+      attributeControls: settings.attributeControls,
     });
     const reranked = await this.rerankService.rerank({
-      query: rewrittenQuery.effectiveQuery,
-      contexts: normalizedCandidates,
+      query: rewrittenSemanticQuery,
+      contexts: scoredCandidates.candidates,
       enabled: settings.rerankEnabled,
       topK: settings.rerankTopK,
     });
@@ -104,9 +129,12 @@ export class RetrievalPipelineService {
       rerankStatus: reranked.status,
       originalCandidateCount: originalContexts.length,
       rewrittenCandidateCount: rewrittenContexts.length,
-      normalizedCandidateCount: normalizedCandidates.length,
+      lexicalCandidateCount: lexicalContexts.length,
+      normalizedCandidateCount: scoredCandidates.candidates.length,
       finalContextCount: contexts.length,
-      candidateFallbackApplied: originalSearch.fallbackApplied || rewrittenSearch.fallbackApplied,
+      parsedQuery,
+      appliedConstraints: scoredCandidates.appliedConstraints,
+      candidateFallbackApplied: originalSearch.fallbackApplied || rewrittenSearch.fallbackApplied || scoredCandidates.fallbackApplied,
     });
 
     return {

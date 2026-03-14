@@ -47,13 +47,13 @@ export class PromptBuilder {
 
   private getWarmthInstruction(warmthLevel: number): string {
     if (warmthLevel <= 3) {
-      return `Use a terse, direct tone. Warmth:${warmthLevel}`;
+      return `Use a terse, direct tone, short answers to the point, don't suggest any help.  Warmth:${warmthLevel} out of 10`;
     }
 
     if (warmthLevel <= 7) {
-      return `Use a clear, natural, moderately warm tone. Warmth:${warmthLevel}`;
+      return `Use a clear, natural, moderately warm tone. Warmth:${warmthLevel} out of 10`;
     }
 
-    return `Use a warm, considerate tone while staying concise and grounded. Warmth:${warmthLevel}`;
+    return `Use a warm, considerate tone. Acknowledge the user's questions. Warmth:${warmthLevel} out of 10`;
   }
 }

@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
@@ -40,7 +42,9 @@ export const createTestEnv = (): Env => ({
   SESSION_TTL_HOURS: 168,
 });
 
-export const createTestDependencies = (): AppDependencies => {
+export const createTestDependencies = (overrides: {
+  chatGateway?: ChatGateway;
+} = {}): AppDependencies => {
   const env = createTestEnv();
   const auditService = createAuditService();
   const accountRepository = new InMemoryAccountRepository();
@@ -139,11 +143,19 @@ export const createTestDependencies = (): AppDependencies => {
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
   );
-  const chatGateway: ChatGateway = {
+  const defaultChatGateway: ChatGateway = {
     async answer(input): Promise<string> {
       return `history:${input.history.length} ${input.prompt}`;
     },
+    async *streamAnswer(input) {
+      const content = await this.answer(input);
+      const midpoint = Math.max(1, Math.ceil(content.length / 2));
+      yield content.slice(0, midpoint);
+      await delay(5);
+      yield content.slice(midpoint);
+    },
   };
+  const chatGateway = overrides.chatGateway ?? defaultChatGateway;
 
   return {
     env,
@@ -173,8 +185,10 @@ export const createTestDependencies = (): AppDependencies => {
   };
 };
 
-export const createTestApp = () => {
-  const dependencies = createTestDependencies();
+export const createTestApp = (overrides: {
+  chatGateway?: ChatGateway;
+} = {}) => {
+  const dependencies = createTestDependencies(overrides);
   return {
     app: createApp(dependencies),
     dependencies,

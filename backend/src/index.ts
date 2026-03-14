@@ -3,12 +3,18 @@ import { existsSync } from "node:fs";
 import { getEnv } from "./app/config/env.js";
 import { createApp } from "./app/server/createApp.js";
 import { buildDependencies } from "./app/server/dependencies.js";
+import { runMigrations } from "./db/runMigrations.js";
+import { createLogger } from "./shared/observability/logger.js";
 
 if (existsSync(".env")) {
   process.loadEnvFile(".env");
 }
 
 const env = getEnv();
+const startupLogger = createLogger();
+
+await runMigrations(env.DATABASE_URL, startupLogger);
+
 const dependencies = buildDependencies(env);
 const app = createApp(dependencies);
 

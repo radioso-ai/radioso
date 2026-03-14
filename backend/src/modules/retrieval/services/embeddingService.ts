@@ -29,4 +29,8 @@ export class EmbeddingService {
   async embedChunks(chunks: string[]): Promise<number[][]> {
     return this.gateway.embedTexts(chunks);
   }
+
+  async embedTexts(texts: string[]): Promise<number[][]> {
+    return this.gateway.embedTexts(texts);
+  }
 }

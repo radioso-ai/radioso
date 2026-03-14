@@ -41,6 +41,7 @@ describe("retrieval benchmark integration", () => {
         rerankTopK: 20,
         warmthLevel: 5,
         citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
       });
 
     for (const scenario of directAnswerQueries) {

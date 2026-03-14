@@ -14,6 +14,7 @@ describe("retrieval settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 0,
         citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
       }),
     ).toThrow("vectorTopK must be between 1 and 300");
   });
@@ -28,8 +29,24 @@ describe("retrieval settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 11,
         citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
       }),
     ).toThrow("warmthLevel must be between 1 and 10");
+  });
+
+  it("rejects unsupported chunking strategies", () => {
+    expect(() =>
+      validateRetrievalSettings({
+        queryRewriteEnabled: false,
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "unsupported" as never,
+      }),
+    ).toThrow("chunkingStrategy must be a supported strategy");
   });
 
   it("creates overlapping chunks for long content", () => {
@@ -47,5 +64,6 @@ describe("retrieval settings and chunking", () => {
     expect(defaults.similarityThreshold).toBe(0.2);
     expect(defaults.warmthLevel).toBe(5);
     expect(defaults.citationDisplayEnabled).toBe(true);
+    expect(defaults.chunkingStrategy).toBe("fixed_window");
   });
 });

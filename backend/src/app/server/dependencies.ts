@@ -18,6 +18,9 @@ import { CandidatePreparationService } from "../../modules/retrieval/services/ca
 import { ConversationContextService } from "../../modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../modules/retrieval/services/promptBuilder.js";
 import { PromptContextSelectorService } from "../../modules/retrieval/services/promptContextSelectorService.js";
+import { ChunkingStrategyRegistry } from "../../modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
+import { FixedWindowChunkingStrategy } from "../../modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
+import { StructuredSemanticChunkingStrategy } from "../../modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
 import { OpenAIQueryRewriteGateway, QueryRewriteService } from "../../modules/retrieval/services/queryRewriteService.js";
 import { OpenAISemanticRerankGateway, RerankService } from "../../modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../modules/retrieval/services/retrievalPipelineService.js";
@@ -37,11 +40,17 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
   const embeddingService = new EmbeddingService(new OpenAIEmbeddingGateway(openai.client, openai.vectorModel));
   const documentRepository = new DocumentRepository(database);
+  const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
+    new FixedWindowChunkingStrategy(),
+    new StructuredSemanticChunkingStrategy(embeddingService),
+  ]);
   const documentIngestionService = new DocumentIngestionService(
     documentRepository,
     new ChunkRepository(database),
     embeddingService,
     auditService,
+    retrievalSettingsService,
+    chunkingStrategyRegistry,
   );
   const documentDeletionService = new DocumentDeletionService(documentRepository, auditService);
   const retrievalPipeline = new RetrievalPipelineService(

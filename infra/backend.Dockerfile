@@ -22,6 +22,7 @@ RUN npm ci --omit=dev
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/openapi.yaml ./openapi.yaml
+COPY --from=build /app/src/db/migrations ./dist/src/db/migrations
 
 EXPOSE 8080
 

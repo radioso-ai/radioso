@@ -6,6 +6,11 @@ import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
+import {
+  AnswerPresentationService,
+  type AnswerSegment,
+  type ChatCitation,
+} from "./answerPresentationService.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -20,12 +25,10 @@ export interface ChatGateway {
   }): AsyncIterable<string>;
 }
 
-export type ChatCitation = { documentId: string; chunkId: string; title: string };
-
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
-  | { type: "done"; conversationId: string; citations: ChatCitation[] };
+  | { type: "done"; conversationId: string; citations?: ChatCitation[]; answerSegments?: AnswerSegment[] };
 
 export class OpenAIChatGateway implements ChatGateway {
   constructor(
@@ -69,6 +72,8 @@ export class OpenAIChatGateway implements ChatGateway {
 }
 
 export class ChatService {
+  private readonly answerPresentationService = new AnswerPresentationService();
+
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
@@ -85,7 +90,8 @@ export class ChatService {
   }): Promise<{
     conversationId: string;
     answer: string;
-    citations: ChatCitation[];
+    citations?: ChatCitation[];
+    answerSegments?: AnswerSegment[];
   }> {
     try {
       const session = await this.prepareSession(input);
@@ -98,19 +104,26 @@ export class ChatService {
               prompt: session.retrieval.prompt,
             });
 
+      const presentation = this.answerPresentationService.present({
+        answer,
+        citations: session.retrieval.citations,
+        citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
+      });
+
       await this.completeAnswer({
         accountId: input.accountId,
         conversationId: session.conversation.id,
-        answer,
-        citations: session.retrieval.citations,
+        answer: presentation.answer,
+        citations: presentation.citations ?? [],
         diagnostics: session.retrieval.diagnostics,
         stream: input.stream,
       });
 
       return {
         conversationId: session.conversation.id,
-        answer,
-        citations: session.retrieval.citations,
+        answer: presentation.answer,
+        citations: presentation.citations,
+        answerSegments: presentation.answerSegments,
       };
     } catch (error) {
       await this.auditService.record({
@@ -162,11 +175,17 @@ export class ChatService {
         }
       }
 
+      const presentation = this.answerPresentationService.present({
+        answer,
+        citations: session.retrieval.citations,
+        citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
+      });
+
       await this.completeAnswer({
         accountId: input.accountId,
         conversationId: session.conversation.id,
-        answer,
-        citations: session.retrieval.citations,
+        answer: presentation.answer,
+        citations: presentation.citations ?? [],
         diagnostics: session.retrieval.diagnostics,
         stream: input.stream,
       });
@@ -174,7 +193,8 @@ export class ChatService {
       yield {
         type: "done",
         conversationId: session.conversation.id,
-        citations: session.retrieval.citations,
+        citations: presentation.citations,
+        answerSegments: presentation.answerSegments,
       };
     } catch (error) {
       await this.auditService.record({

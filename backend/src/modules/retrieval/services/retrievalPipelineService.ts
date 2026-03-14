@@ -17,6 +17,10 @@ export interface RetrievalPipelineResult {
   contexts: import("../domain/retrievalPipelineTypes.js").FinalPromptContext[];
   prompt: string;
   citations: PromptBuildResult["citations"];
+  responseSettings: {
+    warmthLevel: number;
+    citationDisplayEnabled: boolean;
+  };
   diagnostics: RetrievalExecutionDiagnostics;
 }
 
@@ -90,6 +94,9 @@ export class RetrievalPipelineService {
     const prompt = this.promptBuilder.build({
       query: input.query,
       history: input.history,
+      settings: {
+        warmthLevel: settings.warmthLevel,
+      },
       contexts,
     });
     const diagnostics = this.retrievalExecutionTelemetryService.create({
@@ -107,6 +114,10 @@ export class RetrievalPipelineService {
       contexts,
       prompt: prompt.prompt,
       citations: prompt.citations,
+      responseSettings: {
+        warmthLevel: settings.warmthLevel,
+        citationDisplayEnabled: settings.citationDisplayEnabled,
+      },
       diagnostics,
     };
   }

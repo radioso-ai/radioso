@@ -24,6 +24,8 @@ describe("document and settings integration", () => {
         vectorTopK: 0,
         similarityThreshold: 0.2,
         rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
       });
 
     expect(response.status).toBe(400);
@@ -61,6 +63,8 @@ describe("document and settings integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.35,
         rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
       });
     const document = await request(app)
       .post("/api/v1/document/")

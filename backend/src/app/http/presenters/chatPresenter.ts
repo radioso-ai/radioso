@@ -1,13 +1,15 @@
 import type { Response } from "express";
 
-import type { ChatCitation, ChatStreamEvent } from "../../../modules/chat/services/chatService.js";
+import type { AnswerSegment, ChatCitation } from "../../../modules/chat/services/answerPresentationService.js";
+import type { ChatStreamEvent } from "../../../modules/chat/services/chatService.js";
 
 export const sendChatJson = (
   res: Response,
   payload: {
     conversationId: string;
     answer: string;
-    citations: ChatCitation[];
+    citations?: ChatCitation[];
+    answerSegments?: AnswerSegment[];
   },
 ): void => {
   res.status(200).json(payload);
@@ -50,7 +52,7 @@ export const sendChatSse = (
         continue;
       }
 
-      writeEvent("done", { citations: event.citations });
+      writeEvent("done", { citations: event.citations, answerSegments: event.answerSegments });
     }
 
     if (!res.writableEnded) {

@@ -34,10 +34,11 @@ describe("chat contract", () => {
       .send({ query: "What does this page do?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "citations", "conversationId"]);
+    expect(Object.keys(response.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId"]);
     expect(response.body.conversationId).toBeDefined();
     expect(response.body.answer).toContain("This page parses content");
     expect(Array.isArray(response.body.citations)).toBe(true);
+    expect(Array.isArray(response.body.answerSegments)).toBe(true);
     expect(response.body).not.toHaveProperty("retrieval");
   });
 
@@ -189,7 +190,7 @@ describe("chat contract", () => {
       });
 
     expect(second.status).toBe(200);
-    expect(Object.keys(second.body).sort()).toEqual(["answer", "citations", "conversationId"]);
+    expect(Object.keys(second.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId"]);
     expect(second.body.conversationId).toBe(first.body.conversationId);
   });
 
@@ -212,6 +213,8 @@ describe("chat contract", () => {
         vectorTopK: 80,
         similarityThreshold: 0.8,
         rerankTopK: 15,
+        warmthLevel: 5,
+        citationDisplayEnabled: false,
       });
 
     const response = await request(app)
@@ -220,8 +223,9 @@ describe("chat contract", () => {
       .send({ query: "Can you cook Flan?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "citations", "conversationId"]);
+    expect(Object.keys(response.body).sort()).toEqual(["answer", "conversationId"]);
     expect(response.body.answer).toContain("could not find relevant information");
-    expect(response.body.citations).toEqual([]);
+    expect(response.body).not.toHaveProperty("citations");
+    expect(response.body).not.toHaveProperty("answerSegments");
   });
 });

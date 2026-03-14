@@ -82,6 +82,7 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
                       <AssistantMessageContent
                         content={message.content}
                         citations={message.citations}
+                        answerSegments={message.answerSegments}
                         onOpenDocument={onOpenDocument}
                       />
                     )

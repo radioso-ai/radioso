@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS retrieval_settings (
   vector_top_k INTEGER NOT NULL DEFAULT 10,
   similarity_threshold DOUBLE PRECISION NOT NULL DEFAULT 0.2,
   rerank_top_k INTEGER NOT NULL DEFAULT 5,
+  warmth_level INTEGER NOT NULL DEFAULT 5,
+  citation_display_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

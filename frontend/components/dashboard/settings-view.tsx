@@ -84,6 +84,54 @@ export function SettingsView() {
         <div className="max-w-xl space-y-8">
           <div className="space-y-6">
             <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">
+              Response Style
+            </h2>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="warmthLevel" className="text-foreground">Warmth</Label>
+                <span className="text-sm text-muted-foreground font-mono">
+                  {settings.warmthLevel}
+                </span>
+              </div>
+              <Slider
+                id="warmthLevel"
+                min={1}
+                max={10}
+                step={1}
+                value={[settings.warmthLevel]}
+                onValueChange={([value]) => updateSetting('warmthLevel', value)}
+              />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Terse</span>
+                <span>Very warm</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Controls how concise or warm the assistant sounds without changing the underlying answer.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="citationDisplay" className="text-foreground">Show Citations</Label>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Show inline source markers when supporting evidence is available.
+                </p>
+              </div>
+              <Switch
+                id="citationDisplay"
+                checked={settings.citationDisplayEnabled}
+                onCheckedChange={(checked) => updateSetting('citationDisplayEnabled', checked)}
+              />
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+              The assistant may still ask a clarification question when your request is missing information needed for a reliable answer.
+            </p>
+          </div>
+
+          <div className="space-y-6">
+            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">
               Retrieval Options
             </h2>
 

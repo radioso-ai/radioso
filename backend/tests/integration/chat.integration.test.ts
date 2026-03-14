@@ -33,6 +33,7 @@ describe("chat integration", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
       });
 
     const first = await request(app)
@@ -144,6 +145,7 @@ describe("chat integration", () => {
         rerankTopK: 20,
         warmthLevel: 5,
         citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
       });
 
     const strictResponse = await request(app)
@@ -165,6 +167,7 @@ describe("chat integration", () => {
         rerankTopK: 20,
         warmthLevel: 5,
         citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
       });
 
     const firstFollowUp = await request(app)
@@ -224,6 +227,7 @@ describe("chat integration", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
       });
 
     const response = await request(app)
@@ -275,6 +279,7 @@ describe("chat integration", () => {
         rerankTopK: 5,
         warmthLevel: 9,
         citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
       });
 
     const response = await request(app)
@@ -314,6 +319,7 @@ describe("chat integration", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: false,
+        chunkingStrategy: "fixed_window",
       });
 
     const response = await request(app)

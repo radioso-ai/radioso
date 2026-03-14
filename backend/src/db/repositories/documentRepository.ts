@@ -117,4 +117,15 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
     return mapDocument(row);
   }
+
+  async deleteByIdAndAccountId(documentId: string, accountId: string): Promise<boolean> {
+    const rows = await this.database.query<{ id: string }>(
+      `DELETE FROM documents
+       WHERE id = $1 AND account_id = $2
+       RETURNING id`,
+      [documentId, accountId],
+    );
+
+    return rows.length > 0;
+  }
 }

@@ -3,11 +3,36 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
 import { settingsApi, RetrievalSettings } from '@/lib/api'
 import { Save } from 'lucide-react'
+
+const chunkingStrategyOptions: Array<{
+  value: RetrievalSettings['chunkingStrategy']
+  label: string
+  description: string
+}> = [
+  {
+    value: 'fixed_window',
+    label: 'Fixed Window',
+    description: 'Uses the current overlapping fixed-size chunking behavior.',
+  },
+  {
+    value: 'structured_semantic',
+    label: 'Structured Semantic',
+    description:
+      'Uses headings, paragraphs, lists, tables, code fences, and FAQ pairs before merging adjacent blocks by topic.',
+  },
+]
 
 export function SettingsView() {
   const [settings, setSettings] = useState<RetrievalSettings | null>(null)
@@ -134,6 +159,43 @@ export function SettingsView() {
             <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">
               Retrieval Options
             </h2>
+
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="chunkingStrategy" className="text-foreground">Chunking Strategy</Label>
+                <p className="text-sm text-muted-foreground">
+                  Choose how newly ingested or updated documents are split into retrieval chunks.
+                </p>
+              </div>
+              <Select
+                value={settings.chunkingStrategy}
+                onValueChange={(value) =>
+                  updateSetting('chunkingStrategy', value as RetrievalSettings['chunkingStrategy'])
+                }
+              >
+                <SelectTrigger id="chunkingStrategy" className="w-full">
+                  <SelectValue placeholder="Select a chunking strategy" />
+                </SelectTrigger>
+                <SelectContent>
+                  {chunkingStrategyOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
+                {chunkingStrategyOptions.map((option) => (
+                  <div key={option.value}>
+                    <p className="text-sm font-medium text-foreground">{option.label}</p>
+                    <p className="text-sm text-muted-foreground">{option.description}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Changes apply the next time you ingest or update a document. Existing stored chunks stay as they are.
+              </p>
+            </div>
 
             <div className="flex items-center justify-between">
               <div>

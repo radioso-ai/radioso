@@ -73,4 +73,71 @@ describe("answer presentation service", () => {
       },
     ]);
   });
+
+  it("collapses multiple chunks from the same document into one visible source", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "Freya's books are available from Valmora Books.",
+      citationDisplayEnabled: true,
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Freya Rennick",
+          content: "Freya's books are available from Valmora Books.",
+        },
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-2",
+          title: "Freya Rennick",
+          content: "The author page lists several books and bundles.",
+        },
+      ],
+    });
+
+    expect(result.citations).toEqual([
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Freya Rennick" },
+    ]);
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Freya's books are available from Valmora Books.",
+        citationIndices: [0],
+      },
+    ]);
+  });
+
+  it("does not insert citation boundaries inside prices or urls", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "Author page: https://books.valmora.example/autore/freya-rennick. Il mio cuore ricorda Swami Selan costs EUR 18,00 today.",
+      citationDisplayEnabled: true,
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Freya Rennick",
+          content: "Author page: https://books.valmora.example/autore/freya-rennick.",
+        },
+        {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Shop listing",
+          content: "Il mio cuore ricorda Swami Selan costs EUR 18,00 today.",
+        },
+      ],
+    });
+
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Author page: https://books.valmora.example/autore/freya-rennick. ",
+        citationIndices: [0],
+      },
+      {
+        text: "Il mio cuore ricorda Swami Selan costs EUR 18,00 today.",
+        citationIndices: [1],
+      },
+    ]);
+  });
 });

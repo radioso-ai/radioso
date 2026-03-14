@@ -145,12 +145,13 @@ describe("edge cases", () => {
             rerankEnabled: false,
             vectorTopK: 100,
             similarityThreshold: 0.8,
-            rerankTopK: 20,
-            warmthLevel: 5,
-            citationDisplayEnabled: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
+          rerankTopK: 20,
+          warmthLevel: 5,
+          citationDisplayEnabled: true,
+          chunkingStrategy: "fixed_window",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
         },
       } as never,
       {

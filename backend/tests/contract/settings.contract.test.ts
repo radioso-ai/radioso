@@ -28,6 +28,7 @@ describe("retrieval settings contract", () => {
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual([
       "accountId",
+      "chunkingStrategy",
       "citationDisplayEnabled",
       "createdAt",
       "queryRewriteEnabled",
@@ -41,6 +42,7 @@ describe("retrieval settings contract", () => {
     expect(response.body.vectorTopK).toBe(15);
     expect(response.body.warmthLevel).toBe(5);
     expect(response.body.citationDisplayEnabled).toBe(true);
+    expect(response.body.chunkingStrategy).toBe("fixed_window");
   });
 
   it("updates retrieval settings for a valid bearer token", async () => {
@@ -58,6 +60,7 @@ describe("retrieval settings contract", () => {
         rerankTopK: 6,
         warmthLevel: 8,
         citationDisplayEnabled: false,
+        chunkingStrategy: "structured_semantic",
       });
 
     expect(response.status).toBe(200);
@@ -69,9 +72,11 @@ describe("retrieval settings contract", () => {
       rerankTopK: 6,
       warmthLevel: 8,
       citationDisplayEnabled: false,
+      chunkingStrategy: "structured_semantic",
     });
     expect(Object.keys(response.body).sort()).toEqual([
       "accountId",
+      "chunkingStrategy",
       "citationDisplayEnabled",
       "createdAt",
       "queryRewriteEnabled",

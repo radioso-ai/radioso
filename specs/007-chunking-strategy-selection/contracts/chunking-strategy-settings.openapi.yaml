@@ -1,0 +1,121 @@
+openapi: 3.1.0
+info:
+  title: Hivec Chunking Strategy Settings Contract
+  version: 0.1.0
+  summary: Contract update for account-scoped chunking strategy selection
+paths:
+  /api/v1/settings/retrieval:
+    get:
+      summary: Get account retrieval settings including chunking strategy
+      responses:
+        '200':
+          description: Retrieval settings returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+    put:
+      summary: Update account retrieval settings including chunking strategy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRetrievalSettingsRequest'
+      responses:
+        '200':
+          description: Retrieval settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+  /api/v1/document/:
+    post:
+      summary: Create a document using the account's active chunking strategy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentCreateRequest'
+      responses:
+        '201':
+          description: Document accepted and processed with the active chunking strategy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentCreateResponse'
+components:
+  schemas:
+    RetrievalSettings:
+      type: object
+      required:
+        - queryRewriteEnabled
+        - rerankEnabled
+        - vectorTopK
+        - similarityThreshold
+        - rerankTopK
+        - warmthLevel
+        - citationDisplayEnabled
+        - chunkingStrategy
+      properties:
+        queryRewriteEnabled:
+          type: boolean
+        rerankEnabled:
+          type: boolean
+        vectorTopK:
+          type: integer
+          minimum: 1
+          maximum: 300
+        similarityThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        rerankTopK:
+          type: integer
+          minimum: 1
+        warmthLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        citationDisplayEnabled:
+          type: boolean
+        chunkingStrategy:
+          $ref: '#/components/schemas/ChunkingStrategyId'
+    UpdateRetrievalSettingsRequest:
+      allOf:
+        - $ref: '#/components/schemas/RetrievalSettings'
+    ChunkingStrategyId:
+      type: string
+      enum:
+        - fixed_window
+        - structured_semantic
+    DocumentCreateRequest:
+      type: object
+      required:
+        - title
+        - content
+      properties:
+        title:
+          type: string
+          minLength: 1
+        content:
+          type: string
+          minLength: 1
+    DocumentCreateResponse:
+      type: object
+      required:
+        - documentId
+        - status
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - received
+            - normalized
+            - chunked
+            - embedded
+            - ready

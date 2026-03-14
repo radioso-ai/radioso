@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
+import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 
 const updateSettingsSchema = z.object({
   queryRewriteEnabled: z.boolean(),
@@ -13,6 +14,7 @@ const updateSettingsSchema = z.object({
   rerankTopK: z.number().int(),
   warmthLevel: z.number().int(),
   citationDisplayEnabled: z.boolean(),
+  chunkingStrategy: z.enum(chunkingStrategyIds),
 });
 
 export const createSettingsRoutes = (dependencies: AppDependencies): Router => {

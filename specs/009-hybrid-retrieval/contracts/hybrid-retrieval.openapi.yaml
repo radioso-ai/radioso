@@ -50,6 +50,7 @@ components:
     RetrievalSettings:
       type: object
       required:
+        - accountId
         - queryRewriteEnabled
         - rerankEnabled
         - vectorTopK
@@ -59,7 +60,12 @@ components:
         - citationDisplayEnabled
         - chunkingStrategy
         - attributeControls
+        - createdAt
+        - updatedAt
       properties:
+        accountId:
+          type: string
+          format: uuid
         queryRewriteEnabled:
           type: boolean
         rerankEnabled:
@@ -90,6 +96,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AttributeFamilyControl'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     UpdateRetrievalSettingsRequest:
       type: object
       required:

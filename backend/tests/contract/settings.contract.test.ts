@@ -157,8 +157,17 @@ describe("retrieval settings contract", () => {
 
   it("documents attributeControls as optional for the update request schema", () => {
     const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
+    const retrievalSettingsSchema = spec.match(/RetrievalSettings:\n([\s\S]*?)\n    UpdateRetrievalSettingsRequest:/)?.[1] ?? "";
     const updateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    AttributeFamilyControl:/)?.[1] ?? "";
 
+    expect(retrievalSettingsSchema).toContain("- accountId");
+    expect(retrievalSettingsSchema).toContain("- createdAt");
+    expect(retrievalSettingsSchema).toContain("- updatedAt");
+    expect(retrievalSettingsSchema).toContain("accountId:");
+    expect(retrievalSettingsSchema).toContain("format: uuid");
+    expect(retrievalSettingsSchema).toContain("createdAt:");
+    expect(retrievalSettingsSchema).toContain("format: date-time");
+    expect(retrievalSettingsSchema).toContain("updatedAt:");
     expect(updateSchema).toContain("type: object");
     expect(updateSchema).toContain("- chunkingStrategy");
     expect(updateSchema).toContain("attributeControls:");

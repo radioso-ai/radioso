@@ -5,6 +5,9 @@ import type { Env } from "../../src/app/config/env.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
+import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
+import { StructuredSemanticChunkingStrategy, type ChunkingSimilarityPort } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
@@ -42,9 +45,16 @@ export const createTestEnv = (): Env => ({
   SESSION_TTL_HOURS: 168,
 });
 
+interface TestRepositories {
+  retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
+  documentRepository: InMemoryDocumentRepository;
+  chunkRepository: InMemoryChunkRepository;
+}
+
 export const createTestDependencies = (overrides: {
   chatGateway?: ChatGateway;
-} = {}): AppDependencies => {
+  chunkingSimilarityPort?: ChunkingSimilarityPort;
+} = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = createTestEnv();
   const auditService = createAuditService();
   const accountRepository = new InMemoryAccountRepository();
@@ -100,6 +110,17 @@ export const createTestDependencies = (overrides: {
       return embeddingGateway.embedTexts(texts);
     },
   });
+  const chunkingSimilarityPort =
+    overrides.chunkingSimilarityPort ??
+    ({
+      async embedTexts(texts: string[]): Promise<number[][]> {
+        return texts.map((text) => keywordEmbedding(text));
+      },
+    } satisfies ChunkingSimilarityPort);
+  const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
+    new FixedWindowChunkingStrategy(),
+    new StructuredSemanticChunkingStrategy(chunkingSimilarityPort),
+  ]);
   const queryRewriteGateway: QueryRewriteGateway = {
     async rewrite(input) {
       const lastUserContext =
@@ -164,40 +185,51 @@ export const createTestDependencies = (overrides: {
   const chatGateway = overrides.chatGateway ?? defaultChatGateway;
 
   return {
-    env,
-    logger: createLogger("silent"),
-    auditService,
-    authService: new AuthService({
+    dependencies: {
       env,
+      logger: createLogger("silent"),
       auditService,
-      accountRepository,
-      sessionRepository,
-      accountTokenRepository,
-    }),
-    retrievalSettingsService,
-    documentIngestionService: new DocumentIngestionService(
+      authService: new AuthService({
+        env,
+        auditService,
+        accountRepository,
+        sessionRepository,
+        accountTokenRepository,
+      }),
+      retrievalSettingsService,
+      documentIngestionService: new DocumentIngestionService(
+        documentRepository,
+        chunkRepository,
+        embeddingService,
+        auditService,
+        retrievalSettingsService,
+        chunkingStrategyRegistry,
+      ),
+      chatService: new ChatService(
+        conversationRepository,
+        messageRepository,
+        retrievalPipeline,
+        chatGateway,
+        auditService,
+      ),
+    },
+    repositories: {
+      retrievalSettingsRepository,
       documentRepository,
       chunkRepository,
-      embeddingService,
-      auditService,
-    ),
-    chatService: new ChatService(
-      conversationRepository,
-      messageRepository,
-      retrievalPipeline,
-      chatGateway,
-      auditService,
-    ),
+    },
   };
 };
 
 export const createTestApp = (overrides: {
   chatGateway?: ChatGateway;
+  chunkingSimilarityPort?: ChunkingSimilarityPort;
 } = {}) => {
-  const dependencies = createTestDependencies(overrides);
+  const { dependencies, repositories } = createTestDependencies(overrides);
   return {
     app: createApp(dependencies),
     dependencies,
+    repositories,
   };
 };
 
@@ -224,6 +256,34 @@ const keywordScore = (content: string, query: string): number => {
   }
 
   return matches / normalizedTerms.length;
+};
+
+const keywordEmbedding = (text: string): number[] => {
+  const vector = new Array<number>(8).fill(0);
+  const terms = text
+    .toLowerCase()
+    .split(/\W+/)
+    .filter(Boolean)
+    .map((term) => term.replace(/(ing|ed|es|s)$/i, ""))
+    .filter((term) => term.length > 2)
+    .filter((term) => !STOP_WORDS.has(term));
+
+  for (const term of terms) {
+    const bucket = hashTerm(term) % vector.length;
+    vector[bucket] += 1;
+  }
+
+  return vector;
+};
+
+const hashTerm = (term: string): number => {
+  let hash = 0;
+
+  for (let index = 0; index < term.length; index += 1) {
+    hash = (hash * 31 + term.charCodeAt(index)) >>> 0;
+  }
+
+  return hash;
 };
 
 const STOP_WORDS = new Set([

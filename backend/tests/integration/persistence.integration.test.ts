@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,8 +11,12 @@ import { ChunkRepository } from "../../src/db/repositories/chunkRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
+import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
+import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
+import { RetrievalSettingsRepository } from "../../src/db/repositories/retrievalSettingsRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
@@ -33,14 +38,20 @@ const describeIfDatabase = integrationDatabaseUrl ? describe : describe.skip;
 
 describeIfDatabase("persistence integration", () => {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const migrationPath = path.resolve(__dirname, "../../src/db/migrations/001_init.sql");
+  const migrationsPath = path.resolve(__dirname, "../../src/db/migrations");
 
   let database: Database;
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
-    const migrationSql = await readFile(migrationPath, "utf8");
-    await database.pool.query(migrationSql);
+    const migrationFiles = (await readdir(migrationsPath))
+      .filter((file) => file.endsWith(".sql"))
+      .sort();
+
+    for (const migrationFile of migrationFiles) {
+      const migrationSql = await readFile(path.join(migrationsPath, migrationFile), "utf8");
+      await database.pool.query(migrationSql);
+    }
   });
 
   afterAll(async () => {
@@ -146,6 +157,8 @@ describeIfDatabase("persistence integration", () => {
       chunkRepository,
       new EmbeddingService(embeddingGateway),
       new AuditService(createLogger("silent"), noopAuditRepository),
+      new RetrievalSettingsService(new RetrievalSettingsRepository(database), new AuditService(createLogger("silent"), noopAuditRepository)),
+      new ChunkingStrategyRegistry([new FixedWindowChunkingStrategy()]),
     );
 
     const account = await accountRepository.create({

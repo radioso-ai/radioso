@@ -215,6 +215,7 @@ describe("chat contract", () => {
         rerankTopK: 15,
         warmthLevel: 5,
         citationDisplayEnabled: false,
+        chunkingStrategy: "fixed_window",
       });
 
     const response = await request(app)

@@ -71,6 +71,7 @@ export interface ParsedQueryConstraint {
   operator: QueryConstraintOperator;
   confidence: number;
   summary: string;
+  sourceText: string;
   value:
     | { date: string }
     | { amount: number; currencyCode: string | null }

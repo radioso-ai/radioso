@@ -25,6 +25,7 @@ describe("hybrid retrieval info", () => {
             operator: "match",
             confidence: 0.95,
             summary: "in Estonia",
+            sourceText: "in Estonia",
             value: {
               matchKey: "estonia",
               displayName: "Estonia",

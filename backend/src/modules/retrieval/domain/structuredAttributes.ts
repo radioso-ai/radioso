@@ -64,7 +64,7 @@ export interface StructuredAttributes {
   locations: NormalizedLocationValue[];
 }
 
-export type QueryConstraintOperator = "gte" | "lte" | "match";
+export type QueryConstraintOperator = "gte" | "lte" | "match" | "eq";
 
 export interface ParsedQueryConstraint {
   family: AttributeFamilyId;

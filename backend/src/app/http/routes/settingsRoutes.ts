@@ -8,7 +8,6 @@ import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/
 import {
   attributeControlModes,
   attributeFamilyIds,
-  defaultAttributeControls,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 
 const updateSettingsSchema = z.object({
@@ -28,7 +27,7 @@ const updateSettingsSchema = z.object({
         mode: z.enum(attributeControlModes),
       }),
     )
-    .default(defaultAttributeControls()),
+    .optional(),
 });
 
 export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
@@ -47,7 +46,11 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
   router.put("/retrieval", requireApiToken(dependencies), validateBody(updateSettingsSchema), async (req, res, next) => {
     try {
       const { accountId } = res.locals as { accountId: string };
-      const settings = await dependencies.retrievalSettingsService.updateForAccount(accountId, req.body);
+      const existing = await dependencies.retrievalSettingsService.getForAccount(accountId);
+      const settings = await dependencies.retrievalSettingsService.updateForAccount(accountId, {
+        ...req.body,
+        attributeControls: req.body.attributeControls ?? existing.attributeControls,
+      });
       res.status(200).json(settings);
     } catch (error) {
       next(error);

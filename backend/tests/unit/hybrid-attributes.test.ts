@@ -42,4 +42,18 @@ describe("hybrid attributes", () => {
       },
     ]);
   });
+
+  it("extracts locations from ordinary prose", () => {
+    const raw = extractRawStructuredAttributes("The retreat is in Estonia and includes lodging.");
+    const normalized = normalizeStructuredAttributes(raw);
+
+    expect(normalized.locations).toEqual([
+      {
+        matchKey: "estonia",
+        displayName: "Estonia",
+        confidence: 0.95,
+        sourceText: "Estonia",
+      },
+    ]);
+  });
 });

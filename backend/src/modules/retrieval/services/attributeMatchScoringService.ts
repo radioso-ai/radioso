@@ -138,9 +138,12 @@ export class AttributeMatchScoringService {
     if (constraint.family === "date_point" && this.isDateValue(constraint.value)) {
       const compareDate = constraint.value.date;
 
-      const datePointMatch = attributes.datePoints.some((datePoint) => {
+      return attributes.datePoints.some((datePoint) => {
         if (datePoint.confidence < HYBRID_RETRIEVAL_DEFAULTS.attributeValueHardFilterConfidenceThreshold) {
           return false;
+        }
+        if (constraint.operator === "eq") {
+          return datePoint.value === compareDate;
         }
         if (constraint.operator === "gte") {
           return datePoint.value >= compareDate;
@@ -151,13 +154,16 @@ export class AttributeMatchScoringService {
         return false;
       });
 
-      if (datePointMatch) {
-        return true;
-      }
+    }
 
+    if (constraint.family === "date_range" && this.isDateValue(constraint.value)) {
+      const compareDate = constraint.value.date;
       return attributes.dateRanges.some((dateRange) => {
         if (dateRange.confidence < HYBRID_RETRIEVAL_DEFAULTS.attributeValueHardFilterConfidenceThreshold) {
           return false;
+        }
+        if (constraint.operator === "eq") {
+          return dateRange.start <= compareDate && dateRange.end >= compareDate;
         }
         if (constraint.operator === "gte") {
           return dateRange.end >= compareDate;

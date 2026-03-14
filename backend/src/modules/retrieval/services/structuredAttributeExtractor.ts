@@ -3,7 +3,8 @@ import type { RawStructuredAttributes } from "../domain/structuredAttributes.js"
 const DATE_PATTERN = /\b(\d{4}-\d{2}-\d{2})\b/g;
 const DATE_RANGE_PATTERN = /\b(\d{4}-\d{2}-\d{2})\s*(?:to|through|-|–)\s*(\d{4}-\d{2}-\d{2})\b/g;
 const MONEY_PATTERN = /\b(\d+(?:\.\d{1,2})?)\s*(EUR|USD)\b|\$(\d+(?:\.\d{1,2})?)\b/g;
-const LOCATION_PATTERN = /location:\s*([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)/gi;
+const LOCATION_LABEL_PATTERN = /location:\s*([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)/gi;
+const LOCATION_PROSE_PATTERN = /\bin\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)(?=[\s.,;!?]|$)/g;
 
 export const extractRawStructuredAttributes = (content: string): RawStructuredAttributes => {
   const dateRanges: RawStructuredAttributes["dateRanges"] = [];
@@ -51,10 +52,14 @@ export const extractRawStructuredAttributes = (content: string): RawStructuredAt
   }
 
   const locations: RawStructuredAttributes["locations"] = [];
-  for (const match of content.matchAll(LOCATION_PATTERN)) {
-    const value = match[1]?.trim();
-    if (value) {
-      locations.push({ value, sourceText: value });
+  const seenLocations = new Set<string>();
+  for (const pattern of [LOCATION_LABEL_PATTERN, LOCATION_PROSE_PATTERN]) {
+    for (const match of content.matchAll(pattern)) {
+      const value = match[1]?.trim();
+      if (value && !seenLocations.has(value.toLowerCase())) {
+        seenLocations.add(value.toLowerCase());
+        locations.push({ value, sourceText: value });
+      }
     }
   }
 

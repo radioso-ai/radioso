@@ -202,6 +202,71 @@ describeIfDatabase("persistence integration", () => {
     expect(auditEvents.status).toBe("ready");
   });
 
+  it("deletes documents only within the matching account scope and cascades chunks", async () => {
+    const accountRepository = new AccountRepository(database);
+    const documentRepository = new DocumentRepository(database);
+    const chunkRepository = new ChunkRepository(database);
+
+    const ownerAccount = await accountRepository.create({
+      email: `delete-owner-${randomUUID()}@example.com`,
+      passwordHash: "hash-owner",
+    });
+    const otherAccount = await accountRepository.create({
+      email: `delete-other-${randomUUID()}@example.com`,
+      passwordHash: "hash-other",
+    });
+
+    const ownerDocument = await documentRepository.create({
+      accountId: ownerAccount.id,
+      title: "Owner guide",
+      sourceContent: "Owner content",
+      markdownContent: "Owner content",
+      status: "ready",
+    });
+    const otherDocument = await documentRepository.create({
+      accountId: otherAccount.id,
+      title: "Other guide",
+      sourceContent: "Other content",
+      markdownContent: "Other content",
+      status: "ready",
+    });
+
+    await chunkRepository.replaceForDocument(ownerDocument.id, [
+      {
+        id: randomUUID(),
+        documentId: ownerDocument.id,
+        accountId: ownerAccount.id,
+        chunkIndex: 0,
+        content: "Owner chunk",
+        embedding: embeddingOf(0),
+        startOffset: 0,
+        endOffset: 10,
+        createdAt: new Date(),
+      },
+    ]);
+
+    const deniedDelete = await documentRepository.deleteByIdAndAccountId(ownerDocument.id, otherAccount.id);
+    expect(deniedDelete).toBe(false);
+
+    const permittedDelete = await documentRepository.deleteByIdAndAccountId(ownerDocument.id, ownerAccount.id);
+    expect(permittedDelete).toBe(true);
+
+    const deletedDocument = await documentRepository.findByIdAndAccountId(ownerDocument.id, ownerAccount.id);
+    expect(deletedDocument).toBeNull();
+
+    const ownerChunkRows = await database.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM chunks WHERE document_id = $1",
+      [ownerDocument.id],
+    );
+    expect(ownerChunkRows[0]?.count).toBe("0");
+
+    const survivingDocument = await documentRepository.findByIdAndAccountId(otherDocument.id, otherAccount.id);
+    expect(survivingDocument).not.toBeNull();
+
+    await database.query("DELETE FROM documents WHERE account_id = $1 OR account_id = $2", [ownerAccount.id, otherAccount.id]);
+    await database.query("DELETE FROM accounts WHERE id = $1 OR id = $2", [ownerAccount.id, otherAccount.id]);
+  });
+
   it("records retrieval execution metadata without exposing new response fields", async () => {
     const logger = {
       info: vi.fn(),

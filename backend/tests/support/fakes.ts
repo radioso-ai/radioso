@@ -228,6 +228,16 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     this.items.set(record.id, record);
     return record;
   }
+
+  async deleteByIdAndAccountId(documentId: string, accountId: string): Promise<boolean> {
+    const existing = this.items.get(documentId);
+    if (!existing || existing.accountId !== accountId) {
+      return false;
+    }
+
+    this.items.delete(documentId);
+    return true;
+  }
 }
 
 export class InMemoryChunkRepository implements ChunkRepositoryPort {

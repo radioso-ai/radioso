@@ -54,6 +54,7 @@ export interface DocumentRepositoryPort {
     markdownContent: string;
     status: string;
   }): Promise<DocumentRecord>;
+  deleteByIdAndAccountId(documentId: string, accountId: string): Promise<boolean>;
 }
 
 export interface ChunkRepositoryPort {

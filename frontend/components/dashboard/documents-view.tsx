@@ -1,9 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Check, FileText, Pencil, Plus, RefreshCw } from 'lucide-react'
+import { FileText, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Dialog,
   DialogContent,
@@ -22,6 +32,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination'
+import { DocumentStatus } from '@/components/dashboard/document-status'
 import {
   type DocumentSummary,
   documentsApi,
@@ -40,12 +51,24 @@ const EMPTY_FORM = {
   content: '',
 }
 
-const getRagLabel = (document: Pick<DocumentSummary, 'status' | 'ragStatus'>) => {
-  if (document.ragStatus === 'processed' && document.status === 'ready') {
-    return 'RAG processed'
+const getErrorMessage = (error: unknown, fallback: string): string => {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'error' in error &&
+    error.error &&
+    typeof error.error === 'object' &&
+    'message' in error.error &&
+    typeof error.error.message === 'string'
+  ) {
+    return error.error.message
   }
 
-  return `RAG ${document.status === 'ready' ? 'pending' : document.status}`
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+
+  return fallback
 }
 
 export function DocumentsView({
@@ -61,6 +84,9 @@ export function DocumentsView({
   const [editorMode, setEditorMode] = useState<EditorMode>('create')
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null)
   const [formValues, setFormValues] = useState(EMPTY_FORM)
+  const [deleteCandidate, setDeleteCandidate] = useState<DocumentSummary | null>(null)
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null)
+  const [deleteErrorById, setDeleteErrorById] = useState<Record<string, string>>({})
 
   const loadDocuments = useCallback(async () => {
     try {
@@ -78,7 +104,10 @@ export function DocumentsView({
   }, [loadDocuments])
 
   useEffect(() => {
-    setCurrentPage(1)
+    setCurrentPage((page) => {
+      const totalPages = Math.max(1, Math.ceil(documents.length / PAGE_SIZE))
+      return Math.min(page, totalPages)
+    })
   }, [documents.length])
 
   const resetEditor = useCallback(() => {
@@ -191,6 +220,51 @@ export function DocumentsView({
     }
   }
 
+  const handleDeleteDialogChange = (open: boolean) => {
+    if (!open && deletingDocumentId) {
+      return
+    }
+
+    if (!open) {
+      setDeleteCandidate(null)
+    }
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteCandidate) {
+      return
+    }
+
+    const deletingId = deleteCandidate.id
+    setDeletingDocumentId(deletingId)
+    setDeleteErrorById((current) => {
+      const next = { ...current }
+      delete next[deletingId]
+      return next
+    })
+
+    try {
+      await documentsApi.deleteDocument(deletingId)
+      setDocuments((currentDocuments) => {
+        const nextDocuments = currentDocuments.filter((document) => document.id !== deletingId)
+        const nextTotalPages = Math.max(1, Math.ceil(nextDocuments.length / PAGE_SIZE))
+        setCurrentPage((page) => Math.min(page, nextTotalPages))
+        return nextDocuments
+      })
+      if (selectedDocumentId === deletingId) {
+        onSelectedDocumentChange?.(null)
+      }
+      setDeleteCandidate(null)
+    } catch (error) {
+      setDeleteErrorById((current) => ({
+        ...current,
+        [deletingId]: getErrorMessage(error, 'Failed to delete document. Please try again.'),
+      }))
+    } finally {
+      setDeletingDocumentId(null)
+    }
+  }
+
   const formatDate = (date: string) => {
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
@@ -260,6 +334,7 @@ export function DocumentsView({
   const pageStart = (safeCurrentPage - 1) * PAGE_SIZE
   const paginatedDocuments = documents.slice(pageStart, pageStart + PAGE_SIZE)
   const pageEnd = Math.min(pageStart + paginatedDocuments.length, documents.length)
+  const activeDeleteError = deleteCandidate ? deleteErrorById[deleteCandidate.id] : null
 
   const goToPreviousPage = () => {
     setCurrentPage((page) => Math.max(1, page - 1))
@@ -296,6 +371,44 @@ export function DocumentsView({
         </DialogContent>
       </Dialog>
 
+      <AlertDialog open={deleteCandidate !== null} onOpenChange={handleDeleteDialogChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete document?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove{' '}
+              <span className="font-medium text-foreground">{deleteCandidate?.title ?? 'this document'}</span>{' '}
+              from your knowledge base.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {activeDeleteError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {activeDeleteError}
+            </p>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={Boolean(deletingDocumentId)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                void handleConfirmDelete()
+              }}
+              disabled={Boolean(deletingDocumentId)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingDocumentId ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
@@ -318,46 +431,61 @@ export function DocumentsView({
         ) : (
           <div className="w-full space-y-4">
             <div className="grid w-full gap-3">
-              {paginatedDocuments.map((doc) => (
-                <button
-                  key={doc.id}
-                  type="button"
-                  onClick={() =>
-                    onSelectedDocumentChange
-                      ? onSelectedDocumentChange(doc.id)
-                      : void openEditDialog(doc.id)
-                  }
-                  className="flex w-full max-w-full cursor-pointer items-center gap-4 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/20"
-                >
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-muted">
-                    <FileText className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="truncate font-medium text-foreground" title={doc.title}>
-                        {doc.title}
-                      </h3>
-                      <Pencil className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+              {paginatedDocuments.map((doc) => {
+                const deleteError = deleteErrorById[doc.id]
+                return (
+                  <div
+                    key={doc.id}
+                    className="grid w-full gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent/20 sm:grid-cols-[minmax(0,1fr)_auto]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onSelectedDocumentChange
+                          ? onSelectedDocumentChange(doc.id)
+                          : void openEditDialog(doc.id)
+                      }
+                      className="flex min-w-0 items-start gap-4 text-left"
+                    >
+                      <div className="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-muted">
+                        <FileText className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start gap-2">
+                          <h3 className="text-sm font-medium text-foreground [overflow-wrap:anywhere]">
+                            {doc.title}
+                          </h3>
+                          <Pencil className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Updated {formatDate(doc.updatedAt)}
+                        </p>
+                      </div>
+                    </button>
+                    <div className="flex flex-col items-start gap-2 sm:items-end">
+                      <DocumentStatus status={doc.status} />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-destructive hover:text-destructive"
+                        onClick={() => setDeleteCandidate(doc)}
+                        disabled={deletingDocumentId === doc.id}
+                      >
+                        {deletingDocumentId === doc.id ? (
+                          <Spinner className="mr-1 h-3.5 w-3.5" />
+                        ) : (
+                          <Trash2 className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        Delete
+                      </Button>
+                      {deleteError ? (
+                        <p className="max-w-56 text-xs text-destructive sm:text-right">{deleteError}</p>
+                      ) : null}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      Updated {formatDate(doc.updatedAt)}
-                    </p>
                   </div>
-                  <div className="flex flex-col items-end gap-1 text-sm">
-                    <div className="flex items-center gap-1 text-foreground">
-                      {doc.ragStatus === 'processed' ? (
-                        <Check className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4 text-amber-500" />
-                      )}
-                      <span>{getRagLabel(doc)}</span>
-                    </div>
-                    <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                      {doc.status}
-                    </span>
-                  </div>
-                </button>
-              ))}
+                )
+              })}
             </div>
             {documents.length > PAGE_SIZE && (
               <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">

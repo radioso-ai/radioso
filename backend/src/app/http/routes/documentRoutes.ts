@@ -68,5 +68,19 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
+  router.delete("/:documentId", requireApiToken(dependencies), async (req, res, next) => {
+    try {
+      const { accountId } = res.locals as { accountId: string };
+      const { documentId } = documentParamsSchema.parse(req.params);
+      await dependencies.documentDeletionService.delete({
+        accountId,
+        documentId,
+      });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
   return router;
 };

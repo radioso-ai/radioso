@@ -1,11 +1,13 @@
 import type { Response } from "express";
 
+import type { ChatCitation, ChatStreamEvent } from "../../../modules/chat/services/chatService.js";
+
 export const sendChatJson = (
   res: Response,
   payload: {
     conversationId: string;
     answer: string;
-    citations: Array<{ documentId: string; chunkId: string; title: string }>;
+    citations: ChatCitation[];
   },
 ): void => {
   res.status(200).json(payload);
@@ -13,26 +15,46 @@ export const sendChatJson = (
 
 export const sendChatSse = (
   res: Response,
-  payload: {
-    conversationId: string;
-    answer: string;
-    citations: Array<{ documentId: string; chunkId: string; title: string }>;
-  },
-): void => {
+  events: AsyncIterable<ChatStreamEvent>,
+): Promise<void> => {
   res.status(200);
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
 
-  res.write(`event: conversation\n`);
-  res.write(`data: ${JSON.stringify({ conversationId: payload.conversationId })}\n\n`);
+  let closed = false;
+  res.on("close", () => {
+    closed = true;
+  });
 
-  for (const chunk of payload.answer.match(/.{1,32}/g) ?? []) {
-    res.write(`event: chunk\n`);
-    res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
-  }
+  const writeEvent = (event: string, data: Record<string, unknown>) => {
+    if (closed || res.writableEnded) {
+      return;
+    }
 
-  res.write(`event: done\n`);
-  res.write(`data: ${JSON.stringify({ citations: payload.citations })}\n\n`);
-  res.end();
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  return (async () => {
+    for await (const event of events) {
+      if (event.type === "conversation") {
+        writeEvent("conversation", { conversationId: event.conversationId });
+        continue;
+      }
+
+      if (event.type === "chunk") {
+        writeEvent("chunk", { text: event.text });
+        continue;
+      }
+
+      writeEvent("done", { citations: event.citations });
+    }
+
+    if (!res.writableEnded) {
+      res.end();
+    }
+  })();
 };

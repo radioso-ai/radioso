@@ -1,3 +1,7 @@
+import http from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
+
+import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
@@ -38,7 +42,17 @@ describe("chat contract", () => {
   });
 
   it("returns an SSE response when streaming is requested", async () => {
-    const { app } = createTestApp();
+    const delayedGateway: ChatGateway = {
+      async answer(input) {
+        return `history:${input.history.length} ${input.prompt}`;
+      },
+      async *streamAnswer(input) {
+        yield "history:0 ";
+        await delay(30);
+        yield input.prompt;
+      },
+    };
+    const { app } = createTestApp({ chatGateway: delayedGateway });
     const token = await getBearerToken(app);
 
     await request(app)
@@ -62,7 +76,93 @@ describe("chat contract", () => {
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("text/event-stream");
     expect(response.body).toContain("event: conversation");
+    expect(response.body).toContain("event: chunk");
     expect(response.body).toContain("event: done");
+  });
+
+  it("emits chunk data before the stream finishes", async () => {
+    const delayedGateway: ChatGateway = {
+      async answer() {
+        return "streamed answer";
+      },
+      async *streamAnswer() {
+        yield "streamed ";
+        await delay(80);
+        yield "answer";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: delayedGateway });
+    const token = await getBearerToken(app);
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+
+    const server = app.listen();
+
+    try {
+      const result = await new Promise<{ firstChunkMs: number; doneMs: number; body: string }>((resolve, reject) => {
+        const startedAt = Date.now();
+        const chunks: string[] = [];
+        let firstChunkMs = -1;
+        let doneMs = -1;
+        const address = server.address();
+
+        if (!address || typeof address === "string") {
+          reject(new Error("Failed to determine test server address"));
+          return;
+        }
+
+        const req = http.request({
+          method: "POST",
+          host: "127.0.0.1",
+          port: address.port,
+          path: "/api/v1/chat/",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }, (res) => {
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => {
+            chunks.push(chunk);
+            if (firstChunkMs === -1 && chunk.includes("event: chunk")) {
+              firstChunkMs = Date.now() - startedAt;
+            }
+            if (chunk.includes("event: done")) {
+              doneMs = Date.now() - startedAt;
+            }
+          });
+          res.on("end", () => {
+            resolve({
+              firstChunkMs,
+              doneMs,
+              body: chunks.join(""),
+            });
+          });
+          res.on("error", reject);
+        });
+        req.write(JSON.stringify({ query: "What does this page do?", stream: true }));
+        req.end();
+        req.on("error", reject);
+      });
+
+      expect(result.body).toContain("event: chunk");
+      expect(result.body).toContain("event: done");
+      expect(result.firstChunkMs).toBeGreaterThanOrEqual(0);
+      expect(result.doneMs).toBeGreaterThan(result.firstChunkMs);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    }
   });
 
   it("accepts an existing conversation id without changing the request shape", async () => {

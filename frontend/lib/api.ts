@@ -1,4 +1,5 @@
 const API_BASE = `${process.env.NEXT_PUBLIC_API_BASE_PATH ?? "/backend/api/v1"}`;
+const STREAMING_API_PATH = '/api/chat/stream'
 const API_TOKEN_STORAGE_KEY = "hivec.apiToken";
 
 const getStoredApiToken = (): string | null => {
@@ -384,7 +385,7 @@ export const chatApi = {
     data: ChatRequest,
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
-    const response = await fetch(`${API_BASE}/chat/`, {
+    const response = await fetch(STREAMING_API_PATH, {
       method: "POST",
       cache: "no-store",
       headers: {

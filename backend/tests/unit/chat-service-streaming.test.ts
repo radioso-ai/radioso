@@ -27,9 +27,16 @@ describe("chat service streaming", () => {
             rerankStatus: "skipped",
             originalCandidateCount: 1,
             rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
             normalizedCandidateCount: 1,
             finalContextCount: 1,
             candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
           },
         };
       },
@@ -76,6 +83,21 @@ describe("chat service streaming", () => {
         conversationId: expect.any(String),
         citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
         answerSegments: [{ text: "full answer", citationIndices: [0] }],
+        retrievalInfo: {
+          parsedQuery: {
+            semanticQuery: "page do",
+            lexicalQuery: "page do",
+            constraintSummary: [],
+          },
+          candidateCounts: {
+            semantic: 1,
+            lexical: 1,
+            merged: 1,
+            final: 1,
+          },
+          fallbackApplied: false,
+          rerankStatus: "skipped",
+        },
       },
     ]);
 

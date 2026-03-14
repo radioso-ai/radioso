@@ -383,6 +383,7 @@ components:
         - warmthLevel
         - citationDisplayEnabled
         - chunkingStrategy
+        - attributeControls
       properties:
         queryRewriteEnabled:
           type: boolean
@@ -410,9 +411,25 @@ components:
           enum:
             - fixed_window
             - structured_semantic
+        attributeControls:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttributeFamilyControl'
     UpdateRetrievalSettingsRequest:
       allOf:
         - $ref: '#/components/schemas/RetrievalSettings'
+    AttributeFamilyControl:
+      type: object
+      required: [family, enabled, mode]
+      properties:
+        family:
+          type: string
+          enum: [date_point, date_range, money_value, location]
+        enabled:
+          type: boolean
+        mode:
+          type: string
+          enum: [boost_only, hard_filter]
     DocumentCreateRequest:
       type: object
       required: [title, content]
@@ -484,7 +501,7 @@ components:
           description: Omit to start a new conversation
     ChatResponse:
       type: object
-      required: [conversationId, answer]
+      required: [conversationId, answer, retrievalInfo]
       properties:
         conversationId:
           type: string
@@ -499,6 +516,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AnswerSegment'
+        retrievalInfo:
+          $ref: '#/components/schemas/RetrievalInfo'
     Citation:
       type: object
       required: [documentId, chunkId]
@@ -522,6 +541,66 @@ components:
           items:
             type: integer
             minimum: 0
+    RetrievalInfo:
+      type: object
+      required: [candidateCounts, fallbackApplied, rerankStatus]
+      properties:
+        parsedQuery:
+          $ref: '#/components/schemas/ParsedQuery'
+        candidateCounts:
+          $ref: '#/components/schemas/CandidateCounts'
+        appliedConstraints:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppliedConstraint'
+        fallbackApplied:
+          type: boolean
+        rerankStatus:
+          type: string
+          enum: [skipped, applied, fallback]
+    ParsedQuery:
+      type: object
+      required: [semanticQuery, lexicalQuery, constraintSummary]
+      properties:
+        semanticQuery:
+          type: string
+        lexicalQuery:
+          type: string
+        constraintSummary:
+          type: array
+          items:
+            type: string
+    CandidateCounts:
+      type: object
+      required: [semantic, lexical, merged, final]
+      properties:
+        semantic:
+          type: integer
+          minimum: 0
+        lexical:
+          type: integer
+          minimum: 0
+        merged:
+          type: integer
+          minimum: 0
+        final:
+          type: integer
+          minimum: 0
+    AppliedConstraint:
+      type: object
+      required: [family, mode, outcome, summary]
+      properties:
+        family:
+          type: string
+          enum: [date_point, date_range, money_value, location]
+        mode:
+          type: string
+          enum: [boost_only, hard_filter]
+        outcome:
+          type: string
+          enum: [applied, relaxed, skipped]
+        summary:
+          type: string
     ErrorResponse:
       type: object
       required: [error]

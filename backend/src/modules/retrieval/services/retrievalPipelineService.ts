@@ -56,19 +56,26 @@ export class RetrievalPipelineService {
       history: input.history,
       query: input.query,
     });
-    const originalParsedQuery = this.applyAttributeControlsToQuery(
-      parseQueryConstraints(input.query),
+    const originalParsedQuery = parseQueryConstraints(input.query);
+    const originalPreparedQuery = this.applyAttributeControlsToQuery(
+      originalParsedQuery,
       settings.attributeControls,
     );
-    const originalSemanticQuery = originalParsedQuery.semanticQuery || input.query;
+    const originalSemanticQuery = originalPreparedQuery.semanticQuery || input.query;
     const rewrittenQuery = await this.queryRewriteService.rewrite({
       query: input.query,
       contextWindow,
       enabled: settings.queryRewriteEnabled,
     });
-    const parsedQuery = rewrittenQuery.rewriteApplied
-      ? this.applyAttributeControlsToQuery(parseQueryConstraints(rewrittenQuery.effectiveQuery), settings.attributeControls)
+    const rewrittenParsedQuery = rewrittenQuery.rewriteApplied
+      ? parseQueryConstraints(rewrittenQuery.effectiveQuery)
       : originalParsedQuery;
+    const parsedQuery = this.applyAttributeControlsToQuery(
+      rewrittenQuery.rewriteApplied
+        ? this.mergeParsedQueries(originalParsedQuery, rewrittenParsedQuery)
+        : rewrittenParsedQuery,
+      settings.attributeControls,
+    );
     const rewrittenSemanticQuery = parsedQuery.semanticQuery || rewrittenQuery.effectiveQuery;
     const lexicalQuery = parsedQuery.lexicalQuery || rewrittenQuery.effectiveQuery;
     const [originalEmbedding] = await this.embeddingService.embedChunks([originalSemanticQuery]);
@@ -178,14 +185,42 @@ export class RetrievalPipelineService {
     parsedQuery: ParsedQueryInterpretation,
     attributeControls: AttributeFamilyControl[],
   ): ParsedQueryInterpretation {
-    const enabledFamilies = new Set(
-      attributeControls.filter((control) => control.enabled).map((control) => control.family),
+    const hardFilterFamilies = new Set(
+      attributeControls
+        .filter((control) => control.enabled && control.mode === "hard_filter")
+        .map((control) => control.family),
     );
 
     return {
       ...parsedQuery,
-      semanticQuery: this.stripEnabledConstraintLiterals(parsedQuery.semanticQuery, parsedQuery, enabledFamilies),
-      lexicalQuery: this.stripEnabledConstraintLiterals(parsedQuery.lexicalQuery, parsedQuery, enabledFamilies),
+      semanticQuery: this.stripEnabledConstraintLiterals(parsedQuery.semanticQuery, parsedQuery, hardFilterFamilies),
+      lexicalQuery: this.stripEnabledConstraintLiterals(parsedQuery.lexicalQuery, parsedQuery, hardFilterFamilies),
+    };
+  }
+
+  private mergeParsedQueries(
+    originalParsedQuery: ParsedQueryInterpretation,
+    rewrittenParsedQuery: ParsedQueryInterpretation,
+  ): ParsedQueryInterpretation {
+    const seenConstraintKeys = new Set<string>();
+    const constraints = [...originalParsedQuery.constraints, ...rewrittenParsedQuery.constraints].filter((constraint) => {
+      const key = JSON.stringify({
+        family: constraint.family,
+        operator: constraint.operator,
+        summary: constraint.summary,
+        value: constraint.value,
+      });
+      if (seenConstraintKeys.has(key)) {
+        return false;
+      }
+      seenConstraintKeys.add(key);
+      return true;
+    });
+
+    return {
+      semanticQuery: rewrittenParsedQuery.semanticQuery,
+      lexicalQuery: rewrittenParsedQuery.lexicalQuery,
+      constraints,
     };
   }
 

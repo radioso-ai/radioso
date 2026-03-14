@@ -4,6 +4,7 @@ import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
@@ -179,6 +180,10 @@ export const createTestDependencies = (overrides: {
       documentRepository,
       chunkRepository,
       embeddingService,
+      auditService,
+    ),
+    documentDeletionService: new DocumentDeletionService(
+      documentRepository,
       auditService,
     ),
     chatService: new ChatService(

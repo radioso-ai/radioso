@@ -11,6 +11,7 @@ import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSett
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
 import { AuditService } from "../../modules/audit/services/auditService.js";
+import { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
 import { PgVectorSearch } from "../../modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../modules/retrieval/services/candidatePreparationService.js";
@@ -35,12 +36,14 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const openai = new OpenAIClients(env.OPENAI_API_KEY, env.OPENAI_CHAT_MODEL, env.OPENAI_VECTOR_MODEL);
   const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
   const embeddingService = new EmbeddingService(new OpenAIEmbeddingGateway(openai.client, openai.vectorModel));
+  const documentRepository = new DocumentRepository(database);
   const documentIngestionService = new DocumentIngestionService(
-    new DocumentRepository(database),
+    documentRepository,
     new ChunkRepository(database),
     embeddingService,
     auditService,
   );
+  const documentDeletionService = new DocumentDeletionService(documentRepository, auditService);
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
     embeddingService,
@@ -75,6 +78,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     auditService,
     retrievalSettingsService,
     documentIngestionService,
+    documentDeletionService,
     chatService,
   };
 };

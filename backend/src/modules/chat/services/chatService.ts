@@ -106,7 +106,12 @@ export class ChatService {
 
       const presentation = this.answerPresentationService.present({
         answer,
-        citations: session.retrieval.citations,
+        citations: session.retrieval.contexts.map((context) => ({
+          documentId: context.documentId,
+          chunkId: context.chunkId,
+          title: context.title,
+          content: context.content,
+        })),
         citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
       });
 
@@ -177,7 +182,12 @@ export class ChatService {
 
       const presentation = this.answerPresentationService.present({
         answer,
-        citations: session.retrieval.citations,
+        citations: session.retrieval.contexts.map((context) => ({
+          documentId: context.documentId,
+          chunkId: context.chunkId,
+          title: context.title,
+          content: context.content,
+        })),
         citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
       });
 

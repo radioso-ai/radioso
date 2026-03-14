@@ -49,23 +49,26 @@ describe("hybrid query constraints", () => {
   it("parses supported query constraints for date, money, and location", () => {
     const result = parseQueryConstraints("Find retreats in Estonia under 300 EUR after 2026-06-10");
 
-    expect(result.semanticQuery).toBe("retreats");
-    expect(result.lexicalQuery).toBe("retreats");
+    expect(result.semanticQuery).toBe("retreats in Estonia under 300 EUR after 2026-06-10");
+    expect(result.lexicalQuery).toBe("retreats in Estonia under 300 EUR after 2026-06-10");
     expect(result.constraints).toEqual([
       expect.objectContaining({
         family: "location",
         operator: "match",
         confidence: 0.95,
+        sourceText: "in Estonia",
       }),
       expect.objectContaining({
         family: "money_value",
         operator: "lte",
         confidence: 0.95,
+        sourceText: "under 300 EUR",
       }),
       expect.objectContaining({
         family: "date_range",
         operator: "gte",
         confidence: 0.95,
+        sourceText: "after 2026-06-10",
       }),
     ]);
   });
@@ -73,18 +76,20 @@ describe("hybrid query constraints", () => {
   it("parses lowercase locations and exact single-date constraints", () => {
     const result = parseQueryConstraints("Find retreats in estonia on 2026-06-12");
 
-    expect(result.semanticQuery).toBe("retreats");
-    expect(result.lexicalQuery).toBe("retreats");
+    expect(result.semanticQuery).toBe("retreats in estonia on 2026-06-12");
+    expect(result.lexicalQuery).toBe("retreats in estonia on 2026-06-12");
     expect(result.constraints).toEqual([
       expect.objectContaining({
         family: "location",
         operator: "match",
         value: expect.objectContaining({ matchKey: "estonia" }),
+        sourceText: "in estonia",
       }),
       expect.objectContaining({
         family: "date_point",
         operator: "eq",
         value: expect.objectContaining({ date: "2026-06-12" }),
+        sourceText: "on 2026-06-12",
       }),
     ]);
   });

@@ -15,6 +15,8 @@ import { AttributeMatchScoringService } from "./attributeMatchScoringService.js"
 import type { RetrievedChunk, VectorSearchPort } from "../infra/vectorSearch.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import { HYBRID_RETRIEVAL_DEFAULTS } from "../domain/hybridRetrievalConfig.js";
+import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
+import type { AttributeFamilyControl } from "../../settings/domain/retrievalSettings.js";
 
 export interface RetrievalPipelineResult {
   rewrittenQuery: string;
@@ -54,7 +56,10 @@ export class RetrievalPipelineService {
       history: input.history,
       query: input.query,
     });
-    const originalParsedQuery = parseQueryConstraints(input.query);
+    const originalParsedQuery = this.applyAttributeControlsToQuery(
+      parseQueryConstraints(input.query),
+      settings.attributeControls,
+    );
     const originalSemanticQuery = originalParsedQuery.semanticQuery || input.query;
     const rewrittenQuery = await this.queryRewriteService.rewrite({
       query: input.query,
@@ -62,7 +67,7 @@ export class RetrievalPipelineService {
       enabled: settings.queryRewriteEnabled,
     });
     const parsedQuery = rewrittenQuery.rewriteApplied
-      ? parseQueryConstraints(rewrittenQuery.effectiveQuery)
+      ? this.applyAttributeControlsToQuery(parseQueryConstraints(rewrittenQuery.effectiveQuery), settings.attributeControls)
       : originalParsedQuery;
     const rewrittenSemanticQuery = parsedQuery.semanticQuery || rewrittenQuery.effectiveQuery;
     const lexicalQuery = parsedQuery.lexicalQuery || rewrittenQuery.effectiveQuery;
@@ -167,5 +172,41 @@ export class RetrievalPipelineService {
       contexts: rows,
       fallbackApplied: false,
     };
+  }
+
+  private applyAttributeControlsToQuery(
+    parsedQuery: ParsedQueryInterpretation,
+    attributeControls: AttributeFamilyControl[],
+  ): ParsedQueryInterpretation {
+    const enabledFamilies = new Set(
+      attributeControls.filter((control) => control.enabled).map((control) => control.family),
+    );
+
+    return {
+      ...parsedQuery,
+      semanticQuery: this.stripEnabledConstraintLiterals(parsedQuery.semanticQuery, parsedQuery, enabledFamilies),
+      lexicalQuery: this.stripEnabledConstraintLiterals(parsedQuery.lexicalQuery, parsedQuery, enabledFamilies),
+    };
+  }
+
+  private stripEnabledConstraintLiterals(
+    query: string,
+    parsedQuery: ParsedQueryInterpretation,
+    enabledFamilies: Set<AttributeFamilyControl["family"]>,
+  ): string {
+    const stripped = parsedQuery.constraints
+      .filter((constraint) => enabledFamilies.has(constraint.family))
+      .reduce((value, constraint) => {
+        if (!constraint.sourceText) {
+          return value;
+        }
+
+        const escaped = constraint.sourceText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return value.replace(new RegExp(`\\b${escaped}\\b`, "i"), " ");
+      }, query)
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return stripped || query;
   }
 }

@@ -20,7 +20,7 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
     contexts: RetrievedCandidate[];
   }): Promise<Array<{ chunkId: string; relevanceScore: number }>> {
     const candidates = input.contexts
-      .map((context, index) => `${index + 1}. ${context.chunkId} | ${context.title} | ${context.content.slice(0, 500)}`)
+      .map((context, index) => `${index + 1}. ${context.chunkId} | ${context.retrievalText.slice(0, 500)}`)
       .join("\n");
 
     const response = await this.client.chat.completions.create({

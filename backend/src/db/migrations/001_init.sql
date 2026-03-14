@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS retrieval_settings (
   rerank_top_k INTEGER NOT NULL DEFAULT 5,
   warmth_level INTEGER NOT NULL DEFAULT 5,
   citation_display_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  chunking_strategy TEXT NOT NULL DEFAULT 'fixed_window',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

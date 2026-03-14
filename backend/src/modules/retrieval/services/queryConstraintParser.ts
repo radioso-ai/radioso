@@ -7,9 +7,11 @@ import {
 
 const DATE_AFTER_PATTERN = /\b(?:after|from)\s+(\d{4}-\d{2}-\d{2})\b/i;
 const DATE_BEFORE_PATTERN = /\bbefore\s+(\d{4}-\d{2}-\d{2})\b/i;
+const DATE_ON_PATTERN = /\bon\s+(\d{4}-\d{2}-\d{2})\b/i;
 const MONEY_LTE_PATTERN = /\b(?:under|below|less than)\s+(\d+(?:\.\d{1,2})?)\s*(EUR|USD)?\b/i;
 const MONEY_GTE_PATTERN = /\b(?:over|above|more than)\s+(\d+(?:\.\d{1,2})?)\s*(EUR|USD)?\b/i;
-const LOCATION_PATTERN = /\bin\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)\b/;
+const LOCATION_PATTERN =
+  /\bin\s+([a-z][a-z]+(?:\s+[a-z][a-z]+)*)(?=\s+(?:under|below|less than|over|above|more than|after|before|on)\b|[?.!,]|$)/i;
 const LEADING_RETRIEVAL_VERB_PATTERN = /^(?:find|show|list|search for|search)\s+/i;
 
 const normalizeSearchQuery = (query: string): string =>
@@ -78,7 +80,7 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
     const normalized = normalizeDateConstraint(dateAfter);
     if (normalized) {
       constraints.push({
-        family: "date_point",
+        family: "date_range",
         operator: "gte",
         confidence: 0.95,
         summary: `after ${normalized}`,
@@ -94,7 +96,7 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
     const normalized = normalizeDateConstraint(dateBefore);
     if (normalized) {
       constraints.push({
-        family: "date_point",
+        family: "date_range",
         operator: "lte",
         confidence: 0.95,
         summary: `before ${normalized}`,
@@ -102,6 +104,22 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
       });
       semanticQuery = removeConstraintText(semanticQuery, DATE_BEFORE_PATTERN);
       lexicalQuery = removeConstraintText(lexicalQuery, DATE_BEFORE_PATTERN);
+    }
+  }
+
+  const dateOn = query.match(DATE_ON_PATTERN)?.[1];
+  if (dateOn) {
+    const normalized = normalizeDateConstraint(dateOn);
+    if (normalized) {
+      constraints.push({
+        family: "date_point",
+        operator: "eq",
+        confidence: 0.95,
+        summary: `on ${normalized}`,
+        value: { date: normalized },
+      });
+      semanticQuery = removeConstraintText(semanticQuery, DATE_ON_PATTERN);
+      lexicalQuery = removeConstraintText(lexicalQuery, DATE_ON_PATTERN);
     }
   }
 

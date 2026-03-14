@@ -108,4 +108,48 @@ describe("retrieval settings contract", () => {
       "warmthLevel",
     ]);
   });
+
+  it("preserves saved attribute controls when an older client omits the field", async () => {
+    const { app } = createTestApp();
+    const token = await issueToken(app);
+    const authorization = `Bearer ${token}`;
+
+    const firstUpdate = await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: true,
+        vectorTopK: 12,
+        similarityThreshold: 0.4,
+        rerankTopK: 6,
+        warmthLevel: 8,
+        citationDisplayEnabled: false,
+        chunkingStrategy: "structured_semantic",
+        attributeControls: [
+          { family: "date_point", enabled: true, mode: "hard_filter" },
+          { family: "date_range", enabled: false, mode: "boost_only" },
+          { family: "money_value", enabled: false, mode: "boost_only" },
+          { family: "location", enabled: true, mode: "boost_only" },
+        ],
+      });
+
+    const secondUpdate = await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+      });
+
+    expect(firstUpdate.status).toBe(200);
+    expect(secondUpdate.status).toBe(200);
+    expect(secondUpdate.body.attributeControls).toEqual(firstUpdate.body.attributeControls);
+  });
 });

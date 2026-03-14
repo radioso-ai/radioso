@@ -63,9 +63,28 @@ describe("hybrid query constraints", () => {
         confidence: 0.95,
       }),
       expect.objectContaining({
-        family: "date_point",
+        family: "date_range",
         operator: "gte",
         confidence: 0.95,
+      }),
+    ]);
+  });
+
+  it("parses lowercase locations and exact single-date constraints", () => {
+    const result = parseQueryConstraints("Find retreats in estonia on 2026-06-12");
+
+    expect(result.semanticQuery).toBe("retreats");
+    expect(result.lexicalQuery).toBe("retreats");
+    expect(result.constraints).toEqual([
+      expect.objectContaining({
+        family: "location",
+        operator: "match",
+        value: expect.objectContaining({ matchKey: "estonia" }),
+      }),
+      expect.objectContaining({
+        family: "date_point",
+        operator: "eq",
+        value: expect.objectContaining({ date: "2026-06-12" }),
       }),
     ]);
   });
@@ -74,7 +93,7 @@ describe("hybrid query constraints", () => {
     const service = new AttributeMatchScoringService();
     const parsed = parseQueryConstraints("Find retreats in Estonia under 300 EUR after 2026-06-10");
     const controls = defaultAttributeControls().map((control) =>
-      control.family === "location" || control.family === "money_value" || control.family === "date_point"
+      control.family === "location" || control.family === "money_value" || control.family === "date_range"
         ? { ...control, mode: "hard_filter" as const }
         : control,
     );
@@ -117,11 +136,37 @@ describe("hybrid query constraints", () => {
     expect(result.appliedConstraints.every((constraint) => constraint.mode === "hard_filter")).toBe(true);
   });
 
+  it("applies the date_range control independently of single-date controls", () => {
+    const service = new AttributeMatchScoringService();
+    const parsed = parseQueryConstraints("Find retreats after 2026-06-10");
+    const controls = defaultAttributeControls().map((control) =>
+      control.family === "date_range"
+        ? { ...control, mode: "hard_filter" as const }
+        : control.family === "date_point"
+          ? { ...control, enabled: false }
+          : control,
+    );
+
+    const result = service.apply({
+      candidates: [candidate()],
+      parsedQuery: parsed,
+      attributeControls: controls,
+    });
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.appliedConstraints).toContainEqual({
+      family: "date_range",
+      mode: "hard_filter",
+      outcome: "applied",
+      summary: "after 2026-06-10",
+    });
+  });
+
   it("relaxes hard filters to boosts when too few candidates remain", () => {
     const service = new AttributeMatchScoringService();
     const parsed = parseQueryConstraints("Find retreats in Estonia under 300 EUR after 2026-06-10");
     const controls = defaultAttributeControls().map((control) =>
-      control.family === "location" || control.family === "money_value" || control.family === "date_point"
+      control.family === "location" || control.family === "money_value" || control.family === "date_range"
         ? { ...control, mode: "hard_filter" as const }
         : control,
     );

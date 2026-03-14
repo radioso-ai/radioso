@@ -164,12 +164,34 @@ const combineFaqPairs = (content: string, blocks: StructuralBlock[]): Structural
 
 const collectList = (lines: LineRecord[], startIndex: number, matcher: (value: string) => boolean): number => {
   let index = startIndex;
+  const baseIndent = getIndentation(lines[startIndex]?.text ?? "");
 
   while (index + 1 < lines.length) {
     const nextLine = lines[index + 1];
-    if (!nextLine || isBlank(nextLine.text) || !matcher(nextLine.text)) {
+
+    if (!nextLine || isBlank(nextLine.text)) {
       break;
     }
+
+    if (isHeadingLine(nextLine.text) || isFenceLine(nextLine.text) || isTableHeader(lines, index + 1)) {
+      break;
+    }
+
+    if (matcher(nextLine.text)) {
+      index += 1;
+      continue;
+    }
+
+    if (isNestedListItem(nextLine.text, baseIndent) || isListContinuationLine(nextLine.text, baseIndent)) {
+      index += 1;
+      continue;
+    }
+
+    if (startsDifferentTopLevelList(nextLine.text, baseIndent)) {
+      break;
+    }
+
+    // Accept lazy continuation lines for the current list item.
     index += 1;
   }
 
@@ -202,10 +224,14 @@ const collectParagraph = (lines: LineRecord[], startIndex: number): number => {
 };
 
 const findFenceEnd = (lines: LineRecord[], startIndex: number): number => {
-  const opener = lines[startIndex]?.text.trim().slice(0, 3);
+  const opener = parseFence(lines[startIndex]?.text ?? "");
+
+  if (!opener) {
+    return startIndex;
+  }
 
   for (let index = startIndex + 1; index < lines.length; index += 1) {
-    if (lines[index]?.text.trim().startsWith(opener ?? "")) {
+    if (isFenceCloser(lines[index]?.text ?? "", opener)) {
       return index;
     }
   }
@@ -231,3 +257,45 @@ const isTableHeader = (lines: LineRecord[], index: number): boolean =>
 const isTableRow = (value: string): boolean => value.includes("|");
 
 const isTableDelimiter = (value: string): boolean => /^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/.test(value);
+
+const getIndentation = (value: string): number => {
+  const match = value.match(/^(\s*)/);
+  return match?.[1]?.length ?? 0;
+};
+
+const isNestedListItem = (value: string, baseIndent: number): boolean =>
+  (isBulletListItem(value) || isOrderedListItem(value)) && getIndentation(value) > baseIndent;
+
+const isListContinuationLine = (value: string, _baseIndent: number): boolean =>
+  !isBlank(value) &&
+  !isHeadingLine(value) &&
+  !isFenceLine(value) &&
+  !isBulletListItem(value) &&
+  !isOrderedListItem(value) &&
+  !isTableRow(value);
+
+const startsDifferentTopLevelList = (value: string, baseIndent: number): boolean =>
+  (isBulletListItem(value) || isOrderedListItem(value)) && getIndentation(value) <= baseIndent;
+
+const parseFence = (value: string): { marker: "`" | "~"; length: number } | null => {
+  const match = value.match(/^\s{0,3}([`~])\1{2,}/);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    marker: match[1] as "`" | "~",
+    length: match[0].trimStart().length,
+  };
+};
+
+const isFenceCloser = (value: string, opener: { marker: "`" | "~"; length: number }): boolean => {
+  const match = value.match(/^\s{0,3}([`~])\1{2,}\s*$/);
+
+  if (!match || match[1] !== opener.marker) {
+    return false;
+  }
+
+  return match[0].trim().length >= opener.length;
+};

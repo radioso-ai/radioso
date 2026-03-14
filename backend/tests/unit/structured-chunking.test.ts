@@ -38,6 +38,36 @@ It is a retrieval app.`);
     ]);
   });
 
+  it("does not close a 4-backtick fence on an inner triple-backtick example", () => {
+    const blocks = parseStructuralBlocks(`\`\`\`\`md
+\`\`\`ts
+const answer = 42
+\`\`\`
+\`\`\`\`
+
+After fence.`);
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]?.kind).toBe("code_fence");
+    expect(blocks[0]?.content).toContain("```ts");
+    expect(blocks[0]?.content).toContain("const answer = 42");
+    expect(blocks[1]?.kind).toBe("paragraph");
+    expect(blocks[1]?.content).toBe("After fence.");
+  });
+
+  it("keeps wrapped and nested list content inside the same list block", () => {
+    const blocks = parseStructuralBlocks(`- First item
+  continuation line
+  - Nested item
+- Second item`);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.kind).toBe("bullet_list");
+    expect(blocks[0]?.content).toContain("continuation line");
+    expect(blocks[0]?.content).toContain("- Nested item");
+    expect(blocks[0]?.content).toContain("- Second item");
+  });
+
   it("splits oversized structural units into bounded chunks while preserving order", async () => {
     const content = `# Guide
 

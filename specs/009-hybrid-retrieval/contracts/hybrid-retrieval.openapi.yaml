@@ -1,0 +1,304 @@
+openapi: 3.1.0
+info:
+  title: Hivec Hybrid Retrieval Contract
+  version: 0.1.0
+  summary: Additive contract updates for hybrid retrieval settings and operator-facing retrieval information
+paths:
+  /api/v1/settings/retrieval:
+    get:
+      summary: Get account retrieval settings including supported attribute-family controls
+      responses:
+        '200':
+          description: Retrieval settings returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+    put:
+      summary: Update account retrieval settings including supported attribute-family controls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRetrievalSettingsRequest'
+      responses:
+        '200':
+          description: Retrieval settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+  /api/v1/chat/:
+    post:
+      summary: Execute retrieval-backed chat with optional retrieval information in the response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Chat response with additive retrieval information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+components:
+  schemas:
+    RetrievalSettings:
+      type: object
+      required:
+        - accountId
+        - queryRewriteEnabled
+        - rerankEnabled
+        - vectorTopK
+        - similarityThreshold
+        - rerankTopK
+        - warmthLevel
+        - citationDisplayEnabled
+        - chunkingStrategy
+        - attributeControls
+        - createdAt
+        - updatedAt
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        queryRewriteEnabled:
+          type: boolean
+        rerankEnabled:
+          type: boolean
+        vectorTopK:
+          type: integer
+          minimum: 1
+          maximum: 300
+        similarityThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        rerankTopK:
+          type: integer
+          minimum: 1
+        warmthLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        citationDisplayEnabled:
+          type: boolean
+        chunkingStrategy:
+          type: string
+          enum:
+            - fixed_window
+            - structured_semantic
+        attributeControls:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttributeFamilyControl'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UpdateRetrievalSettingsRequest:
+      type: object
+      required:
+        - queryRewriteEnabled
+        - rerankEnabled
+        - vectorTopK
+        - similarityThreshold
+        - rerankTopK
+        - warmthLevel
+        - citationDisplayEnabled
+        - chunkingStrategy
+      properties:
+        queryRewriteEnabled:
+          type: boolean
+        rerankEnabled:
+          type: boolean
+        vectorTopK:
+          type: integer
+          minimum: 1
+          maximum: 300
+        similarityThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        rerankTopK:
+          type: integer
+          minimum: 1
+        warmthLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        citationDisplayEnabled:
+          type: boolean
+        chunkingStrategy:
+          type: string
+          enum:
+            - fixed_window
+            - structured_semantic
+        attributeControls:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttributeFamilyControl'
+    AttributeFamilyControl:
+      type: object
+      required:
+        - family
+        - enabled
+        - mode
+      properties:
+        family:
+          type: string
+          enum:
+            - date_point
+            - date_range
+            - money_value
+            - location
+        enabled:
+          type: boolean
+        mode:
+          type: string
+          enum:
+            - boost_only
+            - hard_filter
+    ChatRequest:
+      type: object
+      required:
+        - query
+        - stream
+      properties:
+        query:
+          type: string
+          minLength: 1
+        stream:
+          type: boolean
+        conversationId:
+          type: string
+          format: uuid
+    ChatResponse:
+      type: object
+      required:
+        - conversationId
+        - answer
+        - retrievalInfo
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+        answerSegments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnswerSegment'
+        retrievalInfo:
+          $ref: '#/components/schemas/RetrievalInfo'
+    Citation:
+      type: object
+      required:
+        - documentId
+        - chunkId
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        chunkId:
+          type: string
+          format: uuid
+        title:
+          type: string
+    AnswerSegment:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+        citationIndices:
+          type: array
+          items:
+            type: integer
+    RetrievalInfo:
+      type: object
+      required:
+        - candidateCounts
+        - fallbackApplied
+        - rerankStatus
+      properties:
+        parsedQuery:
+          $ref: '#/components/schemas/ParsedQuery'
+        candidateCounts:
+          $ref: '#/components/schemas/CandidateCounts'
+        appliedConstraints:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppliedConstraint'
+        fallbackApplied:
+          type: boolean
+        rerankStatus:
+          type: string
+          enum:
+            - skipped
+            - applied
+            - fallback
+    ParsedQuery:
+      type: object
+      properties:
+        semanticQuery:
+          type: string
+        lexicalQuery:
+          type: string
+        constraintSummary:
+          type: array
+          items:
+            type: string
+    CandidateCounts:
+      type: object
+      required:
+        - semantic
+        - lexical
+        - merged
+        - final
+      properties:
+        semantic:
+          type: integer
+          minimum: 0
+        lexical:
+          type: integer
+          minimum: 0
+        merged:
+          type: integer
+          minimum: 0
+        final:
+          type: integer
+          minimum: 0
+    AppliedConstraint:
+      type: object
+      required:
+        - family
+        - mode
+        - outcome
+      properties:
+        family:
+          type: string
+        mode:
+          type: string
+          enum:
+            - boost_only
+            - hard_filter
+        outcome:
+          type: string
+          enum:
+            - applied
+            - relaxed
+            - skipped
+        summary:
+          type: string

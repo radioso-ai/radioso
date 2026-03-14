@@ -10,14 +10,16 @@ export class ChunkRepository implements ChunkRepositoryPort {
 
       for (const chunk of chunks) {
         await client.query(
-          `INSERT INTO chunks (id, document_id, account_id, chunk_index, content, embedding, start_offset, end_offset)
-           VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8)`,
+          `INSERT INTO chunks (id, document_id, account_id, chunk_index, content, search_text, structured_attributes, embedding, start_offset, end_offset)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::vector, $9, $10)`,
           [
             chunk.id,
             chunk.documentId,
             chunk.accountId,
             chunk.chunkIndex,
             chunk.content,
+            chunk.searchText ?? chunk.content,
+            JSON.stringify(chunk.structuredAttributes ?? {}),
             `[${chunk.embedding.join(",")}]`,
             chunk.startOffset,
             chunk.endOffset,

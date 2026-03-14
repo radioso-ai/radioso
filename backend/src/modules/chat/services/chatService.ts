@@ -5,6 +5,7 @@ import type { RetrievalExecutionDiagnostics } from "../../retrieval/domain/retri
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
+import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
 import {
   AnswerPresentationService,
@@ -28,7 +29,13 @@ export interface ChatGateway {
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
-  | { type: "done"; conversationId: string; citations?: ChatCitation[]; answerSegments?: AnswerSegment[] };
+  | {
+      type: "done";
+      conversationId: string;
+      citations?: ChatCitation[];
+      answerSegments?: AnswerSegment[];
+      retrievalInfo: RetrievalInfo;
+    };
 
 export class OpenAIChatGateway implements ChatGateway {
   constructor(
@@ -73,6 +80,7 @@ export class OpenAIChatGateway implements ChatGateway {
 
 export class ChatService {
   private readonly answerPresentationService = new AnswerPresentationService();
+  private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
 
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
@@ -92,6 +100,7 @@ export class ChatService {
     answer: string;
     citations?: ChatCitation[];
     answerSegments?: AnswerSegment[];
+    retrievalInfo: RetrievalInfo;
   }> {
     try {
       const session = await this.prepareSession(input);
@@ -129,6 +138,7 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
+        retrievalInfo: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),
       };
     } catch (error) {
       await this.auditService.record({
@@ -205,6 +215,7 @@ export class ChatService {
         conversationId: session.conversation.id,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
+        retrievalInfo: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),
       };
     } catch (error) {
       await this.auditService.record({

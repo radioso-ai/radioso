@@ -9,6 +9,8 @@ import { DocumentIngestionService } from "../../src/modules/documents/services/d
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { StructuredSemanticChunkingStrategy, type ChunkingSimilarityPort } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
+import type { LexicalSearchPort } from "../../src/modules/retrieval/infra/lexicalSearch.js";
+import { AttributeMatchScoringService } from "../../src/modules/retrieval/services/attributeMatchScoringService.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
@@ -55,6 +57,8 @@ interface TestRepositories {
 export const createTestDependencies = (overrides: {
   chatGateway?: ChatGateway;
   chunkingSimilarityPort?: ChunkingSimilarityPort;
+  lexicalSearch?: LexicalSearchPort;
+  rerankGateway?: RerankGateway;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = createTestEnv();
   const auditService = createAuditService();
@@ -104,6 +108,38 @@ export const createTestDependencies = (overrides: {
       return rows.sort((a, b) => b.similarity - a.similarity).slice(0, input.topK);
     },
   };
+  const defaultLexicalSearch: LexicalSearchPort = {
+    async search(input): Promise<RetrievedChunk[]> {
+      const rows: RetrievedChunk[] = [];
+      for (const [documentId, chunks] of chunkRepository.items.entries()) {
+        const document = documentRepository.items.get(documentId);
+        if (!document || document.accountId !== input.accountId) {
+          continue;
+        }
+        for (const chunk of chunks) {
+          const haystack = `${document.title} ${chunk.searchText ?? chunk.content}`;
+          if (!keywordAllTermsMatch(haystack, input.query)) {
+            continue;
+          }
+          const score = keywordScore(haystack, input.query);
+          if (score > 0) {
+            rows.push({
+              chunkId: chunk.id,
+              documentId,
+              title: document.title,
+              content: chunk.content,
+              similarity: score,
+              chunkIndex: chunk.chunkIndex,
+              startOffset: chunk.startOffset,
+              endOffset: chunk.endOffset,
+            });
+          }
+        }
+      }
+      return rows.sort((a, b) => b.similarity - a.similarity).slice(0, input.topK);
+    },
+  };
+  const lexicalSearch = overrides.lexicalSearch ?? defaultLexicalSearch;
   let currentQueryText = "";
   const embeddingService = new EmbeddingService({
     async embedTexts(texts: string[]): Promise<number[][]> {
@@ -144,7 +180,7 @@ export const createTestDependencies = (overrides: {
       };
     },
   };
-  const rerankGateway: RerankGateway = {
+  const defaultRerankGateway: RerankGateway = {
     async rerank(input) {
       return input.contexts.map((context) => ({
         chunkId: context.chunkId,
@@ -152,14 +188,17 @@ export const createTestDependencies = (overrides: {
       }));
     },
   };
+  const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
   const retrievalSettingsService = new RetrievalSettingsService(retrievalSettingsRepository, auditService);
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
     embeddingService,
     vectorSearch,
+    lexicalSearch,
     new ConversationContextService(),
     new QueryRewriteService(queryRewriteGateway),
     new CandidatePreparationService(),
+    new AttributeMatchScoringService(),
     new RerankService(rerankGateway),
     new PromptContextSelectorService(),
     new PromptBuilder(),
@@ -229,6 +268,8 @@ export const createTestDependencies = (overrides: {
 export const createTestApp = (overrides: {
   chatGateway?: ChatGateway;
   chunkingSimilarityPort?: ChunkingSimilarityPort;
+  lexicalSearch?: LexicalSearchPort;
+  rerankGateway?: RerankGateway;
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);
   return {
@@ -240,14 +281,7 @@ export const createTestApp = (overrides: {
 
 const keywordScore = (content: string, query: string): number => {
   const lowerContent = content.toLowerCase();
-  const terms = query
-    .toLowerCase()
-    .split(/\W+/)
-    .filter(Boolean);
-  const normalizedTerms = terms
-    .map((term) => term.replace(/(ing|ed|es|s)$/i, ""))
-    .filter((term) => term.length > 2)
-    .filter((term) => !STOP_WORDS.has(term));
+  const normalizedTerms = normalizeTerms(query);
 
   if (normalizedTerms.length === 0) {
     return 0;
@@ -263,15 +297,16 @@ const keywordScore = (content: string, query: string): number => {
   return matches / normalizedTerms.length;
 };
 
+const keywordAllTermsMatch = (content: string, query: string): boolean => {
+  const lowerContent = content.toLowerCase();
+  const normalizedTerms = normalizeTerms(query);
+
+  return normalizedTerms.length > 0 && normalizedTerms.every((term) => lowerContent.includes(term));
+};
+
 const keywordEmbedding = (text: string): number[] => {
   const vector = new Array<number>(8).fill(0);
-  const terms = text
-    .toLowerCase()
-    .split(/\W+/)
-    .filter(Boolean)
-    .map((term) => term.replace(/(ing|ed|es|s)$/i, ""))
-    .filter((term) => term.length > 2)
-    .filter((term) => !STOP_WORDS.has(term));
+  const terms = normalizeTerms(text);
 
   for (const term of terms) {
     const bucket = hashTerm(term) % vector.length;
@@ -280,6 +315,15 @@ const keywordEmbedding = (text: string): number[] => {
 
   return vector;
 };
+
+const normalizeTerms = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .split(/\W+/)
+    .filter(Boolean)
+    .map((term) => term.replace(/(ing|ed|es|s)$/i, ""))
+    .filter((term) => term.length > 2)
+    .filter((term) => !STOP_WORDS.has(term));
 
 const hashTerm = (term: string): number => {
   let hash = 0;

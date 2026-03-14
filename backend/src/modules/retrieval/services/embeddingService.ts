@@ -1,11 +1,15 @@
 import type OpenAI from "openai";
+import { renderSearchText } from "./searchTextRenderer.js";
 
 export interface EmbeddingGateway {
   embedTexts(texts: string[]): Promise<number[][]>;
 }
 
 export const buildRetrievalText = (input: { title: string; content: string }): string =>
-  `Title: ${input.title}\n\n${input.content}`.trim();
+  renderSearchText({
+    title: input.title,
+    content: input.content,
+  });
 
 export class OpenAIEmbeddingGateway implements EmbeddingGateway {
   constructor(

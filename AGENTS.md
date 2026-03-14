@@ -16,6 +16,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL account-scoped settings in `retrieval_settings`; existing chat response payloads and SSE events (006-chat-response-controls)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI primitives, Lucide icons (008-document-list-polish)
 - PostgreSQL 16+ (`documents`, `chunks` with `ON DELETE CASCADE`), no new storage systems (008-document-list-polish)
+- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI primitives, existing audit service, PostgreSQL full-text search functions, existing embedding and rerank services (009-hybrid-retrieval)
+- PostgreSQL `chunks`, `retrieval_settings`, `documents`, `messages`, and `audit_events`; additive chunk-search and retrieval-settings columns only, no new external storage system (009-hybrid-retrieval)
 
 
 ## Project Structure
@@ -35,7 +37,7 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 009-hybrid-retrieval: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI primitives, existing audit service, PostgreSQL full-text search functions, existing embedding and rerank services
 - 008-document-list-polish: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI primitives, Lucide icons
 - 006-chat-response-controls: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI Slider/Hover Card
-- 004-strict-grounding: Added TypeScript 5.x on Node.js 22 + Express, pg, OpenAI SDK, Zod, Pino, Vitest, Supertes
 >>>>>>> main

@@ -1,3 +1,5 @@
+import type { StructuredAttributes } from "../domain/structuredAttributes.js";
+import { emptyStructuredAttributes } from "../domain/structuredAttributes.js";
 import type { Database } from "../../../shared/infra/database.js";
 
 export interface RetrievedChunk {
@@ -5,6 +7,8 @@ export interface RetrievedChunk {
   documentId: string;
   title: string;
   content: string;
+  searchText?: string | null;
+  structuredAttributes?: StructuredAttributes;
   similarity: number;
   chunkIndex?: number;
   startOffset?: number | null;
@@ -25,6 +29,8 @@ interface VectorSearchRow {
   document_id: string;
   title: string;
   content: string;
+  search_text: string | null;
+  structured_attributes: StructuredAttributes | null;
   similarity: number;
   chunk_index: number;
   start_offset: number | null;
@@ -45,6 +51,8 @@ export class PgVectorSearch implements VectorSearchPort {
               c.document_id,
               d.title,
               c.content,
+              c.search_text,
+              c.structured_attributes,
               c.chunk_index,
               c.start_offset,
               c.end_offset,
@@ -64,6 +72,8 @@ export class PgVectorSearch implements VectorSearchPort {
       documentId: row.document_id,
       title: row.title,
       content: row.content,
+      searchText: row.search_text,
+      structuredAttributes: row.structured_attributes ?? emptyStructuredAttributes(),
       similarity: Number(row.similarity),
       chunkIndex: row.chunk_index,
       startOffset: row.start_offset,

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
@@ -28,6 +30,7 @@ describe("retrieval settings contract", () => {
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual([
       "accountId",
+      "attributeControls",
       "chunkingStrategy",
       "citationDisplayEnabled",
       "createdAt",
@@ -43,6 +46,12 @@ describe("retrieval settings contract", () => {
     expect(response.body.warmthLevel).toBe(5);
     expect(response.body.citationDisplayEnabled).toBe(true);
     expect(response.body.chunkingStrategy).toBe("fixed_window");
+    expect(response.body.attributeControls).toEqual([
+      { family: "date_point", enabled: true, mode: "boost_only" },
+      { family: "date_range", enabled: true, mode: "boost_only" },
+      { family: "money_value", enabled: true, mode: "boost_only" },
+      { family: "location", enabled: true, mode: "boost_only" },
+    ]);
   });
 
   it("updates retrieval settings for a valid bearer token", async () => {
@@ -57,11 +66,17 @@ describe("retrieval settings contract", () => {
         rerankEnabled: true,
         vectorTopK: 12,
         similarityThreshold: 0.4,
-        rerankTopK: 6,
-        warmthLevel: 8,
-        citationDisplayEnabled: false,
-        chunkingStrategy: "structured_semantic",
-      });
+      rerankTopK: 6,
+      warmthLevel: 8,
+      citationDisplayEnabled: false,
+      chunkingStrategy: "structured_semantic",
+      attributeControls: [
+        { family: "date_point", enabled: true, mode: "hard_filter" },
+        { family: "date_range", enabled: true, mode: "boost_only" },
+        { family: "money_value", enabled: false, mode: "boost_only" },
+        { family: "location", enabled: true, mode: "boost_only" },
+      ],
+    });
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
@@ -73,9 +88,16 @@ describe("retrieval settings contract", () => {
       warmthLevel: 8,
       citationDisplayEnabled: false,
       chunkingStrategy: "structured_semantic",
+      attributeControls: [
+        { family: "date_point", enabled: true, mode: "hard_filter" },
+        { family: "date_range", enabled: true, mode: "boost_only" },
+        { family: "money_value", enabled: false, mode: "boost_only" },
+        { family: "location", enabled: true, mode: "boost_only" },
+      ],
     });
     expect(Object.keys(response.body).sort()).toEqual([
       "accountId",
+      "attributeControls",
       "chunkingStrategy",
       "citationDisplayEnabled",
       "createdAt",
@@ -87,5 +109,69 @@ describe("retrieval settings contract", () => {
       "vectorTopK",
       "warmthLevel",
     ]);
+  });
+
+  it("preserves saved attribute controls when an older client omits the field", async () => {
+    const { app } = createTestApp();
+    const token = await issueToken(app);
+    const authorization = `Bearer ${token}`;
+
+    const firstUpdate = await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: true,
+        vectorTopK: 12,
+        similarityThreshold: 0.4,
+        rerankTopK: 6,
+        warmthLevel: 8,
+        citationDisplayEnabled: false,
+        chunkingStrategy: "structured_semantic",
+        attributeControls: [
+          { family: "date_point", enabled: true, mode: "hard_filter" },
+          { family: "date_range", enabled: false, mode: "boost_only" },
+          { family: "money_value", enabled: false, mode: "boost_only" },
+          { family: "location", enabled: true, mode: "boost_only" },
+        ],
+      });
+
+    const secondUpdate = await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+      });
+
+    expect(firstUpdate.status).toBe(200);
+    expect(secondUpdate.status).toBe(200);
+    expect(secondUpdate.body.attributeControls).toEqual(firstUpdate.body.attributeControls);
+  });
+
+  it("documents attributeControls as optional for the update request schema", () => {
+    const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
+    const retrievalSettingsSchema = spec.match(/RetrievalSettings:\n([\s\S]*?)\n    UpdateRetrievalSettingsRequest:/)?.[1] ?? "";
+    const updateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    AttributeFamilyControl:/)?.[1] ?? "";
+
+    expect(retrievalSettingsSchema).toContain("- accountId");
+    expect(retrievalSettingsSchema).toContain("- createdAt");
+    expect(retrievalSettingsSchema).toContain("- updatedAt");
+    expect(retrievalSettingsSchema).toContain("accountId:");
+    expect(retrievalSettingsSchema).toContain("format: uuid");
+    expect(retrievalSettingsSchema).toContain("createdAt:");
+    expect(retrievalSettingsSchema).toContain("format: date-time");
+    expect(retrievalSettingsSchema).toContain("updatedAt:");
+    expect(updateSchema).toContain("type: object");
+    expect(updateSchema).toContain("- chunkingStrategy");
+    expect(updateSchema).toContain("attributeControls:");
+    expect(updateSchema).not.toContain("- attributeControls");
+    expect(updateSchema).not.toContain("allOf:");
   });
 });

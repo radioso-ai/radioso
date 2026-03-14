@@ -34,12 +34,21 @@ describe("chat contract", () => {
       .send({ query: "What does this page do?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId"]);
+    expect(Object.keys(response.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo"]);
     expect(response.body.conversationId).toBeDefined();
     expect(response.body.answer).toContain("This page parses content");
     expect(Array.isArray(response.body.citations)).toBe(true);
     expect(Array.isArray(response.body.answerSegments)).toBe(true);
-    expect(response.body).not.toHaveProperty("retrieval");
+    expect(response.body.retrievalInfo).toMatchObject({
+      candidateCounts: expect.objectContaining({
+        semantic: expect.any(Number),
+        lexical: expect.any(Number),
+        merged: expect.any(Number),
+        final: expect.any(Number),
+      }),
+      rerankStatus: expect.any(String),
+      fallbackApplied: expect.any(Boolean),
+    });
   });
 
   it("returns an SSE response when streaming is requested", async () => {
@@ -79,6 +88,7 @@ describe("chat contract", () => {
     expect(response.body).toContain("event: conversation");
     expect(response.body).toContain("event: chunk");
     expect(response.body).toContain("event: done");
+    expect(response.body).toContain("\"retrievalInfo\":");
   });
 
   it("emits chunk data before the stream finishes", async () => {
@@ -190,7 +200,7 @@ describe("chat contract", () => {
       });
 
     expect(second.status).toBe(200);
-    expect(Object.keys(second.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId"]);
+    expect(Object.keys(second.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo"]);
     expect(second.body.conversationId).toBe(first.body.conversationId);
   });
 
@@ -224,9 +234,14 @@ describe("chat contract", () => {
       .send({ query: "Can you cook Flan?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "conversationId"]);
+    expect(Object.keys(response.body).sort()).toEqual(["answer", "conversationId", "retrievalInfo"]);
     expect(response.body.answer).toContain("could not find relevant information");
     expect(response.body).not.toHaveProperty("citations");
     expect(response.body).not.toHaveProperty("answerSegments");
+    expect(response.body.retrievalInfo).toMatchObject({
+      candidateCounts: expect.any(Object),
+      fallbackApplied: expect.any(Boolean),
+      rerankStatus: expect.any(String),
+    });
   });
 });

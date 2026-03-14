@@ -34,6 +34,47 @@ const chunkingStrategyOptions: Array<{
   },
 ]
 
+const attributeFamilyOptions: Array<{
+  family: RetrievalSettings['attributeControls'][number]['family']
+  label: string
+  description: string
+}> = [
+  {
+    family: 'date_point',
+    label: 'Single Dates',
+    description: 'Use exact dates such as deadlines, departures, or scheduled days.',
+  },
+  {
+    family: 'date_range',
+    label: 'Date Ranges',
+    description: 'Use spans such as retreat windows, event ranges, or booking periods.',
+  },
+  {
+    family: 'money_value',
+    label: 'Prices',
+    description: 'Use monetary values such as prices, fees, or budget thresholds.',
+  },
+  {
+    family: 'location',
+    label: 'Locations',
+    description: 'Use place names such as cities, countries, or venue references.',
+  },
+]
+
+const attributeModeLabels: Record<
+  RetrievalSettings['attributeControls'][number]['mode'],
+  { label: string; description: string }
+> = {
+  boost_only: {
+    label: 'Boost Only',
+    description: 'Prefer matching results without strictly excluding other candidates.',
+  },
+  hard_filter: {
+    label: 'Hard Filter Eligible',
+    description: 'Allow high-confidence matches to narrow results when the query is precise enough.',
+  },
+}
+
 export function SettingsView() {
   const [settings, setSettings] = useState<RetrievalSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -60,6 +101,21 @@ export function SettingsView() {
   ) => {
     if (!settings) return
     setSettings({ ...settings, [key]: value })
+    setHasChanges(true)
+  }
+
+  const updateAttributeControl = (
+    family: RetrievalSettings['attributeControls'][number]['family'],
+    updates: Partial<RetrievalSettings['attributeControls'][number]>
+  ) => {
+    if (!settings) return
+
+    setSettings({
+      ...settings,
+      attributeControls: settings.attributeControls.map((control) =>
+        control.family === family ? { ...control, ...updates } : control
+      ),
+    })
     setHasChanges(true)
   }
 
@@ -223,6 +279,76 @@ export function SettingsView() {
                 checked={settings.rerankEnabled}
                 onCheckedChange={(checked) => updateSetting('rerankEnabled', checked)}
               />
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label className="text-foreground">Structured Attributes</Label>
+                <p className="text-sm text-muted-foreground">
+                  These are system-defined retrieval helpers, not custom fields. Enable the families
+                  you want the retriever to consider, and choose whether each one should only boost
+                  matches or may act as a high-confidence hard filter.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {attributeFamilyOptions.map((option) => {
+                  const control = settings.attributeControls.find(
+                    (candidate) => candidate.family === option.family
+                  )
+
+                  if (!control) {
+                    return null
+                  }
+
+                  return (
+                    <div
+                      key={option.family}
+                      className="space-y-3 rounded-md border border-border bg-muted/20 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">{option.label}</p>
+                          <p className="text-sm text-muted-foreground">{option.description}</p>
+                        </div>
+                        <Switch
+                          checked={control.enabled}
+                          onCheckedChange={(checked) =>
+                            updateAttributeControl(option.family, { enabled: checked })
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-foreground">Retrieval behavior</Label>
+                        <Select
+                          value={control.mode}
+                          onValueChange={(value) =>
+                            updateAttributeControl(option.family, {
+                              mode: value as RetrievalSettings['attributeControls'][number]['mode'],
+                            })
+                          }
+                          disabled={!control.enabled}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select retrieval behavior" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(attributeModeLabels).map(([value, meta]) => (
+                              <SelectItem key={value} value={value}>
+                                {meta.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-sm text-muted-foreground">
+                          {attributeModeLabels[control.mode].description}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
 

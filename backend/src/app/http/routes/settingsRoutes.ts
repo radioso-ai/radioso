@@ -5,6 +5,10 @@ import type { AppDependencies } from "../../server/types.js";
 import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
+import {
+  attributeControlModes,
+  attributeFamilyIds,
+} from "../../../modules/settings/domain/retrievalSettings.js";
 
 const updateSettingsSchema = z.object({
   queryRewriteEnabled: z.boolean(),
@@ -15,6 +19,15 @@ const updateSettingsSchema = z.object({
   warmthLevel: z.number().int(),
   citationDisplayEnabled: z.boolean(),
   chunkingStrategy: z.enum(chunkingStrategyIds),
+  attributeControls: z
+    .array(
+      z.object({
+        family: z.enum(attributeFamilyIds),
+        enabled: z.boolean(),
+        mode: z.enum(attributeControlModes),
+      }),
+    )
+    .optional(),
 });
 
 export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
@@ -33,7 +46,11 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
   router.put("/retrieval", requireApiToken(dependencies), validateBody(updateSettingsSchema), async (req, res, next) => {
     try {
       const { accountId } = res.locals as { accountId: string };
-      const settings = await dependencies.retrievalSettingsService.updateForAccount(accountId, req.body);
+      const existing = await dependencies.retrievalSettingsService.getForAccount(accountId);
+      const settings = await dependencies.retrievalSettingsService.updateForAccount(accountId, {
+        ...req.body,
+        attributeControls: req.body.attributeControls ?? existing.attributeControls,
+      });
       res.status(200).json(settings);
     } catch (error) {
       next(error);

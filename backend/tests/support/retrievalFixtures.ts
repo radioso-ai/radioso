@@ -34,6 +34,21 @@ export const retrievalFixtureDocuments: Record<string, RetrievalFixtureDocument>
     content:
       "If chat cannot find relevant information, likely causes include no ingested documents, an overly strict similarity threshold, or a poor query match.",
   },
+  exactIdentifier: {
+    title: "Feature Flags",
+    content:
+      "Flag HVC-42-ALPHA enables the hybrid retrieval rollout path for internal testing environments.",
+  },
+  retreatEstonia: {
+    title: "Summer Retreat Estonia",
+    content:
+      "Title: Summer Retreat Estonia. Summary: Four-day meditation retreat with lodging. Start date: 2026-06-12. End date: 2026-06-15. Price: 290 EUR. Location: Estonia.",
+  },
+  retreatLatvia: {
+    title: "Summer Retreat Latvia",
+    content:
+      "Title: Summer Retreat Latvia. Summary: Four-day meditation retreat with lodging. Start date: 2026-06-12. End date: 2026-06-15. Price: 340 EUR. Location: Latvia.",
+  },
 };
 
 export const directAnswerQueries: RetrievalFixtureQuery[] = [
@@ -44,6 +59,10 @@ export const directAnswerQueries: RetrievalFixtureQuery[] = [
   {
     query: "Which cookie name is used for browser sessions?",
     expectedTitles: ["Session Cookie"],
+  },
+  {
+    query: "What does flag HVC-42-ALPHA enable?",
+    expectedTitles: ["Feature Flags"],
   },
 ];
 
@@ -65,5 +84,12 @@ export const fallbackQueries: RetrievalFixtureQuery[] = [
   {
     query: "What is the capital of France?",
     expectedTitles: [],
+  },
+];
+
+export const constraintQueries: RetrievalFixtureQuery[] = [
+  {
+    query: "Find retreats in Estonia under 300 EUR after 2026-06-10",
+    expectedTitles: ["Summer Retreat Estonia"],
   },
 ];

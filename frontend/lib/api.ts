@@ -117,6 +117,13 @@ export interface RetrievalSettings {
   warmthLevel: number
   citationDisplayEnabled: boolean
   chunkingStrategy: 'fixed_window' | 'structured_semantic'
+  attributeControls: AttributeFamilyControl[]
+}
+
+export interface AttributeFamilyControl {
+  family: 'date_point' | 'date_range' | 'money_value' | 'location'
+  enabled: boolean
+  mode: 'boost_only' | 'hard_filter'
 }
 
 export interface DocumentCreateRequest {
@@ -163,11 +170,40 @@ export interface AnswerSegment {
   citationIndices?: number[]
 }
 
+export interface RetrievalInfo {
+  parsedQuery?: ParsedQueryInfo
+  candidateCounts: CandidateCounts
+  appliedConstraints?: AppliedConstraintInfo[]
+  fallbackApplied: boolean
+  rerankStatus: 'skipped' | 'applied' | 'fallback'
+}
+
+export interface ParsedQueryInfo {
+  semanticQuery: string
+  lexicalQuery: string
+  constraintSummary: string[]
+}
+
+export interface CandidateCounts {
+  semantic: number
+  lexical: number
+  merged: number
+  final: number
+}
+
+export interface AppliedConstraintInfo {
+  family: 'date_point' | 'date_range' | 'money_value' | 'location'
+  mode: 'boost_only' | 'hard_filter'
+  outcome: 'applied' | 'relaxed' | 'skipped'
+  summary: string
+}
+
 export interface ChatResponse {
   conversationId: string
   answer: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  retrievalInfo: RetrievalInfo
 }
 
 export interface ChatStreamConversation {
@@ -182,6 +218,7 @@ export interface ChatStreamCompletion {
   conversationId?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  retrievalInfo?: RetrievalInfo
 }
 
 interface ChatStreamHandlers {
@@ -250,6 +287,7 @@ const streamChatEvents = async (
   let conversationId = ''
   let citations: Citation[] | undefined
   let answerSegments: AnswerSegment[] | undefined
+  let retrievalInfo: RetrievalInfo | undefined
 
   const flushEvent = (rawEvent: string) => {
     if (!rawEvent.trim()) {
@@ -277,13 +315,21 @@ const streamChatEvents = async (
     }
 
     if (eventName === 'done') {
-      const payload = JSON.parse(data) as { citations?: Citation[]; answerSegments?: AnswerSegment[] }
+      const payload = JSON.parse(data) as {
+        conversationId?: string
+        citations?: Citation[]
+        answerSegments?: AnswerSegment[]
+        retrievalInfo?: RetrievalInfo
+      }
+      conversationId = payload.conversationId ?? conversationId
       citations = payload.citations
       answerSegments = payload.answerSegments
+      retrievalInfo = payload.retrievalInfo
       handlers.onDone?.({
         conversationId,
         citations,
         answerSegments,
+        retrievalInfo,
       })
     }
   }
@@ -314,6 +360,7 @@ const streamChatEvents = async (
     answer,
     citations,
     answerSegments,
+    retrievalInfo: retrievalInfo!,
   }
 }
 

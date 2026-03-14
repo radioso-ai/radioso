@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Spinner } from '@/components/ui/spinner'
 import { Send } from 'lucide-react'
-import { AssistantMessageContent } from './chat-citations'
+import { AssistantMessageContent, type CitationOpenResult } from './chat-citations'
+import { documentsApi } from '@/lib/api'
 import { useChatSession } from '@/lib/chat-context'
 
 interface ChatViewProps {
@@ -40,6 +41,28 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSubmit(e)
+    }
+  }
+
+  const handleOpenCitation = async (documentId: string): Promise<CitationOpenResult> => {
+    try {
+      await documentsApi.getDocument(documentId)
+      onOpenDocument(documentId)
+      return 'opened'
+    } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'error' in error &&
+        error.error &&
+        typeof error.error === 'object' &&
+        'code' in error.error &&
+        error.error.code === 'not_found'
+      ) {
+        return 'unavailable'
+      }
+
+      return 'error'
     }
   }
 
@@ -83,7 +106,7 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
                         content={message.content}
                         citations={message.citations}
                         answerSegments={message.answerSegments}
-                        onOpenDocument={onOpenDocument}
+                        onOpenDocument={handleOpenCitation}
                       />
                     )
                   ) : (

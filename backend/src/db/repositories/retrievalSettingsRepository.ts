@@ -14,6 +14,7 @@ interface RetrievalSettingsRow {
   rerank_top_k: number;
   warmth_level: number;
   citation_display_enabled: boolean;
+  chunking_strategy: RetrievalSettingsRecord["chunkingStrategy"];
   created_at: Date;
   updated_at: Date;
 }
@@ -27,6 +28,7 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => ({
   rerankTopK: row.rerank_top_k,
   warmthLevel: row.warmth_level,
   citationDisplayEnabled: row.citation_display_enabled,
+  chunkingStrategy: row.chunking_strategy,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -36,7 +38,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
 
   async findByAccountId(accountId: string): Promise<RetrievalSettingsRecord | null> {
     const [row] = await this.database.query<RetrievalSettingsRow>(
-      `SELECT account_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, created_at, updated_at
+      `SELECT account_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, chunking_strategy, created_at, updated_at
        FROM retrieval_settings
        WHERE account_id = $1`,
       [accountId],
@@ -55,9 +57,10 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
          similarity_threshold,
          rerank_top_k,
          warmth_level,
-         citation_display_enabled
+         citation_display_enabled,
+         chunking_strategy
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (account_id)
        DO UPDATE SET query_rewrite_enabled = EXCLUDED.query_rewrite_enabled,
                      rerank_enabled = EXCLUDED.rerank_enabled,
@@ -66,8 +69,9 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
                      rerank_top_k = EXCLUDED.rerank_top_k,
                      warmth_level = EXCLUDED.warmth_level,
                      citation_display_enabled = EXCLUDED.citation_display_enabled,
+                     chunking_strategy = EXCLUDED.chunking_strategy,
                      updated_at = NOW()
-       RETURNING account_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, created_at, updated_at`,
+       RETURNING account_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, chunking_strategy, created_at, updated_at`,
       [
         accountId,
         input.queryRewriteEnabled,
@@ -77,6 +81,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
         input.rerankTopK,
         input.warmthLevel,
         input.citationDisplayEnabled,
+        input.chunkingStrategy,
       ],
     );
 

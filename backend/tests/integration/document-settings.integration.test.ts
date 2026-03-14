@@ -26,6 +26,7 @@ describe("document and settings integration", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
       });
 
     expect(response.status).toBe(400);
@@ -65,6 +66,7 @@ describe("document and settings integration", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
+        chunkingStrategy: "structured_semantic",
       });
     const document = await request(app)
       .post("/api/v1/document/")
@@ -75,6 +77,7 @@ describe("document and settings integration", () => {
       });
 
     expect(settings.status).toBe(200);
+    expect(settings.body.chunkingStrategy).toBe("structured_semantic");
     expect(document.status).toBe(201);
   });
 });

@@ -140,6 +140,7 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       rerankTopK: input.rerankTopK,
       warmthLevel: input.warmthLevel,
       citationDisplayEnabled: input.citationDisplayEnabled,
+      chunkingStrategy: input.chunkingStrategy,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };

@@ -17,6 +17,9 @@ import { CandidatePreparationService } from "../../modules/retrieval/services/ca
 import { ConversationContextService } from "../../modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../modules/retrieval/services/promptBuilder.js";
 import { PromptContextSelectorService } from "../../modules/retrieval/services/promptContextSelectorService.js";
+import { ChunkingStrategyRegistry } from "../../modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
+import { FixedWindowChunkingStrategy } from "../../modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
+import { StructuredSemanticChunkingStrategy } from "../../modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
 import { OpenAIQueryRewriteGateway, QueryRewriteService } from "../../modules/retrieval/services/queryRewriteService.js";
 import { OpenAISemanticRerankGateway, RerankService } from "../../modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../modules/retrieval/services/retrievalPipelineService.js";
@@ -35,11 +38,17 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const openai = new OpenAIClients(env.OPENAI_API_KEY, env.OPENAI_CHAT_MODEL, env.OPENAI_VECTOR_MODEL);
   const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
   const embeddingService = new EmbeddingService(new OpenAIEmbeddingGateway(openai.client, openai.vectorModel));
+  const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
+    new FixedWindowChunkingStrategy(),
+    new StructuredSemanticChunkingStrategy(embeddingService),
+  ]);
   const documentIngestionService = new DocumentIngestionService(
     new DocumentRepository(database),
     new ChunkRepository(database),
     embeddingService,
     auditService,
+    retrievalSettingsService,
+    chunkingStrategyRegistry,
   );
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,

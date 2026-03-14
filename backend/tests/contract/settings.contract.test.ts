@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
@@ -151,5 +153,16 @@ describe("retrieval settings contract", () => {
     expect(firstUpdate.status).toBe(200);
     expect(secondUpdate.status).toBe(200);
     expect(secondUpdate.body.attributeControls).toEqual(firstUpdate.body.attributeControls);
+  });
+
+  it("documents attributeControls as optional for the update request schema", () => {
+    const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
+    const updateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    AttributeFamilyControl:/)?.[1] ?? "";
+
+    expect(updateSchema).toContain("type: object");
+    expect(updateSchema).toContain("- chunkingStrategy");
+    expect(updateSchema).toContain("attributeControls:");
+    expect(updateSchema).not.toContain("- attributeControls");
+    expect(updateSchema).not.toContain("allOf:");
   });
 });

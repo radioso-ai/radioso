@@ -59,6 +59,8 @@ export class PgLexicalSearch implements LexicalSearchPort {
       [input.accountId, normalizedQuery, input.topK],
     );
 
+    const maxRank = rows.reduce((highest, row) => Math.max(highest, Number(row.rank)), 0);
+
     return rows.map((row) => ({
       chunkId: row.chunk_id,
       documentId: row.document_id,
@@ -66,10 +68,18 @@ export class PgLexicalSearch implements LexicalSearchPort {
       content: row.content,
       searchText: row.search_text,
       structuredAttributes: row.structured_attributes ?? emptyStructuredAttributes(),
-      similarity: Number(row.rank),
+      similarity: normalizeLexicalRank(Number(row.rank), maxRank),
       chunkIndex: row.chunk_index,
       startOffset: row.start_offset,
       endOffset: row.end_offset,
     }));
   }
 }
+
+const normalizeLexicalRank = (rank: number, maxRank: number): number => {
+  if (!Number.isFinite(rank) || rank <= 0 || maxRank <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(1, rank / maxRank));
+};

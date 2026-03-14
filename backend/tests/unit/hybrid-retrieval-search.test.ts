@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { PgLexicalSearch } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { renderSearchText } from "../../src/modules/retrieval/services/searchTextRenderer.js";
 
@@ -59,5 +60,47 @@ describe("hybrid retrieval search", () => {
       semanticScore: 0,
       lexicalScore: 0.6,
     });
+  });
+
+  it("normalizes lexical ranks before they are merged with semantic similarity", async () => {
+    const search = new PgLexicalSearch({
+      async query() {
+        return [
+          {
+            chunk_id: "chunk-1",
+            document_id: "doc-1",
+            title: "Guide",
+            content: "Top lexical hit",
+            search_text: null,
+            structured_attributes: null,
+            chunk_index: 0,
+            start_offset: 0,
+            end_offset: 20,
+            rank: 4,
+          },
+          {
+            chunk_id: "chunk-2",
+            document_id: "doc-2",
+            title: "Guide",
+            content: "Weaker lexical hit",
+            search_text: null,
+            structured_attributes: null,
+            chunk_index: 1,
+            start_offset: 21,
+            end_offset: 40,
+            rank: 1,
+          },
+        ];
+      },
+    } as never);
+
+    const results = await search.search({
+      accountId: "a1",
+      query: "guide",
+      topK: 5,
+    });
+
+    expect(results[0]?.similarity).toBe(1);
+    expect(results[1]?.similarity).toBe(0.25);
   });
 });

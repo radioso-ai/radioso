@@ -94,6 +94,29 @@ describe("hybrid query constraints", () => {
     ]);
   });
 
+  it("parses locations when ordinary free text follows the place name", () => {
+    const retreatResult = parseQueryConstraints("Find retreats in Estonia with lodging");
+    const docsResult = parseQueryConstraints("Find docs in New York about visas");
+
+    expect(retreatResult.constraints).toEqual([
+      expect.objectContaining({
+        family: "location",
+        operator: "match",
+        summary: "in Estonia",
+        sourceText: "in Estonia",
+      }),
+    ]);
+    expect(docsResult.constraints).toEqual([
+      expect.objectContaining({
+        family: "location",
+        operator: "match",
+        summary: "in New York",
+        sourceText: "in New York",
+        value: expect.objectContaining({ matchKey: "new york" }),
+      }),
+    ]);
+  });
+
   it("uses hard filtering when high-confidence constraints and settings allow it", () => {
     const service = new AttributeMatchScoringService();
     const parsed = parseQueryConstraints("Find retreats in Estonia under 300 EUR after 2026-06-10");

@@ -91,8 +91,47 @@ components:
           items:
             $ref: '#/components/schemas/AttributeFamilyControl'
     UpdateRetrievalSettingsRequest:
-      allOf:
-        - $ref: '#/components/schemas/RetrievalSettings'
+      type: object
+      required:
+        - queryRewriteEnabled
+        - rerankEnabled
+        - vectorTopK
+        - similarityThreshold
+        - rerankTopK
+        - warmthLevel
+        - citationDisplayEnabled
+        - chunkingStrategy
+      properties:
+        queryRewriteEnabled:
+          type: boolean
+        rerankEnabled:
+          type: boolean
+        vectorTopK:
+          type: integer
+          minimum: 1
+          maximum: 300
+        similarityThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        rerankTopK:
+          type: integer
+          minimum: 1
+        warmthLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        citationDisplayEnabled:
+          type: boolean
+        chunkingStrategy:
+          type: string
+          enum:
+            - fixed_window
+            - structured_semantic
+        attributeControls:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttributeFamilyControl'
     AttributeFamilyControl:
       type: object
       required:

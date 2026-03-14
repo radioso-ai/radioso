@@ -11,7 +11,7 @@ const DATE_ON_PATTERN = /\bon\s+(\d{4}-\d{2}-\d{2})\b/i;
 const MONEY_LTE_PATTERN = /\b(?:under|below|less than)\s+(\d+(?:\.\d{1,2})?)\s*(EUR|USD)?\b/i;
 const MONEY_GTE_PATTERN = /\b(?:over|above|more than)\s+(\d+(?:\.\d{1,2})?)\s*(EUR|USD)?\b/i;
 const LOCATION_PATTERN =
-  /\bin\s+([a-z][a-z]+(?:\s+[a-z][a-z]+)*)(?=\s+(?:under|below|less than|over|above|more than|after|before|on)\b|[?.!,]|$)/i;
+  /\bin\s+([a-z][a-z]+(?:\s+[a-z][a-z]+)*?)(?=\s+(?:under|below|less than|over|above|more than|after|before|on|with|about|for|near|around|regarding)\b|[?.!,]|$)/i;
 const LEADING_RETRIEVAL_VERB_PATTERN = /^(?:find|show|list|search for|search)\s+/i;
 
 const normalizeSearchQuery = (query: string): string =>

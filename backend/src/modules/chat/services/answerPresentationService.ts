@@ -47,20 +47,32 @@ export class AnswerPresentationService {
   }
 
   private deduplicateCitations(citations: CitationEvidence[]): CitationEvidence[] {
-    const seen = new Set<string>();
-    const deduped: CitationEvidence[] = [];
+    const dedupedByDocument = new Map<string, CitationEvidence>();
 
     for (const citation of citations) {
-      const key = `${citation.documentId}:${citation.chunkId}`;
-      if (seen.has(key)) {
+      const existing = dedupedByDocument.get(citation.documentId);
+      if (!existing) {
+        dedupedByDocument.set(citation.documentId, { ...citation });
         continue;
       }
 
-      seen.add(key);
-      deduped.push(citation);
+      if (!existing.title.trim() && citation.title.trim()) {
+        existing.title = citation.title;
+      }
+
+      if (citation.content.trim().length === 0) {
+        continue;
+      }
+
+      const existingParts = new Set(existing.content.split("\n\n").map((part) => part.trim()).filter(Boolean));
+      if (!existingParts.has(citation.content.trim())) {
+        existing.content = existing.content.trim().length > 0
+          ? `${existing.content}\n\n${citation.content}`
+          : citation.content;
+      }
     }
 
-    return deduped;
+    return [...dedupedByDocument.values()];
   }
 
   private splitIntoSegments(answer: string): string[] {
@@ -75,7 +87,7 @@ export class AnswerPresentationService {
         continue;
       }
 
-      if (!",;.!?\n".includes(char)) {
+      if (!this.isSegmentBoundary(answer, index, char)) {
         continue;
       }
 
@@ -95,6 +107,45 @@ export class AnswerPresentationService {
     }
 
     return segments.length > 0 ? segments : [answer];
+  }
+
+  private isSegmentBoundary(answer: string, index: number, char: string): boolean {
+    if (char === "\n" || char === "!" || char === "?") {
+      return true;
+    }
+
+    const previousChar = answer[index - 1] ?? "";
+    const nextChar = answer[index + 1] ?? "";
+
+    if (char === ",") {
+      if (/\d/.test(previousChar) && /\d/.test(nextChar)) {
+        return false;
+      }
+
+      return true;
+    }
+
+    if (char === ".") {
+      if (/\d/.test(previousChar) && /\d/.test(nextChar)) {
+        return false;
+      }
+
+      if (/[A-Za-z0-9]/.test(previousChar) && /[A-Za-z0-9/#?&=_-]/.test(nextChar)) {
+        return false;
+      }
+
+      if (previousChar === "." || nextChar === ".") {
+        return false;
+      }
+
+      return true;
+    }
+
+    if (char === ";") {
+      return true;
+    }
+
+    return false;
   }
 
   private assignCitationsToSegments(segments: string[], citations: CitationEvidence[]): AnswerSegment[] {

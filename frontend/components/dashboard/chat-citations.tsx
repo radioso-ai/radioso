@@ -1,6 +1,7 @@
 'use client'
 
 import { Fragment, type ReactNode, useState } from 'react'
+import { ArrowUpRight, FileText } from 'lucide-react'
 
 import {
   HoverCard,
@@ -35,13 +36,25 @@ const CitationMarker = ({
       <button
         type="button"
         onClick={() => onOpenDocument(citation, index)}
-        className="mx-0.5 inline-flex align-baseline text-xs font-medium text-primary transition-opacity hover:opacity-80"
+        className="mx-0.5 inline-flex translate-y-[-0.15rem] items-center rounded-full border border-primary/25 bg-primary/8 px-1.5 py-0.5 align-baseline text-[11px] font-semibold leading-none text-primary transition-colors hover:border-primary/40 hover:bg-primary/14"
+        aria-label={`Open source ${index + 1}: ${getCitationLabel(citation, index)}`}
       >
         [{index + 1}]
       </button>
     </HoverCardTrigger>
-    <HoverCardContent className="w-fit max-w-xs px-3 py-2 text-sm">
-      {getCitationLabel(citation, index)}
+    <HoverCardContent className="max-w-xs space-y-2 px-3 py-3">
+      <div className="space-y-1">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Source {index + 1}
+        </p>
+        <p className="text-sm font-medium leading-snug">
+          {getCitationLabel(citation, index)}
+        </p>
+      </div>
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <FileText className="h-3.5 w-3.5" />
+        <span>Click to open document</span>
+      </div>
     </HoverCardContent>
   </HoverCard>
 )
@@ -67,6 +80,9 @@ export function AssistantMessageContent({
   const noticeScope = `${content}|${citations.length}|${answerSegments?.length ?? 0}`
   const segments = getRenderableSegments(content, answerSegments)
   const contentNodes: ReactNode[] = []
+  const sourceEntries = citations
+    .map((citation, index) => ({ citation, index }))
+    .filter(({ citation }) => Boolean(citation))
 
   const handleCitationOpen = async (citation: Citation, index: number) => {
     try {
@@ -128,6 +144,34 @@ export function AssistantMessageContent({
       <div className="text-sm whitespace-pre-wrap break-words">
         {contentNodes}
       </div>
+      {sourceEntries.length > 0 ? (
+        <div className="rounded-md border border-border/70 bg-background/55 p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Sources
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {sourceEntries.map(({ citation, index }) => (
+              <button
+                key={`source-${citation.documentId}-${citation.chunkId}-${index}`}
+                type="button"
+                onClick={() => handleCitationOpen(citation, index)}
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary"
+              >
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1 text-[11px] font-semibold text-muted-foreground">
+                  {index + 1}
+                </span>
+                <span className="max-w-52 truncate">
+                  {getCitationLabel(citation, index)}
+                </span>
+                <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {citationNotice && citationNotice.scope === noticeScope ? (
         <p className="text-xs text-amber-300" role="status">
           {citationNotice.message}

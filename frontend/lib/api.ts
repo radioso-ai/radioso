@@ -73,6 +73,15 @@ const request = async <T>(
     throw await buildError(response);
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return undefined as T;
+  }
+
   return response.json() as Promise<T>;
 };
 
@@ -381,6 +390,12 @@ export const documentsApi = {
     return request<DocumentCreateResponse>(`/document/${documentId}`, {
       method: "PUT",
       body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async deleteDocument(documentId: string): Promise<void> {
+    await request<void>(`/document/${documentId}`, {
+      method: "DELETE",
     }, { withApiToken: true })
   }
 }

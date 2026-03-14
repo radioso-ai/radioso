@@ -1,0 +1,90 @@
+openapi: 3.1.0
+info:
+  title: Document List Polish Contract Delta
+  version: 0.1.0
+  description: Contract slice for document deletion and citation-open missing-source handling.
+paths:
+  /api/v1/document/{documentId}:
+    get:
+      tags: [Documents]
+      summary: Get a document for the authenticated account
+      operationId: getDocument
+      description: Existing endpoint used by citation activation to check source availability.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Source exists and can be opened
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Source has been removed or is not owned by this account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Documents]
+      summary: Permanently delete a document for the authenticated account
+      operationId: deleteDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Document deleted successfully
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Document not found for authenticated account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string

@@ -28,6 +28,7 @@ describe("retrieval settings contract", () => {
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual([
       "accountId",
+      "citationDisplayEnabled",
       "createdAt",
       "queryRewriteEnabled",
       "rerankEnabled",
@@ -35,8 +36,11 @@ describe("retrieval settings contract", () => {
       "similarityThreshold",
       "updatedAt",
       "vectorTopK",
+      "warmthLevel",
     ]);
-    expect(response.body.vectorTopK).toBe(10);
+    expect(response.body.vectorTopK).toBe(15);
+    expect(response.body.warmthLevel).toBe(5);
+    expect(response.body.citationDisplayEnabled).toBe(true);
   });
 
   it("updates retrieval settings for a valid bearer token", async () => {
@@ -52,6 +56,8 @@ describe("retrieval settings contract", () => {
         vectorTopK: 12,
         similarityThreshold: 0.4,
         rerankTopK: 6,
+        warmthLevel: 8,
+        citationDisplayEnabled: false,
       });
 
     expect(response.status).toBe(200);
@@ -61,9 +67,12 @@ describe("retrieval settings contract", () => {
       vectorTopK: 12,
       similarityThreshold: 0.4,
       rerankTopK: 6,
+      warmthLevel: 8,
+      citationDisplayEnabled: false,
     });
     expect(Object.keys(response.body).sort()).toEqual([
       "accountId",
+      "citationDisplayEnabled",
       "createdAt",
       "queryRewriteEnabled",
       "rerankEnabled",
@@ -71,6 +80,7 @@ describe("retrieval settings contract", () => {
       "similarityThreshold",
       "updatedAt",
       "vectorTopK",
+      "warmthLevel",
     ]);
   });
 });

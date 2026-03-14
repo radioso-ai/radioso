@@ -12,6 +12,8 @@ interface RetrievalSettingsRow {
   vector_top_k: number;
   similarity_threshold: number;
   rerank_top_k: number;
+  warmth_level: number;
+  citation_display_enabled: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -23,6 +25,8 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => ({
   vectorTopK: row.vector_top_k,
   similarityThreshold: row.similarity_threshold,
   rerankTopK: row.rerank_top_k,
+  warmthLevel: row.warmth_level,
+  citationDisplayEnabled: row.citation_display_enabled,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -32,7 +36,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
 
   async findByAccountId(accountId: string): Promise<RetrievalSettingsRecord | null> {
     const [row] = await this.database.query<RetrievalSettingsRow>(
-      `SELECT account_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, created_at, updated_at
+      `SELECT account_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, created_at, updated_at
        FROM retrieval_settings
        WHERE account_id = $1`,
       [accountId],
@@ -43,16 +47,27 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
 
   async upsert(accountId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
     const [row] = await this.database.query<RetrievalSettingsRow>(
-      `INSERT INTO retrieval_settings (account_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO retrieval_settings (
+         account_id,
+         query_rewrite_enabled,
+         rerank_enabled,
+         vector_top_k,
+         similarity_threshold,
+         rerank_top_k,
+         warmth_level,
+         citation_display_enabled
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (account_id)
        DO UPDATE SET query_rewrite_enabled = EXCLUDED.query_rewrite_enabled,
                      rerank_enabled = EXCLUDED.rerank_enabled,
                      vector_top_k = EXCLUDED.vector_top_k,
                      similarity_threshold = EXCLUDED.similarity_threshold,
                      rerank_top_k = EXCLUDED.rerank_top_k,
+                     warmth_level = EXCLUDED.warmth_level,
+                     citation_display_enabled = EXCLUDED.citation_display_enabled,
                      updated_at = NOW()
-       RETURNING account_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, created_at, updated_at`,
+       RETURNING account_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, created_at, updated_at`,
       [
         accountId,
         input.queryRewriteEnabled,
@@ -60,6 +75,8 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
         input.vectorTopK,
         input.similarityThreshold,
         input.rerankTopK,
+        input.warmthLevel,
+        input.citationDisplayEnabled,
       ],
     );
 

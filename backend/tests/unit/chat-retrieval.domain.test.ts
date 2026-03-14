@@ -260,6 +260,9 @@ describe("chat retrieval domain", () => {
     const result = builder.build({
       query: "What does the page do?",
       history: [],
+      settings: {
+        warmthLevel: 9,
+      },
       contexts: [
         {
           chunkId: "c1",
@@ -278,6 +281,8 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.prompt).toContain("The page parses content.");
+    expect(result.prompt).toContain("warm");
+    expect(result.prompt).toContain("Do not end the answer with a question");
     expect(result.citations).toEqual([{ documentId: "d1", chunkId: "c1", title: "Intro" }]);
   });
 });

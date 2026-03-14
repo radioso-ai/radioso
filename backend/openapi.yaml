@@ -358,6 +358,8 @@ components:
         - vectorTopK
         - similarityThreshold
         - rerankTopK
+        - warmthLevel
+        - citationDisplayEnabled
       properties:
         queryRewriteEnabled:
           type: boolean
@@ -374,6 +376,12 @@ components:
         rerankTopK:
           type: integer
           minimum: 1
+        warmthLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        citationDisplayEnabled:
+          type: boolean
     UpdateRetrievalSettingsRequest:
       allOf:
         - $ref: '#/components/schemas/RetrievalSettings'
@@ -459,6 +467,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Citation'
+        answerSegments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnswerSegment'
     Citation:
       type: object
       required: [documentId, chunkId]
@@ -471,6 +483,17 @@ components:
           format: uuid
         title:
           type: string
+    AnswerSegment:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+        citationIndices:
+          type: array
+          items:
+            type: integer
+            minimum: 0
     ErrorResponse:
       type: object
       required: [error]

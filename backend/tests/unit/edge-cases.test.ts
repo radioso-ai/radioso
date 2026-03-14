@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { chunkMarkdown, normalizeMarkdown } from "../../src/modules/retrieval/domain/chunkingService.js";
 import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
+import { AttributeMatchScoringService } from "../../src/modules/retrieval/services/attributeMatchScoringService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
@@ -9,6 +10,7 @@ import { CandidatePreparationService } from "../../src/modules/retrieval/service
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
+import { defaultAttributeControls } from "../../src/modules/settings/domain/retrievalSettings.js";
 
 describe("edge cases", () => {
   it("normalizes short content into a single chunk", () => {
@@ -115,8 +117,10 @@ describe("edge cases", () => {
           title: "Rate Limits",
           content: "The API allows 60 requests per minute.",
           similarity: 0.9,
-          retrievalSources: ["original"],
+          retrievalSources: ["semantic_original"],
           retrievalText: "Rate Limits The API allows 60 requests per minute.",
+          semanticScore: 0.9,
+          lexicalScore: 0,
         },
         {
           chunkId: "c2",
@@ -124,8 +128,10 @@ describe("edge cases", () => {
           title: "Troubleshooting",
           content: "If no context is found, check the threshold.",
           similarity: 0.1,
-          retrievalSources: ["rewritten"],
+          retrievalSources: ["semantic_rewritten"],
           retrievalText: "Troubleshooting If no context is found, check the threshold.",
+          semanticScore: 0.1,
+          lexicalScore: 0,
         },
       ],
     });
@@ -145,13 +151,14 @@ describe("edge cases", () => {
             rerankEnabled: false,
             vectorTopK: 100,
             similarityThreshold: 0.8,
-          rerankTopK: 20,
-          warmthLevel: 5,
-          citationDisplayEnabled: true,
-          chunkingStrategy: "fixed_window",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
+            rerankTopK: 20,
+            warmthLevel: 5,
+            citationDisplayEnabled: true,
+            chunkingStrategy: "fixed_window",
+            attributeControls: defaultAttributeControls(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
         },
       } as never,
       {
@@ -176,9 +183,15 @@ describe("edge cases", () => {
           ];
         },
       },
+      {
+        async search() {
+          return [];
+        },
+      },
       new ConversationContextService(),
       new QueryRewriteService(),
       new CandidatePreparationService(),
+      new AttributeMatchScoringService(),
       new RerankService(),
       new PromptContextSelectorService(),
       new PromptBuilder(),

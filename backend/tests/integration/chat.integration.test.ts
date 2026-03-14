@@ -1,6 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
+import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { createTestApp } from "../support/testApp.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
 
@@ -242,6 +243,16 @@ describe("chat integration", () => {
     const chatAudit = [...auditEvents].reverse().find((event) => event.eventType === "chat.answer");
 
     expect(response.status).toBe(200);
+    expect(response.body.retrievalInfo).toMatchObject({
+      candidateCounts: {
+        semantic: expect.any(Number),
+        lexical: expect.any(Number),
+        merged: expect.any(Number),
+        final: expect.any(Number),
+      },
+      rerankStatus: expect.any(String),
+      fallbackApplied: expect.any(Boolean),
+    });
     expect(chatAudit?.metadata?.retrieval).toMatchObject({
       rewriteStatus: expect.any(String),
       rerankStatus: expect.any(String),
@@ -249,6 +260,39 @@ describe("chat integration", () => {
       normalizedCandidateCount: expect.any(Number),
       finalContextCount: expect.any(Number),
     });
+  });
+
+  it("returns the exact-match source for identifier-style queries", async () => {
+    const { app } = createTestApp();
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "identifiers@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Feature Flags",
+        content: "Flag HVC-42-ALPHA enables the hybrid retrieval rollout path for internal testing environments.",
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        query: "What does flag HVC-42-ALPHA enable?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).not.toContain("could not find relevant information");
+    expect(response.body.citations[0]?.title).toBe("Feature Flags");
   });
 
   it("applies persisted warmth settings to generated answers", async () => {
@@ -331,5 +375,132 @@ describe("chat integration", () => {
     expect(response.body.answer).toContain("The page explains testing");
     expect(response.body).not.toHaveProperty("citations");
     expect(response.body).not.toHaveProperty("answerSegments");
+  });
+
+  it("falls back safely when rerank fails", async () => {
+    const failingRerankGateway: RerankGateway = {
+      async rerank() {
+        throw new Error("rerank failed");
+      },
+    };
+    const { app } = createTestApp({ rerankGateway: failingRerankGateway });
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "rerank-failure@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send(retrievalFixtureDocuments.rateLimits);
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: true,
+        vectorTopK: 50,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        query: "What is the API rate limit and how long should a client wait before retrying?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.citations[0]?.title).toBe("Rate Limits");
+    expect(response.body.retrievalInfo.rerankStatus).toBe("fallback");
+  });
+
+  it("still answers grounded questions when lexical search is disabled", async () => {
+    const { app } = createTestApp({
+      lexicalSearch: {
+        async search() {
+          return [];
+        },
+      },
+    });
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "lexical-off@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send(retrievalFixtureDocuments.rateLimits);
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        query: "What is the API rate limit and how long should a client wait before retrying?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.citations[0]?.title).toBe("Rate Limits");
+    expect(response.body.retrievalInfo.candidateCounts.lexical).toBe(0);
+  });
+
+  it("handles legacy chunks without search text or structured attributes", async () => {
+    const { app, repositories } = createTestApp();
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "legacy-chunks@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    const documentResponse = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send(retrievalFixtureDocuments.sessionCookie);
+
+    const storedChunks = repositories.chunkRepository.items.get(documentResponse.body.documentId);
+    if (storedChunks) {
+      repositories.chunkRepository.items.set(
+        documentResponse.body.documentId,
+        storedChunks.map((chunk) => ({
+          ...chunk,
+          searchText: null,
+          structuredAttributes: null,
+        })),
+      );
+    }
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        query: "Which cookie name is used for browser sessions?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).not.toContain("could not find relevant information");
+    expect(response.body.citations[0]?.title).toBe("Session Cookie");
   });
 });

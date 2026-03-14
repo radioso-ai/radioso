@@ -5,6 +5,11 @@ import type { AppDependencies } from "../../server/types.js";
 import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
+import {
+  attributeControlModes,
+  attributeFamilyIds,
+  defaultAttributeControls,
+} from "../../../modules/settings/domain/retrievalSettings.js";
 
 const updateSettingsSchema = z.object({
   queryRewriteEnabled: z.boolean(),
@@ -15,6 +20,15 @@ const updateSettingsSchema = z.object({
   warmthLevel: z.number().int(),
   citationDisplayEnabled: z.boolean(),
   chunkingStrategy: z.enum(chunkingStrategyIds),
+  attributeControls: z
+    .array(
+      z.object({
+        family: z.enum(attributeFamilyIds),
+        enabled: z.boolean(),
+        mode: z.enum(attributeControlModes),
+      }),
+    )
+    .default(defaultAttributeControls()),
 });
 
 export const createSettingsRoutes = (dependencies: AppDependencies): Router => {

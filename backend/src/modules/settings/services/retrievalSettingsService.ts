@@ -1,5 +1,6 @@
 import {
   defaultRetrievalSettings,
+  defaultAttributeControls,
   type RetrievalSettingsInput,
   type RetrievalSettingsRecord,
   validateRetrievalSettings,
@@ -21,7 +22,14 @@ export class RetrievalSettingsService {
     const existing = await this.repository.findByAccountId(accountId);
 
     if (existing) {
-      return existing;
+      const normalized = validateRetrievalSettings({
+        ...existing,
+        attributeControls: existing.attributeControls ?? defaultAttributeControls(),
+      });
+      return {
+        ...existing,
+        ...normalized,
+      };
     }
 
     const defaults = defaultRetrievalSettings(accountId);

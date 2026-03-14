@@ -141,6 +141,7 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       warmthLevel: input.warmthLevel,
       citationDisplayEnabled: input.citationDisplayEnabled,
       chunkingStrategy: input.chunkingStrategy,
+      attributeControls: input.attributeControls,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };

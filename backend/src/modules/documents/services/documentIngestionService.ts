@@ -2,8 +2,16 @@ import { randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/services/auditService.js";
 import { normalizeMarkdown, type ChunkingStrategy } from "../../retrieval/domain/chunking/chunkingStrategy.js";
+import {
+  emptyStructuredAttributes,
+  renderStructuredAttributeSummary,
+  type StructuredAttributes,
+} from "../../retrieval/domain/structuredAttributes.js";
+import { normalizeStructuredAttributes } from "../../retrieval/services/attributeNormalizer.js";
 import { buildRetrievalText, type EmbeddingService } from "../../retrieval/services/embeddingService.js";
 import type { ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
+import { renderSearchText } from "../../retrieval/services/searchTextRenderer.js";
+import { extractRawStructuredAttributes } from "../../retrieval/services/structuredAttributeExtractor.js";
 import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSettings.js";
 import { notFound } from "../../../shared/domain/errors.js";
 
@@ -24,6 +32,8 @@ export interface ChunkRecord {
   accountId: string;
   chunkIndex: number;
   content: string;
+  searchText?: string | null;
+  structuredAttributes?: StructuredAttributes | null;
   embedding: number[];
   startOffset: number;
   endOffset: number;
@@ -131,13 +141,23 @@ export class DocumentIngestionService {
         title: input.title,
         content: markdownContent,
       });
+      const enrichedChunks = chunks.map((chunk) => {
+        const structuredAttributes = normalizeStructuredAttributes(extractRawStructuredAttributes(chunk.content));
+        const attributeText = renderStructuredAttributeSummary(structuredAttributes);
+        const searchText = renderSearchText({
+          title: input.title,
+          attributeText,
+          content: chunk.content,
+        });
+
+        return {
+          ...chunk,
+          structuredAttributes,
+          searchText,
+        };
+      });
       const embeddings = await this.embeddingService.embedChunks(
-        chunks.map((chunk) =>
-          buildRetrievalText({
-            title: input.title,
-            content: chunk.content,
-          }),
-        ),
+        enrichedChunks.map((chunk) => chunk.searchText),
       );
       const persistedDocumentInput = {
         accountId: input.accountId,
@@ -153,12 +173,14 @@ export class DocumentIngestionService {
           })
         : await this.documentRepository.create(persistedDocumentInput);
       documentId = document.id;
-      const persistedChunks: ChunkRecord[] = chunks.map((chunk, index) => ({
+      const persistedChunks: ChunkRecord[] = enrichedChunks.map((chunk, index) => ({
         id: randomUUID(),
         documentId: document.id,
         accountId: input.accountId,
         chunkIndex: chunk.chunkIndex,
         content: chunk.content,
+        searchText: chunk.searchText,
+        structuredAttributes: chunk.structuredAttributes ?? emptyStructuredAttributes(),
         embedding: embeddings[index] ?? [],
         startOffset: chunk.startOffset,
         endOffset: chunk.endOffset,

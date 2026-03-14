@@ -209,4 +209,142 @@ describe("edge cases", () => {
     expect(result.diagnostics.candidateFallbackApplied).toBe(false);
     expect(result.diagnostics.fallbackApplied).toBe(false);
   });
+
+  it("keeps disabled attribute literals in semantic and lexical queries", async () => {
+    const embeddedQueries: string[] = [];
+    const lexicalQueries: string[] = [];
+    const service = new RetrievalPipelineService(
+      {
+        async getForAccount() {
+          return {
+            accountId: "a1",
+            queryRewriteEnabled: false,
+            rerankEnabled: false,
+            vectorTopK: 20,
+            similarityThreshold: 0.2,
+            rerankTopK: 5,
+            warmthLevel: 5,
+            citationDisplayEnabled: true,
+            chunkingStrategy: "fixed_window",
+            attributeControls: defaultAttributeControls().map((control) =>
+              control.family === "location" || control.family === "money_value"
+                ? { ...control, enabled: false }
+                : control,
+            ),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+      } as never,
+      {
+        async embedChunks(chunks: string[]) {
+          embeddedQueries.push(...chunks);
+          return chunks.map(() => [1, 0, 0]);
+        },
+      } as never,
+      {
+        async search() {
+          return [];
+        },
+      },
+      {
+        async search(input) {
+          lexicalQueries.push(input.query);
+          return [];
+        },
+      },
+      new ConversationContextService(),
+      new QueryRewriteService(),
+      new CandidatePreparationService(),
+      new AttributeMatchScoringService(),
+      new RerankService(),
+      new PromptContextSelectorService(),
+      new PromptBuilder(),
+      new RetrievalExecutionTelemetryService(),
+    );
+
+    const result = await service.run({
+      accountId: "a1",
+      query: "Find retreats in Estonia under 300 EUR",
+      history: [],
+    });
+
+    expect(embeddedQueries).toEqual(["retreats in Estonia under 300 EUR"]);
+    expect(lexicalQueries).toEqual(["retreats in Estonia under 300 EUR"]);
+    expect(result.diagnostics.parsedQuery?.semanticQuery).toBe("retreats in Estonia under 300 EUR");
+    expect(result.diagnostics.appliedConstraints).toEqual([
+      {
+        family: "location",
+        mode: "boost_only",
+        outcome: "skipped",
+        summary: "in Estonia",
+      },
+      {
+        family: "money_value",
+        mode: "boost_only",
+        outcome: "skipped",
+        summary: "under 300 EUR",
+      },
+    ]);
+  });
+
+  it("strips enabled attribute literals before semantic and lexical retrieval", async () => {
+    const embeddedQueries: string[] = [];
+    const lexicalQueries: string[] = [];
+    const service = new RetrievalPipelineService(
+      {
+        async getForAccount() {
+          return {
+            accountId: "a1",
+            queryRewriteEnabled: false,
+            rerankEnabled: false,
+            vectorTopK: 20,
+            similarityThreshold: 0.2,
+            rerankTopK: 5,
+            warmthLevel: 5,
+            citationDisplayEnabled: true,
+            chunkingStrategy: "fixed_window",
+            attributeControls: defaultAttributeControls(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+      } as never,
+      {
+        async embedChunks(chunks: string[]) {
+          embeddedQueries.push(...chunks);
+          return chunks.map(() => [1, 0, 0]);
+        },
+      } as never,
+      {
+        async search() {
+          return [];
+        },
+      },
+      {
+        async search(input) {
+          lexicalQueries.push(input.query);
+          return [];
+        },
+      },
+      new ConversationContextService(),
+      new QueryRewriteService(),
+      new CandidatePreparationService(),
+      new AttributeMatchScoringService(),
+      new RerankService(),
+      new PromptContextSelectorService(),
+      new PromptBuilder(),
+      new RetrievalExecutionTelemetryService(),
+    );
+
+    const result = await service.run({
+      accountId: "a1",
+      query: "Find retreats in Estonia under 300 EUR",
+      history: [],
+    });
+
+    expect(embeddedQueries).toEqual(["retreats"]);
+    expect(lexicalQueries).toEqual(["retreats"]);
+    expect(result.diagnostics.parsedQuery?.semanticQuery).toBe("retreats");
+  });
 });

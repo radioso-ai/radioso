@@ -20,15 +20,14 @@ const normalizeSearchQuery = (query: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
-const removeConstraintText = (query: string, pattern: RegExp): string => normalizeSearchQuery(query.replace(pattern, " "));
-
 export const parseQueryConstraints = (query: string): ParsedQueryInterpretation => {
   const constraints: ParsedQueryInterpretation["constraints"] = [];
-  let semanticQuery = query;
-  let lexicalQuery = query;
+  const semanticQuery = normalizeSearchQuery(query);
+  const lexicalQuery = normalizeSearchQuery(query);
 
-  const location = query.match(LOCATION_PATTERN)?.[1];
-  if (location) {
+  const locationMatch = query.match(LOCATION_PATTERN);
+  const location = locationMatch?.[1];
+  if (location && locationMatch?.[0]) {
     const normalized = normalizeLocationConstraint(location);
     if (normalized) {
       constraints.push({
@@ -36,10 +35,9 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
         operator: "match",
         confidence: 0.95,
         summary: `in ${normalized.displayName}`,
+        sourceText: locationMatch[0].trim(),
         value: normalized,
       });
-      semanticQuery = removeConstraintText(semanticQuery, LOCATION_PATTERN);
-      lexicalQuery = removeConstraintText(lexicalQuery, LOCATION_PATTERN);
     }
   }
 
@@ -52,10 +50,9 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
         operator: "lte",
         confidence: 0.95,
         summary: `under ${normalized.amount}${normalized.currencyCode ? ` ${normalized.currencyCode}` : ""}`,
+        sourceText: moneyLte[0].trim(),
         value: normalized,
       });
-      semanticQuery = removeConstraintText(semanticQuery, MONEY_LTE_PATTERN);
-      lexicalQuery = removeConstraintText(lexicalQuery, MONEY_LTE_PATTERN);
     }
   }
 
@@ -68,15 +65,15 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
         operator: "gte",
         confidence: 0.95,
         summary: `over ${normalized.amount}${normalized.currencyCode ? ` ${normalized.currencyCode}` : ""}`,
+        sourceText: moneyGte[0].trim(),
         value: normalized,
       });
-      semanticQuery = removeConstraintText(semanticQuery, MONEY_GTE_PATTERN);
-      lexicalQuery = removeConstraintText(lexicalQuery, MONEY_GTE_PATTERN);
     }
   }
 
-  const dateAfter = query.match(DATE_AFTER_PATTERN)?.[1];
-  if (dateAfter) {
+  const dateAfterMatch = query.match(DATE_AFTER_PATTERN);
+  const dateAfter = dateAfterMatch?.[1];
+  if (dateAfter && dateAfterMatch?.[0]) {
     const normalized = normalizeDateConstraint(dateAfter);
     if (normalized) {
       constraints.push({
@@ -84,15 +81,15 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
         operator: "gte",
         confidence: 0.95,
         summary: `after ${normalized}`,
+        sourceText: dateAfterMatch[0].trim(),
         value: { date: normalized },
       });
-      semanticQuery = removeConstraintText(semanticQuery, DATE_AFTER_PATTERN);
-      lexicalQuery = removeConstraintText(lexicalQuery, DATE_AFTER_PATTERN);
     }
   }
 
-  const dateBefore = query.match(DATE_BEFORE_PATTERN)?.[1];
-  if (dateBefore) {
+  const dateBeforeMatch = query.match(DATE_BEFORE_PATTERN);
+  const dateBefore = dateBeforeMatch?.[1];
+  if (dateBefore && dateBeforeMatch?.[0]) {
     const normalized = normalizeDateConstraint(dateBefore);
     if (normalized) {
       constraints.push({
@@ -100,15 +97,15 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
         operator: "lte",
         confidence: 0.95,
         summary: `before ${normalized}`,
+        sourceText: dateBeforeMatch[0].trim(),
         value: { date: normalized },
       });
-      semanticQuery = removeConstraintText(semanticQuery, DATE_BEFORE_PATTERN);
-      lexicalQuery = removeConstraintText(lexicalQuery, DATE_BEFORE_PATTERN);
     }
   }
 
-  const dateOn = query.match(DATE_ON_PATTERN)?.[1];
-  if (dateOn) {
+  const dateOnMatch = query.match(DATE_ON_PATTERN);
+  const dateOn = dateOnMatch?.[1];
+  if (dateOn && dateOnMatch?.[0]) {
     const normalized = normalizeDateConstraint(dateOn);
     if (normalized) {
       constraints.push({
@@ -116,16 +113,15 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
         operator: "eq",
         confidence: 0.95,
         summary: `on ${normalized}`,
+        sourceText: dateOnMatch[0].trim(),
         value: { date: normalized },
       });
-      semanticQuery = removeConstraintText(semanticQuery, DATE_ON_PATTERN);
-      lexicalQuery = removeConstraintText(lexicalQuery, DATE_ON_PATTERN);
     }
   }
 
   return {
-    semanticQuery: normalizeSearchQuery(semanticQuery || query),
-    lexicalQuery: normalizeSearchQuery(lexicalQuery || query),
+    semanticQuery,
+    lexicalQuery,
     constraints,
   };
 };

@@ -334,6 +334,7 @@ export function DocumentsView({
   const pageStart = (safeCurrentPage - 1) * PAGE_SIZE
   const paginatedDocuments = documents.slice(pageStart, pageStart + PAGE_SIZE)
   const pageEnd = Math.min(pageStart + paginatedDocuments.length, documents.length)
+  const activeDeleteError = deleteCandidate ? deleteErrorById[deleteCandidate.id] : null
 
   const goToPreviousPage = () => {
     setCurrentPage((page) => Math.max(1, page - 1))
@@ -380,6 +381,11 @@ export function DocumentsView({
               from your knowledge base.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {activeDeleteError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {activeDeleteError}
+            </p>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={Boolean(deletingDocumentId)}>Cancel</AlertDialogCancel>
             <AlertDialogAction

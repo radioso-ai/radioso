@@ -7,49 +7,17 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card'
-import { type Citation } from '@/lib/api'
+import { type AnswerSegment, type Citation } from '@/lib/api'
 
 interface AssistantMessageContentProps {
   content: string
   citations?: Citation[]
+  answerSegments?: AnswerSegment[]
   onOpenDocument: (documentId: string) => void
 }
 
 const getCitationLabel = (citation: Citation, index: number) =>
   citation.title?.trim() || `Document ${index + 1}`
-
-const splitClaims = (content: string) => {
-  const paragraphs = content.split('\n')
-
-  return paragraphs.map((paragraph) => {
-    if (!paragraph.trim()) {
-      return ['']
-    }
-
-    return paragraph.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g) ?? [paragraph]
-  })
-}
-
-const buildClaimCitationMap = (claimCount: number, citations: Citation[]) => {
-  const citationMap = Array.from({ length: claimCount }, () => [] as Array<{ citation: Citation; index: number }>)
-
-  if (claimCount === 0) {
-    return citationMap
-  }
-
-  citations.forEach((citation, index) => {
-    const targetClaim = citations.length === 1
-      ? 0
-      : Math.round((index * (claimCount - 1)) / (citations.length - 1))
-
-    citationMap[targetClaim]?.push({
-      citation,
-      index,
-    })
-  })
-
-  return citationMap
-}
 
 const CitationMarker = ({
   citation,
@@ -76,39 +44,51 @@ const CitationMarker = ({
   </HoverCard>
 )
 
+const getRenderableSegments = (
+  content: string,
+  answerSegments?: AnswerSegment[],
+) => {
+  if (answerSegments && answerSegments.length > 0) {
+    return answerSegments
+  }
+
+  return [{ text: content }]
+}
+
 export function AssistantMessageContent({
   content,
   citations = [],
+  answerSegments,
   onOpenDocument,
 }: AssistantMessageContentProps) {
-  const claimGroups = splitClaims(content)
-  const claimCount = claimGroups.reduce((total, group) => total + group.length, 0)
-  const claimCitationMap = buildClaimCitationMap(claimCount, citations)
+  const segments = getRenderableSegments(content, answerSegments)
   const contentNodes: ReactNode[] = []
-  let claimIndex = 0
 
-  claimGroups.forEach((claims, paragraphIndex) => {
-    if (paragraphIndex > 0) {
-      contentNodes.push(<br key={`line-break-${paragraphIndex}`} />)
-    }
+  segments.forEach((segment, segmentIndex) => {
+    const dedupedIndices = [...new Set(segment.citationIndices ?? [])].filter(
+      (index) => index >= 0 && index < citations.length,
+    )
 
-    claims.forEach((claim, localClaimIndex) => {
-      contentNodes.push(
-        <Fragment key={`claim-${paragraphIndex}-${localClaimIndex}`}>
-          {claim}
-          {claimCitationMap[claimIndex]?.map(({ citation, index }) => (
+    contentNodes.push(
+      <Fragment key={`segment-${segmentIndex}`}>
+        {segment.text}
+        {dedupedIndices.map((citationIndex) => {
+          const citation = citations[citationIndex]
+          if (!citation) {
+            return null
+          }
+
+          return (
             <CitationMarker
-              key={`${citation.documentId}-${citation.chunkId}-${index}`}
+              key={`${citation.documentId}-${citation.chunkId}-${citationIndex}`}
               citation={citation}
-              index={index}
+              index={citationIndex}
               onOpenDocument={onOpenDocument}
             />
-          ))}
-        </Fragment>,
-      )
-
-      claimIndex += 1
-    })
+          )
+        })}
+      </Fragment>,
+    )
   })
 
   return (

@@ -1,4 +1,5 @@
 const API_BASE = `${process.env.NEXT_PUBLIC_API_BASE_PATH ?? "/backend/api/v1"}`;
+const STREAMING_API_BASE = `${process.env.NEXT_PUBLIC_STREAMING_API_BASE_PATH ?? API_BASE}`;
 const API_TOKEN_STORAGE_KEY = "hivec.apiToken";
 
 const getStoredApiToken = (): string | null => {
@@ -104,6 +105,8 @@ export interface RetrievalSettings {
   vectorTopK: number
   similarityThreshold: number
   rerankTopK: number
+  warmthLevel: number
+  citationDisplayEnabled: boolean
 }
 
 export interface DocumentCreateRequest {
@@ -145,10 +148,16 @@ export interface Citation {
   title?: string
 }
 
+export interface AnswerSegment {
+  text: string
+  citationIndices?: number[]
+}
+
 export interface ChatResponse {
   conversationId: string
   answer: string
   citations?: Citation[]
+  answerSegments?: AnswerSegment[]
 }
 
 export interface ChatStreamConversation {
@@ -161,7 +170,8 @@ export interface ChatStreamChunk {
 
 export interface ChatStreamCompletion {
   conversationId?: string
-  citations: Citation[]
+  citations?: Citation[]
+  answerSegments?: AnswerSegment[]
 }
 
 interface ChatStreamHandlers {
@@ -228,7 +238,8 @@ const streamChatEvents = async (
   let buffer = ''
   let answer = ''
   let conversationId = ''
-  let citations: Citation[] = []
+  let citations: Citation[] | undefined
+  let answerSegments: AnswerSegment[] | undefined
 
   const flushEvent = (rawEvent: string) => {
     if (!rawEvent.trim()) {
@@ -256,11 +267,13 @@ const streamChatEvents = async (
     }
 
     if (eventName === 'done') {
-      const payload = JSON.parse(data) as { citations?: Citation[] }
-      citations = payload.citations ?? []
+      const payload = JSON.parse(data) as { citations?: Citation[]; answerSegments?: AnswerSegment[] }
+      citations = payload.citations
+      answerSegments = payload.answerSegments
       handlers.onDone?.({
         conversationId,
         citations,
+        answerSegments,
       })
     }
   }
@@ -290,6 +303,7 @@ const streamChatEvents = async (
     conversationId,
     answer,
     citations,
+    answerSegments,
   }
 }
 
@@ -384,7 +398,7 @@ export const chatApi = {
     data: ChatRequest,
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
-    const response = await fetch(`${API_BASE}/chat/`, {
+    const response = await fetch(`${STREAMING_API_BASE}/chat/`, {
       method: "POST",
       cache: "no-store",
       headers: {
@@ -408,7 +422,8 @@ export const chatApi = {
       }
       handlers.onDone?.({
         conversationId: payload.conversationId,
-        citations: payload.citations ?? [],
+        citations: payload.citations,
+        answerSegments: payload.answerSegments,
       })
       return payload
     }

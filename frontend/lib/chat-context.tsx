@@ -11,6 +11,7 @@ import {
 
 import {
   chatApi,
+  type AnswerSegment,
   type Citation,
   type ChatStreamCompletion,
 } from '@/lib/api'
@@ -20,6 +21,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   citations?: Citation[]
+  answerSegments?: AnswerSegment[]
   status: 'complete' | 'streaming' | 'error'
 }
 
@@ -101,6 +103,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             ? {
                 ...message,
                 citations: completion.citations,
+                answerSegments: completion.answerSegments,
                 status: 'complete',
               }
             : message,
@@ -187,7 +190,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (!didComplete) {
           applyCompletion(accountId, assistantMessageId, {
             conversationId: completion.conversationId,
-            citations: completion.citations ?? [],
+            citations: completion.citations,
+            answerSegments: completion.answerSegments,
           })
         }
       } catch (error) {
@@ -204,6 +208,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               content: message.content || errorMessage,
               status: 'error' as const,
               citations: [] as Citation[],
+              answerSegments: undefined,
             }
           })
 

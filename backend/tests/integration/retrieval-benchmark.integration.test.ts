@@ -39,6 +39,8 @@ describe("retrieval benchmark integration", () => {
         vectorTopK: 100,
         similarityThreshold: 0.2,
         rerankTopK: 20,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
       });
 
     for (const scenario of directAnswerQueries) {
@@ -89,7 +91,7 @@ describe("retrieval benchmark integration", () => {
 
       expect(response.status).toBe(200);
       expect(response.body.answer).toContain("could not find relevant information");
-      expect(response.body.citations).toEqual([]);
+      expect(response.body.citations ?? []).toEqual([]);
     }
   });
 });

@@ -1,0 +1,148 @@
+openapi: 3.1.0
+info:
+  title: Hivec Chat Response Controls Contract
+  version: 0.1.0
+  summary: Contract additions for account-scoped response preferences and optional citation metadata
+paths:
+  /api/v1/settings/retrieval:
+    get:
+      summary: Get account retrieval and response settings
+      responses:
+        '200':
+          description: Settings returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+    put:
+      summary: Update account retrieval and response settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRetrievalSettingsRequest'
+      responses:
+        '200':
+          description: Settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+  /api/v1/chat/:
+    post:
+      summary: Create a grounded chat answer with optional citation metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Non-streaming chat response or streaming event stream
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+            text/event-stream:
+              schema:
+                type: string
+components:
+  schemas:
+    RetrievalSettings:
+      type: object
+      required:
+        - queryRewriteEnabled
+        - rerankEnabled
+        - vectorTopK
+        - similarityThreshold
+        - rerankTopK
+        - warmthLevel
+        - citationDisplayEnabled
+      properties:
+        queryRewriteEnabled:
+          type: boolean
+        rerankEnabled:
+          type: boolean
+        vectorTopK:
+          type: integer
+          minimum: 1
+          maximum: 300
+        similarityThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        rerankTopK:
+          type: integer
+          minimum: 1
+        warmthLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        citationDisplayEnabled:
+          type: boolean
+    UpdateRetrievalSettingsRequest:
+      allOf:
+        - $ref: '#/components/schemas/RetrievalSettings'
+    ChatRequest:
+      type: object
+      required:
+        - query
+        - stream
+      properties:
+        query:
+          type: string
+          minLength: 1
+        stream:
+          type: boolean
+        conversationId:
+          type: string
+          format: uuid
+    ChatResponse:
+      type: object
+      required:
+        - conversationId
+        - answer
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        answer:
+          type: string
+        citations:
+          type: array
+          description: Optional deduplicated citation list used by structured answer metadata
+          items:
+            $ref: '#/components/schemas/Citation'
+        answerSegments:
+          type: array
+          description: Optional ordered answer segments with citation references for rendering
+          items:
+            $ref: '#/components/schemas/AnswerSegment'
+    Citation:
+      type: object
+      required:
+        - documentId
+        - chunkId
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        chunkId:
+          type: string
+          format: uuid
+        title:
+          type: string
+    AnswerSegment:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+        citationIndices:
+          type: array
+          items:
+            type: integer
+            minimum: 0

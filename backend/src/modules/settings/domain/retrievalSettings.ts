@@ -7,6 +7,8 @@ export interface RetrievalSettingsRecord {
   vectorTopK: number;
   similarityThreshold: number;
   rerankTopK: number;
+  warmthLevel: number;
+  citationDisplayEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -17,6 +19,8 @@ export interface RetrievalSettingsInput {
   vectorTopK: number;
   similarityThreshold: number;
   rerankTopK: number;
+  warmthLevel: number;
+  citationDisplayEnabled: boolean;
 }
 
 export const defaultRetrievalSettings = (accountId: string): RetrievalSettingsRecord => ({
@@ -26,6 +30,8 @@ export const defaultRetrievalSettings = (accountId: string): RetrievalSettingsRe
   vectorTopK: 15,
   similarityThreshold: 0.2,
   rerankTopK: 5,
+  warmthLevel: 5,
+  citationDisplayEnabled: true,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -39,6 +45,9 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   }
   if (input.rerankTopK < 1) {
     throw badRequest("rerankTopK must be greater than 0");
+  }
+  if (!Number.isInteger(input.warmthLevel) || input.warmthLevel < 1 || input.warmthLevel > 10) {
+    throw badRequest("warmthLevel must be between 1 and 10");
   }
 
   return input;

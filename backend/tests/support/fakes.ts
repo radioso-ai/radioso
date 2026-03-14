@@ -138,6 +138,8 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       vectorTopK: input.vectorTopK,
       similarityThreshold: input.similarityThreshold,
       rerankTopK: input.rerankTopK,
+      warmthLevel: input.warmthLevel,
+      citationDisplayEnabled: input.citationDisplayEnabled,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };

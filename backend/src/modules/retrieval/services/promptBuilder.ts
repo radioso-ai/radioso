@@ -1,5 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { FinalPromptContext } from "../domain/retrievalPipelineTypes.js";
+import { renderStructuredAttributeSummary } from "../domain/structuredAttributes.js";
 
 export interface PromptBuildResult {
   prompt: string;
@@ -19,7 +20,16 @@ export class PromptBuilder {
       .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
       .join("\n");
     const contextsSection = input.contexts
-      .map((context, index) => `Context ${index + 1} (${context.title}): ${context.content}`)
+      .map((context, index) => {
+        const attributeSummary = renderStructuredAttributeSummary(context.structuredAttributes ?? {
+          datePoints: [],
+          dateRanges: [],
+          moneyValues: [],
+          locations: [],
+        });
+        const prefix = attributeSummary ? `Attributes: ${attributeSummary}\n` : "";
+        return `Context ${index + 1} (${context.title}): ${prefix}${context.content}`;
+      })
       .join("\n\n");
     const warmthInstruction = this.getWarmthInstruction(input.settings.warmthLevel);
 

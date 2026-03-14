@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
+import { OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
@@ -94,12 +95,13 @@ describe("chat retrieval domain", () => {
       rewritten: [
         { chunkId: "c1", documentId: "d1", title: "A", content: "rate limit", similarity: 0.9 },
       ],
+      lexical: [],
     });
 
     expect(result).toHaveLength(2);
     expect(result[0]).toMatchObject({
       chunkId: "c1",
-      retrievalSources: ["original", "rewritten"],
+      retrievalSources: ["semantic_original", "semantic_rewritten"],
       similarity: 0.9,
     });
   });
@@ -125,8 +127,10 @@ describe("chat retrieval domain", () => {
           title: "A",
           content: "nothing relevant",
           similarity: 0.9,
-          retrievalSources: ["original"],
+          retrievalSources: ["semantic_original"],
           retrievalText: "A nothing relevant",
+          semanticScore: 0.9,
+          lexicalScore: 0,
         },
         {
           chunkId: "c2",
@@ -134,8 +138,10 @@ describe("chat retrieval domain", () => {
           title: "B",
           content: "this test page explains behavior",
           similarity: 0.3,
-          retrievalSources: ["rewritten"],
+          retrievalSources: ["semantic_rewritten"],
           retrievalText: "B this test page explains behavior",
+          semanticScore: 0.3,
+          lexicalScore: 0,
         },
       ],
     });
@@ -143,6 +149,51 @@ describe("chat retrieval domain", () => {
     expect(result.status).toBe("applied");
     expect(result.contexts).toHaveLength(1);
     expect(result.contexts[0]?.chunkId).toBe("c2");
+  });
+
+  it("uses enriched retrieval text when building rerank candidates", async () => {
+    let prompt = "";
+    const gateway = new OpenAISemanticRerankGateway(
+      {
+        chat: {
+          completions: {
+            create: async (input: { messages: Array<{ content: string }> }) => {
+              prompt = input.messages[1]?.content ?? "";
+              return {
+                choices: [
+                  {
+                    message: {
+                      content: "[]",
+                    },
+                  },
+                ],
+              };
+            },
+          },
+        },
+      } as never,
+      "gpt-test",
+    );
+
+    await gateway.rerank({
+      query: "summer retreat",
+      contexts: [
+        {
+          chunkId: "c1",
+          documentId: "d1",
+          title: "Summer Retreat",
+          content: "RAW BODY CONTENT SHOULD NOT BE USED",
+          similarity: 0.7,
+          retrievalSources: ["semantic_original"],
+          retrievalText: "Title: Summer Retreat | Dates: 2026-06-12 to 2026-06-15 | Location: Estonia",
+          semanticScore: 0.7,
+          lexicalScore: 0.3,
+        },
+      ],
+    });
+
+    expect(prompt).toContain("Title: Summer Retreat | Dates: 2026-06-12 to 2026-06-15 | Location: Estonia");
+    expect(prompt).not.toContain("RAW BODY CONTENT SHOULD NOT BE USED");
   });
 
   it("uses valid rerank scores even when some score rows are malformed", async () => {
@@ -166,8 +217,10 @@ describe("chat retrieval domain", () => {
           title: "Rate Limits",
           content: "The API allows 60 requests per minute.",
           similarity: 0.4,
-          retrievalSources: ["original"],
+          retrievalSources: ["semantic_original"],
           retrievalText: "Rate Limits The API allows 60 requests per minute.",
+          semanticScore: 0.4,
+          lexicalScore: 0,
         },
         {
           chunkId: "c2",
@@ -175,8 +228,10 @@ describe("chat retrieval domain", () => {
           title: "Troubleshooting",
           content: "If no context is found, check the threshold.",
           similarity: 0.9,
-          retrievalSources: ["original"],
+          retrievalSources: ["semantic_original"],
           retrievalText: "Troubleshooting If no context is found, check the threshold.",
+          semanticScore: 0.9,
+          lexicalScore: 0,
         },
       ],
     });
@@ -197,8 +252,10 @@ describe("chat retrieval domain", () => {
           title: "A",
           content: "short content",
           similarity: 0.8,
-          retrievalSources: ["original"],
+          retrievalSources: ["semantic_original"],
           retrievalText: "A short content",
+          semanticScore: 0.8,
+          lexicalScore: 0,
           relevanceScore: 0.9,
           rerankPosition: 0,
         },
@@ -208,8 +265,10 @@ describe("chat retrieval domain", () => {
           title: "B",
           content: "x".repeat(400),
           similarity: 0.7,
-          retrievalSources: ["original"],
+          retrievalSources: ["semantic_original"],
           retrievalText: "B large content",
+          semanticScore: 0.7,
+          lexicalScore: 0,
           relevanceScore: 0.8,
           rerankPosition: 1,
         },
@@ -232,8 +291,10 @@ describe("chat retrieval domain", () => {
           title: "A",
           content: "x".repeat(200),
           similarity: 0.95,
-          retrievalSources: ["original"],
+          retrievalSources: ["semantic_original"],
           retrievalText: "A oversized content",
+          semanticScore: 0.95,
+          lexicalScore: 0,
           relevanceScore: 0.99,
           rerankPosition: 0,
         },
@@ -243,8 +304,10 @@ describe("chat retrieval domain", () => {
           title: "B",
           content: "fits",
           similarity: 0.8,
-          retrievalSources: ["original"],
+          retrievalSources: ["semantic_original"],
           retrievalText: "B fits",
+          semanticScore: 0.8,
+          lexicalScore: 0,
           relevanceScore: 0.85,
           rerankPosition: 1,
         },
@@ -270,8 +333,10 @@ describe("chat retrieval domain", () => {
           title: "Intro",
           content: "The page parses content.",
           similarity: 0.8,
-          retrievalSources: ["original"],
+          retrievalSources: ["semantic_original"],
           retrievalText: "Intro The page parses content.",
+          semanticScore: 0.8,
+          lexicalScore: 0,
           relevanceScore: 0.9,
           rerankPosition: 0,
           promptPosition: 0,

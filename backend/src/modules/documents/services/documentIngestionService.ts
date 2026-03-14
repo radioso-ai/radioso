@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/services/auditService.js";
-import { chunkMarkdown, normalizeMarkdown } from "../../retrieval/domain/chunkingService.js";
+import { normalizeMarkdown, type ChunkingStrategy } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 import { buildRetrievalText, type EmbeddingService } from "../../retrieval/services/embeddingService.js";
+import type { ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
+import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSettings.js";
 import { notFound } from "../../../shared/domain/errors.js";
 
 export interface DocumentRecord {
@@ -59,6 +61,14 @@ export interface ChunkRepositoryPort {
   replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void>;
 }
 
+export interface RetrievalSettingsReaderPort {
+  getForAccount(accountId: string): Promise<RetrievalSettingsRecord>;
+}
+
+export interface ChunkingStrategyRegistryPort {
+  get(strategyId: ChunkingStrategyId): ChunkingStrategy;
+}
+
 export interface DocumentSummary {
   id: string;
   title: string;
@@ -78,6 +88,8 @@ export class DocumentIngestionService {
     private readonly chunkRepository: ChunkRepositoryPort,
     private readonly embeddingService: EmbeddingService,
     private readonly auditService: AuditService,
+    private readonly retrievalSettingsService: RetrievalSettingsReaderPort,
+    private readonly chunkingStrategyRegistry: ChunkingStrategyRegistryPort,
   ) {}
 
   async ingest(input: { accountId: string; title: string; content: string }): Promise<{ documentId: string; status: string }> {
@@ -113,7 +125,12 @@ export class DocumentIngestionService {
 
     try {
       const markdownContent = normalizeMarkdown(input.content);
-      const chunks = chunkMarkdown(markdownContent);
+      const settings = await this.retrievalSettingsService.getForAccount(input.accountId);
+      const chunkingStrategy = this.chunkingStrategyRegistry.get(settings.chunkingStrategy);
+      const chunks = await chunkingStrategy.chunk({
+        title: input.title,
+        content: markdownContent,
+      });
       const embeddings = await this.embeddingService.embedChunks(
         chunks.map((chunk) =>
           buildRetrievalText({

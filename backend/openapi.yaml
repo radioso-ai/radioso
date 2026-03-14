@@ -382,6 +382,7 @@ components:
         - rerankTopK
         - warmthLevel
         - citationDisplayEnabled
+        - chunkingStrategy
       properties:
         queryRewriteEnabled:
           type: boolean
@@ -404,6 +405,11 @@ components:
           maximum: 10
         citationDisplayEnabled:
           type: boolean
+        chunkingStrategy:
+          type: string
+          enum:
+            - fixed_window
+            - structured_semantic
     UpdateRetrievalSettingsRequest:
       allOf:
         - $ref: '#/components/schemas/RetrievalSettings'

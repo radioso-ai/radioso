@@ -116,6 +116,7 @@ export interface RetrievalSettings {
   rerankTopK: number
   warmthLevel: number
   citationDisplayEnabled: boolean
+  chunkingStrategy: 'fixed_window' | 'structured_semantic'
 }
 
 export interface DocumentCreateRequest {

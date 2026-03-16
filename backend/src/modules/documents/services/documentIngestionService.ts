@@ -1,19 +1,6 @@
-import { randomUUID } from "node:crypto";
-
 import type { AuditService } from "../../audit/services/auditService.js";
-import { normalizeMarkdown, type ChunkingStrategy } from "../../retrieval/domain/chunking/chunkingStrategy.js";
-import {
-  emptyStructuredAttributes,
-  renderStructuredAttributeSummary,
-  type StructuredAttributes,
-} from "../../retrieval/domain/structuredAttributes.js";
-import { normalizeStructuredAttributes } from "../../retrieval/services/attributeNormalizer.js";
-import { buildRetrievalText, type EmbeddingService } from "../../retrieval/services/embeddingService.js";
-import type { ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
-import { renderSearchText } from "../../retrieval/services/searchTextRenderer.js";
-import { extractRawStructuredAttributes } from "../../retrieval/services/structuredAttributeExtractor.js";
-import { deriveChunkSection, deriveDocumentSubject } from "../../retrieval/services/subjectIdentityService.js";
-import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSettings.js";
+import { normalizeMarkdown } from "../../retrieval/domain/chunking/chunkingStrategy.js";
+import type { StructuredAttributes } from "../../retrieval/domain/structuredAttributes.js";
 import { notFound } from "../../../shared/domain/errors.js";
 
 export interface DocumentRecord {
@@ -23,6 +10,8 @@ export interface DocumentRecord {
   sourceContent: string;
   markdownContent: string;
   status: string;
+  revision: number;
+  failureReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,6 +31,12 @@ export interface ChunkRecord {
 }
 
 export interface DocumentRepositoryPort {
+  createAndQueue(input: {
+    accountId: string;
+    title: string;
+    sourceContent: string;
+    markdownContent: string;
+  }): Promise<DocumentRecord>;
   create(input: {
     accountId: string;
     title: string;
@@ -55,6 +50,13 @@ export interface DocumentRepositoryPort {
     status: string;
     failureReason?: string | null;
   }): Promise<DocumentRecord>;
+  setStatusIfRevisionMatches(input: {
+    documentId: string;
+    accountId: string;
+    revision: number;
+    status: string;
+    failureReason?: string | null;
+  }): Promise<DocumentRecord | null>;
   findByIdAndAccountId(documentId: string, accountId: string): Promise<DocumentRecord | null>;
   listByAccountId(accountId: string): Promise<DocumentRecord[]>;
   update(input: {
@@ -65,19 +67,20 @@ export interface DocumentRepositoryPort {
     markdownContent: string;
     status: string;
   }): Promise<DocumentRecord>;
+  updateAndQueue(input: {
+    documentId: string;
+    accountId: string;
+    title: string;
+    sourceContent: string;
+    markdownContent: string;
+  }): Promise<DocumentRecord>;
+  requeue(documentId: string, accountId: string): Promise<DocumentRecord>;
+  requeueAndQueue(documentId: string, accountId: string): Promise<DocumentRecord>;
   deleteByIdAndAccountId(documentId: string, accountId: string): Promise<boolean>;
 }
 
 export interface ChunkRepositoryPort {
   replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void>;
-}
-
-export interface RetrievalSettingsReaderPort {
-  getForAccount(accountId: string): Promise<RetrievalSettingsRecord>;
-}
-
-export interface ChunkingStrategyRegistryPort {
-  get(strategyId: ChunkingStrategyId): ChunkingStrategy;
 }
 
 export interface DocumentSummary {
@@ -96,20 +99,120 @@ export interface DocumentDetails extends DocumentSummary {
 export class DocumentIngestionService {
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
-    private readonly chunkRepository: ChunkRepositoryPort,
-    private readonly embeddingService: EmbeddingService,
     private readonly auditService: AuditService,
-    private readonly retrievalSettingsService: RetrievalSettingsReaderPort,
-    private readonly chunkingStrategyRegistry: ChunkingStrategyRegistryPort,
   ) {}
 
   async ingest(input: { accountId: string; title: string; content: string }): Promise<{ documentId: string; status: string }> {
-    return this.persistDocument(input);
+    try {
+      const document = await this.documentRepository.createAndQueue({
+        accountId: input.accountId,
+        title: input.title,
+        sourceContent: input.content,
+        markdownContent: normalizeMarkdown(input.content),
+      });
+
+      await this.auditService.record({
+        accountId: input.accountId,
+        eventType: "document.ingest",
+        eventStatus: "success",
+        metadata: {
+          documentId: document.id,
+          revision: document.revision,
+          status: document.status,
+        },
+      });
+
+      return {
+        documentId: document.id,
+        status: document.status,
+      };
+    } catch (error) {
+      await this.auditService.record({
+        accountId: input.accountId,
+        eventType: "document.ingest",
+        eventStatus: "failure",
+        metadata: {
+          reason: error instanceof Error ? error.message : "Failed to queue document processing",
+        },
+      });
+      throw error;
+    }
   }
 
   async update(input: { accountId: string; documentId: string; title: string; content: string }): Promise<{ documentId: string; status: string }> {
     await this.getDocument(input.accountId, input.documentId);
-    return this.persistDocument(input);
+
+    try {
+      const document = await this.documentRepository.updateAndQueue({
+        documentId: input.documentId,
+        accountId: input.accountId,
+        title: input.title,
+        sourceContent: input.content,
+        markdownContent: normalizeMarkdown(input.content),
+      });
+
+      await this.auditService.record({
+        accountId: input.accountId,
+        eventType: "document.update",
+        eventStatus: "success",
+        metadata: {
+          documentId: document.id,
+          revision: document.revision,
+          status: document.status,
+        },
+      });
+
+      return {
+        documentId: document.id,
+        status: document.status,
+      };
+    } catch (error) {
+      await this.auditService.record({
+        accountId: input.accountId,
+        eventType: "document.update",
+        eventStatus: "failure",
+        metadata: {
+          documentId: input.documentId,
+          reason: error instanceof Error ? error.message : "Failed to queue document processing",
+        },
+      });
+      throw error;
+    }
+  }
+
+  async reprocess(input: { accountId: string; documentId: string }): Promise<{ documentId: string; status: string }> {
+    await this.getDocument(input.accountId, input.documentId);
+
+    try {
+      const document = await this.documentRepository.requeueAndQueue(input.documentId, input.accountId);
+
+      await this.auditService.record({
+        accountId: input.accountId,
+        eventType: "document.reprocess",
+        eventStatus: "success",
+        metadata: {
+          documentId: document.id,
+          revision: document.revision,
+          status: document.status,
+        },
+      });
+
+      return {
+        documentId: document.id,
+        status: document.status,
+      };
+    } catch (error) {
+      await this.auditService.record({
+        accountId: input.accountId,
+        eventType: "document.reprocess",
+        eventStatus: "failure",
+        metadata: {
+          documentId: input.documentId,
+          reason: error instanceof Error ? error.message : "Failed to queue document processing",
+        },
+      });
+      throw error;
+    }
   }
 
   async getDocument(accountId: string, documentId: string): Promise<DocumentDetails> {
@@ -124,110 +227,6 @@ export class DocumentIngestionService {
   async listForAccount(accountId: string): Promise<DocumentSummary[]> {
     const documents = await this.documentRepository.listByAccountId(accountId);
     return documents.map((document) => this.toSummary(document));
-  }
-
-  private async persistDocument(input: {
-    accountId: string;
-    title: string;
-    content: string;
-    documentId?: string;
-  }): Promise<{ documentId: string; status: string }> {
-    let documentId: string | undefined;
-
-    try {
-      const markdownContent = normalizeMarkdown(input.content);
-      const documentSubject = deriveDocumentSubject({
-        title: input.title,
-        content: markdownContent,
-      });
-      const settings = await this.retrievalSettingsService.getForAccount(input.accountId);
-      const chunkingStrategy = this.chunkingStrategyRegistry.get(settings.chunkingStrategy);
-      const chunks = await chunkingStrategy.chunk({
-        title: input.title,
-        content: markdownContent,
-      });
-      const enrichedChunks = chunks.map((chunk) => {
-        const structuredAttributes = normalizeStructuredAttributes(extractRawStructuredAttributes(chunk.content));
-        const attributeText = renderStructuredAttributeSummary(structuredAttributes);
-        const searchText = renderSearchText({
-          title: input.title,
-          subjectLabel: documentSubject,
-          sectionPath: deriveChunkSection(chunk.content),
-          attributeText,
-          content: chunk.content,
-        });
-
-        return {
-          ...chunk,
-          structuredAttributes,
-          searchText,
-        };
-      });
-      const embeddings = await this.embeddingService.embedChunks(
-        enrichedChunks.map((chunk) => chunk.searchText),
-      );
-      const persistedDocumentInput = {
-        accountId: input.accountId,
-        title: input.title,
-        sourceContent: input.content,
-        markdownContent,
-        status: "pending",
-      };
-      const document = input.documentId
-        ? await this.documentRepository.update({
-            documentId: input.documentId,
-            ...persistedDocumentInput,
-          })
-        : await this.documentRepository.create(persistedDocumentInput);
-      documentId = document.id;
-      const persistedChunks: ChunkRecord[] = enrichedChunks.map((chunk, index) => ({
-        id: randomUUID(),
-        documentId: document.id,
-        accountId: input.accountId,
-        chunkIndex: chunk.chunkIndex,
-        content: chunk.content,
-        searchText: chunk.searchText,
-        structuredAttributes: chunk.structuredAttributes ?? emptyStructuredAttributes(),
-        embedding: embeddings[index] ?? [],
-        startOffset: chunk.startOffset,
-        endOffset: chunk.endOffset,
-        createdAt: new Date(),
-      }));
-
-      await this.chunkRepository.replaceForDocument(document.id, persistedChunks);
-      const readyDocument = await this.documentRepository.setStatus({
-        documentId: document.id,
-        accountId: input.accountId,
-        status: "ready",
-        failureReason: null,
-      });
-      await this.auditService.record({
-        accountId: input.accountId,
-        eventType: input.documentId ? "document.update" : "document.ingest",
-        eventStatus: "success",
-        metadata: { documentId: document.id },
-      });
-
-      return {
-        documentId: document.id,
-        status: readyDocument.status,
-      };
-    } catch (error) {
-      if (documentId) {
-        await this.documentRepository.setStatus({
-          documentId,
-          accountId: input.accountId,
-          status: "failed",
-          failureReason: error instanceof Error ? error.message : "Unknown ingestion error",
-        });
-      }
-      await this.auditService.record({
-        accountId: input.accountId,
-        eventType: input.documentId ? "document.update" : "document.ingest",
-        eventStatus: "failure",
-      });
-      throw error;
-    }
   }
 
   private toSummary(document: DocumentRecord): DocumentSummary {

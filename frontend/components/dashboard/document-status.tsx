@@ -6,7 +6,7 @@ interface DocumentStatusProps {
   status: string
 }
 
-const normalizeStatus = (status: string): 'ready' | 'failed' | 'processing' => {
+const normalizeStatus = (status: string): 'queued' | 'processing' | 'ready' | 'failed' => {
   const normalized = status.toLowerCase()
 
   if (normalized === 'ready') {
@@ -15,6 +15,10 @@ const normalizeStatus = (status: string): 'ready' | 'failed' | 'processing' => {
 
   if (normalized === 'failed') {
     return 'failed'
+  }
+
+  if (normalized === 'queued') {
+    return 'queued'
   }
 
   return 'processing'
@@ -29,6 +33,10 @@ const getStatusLabel = (status: string): string => {
 
   if (normalized === 'failed') {
     return 'Failed'
+  }
+
+  if (normalized === 'queued') {
+    return 'Queued'
   }
 
   return 'Processing'

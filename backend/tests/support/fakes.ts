@@ -10,10 +10,14 @@ import type {
 } from "../../src/modules/auth/services/authService.js";
 import type {
   ChunkRecord,
+  ChunkRepositoryPort,
   DocumentRecord,
   DocumentRepositoryPort,
-  ChunkRepositoryPort,
 } from "../../src/modules/documents/services/documentIngestionService.js";
+import type {
+  DocumentProcessingJobRecord,
+  DocumentProcessingJobRepositoryPort,
+} from "../../src/db/repositories/documentProcessingJobRepository.js";
 import type {
   ConversationRecord,
   ConversationRepositoryPort,
@@ -158,6 +162,36 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
 export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   readonly items = new Map<string, DocumentRecord>();
 
+  constructor(private readonly jobRepository?: InMemoryDocumentProcessingJobRepository) {}
+
+  async createAndQueue(input: {
+    accountId: string;
+    title: string;
+    sourceContent: string;
+    markdownContent: string;
+  }): Promise<DocumentRecord> {
+    const record: DocumentRecord = {
+      id: randomUUID(),
+      accountId: input.accountId,
+      title: input.title,
+      sourceContent: input.sourceContent,
+      markdownContent: input.markdownContent,
+      status: "queued",
+      revision: 1,
+      failureReason: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    await this.jobRepository?.enqueue({
+      documentId: record.id,
+      accountId: record.accountId,
+      documentRevision: record.revision,
+    });
+    this.items.set(record.id, record);
+    return record;
+  }
+
   async create(input: {
     accountId: string;
     title: string;
@@ -172,6 +206,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       status: input.status,
+      revision: 1,
+      failureReason: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -182,7 +218,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   async listByAccountId(accountId: string): Promise<DocumentRecord[]> {
     return [...this.items.values()]
       .filter((item) => item.accountId === accountId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   }
 
   async findByIdAndAccountId(documentId: string, accountId: string): Promise<DocumentRecord | null> {
@@ -204,6 +240,29 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     const record: DocumentRecord = {
       ...existing,
       status: input.status,
+      failureReason: input.status === "failed" ? (input.failureReason ?? null) : null,
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async setStatusIfRevisionMatches(input: {
+    documentId: string;
+    accountId: string;
+    revision: number;
+    status: string;
+    failureReason?: string | null;
+  }): Promise<DocumentRecord | null> {
+    const existing = this.items.get(input.documentId);
+    if (!existing || existing.accountId !== input.accountId || existing.revision !== input.revision) {
+      return null;
+    }
+
+    const record: DocumentRecord = {
+      ...existing,
+      status: input.status,
+      failureReason: input.status === "failed" ? (input.failureReason ?? null) : null,
       updatedAt: new Date(),
     };
     this.items.set(record.id, record);
@@ -229,8 +288,82 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       status: input.status,
+      revision: existing.revision + 1,
+      failureReason: null,
       updatedAt: new Date(),
     };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async updateAndQueue(input: {
+    documentId: string;
+    accountId: string;
+    title: string;
+    sourceContent: string;
+    markdownContent: string;
+  }): Promise<DocumentRecord> {
+    const existing = this.items.get(input.documentId);
+    if (!existing || existing.accountId !== input.accountId) {
+      throw new Error(`Document ${input.documentId} not found`);
+    }
+
+    const record: DocumentRecord = {
+      ...existing,
+      title: input.title,
+      sourceContent: input.sourceContent,
+      markdownContent: input.markdownContent,
+      status: "queued",
+      revision: existing.revision + 1,
+      failureReason: null,
+      updatedAt: new Date(),
+    };
+
+    await this.jobRepository?.enqueue({
+      documentId: record.id,
+      accountId: record.accountId,
+      documentRevision: record.revision,
+    });
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async requeue(documentId: string, accountId: string): Promise<DocumentRecord> {
+    const existing = this.items.get(documentId);
+    if (!existing || existing.accountId !== accountId) {
+      throw new Error(`Document ${documentId} not found`);
+    }
+
+    const record: DocumentRecord = {
+      ...existing,
+      status: "queued",
+      revision: existing.revision + 1,
+      failureReason: null,
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async requeueAndQueue(documentId: string, accountId: string): Promise<DocumentRecord> {
+    const existing = this.items.get(documentId);
+    if (!existing || existing.accountId !== accountId) {
+      throw new Error(`Document ${documentId} not found`);
+    }
+
+    const record: DocumentRecord = {
+      ...existing,
+      status: "queued",
+      revision: existing.revision + 1,
+      failureReason: null,
+      updatedAt: new Date(),
+    };
+
+    await this.jobRepository?.enqueue({
+      documentId: record.id,
+      accountId: record.accountId,
+      documentRevision: record.revision,
+    });
     this.items.set(record.id, record);
     return record;
   }
@@ -251,6 +384,100 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
 
   async replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void> {
     this.items.set(documentId, chunks);
+  }
+}
+
+export class InMemoryDocumentProcessingJobRepository implements DocumentProcessingJobRepositoryPort {
+  readonly items = new Map<string, DocumentProcessingJobRecord>();
+
+  async enqueue(input: { documentId: string; accountId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord> {
+    const record: DocumentProcessingJobRecord = {
+      id: randomUUID(),
+      documentId: input.documentId,
+      accountId: input.accountId,
+      documentRevision: input.documentRevision,
+      status: "queued",
+      attemptCount: 0,
+      lastError: null,
+      availableAt: new Date(),
+      claimedAt: null,
+      completedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async claimNext(now: Date = new Date()): Promise<DocumentProcessingJobRecord | null> {
+    const next = [...this.items.values()]
+      .filter((item) => item.status === "queued" && item.availableAt <= now)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())[0];
+
+    if (!next) {
+      return null;
+    }
+
+    const claimed: DocumentProcessingJobRecord = {
+      ...next,
+      status: "processing",
+      attemptCount: next.attemptCount + 1,
+      claimedAt: now,
+      updatedAt: now,
+    };
+    this.items.set(claimed.id, claimed);
+    return claimed;
+  }
+
+  async listProcessingJobs(): Promise<DocumentProcessingJobRecord[]> {
+    return [...this.items.values()]
+      .filter((item) => item.status === "processing")
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  }
+
+  async markCompleted(jobId: string): Promise<void> {
+    this.update(jobId, {
+      status: "completed",
+      completedAt: new Date(),
+    });
+  }
+
+  async markSkipped(jobId: string, reason: string): Promise<void> {
+    this.update(jobId, {
+      status: "skipped",
+      lastError: reason,
+      completedAt: new Date(),
+    });
+  }
+
+  async markFailed(jobId: string, errorMessage: string): Promise<void> {
+    this.update(jobId, {
+      status: "failed",
+      lastError: errorMessage,
+      completedAt: new Date(),
+    });
+  }
+
+  async reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void> {
+    this.update(jobId, {
+      status: "queued",
+      lastError: errorMessage,
+      availableAt: nextAttemptAt,
+      claimedAt: null,
+    });
+  }
+
+  private update(jobId: string, partial: Partial<DocumentProcessingJobRecord>): void {
+    const existing = this.items.get(jobId);
+    if (!existing) {
+      return;
+    }
+
+    this.items.set(jobId, {
+      ...existing,
+      ...partial,
+      updatedAt: new Date(),
+    });
   }
 }
 

@@ -1,4 +1,5 @@
 import type { RetrievedCandidate, RerankedCandidate } from "../domain/retrievalPipelineTypes.js";
+import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { EntityQueryIntent } from "./entityQueryIntentService.js";
 import { extractSubjectLabel, normalizeIdentityPhrase, subjectMatchesPhrase } from "./subjectIdentityService.js";
 
@@ -11,16 +12,14 @@ export interface EntityIntegrityResolution {
 export class EntityIntegrityService {
   applyCandidateGuards(input: {
     candidates: RetrievedCandidate[];
+    query: string;
+    history: MessageRecord[];
     intent: EntityQueryIntent;
   }): RetrievedCandidate[] {
-    if (input.intent.mode === "generic" || input.intent.mode === "comparison") {
-      return input.candidates;
-    }
-
     return [...input.candidates]
       .map((candidate) => {
         const subjectLabel = candidate.subjectLabel ?? extractSubjectLabel(candidate.retrievalText) ?? extractSubjectLabel(candidate.content);
-        const adjustedScore = this.adjustedScore(candidate, subjectLabel, input.intent);
+        const adjustedScore = this.adjustedScore(candidate, subjectLabel, input);
 
         return {
           ...candidate,
@@ -34,6 +33,8 @@ export class EntityIntegrityService {
 
   resolveContexts(input: {
     contexts: RerankedCandidate[];
+    query: string;
+    history: MessageRecord[];
     intent: EntityQueryIntent;
     topK: number;
   }): EntityIntegrityResolution {
@@ -42,16 +43,19 @@ export class EntityIntegrityService {
       .map((context) => context.subjectLabel ?? extractSubjectLabel(context.retrievalText) ?? extractSubjectLabel(context.content))
       .filter((value): value is string => Boolean(value));
     const distinctSubjects = [...new Set(subjects.map((value) => normalizeIdentityPhrase(value)))];
+    const queryMatchedSubjects = distinctSubjects.filter((subject) =>
+      this.collectFocusTexts(input.query, input.history).some((text) => text.includes(subject)),
+    );
 
-    if (input.intent.mode === "generic" || input.intent.mode === "comparison") {
+    if (input.intent.mode === "comparison") {
       return {
         contexts: limited,
         ambiguityDetected: false,
-        selectedSubjects: distinctSubjects,
+        selectedSubjects: queryMatchedSubjects.length > 0 ? queryMatchedSubjects : distinctSubjects,
       };
     }
 
-    const preferredSubject = this.findPreferredSubject(limited, input.intent);
+    const preferredSubject = this.findPreferredSubject(limited, input);
     if (!preferredSubject) {
       return {
         contexts: limited,
@@ -82,30 +86,44 @@ export class EntityIntegrityService {
   private adjustedScore(
     candidate: RetrievedCandidate,
     subjectLabel: string | null,
-    intent: EntityQueryIntent,
+    input: {
+      query: string;
+      history: MessageRecord[];
+      intent: EntityQueryIntent;
+    },
   ): number {
     let score = candidate.similarity;
+    const focusTexts = this.collectFocusTexts(input.query, input.history);
 
-    if (subjectLabel && intent.includePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))) {
+    if (subjectLabel && focusTexts.some((text) => text.includes(normalizeIdentityPhrase(subjectLabel)))) {
       score += 1;
     }
 
-    if (subjectLabel && intent.excludePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))) {
+    if (subjectLabel && input.intent.includePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))) {
+      score += 1;
+    }
+
+    if (subjectLabel && input.intent.excludePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))) {
       score -= 1;
     }
 
-    if (
-      subjectLabel &&
-      intent.includePhrases.length > 0 &&
-      !intent.includePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))
-    ) {
+    if (subjectLabel && input.intent.includePhrases.length > 0 && !input.intent.includePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))) {
       score -= 0.5;
     }
 
     return score;
   }
 
-  private findPreferredSubject(contexts: RerankedCandidate[], intent: EntityQueryIntent): string | null {
+  private findPreferredSubject(
+    contexts: RerankedCandidate[],
+    input: {
+      query: string;
+      history: MessageRecord[];
+      intent: EntityQueryIntent;
+    },
+  ): string | null {
+    const focusTexts = this.collectFocusTexts(input.query, input.history);
+
     for (const context of contexts) {
       const subjectLabel = context.subjectLabel ?? extractSubjectLabel(context.retrievalText) ?? extractSubjectLabel(context.content);
       if (!subjectLabel) {
@@ -113,11 +131,25 @@ export class EntityIntegrityService {
       }
 
       const normalized = normalizeIdentityPhrase(subjectLabel);
-      if (intent.includePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))) {
+      if (focusTexts.some((text) => text.includes(normalized))) {
+        return normalized;
+      }
+
+      if (input.intent.includePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))) {
         return normalized;
       }
     }
 
     return null;
+  }
+
+  private collectFocusTexts(query: string, history: MessageRecord[]): string[] {
+    const latestUserMessages = history
+      .filter((message) => message.role === "user")
+      .slice(-2)
+      .map((message) => normalizeIdentityPhrase(message.content))
+      .filter(Boolean);
+
+    return [normalizeIdentityPhrase(query), ...latestUserMessages].filter(Boolean);
   }
 }

@@ -1,28 +1,13 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { normalizeIdentityPhrase } from "./subjectIdentityService.js";
 
-export type EntityQueryMode = "generic" | "single_entity" | "comparison" | "correction";
+export type EntityQueryMode = "generic" | "comparison" | "correction";
 
 export interface EntityQueryIntent {
   mode: EntityQueryMode;
   includePhrases: string[];
   excludePhrases: string[];
 }
-
-const STOP_PHRASES = new Set([
-  "a",
-  "an",
-  "the",
-  "is",
-  "are",
-  "was",
-  "were",
-  "who",
-  "what",
-  "where",
-  "tell me about",
-  "compare",
-]);
 
 export class EntityQueryIntentService {
   interpret(input: { query: string; history: MessageRecord[] }): EntityQueryIntent {
@@ -40,15 +25,6 @@ export class EntityQueryIntentService {
     const correction = this.parseCorrection(query, input.history);
     if (correction) {
       return correction;
-    }
-
-    const singleTarget = this.parseSingleTarget(query);
-    if (singleTarget.length > 0) {
-      return {
-        mode: "single_entity",
-        includePhrases: singleTarget,
-        excludePhrases: [],
-      };
     }
 
     return {
@@ -108,28 +84,6 @@ export class EntityQueryIntentService {
     return null;
   }
 
-  private parseSingleTarget(query: string): string[] {
-    const normalized = query.replace(/\?+$/, "").trim();
-    const patterns = [
-      /^(?:who|what|where)\s+is\s+(.+)$/i,
-      /^(?:tell me about|what do you know about)\s+(.+)$/i,
-    ];
-
-    for (const pattern of patterns) {
-      const match = normalized.match(pattern);
-      if (match?.[1]) {
-        const candidate = this.takeLeadingEntity(match[1]);
-        if (/^not\b/i.test(candidate)) {
-          return [];
-        }
-
-        return this.cleanupPhrases([candidate]);
-      }
-    }
-
-    return [];
-  }
-
   private splitEntities(value: string): string[] {
     return this.cleanupPhrases(
       value
@@ -150,6 +104,6 @@ export class EntityQueryIntentService {
     return values
       .map((value) => normalizeIdentityPhrase(value))
       .filter((value) => value.length > 1)
-      .filter((value) => !STOP_PHRASES.has(value));
+      .filter((value) => !/^\d+$/.test(value));
   }
 }

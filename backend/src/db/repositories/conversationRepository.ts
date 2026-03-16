@@ -11,6 +11,7 @@ export interface ConversationRecord {
 
 export interface ConversationRepositoryPort {
   create(accountId: string): Promise<ConversationRecord>;
+  listByAccountId(accountId: string): Promise<ConversationRecord[]>;
   findByIdAndAccountId(conversationId: string, accountId: string): Promise<ConversationRecord | null>;
   touch(conversationId: string): Promise<void>;
 }
@@ -41,6 +42,18 @@ export class ConversationRepository implements ConversationRepositoryPort {
     );
 
     return mapConversation(row);
+  }
+
+  async listByAccountId(accountId: string): Promise<ConversationRecord[]> {
+    const rows = await this.database.query<ConversationRow>(
+      `SELECT id, account_id, created_at, updated_at
+       FROM conversations
+       WHERE account_id = $1
+       ORDER BY updated_at DESC, created_at DESC`,
+      [accountId],
+    );
+
+    return rows.map(mapConversation);
   }
 
   async findByIdAndAccountId(conversationId: string, accountId: string): Promise<ConversationRecord | null> {

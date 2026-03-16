@@ -19,6 +19,84 @@ const getBearerToken = async (app: ReturnType<typeof createTestApp>["app"]) => {
 };
 
 describe("chat contract", () => {
+  it("lists chat history summaries for the active account", async () => {
+    const { app } = createTestApp();
+    const token = await getBearerToken(app);
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+
+    const chat = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does this page do?", stream: false });
+
+    const response = await request(app)
+      .get("/api/v1/chat/history")
+      .set("Authorization", authorization);
+
+    expect(chat.status).toBe(200);
+    expect(response.status).toBe(200);
+    expect(response.body.conversations).toEqual([
+      expect.objectContaining({
+        id: chat.body.conversationId,
+        messageCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        preview: expect.any(String),
+      }),
+    ]);
+  });
+
+  it("returns a conversation history detail with debug metadata", async () => {
+    const { app } = createTestApp();
+    const token = await getBearerToken(app);
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+
+    const chat = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does this page do?", stream: false });
+
+    const response = await request(app)
+      .get(`/api/v1/chat/history/${chat.body.conversationId}`)
+      .set("Authorization", authorization);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      conversationId: chat.body.conversationId,
+      accountId: expect.any(String),
+      messageCount: 2,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      messages: [
+        expect.objectContaining({
+          role: "user",
+          content: "What does this page do?",
+        }),
+        expect.objectContaining({
+          role: "assistant",
+          debug: expect.objectContaining({
+            eventStatus: "success",
+            stream: false,
+            citationCount: expect.any(Number),
+            retrievalInfo: expect.objectContaining({
+              candidateCounts: expect.any(Object),
+            }),
+          }),
+        }),
+      ],
+    });
+  });
+
   it("returns a non-streaming chat response with a conversation id", async () => {
     const { app } = createTestApp();
     const token = await getBearerToken(app);

@@ -1,6 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
+import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { createTestApp } from "../support/testApp.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
@@ -260,6 +261,68 @@ describe("chat integration", () => {
       normalizedCandidateCount: expect.any(Number),
       finalContextCount: expect.any(Number),
     });
+    expect(chatAudit?.metadata).toMatchObject({
+      assistantMessageId: expect.any(String),
+      conversationId: response.body.conversationId,
+      stream: false,
+    });
+  });
+
+  it("records a failure turn that can be inspected through history", async () => {
+    const failingGateway: ChatGateway = {
+      async answer() {
+        throw new Error("upstream unavailable");
+      },
+      async *streamAnswer() {
+        throw new Error("upstream unavailable");
+      },
+    };
+    const { app } = createTestApp({ chatGateway: failingGateway });
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "history-failure@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
+
+    const failure = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does the page explain?", stream: false });
+
+    expect(failure.status).toBe(500);
+
+    const history = await request(app)
+      .get("/api/v1/chat/history")
+      .set("Authorization", authorization);
+
+    expect(history.status).toBe(200);
+    expect(history.body.conversations).toHaveLength(1);
+
+    const detail = await request(app)
+      .get(`/api/v1/chat/history/${history.body.conversations[0].id}`)
+      .set("Authorization", authorization);
+
+    expect(detail.status).toBe(200);
+    expect(detail.body.messages).toEqual([
+      expect.objectContaining({ role: "user", content: "What does the page explain?" }),
+      expect.objectContaining({
+        role: "assistant",
+        content: "Sorry, something went wrong. Please try again.",
+        debug: expect.objectContaining({
+          eventStatus: "failure",
+          errorMessage: "upstream unavailable",
+        }),
+      }),
+    ]);
   });
 
   it("returns the exact-match source for identifier-style queries", async () => {

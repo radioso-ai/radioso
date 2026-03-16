@@ -1,17 +1,12 @@
 import type OpenAI from "openai";
 
 import { notFound } from "../../../shared/domain/errors.js";
-import type { RetrievalExecutionDiagnostics } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
-import {
-  AnswerPresentationService,
-  type AnswerSegment,
-  type ChatCitation,
-} from "./answerPresentationService.js";
+import { AnswerPresentationService, type AnswerSegment, type ChatCitation } from "./answerPresentationService.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 
 export interface ChatGateway {
@@ -38,6 +33,18 @@ export type ChatStreamEvent =
       answerSegments?: AnswerSegment[];
       retrievalInfo: RetrievalInfo;
     };
+
+interface PreparedSession {
+  conversation: {
+    id: string;
+    accountId: string;
+    createdAt: Date;
+    updatedAt: Date;
+  };
+  history: MessageRecord[];
+  retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
+  userMessage: MessageRecord;
+}
 
 export class OpenAIChatGateway implements ChatGateway {
   constructor(
@@ -104,8 +111,11 @@ export class ChatService {
     answerSegments?: AnswerSegment[];
     retrievalInfo: RetrievalInfo;
   }> {
+    let session: PreparedSession | null = null;
+    let assistantMessageId: string | undefined;
+
     try {
-      const session = await this.prepareSession(input);
+      session = await this.prepareSession(input);
       const answer =
         session.retrieval.contexts.length === 0
           ? "I could not find relevant information in your documents."
@@ -126,9 +136,10 @@ export class ChatService {
         citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
       });
 
-      await this.completeAnswer({
+      assistantMessageId = await this.persistAssistantTurn({
         accountId: input.accountId,
         conversationId: session.conversation.id,
+        userMessageId: session.userMessage.id,
         answer: presentation.answer,
         citations: presentation.citations ?? [],
         diagnostics: session.retrieval.diagnostics,
@@ -143,12 +154,7 @@ export class ChatService {
         retrievalInfo: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),
       };
     } catch (error) {
-      await this.auditService.record({
-        accountId: input.accountId,
-        eventType: "chat.answer",
-        eventStatus: "failure",
-        metadata: { stream: input.stream, stage: "chat.answer" },
-      });
+      await this.recordFailure(input, session, assistantMessageId, error);
       throw error;
     }
   }
@@ -159,8 +165,11 @@ export class ChatService {
     query: string;
     stream: boolean;
   }): AsyncIterable<ChatStreamEvent> {
+    let session: PreparedSession | null = null;
+    let assistantMessageId: string | undefined;
+
     try {
-      const session = await this.prepareSession(input);
+      session = await this.prepareSession(input);
 
       yield {
         type: "conversation",
@@ -208,9 +217,10 @@ export class ChatService {
         citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
       });
 
-      await this.completeAnswer({
+      assistantMessageId = await this.persistAssistantTurn({
         accountId: input.accountId,
         conversationId: session.conversation.id,
+        userMessageId: session.userMessage.id,
         answer: presentation.answer,
         citations: presentation.citations ?? [],
         diagnostics: session.retrieval.diagnostics,
@@ -226,12 +236,7 @@ export class ChatService {
         retrievalInfo: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),
       };
     } catch (error) {
-      await this.auditService.record({
-        accountId: input.accountId,
-        eventType: "chat.answer",
-        eventStatus: "failure",
-        metadata: { stream: input.stream, stage: "chat.answer" },
-      });
+      await this.recordFailure(input, session, assistantMessageId, error);
       throw error;
     }
   }
@@ -240,7 +245,7 @@ export class ChatService {
     accountId: string;
     conversationId?: string;
     query: string;
-  }) {
+  }): Promise<PreparedSession> {
     const conversation = input.conversationId
       ? await this.ensureConversation(input.conversationId, input.accountId)
       : await this.conversationRepository.create(input.accountId);
@@ -251,7 +256,7 @@ export class ChatService {
       history,
     });
 
-    await this.messageRepository.create({
+    const userMessage = await this.messageRepository.create({
       conversationId: conversation.id,
       accountId: input.accountId,
       role: "user",
@@ -262,23 +267,26 @@ export class ChatService {
       conversation,
       history,
       retrieval,
+      userMessage,
     };
   }
 
-  private async completeAnswer(input: {
+  private async persistAssistantTurn(input: {
     accountId: string;
     conversationId: string;
+    userMessageId: string;
     answer: string;
     citations: ChatCitation[];
-    diagnostics: RetrievalExecutionDiagnostics;
+    diagnostics: PreparedSession["retrieval"]["diagnostics"];
     stream: boolean;
-  }) {
-    await this.messageRepository.create({
+  }): Promise<string> {
+    const assistantMessage = await this.messageRepository.create({
       conversationId: input.conversationId,
       accountId: input.accountId,
       role: "assistant",
       content: input.answer,
     });
+
     await this.conversationRepository.touch(input.conversationId);
     await this.auditService.record({
       accountId: input.accountId,
@@ -286,9 +294,54 @@ export class ChatService {
       eventStatus: "success",
       metadata: {
         conversationId: input.conversationId,
+        userMessageId: input.userMessageId,
+        assistantMessageId: assistantMessage.id,
         stream: input.stream,
         citationCount: input.citations.length,
         retrieval: input.diagnostics,
+      },
+    });
+
+    return assistantMessage.id;
+  }
+
+  private async recordFailure(
+    input: {
+      accountId: string;
+      conversationId?: string;
+      query: string;
+      stream: boolean;
+    },
+    session: PreparedSession | null,
+    existingAssistantMessageId: string | undefined,
+    error: unknown,
+  ) {
+    let assistantMessageId = existingAssistantMessageId;
+
+    if (session && !assistantMessageId) {
+      const assistantMessage = await this.messageRepository.create({
+        conversationId: session.conversation.id,
+        accountId: input.accountId,
+        role: "assistant",
+        content: "Sorry, something went wrong. Please try again.",
+      });
+      assistantMessageId = assistantMessage.id;
+      await this.conversationRepository.touch(session.conversation.id);
+    }
+
+    await this.auditService.record({
+      accountId: input.accountId,
+      eventType: "chat.answer",
+      eventStatus: "failure",
+      metadata: {
+        stage: "chat.answer",
+        conversationId: session?.conversation.id ?? input.conversationId,
+        userMessageId: session?.userMessage.id,
+        assistantMessageId,
+        stream: input.stream,
+        citationCount: 0,
+        retrieval: session?.retrieval.diagnostics,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
       },
     });
   }

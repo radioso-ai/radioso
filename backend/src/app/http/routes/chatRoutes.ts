@@ -15,6 +15,32 @@ const chatSchema = z.object({
 export const createChatRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
 
+  router.get("/history", requireApiToken(dependencies), async (_req, res, next) => {
+    try {
+      const { accountId } = res.locals as { accountId: string };
+      const conversations = await dependencies.chatHistoryService.listConversations(accountId);
+      res.status(200).json({ conversations });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/history/:conversationId", requireApiToken(dependencies), async (req, res, next) => {
+    try {
+      const { accountId } = res.locals as { accountId: string };
+      const conversationId = Array.isArray(req.params.conversationId)
+        ? req.params.conversationId[0]
+        : req.params.conversationId;
+      const conversation = await dependencies.chatHistoryService.getConversation(
+        accountId,
+        conversationId,
+      );
+      res.status(200).json(conversation);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/", requireApiToken(dependencies), validateBody(chatSchema), async (req, res, next) => {
     try {
       const { accountId } = res.locals as { accountId: string };

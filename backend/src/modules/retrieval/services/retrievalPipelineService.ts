@@ -17,7 +17,6 @@ import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import { HYBRID_RETRIEVAL_DEFAULTS } from "../domain/hybridRetrievalConfig.js";
 import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
 import type { AttributeFamilyControl } from "../../settings/domain/retrievalSettings.js";
-import { EntityIntegrityService } from "./entityIntegrityService.js";
 
 export interface RetrievalPipelineResult {
   rewrittenQuery: string;
@@ -45,7 +44,6 @@ export class RetrievalPipelineService {
     private readonly promptContextSelectorService: PromptContextSelectorService,
     private readonly promptBuilder: PromptBuilder,
     private readonly retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
-    private readonly entityIntegrityService: EntityIntegrityService = new EntityIntegrityService(),
   ) {}
 
   async run(input: {
@@ -114,12 +112,7 @@ export class RetrievalPipelineService {
       rewritten: rewrittenContexts,
       lexical: lexicalContexts,
     });
-    const guardedCandidates = this.entityIntegrityService.applyCandidateGuards({
-      candidates: normalizedCandidates,
-      query: input.query,
-      history: input.history,
-    });
-    const mergedCandidates = guardedCandidates.slice(0, HYBRID_RETRIEVAL_DEFAULTS.mergedCandidateCap);
+    const mergedCandidates = normalizedCandidates.slice(0, HYBRID_RETRIEVAL_DEFAULTS.mergedCandidateCap);
     const scoredCandidates = this.attributeMatchScoringService.apply({
       candidates: mergedCandidates,
       parsedQuery,
@@ -131,14 +124,8 @@ export class RetrievalPipelineService {
       enabled: settings.rerankEnabled,
       topK: settings.rerankTopK,
     });
-    const resolvedContexts = this.entityIntegrityService.resolveContexts({
-      contexts: reranked.contexts,
-      query: input.query,
-      history: input.history,
-      topK: settings.rerankTopK,
-    });
     const contexts = this.promptContextSelectorService.select({
-      contexts: resolvedContexts.contexts,
+      contexts: reranked.contexts,
       topK: settings.rerankTopK,
     });
     const prompt = this.promptBuilder.build({
@@ -160,8 +147,6 @@ export class RetrievalPipelineService {
       parsedQuery,
       appliedConstraints: scoredCandidates.appliedConstraints,
       candidateFallbackApplied: originalSearch.fallbackApplied || rewrittenSearch.fallbackApplied || scoredCandidates.fallbackApplied,
-      entityAmbiguityDetected: resolvedContexts.ambiguityDetected,
-      selectedSubjects: resolvedContexts.selectedSubjects,
     });
 
     return {

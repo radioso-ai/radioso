@@ -12,6 +12,7 @@ import { buildRetrievalText, type EmbeddingService } from "../../retrieval/servi
 import type { ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 import { renderSearchText } from "../../retrieval/services/searchTextRenderer.js";
 import { extractRawStructuredAttributes } from "../../retrieval/services/structuredAttributeExtractor.js";
+import { deriveChunkSection, deriveDocumentSubject } from "../../retrieval/services/subjectIdentityService.js";
 import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSettings.js";
 import { notFound } from "../../../shared/domain/errors.js";
 
@@ -135,6 +136,10 @@ export class DocumentIngestionService {
 
     try {
       const markdownContent = normalizeMarkdown(input.content);
+      const documentSubject = deriveDocumentSubject({
+        title: input.title,
+        content: markdownContent,
+      });
       const settings = await this.retrievalSettingsService.getForAccount(input.accountId);
       const chunkingStrategy = this.chunkingStrategyRegistry.get(settings.chunkingStrategy);
       const chunks = await chunkingStrategy.chunk({
@@ -146,6 +151,8 @@ export class DocumentIngestionService {
         const attributeText = renderStructuredAttributeSummary(structuredAttributes);
         const searchText = renderSearchText({
           title: input.title,
+          subjectLabel: documentSubject,
+          sectionPath: deriveChunkSection(chunk.content),
           attributeText,
           content: chunk.content,
         });

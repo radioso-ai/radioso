@@ -28,6 +28,7 @@ export interface RetrievedCandidate extends RetrievedChunk {
   semanticScore: number;
   lexicalScore: number;
   attributeMatchScore?: number;
+  subjectLabel?: string | null;
 }
 
 export interface RerankedCandidate extends RetrievedCandidate {
@@ -54,4 +55,6 @@ export interface RetrievalExecutionDiagnostics {
   appliedConstraints?: AppliedConstraint[];
   candidateFallbackApplied: boolean;
   fallbackApplied: boolean;
+  entityAmbiguityDetected?: boolean;
+  selectedSubjects?: string[];
 }

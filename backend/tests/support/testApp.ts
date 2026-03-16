@@ -90,7 +90,7 @@ export const createTestDependencies = (overrides: {
           continue;
         }
         for (const chunk of chunks) {
-          const score = keywordScore(`${document.title} ${chunk.content}`, currentQueryText);
+          const score = keywordScore(`${document.title} ${chunk.searchText ?? chunk.content}`, currentQueryText);
           if (score >= input.similarityThreshold) {
             rows.push({
               chunkId: chunk.id,

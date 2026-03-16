@@ -56,7 +56,7 @@ export class EntityIntegrityService {
       return {
         contexts: limited,
         ambiguityDetected: distinctSubjects.length > 1,
-        selectedSubjects: distinctSubjects,
+        selectedSubjects: distinctSubjects.length > 1 ? [] : distinctSubjects,
       };
     }
 

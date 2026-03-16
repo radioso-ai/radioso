@@ -37,7 +37,7 @@ export class EntityQueryIntentService {
       };
     }
 
-    const correction = this.parseCorrection(query);
+    const correction = this.parseCorrection(query, input.history);
     if (correction) {
       return correction;
     }
@@ -72,7 +72,7 @@ export class EntityQueryIntentService {
     return [];
   }
 
-  private parseCorrection(query: string): EntityQueryIntent | null {
+  private parseCorrection(query: string, history: MessageRecord[]): EntityQueryIntent | null {
     const normalized = query.replace(/\?+$/, "").trim();
     const meantMatch = normalized.match(/^i meant\s+(.+?)(?:\s*,?\s*not\s+(.+))?$/i);
     if (meantMatch?.[1]) {
@@ -81,6 +81,10 @@ export class EntityQueryIntentService {
         includePhrases: this.cleanupPhrases([meantMatch[1]]),
         excludePhrases: this.cleanupPhrases(meantMatch[2] ? [meantMatch[2]] : []),
       };
+    }
+
+    if (history.length === 0) {
+      return null;
     }
 
     const notMatch = normalized.match(/^(.+?)\s*,?\s*not\s+(.+)$/i);
@@ -114,7 +118,12 @@ export class EntityQueryIntentService {
     for (const pattern of patterns) {
       const match = normalized.match(pattern);
       if (match?.[1]) {
-        return this.cleanupPhrases([this.takeLeadingEntity(match[1])]);
+        const candidate = this.takeLeadingEntity(match[1]);
+        if (/^not\b/i.test(candidate)) {
+          return [];
+        }
+
+        return this.cleanupPhrases([candidate]);
       }
     }
 

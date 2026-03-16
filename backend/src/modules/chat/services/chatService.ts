@@ -91,8 +91,6 @@ export class OpenAIChatGateway implements ChatGateway {
 export class ChatService {
   private readonly answerPresentationService = new AnswerPresentationService();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
-  private readonly unsafeEntityBlendMessage =
-    "I found conflicting information that seems to refer to different subjects. Please clarify which one you mean.";
 
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
@@ -173,12 +171,6 @@ export class ChatService {
 
       if (session.retrieval.contexts.length === 0) {
         rawAnswer = "I could not find relevant information in your documents.";
-        yield {
-          type: "chunk",
-          text: rawAnswer,
-        };
-      } else if (this.shouldBlockForEntityAmbiguity(session.retrieval)) {
-        rawAnswer = this.unsafeEntityBlendMessage;
         yield {
           type: "chunk",
           text: rawAnswer,
@@ -277,8 +269,6 @@ export class ChatService {
     const answer =
       session.retrieval.contexts.length === 0
         ? "I could not find relevant information in your documents."
-        : this.shouldBlockForEntityAmbiguity(session.retrieval)
-          ? this.unsafeEntityBlendMessage
         : await this.chatGateway.answer({
             query,
             history: session.history,
@@ -375,18 +365,5 @@ export class ChatService {
     }
 
     return conversation;
-  }
-
-  private shouldBlockForEntityAmbiguity(
-    retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>,
-  ): boolean {
-    if (!retrieval.entityIntegrity) {
-      return false;
-    }
-
-    return (
-      retrieval.entityIntegrity.ambiguityDetected &&
-      retrieval.entityIntegrity.selectedSubjects.length === 0
-    );
   }
 }

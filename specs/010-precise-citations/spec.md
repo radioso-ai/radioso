@@ -2,7 +2,7 @@
 
 **Feature Branch**: `010-precise-citations`  
 **Created**: 2026-03-16  
-**Status**: Draft  
+**Status**: Approved  
 **Input**: User description: "Fix chat citations so the backend generates precise source placement instead of heuristic post-processing"
 
 ## User Scenarios & Testing *(mandatory)*
@@ -125,4 +125,3 @@ An authenticated account user receives a readable answer even when the model emi
 - **SC-002**: In regression testing, 100% of invalid citation anchors are excluded from rendered citation metadata without leaving raw placeholder syntax in the completed answer.
 - **SC-003**: In validation runs, the completed streamed response and the completed non-streamed response produce equivalent citation placement for the same generated answer content.
 - **SC-004**: In user acceptance testing, 100% of rendered citation markers continue to open the intended account-scoped source document.
-

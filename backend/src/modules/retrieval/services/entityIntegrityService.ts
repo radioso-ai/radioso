@@ -1,7 +1,6 @@
 import type { RetrievedCandidate, RerankedCandidate } from "../domain/retrievalPipelineTypes.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { EntityQueryIntent } from "./entityQueryIntentService.js";
-import { extractSubjectLabel, normalizeIdentityPhrase, subjectMatchesPhrase } from "./subjectIdentityService.js";
+import { extractSubjectLabel, normalizeIdentityPhrase } from "./subjectIdentityService.js";
 
 export interface EntityIntegrityResolution {
   contexts: RerankedCandidate[];
@@ -14,7 +13,6 @@ export class EntityIntegrityService {
     candidates: RetrievedCandidate[];
     query: string;
     history: MessageRecord[];
-    intent: EntityQueryIntent;
   }): RetrievedCandidate[] {
     return [...input.candidates]
       .map((candidate) => {
@@ -35,7 +33,6 @@ export class EntityIntegrityService {
     contexts: RerankedCandidate[];
     query: string;
     history: MessageRecord[];
-    intent: EntityQueryIntent;
     topK: number;
   }): EntityIntegrityResolution {
     const limited = input.contexts.slice(0, input.topK);
@@ -47,11 +44,11 @@ export class EntityIntegrityService {
       this.collectFocusTexts(input.query, input.history).some((text) => text.includes(subject)),
     );
 
-    if (input.intent.mode === "comparison") {
+    if (queryMatchedSubjects.length > 1) {
       return {
         contexts: limited,
-        ambiguityDetected: false,
-        selectedSubjects: queryMatchedSubjects.length > 0 ? queryMatchedSubjects : distinctSubjects,
+        ambiguityDetected: distinctSubjects.length > queryMatchedSubjects.length,
+        selectedSubjects: queryMatchedSubjects,
       };
     }
 
@@ -68,9 +65,7 @@ export class EntityIntegrityService {
       const subjectLabel = context.subjectLabel ?? extractSubjectLabel(context.retrievalText) ?? extractSubjectLabel(context.content);
 
       if (!subjectLabel) {
-        return input.intent.includePhrases.some((phrase) =>
-          normalizeIdentityPhrase(`${context.title} ${context.retrievalText}`).includes(phrase),
-        );
+        return false;
       }
 
       return normalizeIdentityPhrase(subjectLabel) === preferredSubject;
@@ -89,7 +84,6 @@ export class EntityIntegrityService {
     input: {
       query: string;
       history: MessageRecord[];
-      intent: EntityQueryIntent;
     },
   ): number {
     let score = candidate.similarity;
@@ -97,18 +91,6 @@ export class EntityIntegrityService {
 
     if (subjectLabel && focusTexts.some((text) => text.includes(normalizeIdentityPhrase(subjectLabel)))) {
       score += 1;
-    }
-
-    if (subjectLabel && input.intent.includePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))) {
-      score += 1;
-    }
-
-    if (subjectLabel && input.intent.excludePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))) {
-      score -= 1;
-    }
-
-    if (subjectLabel && input.intent.includePhrases.length > 0 && !input.intent.includePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))) {
-      score -= 0.5;
     }
 
     return score;
@@ -119,7 +101,6 @@ export class EntityIntegrityService {
     input: {
       query: string;
       history: MessageRecord[];
-      intent: EntityQueryIntent;
     },
   ): string | null {
     const focusTexts = this.collectFocusTexts(input.query, input.history);
@@ -132,10 +113,6 @@ export class EntityIntegrityService {
 
       const normalized = normalizeIdentityPhrase(subjectLabel);
       if (focusTexts.some((text) => text.includes(normalized))) {
-        return normalized;
-      }
-
-      if (input.intent.includePhrases.some((phrase) => subjectMatchesPhrase(subjectLabel, phrase))) {
         return normalized;
       }
     }

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import type { RetrievedCandidate, RerankedCandidate } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { EntityIntegrityService } from "../../src/modules/retrieval/services/entityIntegrityService.js";
-import { EntityQueryIntentService } from "../../src/modules/retrieval/services/entityQueryIntentService.js";
 
 const message = (content: string, role: MessageRecord["role"] = "user"): MessageRecord => ({
   id: content,
@@ -43,51 +42,8 @@ const reranked = (input: {
 });
 
 describe("entity integrity services", () => {
-  it("parses correction turns without relying on person-specific rules", () => {
-    const service = new EntityQueryIntentService();
-
-    const result = service.interpret({
-      query: "Premi was given a Nayaswami title, not Freya",
-      history: [message("Who is Freya?")],
-    });
-
-    expect(result.mode).toBe("correction");
-    expect(result.includePhrases).toContain("premi");
-    expect(result.excludePhrases).toContain("freya");
-  });
-
-  it("does not treat ordinary negation as a correction when there is no correction context", () => {
-    const service = new EntityQueryIntentService();
-
-    const result = service.interpret({
-      query: "What is not allowed in the API?",
-      history: [],
-    });
-
-    expect(result.mode).toBe("generic");
-    expect(result.includePhrases).toEqual([]);
-    expect(result.excludePhrases).toEqual([]);
-  });
-
-  it("does not collapse explicit comparison queries into a single entity", () => {
-    const service = new EntityQueryIntentService();
-
-    const result = service.interpret({
-      query: "Compare Freya and Premi",
-      history: [],
-    });
-
-    expect(result.mode).toBe("comparison");
-    expect(result.includePhrases).toEqual(expect.arrayContaining(["freya", "premi"]));
-  });
-
   it("boosts candidates whose anchored subject matches the target entity", () => {
-    const queryIntentService = new EntityQueryIntentService();
     const integrityService = new EntityIntegrityService();
-    const intent = queryIntentService.interpret({
-      query: "Who is Freya?",
-      history: [],
-    });
 
     const result = integrityService.applyCandidateGuards({
       candidates: [
@@ -104,7 +60,6 @@ describe("entity integrity services", () => {
       ],
       query: "Who is Freya?",
       history: [],
-      intent,
     });
 
     expect(result[0]?.chunkId).toBe("freya");
@@ -129,11 +84,6 @@ describe("entity integrity services", () => {
       ],
       query: "Who is Freya?",
       history: [],
-      intent: {
-        mode: "generic",
-        includePhrases: [],
-        excludePhrases: [],
-      },
       topK: 5,
     });
 
@@ -142,13 +92,8 @@ describe("entity integrity services", () => {
     expect(result.contexts[0]?.chunkId).toBe("freya");
   });
 
-  it("keeps multiple subject groups available for explicit comparisons", () => {
-    const queryIntentService = new EntityQueryIntentService();
+  it("keeps multiple subject groups available when the query names both", () => {
     const integrityService = new EntityIntegrityService();
-    const intent = queryIntentService.interpret({
-      query: "Compare Freya and Premi",
-      history: [],
-    });
 
     const result = integrityService.resolveContexts({
       contexts: [
@@ -165,11 +110,10 @@ describe("entity integrity services", () => {
       ],
       query: "Compare Freya and Premi",
       history: [],
-      intent,
       topK: 5,
     });
 
-    expect(result.ambiguityDetected).toBe(false);
+    expect(result.selectedSubjects).toEqual(["freya", "premi"]);
     expect(result.contexts.map((context) => context.chunkId)).toEqual(["freya", "premi"]);
   });
 
@@ -191,11 +135,6 @@ describe("entity integrity services", () => {
       ],
       query: "Tell me more",
       history: [message("Who is Freya?")],
-      intent: {
-        mode: "generic",
-        includePhrases: [],
-        excludePhrases: [],
-      },
       topK: 5,
     });
 
@@ -223,11 +162,6 @@ describe("entity integrity services", () => {
       ],
       query: "Who is Freya?",
       history: [],
-      intent: {
-        mode: "generic",
-        includePhrases: ["freya"],
-        excludePhrases: [],
-      },
       topK: 5,
     });
 

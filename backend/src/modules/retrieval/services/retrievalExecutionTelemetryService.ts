@@ -12,8 +12,6 @@ export class RetrievalExecutionTelemetryService {
     parsedQuery?: import("../domain/structuredAttributes.js").ParsedQueryInterpretation;
     appliedConstraints?: import("../domain/structuredAttributes.js").AppliedConstraint[];
     candidateFallbackApplied: boolean;
-    entityAmbiguityDetected?: boolean;
-    selectedSubjects?: string[];
   }): RetrievalExecutionDiagnostics {
     return {
       ...input,

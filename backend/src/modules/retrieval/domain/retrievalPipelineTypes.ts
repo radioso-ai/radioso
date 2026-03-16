@@ -55,6 +55,4 @@ export interface RetrievalExecutionDiagnostics {
   appliedConstraints?: AppliedConstraint[];
   candidateFallbackApplied: boolean;
   fallbackApplied: boolean;
-  entityAmbiguityDetected?: boolean;
-  selectedSubjects?: string[];
 }

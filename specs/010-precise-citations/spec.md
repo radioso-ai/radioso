@@ -19,7 +19,8 @@ An authenticated account user asks a question in chat and reads an assistant ans
 
 1. **Given** a chat response is generated from retrieved sources, **When** the completed answer is shown, **Then** each citation marker appears only at the exact claim location declared by the backend for that answer.
 2. **Given** an answer contains multiple cited claims, **When** the user reads the answer, **Then** the citation numbering remains consistent within that answer and each marker maps to the intended source.
-3. **Given** an answer contains uncited connective text, **When** the answer is rendered, **Then** citation markers do not appear in unrelated words, punctuation, URLs, or currency values.
+3. **Given** the model emits multiple citation anchors for one claim boundary, **When** the answer is rendered, **Then** only the first valid cited result for that boundary is shown as the visible marker.
+4. **Given** an answer contains uncited connective text, **When** the answer is rendered, **Then** citation markers do not appear in unrelated words, punctuation, URLs, or currency values.
 
 ---
 
@@ -55,7 +56,8 @@ An authenticated account user receives a readable answer even when the model emi
 
 ### Edge Cases
 
-- If the model emits duplicate anchors for the same source at one claim boundary, the answer should render a stable, deduplicated citation set at that exact location.
+- If the model emits duplicate anchors for the same source at one claim boundary, the answer should render one stable marker at that location.
+- If the model emits multiple different valid anchors at one claim boundary, only the first valid cited result in retrieval order should remain visible.
 - If a source is retrieved but never cited in the generated answer, it should not appear as a visible inline citation.
 - If the model cites a source number outside the retrieved result range, that source number should not become a visible marker.
 - If the answer contains markdown, lists, links, or line breaks, citation placement should still attach to the intended claim boundary without breaking formatting.
@@ -92,7 +94,7 @@ An authenticated account user receives a readable answer even when the model emi
 - **FR-004**: The system MUST preserve the visible answer wording and ordering except for removing or transforming citation-anchor syntax into structured citation metadata.
 - **FR-005**: The system MUST include only sources that were explicitly and validly cited in the completed answer as visible citations for that message.
 - **FR-006**: The system MUST ignore or remove citation anchors that reference unknown, malformed, or incomplete source numbers rather than rendering misleading markers.
-- **FR-007**: The system MUST deduplicate repeated citations at the same rendered claim boundary while preserving distinct cited sources when multiple valid sources are attached to one claim.
+- **FR-007**: The system MUST render at most one visible citation per claim boundary by selecting the first valid cited result in retrieval order and collapsing duplicate anchors for that same visible source.
 - **FR-008**: The system MUST produce the same completed-answer citation placement contract for both non-streamed chat responses and SSE completion events.
 - **FR-009**: The system MUST ensure the in-progress streaming state does not expose unfinished citation-anchor syntax as the final user-visible citation representation.
 - **FR-010**: The system MUST preserve existing citation click behavior so each rendered citation still opens the intended account-scoped document.
@@ -102,6 +104,7 @@ An authenticated account user receives a readable answer even when the model emi
 
 - Render inline citation markers only from backend-provided exact placement metadata.
 - Preserve existing source hover and document-opening interactions for valid citations.
+- Do not add a separate sources list or sources box below the assistant answer.
 - Avoid showing raw backend citation-anchor syntax in the completed assistant message.
 
 ### Key Entities *(include if feature involves data)*

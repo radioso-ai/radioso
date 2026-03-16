@@ -2,7 +2,7 @@ import type OpenAI from "openai";
 
 import { notFound } from "../../../shared/domain/errors.js";
 import type { AuditService } from "../../audit/services/auditService.js";
-import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
+import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
@@ -35,12 +35,7 @@ export type ChatStreamEvent =
     };
 
 interface PreparedSession {
-  conversation: {
-    id: string;
-    accountId: string;
-    createdAt: Date;
-    updatedAt: Date;
-  };
+  conversation: ConversationRecord;
   history: MessageRecord[];
   retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
   userMessage: MessageRecord;
@@ -136,11 +131,18 @@ export class ChatService {
         citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
       });
 
-      assistantMessageId = await this.persistAssistantTurn({
+      const assistantMessage = await this.messageRepository.create({
+        conversationId: session.conversation.id,
+        accountId: input.accountId,
+        role: "assistant",
+        content: presentation.answer,
+      });
+      assistantMessageId = assistantMessage.id;
+      await this.finalizeAssistantTurn({
         accountId: input.accountId,
         conversationId: session.conversation.id,
         userMessageId: session.userMessage.id,
-        answer: presentation.answer,
+        assistantMessageId,
         citations: presentation.citations ?? [],
         diagnostics: session.retrieval.diagnostics,
         stream: input.stream,
@@ -217,11 +219,18 @@ export class ChatService {
         citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
       });
 
-      assistantMessageId = await this.persistAssistantTurn({
+      const assistantMessage = await this.messageRepository.create({
+        conversationId: session.conversation.id,
+        accountId: input.accountId,
+        role: "assistant",
+        content: presentation.answer,
+      });
+      assistantMessageId = assistantMessage.id;
+      await this.finalizeAssistantTurn({
         accountId: input.accountId,
         conversationId: session.conversation.id,
         userMessageId: session.userMessage.id,
-        answer: presentation.answer,
+        assistantMessageId,
         citations: presentation.citations ?? [],
         diagnostics: session.retrieval.diagnostics,
         stream: input.stream,
@@ -248,45 +257,41 @@ export class ChatService {
   }): Promise<PreparedSession> {
     const conversation = input.conversationId
       ? await this.ensureConversation(input.conversationId, input.accountId)
-      : await this.conversationRepository.create(input.accountId);
-    const history = await this.messageRepository.listByConversationId(conversation.id);
+      : null;
+    const history = conversation
+      ? await this.messageRepository.listByConversationId(conversation.id)
+      : [];
     const retrieval = await this.retrievalPipeline.run({
       accountId: input.accountId,
       query: input.query,
       history,
     });
+    const persistedConversation = conversation ?? await this.conversationRepository.create(input.accountId);
 
     const userMessage = await this.messageRepository.create({
-      conversationId: conversation.id,
+      conversationId: persistedConversation.id,
       accountId: input.accountId,
       role: "user",
       content: input.query,
     });
 
     return {
-      conversation,
+      conversation: persistedConversation,
       history,
       retrieval,
       userMessage,
     };
   }
 
-  private async persistAssistantTurn(input: {
+  private async finalizeAssistantTurn(input: {
     accountId: string;
     conversationId: string;
     userMessageId: string;
-    answer: string;
+    assistantMessageId: string;
     citations: ChatCitation[];
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
     stream: boolean;
-  }): Promise<string> {
-    const assistantMessage = await this.messageRepository.create({
-      conversationId: input.conversationId,
-      accountId: input.accountId,
-      role: "assistant",
-      content: input.answer,
-    });
-
+  }): Promise<void> {
     await this.conversationRepository.touch(input.conversationId);
     await this.auditService.record({
       accountId: input.accountId,
@@ -295,14 +300,12 @@ export class ChatService {
       metadata: {
         conversationId: input.conversationId,
         userMessageId: input.userMessageId,
-        assistantMessageId: assistantMessage.id,
+        assistantMessageId: input.assistantMessageId,
         stream: input.stream,
         citationCount: input.citations.length,
         retrieval: input.diagnostics,
       },
     });
-
-    return assistantMessage.id;
   }
 
   private async recordFailure(

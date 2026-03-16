@@ -1,6 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
+import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { createTestApp } from "../support/testApp.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
@@ -502,5 +503,132 @@ describe("chat integration", () => {
     expect(response.status).toBe(200);
     expect(response.body.answer).not.toContain("could not find relevant information");
     expect(response.body.citations[0]?.title).toBe("Session Cookie");
+  });
+
+  it("keeps single-entity answers anchored to one subject across overlapping chunks", async () => {
+    const chatGateway: ChatGateway = {
+      async answer(input) {
+        return input.prompt;
+      },
+      async *streamAnswer(input) {
+        yield await this.answer(input);
+      },
+    };
+    const { app } = createTestApp({ chatGateway });
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "entity-anchor@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "| Generic Catalog |",
+        content: "## Narayani\nNarayani Anaya wrote My Soul Remembers Swami Kriyananda.",
+      });
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "| Generic Catalog |",
+        content: "## Premi\nIn September 2015 she took the vows as Nayaswami.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "structured_semantic",
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Who is Narayani?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain("Subject: Narayani");
+    expect(response.body.answer).not.toContain("Subject: Premi");
+  });
+
+  it("honors correction turns without collapsing explicit comparisons", async () => {
+    const chatGateway: ChatGateway = {
+      async answer(input) {
+        return input.prompt;
+      },
+      async *streamAnswer(input) {
+        yield await this.answer(input);
+      },
+    };
+    const { app } = createTestApp({ chatGateway });
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "entity-correction@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "| Generic Catalog |",
+        content: "## Narayani\nNarayani Anaya wrote My Soul Remembers Swami Kriyananda.",
+      });
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "| Generic Catalog |",
+        content: "## Premi\nIn September 2015 she took the vows as Nayaswami.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "structured_semantic",
+      });
+
+    const correctionResponse = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Premi was given a Nayaswami title, not Narayani", stream: false });
+
+    const comparisonResponse = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Compare Narayani and Premi", stream: false });
+
+    expect(correctionResponse.status).toBe(200);
+    expect(correctionResponse.body.answer).toContain("Subject: Premi");
+    expect(correctionResponse.body.answer).not.toContain("Subject: Narayani");
+
+    expect(comparisonResponse.status).toBe(200);
+    expect(comparisonResponse.body.answer).toContain("Subject: Narayani");
+    expect(comparisonResponse.body.answer).toContain("Subject: Premi");
   });
 });

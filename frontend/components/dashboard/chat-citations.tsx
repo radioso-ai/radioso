@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, type ReactNode, useState } from 'react'
-import { ArrowUpRight, FileText } from 'lucide-react'
+import { FileText } from 'lucide-react'
 
 import {
   HoverCard,
@@ -80,9 +80,6 @@ export function AssistantMessageContent({
   const noticeScope = `${content}|${citations.length}|${answerSegments?.length ?? 0}`
   const segments = getRenderableSegments(content, answerSegments)
   const contentNodes: ReactNode[] = []
-  const sourceEntries = citations
-    .map((citation, index) => ({ citation, index }))
-    .filter(({ citation }) => Boolean(citation))
 
   const handleCitationOpen = async (citation: Citation, index: number) => {
     try {
@@ -144,34 +141,6 @@ export function AssistantMessageContent({
       <div className="text-sm whitespace-pre-wrap break-words">
         {contentNodes}
       </div>
-      {sourceEntries.length > 0 ? (
-        <div className="rounded-md border border-border/70 bg-background/55 p-3">
-          <div className="mb-2 flex items-center gap-2">
-            <FileText className="h-4 w-4 text-muted-foreground" />
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Sources
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {sourceEntries.map(({ citation, index }) => (
-              <button
-                key={`source-${citation.documentId}-${citation.chunkId}-${index}`}
-                type="button"
-                onClick={() => handleCitationOpen(citation, index)}
-                className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary"
-              >
-                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1 text-[11px] font-semibold text-muted-foreground">
-                  {index + 1}
-                </span>
-                <span className="max-w-52 truncate">
-                  {getCitationLabel(citation, index)}
-                </span>
-                <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
       {citationNotice && citationNotice.scope === noticeScope ? (
         <p className="text-xs text-amber-300" role="status">
           {citationNotice.message}

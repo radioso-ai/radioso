@@ -703,7 +703,7 @@ describe("chat integration", () => {
     expect(comparisonResponse.body.answer).toContain("Subject: Premi");
   });
 
-  it("refuses a single-entity answer when retrieval stays split across competing subjects", async () => {
+  it("does not hard-stop when retrieval stays split across competing subjects", async () => {
     const { app } = createTestApp();
 
     const register = await request(app).post("/api/v1/auth/register").send({
@@ -750,7 +750,9 @@ describe("chat integration", () => {
       .send({ query: "Who is the Nayaswami?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toContain("Please clarify which one you mean");
+    expect(response.body.answer).not.toContain("Please clarify which one you mean");
+    expect(response.body.answer).not.toContain("could not find relevant information");
+    expect(response.body.citations.length).toBeGreaterThan(0);
   });
 });
 

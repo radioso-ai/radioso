@@ -1,17 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
+import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
 import { defaultRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
-import { createAuditService, InMemoryDocumentRepository } from "../support/fakes.js";
+import {
+  createAuditService,
+  InMemoryChunkRepository,
+  InMemoryDocumentRepository,
+} from "../support/fakes.js";
 
 describe("document subject search text", () => {
   it("anchors later chunks to the document subject even when the chunk text omits the subject name", async () => {
     const documentRepository = new InMemoryDocumentRepository();
+    const chunkRepository = new InMemoryChunkRepository();
     const persistedSearchTexts: string[] = [];
     const embeddingService = new EmbeddingService({
       async embedTexts(texts: string[]): Promise<number[][]> {
+        persistedSearchTexts.push(...texts);
         return texts.map(() => [1, 2, 3]);
       },
     });
@@ -34,11 +41,18 @@ describe("document subject search text", () => {
         ];
       },
     };
-    const service = new DocumentIngestionService(
+    const document = await documentRepository.create({
+      accountId: "account-1",
+      title: "| Generic Catalog |",
+      sourceContent: "## Premi\nPremi teaches meditation in summer camps.\n\nIn September 2015 she took the vows as Nayaswami.",
+      markdownContent: "## Premi\nPremi teaches meditation in summer camps.\n\nIn September 2015 she took the vows as Nayaswami.",
+      status: "queued",
+    });
+    const service = new DocumentProcessingService(
       documentRepository,
       {
-        async replaceForDocument(_documentId, chunks): Promise<void> {
-          persistedSearchTexts.push(...chunks.map((chunk) => chunk.searchText ?? ""));
+        async replaceForDocument(documentId, chunks): Promise<void> {
+          await chunkRepository.replaceForDocument(documentId, chunks);
         },
       },
       embeddingService,
@@ -51,17 +65,22 @@ describe("document subject search text", () => {
           };
         },
       },
-      {
-        get() {
-          return strategy;
-        },
-      },
+      new ChunkingStrategyRegistry([strategy]),
     );
 
-    await service.ingest({
+    await service.process({
+      id: "job-1",
+      documentId: document.id,
       accountId: "account-1",
-      title: "| Generic Catalog |",
-      content: "## Premi\nPremi teaches meditation in summer camps.\n\nIn September 2015 she took the vows as Nayaswami.",
+      documentRevision: document.revision,
+      status: "processing",
+      attemptCount: 1,
+      lastError: null,
+      availableAt: new Date(),
+      claimedAt: new Date(),
+      completedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
 
     expect(persistedSearchTexts[1]).toContain("Subject: Premi");

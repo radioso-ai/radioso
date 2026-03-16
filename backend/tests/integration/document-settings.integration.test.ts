@@ -44,7 +44,7 @@ describe("document and settings integration", () => {
     expect(response.status).toBe(401);
   });
 
-  it("updates settings and ingests a document for the same account", async () => {
+  it("updates settings and accepts a document for async processing for the same account", async () => {
     const { app } = createTestApp();
 
     const register = await request(app).post("/api/v1/auth/register").send({
@@ -79,7 +79,8 @@ describe("document and settings integration", () => {
 
     expect(settings.status).toBe(200);
     expect(settings.body.chunkingStrategy).toBe("structured_semantic");
-    expect(document.status).toBe(201);
+    expect(document.status).toBe(202);
+    expect(document.body.status).toBe("queued");
   });
 
   it("keeps attribute-family controls account scoped", async () => {

@@ -60,6 +60,7 @@ export class PgVectorSearch implements VectorSearchPort {
        FROM chunks c
        JOIN documents d ON d.id = c.document_id
        WHERE c.account_id = $1
+         AND d.status = 'ready'
          AND c.embedding IS NOT NULL
          AND 1 - (c.embedding <=> $2::vector) >= $3
        ORDER BY c.embedding <=> $2::vector ASC

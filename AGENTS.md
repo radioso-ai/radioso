@@ -20,6 +20,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL `chunks`, `retrieval_settings`, `documents`, `messages`, and `audit_events`; additive chunk-search and retrieval-settings columns only, no new external storage system (009-hybrid-retrieval)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, OpenAI SDK, pg, Zod, Pino, Vitest, Supertest, Next.js App Router, existing chat streaming route (010-precise-citations)
 - PostgreSQL unchanged; no new persisted data for this feature (010-precise-citations)
+- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Vitest, Supertest, Next.js App Router (012-async-document-processing)
+- PostgreSQL 16+ with `pgvector`; additive job/revision columns and processing-job table (012-async-document-processing)
 
 
 ## Project Structure
@@ -39,7 +41,7 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 012-async-document-processing: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Vitest, Supertest, Next.js App Router
 - 010-precise-citations: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, OpenAI SDK, pg, Zod, Pino, Vitest, Supertest, Next.js App Router, existing chat streaming route
 - 009-hybrid-retrieval: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI primitives, existing audit service, PostgreSQL full-text search functions, existing embedding and rerank services
-- 008-document-list-polish: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI primitives, Lucide icons
 >>>>>>> main

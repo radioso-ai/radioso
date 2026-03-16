@@ -18,6 +18,7 @@ export interface AuditEventRepositoryPort {
     eventStatus: string;
     metadata?: Record<string, unknown>;
   }): Promise<AuditEventRecord>;
+  listChatAnswerEventsByConversationId(accountId: string, conversationId: string): Promise<AuditEventRecord[]>;
 }
 
 interface AuditEventRow {
@@ -55,5 +56,19 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     );
 
     return mapAuditEvent(row);
+  }
+
+  async listChatAnswerEventsByConversationId(accountId: string, conversationId: string): Promise<AuditEventRecord[]> {
+    const rows = await this.database.query<AuditEventRow>(
+      `SELECT id, account_id, event_type, event_status, metadata_json, created_at
+       FROM audit_events
+       WHERE account_id = $1
+         AND event_type = 'chat.answer'
+         AND metadata_json ->> 'conversationId' = $2
+       ORDER BY created_at ASC`,
+      [accountId, conversationId],
+    );
+
+    return rows.map(mapAuditEvent);
   }
 }

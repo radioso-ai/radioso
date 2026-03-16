@@ -43,11 +43,12 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "full answer";
+        return "full answer[[1]]";
       },
       async *streamAnswer() {
         yield "full ";
-        yield "answer";
+        yield "answer[[";
+        yield "1]]";
       },
     };
     const service = new ChatService(
@@ -68,6 +69,8 @@ describe("chat service streaming", () => {
       events.push(event);
 
       if (event.type === "chunk") {
+        expect(event.text).not.toContain("[[");
+        expect(event.text).not.toContain("]]");
         const [conversationId] = conversationRepository.items.keys();
         const persisted = await messageRepository.listByConversationId(conversationId!);
         expect(persisted.map((message) => message.role)).toEqual(["user"]);

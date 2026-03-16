@@ -216,6 +216,7 @@ export interface ChatStreamChunk {
 
 export interface ChatStreamCompletion {
   conversationId?: string
+  answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   retrievalInfo?: RetrievalInfo
@@ -317,16 +318,19 @@ const streamChatEvents = async (
     if (eventName === 'done') {
       const payload = JSON.parse(data) as {
         conversationId?: string
+        answer?: string
         citations?: Citation[]
         answerSegments?: AnswerSegment[]
         retrievalInfo?: RetrievalInfo
       }
       conversationId = payload.conversationId ?? conversationId
+      answer = payload.answer ?? answer
       citations = payload.citations
       answerSegments = payload.answerSegments
       retrievalInfo = payload.retrievalInfo
       handlers.onDone?.({
         conversationId,
+        answer,
         citations,
         answerSegments,
         retrievalInfo,
@@ -485,8 +489,10 @@ export const chatApi = {
       }
       handlers.onDone?.({
         conversationId: payload.conversationId,
+        answer: payload.answer,
         citations: payload.citations,
         answerSegments: payload.answerSegments,
+        retrievalInfo: payload.retrievalInfo,
       })
       return payload
     }

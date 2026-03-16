@@ -41,6 +41,12 @@ interface PreparedSession {
   userMessage: MessageRecord;
 }
 
+interface PresentedAnswer {
+  answer: string;
+  citations?: ChatCitation[];
+  answerSegments?: AnswerSegment[];
+}
+
 export class OpenAIChatGateway implements ChatGateway {
   constructor(
     private readonly client: OpenAI,
@@ -111,25 +117,7 @@ export class ChatService {
 
     try {
       session = await this.prepareSession(input);
-      const answer =
-        session.retrieval.contexts.length === 0
-          ? "I could not find relevant information in your documents."
-          : await this.chatGateway.answer({
-              query: input.query,
-              history: session.history,
-              prompt: session.retrieval.prompt,
-            });
-
-      const presentation = this.answerPresentationService.present({
-        answer,
-        citations: session.retrieval.contexts.map((context) => ({
-          documentId: context.documentId,
-          chunkId: context.chunkId,
-          title: context.title,
-          content: context.content,
-        })),
-        citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
-      });
+      const presentation = await this.generateAnswerPresentation(session, input.query);
 
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
@@ -208,16 +196,7 @@ export class ChatService {
         }
       }
 
-      const presentation = this.answerPresentationService.present({
-        answer: rawAnswer,
-        citations: session.retrieval.contexts.map((context) => ({
-          documentId: context.documentId,
-          chunkId: context.chunkId,
-          title: context.title,
-          content: context.content,
-        })),
-        citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
-      });
+      const presentation = this.presentAnswer(session, rawAnswer);
 
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
@@ -281,6 +260,35 @@ export class ChatService {
       retrieval,
       userMessage,
     };
+  }
+
+  private async generateAnswerPresentation(
+    session: PreparedSession,
+    query: string,
+  ): Promise<PresentedAnswer> {
+    const answer =
+      session.retrieval.contexts.length === 0
+        ? "I could not find relevant information in your documents."
+        : await this.chatGateway.answer({
+            query,
+            history: session.history,
+            prompt: session.retrieval.prompt,
+          });
+
+    return this.presentAnswer(session, answer);
+  }
+
+  private presentAnswer(session: PreparedSession, answer: string): PresentedAnswer {
+    return this.answerPresentationService.present({
+      answer,
+      citations: session.retrieval.contexts.map((context) => ({
+        documentId: context.documentId,
+        chunkId: context.chunkId,
+        title: context.title,
+        content: context.content,
+      })),
+      citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
+    });
   }
 
   private async finalizeAssistantTurn(input: {

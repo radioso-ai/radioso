@@ -290,6 +290,53 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v1/chat/history:
+    get:
+      tags: [Chat]
+      summary: List saved chat conversations for the authenticated account
+      operationId: listChatHistory
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Chat history summaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatHistoryListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/chat/history/{conversationId}:
+    get:
+      tags: [Chat]
+      summary: Get a saved conversation and its debug metadata
+      operationId: getChatHistoryConversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Historical conversation detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatConversationDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     sessionCookie:
@@ -569,6 +616,119 @@ components:
             $ref: '#/components/schemas/AnswerSegment'
         retrievalInfo:
           $ref: '#/components/schemas/RetrievalInfo'
+    ChatHistoryListResponse:
+      type: object
+      required: [conversations]
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatConversationSummary'
+    ChatConversationSummary:
+      type: object
+      required:
+        - id
+        - createdAt
+        - updatedAt
+        - messageCount
+        - userMessageCount
+        - assistantMessageCount
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        messageCount:
+          type: integer
+          minimum: 0
+        userMessageCount:
+          type: integer
+          minimum: 0
+        assistantMessageCount:
+          type: integer
+          minimum: 0
+        preview:
+          type: string
+          nullable: true
+    ChatConversationDetail:
+      type: object
+      required:
+        - conversationId
+        - accountId
+        - createdAt
+        - updatedAt
+        - messageCount
+        - userMessageCount
+        - assistantMessageCount
+        - messages
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        messageCount:
+          type: integer
+          minimum: 0
+        userMessageCount:
+          type: integer
+          minimum: 0
+        assistantMessageCount:
+          type: integer
+          minimum: 0
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatConversationMessage'
+    ChatConversationMessage:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        debug:
+          $ref: '#/components/schemas/ChatConversationMessageDebug'
+    ChatConversationMessageDebug:
+      type: object
+      required: [eventStatus, recordedAt, stream, citationCount]
+      properties:
+        eventStatus:
+          type: string
+          enum: [success, failure]
+        recordedAt:
+          type: string
+          format: date-time
+        stream:
+          type: boolean
+        citationCount:
+          type: integer
+          minimum: 0
+        retrievalInfo:
+          $ref: '#/components/schemas/RetrievalInfo'
+        errorMessage:
+          type: string
+          nullable: true
     Citation:
       type: object
       required: [documentId, chunkId]

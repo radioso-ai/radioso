@@ -1,4 +1,5 @@
 import http from "node:http";
+import { readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
@@ -19,6 +20,99 @@ const getBearerToken = async (app: ReturnType<typeof createTestApp>["app"]) => {
 };
 
 describe("chat contract", () => {
+  it("lists chat history summaries for the active account", async () => {
+    const { app } = createTestApp();
+    const token = await getBearerToken(app);
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+
+    const chat = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does this page do?", stream: false });
+
+    const response = await request(app)
+      .get("/api/v1/chat/history")
+      .set("Authorization", authorization);
+
+    expect(chat.status).toBe(200);
+    expect(response.status).toBe(200);
+    expect(response.body.conversations).toEqual([
+      expect.objectContaining({
+        id: chat.body.conversationId,
+        messageCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        preview: expect.any(String),
+      }),
+    ]);
+  });
+
+  it("returns a conversation history detail with debug metadata", async () => {
+    const { app } = createTestApp();
+    const token = await getBearerToken(app);
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+
+    const chat = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does this page do?", stream: false });
+
+    const response = await request(app)
+      .get(`/api/v1/chat/history/${chat.body.conversationId}`)
+      .set("Authorization", authorization);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      conversationId: chat.body.conversationId,
+      accountId: expect.any(String),
+      messageCount: 2,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      messages: [
+        expect.objectContaining({
+          role: "user",
+          content: "What does this page do?",
+        }),
+        expect.objectContaining({
+          role: "assistant",
+          debug: expect.objectContaining({
+            eventStatus: "success",
+            stream: false,
+            citationCount: expect.any(Number),
+            retrievalInfo: expect.objectContaining({
+              candidateCounts: expect.any(Object),
+            }),
+          }),
+        }),
+      ],
+    });
+  });
+
+  it("rejects an invalid history conversation id with a client error", async () => {
+    const { app } = createTestApp();
+    const token = await getBearerToken(app);
+
+    const response = await request(app)
+      .get("/api/v1/chat/history/not-a-uuid")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: expect.any(String),
+      message: expect.any(String),
+    });
+  });
+
   it("returns a non-streaming chat response with a conversation id", async () => {
     const { app } = createTestApp();
     const token = await getBearerToken(app);
@@ -246,5 +340,15 @@ describe("chat contract", () => {
       fallbackApplied: expect.any(Boolean),
       rerankStatus: expect.any(String),
     });
+  });
+
+  it("documents the chat history endpoints in the shared OpenAPI contract", () => {
+    const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
+
+    expect(spec).toContain("/api/v1/chat/history:");
+    expect(spec).toContain("/api/v1/chat/history/{conversationId}:");
+    expect(spec).toContain("ChatHistoryListResponse:");
+    expect(spec).toContain("ChatConversationDetail:");
+    expect(spec).toContain("ChatConversationMessageDebug:");
   });
 });

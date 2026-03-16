@@ -1,5 +1,6 @@
 import { getEnv, type Env } from "../config/env.js";
 import { ChatService, OpenAIChatGateway } from "../../modules/chat/services/chatService.js";
+import { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { AccountTokenRepository } from "../../db/repositories/accountTokenRepository.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
@@ -37,7 +38,8 @@ import type { AppDependencies } from "./types.js";
 export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const logger = createLogger();
   const database = new Database(env.DATABASE_URL);
-  const auditService = new AuditService(logger, new AuditEventRepository(database));
+  const auditEventRepository = new AuditEventRepository(database);
+  const auditService = new AuditService(logger, auditEventRepository);
   const openai = new OpenAIClients(env.OPENAI_API_KEY, env.OPENAI_CHAT_MODEL, env.OPENAI_VECTOR_MODEL);
   const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
   const embeddingService = new EmbeddingService(new OpenAIEmbeddingGateway(openai.client, openai.vectorModel));
@@ -76,6 +78,11 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new OpenAIChatGateway(openai.client, openai.chatModel),
     auditService,
   );
+  const chatHistoryService = new ChatHistoryService(
+    new ConversationRepository(database),
+    new MessageRepository(database),
+    auditEventRepository,
+  );
   const authService = new AuthService({
     env,
     accountRepository: new AccountRepository(database),
@@ -93,5 +100,6 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     documentIngestionService,
     documentDeletionService,
     chatService,
+    chatHistoryService,
   };
 };

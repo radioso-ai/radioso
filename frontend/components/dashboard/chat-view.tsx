@@ -7,7 +7,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Spinner } from '@/components/ui/spinner'
 import { Send } from 'lucide-react'
 import { AssistantMessageContent, type CitationOpenResult } from './chat-citations'
-import { ChatRetrievalInfo } from './chat-retrieval-info'
 import { documentsApi } from '@/lib/api'
 import { useChatSession } from '@/lib/chat-context'
 
@@ -113,9 +112,6 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
                   ) : (
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                   )}
-                  {message.role === 'assistant' ? (
-                    <ChatRetrievalInfo retrievalInfo={message.retrievalInfo} />
-                  ) : null}
                 </div>
               </div>
             ))}

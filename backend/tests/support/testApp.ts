@@ -4,6 +4,7 @@ import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
@@ -26,6 +27,7 @@ import { createLogger } from "../../src/shared/observability/logger.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import {
   createAuditService,
+  InMemoryAuditEventRepository,
   InMemoryAccountRepository,
   InMemoryAccountTokenRepository,
   InMemoryChunkRepository,
@@ -61,7 +63,8 @@ export const createTestDependencies = (overrides: {
   rerankGateway?: RerankGateway;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = createTestEnv();
-  const auditService = createAuditService();
+  const auditEventRepository = new InMemoryAuditEventRepository();
+  const auditService = createAuditService(auditEventRepository);
   const accountRepository = new InMemoryAccountRepository();
   const sessionRepository = new InMemorySessionRepository();
   const accountTokenRepository = new InMemoryAccountTokenRepository();
@@ -259,6 +262,11 @@ export const createTestDependencies = (overrides: {
         retrievalPipeline,
         chatGateway,
         auditService,
+      ),
+      chatHistoryService: new ChatHistoryService(
+        conversationRepository,
+        messageRepository,
+        auditEventRepository,
       ),
     },
     repositories: {

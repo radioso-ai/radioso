@@ -688,7 +688,7 @@ describe("chat integration", () => {
       .send({ query: "Who is the Nayaswami?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toContain("can't answer safely");
+    expect(response.body.answer).toContain("Please clarify which one you mean");
   });
 });
 

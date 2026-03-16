@@ -84,7 +84,7 @@ export class ChatService {
   private readonly answerPresentationService = new AnswerPresentationService();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly unsafeEntityBlendMessage =
-    "I found conflicting information about multiple entities in your documents and can't answer safely from the retrieved context.";
+    "I found conflicting information that seems to refer to different subjects. Please clarify which one you mean.";
 
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
@@ -322,7 +322,6 @@ export class ChatService {
 
     return (
       retrieval.entityIntegrity.ambiguityDetected &&
-      (retrieval.entityIntegrity.mode === "single_entity" || retrieval.entityIntegrity.mode === "correction") &&
       retrieval.entityIntegrity.selectedSubjects.length === 0
     );
   }

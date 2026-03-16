@@ -203,4 +203,102 @@ describe("chat service streaming", () => {
       content: "full answer  marker",
     });
   });
+
+  it("does not persist a duplicate assistant turn when touch fails after the assistant answer is written", async () => {
+    class FailingTouchConversationRepository extends InMemoryConversationRepository {
+      override async touch(): Promise<void> {
+        throw new Error("touch failed");
+      }
+    }
+
+    const conversationRepository = new FailingTouchConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          contexts: [],
+          prompt: "prompt text",
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "",
+              lexicalQuery: "",
+              constraints: [],
+            },
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "full answer";
+      },
+      async *streamAnswer() {
+        yield "full answer";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    await expect(service.answer({
+      accountId: "account-1",
+      query: "What does this page do?",
+      stream: false,
+    })).rejects.toThrow("touch failed");
+
+    const [conversationId] = conversationRepository.items.keys();
+    const persisted = await messageRepository.listByConversationId(conversationId!);
+    expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
+      { role: "user", content: "What does this page do?" },
+      { role: "assistant", content: "I could not find relevant information in your documents." },
+    ]);
+  });
+
+  it("does not create an empty conversation when retrieval fails before the first turn is persisted", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        throw new Error("retrieval failed");
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "unused";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    await expect(service.answer({
+      accountId: "account-1",
+      query: "What does this page do?",
+      stream: false,
+    })).rejects.toThrow("retrieval failed");
+
+    expect(conversationRepository.items.size).toBe(0);
+  });
 });

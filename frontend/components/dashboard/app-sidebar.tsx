@@ -25,6 +25,7 @@ import { useAuth } from '@/lib/auth-context'
 import { useTheme } from 'next-themes'
 import {
   MessageSquare,
+  History,
   FileText,
   Settings,
   Key,
@@ -46,7 +47,6 @@ interface AppSidebarProps {
 }
 
 const navItems = [
-  { id: 'chat' as const, label: 'Chat', icon: MessageSquare },
   { id: 'documents' as const, label: 'Documents', icon: FileText },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
   { id: 'token' as const, label: 'API Token', icon: Key },
@@ -73,6 +73,31 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={currentView === 'chat'}
+                  tooltip="Chat"
+                >
+                  <Link href={buildAccountRoute(accountId, 'chat')}>
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Chat</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={currentView === 'history'}
+                  tooltip="History"
+                  className="pl-8 text-muted-foreground group-data-[collapsible=icon]:pl-2"
+                >
+                  <Link href={buildAccountRoute(accountId, 'history')}>
+                    <History className="w-4 h-4" />
+                    <span className="group-data-[collapsible=icon]:hidden">History</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.id}>
                   <SidebarMenuButton asChild isActive={currentView === item.id} tooltip={item.label}>

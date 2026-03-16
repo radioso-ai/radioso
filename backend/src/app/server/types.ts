@@ -1,4 +1,5 @@
 import type { ChatService } from "../../modules/chat/services/chatService.js";
+import type { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
 import type { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import type { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
 import type { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
@@ -16,4 +17,5 @@ export interface AppDependencies {
   documentIngestionService: DocumentIngestionService;
   documentDeletionService: DocumentDeletionService;
   chatService: ChatService;
+  chatHistoryService: ChatHistoryService;
 }

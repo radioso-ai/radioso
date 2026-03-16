@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from './app-sidebar'
 import { ChatView } from './chat-view'
+import { ChatHistoryView } from './chat-history-view'
 import { DocumentsView } from './documents-view'
 import { SettingsView } from './settings-view'
 import { TokenView } from './token-view'
@@ -38,6 +39,7 @@ export function DashboardShell({
           {currentView === 'chat' && (
             <ChatView accountId={accountId} onOpenDocument={openDocument} />
           )}
+          {currentView === 'history' && <ChatHistoryView accountId={accountId} />}
           {currentView === 'documents' && (
             <DocumentsView
               selectedDocumentId={selectedDocumentId ?? null}

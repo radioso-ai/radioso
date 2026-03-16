@@ -31,7 +31,7 @@ export interface RetrievalPipelineResult {
   };
   diagnostics: RetrievalExecutionDiagnostics;
   entityIntegrity: {
-    mode: "generic" | "single_entity" | "comparison" | "correction";
+    mode: "generic" | "comparison" | "correction";
     ambiguityDetected: boolean;
     selectedSubjects: string[];
   };
@@ -127,6 +127,8 @@ export class RetrievalPipelineService {
     });
     const guardedCandidates = this.entityIntegrityService.applyCandidateGuards({
       candidates: normalizedCandidates,
+      query: input.query,
+      history: input.history,
       intent: entityIntent,
     });
     const mergedCandidates = guardedCandidates.slice(0, HYBRID_RETRIEVAL_DEFAULTS.mergedCandidateCap);
@@ -143,6 +145,8 @@ export class RetrievalPipelineService {
     });
     const resolvedContexts = this.entityIntegrityService.resolveContexts({
       contexts: reranked.contexts,
+      query: input.query,
+      history: input.history,
       intent: entityIntent,
       topK: settings.rerankTopK,
     });

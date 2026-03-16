@@ -43,19 +43,6 @@ const reranked = (input: {
 });
 
 describe("entity integrity services", () => {
-  it("parses a single-entity target from identity questions", () => {
-    const service = new EntityQueryIntentService();
-
-    const result = service.interpret({
-      query: "Who is Narayani?",
-      history: [],
-    });
-
-    expect(result.mode).toBe("single_entity");
-    expect(result.includePhrases).toContain("narayani");
-    expect(result.excludePhrases).toEqual([]);
-  });
-
   it("parses correction turns without relying on person-specific rules", () => {
     const service = new EntityQueryIntentService();
 
@@ -115,6 +102,8 @@ describe("entity integrity services", () => {
           similarity: 0.88,
         }),
       ],
+      query: "Who is Narayani?",
+      history: [],
       intent,
     });
 
@@ -123,12 +112,7 @@ describe("entity integrity services", () => {
   });
 
   it("treats competing anchored subjects as unsafe for single-entity answers", () => {
-    const queryIntentService = new EntityQueryIntentService();
     const integrityService = new EntityIntegrityService();
-    const intent = queryIntentService.interpret({
-      query: "Who is Narayani?",
-      history: [],
-    });
 
     const result = integrityService.resolveContexts({
       contexts: [
@@ -143,7 +127,13 @@ describe("entity integrity services", () => {
           similarity: 0.85,
         }),
       ],
-      intent,
+      query: "Who is Narayani?",
+      history: [],
+      intent: {
+        mode: "generic",
+        includePhrases: [],
+        excludePhrases: [],
+      },
       topK: 5,
     });
 
@@ -173,12 +163,46 @@ describe("entity integrity services", () => {
           similarity: 0.85,
         }),
       ],
+      query: "Compare Narayani and Premi",
+      history: [],
       intent,
       topK: 5,
     });
 
     expect(result.ambiguityDetected).toBe(false);
     expect(result.contexts.map((context) => context.chunkId)).toEqual(["narayani", "premi"]);
+  });
+
+  it("uses recent user history to keep follow-up retrieval anchored to the same subject", () => {
+    const integrityService = new EntityIntegrityService();
+
+    const result = integrityService.resolveContexts({
+      contexts: [
+        reranked({
+          chunkId: "narayani",
+          retrievalText: "Subject: Narayani\nSection: Biography\nBorn in Spain and became a writer.",
+          similarity: 0.9,
+        }),
+        reranked({
+          chunkId: "premi",
+          retrievalText: "Subject: Premi\nSection: Vows\nIn 2015 she took vows as Nayaswami.",
+          similarity: 0.89,
+        }),
+      ],
+      query: "Tell me more",
+      history: [message("Who is Narayani?")],
+      intent: {
+        mode: "generic",
+        includePhrases: [],
+        excludePhrases: [],
+      },
+      topK: 5,
+    });
+
+    expect(result.ambiguityDetected).toBe(true);
+    expect(result.selectedSubjects).toEqual(["narayani"]);
+    expect(result.contexts).toHaveLength(1);
+    expect(result.contexts[0]?.chunkId).toBe("narayani");
   });
 
   it("marks unresolved competing subjects as unsafe when no preferred subject can be found", () => {
@@ -197,8 +221,10 @@ describe("entity integrity services", () => {
           similarity: 0.85,
         }),
       ],
+      query: "Who is Narayani?",
+      history: [],
       intent: {
-        mode: "single_entity",
+        mode: "generic",
         includePhrases: ["narayani"],
         excludePhrases: [],
       },

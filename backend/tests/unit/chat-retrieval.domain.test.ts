@@ -84,6 +84,34 @@ describe("chat retrieval domain", () => {
     expect(result.effectiveQuery).toContain("session cookie");
   });
 
+  it("uses a carried subject for deterministic fallback on context-dependent follow-ups", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        throw new Error("boom");
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Can I buy her book?",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [message("Earlier grounded turn")],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+      carriedSubject: {
+        canonicalLabel: "Narayani",
+        normalizedKey: "narayani",
+        aliases: [],
+      },
+      selfContained: false,
+    });
+
+    expect(result.status).toBe("fallback");
+    expect(result.effectiveQuery).toContain("Narayani");
+    expect(result.effectiveQuery).toContain("book");
+  });
+
   it("deduplicates candidates across original and rewritten retrieval paths", () => {
     const service = new CandidatePreparationService();
 

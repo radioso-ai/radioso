@@ -8,6 +8,50 @@ export interface ConversationContextWindow {
   selectionReason: string;
 }
 
+export interface SubjectReference {
+  canonicalLabel: string;
+  normalizedKey: string;
+  aliases: string[];
+  stableId?: string | null;
+  subjectType?: string | null;
+}
+
+export interface SubjectConvergenceMetrics {
+  winningSubject: SubjectReference | null;
+  runnerUpSubject: SubjectReference | null;
+  supportCount: number;
+  scoreMass: number;
+  runnerUpScoreMass: number;
+  winnerMargin: number;
+  agreementAcrossPaths: boolean;
+  isComparative: boolean;
+  isAmbiguous: boolean;
+}
+
+export type SubjectReuseOutcome = "reused" | "newly_established" | "replaced" | "cleared" | "unresolved";
+
+export interface SubjectReuseState {
+  resolvedSubject: SubjectReference | null;
+  resolutionOutcome: SubjectReuseOutcome;
+  resolutionConfidence: number;
+  resolutionSourceTurnId: string;
+  resolutionEvidence: SubjectConvergenceMetrics;
+  stateVersion: number;
+}
+
+export interface RetrievalContinuityDiagnostics {
+  subjectReuseOutcome: SubjectReuseOutcome;
+  winningSubject: SubjectReference | null;
+  runnerUpSubject: SubjectReference | null;
+  rawPathWinningSubject: SubjectReference | null;
+  biasedPathWinningSubject: SubjectReference | null;
+  supportCount: number;
+  scoreMass: number;
+  winnerMargin: number;
+  agreementAcrossPaths: boolean;
+  disagreementDetected: boolean;
+}
+
 export type RewriteStatus = "skipped" | "applied" | "fallback";
 
 export interface RewrittenRetrievalQuery {
@@ -18,6 +62,7 @@ export interface RewrittenRetrievalQuery {
   status: RewriteStatus;
   confidence: number;
   fallbackReason?: string;
+  usedCarriedSubject?: boolean;
 }
 
 export type RetrievalSource = "semantic_original" | "semantic_rewritten" | "lexical";
@@ -55,4 +100,5 @@ export interface RetrievalExecutionDiagnostics {
   appliedConstraints?: AppliedConstraint[];
   candidateFallbackApplied: boolean;
   fallbackApplied: boolean;
+  continuity?: RetrievalContinuityDiagnostics;
 }

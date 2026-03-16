@@ -16,6 +16,16 @@ export interface RetrievalInfo {
   appliedConstraints?: AppliedConstraint[];
   fallbackApplied: boolean;
   rerankStatus: RerankStatus;
+  continuity?: {
+    outcome: string;
+    subject?: string;
+    normalizedSubject?: string;
+    supportCount: number;
+    scoreMass: number;
+    winnerMargin: number;
+    agreementAcrossPaths: boolean;
+    disagreementDetected: boolean;
+  };
 }
 
 export class RetrievalInfoPresenter {
@@ -37,6 +47,18 @@ export class RetrievalInfoPresenter {
       appliedConstraints: input.appliedConstraints?.length ? input.appliedConstraints : undefined,
       fallbackApplied: input.fallbackApplied,
       rerankStatus: input.rerankStatus,
+      continuity: input.continuity
+        ? {
+            outcome: input.continuity.subjectReuseOutcome,
+            subject: input.continuity.winningSubject?.canonicalLabel,
+            normalizedSubject: input.continuity.winningSubject?.normalizedKey,
+            supportCount: input.continuity.supportCount,
+            scoreMass: input.continuity.scoreMass,
+            winnerMargin: input.continuity.winnerMargin,
+            agreementAcrossPaths: input.continuity.agreementAcrossPaths,
+            disagreementDetected: input.continuity.disagreementDetected,
+          }
+        : undefined,
     };
   }
 }

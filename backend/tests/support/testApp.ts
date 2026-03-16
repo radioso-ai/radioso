@@ -163,6 +163,12 @@ export const createTestDependencies = (overrides: {
   ]);
   const queryRewriteGateway: QueryRewriteGateway = {
     async rewrite(input) {
+      if (input.carriedSubject && /\b(book|later|buy|cost|where)\b/i.test(input.query)) {
+        return {
+          rewrittenQuery: `${input.carriedSubject.canonicalLabel} ${input.query}`.trim(),
+          confidence: 0.95,
+        };
+      }
       const lastUserContext =
         [...input.contextMessages].reverse().find((message) => message.role === "user")?.content ?? "";
       const normalizedContext = lastUserContext
@@ -206,6 +212,7 @@ export const createTestDependencies = (overrides: {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
+    auditEventRepository,
   );
   const defaultChatGateway: ChatGateway = {
     async answer(input): Promise<string> {

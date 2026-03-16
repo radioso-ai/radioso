@@ -70,6 +70,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
+    auditEventRepository,
   );
   const chatService = new ChatService(
     new ConversationRepository(database),

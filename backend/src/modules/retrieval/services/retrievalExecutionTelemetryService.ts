@@ -1,4 +1,9 @@
-import type { RetrievalExecutionDiagnostics, RewriteStatus, RerankStatus } from "../domain/retrievalPipelineTypes.js";
+import type {
+  RetrievalContinuityDiagnostics,
+  RetrievalExecutionDiagnostics,
+  RewriteStatus,
+  RerankStatus,
+} from "../domain/retrievalPipelineTypes.js";
 
 export class RetrievalExecutionTelemetryService {
   create(input: {
@@ -12,6 +17,7 @@ export class RetrievalExecutionTelemetryService {
     parsedQuery?: import("../domain/structuredAttributes.js").ParsedQueryInterpretation;
     appliedConstraints?: import("../domain/structuredAttributes.js").AppliedConstraint[];
     candidateFallbackApplied: boolean;
+    continuity?: RetrievalContinuityDiagnostics;
   }): RetrievalExecutionDiagnostics {
     return {
       ...input,

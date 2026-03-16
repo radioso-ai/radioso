@@ -685,6 +685,150 @@ describe("chat integration", () => {
     expect(comparisonResponse.body.answer).toContain("Subject: Premi");
   });
 
+  it("reuses the grounded subject on a later context-dependent follow-up", async () => {
+    const chatGateway: ChatGateway = {
+      async answer(input) {
+        return extractRetrievedContext(input.prompt);
+      },
+      async *streamAnswer(input) {
+        yield await this.answer(input);
+      },
+    };
+    const { app } = createTestApp({ chatGateway });
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "subject-reuse@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "| Generic Catalog |",
+        content: "## Narayani\nNarayani wrote the book My Soul Remembers Swami Kriyananda.",
+      });
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "| Generic Catalog |",
+        content: "## Premi\nPremi teaches chanting and devotion.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "structured_semantic",
+      });
+
+    const firstResponse = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Who is Narayani?", stream: false });
+
+    const secondResponse = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: firstResponse.body.conversationId,
+        query: "Can I buy her book?",
+        stream: false,
+      });
+
+    expect(secondResponse.status).toBe(200);
+    expect(secondResponse.body.answer).toContain("Subject: Narayani");
+    expect(secondResponse.body.answer).not.toContain("Subject: Premi");
+    expect(secondResponse.body.retrievalInfo.continuity).toMatchObject({
+      outcome: "reused",
+      subject: "Narayani",
+    });
+  });
+
+  it("replaces the carried subject when the current turn explicitly names a new subject", async () => {
+    const chatGateway: ChatGateway = {
+      async answer(input) {
+        return extractRetrievedContext(input.prompt);
+      },
+      async *streamAnswer(input) {
+        yield await this.answer(input);
+      },
+    };
+    const { app } = createTestApp({ chatGateway });
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "subject-replace@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "| Generic Catalog |",
+        content: "## Narayani\nNarayani wrote the book My Soul Remembers Swami Kriyananda.",
+      });
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "| Generic Catalog |",
+        content: "## Premi\nPremi teaches chanting and devotion.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "structured_semantic",
+      });
+
+    const firstResponse = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Who is Narayani?", stream: false });
+
+    const secondResponse = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: firstResponse.body.conversationId,
+        query: "Who is Premi?",
+        stream: false,
+      });
+
+    expect(secondResponse.status).toBe(200);
+    expect(secondResponse.body.answer).toContain("Subject: Premi");
+    expect(secondResponse.body.answer).not.toContain("Subject: Narayani");
+    expect(secondResponse.body.retrievalInfo.continuity).toMatchObject({
+      outcome: "replaced",
+      subject: "Premi",
+    });
+  });
+
   it("does not hard-stop when retrieval stays split across competing subjects", async () => {
     const { app } = createTestApp();
 

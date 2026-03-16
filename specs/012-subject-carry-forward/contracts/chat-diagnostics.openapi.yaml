@@ -1,0 +1,70 @@
+openapi: 3.1.0
+info:
+  title: Chat Retrieval Diagnostics Additions
+  version: 0.1.0
+  description: Additive contract for conversational subject continuity diagnostics exposed by existing chat retrieval info.
+paths: {}
+components:
+  schemas:
+    SubjectReference:
+      type: object
+      required:
+        - canonicalLabel
+        - normalizedKey
+      properties:
+        canonicalLabel:
+          type: string
+        normalizedKey:
+          type: string
+        aliases:
+          type: array
+          items:
+            type: string
+        stableId:
+          type: string
+          nullable: true
+        subjectType:
+          type: string
+          nullable: true
+    RetrievalContinuityDiagnostics:
+      type: object
+      required:
+        - subjectReuseOutcome
+        - agreementAcrossPaths
+        - disagreementDetected
+      properties:
+        subjectReuseOutcome:
+          type: string
+          enum:
+            - reused
+            - newly_established
+            - replaced
+            - cleared
+            - unresolved
+        winningSubject:
+          $ref: '#/components/schemas/SubjectReference'
+        runnerUpSubject:
+          allOf:
+            - $ref: '#/components/schemas/SubjectReference'
+          nullable: true
+        rawPathWinningSubject:
+          allOf:
+            - $ref: '#/components/schemas/SubjectReference'
+          nullable: true
+        biasedPathWinningSubject:
+          allOf:
+            - $ref: '#/components/schemas/SubjectReference'
+          nullable: true
+        supportCount:
+          type: integer
+          minimum: 0
+        scoreMass:
+          type: number
+          minimum: 0
+        winnerMargin:
+          type: number
+          minimum: 0
+        agreementAcrossPaths:
+          type: boolean
+        disagreementDetected:
+          type: boolean

@@ -234,28 +234,29 @@ export class ChatService {
     conversationId?: string;
     query: string;
   }): Promise<PreparedSession> {
-    const conversation = input.conversationId
+    const existingConversation = input.conversationId
       ? await this.ensureConversation(input.conversationId, input.accountId)
       : null;
-    const history = conversation
-      ? await this.messageRepository.listByConversationId(conversation.id)
+    const history = existingConversation
+      ? await this.messageRepository.listByConversationId(existingConversation.id)
       : [];
     const retrieval = await this.retrievalPipeline.run({
       accountId: input.accountId,
       query: input.query,
       history,
+      conversationId: existingConversation?.id,
     });
-    const persistedConversation = conversation ?? await this.conversationRepository.create(input.accountId);
+    const conversation = existingConversation ?? await this.conversationRepository.create(input.accountId);
 
     const userMessage = await this.messageRepository.create({
-      conversationId: persistedConversation.id,
+      conversationId: conversation.id,
       accountId: input.accountId,
       role: "user",
       content: input.query,
     });
 
     return {
-      conversation: persistedConversation,
+      conversation,
       history,
       retrieval,
       userMessage,

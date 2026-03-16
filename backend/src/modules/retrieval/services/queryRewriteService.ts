@@ -1,12 +1,13 @@
 import type OpenAI from "openai";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { ConversationContextWindow, RewrittenRetrievalQuery } from "../domain/retrievalPipelineTypes.js";
+import type { ConversationContextWindow, RewrittenRetrievalQuery, SubjectReference } from "../domain/retrievalPipelineTypes.js";
 
 export interface QueryRewriteGateway {
   rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
+    carriedSubject?: SubjectReference | null;
   }): Promise<{ rewrittenQuery: string; confidence: number }>;
 }
 
@@ -19,6 +20,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
   async rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
+    carriedSubject?: SubjectReference | null;
   }): Promise<{ rewrittenQuery: string; confidence: number }> {
     const context = input.contextMessages
       .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
@@ -35,7 +37,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
         },
         {
           role: "user",
-          content: `Conversation context:\n${context || "No prior context"}\n\nLatest user question:\n${input.query}`,
+          content: `Conversation context:\n${context || "No prior context"}\n\nCarried subject:\n${input.carriedSubject?.canonicalLabel ?? "None"}\n\nLatest user question:\n${input.query}`,
         },
       ],
     });
@@ -58,12 +60,14 @@ export class QueryRewriteService {
     query: string;
     contextWindow: ConversationContextWindow;
     enabled: boolean;
+    carriedSubject?: SubjectReference | null;
+    selfContained?: boolean;
   }): Promise<RewrittenRetrievalQuery> {
     if (!input.enabled) {
       return this.skipped(input.query);
     }
 
-    if (!this.shouldRewrite(input.query, input.contextWindow)) {
+    if (!this.shouldRewrite(input.query, input.contextWindow, input.carriedSubject, input.selfContained)) {
       return this.skipped(input.query);
     }
 
@@ -71,6 +75,7 @@ export class QueryRewriteService {
       const result = await this.gateway?.rewrite({
         query: input.query,
         contextMessages: input.contextWindow.selectedMessages,
+        carriedSubject: input.carriedSubject,
       });
 
       const rewrittenQuery = this.normalizeRewrite(result?.rewrittenQuery);
@@ -82,21 +87,27 @@ export class QueryRewriteService {
           rewriteApplied: true,
           status: "applied",
           confidence: result?.confidence ?? 0.5,
+          usedCarriedSubject: Boolean(input.carriedSubject),
         };
       }
 
-      return this.heuristicFallback(input.query, input.contextWindow, "rewrite_unusable");
+      return this.heuristicFallback(input.query, input.contextWindow, "rewrite_unusable", input.carriedSubject, input.selfContained);
     } catch {
-      return this.heuristicFallback(input.query, input.contextWindow, "rewrite_failed");
+      return this.heuristicFallback(input.query, input.contextWindow, "rewrite_failed", input.carriedSubject, input.selfContained);
     }
   }
 
-  private shouldRewrite(query: string, contextWindow: ConversationContextWindow): boolean {
+  private shouldRewrite(
+    query: string,
+    contextWindow: ConversationContextWindow,
+    carriedSubject?: SubjectReference | null,
+    selfContained?: boolean,
+  ): boolean {
     if (contextWindow.selectedMessages.length === 0) {
-      return false;
+      return Boolean(carriedSubject) && selfContained === false;
     }
 
-    return this.isFollowupStyleQuery(query);
+    return Boolean(carriedSubject && selfContained === false) || this.isFollowupStyleQuery(query);
   }
 
   private skipped(query: string): RewrittenRetrievalQuery {
@@ -114,8 +125,10 @@ export class QueryRewriteService {
     query: string,
     contextWindow: ConversationContextWindow,
     reason: string,
+    carriedSubject?: SubjectReference | null,
+    selfContained?: boolean,
   ): RewrittenRetrievalQuery {
-    if (!this.isFollowupStyleQuery(query)) {
+    if (!this.isFollowupStyleQuery(query) && !(carriedSubject && selfContained === false)) {
       return {
         originalQuery: query,
         rewrittenQuery: query,
@@ -127,7 +140,7 @@ export class QueryRewriteService {
       };
     }
 
-    const heuristicRewrite = this.buildHeuristicRewrite(query, contextWindow);
+    const heuristicRewrite = this.buildHeuristicRewrite(query, contextWindow, carriedSubject);
     if (!heuristicRewrite || heuristicRewrite === query) {
       return {
         originalQuery: query,
@@ -148,6 +161,7 @@ export class QueryRewriteService {
       status: "fallback",
       confidence: 0.25,
       fallbackReason: reason,
+      usedCarriedSubject: Boolean(carriedSubject),
     };
   }
 
@@ -155,13 +169,17 @@ export class QueryRewriteService {
     return REFERENTIAL_PATTERN.test(query) || CONTINUATION_PATTERN.test(query);
   }
 
-  private buildHeuristicRewrite(query: string, contextWindow: ConversationContextWindow): string | null {
-    const contextSubject = this.extractContextSubject(contextWindow.selectedMessages);
+  private buildHeuristicRewrite(
+    query: string,
+    contextWindow: ConversationContextWindow,
+    carriedSubject?: SubjectReference | null,
+  ): string | null {
+    const contextSubject = carriedSubject?.canonicalLabel ?? this.extractContextSubject(contextWindow.selectedMessages);
     if (!contextSubject) {
       return null;
     }
 
-    if (REFERENTIAL_PATTERN.test(query)) {
+    if (REFERENTIAL_PATTERN.test(query) || carriedSubject) {
       return this.replaceReferentialSubject(query, contextSubject);
     }
 
@@ -195,8 +213,13 @@ export class QueryRewriteService {
 
     return query
       .replace(/\bit\b/i, `the ${loweredSubject}`)
+      .replace(/\bits\b/i, `${loweredSubject}'s`)
       .replace(/\bthis\b/i, `the ${loweredSubject}`)
       .replace(/\bthat\b/i, `the ${loweredSubject}`)
+      .replace(/\bhe\b/i, loweredSubject)
+      .replace(/\bshe\b/i, loweredSubject)
+      .replace(/\bhim\b/i, loweredSubject)
+      .replace(/\bher\b/i, `${loweredSubject}'s`)
       .replace(/\bthey\b/i, loweredSubject)
       .replace(/\bthem\b/i, loweredSubject)
       .replace(/\btheir\b/i, `${loweredSubject}'s`)

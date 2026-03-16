@@ -39,6 +39,8 @@ describe("chat contract", () => {
     expect(response.body.answer).toContain("This page parses content");
     expect(Array.isArray(response.body.citations)).toBe(true);
     expect(Array.isArray(response.body.answerSegments)).toBe(true);
+    expect(response.body.answer).not.toContain("[[");
+    expect(response.body.answerSegments).toEqual([{ text: expect.any(String), citationIndices: [0] }]);
     expect(response.body.retrievalInfo).toMatchObject({
       candidateCounts: expect.objectContaining({
         semantic: expect.any(Number),
@@ -88,6 +90,7 @@ describe("chat contract", () => {
     expect(response.body).toContain("event: conversation");
     expect(response.body).toContain("event: chunk");
     expect(response.body).toContain("event: done");
+    expect(response.body).toContain("\"answer\":");
     expect(response.body).toContain("\"retrievalInfo\":");
   });
 

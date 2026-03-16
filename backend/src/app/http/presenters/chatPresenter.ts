@@ -56,6 +56,7 @@ export const sendChatSse = (
 
       writeEvent("done", {
         conversationId: event.conversationId,
+        answer: event.answer,
         citations: event.citations,
         answerSegments: event.answerSegments,
         retrievalInfo: event.retrievalInfo,

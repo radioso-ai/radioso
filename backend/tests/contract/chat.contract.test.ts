@@ -37,9 +37,10 @@ describe("chat contract", () => {
     expect(Object.keys(response.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo"]);
     expect(response.body.conversationId).toBeDefined();
     expect(response.body.answer).toContain("This page parses content");
-    expect(response.body.answer).not.toContain("[[");
     expect(Array.isArray(response.body.citations)).toBe(true);
     expect(Array.isArray(response.body.answerSegments)).toBe(true);
+    expect(response.body.answer).not.toContain("[[");
+    expect(response.body.answerSegments).toEqual([{ text: expect.any(String), citationIndices: [0] }]);
     expect(response.body.retrievalInfo).toMatchObject({
       candidateCounts: expect.objectContaining({
         semantic: expect.any(Number),
@@ -203,7 +204,6 @@ describe("chat contract", () => {
     expect(second.status).toBe(200);
     expect(Object.keys(second.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo"]);
     expect(second.body.conversationId).toBe(first.body.conversationId);
-    expect(second.body.answer).not.toContain("[[");
   });
 
   it("refuses out-of-corpus questions when only low-similarity partial matches exist", async () => {

@@ -24,7 +24,7 @@ describe("answer presentation service", () => {
     });
   });
 
-  it("assigns citations to matching clauses instead of appending all citations to the end", () => {
+  it("requires explicit anchors for citation placement and does not fall back to heuristic segmentation", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
@@ -53,32 +53,17 @@ describe("answer presentation service", () => {
       ],
     });
 
-    expect(result.citations).toEqual([
-      { documentId: "doc-1", chunkId: "chunk-1", title: "Profile" },
-      { documentId: "doc-2", chunkId: "chunk-2", title: "Program" },
-      { documentId: "doc-3", chunkId: "chunk-3", title: "Languages" },
-    ]);
-    expect(result.answerSegments).toEqual([
-      {
-        text: "Tomas is a leader/facilitator featured by Valmora Europe, ",
-        citationIndices: [0],
-      },
-      {
-        text: "leads morning meditations and Purification ceremonies, ",
-        citationIndices: [1],
-      },
-      {
-        text: "and events are offered in Italian and English.",
-        citationIndices: [2],
-      },
-    ]);
+    expect(result).toEqual({
+      answer:
+        "Tomas is a leader/facilitator featured by Valmora Europe, leads morning meditations and Purification ceremonies, and events are offered in Italian and English.",
+    });
   });
 
-  it("collapses multiple chunks from the same document into one visible source", () => {
+  it("parses explicit anchors into deterministic segments and deduped citations", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
-      answer: "Freya's books are available from Valmora Books.",
+      answer: "Freya's books are available from Valmora Books.[[1]]",
       citationDisplayEnabled: true,
       citations: [
         {
@@ -107,11 +92,11 @@ describe("answer presentation service", () => {
     ]);
   });
 
-  it("does not insert citation boundaries inside prices or urls", () => {
+  it("removes anchors from the returned answer text", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
-      answer: "Author page: https://books.valmora.example/autore/freya-rennick. Il mio cuore ricorda Swami Selan costs EUR 18,00 today.",
+      answer: "Author page: https://books.valmora.example/autore/freya-rennick.[[1]] Price is EUR 18,00.[[2]]",
       citationDisplayEnabled: true,
       citations: [
         {
@@ -129,13 +114,14 @@ describe("answer presentation service", () => {
       ],
     });
 
+    expect(result.answer).toBe("Author page: https://books.valmora.example/autore/freya-rennick. Price is EUR 18,00.");
     expect(result.answerSegments).toEqual([
       {
-        text: "Author page: https://books.valmora.example/autore/freya-rennick. ",
+        text: "Author page: https://books.valmora.example/autore/freya-rennick.",
         citationIndices: [0],
       },
       {
-        text: "Il mio cuore ricorda Swami Selan costs EUR 18,00 today.",
+        text: " Price is EUR 18,00.",
         citationIndices: [1],
       },
     ]);

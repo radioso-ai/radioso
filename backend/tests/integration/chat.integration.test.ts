@@ -626,7 +626,7 @@ describe("chat integration", () => {
     expect(response.body.answer).not.toContain("Subject: Premi");
   });
 
-  it("honors correction turns without collapsing explicit comparisons", async () => {
+  it("keeps multiple explicitly named subjects available in comparison prompts", async () => {
     const chatGateway: ChatGateway = {
       async answer(input) {
         return extractRetrievedContext(input.prompt);
@@ -638,7 +638,7 @@ describe("chat integration", () => {
     const { app } = createTestApp({ chatGateway });
 
     const register = await request(app).post("/api/v1/auth/register").send({
-      email: "entity-correction@example.com",
+      email: "entity-comparison@example.com",
       password: "verysecurepassword",
     });
     const token = await request(app)
@@ -675,28 +675,10 @@ describe("chat integration", () => {
         chunkingStrategy: "structured_semantic",
       });
 
-    const primerResponse = await request(app)
-      .post("/api/v1/chat/")
-      .set("Authorization", authorization)
-      .send({ query: "Who is Narayani?", stream: false });
-
-    const correctionResponse = await request(app)
-      .post("/api/v1/chat/")
-      .set("Authorization", authorization)
-      .send({
-        conversationId: primerResponse.body.conversationId,
-        query: "Premi was given a Nayaswami title, not Narayani",
-        stream: false,
-      });
-
     const comparisonResponse = await request(app)
       .post("/api/v1/chat/")
       .set("Authorization", authorization)
       .send({ query: "Compare Narayani and Premi", stream: false });
-
-    expect(correctionResponse.status).toBe(200);
-    expect(correctionResponse.body.answer).toContain("Subject: Premi");
-    expect(correctionResponse.body.answer).not.toContain("Subject: Narayani");
 
     expect(comparisonResponse.status).toBe(200);
     expect(comparisonResponse.body.answer).toContain("Subject: Narayani");

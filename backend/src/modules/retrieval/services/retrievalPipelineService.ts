@@ -17,7 +17,6 @@ import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import { HYBRID_RETRIEVAL_DEFAULTS } from "../domain/hybridRetrievalConfig.js";
 import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
 import type { AttributeFamilyControl } from "../../settings/domain/retrievalSettings.js";
-import { EntityQueryIntentService } from "./entityQueryIntentService.js";
 import { EntityIntegrityService } from "./entityIntegrityService.js";
 
 export interface RetrievalPipelineResult {
@@ -30,11 +29,6 @@ export interface RetrievalPipelineResult {
     citationDisplayEnabled: boolean;
   };
   diagnostics: RetrievalExecutionDiagnostics;
-  entityIntegrity: {
-    mode: "generic" | "comparison" | "correction";
-    ambiguityDetected: boolean;
-    selectedSubjects: string[];
-  };
 }
 
 export class RetrievalPipelineService {
@@ -51,7 +45,6 @@ export class RetrievalPipelineService {
     private readonly promptContextSelectorService: PromptContextSelectorService,
     private readonly promptBuilder: PromptBuilder,
     private readonly retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
-    private readonly entityQueryIntentService: EntityQueryIntentService = new EntityQueryIntentService(),
     private readonly entityIntegrityService: EntityIntegrityService = new EntityIntegrityService(),
   ) {}
 
@@ -61,10 +54,6 @@ export class RetrievalPipelineService {
     history: MessageRecord[];
   }): Promise<RetrievalPipelineResult> {
     const settings = await this.retrievalSettingsService.getForAccount(input.accountId);
-    const entityIntent = this.entityQueryIntentService.interpret({
-      query: input.query,
-      history: input.history,
-    });
     const contextWindow = this.conversationContextService.select({
       history: input.history,
       query: input.query,
@@ -129,7 +118,6 @@ export class RetrievalPipelineService {
       candidates: normalizedCandidates,
       query: input.query,
       history: input.history,
-      intent: entityIntent,
     });
     const mergedCandidates = guardedCandidates.slice(0, HYBRID_RETRIEVAL_DEFAULTS.mergedCandidateCap);
     const scoredCandidates = this.attributeMatchScoringService.apply({
@@ -147,7 +135,6 @@ export class RetrievalPipelineService {
       contexts: reranked.contexts,
       query: input.query,
       history: input.history,
-      intent: entityIntent,
       topK: settings.rerankTopK,
     });
     const contexts = this.promptContextSelectorService.select({
@@ -187,11 +174,6 @@ export class RetrievalPipelineService {
         citationDisplayEnabled: settings.citationDisplayEnabled,
       },
       diagnostics,
-      entityIntegrity: {
-        mode: entityIntent.mode,
-        ambiguityDetected: resolvedContexts.ambiguityDetected,
-        selectedSubjects: resolvedContexts.selectedSubjects,
-      },
     };
   }
 

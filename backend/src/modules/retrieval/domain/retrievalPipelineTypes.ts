@@ -28,7 +28,6 @@ export interface RetrievedCandidate extends RetrievedChunk {
   semanticScore: number;
   lexicalScore: number;
   attributeMatchScore?: number;
-  subjectLabel?: string | null;
 }
 
 export interface RerankedCandidate extends RetrievedCandidate {

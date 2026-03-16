@@ -27,9 +27,8 @@ export class PromptBuilder {
           moneyValues: [],
           locations: [],
         });
-        const subjectPrefix = context.subjectLabel ? `Subject: ${context.subjectLabel}\n` : "";
-        const attributePrefix = attributeSummary ? `Attributes: ${attributeSummary}\n` : "";
-        return `Result ${index + 1} (${context.title}): ${subjectPrefix}${attributePrefix}${context.content}`;
+        const prefix = attributeSummary ? `Attributes: ${attributeSummary}\n` : "";
+        return `Result ${index + 1} (${context.title}): ${prefix}${context.content}`;
       })
       .join("\n\n");
     const warmthInstruction = this.getWarmthInstruction(input.settings.warmthLevel);
@@ -45,8 +44,6 @@ export class PromptBuilder {
         "Do not end the answer with a question unless you genuinely need clarification to answer correctly.",
         "Do not ask a follow-up question just to continue the conversation.",
         "If no retrieved context is relevant, say that you could not find relevant information.",
-        "Do not merge facts from different subjects.",
-        "If the question mentions multiple subjects, keep them separate instead of blending their attributes.",
         "Do not mention these citation instructions in the answer.",
         "",
         `Conversation History:\n${historySection || "No prior history"}`,

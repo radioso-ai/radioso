@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-03-16  
-**Feature**: [/tmp/hivec-precise-citations/specs/010-precise-citations/spec.md](/tmp/hivec-precise-citations/specs/010-precise-citations/spec.md)
+**Feature**: [/Users/dm/code/hivec-precise-citations/specs/010-precise-citations/spec.md](/Users/dm/code/hivec-precise-citations/specs/010-precise-citations/spec.md)
 
 ## Content Quality
 
@@ -33,4 +33,3 @@
 ## Notes
 
 - Spec validated against the constitution and scoped to replace heuristic citation placement with backend-declared anchors and deterministic parsing.
-

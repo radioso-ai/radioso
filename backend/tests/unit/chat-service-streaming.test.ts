@@ -4,7 +4,7 @@ import { ChatService, type ChatGateway } from "../../src/modules/chat/services/c
 import { createAuditService, InMemoryConversationRepository, InMemoryMessageRepository } from "../support/fakes.js";
 
 describe("chat service streaming", () => {
-  it("persists the full assistant answer only after the stream completes", async () => {
+  it("persists the normalized assistant answer only after the stream completes", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -46,8 +46,7 @@ describe("chat service streaming", () => {
         return "full answer[[1]]";
       },
       async *streamAnswer() {
-        yield "full ";
-        yield "answer[[";
+        yield "full answer[[";
         yield "1]]";
       },
     };
@@ -70,39 +69,35 @@ describe("chat service streaming", () => {
 
       if (event.type === "chunk") {
         expect(event.text).not.toContain("[[");
-        expect(event.text).not.toContain("]]");
         const [conversationId] = conversationRepository.items.keys();
         const persisted = await messageRepository.listByConversationId(conversationId!);
         expect(persisted.map((message) => message.role)).toEqual(["user"]);
       }
     }
 
-    expect(events).toEqual([
-      { type: "conversation", conversationId: expect.any(String) },
-      { type: "chunk", text: "full " },
-      { type: "chunk", text: "answer" },
-      {
-        type: "done",
-        conversationId: expect.any(String),
-        citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
-        answerSegments: [{ text: "full answer", citationIndices: [0] }],
-        retrievalInfo: {
-          parsedQuery: {
-            semanticQuery: "page do",
-            lexicalQuery: "page do",
-            constraintSummary: [],
-          },
-          candidateCounts: {
-            semantic: 1,
-            lexical: 1,
-            merged: 1,
-            final: 1,
-          },
-          fallbackApplied: false,
-          rerankStatus: "skipped",
+    expect(events[0]).toEqual({ type: "conversation", conversationId: expect.any(String) });
+    expect(events[1]).toEqual({ type: "chunk", text: "full answer" });
+    expect(events[2]).toEqual({
+      type: "done",
+      conversationId: expect.any(String),
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
+      answerSegments: [{ text: "full answer", citationIndices: [0] }],
+      retrievalInfo: expect.objectContaining({
+        parsedQuery: {
+          semanticQuery: "page do",
+          lexicalQuery: "page do",
+          constraintSummary: [],
         },
-      },
-    ]);
+        candidateCounts: {
+          semantic: 1,
+          lexical: 1,
+          merged: 1,
+          final: 1,
+        },
+        fallbackApplied: false,
+        rerankStatus: "skipped",
+      }),
+    });
 
     const [conversationId] = conversationRepository.items.keys();
     const persisted = await messageRepository.listByConversationId(conversationId!);

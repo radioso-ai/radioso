@@ -1,39 +1,31 @@
 # Research: Precise Citation Placement
 
-**Date**: 2026-03-16  
-**Branch**: `010-precise-citations`
+## Decision 1: Use explicit citation anchors in model output
 
-## Decision: Citation Anchor Format
+- **Decision**: The grounded prompt will require the model to cite retrieved sources through a strict numeric anchor syntax tied to retrieval result numbers.
+- **Rationale**: Exact placement is only reliable when the generator declares where citations belong. Post-hoc text-overlap scoring cannot distinguish claim boundaries from URLs, prices, or connective prose.
+- **Alternatives considered**:
+  - Keep heuristic placement and improve tokenization: rejected because the failure mode is structural, not just token quality.
+  - Push anchor parsing to the frontend: rejected because the backend owns trust, validation, and response normalization.
 
-Use `[[N]]` anchors in the raw model output, where `N` is the 1-based index of the retrieved context entry shown to the model (e.g., "Result 1", "Result 2").
+## Decision 2: Normalize anchors into the existing response shape
 
-Rationale:
+- **Decision**: The backend will strip raw anchors from the visible answer and emit normalized `citations` plus `answerSegments` for completed responses.
+- **Rationale**: This preserves current frontend behavior and avoids exposing raw model syntax directly to users.
+- **Alternatives considered**:
+  - Return raw answer text with inline anchors only: rejected because the frontend would need to parse model syntax and handle malformed anchors.
+  - Introduce a brand-new response contract: rejected because the existing shape already models exact placement well enough.
 
-- Matches an established pattern (Skald-style) and is easy to parse deterministically.
-- Can be filtered out of streaming chunks to avoid user-visible placeholder syntax.
-- Supports multiple sources per claim via `[[1]][[2]]` sequences.
+## Decision 3: Finalize precise placement only on completion for streaming
 
-## Decision: Deterministic Parsing (No Heuristic Placement)
+- **Decision**: SSE chunk events remain plain text; citation normalization happens once the full answer is available.
+- **Rationale**: Partial streams can split anchors across chunks, so final normalization must operate on the complete answer.
+- **Alternatives considered**:
+  - Stream incremental citation metadata: rejected because the current transport is text-first and chunk-safe normalization would add complexity outside the approved scope.
 
-Parse the final raw answer and convert anchors into `answerSegments` by splitting the answer at each anchor boundary, attaching the anchor's validated source(s) to the preceding segment.
+## Decision 4: Drop malformed or unknown anchors safely
 
-Rationale:
-
-- Produces exact placement declared by the backend.
-- Avoids overlap-scoring/punctuation heuristics which are inherently unreliable for URLs, prices, and lists.
-
-## Decision: Streaming Sanitization
-
-Remove anchors from streamed chunks before sending them to clients. Maintain the full raw answer (including anchors) server-side for final parsing at completion.
-
-Rationale:
-
-- Frontend currently accumulates streamed text and does not replace it at completion, so streamed text must match the final visible answer.
-- Prevents partial anchor artifacts when chunk boundaries split `[[` / `]]`.
-
-## Alternatives Considered
-
-- Heuristic placement based on overlap: rejected due to known misplacement and non-determinism.
-- Frontend parsing of anchors: rejected due to modularity and trust boundaries.
-- Sending `answer` in SSE completion and overriding the streamed content: rejected to avoid contract/UI churn; current streaming path does not support it.
-
+- **Decision**: Unknown, malformed, or incomplete anchors are removed from rendered citation metadata and do not become visible markers.
+- **Rationale**: Safe degradation is preferable to guessing or showing misleading markers.
+- **Alternatives considered**:
+  - Attempt to repair invalid anchors heuristically: rejected because that reintroduces the ambiguity this feature is removing.

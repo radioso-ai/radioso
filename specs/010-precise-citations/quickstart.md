@@ -1,25 +1,39 @@
 # Quickstart: Precise Citation Placement
 
-## Goal
+## 1. Write failing backend tests first
 
-Verify that chat answers render citations exactly at backend-declared claim boundaries and that streaming does not expose citation-anchor placeholders.
+Run targeted backend tests that prove the current heuristic behavior is insufficient and define the exact-placement contract:
 
-## Preconditions
+```bash
+cd /Users/dm/code/hivec-precise-citations/backend
+npm run test:unit -- tests/unit/answer-presentation.test.ts tests/unit/chat-service-streaming.test.ts
+npm run test:contract -- tests/contract/chat.contract.test.ts
+```
 
-- Backend running with a seeded account and at least two documents uploaded.
-- Retrieval settings enable citation display.
+## 2. Implement deterministic citation normalization
 
-## Manual Test
+Update prompt construction, add the citation-anchor parser, and route completed JSON and SSE answers through the same normalization path.
 
-1. Ask a question that should produce at least two distinct claims sourced from different documents.
-2. Confirm the assistant answer renders inline citations at the end of the relevant claim segments.
-3. Confirm no raw `[[N]]` placeholder syntax is visible anywhere in the rendered answer.
-4. Click each citation marker and confirm it opens the intended document.
-5. Repeat with streaming enabled.
+## 3. Run focused backend verification
 
-## Expected Results
+```bash
+cd /Users/dm/code/hivec-precise-citations/backend
+npm run test:unit -- tests/unit/answer-presentation.test.ts tests/unit/chat-service-streaming.test.ts
+npm run test:contract -- tests/contract/chat.contract.test.ts
+npm run test:integration -- tests/integration/chat.integration.test.ts
+npm run build
+```
 
-- Citations appear only where the answer is cited; uncited text has no markers.
-- Invalid or unknown anchors do not produce markers.
-- Streaming displays readable text throughout and the completion adds citation metadata without changing the already-displayed text.
+## 4. Run frontend verification
 
+```bash
+cd /Users/dm/code/hivec-precise-citations/frontend
+npm run build
+```
+
+## 5. Manual acceptance checks
+
+- Ask a question that produces multiple claims and verify inline citation markers land on the intended claims.
+- Confirm no marker appears inside prices, URLs, or connective prose.
+- Verify streamed answers finalize into the same placement as non-streamed answers.
+- Confirm malformed anchors in test fixtures do not leak raw placeholder syntax to the final answer.

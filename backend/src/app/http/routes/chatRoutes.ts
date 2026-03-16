@@ -5,11 +5,16 @@ import type { AppDependencies } from "../../server/types.js";
 import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
+import { badRequest } from "../../../shared/domain/errors.js";
 
 const chatSchema = z.object({
   query: z.string().min(1),
   stream: z.boolean(),
   conversationId: z.string().uuid().optional(),
+});
+
+const conversationParamsSchema = z.object({
+  conversationId: z.string().uuid(),
 });
 
 export const createChatRoutes = (dependencies: AppDependencies): Router => {
@@ -28,9 +33,12 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
   router.get("/history/:conversationId", requireApiToken(dependencies), async (req, res, next) => {
     try {
       const { accountId } = res.locals as { accountId: string };
-      const conversationId = Array.isArray(req.params.conversationId)
-        ? req.params.conversationId[0]
-        : req.params.conversationId;
+      const parsedParams = conversationParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      const { conversationId } = parsedParams.data;
       const conversation = await dependencies.chatHistoryService.getConversation(
         accountId,
         conversationId,

@@ -508,7 +508,7 @@ describe("chat integration", () => {
   it("keeps single-entity answers anchored to one subject across overlapping chunks", async () => {
     const chatGateway: ChatGateway = {
       async answer(input) {
-        return input.prompt;
+        return extractRetrievedContext(input.prompt);
       },
       async *streamAnswer(input) {
         yield await this.answer(input);
@@ -567,7 +567,7 @@ describe("chat integration", () => {
   it("honors correction turns without collapsing explicit comparisons", async () => {
     const chatGateway: ChatGateway = {
       async answer(input) {
-        return input.prompt;
+        return extractRetrievedContext(input.prompt);
       },
       async *streamAnswer(input) {
         yield await this.answer(input);
@@ -613,10 +613,19 @@ describe("chat integration", () => {
         chunkingStrategy: "structured_semantic",
       });
 
+    const primerResponse = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Who is Narayani?", stream: false });
+
     const correctionResponse = await request(app)
       .post("/api/v1/chat/")
       .set("Authorization", authorization)
-      .send({ query: "Premi was given a Nayaswami title, not Narayani", stream: false });
+      .send({
+        conversationId: primerResponse.body.conversationId,
+        query: "Premi was given a Nayaswami title, not Narayani",
+        stream: false,
+      });
 
     const comparisonResponse = await request(app)
       .post("/api/v1/chat/")
@@ -631,4 +640,59 @@ describe("chat integration", () => {
     expect(comparisonResponse.body.answer).toContain("Subject: Narayani");
     expect(comparisonResponse.body.answer).toContain("Subject: Premi");
   });
+
+  it("refuses a single-entity answer when retrieval stays split across competing subjects", async () => {
+    const { app } = createTestApp();
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "entity-ambiguity@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "| Generic Catalog |",
+        content: "## Premi\nPremi is a Nayaswami teacher who leads devotion and chanting.",
+      });
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "| Generic Catalog |",
+        content: "## Clarita\nClarita is a Nayaswami teacher of meditation and healing.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "structured_semantic",
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Who is the Nayaswami?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain("can't answer safely");
+  });
 });
+
+const extractRetrievedContext = (prompt: string): string => {
+  const match = prompt.match(/Retrieved Context:\n([\s\S]*?)\n\nUser Question:/);
+  return match?.[1] ?? prompt;
+};

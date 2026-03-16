@@ -69,6 +69,19 @@ describe("entity integrity services", () => {
     expect(result.excludePhrases).toContain("narayani");
   });
 
+  it("does not treat ordinary negation as a correction when there is no correction context", () => {
+    const service = new EntityQueryIntentService();
+
+    const result = service.interpret({
+      query: "What is not allowed in the API?",
+      history: [],
+    });
+
+    expect(result.mode).toBe("generic");
+    expect(result.includePhrases).toEqual([]);
+    expect(result.excludePhrases).toEqual([]);
+  });
+
   it("does not collapse explicit comparison queries into a single entity", () => {
     const service = new EntityQueryIntentService();
 
@@ -166,5 +179,34 @@ describe("entity integrity services", () => {
 
     expect(result.ambiguityDetected).toBe(false);
     expect(result.contexts.map((context) => context.chunkId)).toEqual(["narayani", "premi"]);
+  });
+
+  it("marks unresolved competing subjects as unsafe when no preferred subject can be found", () => {
+    const integrityService = new EntityIntegrityService();
+
+    const result = integrityService.resolveContexts({
+      contexts: [
+        reranked({
+          chunkId: "premi",
+          retrievalText: "Subject: Premi\nSection: Vows\nIn 2015 she took vows as Nayaswami.",
+          similarity: 0.9,
+        }),
+        reranked({
+          chunkId: "clarita",
+          retrievalText: "Subject: Clarita\nSection: Biography\nClarita teaches meditation and healing.",
+          similarity: 0.85,
+        }),
+      ],
+      intent: {
+        mode: "single_entity",
+        includePhrases: ["narayani"],
+        excludePhrases: [],
+      },
+      topK: 5,
+    });
+
+    expect(result.ambiguityDetected).toBe(true);
+    expect(result.selectedSubjects).toEqual([]);
+    expect(result.contexts).toHaveLength(2);
   });
 });

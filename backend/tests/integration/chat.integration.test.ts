@@ -566,4 +566,5 @@ describe("chat integration", () => {
     expect(response.body.answer).not.toContain("could not find relevant information");
     expect(response.body.citations[0]?.title).toBe("Session Cookie");
   });
+
 });

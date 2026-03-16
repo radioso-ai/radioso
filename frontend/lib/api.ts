@@ -222,6 +222,48 @@ export interface ChatStreamCompletion {
   retrievalInfo?: RetrievalInfo
 }
 
+export interface ChatConversationSummary {
+  id: string
+  createdAt: string
+  updatedAt: string
+  messageCount: number
+  userMessageCount: number
+  assistantMessageCount: number
+  preview: string | null
+}
+
+export interface ChatConversationTurnDebug {
+  eventStatus: 'success' | 'failure'
+  recordedAt: string
+  stream: boolean
+  citationCount: number
+  retrievalInfo?: RetrievalInfo
+  errorMessage?: string | null
+}
+
+export interface ChatConversationTurn {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  createdAt: string
+  debug?: ChatConversationTurnDebug
+}
+
+export interface ChatConversationDetail {
+  conversationId: string
+  accountId: string
+  createdAt: string
+  updatedAt: string
+  messageCount: number
+  userMessageCount: number
+  assistantMessageCount: number
+  messages: ChatConversationTurn[]
+}
+
+export interface ChatHistoryListResponse {
+  conversations: ChatConversationSummary[]
+}
+
 interface ChatStreamHandlers {
   onConversation?: (payload: ChatStreamConversation) => void
   onChunk?: (payload: ChatStreamChunk) => void
@@ -498,5 +540,18 @@ export const chatApi = {
     }
 
     return streamChatEvents(response, handlers)
+  },
+
+  async listHistory(): Promise<ChatConversationSummary[]> {
+    const response = await request<ChatHistoryListResponse>('/chat/history', {
+      method: 'GET',
+    }, { withApiToken: true })
+    return response.conversations
+  },
+
+  async getHistoryConversation(conversationId: string): Promise<ChatConversationDetail> {
+    return request<ChatConversationDetail>(`/chat/history/${conversationId}`, {
+      method: 'GET',
+    }, { withApiToken: true })
   },
 }

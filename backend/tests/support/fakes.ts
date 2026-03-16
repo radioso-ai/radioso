@@ -18,10 +18,15 @@ import type {
   ConversationRecord,
   ConversationRepositoryPort,
 } from "../../src/db/repositories/conversationRepository.js";
+import type {
+  AuditEventRecord,
+  AuditEventRepositoryPort,
+} from "../../src/db/repositories/auditEventRepository.js";
+import type { AuditEventInput } from "../../src/modules/audit/services/auditService.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
 import type { RetrievalSettingsInput, RetrievalSettingsRecord } from "../../src/modules/settings/domain/retrievalSettings.js";
 import type { RetrievalSettingsRepositoryPort } from "../../src/modules/settings/services/retrievalSettingsService.js";
-import { AuditService, type AuditEventInput } from "../../src/modules/audit/services/auditService.js";
+import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
 export class InMemoryAccountRepository implements AccountRepositoryPort {
@@ -268,6 +273,12 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     return item && item.accountId === accountId ? item : null;
   }
 
+  async listByAccountId(accountId: string): Promise<ConversationRecord[]> {
+    return [...this.items.values()]
+      .filter((item) => item.accountId === accountId)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+  }
+
   async touch(conversationId: string): Promise<void> {
     const item = this.items.get(conversationId);
     if (item) {
@@ -304,6 +315,38 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
   }
 }
 
+export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
+  readonly items: AuditEventRecord[] = [];
+
+  async create(input: {
+    accountId?: string | null;
+    eventType: string;
+    eventStatus: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<AuditEventRecord> {
+    const record: AuditEventRecord = {
+      id: randomUUID(),
+      accountId: input.accountId ?? null,
+      eventType: input.eventType,
+      eventStatus: input.eventStatus,
+      metadata: input.metadata ?? {},
+      createdAt: new Date(),
+    };
+    this.items.push(record);
+    return record;
+  }
+
+  async listChatAnswerEventsByConversationId(accountId: string, conversationId: string): Promise<AuditEventRecord[]> {
+    return this.items.filter((event) => {
+      return (
+        event.accountId === accountId &&
+        event.eventType === "chat.answer" &&
+        event.metadata.conversationId === conversationId
+      );
+    });
+  }
+}
+
 export class InMemoryAuditService extends AuditService {
   readonly events: AuditEventInput[] = [];
 
@@ -313,16 +356,6 @@ export class InMemoryAuditService extends AuditService {
   }
 }
 
-export const createAuditService = (): InMemoryAuditService =>
-  new InMemoryAuditService(createLogger("silent"), {
-    async create() {
-      return {
-        id: "audit-event",
-        accountId: null,
-        eventType: "",
-        eventStatus: "",
-        metadata: {},
-        createdAt: new Date(),
-      };
-    },
-  });
+export const createAuditService = (
+  repository: AuditEventRepositoryPort = new InMemoryAuditEventRepository(),
+): InMemoryAuditService => new InMemoryAuditService(createLogger("silent"), repository);

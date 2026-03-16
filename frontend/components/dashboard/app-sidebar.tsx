@@ -76,7 +76,7 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={currentView === 'chat' || currentView === 'history'}
+                  isActive={currentView === 'chat'}
                   tooltip="Chat"
                 >
                   <Link href={buildAccountRoute(accountId, 'chat')}>

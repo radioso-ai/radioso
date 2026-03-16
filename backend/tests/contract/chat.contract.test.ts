@@ -97,6 +97,21 @@ describe("chat contract", () => {
     });
   });
 
+  it("rejects an invalid history conversation id with a client error", async () => {
+    const { app } = createTestApp();
+    const token = await getBearerToken(app);
+
+    const response = await request(app)
+      .get("/api/v1/chat/history/not-a-uuid")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: expect.any(String),
+      message: expect.any(String),
+    });
+  });
+
   it("returns a non-streaming chat response with a conversation id", async () => {
     const { app } = createTestApp();
     const token = await getBearerToken(app);

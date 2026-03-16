@@ -1,4 +1,5 @@
 import http from "node:http";
+import { readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
@@ -339,5 +340,15 @@ describe("chat contract", () => {
       fallbackApplied: expect.any(Boolean),
       rerankStatus: expect.any(String),
     });
+  });
+
+  it("documents the chat history endpoints in the shared OpenAPI contract", () => {
+    const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
+
+    expect(spec).toContain("/api/v1/chat/history:");
+    expect(spec).toContain("/api/v1/chat/history/{conversationId}:");
+    expect(spec).toContain("ChatHistoryListResponse:");
+    expect(spec).toContain("ChatConversationDetail:");
+    expect(spec).toContain("ChatConversationMessageDebug:");
   });
 });

@@ -135,7 +135,7 @@ describe("chat retrieval domain", () => {
       selfContained: false,
     });
 
-    expect(result.effectiveQuery).toBe("Tell me about Narayani");
+    expect(result.effectiveQuery).toBe("Narayani Tell me about her");
   });
 
   it("deduplicates candidates across original and rewritten retrieval paths", () => {

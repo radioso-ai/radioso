@@ -179,7 +179,11 @@ export class QueryRewriteService {
       return null;
     }
 
-    if (REFERENTIAL_PATTERN.test(query) || carriedSubject) {
+    if (carriedSubject) {
+      return `${contextSubject} ${query}`.trim();
+    }
+
+    if (REFERENTIAL_PATTERN.test(query)) {
       return this.replaceReferentialSubject(query, contextSubject);
     }
 

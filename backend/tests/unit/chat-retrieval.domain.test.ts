@@ -112,6 +112,32 @@ describe("chat retrieval domain", () => {
     expect(result.effectiveQuery).toContain("book");
   });
 
+  it("keeps object-pronoun her non-possessive when no noun follows", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        throw new Error("boom");
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Tell me about her",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [message("Earlier grounded turn")],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+      carriedSubject: {
+        canonicalLabel: "Narayani",
+        normalizedKey: "narayani",
+        aliases: [],
+      },
+      selfContained: false,
+    });
+
+    expect(result.effectiveQuery).toBe("Tell me about Narayani");
+  });
+
   it("deduplicates candidates across original and rewritten retrieval paths", () => {
     const service = new CandidatePreparationService();
 

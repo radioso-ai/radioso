@@ -376,7 +376,7 @@ export class RetrievalPipelineService {
   }
 
   private isComparativeQuery(query: string): boolean {
-    return /\b(compare|versus|vs\b|and\b)\b/i.test(query);
+    return /\b(compare|comparison|versus|vs\.?)\b/i.test(query);
   }
 
   private isSelfContained(query: string, carriedSubject?: SubjectReference | null): boolean {

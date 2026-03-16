@@ -7,6 +7,8 @@ import { ChatService, type ChatGateway } from "../../src/modules/chat/services/c
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
+import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { StructuredSemanticChunkingStrategy, type ChunkingSimilarityPort } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
@@ -33,6 +35,7 @@ import {
   InMemoryChunkRepository,
   InMemoryConversationRepository,
   InMemoryDocumentRepository,
+  InMemoryDocumentProcessingJobRepository,
   InMemoryMessageRepository,
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
@@ -54,6 +57,7 @@ interface TestRepositories {
   retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
   documentRepository: InMemoryDocumentRepository;
   chunkRepository: InMemoryChunkRepository;
+  documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
 }
 
 export const createTestDependencies = (overrides: {
@@ -69,7 +73,8 @@ export const createTestDependencies = (overrides: {
   const sessionRepository = new InMemorySessionRepository();
   const accountTokenRepository = new InMemoryAccountTokenRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
-  const documentRepository = new InMemoryDocumentRepository();
+  const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository();
+  const documentRepository = new InMemoryDocumentRepository(documentProcessingJobRepository);
   const chunkRepository = new InMemoryChunkRepository();
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
@@ -89,7 +94,7 @@ export const createTestDependencies = (overrides: {
       const rows: RetrievedChunk[] = [];
       for (const [documentId, chunks] of chunkRepository.items.entries()) {
         const document = documentRepository.items.get(documentId);
-        if (!document || document.accountId !== input.accountId) {
+        if (!document || document.accountId !== input.accountId || document.status !== "ready") {
           continue;
         }
         for (const chunk of chunks) {
@@ -116,7 +121,7 @@ export const createTestDependencies = (overrides: {
       const rows: RetrievedChunk[] = [];
       for (const [documentId, chunks] of chunkRepository.items.entries()) {
         const document = documentRepository.items.get(documentId);
-        if (!document || document.accountId !== input.accountId) {
+        if (!document || document.accountId !== input.accountId || document.status !== "ready") {
           continue;
         }
         for (const chunk of chunks) {
@@ -193,6 +198,21 @@ export const createTestDependencies = (overrides: {
   };
   const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
   const retrievalSettingsService = new RetrievalSettingsService(retrievalSettingsRepository, auditService);
+  const documentProcessingService = new DocumentProcessingService(
+    documentRepository,
+    chunkRepository,
+    embeddingService,
+    auditService,
+    retrievalSettingsService,
+    chunkingStrategyRegistry,
+  );
+  const documentProcessingWorker = new DocumentProcessingWorker(
+    documentRepository,
+    documentProcessingJobRepository,
+    documentProcessingService,
+    auditService,
+    createLogger("silent"),
+  );
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
     embeddingService,
@@ -246,12 +266,9 @@ export const createTestDependencies = (overrides: {
       retrievalSettingsService,
       documentIngestionService: new DocumentIngestionService(
         documentRepository,
-        chunkRepository,
-        embeddingService,
         auditService,
-        retrievalSettingsService,
-        chunkingStrategyRegistry,
       ),
+      documentProcessingWorker,
       documentDeletionService: new DocumentDeletionService(
         documentRepository,
         auditService,
@@ -273,6 +290,7 @@ export const createTestDependencies = (overrides: {
       retrievalSettingsRepository,
       documentRepository,
       chunkRepository,
+      documentProcessingJobRepository,
     },
   };
 };

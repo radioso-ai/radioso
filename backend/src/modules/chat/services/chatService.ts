@@ -167,15 +167,13 @@ export class ChatService {
       };
 
       let rawAnswer = "";
-      let visibleAnswer = "";
       const sanitizer = new CitationAnchorSanitizer();
 
       if (session.retrieval.contexts.length === 0) {
         rawAnswer = "I could not find relevant information in your documents.";
-        visibleAnswer = rawAnswer;
         yield {
           type: "chunk",
-          text: visibleAnswer,
+          text: rawAnswer,
         };
       } else {
         for await (const text of this.chatGateway.streamAnswer({
@@ -191,7 +189,6 @@ export class ChatService {
           if (!safe) {
             continue;
           }
-          visibleAnswer = `${visibleAnswer}${safe}`;
           yield {
             type: "chunk",
             text: safe,
@@ -209,13 +206,6 @@ export class ChatService {
         })),
         citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
       });
-
-      // Ensure any dangling partial anchor syntax doesn't leak via streaming.
-      const tail = sanitizer.flush();
-      if (tail) {
-        visibleAnswer = `${visibleAnswer}${tail}`;
-        yield { type: "chunk", text: tail };
-      }
 
       await this.completeAnswer({
         accountId: input.accountId,

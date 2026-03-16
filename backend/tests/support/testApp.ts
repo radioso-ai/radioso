@@ -1,4 +1,3 @@
-import net from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { createApp } from "../../src/app/server/createApp.js";
@@ -36,19 +35,6 @@ import {
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
 } from "./fakes.js";
-
-// Test environment hardening: force servers to bind to localhost when a hostname is omitted.
-// Some sandbox environments disallow binding to 0.0.0.0 (the Node default).
-const originalServerListen = net.Server.prototype.listen;
-net.Server.prototype.listen = function patchedListen(this: net.Server, ...args: unknown[]) {
-  if (typeof args[0] === "number") {
-    if (typeof args[1] === "function" || args[1] == null) {
-      args.splice(1, 0, "127.0.0.1");
-    }
-  }
-
-  return originalServerListen.apply(this, args as never);
-};
 
 export const createTestEnv = (): Env => ({
   NODE_ENV: "test",
@@ -226,8 +212,11 @@ export const createTestDependencies = (overrides: {
         .match(/Result 1 \([^)]+\): ([\s\S]*?)(?:\n\n|$)/)?.[1]
         ?.trim();
 
-      const base = `Warmth:${warmthLevel} ${firstContext || `history:${input.history.length} ${input.query}`}`.trim();
-      return firstContext ? `${base}[[1]]` : base;
+      if (firstContext) {
+        return `Warmth:${warmthLevel} ${firstContext}[[1]]`.trim();
+      }
+
+      return `Warmth:${warmthLevel} history:${input.history.length} ${input.query}`.trim();
     },
     async *streamAnswer(input) {
       const content = await this.answer(input);
@@ -287,31 +276,8 @@ export const createTestApp = (overrides: {
   rerankGateway?: RerankGateway;
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);
-  const app = createApp(dependencies);
-
-  // In this sandbox, binding to 0.0.0.0 can be disallowed. Supertest may call app.listen(0, cb)
-  // without specifying a hostname, which defaults to 0.0.0.0. Force localhost for test servers.
-  const originalListen = app.listen.bind(app);
-  (app as unknown as { listen: (...args: unknown[]) => unknown }).listen = (...args: unknown[]) => {
-    const [port, hostOrCallback, callback] = args as [number | undefined, unknown, unknown];
-    if (typeof hostOrCallback === "string") {
-      return originalListen(...(args as Parameters<typeof originalListen>));
-    }
-
-    const hostname = "127.0.0.1";
-    if (typeof hostOrCallback === "function") {
-      return originalListen((port ?? 0) as number, hostname, hostOrCallback as never);
-    }
-
-    if (typeof callback === "function") {
-      return originalListen((port ?? 0) as number, hostname, callback as never);
-    }
-
-    return originalListen((port ?? 0) as number, hostname);
-  };
-
   return {
-    app,
+    app: createApp(dependencies),
     dependencies,
     repositories,
   };

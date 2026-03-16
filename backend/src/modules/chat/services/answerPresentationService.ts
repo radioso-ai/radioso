@@ -1,4 +1,4 @@
-import { CitationAnchorParser, stripCitationAnchorsForDisplay } from "./citationAnchorParser.js";
+import { findCitationAnchorGroups, stripResidualCitationSyntax } from "./citationAnchorParser.js";
 
 export interface ChatCitation {
   documentId: string;
@@ -22,32 +22,103 @@ export interface PresentedAnswer {
 }
 
 export class AnswerPresentationService {
-  private readonly citationAnchorParser = new CitationAnchorParser();
-
   present(input: {
     answer: string;
     citations: CitationEvidence[];
     citationDisplayEnabled: boolean;
   }): PresentedAnswer {
-    const answer = input.answer ?? "";
-    const contexts = input.citations ?? [];
+    const normalized = this.normalizeAnchoredAnswer(input.answer.trim(), input.citations);
 
-    // Always strip anchor syntax from the returned answer so clients never see placeholders.
-    const sanitizedAnswer = stripCitationAnchorsForDisplay(answer);
-
-    if (!input.citationDisplayEnabled) {
-      return { answer: sanitizedAnswer };
+    if (!input.citationDisplayEnabled || normalized.citations.length === 0) {
+      return { answer: normalized.answer };
     }
 
-    if (contexts.length === 0) {
-      return { answer: sanitizedAnswer };
+    return {
+      answer: normalized.answer,
+      citations: normalized.citations,
+      answerSegments: normalized.answerSegments,
+    };
+  }
+
+  private normalizeAnchoredAnswer(answer: string, citations: CitationEvidence[]): {
+    answer: string;
+    citations: ChatCitation[];
+    answerSegments: AnswerSegment[];
+  } {
+    const anchorGroups = findCitationAnchorGroups(answer);
+    const visibleCitations: ChatCitation[] = [];
+    const citationIndexByDocument = new Map<string, number>();
+    const answerSegments: AnswerSegment[] = [];
+
+    let answerText = "";
+    let currentText = "";
+    let lastIndex = 0;
+
+    const pushSegment = (text: string, citationIndices?: number[]) => {
+      if (text.length === 0) {
+        return;
+      }
+
+      const segment = citationIndices && citationIndices.length > 0
+        ? { text, citationIndices }
+        : { text };
+      answerSegments.push(segment);
+      answerText += text;
+    };
+
+    const resolveCitationIndices = (resultNumbers: number[]): number[] => {
+      const resolved: number[] = [];
+
+      for (const resultNumber of resultNumbers) {
+        const citation = citations[resultNumber - 1];
+        if (!citation) {
+          continue;
+        }
+
+        let citationIndex = citationIndexByDocument.get(citation.documentId);
+        if (citationIndex === undefined) {
+          citationIndex = visibleCitations.length;
+          citationIndexByDocument.set(citation.documentId, citationIndex);
+          visibleCitations.push({
+            documentId: citation.documentId,
+            chunkId: citation.chunkId,
+            title: citation.title,
+          });
+        }
+
+        if (!resolved.includes(citationIndex)) {
+          resolved.push(citationIndex);
+        }
+      }
+
+      return resolved;
+    };
+
+    for (const anchorGroup of anchorGroups) {
+      currentText += stripResidualCitationSyntax(answer.slice(lastIndex, anchorGroup.start));
+
+      const citationIndices = resolveCitationIndices(anchorGroup.resultNumbers);
+      const match = currentText.match(/^(.*?)(\s*)$/s);
+      const coreText = match?.[1] ?? currentText;
+      const trailingWhitespace = match?.[2] ?? "";
+
+      if (citationIndices.length > 0 && coreText.length > 0) {
+        pushSegment(coreText, citationIndices);
+        currentText = trailingWhitespace;
+      } else {
+        currentText = `${coreText}${trailingWhitespace}`;
+      }
+
+      lastIndex = anchorGroup.end;
     }
 
-    const presented = this.citationAnchorParser.present({ answer, citations: contexts });
+    currentText += stripResidualCitationSyntax(answer.slice(lastIndex));
+    pushSegment(currentText);
 
-    // The parser already strips anchors for display. Ensure the answer is always sanitized.
-    return presented.citations && presented.answerSegments
-      ? presented
-      : { answer: sanitizedAnswer };
+    return {
+      answer: answerText,
+      citations: visibleCitations,
+      answerSegments,
+    };
   }
 }

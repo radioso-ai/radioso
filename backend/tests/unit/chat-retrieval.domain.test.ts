@@ -348,6 +348,8 @@ describe("chat retrieval domain", () => {
     expect(result.prompt).toContain("The page parses content.");
     expect(result.prompt).toContain("warm");
     expect(result.prompt).toContain("Do not end the answer with a question");
+    expect(result.prompt).toContain("Result 1 (Intro):");
+    expect(result.prompt).toContain("[[1]]");
     expect(result.citations).toEqual([{ documentId: "d1", chunkId: "c1", title: "Intro" }]);
   });
 });

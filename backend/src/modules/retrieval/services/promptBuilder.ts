@@ -28,7 +28,7 @@ export class PromptBuilder {
           locations: [],
         });
         const prefix = attributeSummary ? `Attributes: ${attributeSummary}\n` : "";
-        return `Context ${index + 1} (${context.title}): ${prefix}${context.content}`;
+        return `Result ${index + 1} (${context.title}): ${prefix}${context.content}`;
       })
       .join("\n\n");
     const warmthInstruction = this.getWarmthInstruction(input.settings.warmthLevel);
@@ -40,6 +40,12 @@ export class PromptBuilder {
         "Answer only from the retrieved context when relevant.",
         "Do not end the answer with a question unless you genuinely need clarification to answer correctly.",
         "Do not ask a follow-up question just to continue the conversation.",
+        "",
+        "Citations:",
+        "- Cite sources inline using [[N]] where N is the Result number (e.g., [[1]], [[2]]).",
+        "- Place citations immediately after the sentence or clause they support.",
+        "- Use only double square brackets. Do not use markdown links for citations.",
+        "- If multiple sources support a claim, cite each: [[1]][[2]]. Do not cite ranges.",
         "",
         `Conversation History:\n${historySection || "No prior history"}`,
         "",

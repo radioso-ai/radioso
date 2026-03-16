@@ -12,6 +12,7 @@ import {
   type AnswerSegment,
   type ChatCitation,
 } from "./answerPresentationService.js";
+import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -165,13 +166,16 @@ export class ChatService {
         conversationId: session.conversation.id,
       };
 
-      let answer = "";
+      let rawAnswer = "";
+      let visibleAnswer = "";
+      const sanitizer = new CitationAnchorSanitizer();
 
       if (session.retrieval.contexts.length === 0) {
-        answer = "I could not find relevant information in your documents.";
+        rawAnswer = "I could not find relevant information in your documents.";
+        visibleAnswer = rawAnswer;
         yield {
           type: "chunk",
-          text: answer,
+          text: visibleAnswer,
         };
       } else {
         for await (const text of this.chatGateway.streamAnswer({
@@ -182,16 +186,21 @@ export class ChatService {
           if (!text) {
             continue;
           }
-          answer = `${answer}${text}`;
+          rawAnswer = `${rawAnswer}${text}`;
+          const safe = sanitizer.push(text);
+          if (!safe) {
+            continue;
+          }
+          visibleAnswer = `${visibleAnswer}${safe}`;
           yield {
             type: "chunk",
-            text,
+            text: safe,
           };
         }
       }
 
       const presentation = this.answerPresentationService.present({
-        answer,
+        answer: rawAnswer,
         citations: session.retrieval.contexts.map((context) => ({
           documentId: context.documentId,
           chunkId: context.chunkId,
@@ -200,6 +209,13 @@ export class ChatService {
         })),
         citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
       });
+
+      // Ensure any dangling partial anchor syntax doesn't leak via streaming.
+      const tail = sanitizer.flush();
+      if (tail) {
+        visibleAnswer = `${visibleAnswer}${tail}`;
+        yield { type: "chunk", text: tail };
+      }
 
       await this.completeAnswer({
         accountId: input.accountId,

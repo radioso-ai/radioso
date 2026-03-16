@@ -80,7 +80,7 @@ describe("answer presentation service", () => {
     ]);
   });
 
-  it("collapses multiple cited chunks from the same document into one visible source", () => {
+  it("keeps only the first valid cited result at a claim boundary", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
@@ -94,9 +94,9 @@ describe("answer presentation service", () => {
           content: "Narayani's books are available from Ananda Edizioni.",
         },
         {
-          documentId: "doc-1",
+          documentId: "doc-2",
           chunkId: "chunk-2",
-          title: "Narayani Anaya",
+          title: "Ananda Edizioni",
           content: "The author page lists several books and bundles.",
         },
       ],
@@ -109,6 +109,43 @@ describe("answer presentation service", () => {
     expect(result.answerSegments).toEqual([
       {
         text: "Narayani's books are available from Ananda Edizioni",
+        citationIndices: [0],
+      },
+      {
+        text: ".",
+      },
+    ]);
+  });
+
+  it("falls through to the next valid anchor when the first cited result is invalid", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "The retreat is offered in Assisi[[9]][[2]].",
+      citationDisplayEnabled: true,
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Placeholder",
+          content: "Unused context.",
+        },
+        {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Retreat Calendar",
+          content: "The retreat is offered in Assisi.",
+        },
+      ],
+    });
+
+    expect(result.answer).toBe("The retreat is offered in Assisi.");
+    expect(result.citations).toEqual([
+      { documentId: "doc-2", chunkId: "chunk-2", title: "Retreat Calendar" },
+    ]);
+    expect(result.answerSegments).toEqual([
+      {
+        text: "The retreat is offered in Assisi",
         citationIndices: [0],
       },
       {

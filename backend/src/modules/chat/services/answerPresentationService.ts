@@ -67,8 +67,6 @@ export class AnswerPresentationService {
     };
 
     const resolveCitationIndices = (resultNumbers: number[]): number[] => {
-      const resolved: number[] = [];
-
       for (const resultNumber of resultNumbers) {
         const citation = citations[resultNumber - 1];
         if (!citation) {
@@ -86,12 +84,10 @@ export class AnswerPresentationService {
           });
         }
 
-        if (!resolved.includes(citationIndex)) {
-          resolved.push(citationIndex);
-        }
+        return [citationIndex];
       }
 
-      return resolved;
+      return [];
     };
 
     for (const anchorGroup of anchorGroups) {

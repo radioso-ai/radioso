@@ -12,6 +12,7 @@ import {
   type AnswerSegment,
   type ChatCitation,
 } from "./answerPresentationService.js";
+import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -32,6 +33,7 @@ export type ChatStreamEvent =
   | {
       type: "done";
       conversationId: string;
+      answer: string;
       citations?: ChatCitation[];
       answerSegments?: AnswerSegment[];
       retrievalInfo: RetrievalInfo;
@@ -165,13 +167,14 @@ export class ChatService {
         conversationId: session.conversation.id,
       };
 
-      let answer = "";
+      let rawAnswer = "";
+      const sanitizer = new CitationAnchorSanitizer();
 
       if (session.retrieval.contexts.length === 0) {
-        answer = "I could not find relevant information in your documents.";
+        rawAnswer = "I could not find relevant information in your documents.";
         yield {
           type: "chunk",
-          text: answer,
+          text: rawAnswer,
         };
       } else {
         for await (const text of this.chatGateway.streamAnswer({
@@ -182,16 +185,20 @@ export class ChatService {
           if (!text) {
             continue;
           }
-          answer = `${answer}${text}`;
+          rawAnswer = `${rawAnswer}${text}`;
+          const safe = sanitizer.push(text);
+          if (!safe) {
+            continue;
+          }
           yield {
             type: "chunk",
-            text,
+            text: safe,
           };
         }
       }
 
       const presentation = this.answerPresentationService.present({
-        answer,
+        answer: rawAnswer,
         citations: session.retrieval.contexts.map((context) => ({
           documentId: context.documentId,
           chunkId: context.chunkId,
@@ -213,6 +220,7 @@ export class ChatService {
       yield {
         type: "done",
         conversationId: session.conversation.id,
+        answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
         retrievalInfo: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),

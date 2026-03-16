@@ -104,6 +104,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           message.id === assistantMessageId
             ? {
                 ...message,
+                content: completion.answer ?? message.content,
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
                 retrievalInfo: completion.retrievalInfo,
@@ -193,8 +194,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (!didComplete) {
           applyCompletion(accountId, assistantMessageId, {
             conversationId: completion.conversationId,
+            answer: completion.answer,
             citations: completion.citations,
             answerSegments: completion.answerSegments,
+            retrievalInfo: completion.retrievalInfo,
           })
         }
       } catch (error) {

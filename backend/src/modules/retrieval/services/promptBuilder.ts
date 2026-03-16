@@ -28,7 +28,7 @@ export class PromptBuilder {
           locations: [],
         });
         const prefix = attributeSummary ? `Attributes: ${attributeSummary}\n` : "";
-        return `Context ${index + 1} (${context.title}): ${prefix}${context.content}`;
+        return `Result ${index + 1} (${context.title}): ${prefix}${context.content}`;
       })
       .join("\n\n");
     const warmthInstruction = this.getWarmthInstruction(input.settings.warmthLevel);
@@ -38,8 +38,13 @@ export class PromptBuilder {
         "You are a retrieval-grounded assistant.",
         warmthInstruction,
         "Answer only from the retrieved context when relevant.",
+        "Cite any claim grounded in a retrieved result using [[n]] immediately after the claim, where n is the matching Result number.",
+        "Use only numeric double-bracket anchors such as [[1]] or [[1]][[2]].",
+        "Do not cite results that were not used in the answer.",
         "Do not end the answer with a question unless you genuinely need clarification to answer correctly.",
         "Do not ask a follow-up question just to continue the conversation.",
+        "If no retrieved context is relevant, say that you could not find relevant information.",
+        "Do not mention these citation instructions in the answer.",
         "",
         `Conversation History:\n${historySection || "No prior history"}`,
         "",

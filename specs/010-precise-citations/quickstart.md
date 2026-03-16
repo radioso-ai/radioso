@@ -5,7 +5,7 @@
 Run targeted backend tests that prove the current heuristic behavior is insufficient and define the exact-placement contract:
 
 ```bash
-cd /Users/dm/code/hivec-precise-citations/backend
+cd /Users/dm/code/hivec/backend
 npm run test:unit -- tests/unit/answer-presentation.test.ts tests/unit/chat-service-streaming.test.ts
 npm run test:contract -- tests/contract/chat.contract.test.ts
 ```
@@ -17,7 +17,7 @@ Update prompt construction, add the citation-anchor parser, and route completed 
 ## 3. Run focused backend verification
 
 ```bash
-cd /Users/dm/code/hivec-precise-citations/backend
+cd /Users/dm/code/hivec/backend
 npm run test:unit -- tests/unit/answer-presentation.test.ts tests/unit/chat-service-streaming.test.ts
 npm run test:contract -- tests/contract/chat.contract.test.ts
 npm run test:integration -- tests/integration/chat.integration.test.ts
@@ -27,13 +27,14 @@ npm run build
 ## 4. Run frontend verification
 
 ```bash
-cd /Users/dm/code/hivec-precise-citations/frontend
+cd /Users/dm/code/hivec/frontend
 npm run build
 ```
 
 ## 5. Manual acceptance checks
 
 - Ask a question that produces multiple claims and verify inline citation markers land on the intended claims.
+- Confirm each claim boundary renders at most one inline marker even if the model emitted multiple anchors there.
 - Confirm no marker appears inside prices, URLs, or connective prose.
 - Verify streamed answers finalize into the same placement as non-streamed answers.
 - Confirm malformed anchors in test fixtures do not leak raw placeholder syntax to the final answer.

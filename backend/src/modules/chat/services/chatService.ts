@@ -33,6 +33,7 @@ export type ChatStreamEvent =
   | {
       type: "done";
       conversationId: string;
+      answer: string;
       citations?: ChatCitation[];
       answerSegments?: AnswerSegment[];
       retrievalInfo: RetrievalInfo;
@@ -219,6 +220,7 @@ export class ChatService {
       yield {
         type: "done",
         conversationId: session.conversation.id,
+        answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
         retrievalInfo: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),

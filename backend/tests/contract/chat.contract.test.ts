@@ -90,6 +90,7 @@ describe("chat contract", () => {
     expect(response.body).toContain("event: conversation");
     expect(response.body).toContain("event: chunk");
     expect(response.body).toContain("event: done");
+    expect(response.body).toContain("\"answer\":");
     expect(response.body).toContain("\"retrievalInfo\":");
   });
 

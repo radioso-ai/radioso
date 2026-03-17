@@ -9,13 +9,14 @@ import {
 } from '@/lib/api'
 import {
   Drawer,
+  DrawerClose,
   DrawerContent,
   DrawerDescription,
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer'
 import { Spinner } from '@/components/ui/spinner'
-import { MessageSquareText } from 'lucide-react'
+import { MessageSquareText, X } from 'lucide-react'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -189,10 +190,15 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
       >
         <DrawerContent className="h-full w-full max-w-3xl">
           <DrawerHeader className="border-b border-border">
-            <DrawerTitle>{selectedSummary?.preview || 'Conversation details'}</DrawerTitle>
-            <DrawerDescription>
-              {selectedConversationId ? `Conversation ${selectedConversationId}` : 'Select a conversation'}
-            </DrawerDescription>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <DrawerTitle>{selectedSummary?.preview || 'Conversation details'}</DrawerTitle>
+                <DrawerDescription className="sr-only">Conversation details panel</DrawerDescription>
+              </div>
+              <DrawerClose className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </DrawerClose>
+            </div>
           </DrawerHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -206,16 +212,15 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
               </div>
             ) : conversationDetail ? (
               <div className="space-y-6">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <MetadataCard label="Conversation ID" value={conversationDetail.conversationId} mono />
-                  <MetadataCard label="Account ID" value={conversationDetail.accountId} mono />
-                  <MetadataCard label="Created" value={formatTimestamp(conversationDetail.createdAt)} />
-                  <MetadataCard label="Last updated" value={formatTimestamp(conversationDetail.updatedAt)} />
-                  <MetadataCard label="Messages" value={String(conversationDetail.messageCount)} />
-                  <MetadataCard
-                    label="Turns"
-                    value={`${conversationDetail.userMessageCount} user / ${conversationDetail.assistantMessageCount} assistant`}
-                  />
+                <div className="space-y-1 text-sm text-muted-foreground">
+                  <p>
+                    Conversation{' '}
+                    <span className="select-all font-mono text-foreground">{conversationDetail.conversationId}</span>
+                  </p>
+                  <p>
+                    Account{' '}
+                    <span className="select-all font-mono text-foreground">{conversationDetail.accountId}</span>
+                  </p>
                 </div>
 
                 <div className="space-y-4">
@@ -233,7 +238,7 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
                           <p className="text-sm font-medium capitalize text-foreground">{message.role}</p>
                           <p className="text-xs text-muted-foreground">{formatTimestamp(message.createdAt)}</p>
                         </div>
-                        <p className="text-xs text-muted-foreground">{message.id}</p>
+                        <p className="select-all font-mono text-xs text-muted-foreground">{message.id}</p>
                       </div>
 
                       <p className="whitespace-pre-wrap text-sm text-foreground">{message.content}</p>

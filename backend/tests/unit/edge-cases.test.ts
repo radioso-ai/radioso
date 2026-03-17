@@ -68,7 +68,7 @@ describe("edge cases", () => {
     expect(result.effectiveQuery).toBe("What is it used for?");
   });
 
-  it("does not heuristic-rewrite a standalone short query against prior context", async () => {
+  it("falls back when contextual rewrite assistance fails for a standalone query", async () => {
     const service = new QueryRewriteService({
       async rewrite() {
         throw new Error("rewrite unavailable");
@@ -94,7 +94,7 @@ describe("edge cases", () => {
       },
     });
 
-    expect(result.status).toBe("skipped");
+    expect(result.status).toBe("fallback");
     expect(result.effectiveQuery).toBe("What is the API rate limit?");
     expect(result.rewriteApplied).toBe(false);
   });

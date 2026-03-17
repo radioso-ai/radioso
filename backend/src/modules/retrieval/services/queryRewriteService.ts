@@ -73,10 +73,6 @@ Do not wrap the JSON in markdown fences.`,
   }
 }
 
-const REFERENTIAL_PATTERN =
-  /\b(it|its|that|those|these|they|them|their|he|she|him|her|this|one|ones)\b/i;
-const CONTINUATION_PATTERN = /^(and|also|what about|how about|what else about)\b/i;
-
 export class QueryRewriteService {
   private readonly eligibilityService = new RewriteEligibilityService();
   private readonly hallucinationGuard = new RewriteHallucinationGuard();
@@ -141,11 +137,7 @@ export class QueryRewriteService {
   }
 
   private shouldRewrite(query: string, contextWindow: ConversationContextWindow): boolean {
-    if (contextWindow.selectedMessages.length === 0) {
-      return false;
-    }
-
-    return this.isFollowupStyleQuery(query);
+    return contextWindow.selectedMessages.length > 0 && this.gateway !== undefined;
   }
 
   private skipped(query: string): RewrittenRetrievalQuery {
@@ -171,10 +163,6 @@ export class QueryRewriteService {
       confidence: 0,
       fallbackReason: reason,
     };
-  }
-
-  private isFollowupStyleQuery(query: string): boolean {
-    return REFERENTIAL_PATTERN.test(query) || CONTINUATION_PATTERN.test(query);
   }
 
   private rejected(
@@ -255,7 +243,7 @@ export class QueryRewriteService {
       return false;
     }
 
-    return !/^(answer|the answer is|here('| i)?s)/i.test(rewrittenQuery);
+    return true;
   }
 }
 

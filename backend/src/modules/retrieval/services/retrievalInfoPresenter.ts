@@ -16,6 +16,14 @@ export interface RetrievalInfo {
   appliedConstraints?: AppliedConstraint[];
   fallbackApplied: boolean;
   rerankStatus: RerankStatus;
+  rewrite?: {
+    status: RetrievalExecutionDiagnostics["rewriteStatus"];
+    eligible: boolean;
+    ran: boolean;
+    materialDisagreement: boolean;
+    continuityDecision?: RetrievalExecutionDiagnostics["continuityDecision"];
+    rejectionReason?: string;
+  };
 }
 
 export class RetrievalInfoPresenter {
@@ -37,6 +45,14 @@ export class RetrievalInfoPresenter {
       appliedConstraints: input.appliedConstraints?.length ? input.appliedConstraints : undefined,
       fallbackApplied: input.fallbackApplied,
       rerankStatus: input.rerankStatus,
+      rewrite: {
+        status: input.rewriteStatus,
+        eligible: input.rewriteEligible ?? false,
+        ran: input.rewriteRan ?? false,
+        materialDisagreement: input.materialDisagreement ?? false,
+        continuityDecision: input.continuityDecision,
+        rejectionReason: input.rejectionReason,
+      },
     };
   }
 }

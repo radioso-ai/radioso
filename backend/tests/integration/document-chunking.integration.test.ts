@@ -43,7 +43,7 @@ What changes now?
 Only future ingests change.`,
       });
 
-    expect(document.status).toBe(201);
+    expect(document.status).toBe(202);
     const storedChunks = repositories.chunkRepository.items.get(document.body.documentId) ?? [];
     expect(storedChunks.length).toBeGreaterThan(1);
     expect(storedChunks.some((chunk) => chunk.content.includes("Open Settings"))).toBe(true);
@@ -99,7 +99,7 @@ What changed?
 Chunking behavior.`,
       });
 
-    expect(updated.status).toBe(200);
+    expect(updated.status).toBe(202);
     const updatedChunks = repositories.chunkRepository.items.get(created.body.documentId) ?? [];
     expect(updatedChunks).not.toEqual(originalChunks);
     expect(updatedChunks.some((chunk) => chunk.content.includes("What changed?"))).toBe(true);

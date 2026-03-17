@@ -384,6 +384,53 @@ export function DocumentsView({
     setCurrentPage((page) => Math.min(totalPages, page + 1))
   }
 
+  const renderPagination = () => (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm text-muted-foreground">
+        Showing {pageStart + 1}-{pageEnd} of {documents.length} documents
+      </p>
+      <Pagination className="mx-0 w-auto justify-start sm:justify-end">
+        <PaginationContent>
+          <PaginationItem>
+            <PaginationPrevious
+              href="#"
+              onClick={(event) => {
+                event.preventDefault()
+                goToPreviousPage()
+              }}
+              aria-disabled={safeCurrentPage === 1}
+              className={
+                safeCurrentPage === 1
+                  ? 'pointer-events-none opacity-50'
+                  : undefined
+              }
+            />
+          </PaginationItem>
+          <PaginationItem>
+            <span className="px-3 text-sm text-muted-foreground">
+              Page {safeCurrentPage} of {totalPages}
+            </span>
+          </PaginationItem>
+          <PaginationItem>
+            <PaginationNext
+              href="#"
+              onClick={(event) => {
+                event.preventDefault()
+                goToNextPage()
+              }}
+              aria-disabled={safeCurrentPage === totalPages}
+              className={
+                safeCurrentPage === totalPages
+                  ? 'pointer-events-none opacity-50'
+                  : undefined
+              }
+            />
+          </PaginationItem>
+        </PaginationContent>
+      </Pagination>
+    </div>
+  )
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 flex items-center justify-between border-b border-border px-6 py-4">
@@ -470,6 +517,7 @@ export function DocumentsView({
           </div>
         ) : (
           <div className="w-full space-y-4">
+            {documents.length > PAGE_SIZE && renderPagination()}
             <div className="grid w-full gap-3">
               {paginatedDocuments.map((doc) => {
                 const deleteError = deleteErrorById[doc.id]
@@ -504,42 +552,36 @@ export function DocumentsView({
                         </p>
                       </div>
                     </button>
-                    <div className="flex flex-col items-start gap-2 sm:items-end">
+                    <div className="flex items-center gap-2">
                       <DocumentStatus status={doc.status} />
                       {isFailed ? (
-                        <Button
+                        <button
                           type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-2"
+                          className="inline-flex items-center justify-center rounded-full border border-border px-2.5 py-1 text-muted-foreground hover:bg-accent/40 disabled:opacity-50"
                           onClick={() => void handleRetry(doc.id)}
                           disabled={retryingDocumentId === doc.id}
                         >
                           {retryingDocumentId === doc.id ? (
-                            <Spinner className="mr-1 h-3.5 w-3.5" />
+                            <Spinner className="h-3.5 w-3.5" />
                           ) : (
-                            <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                            <RefreshCw className="h-3.5 w-3.5" />
                           )}
-                          Retry
-                        </Button>
+                        </button>
                       ) : null}
-                      <Button
+                      <button
                         type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-2 text-destructive hover:text-destructive"
+                        className="inline-flex items-center justify-center rounded-full border border-border px-2.5 py-1 text-destructive hover:bg-destructive/10 disabled:opacity-50"
                         onClick={() => setDeleteCandidate(doc)}
                         disabled={deletingDocumentId === doc.id || retryingDocumentId === doc.id}
                       >
                         {deletingDocumentId === doc.id ? (
-                          <Spinner className="mr-1 h-3.5 w-3.5" />
+                          <Spinner className="h-3.5 w-3.5" />
                         ) : (
-                          <Trash2 className="mr-1 h-3.5 w-3.5" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         )}
-                        Delete
-                      </Button>
+                      </button>
                       {deleteError ? (
-                        <p className="max-w-56 text-xs text-destructive sm:text-right">{deleteError}</p>
+                        <p className="max-w-56 text-xs text-destructive">{deleteError}</p>
                       ) : null}
                       {retryError ? (
                         <p className="max-w-56 text-xs text-destructive sm:text-right">{retryError}</p>
@@ -549,52 +591,7 @@ export function DocumentsView({
                 )
               })}
             </div>
-            {documents.length > PAGE_SIZE && (
-              <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Showing {pageStart + 1}-{pageEnd} of {documents.length} documents
-                </p>
-                <Pagination className="mx-0 w-auto justify-start sm:justify-end">
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious
-                        href="#"
-                        onClick={(event) => {
-                          event.preventDefault()
-                          goToPreviousPage()
-                        }}
-                        aria-disabled={safeCurrentPage === 1}
-                        className={
-                          safeCurrentPage === 1
-                            ? 'pointer-events-none opacity-50'
-                            : undefined
-                        }
-                      />
-                    </PaginationItem>
-                    <PaginationItem>
-                      <span className="px-3 text-sm text-muted-foreground">
-                        Page {safeCurrentPage} of {totalPages}
-                      </span>
-                    </PaginationItem>
-                    <PaginationItem>
-                      <PaginationNext
-                        href="#"
-                        onClick={(event) => {
-                          event.preventDefault()
-                          goToNextPage()
-                        }}
-                        aria-disabled={safeCurrentPage === totalPages}
-                        className={
-                          safeCurrentPage === totalPages
-                            ? 'pointer-events-none opacity-50'
-                            : undefined
-                        }
-                      />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-              </div>
-            )}
+            {documents.length > PAGE_SIZE && renderPagination()}
           </div>
         )}
       </div>

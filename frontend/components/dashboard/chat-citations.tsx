@@ -3,6 +3,39 @@
 import { Fragment, type ReactNode, useState } from 'react'
 import { FileText } from 'lucide-react'
 
+const URL_REGEX = /https?:\/\/[^\s<>)"']+/g
+
+export function linkifyText(text: string): ReactNode[] {
+  const parts: ReactNode[] = []
+  let lastIndex = 0
+
+  for (const match of text.matchAll(URL_REGEX)) {
+    const url = match[0]
+    const index = match.index
+    if (index > lastIndex) {
+      parts.push(text.slice(lastIndex, index))
+    }
+    parts.push(
+      <a
+        key={index}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-primary underline hover:text-primary/80"
+      >
+        {url}
+      </a>,
+    )
+    lastIndex = index + url.length
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex))
+  }
+
+  return parts.length > 0 ? parts : [text]
+}
+
 import {
   HoverCard,
   HoverCardContent,
@@ -116,7 +149,7 @@ export function AssistantMessageContent({
 
     contentNodes.push(
       <Fragment key={`segment-${segmentIndex}`}>
-        {segment.text}
+        {linkifyText(segment.text)}
         {dedupedIndices.map((citationIndex) => {
           const citation = citations[citationIndex]
           if (!citation) {

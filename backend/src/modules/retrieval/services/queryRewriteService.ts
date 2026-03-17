@@ -1,13 +1,27 @@
 import type OpenAI from "openai";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { ConversationContextWindow, RewrittenRetrievalQuery } from "../domain/retrievalPipelineTypes.js";
+import type {
+  ConversationContextWindow,
+  RewrittenRetrievalQuery,
+  RewriteTurnKind,
+  StructuredRewriteResult,
+} from "../domain/retrievalPipelineTypes.js";
+import { REWRITE_STATUS, REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
+import { RewriteEligibilityService, RewriteHallucinationGuard } from "./rewritePolicyService.js";
+
+export interface QueryRewriteGatewayFallbackResult {
+  rewrittenQuery: string;
+  confidence: number;
+}
+
+export type QueryRewriteGatewayResult = QueryRewriteGatewayFallbackResult | StructuredRewriteResult;
 
 export interface QueryRewriteGateway {
   rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
-  }): Promise<{ rewrittenQuery: string; confidence: number }>;
+  }): Promise<QueryRewriteGatewayResult>;
 }
 
 export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
@@ -19,9 +33,13 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
   async rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
-  }): Promise<{ rewrittenQuery: string; confidence: number }> {
+  }): Promise<StructuredRewriteResult> {
     const context = input.contextMessages
-      .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+      .map((message) =>
+        `${message.role.toUpperCase()}: ${message.content}${
+          message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
+        }`,
+      )
       .join("\n");
 
     const response = await this.client.chat.completions.create({
@@ -30,8 +48,18 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
       messages: [
         {
           role: "system",
-          content:
-            "Rewrite the user's latest question into a standalone retrieval query. Preserve intent, preserve proper nouns and technical terms, resolve references from the supplied conversation context, and do not answer the question. Return only the rewritten query.",
+          content: `Rewrite the user's latest question into a standalone retrieval query.
+Preserve intent, preserve proper nouns and technical terms, resolve references only when supported by the supplied user-authored conversation context, and do not answer the question.
+Preserve ambiguity instead of inventing certainty.
+Keep related entities separate from the proposed main subject.
+Treat USER messages and the latest user question as authoritative grounding. ASSISTANT messages are context only and must not by themselves justify a subject switch or a newly introduced entity.
+Confidence means certainty in subject resolution and turn interpretation, not answer confidence:
+- use 0.0-0.4 when ambiguity remains or the subject is only weakly implied
+- use 0.5-0.7 when the likely subject is supported by user context but still inferential
+- use 0.8-1.0 only when the current turn or explicit user context clearly supports the subject
+Return strict JSON matching this blueprint exactly:
+{"rewrittenQuery":"string","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":true,"confidence":0.0}
+Do not wrap the JSON in markdown fences.`,
         },
         {
           role: "user",
@@ -40,18 +68,15 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
       ],
     });
 
-    return {
-      rewrittenQuery: response.choices[0]?.message?.content?.trim() ?? "",
-      confidence: 0.9,
-    };
+    const raw = response.choices[0]?.message?.content?.trim() ?? "";
+    return parseStructuredRewrite(raw);
   }
 }
 
-const REFERENTIAL_PATTERN =
-  /\b(it|its|that|those|these|they|them|their|he|she|him|her|this|one|ones)\b/i;
-const CONTINUATION_PATTERN = /^(and|also|what about|how about|what else about)\b/i;
-
 export class QueryRewriteService {
+  private readonly eligibilityService = new RewriteEligibilityService();
+  private readonly hallucinationGuard = new RewriteHallucinationGuard();
+
   constructor(private readonly gateway?: QueryRewriteGateway) {}
 
   async rewrite(input: {
@@ -68,35 +93,51 @@ export class QueryRewriteService {
     }
 
     try {
-      const result = await this.gateway?.rewrite({
+      const rawResult = await this.gateway?.rewrite({
         query: input.query,
         contextMessages: input.contextWindow.selectedMessages,
       });
+      const result = this.normalizeStructuredResult(input.query, rawResult);
 
-      const rewrittenQuery = this.normalizeRewrite(result?.rewrittenQuery);
-      if (this.isUsableRewrite(input.query, rewrittenQuery)) {
+      if (result.unresolved) {
+        return this.rejected(input.query, result, "rewrite_unresolved");
+      }
+
+      if (this.isUsableRewrite(input.query, result.rewrittenQuery)) {
+        const hallucinationCheck = this.hallucinationGuard.evaluate({
+          query: input.query,
+          history: input.contextWindow.selectedMessages,
+          rewrite: result,
+        });
+        if (!hallucinationCheck.accepted) {
+          return this.rejected(input.query, result, hallucinationCheck.rejectionReason ?? "rewrite_rejected");
+        }
+
+        const eligibility = this.eligibilityService.evaluate({
+          originalQuery: input.query,
+          rewrite: result,
+        });
         return {
           originalQuery: input.query,
-          rewrittenQuery,
-          effectiveQuery: rewrittenQuery,
-          rewriteApplied: true,
-          status: "applied",
-          confidence: result?.confidence ?? 0.5,
+          rewrittenQuery: result.rewrittenQuery,
+          effectiveQuery: eligibility.eligible ? result.rewrittenQuery : input.query,
+          rewriteApplied: eligibility.eligible,
+          retrievalEligible: eligibility.eligible,
+          status: eligibility.eligible ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
+          confidence: result.confidence ?? 0.5,
+          structuredResult: result,
+          rejectionReason: eligibility.rejectionReason,
         };
       }
 
-      return this.heuristicFallback(input.query, input.contextWindow, "rewrite_unusable");
+      return this.fallback(input.query, "rewrite_unusable");
     } catch {
-      return this.heuristicFallback(input.query, input.contextWindow, "rewrite_failed");
+      return this.fallback(input.query, "rewrite_failed");
     }
   }
 
   private shouldRewrite(query: string, contextWindow: ConversationContextWindow): boolean {
-    if (contextWindow.selectedMessages.length === 0) {
-      return false;
-    }
-
-    return this.isFollowupStyleQuery(query);
+    return contextWindow.selectedMessages.length > 0 && this.gateway !== undefined;
   }
 
   private skipped(query: string): RewrittenRetrievalQuery {
@@ -105,103 +146,41 @@ export class QueryRewriteService {
       rewrittenQuery: query,
       effectiveQuery: query,
       rewriteApplied: false,
-      status: "skipped",
+      retrievalEligible: false,
+      status: REWRITE_STATUS.SKIPPED,
       confidence: 0,
     };
   }
 
-  private heuristicFallback(
-    query: string,
-    contextWindow: ConversationContextWindow,
-    reason: string,
-  ): RewrittenRetrievalQuery {
-    if (!this.isFollowupStyleQuery(query)) {
-      return {
-        originalQuery: query,
-        rewrittenQuery: query,
-        effectiveQuery: query,
-        rewriteApplied: false,
-        status: "fallback",
-        confidence: 0,
-        fallbackReason: reason,
-      };
-    }
-
-    const heuristicRewrite = this.buildHeuristicRewrite(query, contextWindow);
-    if (!heuristicRewrite || heuristicRewrite === query) {
-      return {
-        originalQuery: query,
-        rewrittenQuery: query,
-        effectiveQuery: query,
-        rewriteApplied: false,
-        status: "fallback",
-        confidence: 0,
-        fallbackReason: reason,
-      };
-    }
-
+  private fallback(query: string, reason: string): RewrittenRetrievalQuery {
     return {
       originalQuery: query,
-      rewrittenQuery: heuristicRewrite,
-      effectiveQuery: heuristicRewrite,
-      rewriteApplied: true,
-      status: "fallback",
-      confidence: 0.25,
+      rewrittenQuery: query,
+      effectiveQuery: query,
+      rewriteApplied: false,
+      retrievalEligible: false,
+      status: REWRITE_STATUS.FALLBACK,
+      confidence: 0,
       fallbackReason: reason,
     };
   }
 
-  private isFollowupStyleQuery(query: string): boolean {
-    return REFERENTIAL_PATTERN.test(query) || CONTINUATION_PATTERN.test(query);
-  }
-
-  private buildHeuristicRewrite(query: string, contextWindow: ConversationContextWindow): string | null {
-    const contextSubject = this.extractContextSubject(contextWindow.selectedMessages);
-    if (!contextSubject) {
-      return null;
-    }
-
-    if (REFERENTIAL_PATTERN.test(query)) {
-      return this.replaceReferentialSubject(query, contextSubject);
-    }
-
-    return `${contextSubject} ${query}`.trim();
-  }
-
-  private extractContextSubject(messages: MessageRecord[]): string | null {
-    const recentUserMessage = [...messages]
-      .reverse()
-      .find((message) => message.role === "user" && message.content.trim().length > 0)?.content;
-
-    if (!recentUserMessage) {
-      return null;
-    }
-
-    const normalized = recentUserMessage
-      .trim()
-      .replace(/^tell me about\s+/i, "")
-      .replace(/^what is\s+/i, "")
-      .replace(/^explain\s+/i, "")
-      .replace(/^describe\s+/i, "")
-      .replace(/^can you explain\s+/i, "")
-      .replace(/[?.!]+$/g, "")
-      .trim();
-
-    return normalized.length > 0 ? normalized : null;
-  }
-
-  private replaceReferentialSubject(query: string, subject: string): string {
-    const loweredSubject = subject.replace(/^(the|a|an)\s+/i, "").trim();
-
-    return query
-      .replace(/\bit\b/i, `the ${loweredSubject}`)
-      .replace(/\bthis\b/i, `the ${loweredSubject}`)
-      .replace(/\bthat\b/i, `the ${loweredSubject}`)
-      .replace(/\bthey\b/i, loweredSubject)
-      .replace(/\bthem\b/i, loweredSubject)
-      .replace(/\btheir\b/i, `${loweredSubject}'s`)
-      .replace(/\s+/g, " ")
-      .trim();
+  private rejected(
+    query: string,
+    rewrite: StructuredRewriteResult,
+    reason: string,
+  ): RewrittenRetrievalQuery {
+    return {
+      originalQuery: query,
+      rewrittenQuery: rewrite.rewrittenQuery,
+      effectiveQuery: query,
+      rewriteApplied: false,
+      retrievalEligible: false,
+      status: REWRITE_STATUS.REJECTED,
+      confidence: rewrite.confidence,
+      structuredResult: rewrite,
+      rejectionReason: reason,
+    };
   }
 
   private normalizeRewrite(rewrittenQuery?: string): string {
@@ -216,6 +195,45 @@ export class QueryRewriteService {
       .trim();
   }
 
+  private normalizeStructuredResult(
+    originalQuery: string,
+    result?: QueryRewriteGatewayResult,
+  ): StructuredRewriteResult {
+    if (result && "turnKind" in result) {
+      return {
+        rewrittenQuery: this.normalizeRewrite(result.rewrittenQuery),
+        turnKind: this.normalizeTurnKind(result.turnKind),
+        proposedActiveSubject: result.proposedActiveSubject?.trim() || undefined,
+        relatedEntities: [...new Set((result.relatedEntities ?? []).map((entity) => entity.trim()).filter(Boolean))],
+        unresolved: Boolean(result.unresolved),
+        confidence: result.confidence ?? 0.5,
+      };
+    }
+
+    return {
+      rewrittenQuery: this.normalizeRewrite(result?.rewrittenQuery ?? originalQuery),
+      turnKind: REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP,
+      proposedActiveSubject: undefined,
+      relatedEntities: [],
+      unresolved: false,
+      confidence: result?.confidence ?? 0.5,
+    };
+  }
+
+  private normalizeTurnKind(turnKind?: string): RewriteTurnKind {
+    switch (turnKind) {
+      case REWRITE_TURN_KIND.FRESH_SUBJECT:
+      case REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP:
+      case REWRITE_TURN_KIND.REFERENTIAL_RELATION:
+      case REWRITE_TURN_KIND.EXPLICIT_RECENTER:
+      case REWRITE_TURN_KIND.COMPARATIVE:
+      case REWRITE_TURN_KIND.AMBIGUOUS:
+        return turnKind;
+      default:
+        return REWRITE_TURN_KIND.AMBIGUOUS;
+    }
+  }
+
   private isUsableRewrite(originalQuery: string, rewrittenQuery: string): boolean {
     if (!rewrittenQuery || rewrittenQuery === originalQuery) {
       return false;
@@ -225,6 +243,23 @@ export class QueryRewriteService {
       return false;
     }
 
-    return !/^(answer|the answer is|here('| i)?s)/i.test(rewrittenQuery);
+    return true;
   }
 }
+
+const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
+  const normalized = raw.trim().replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim();
+  const parsed = JSON.parse(normalized) as Partial<StructuredRewriteResult>;
+
+  return {
+    rewrittenQuery: typeof parsed.rewrittenQuery === "string" ? parsed.rewrittenQuery : "",
+    turnKind:
+      typeof parsed.turnKind === "string" ? (parsed.turnKind as RewriteTurnKind) : REWRITE_TURN_KIND.AMBIGUOUS,
+    proposedActiveSubject: typeof parsed.proposedActiveSubject === "string" ? parsed.proposedActiveSubject : undefined,
+    relatedEntities: Array.isArray(parsed.relatedEntities)
+      ? parsed.relatedEntities.filter((entity): entity is string => typeof entity === "string")
+      : [],
+    unresolved: Boolean(parsed.unresolved),
+    confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
+  };
+};

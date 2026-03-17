@@ -10,6 +10,7 @@ import { AccountRepository } from "../../src/db/repositories/accountRepository.j
 import { ChunkRepository } from "../../src/db/repositories/chunkRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
+import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
@@ -30,6 +31,7 @@ const noopAuditRepository = {
     return {
       id: randomUUID(),
       accountId: null,
+      workspaceId: null,
       eventType: "",
       eventStatus: "",
       metadata: {},
@@ -47,9 +49,11 @@ describeIfDatabase("persistence integration", () => {
   const migrationsPath = path.resolve(__dirname, "../../src/db/migrations");
 
   let database: Database;
+  let workspaceRepository: WorkspaceRepository;
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
+    workspaceRepository = new WorkspaceRepository(database);
     const migrationFiles = (await readdir(migrationsPath))
       .filter((file) => file.endsWith(".sql"))
       .sort();
@@ -70,7 +74,7 @@ describeIfDatabase("persistence integration", () => {
     return embedding;
   };
 
-  it("persists records and returns account-scoped vector matches", async () => {
+  it("persists records and returns workspace-scoped vector matches", async () => {
     const accountRepository = new AccountRepository(database);
     const documentRepository = new DocumentRepository(database);
     const chunkRepository = new ChunkRepository(database);
@@ -84,19 +88,21 @@ describeIfDatabase("persistence integration", () => {
       email: `persist-b-${randomUUID()}@example.com`,
       passwordHash: "hash-b",
     });
+    const workspaceA = await workspaceRepository.create(accountA.id, "Workspace A");
+    const workspaceB = await workspaceRepository.create(accountB.id, "Workspace B");
 
     const documentA = await documentRepository.create({
-      accountId: accountA.id,
+      workspaceId: workspaceA.id,
       title: "Guide A",
       sourceContent: "The test page explains ingestion.",
       markdownContent: "The test page explains ingestion.",
       status: "ready",
     });
     const documentB = await documentRepository.create({
-      accountId: accountB.id,
+      workspaceId: workspaceB.id,
       title: "Guide B",
-      sourceContent: "Other account content.",
-      markdownContent: "Other account content.",
+      sourceContent: "Other workspace content.",
+      markdownContent: "Other workspace content.",
       status: "ready",
     });
 
@@ -104,7 +110,7 @@ describeIfDatabase("persistence integration", () => {
       {
         id: randomUUID(),
         documentId: documentA.id,
-        accountId: accountA.id,
+        workspaceId: workspaceA.id,
         chunkIndex: 0,
         content: "The test page explains ingestion and parsing.",
         embedding: embeddingOf(0),
@@ -117,9 +123,9 @@ describeIfDatabase("persistence integration", () => {
       {
         id: randomUUID(),
         documentId: documentB.id,
-        accountId: accountB.id,
+        workspaceId: workspaceB.id,
         chunkIndex: 0,
-        content: "This belongs to another account.",
+        content: "This belongs to another workspace.",
         embedding: embeddingOf(1),
         startOffset: 0,
         endOffset: 31,
@@ -128,7 +134,7 @@ describeIfDatabase("persistence integration", () => {
     ]);
 
     const matches = await vectorSearch.search({
-      accountId: accountA.id,
+      workspaceId: workspaceA.id,
       queryEmbedding: embeddingOf(0),
       topK: 5,
       similarityThreshold: 0.1,
@@ -137,8 +143,9 @@ describeIfDatabase("persistence integration", () => {
     expect(matches).toHaveLength(1);
     expect(matches[0].documentId).toBe(documentA.id);
 
-    await database.query("DELETE FROM chunks WHERE account_id = $1 OR account_id = $2", [accountA.id, accountB.id]);
-    await database.query("DELETE FROM documents WHERE account_id = $1 OR account_id = $2", [accountA.id, accountB.id]);
+    await database.query("DELETE FROM chunks WHERE workspace_id = $1 OR workspace_id = $2", [workspaceA.id, workspaceB.id]);
+    await database.query("DELETE FROM documents WHERE workspace_id = $1 OR workspace_id = $2", [workspaceA.id, workspaceB.id]);
+    await database.query("DELETE FROM workspaces WHERE id = $1 OR id = $2", [workspaceA.id, workspaceB.id]);
     await database.query("DELETE FROM accounts WHERE id = $1 OR id = $2", [accountA.id, accountB.id]);
   });
 
@@ -185,14 +192,15 @@ describeIfDatabase("persistence integration", () => {
       email: `title-aware-${randomUUID()}@example.com`,
       passwordHash: "hash-a",
     });
+    const workspace = await workspaceRepository.create(account.id, "Test Workspace");
 
     const sessionCookie = await ingestionService.ingest({
-      accountId: account.id,
+      workspaceId: workspace.id,
       title: "Session Cookie",
       content: "Used for account registration and bearer token issuance.",
     });
     const auditEvents = await ingestionService.ingest({
-      accountId: account.id,
+      workspaceId: workspace.id,
       title: "Audit Events",
       content: "Used for recording security-relevant activity.",
     });
@@ -210,7 +218,7 @@ describeIfDatabase("persistence integration", () => {
     expect(storedChunks[0]?.content).not.toContain("Title:");
 
     const matches = await vectorSearch.search({
-      accountId: account.id,
+      workspaceId: workspace.id,
       queryEmbedding: embeddingOf(0),
       topK: 5,
       similarityThreshold: 0.1,
@@ -219,13 +227,14 @@ describeIfDatabase("persistence integration", () => {
     expect(matches[0]?.title).toBe("Session Cookie");
     expect(matches[0]?.content).toContain("Used for account registration");
 
-    await database.query("DELETE FROM chunks WHERE account_id = $1", [account.id]);
-    await database.query("DELETE FROM documents WHERE account_id = $1", [account.id]);
+    await database.query("DELETE FROM chunks WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM workspaces WHERE id = $1", [workspace.id]);
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
     expect(auditEvents.status).toBe("queued");
   });
 
-  it("deletes documents only within the matching account scope and cascades chunks", async () => {
+  it("deletes documents only within the matching workspace scope and cascades chunks", async () => {
     const accountRepository = new AccountRepository(database);
     const documentRepository = new DocumentRepository(database);
     const chunkRepository = new ChunkRepository(database);
@@ -238,16 +247,18 @@ describeIfDatabase("persistence integration", () => {
       email: `delete-other-${randomUUID()}@example.com`,
       passwordHash: "hash-other",
     });
+    const ownerWorkspace = await workspaceRepository.create(ownerAccount.id, "Owner Workspace");
+    const otherWorkspace = await workspaceRepository.create(otherAccount.id, "Other Workspace");
 
     const ownerDocument = await documentRepository.create({
-      accountId: ownerAccount.id,
+      workspaceId: ownerWorkspace.id,
       title: "Owner guide",
       sourceContent: "Owner content",
       markdownContent: "Owner content",
       status: "ready",
     });
     const otherDocument = await documentRepository.create({
-      accountId: otherAccount.id,
+      workspaceId: otherWorkspace.id,
       title: "Other guide",
       sourceContent: "Other content",
       markdownContent: "Other content",
@@ -258,7 +269,7 @@ describeIfDatabase("persistence integration", () => {
       {
         id: randomUUID(),
         documentId: ownerDocument.id,
-        accountId: ownerAccount.id,
+        workspaceId: ownerWorkspace.id,
         chunkIndex: 0,
         content: "Owner chunk",
         embedding: embeddingOf(0),
@@ -268,13 +279,13 @@ describeIfDatabase("persistence integration", () => {
       },
     ]);
 
-    const deniedDelete = await documentRepository.deleteByIdAndAccountId(ownerDocument.id, otherAccount.id);
+    const deniedDelete = await documentRepository.deleteByIdAndWorkspaceId(ownerDocument.id, otherWorkspace.id);
     expect(deniedDelete).toBe(false);
 
-    const permittedDelete = await documentRepository.deleteByIdAndAccountId(ownerDocument.id, ownerAccount.id);
+    const permittedDelete = await documentRepository.deleteByIdAndWorkspaceId(ownerDocument.id, ownerWorkspace.id);
     expect(permittedDelete).toBe(true);
 
-    const deletedDocument = await documentRepository.findByIdAndAccountId(ownerDocument.id, ownerAccount.id);
+    const deletedDocument = await documentRepository.findByIdAndWorkspaceId(ownerDocument.id, ownerWorkspace.id);
     expect(deletedDocument).toBeNull();
 
     const ownerChunkRows = await database.query<{ count: string }>(
@@ -283,10 +294,11 @@ describeIfDatabase("persistence integration", () => {
     );
     expect(ownerChunkRows[0]?.count).toBe("0");
 
-    const survivingDocument = await documentRepository.findByIdAndAccountId(otherDocument.id, otherAccount.id);
+    const survivingDocument = await documentRepository.findByIdAndWorkspaceId(otherDocument.id, otherWorkspace.id);
     expect(survivingDocument).not.toBeNull();
 
-    await database.query("DELETE FROM documents WHERE account_id = $1 OR account_id = $2", [ownerAccount.id, otherAccount.id]);
+    await database.query("DELETE FROM documents WHERE workspace_id = $1 OR workspace_id = $2", [ownerWorkspace.id, otherWorkspace.id]);
+    await database.query("DELETE FROM workspaces WHERE id = $1 OR id = $2", [ownerWorkspace.id, otherWorkspace.id]);
     await database.query("DELETE FROM accounts WHERE id = $1 OR id = $2", [ownerAccount.id, otherAccount.id]);
   });
 

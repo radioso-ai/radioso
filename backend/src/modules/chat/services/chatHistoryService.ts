@@ -37,7 +37,7 @@ export interface ChatConversationTurn {
 
 export interface ChatConversationDetail {
   conversationId: string;
-  accountId: string;
+  workspaceId: string;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -75,8 +75,8 @@ export class ChatHistoryService {
     private readonly auditEventRepository: AuditEventRepositoryPort,
   ) {}
 
-  async listConversations(accountId: string): Promise<ChatConversationSummary[]> {
-    const conversations = await this.conversationRepository.listByAccountId(accountId);
+  async listConversations(workspaceId: string): Promise<ChatConversationSummary[]> {
+    const conversations = await this.conversationRepository.listByWorkspaceId(workspaceId);
 
     const summaries = await Promise.all(
       conversations.map(async (conversation) => {
@@ -88,8 +88,8 @@ export class ChatHistoryService {
     return summaries;
   }
 
-  async getConversation(accountId: string, conversationId: string): Promise<ChatConversationDetail> {
-    const conversation = await this.conversationRepository.findByIdAndAccountId(conversationId, accountId);
+  async getConversation(workspaceId: string, conversationId: string): Promise<ChatConversationDetail> {
+    const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
     if (!conversation) {
       throw notFound("Conversation not found");
@@ -97,7 +97,7 @@ export class ChatHistoryService {
 
     const [messages, auditEvents] = await Promise.all([
       this.messageRepository.listByConversationId(conversation.id),
-      this.auditEventRepository.listChatAnswerEventsByConversationId(accountId, conversation.id),
+      this.auditEventRepository.listChatAnswerEventsByConversationId(workspaceId, conversation.id),
     ]);
 
     const debugByAssistantMessageId = this.buildDebugIndex(auditEvents);
@@ -106,7 +106,7 @@ export class ChatHistoryService {
 
     return {
       conversationId: conversation.id,
-      accountId: conversation.accountId,
+      workspaceId: conversation.workspaceId,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),
       messageCount: messages.length,

@@ -3,21 +3,15 @@ import { describe, expect, it } from "vitest";
 
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
-import { createTestApp } from "../support/testApp.js";
+import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
 
 describe("chat integration", () => {
   it("creates a new conversation and reuses it on follow-up questions", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "followup@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "followup@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")
@@ -60,17 +54,11 @@ describe("chat integration", () => {
   it("returns a safe answer when no relevant chunks are found", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "empty@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
+    const { token } = await issueTestToken(app, "empty@example.com");
 
     const response = await request(app)
       .post("/api/v1/chat/")
-      .set("Authorization", `Bearer ${token.body.token}`)
+      .set("Authorization", `Bearer ${token}`)
       .send({ query: "What is the capital of France?", stream: false });
 
     expect(response.status).toBe(200);
@@ -80,33 +68,21 @@ describe("chat integration", () => {
   it("keeps conversations account scoped", async () => {
     const { app } = createTestApp();
 
-    const firstRegister = await request(app).post("/api/v1/auth/register").send({
-      email: "scope-a@example.com",
-      password: "verysecurepassword",
-    });
-    const secondRegister = await request(app).post("/api/v1/auth/register").send({
-      email: "scope-b@example.com",
-      password: "verysecurepassword",
-    });
-    const firstToken = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", firstRegister.headers["set-cookie"][0]);
-    const secondToken = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", secondRegister.headers["set-cookie"][0]);
+    const { token: firstToken } = await issueTestToken(app, "scope-a@example.com");
+    const { token: secondToken } = await issueTestToken(app, "scope-b@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${firstToken.body.token}`)
+      .set("Authorization", `Bearer ${firstToken}`)
       .send({ title: "A", content: "Account A data only." });
 
     const firstChat = await request(app)
       .post("/api/v1/chat/")
-      .set("Authorization", `Bearer ${firstToken.body.token}`)
+      .set("Authorization", `Bearer ${firstToken}`)
       .send({ query: "What data is here?", stream: false });
     const secondChat = await request(app)
       .post("/api/v1/chat/")
-      .set("Authorization", `Bearer ${secondToken.body.token}`)
+      .set("Authorization", `Bearer ${secondToken}`)
       .send({
         conversationId: firstChat.body.conversationId,
         query: "Can I reuse this conversation?",
@@ -120,14 +96,8 @@ describe("chat integration", () => {
   it("returns grounded answers for strict and broad retrieval profiles", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "profiles@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "profiles@example.com");
+    const authorization = `Bearer ${token}`;
 
     for (const document of Object.values(retrievalFixtureDocuments)) {
       await request(app)
@@ -204,14 +174,8 @@ describe("chat integration", () => {
   it("records retrieval diagnostics for successful chats", async () => {
     const { app, dependencies } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "diagnostics@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "diagnostics@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")
@@ -279,14 +243,8 @@ describe("chat integration", () => {
     };
     const { app } = createTestApp({ chatGateway: failingGateway });
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "history-failure@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "history-failure@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")
@@ -328,14 +286,8 @@ describe("chat integration", () => {
   it("returns the exact-match source for identifier-style queries", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "identifiers@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "identifiers@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")
@@ -361,14 +313,8 @@ describe("chat integration", () => {
   it("applies persisted warmth settings to generated answers", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "warmth@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "warmth@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")
@@ -401,14 +347,8 @@ describe("chat integration", () => {
   it("omits citation metadata when citation display is disabled", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "no-citations@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "no-citations@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")
@@ -448,14 +388,8 @@ describe("chat integration", () => {
     };
     const { app } = createTestApp({ rerankGateway: failingRerankGateway });
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "rerank-failure@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "rerank-failure@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")
@@ -498,14 +432,8 @@ describe("chat integration", () => {
       },
     });
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "lexical-off@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "lexical-off@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")
@@ -528,14 +456,8 @@ describe("chat integration", () => {
   it("handles legacy chunks without search text or structured attributes", async () => {
     const { app, repositories } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "legacy-chunks@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "legacy-chunks@example.com");
+    const authorization = `Bearer ${token}`;
 
     const documentResponse = await request(app)
       .post("/api/v1/document/")

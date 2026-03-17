@@ -22,8 +22,8 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
 
   router.get("/history", requireApiToken(dependencies), async (_req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
-      const conversations = await dependencies.chatHistoryService.listConversations(accountId);
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const conversations = await dependencies.chatHistoryService.listConversations(workspaceId);
       res.status(200).json({ conversations });
     } catch (error) {
       next(error);
@@ -32,7 +32,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
 
   router.get("/history/:conversationId", requireApiToken(dependencies), async (req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
+      const { workspaceId } = res.locals as { workspaceId: string };
       const parsedParams = conversationParamsSchema.safeParse(req.params);
       if (!parsedParams.success) {
         next(badRequest("Invalid request params", parsedParams.error.flatten()));
@@ -40,7 +40,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
       }
       const { conversationId } = parsedParams.data;
       const conversation = await dependencies.chatHistoryService.getConversation(
-        accountId,
+        workspaceId,
         conversationId,
       );
       res.status(200).json(conversation);
@@ -51,12 +51,12 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
 
   router.post("/", requireApiToken(dependencies), validateBody(chatSchema), async (req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
+      const { workspaceId } = res.locals as { workspaceId: string };
       if (req.body.stream) {
         await sendChatSse(
           res,
           dependencies.chatService.streamAnswer({
-            accountId,
+            workspaceId,
             query: req.body.query,
             stream: req.body.stream,
             conversationId: req.body.conversationId,
@@ -66,7 +66,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
       }
 
       const result = await dependencies.chatService.answer({
-        accountId,
+        workspaceId,
         query: req.body.query,
         stream: req.body.stream,
         conversationId: req.body.conversationId,

@@ -5,7 +5,7 @@ import { notFound } from "../../../shared/domain/errors.js";
 
 export interface DocumentRecord {
   id: string;
-  accountId: string;
+  workspaceId: string;
   title: string;
   sourceContent: string;
   markdownContent: string;
@@ -19,7 +19,7 @@ export interface DocumentRecord {
 export interface ChunkRecord {
   id: string;
   documentId: string;
-  accountId: string;
+  workspaceId: string;
   chunkIndex: number;
   content: string;
   searchText?: string | null;
@@ -32,13 +32,13 @@ export interface ChunkRecord {
 
 export interface DocumentRepositoryPort {
   createAndQueue(input: {
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
   }): Promise<DocumentRecord>;
   create(input: {
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
@@ -46,22 +46,22 @@ export interface DocumentRepositoryPort {
   }): Promise<DocumentRecord>;
   setStatus(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     status: string;
     failureReason?: string | null;
   }): Promise<DocumentRecord>;
   setStatusIfRevisionMatches(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     revision: number;
     status: string;
     failureReason?: string | null;
   }): Promise<DocumentRecord | null>;
-  findByIdAndAccountId(documentId: string, accountId: string): Promise<DocumentRecord | null>;
-  listByAccountId(accountId: string): Promise<DocumentRecord[]>;
+  findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null>;
+  listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]>;
   update(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
@@ -69,21 +69,21 @@ export interface DocumentRepositoryPort {
   }): Promise<DocumentRecord>;
   updateAndQueue(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
   }): Promise<DocumentRecord>;
-  requeue(documentId: string, accountId: string): Promise<DocumentRecord>;
-  requeueAndQueue(documentId: string, accountId: string): Promise<DocumentRecord>;
-  deleteByIdAndAccountId(documentId: string, accountId: string): Promise<boolean>;
+  requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
+  requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
+  deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean>;
 }
 
 export interface ChunkRepositoryPort {
   replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void>;
   publishForDocumentRevision(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     revision: number;
     chunks: ChunkRecord[];
   }): Promise<boolean>;
@@ -108,17 +108,17 @@ export class DocumentIngestionService {
     private readonly auditService: AuditService,
   ) {}
 
-  async ingest(input: { accountId: string; title: string; content: string }): Promise<{ documentId: string; status: string }> {
+  async ingest(input: { workspaceId: string; title: string; content: string }): Promise<{ documentId: string; status: string }> {
     try {
       const document = await this.documentRepository.createAndQueue({
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         title: input.title,
         sourceContent: input.content,
         markdownContent: normalizeMarkdown(input.content),
       });
 
       await this.auditService.record({
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         eventType: "document.ingest",
         eventStatus: "success",
         metadata: {
@@ -134,7 +134,7 @@ export class DocumentIngestionService {
       };
     } catch (error) {
       await this.auditService.record({
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         eventType: "document.ingest",
         eventStatus: "failure",
         metadata: {
@@ -145,20 +145,20 @@ export class DocumentIngestionService {
     }
   }
 
-  async update(input: { accountId: string; documentId: string; title: string; content: string }): Promise<{ documentId: string; status: string }> {
-    await this.getDocument(input.accountId, input.documentId);
+  async update(input: { workspaceId: string; documentId: string; title: string; content: string }): Promise<{ documentId: string; status: string }> {
+    await this.getDocument(input.workspaceId, input.documentId);
 
     try {
       const document = await this.documentRepository.updateAndQueue({
         documentId: input.documentId,
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         title: input.title,
         sourceContent: input.content,
         markdownContent: normalizeMarkdown(input.content),
       });
 
       await this.auditService.record({
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         eventType: "document.update",
         eventStatus: "success",
         metadata: {
@@ -174,7 +174,7 @@ export class DocumentIngestionService {
       };
     } catch (error) {
       await this.auditService.record({
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         eventType: "document.update",
         eventStatus: "failure",
         metadata: {
@@ -186,14 +186,14 @@ export class DocumentIngestionService {
     }
   }
 
-  async reprocess(input: { accountId: string; documentId: string }): Promise<{ documentId: string; status: string }> {
-    await this.getDocument(input.accountId, input.documentId);
+  async reprocess(input: { workspaceId: string; documentId: string }): Promise<{ documentId: string; status: string }> {
+    await this.getDocument(input.workspaceId, input.documentId);
 
     try {
-      const document = await this.documentRepository.requeueAndQueue(input.documentId, input.accountId);
+      const document = await this.documentRepository.requeueAndQueue(input.documentId, input.workspaceId);
 
       await this.auditService.record({
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         eventType: "document.reprocess",
         eventStatus: "success",
         metadata: {
@@ -209,7 +209,7 @@ export class DocumentIngestionService {
       };
     } catch (error) {
       await this.auditService.record({
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         eventType: "document.reprocess",
         eventStatus: "failure",
         metadata: {
@@ -221,8 +221,8 @@ export class DocumentIngestionService {
     }
   }
 
-  async getDocument(accountId: string, documentId: string): Promise<DocumentDetails> {
-    const document = await this.documentRepository.findByIdAndAccountId(documentId, accountId);
+  async getDocument(workspaceId: string, documentId: string): Promise<DocumentDetails> {
+    const document = await this.documentRepository.findByIdAndWorkspaceId(documentId, workspaceId);
     if (!document) {
       throw notFound("Document not found");
     }
@@ -230,8 +230,8 @@ export class DocumentIngestionService {
     return this.toDetails(document);
   }
 
-  async listForAccount(accountId: string): Promise<DocumentSummary[]> {
-    const documents = await this.documentRepository.listByAccountId(accountId);
+  async listForWorkspace(workspaceId: string): Promise<DocumentSummary[]> {
+    const documents = await this.documentRepository.listByWorkspaceId(workspaceId);
     return documents.map((document) => this.toSummary(document));
   }
 

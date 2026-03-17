@@ -35,8 +35,8 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
 
   router.get("/retrieval", requireApiToken(dependencies), async (_req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
-      const settings = await dependencies.retrievalSettingsService.getForAccount(accountId);
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const settings = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
       res.status(200).json(settings);
     } catch (error) {
       next(error);
@@ -45,9 +45,9 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
 
   router.put("/retrieval", requireApiToken(dependencies), validateBody(updateSettingsSchema), async (req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
-      const existing = await dependencies.retrievalSettingsService.getForAccount(accountId);
-      const settings = await dependencies.retrievalSettingsService.updateForAccount(accountId, {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
+      const settings = await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
         ...req.body,
         attributeControls: req.body.attributeControls ?? existing.attributeControls,
       });

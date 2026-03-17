@@ -14,7 +14,7 @@ export const insertChunks = async (client: PoolClient, chunks: ChunkRecord[]): P
     values.push(
       chunk.id,
       chunk.documentId,
-      chunk.accountId,
+      chunk.workspaceId,
       chunk.chunkIndex,
       chunk.content,
       chunk.searchText ?? chunk.content,
@@ -28,7 +28,7 @@ export const insertChunks = async (client: PoolClient, chunks: ChunkRecord[]): P
   });
 
   await client.query(
-    `INSERT INTO chunks (id, document_id, account_id, chunk_index, content, search_text, structured_attributes, embedding, start_offset, end_offset)
+    `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, structured_attributes, embedding, start_offset, end_offset)
      VALUES ${placeholders.join(", ")}`,
     values,
   );
@@ -46,7 +46,7 @@ export class ChunkRepository implements ChunkRepositoryPort {
 
   async publishForDocumentRevision(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     revision: number;
     chunks: ChunkRecord[];
   }): Promise<boolean> {
@@ -55,10 +55,10 @@ export class ChunkRepository implements ChunkRepositoryPort {
         `SELECT id
          FROM documents
          WHERE id = $1
-           AND account_id = $2
+           AND workspace_id = $2
            AND revision = $3
          FOR UPDATE`,
-        [input.documentId, input.accountId, input.revision],
+        [input.documentId, input.workspaceId, input.revision],
       );
 
       if (documentRows.rows.length === 0) {
@@ -74,9 +74,9 @@ export class ChunkRepository implements ChunkRepositoryPort {
              failure_reason = NULL,
              updated_at = NOW()
          WHERE id = $1
-           AND account_id = $2
+           AND workspace_id = $2
            AND revision = $3`,
-        [input.documentId, input.accountId, input.revision],
+        [input.documentId, input.workspaceId, input.revision],
       );
 
       return true;

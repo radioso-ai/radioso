@@ -2,7 +2,7 @@ import type { AuditService } from "../../audit/services/auditService.js";
 import { notFound } from "../../../shared/domain/errors.js";
 
 export interface DocumentDeletionRepositoryPort {
-  deleteByIdAndAccountId(documentId: string, accountId: string): Promise<boolean>;
+  deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean>;
 }
 
 export class DocumentDeletionService {
@@ -11,12 +11,12 @@ export class DocumentDeletionService {
     private readonly auditService: AuditService,
   ) {}
 
-  async delete(input: { accountId: string; documentId: string }): Promise<void> {
-    const deleted = await this.documentRepository.deleteByIdAndAccountId(input.documentId, input.accountId);
+  async delete(input: { workspaceId: string; documentId: string }): Promise<void> {
+    const deleted = await this.documentRepository.deleteByIdAndWorkspaceId(input.documentId, input.workspaceId);
 
     if (!deleted) {
       await this.auditService.record({
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         eventType: "document.delete",
         eventStatus: "failure",
         metadata: {
@@ -28,7 +28,7 @@ export class DocumentDeletionService {
     }
 
     await this.auditService.record({
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       eventType: "document.delete",
       eventStatus: "success",
       metadata: {

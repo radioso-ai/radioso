@@ -4,7 +4,7 @@ import type { RetrievedChunk } from "./vectorSearch.js";
 
 export interface LexicalSearchPort {
   search(input: {
-    accountId: string;
+    workspaceId: string;
     query: string;
     topK: number;
   }): Promise<RetrievedChunk[]>;
@@ -27,7 +27,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
   constructor(private readonly database: Database) {}
 
   async search(input: {
-    accountId: string;
+    workspaceId: string;
     query: string;
     topK: number;
   }): Promise<RetrievedChunk[]> {
@@ -52,12 +52,12 @@ export class PgLexicalSearch implements LexicalSearchPort {
               ) AS rank
        FROM chunks c
        JOIN documents d ON d.id = c.document_id
-       WHERE c.account_id = $1
+       WHERE c.workspace_id = $1
          AND d.status = 'ready'
          AND plainto_tsquery('simple', $2) @@ to_tsvector('simple', coalesce(c.search_text, c.content, ''))
        ORDER BY rank DESC, c.chunk_index ASC
        LIMIT $3`,
-      [input.accountId, normalizedQuery, input.topK],
+      [input.workspaceId, normalizedQuery, input.topK],
     );
 
     const maxRank = rows.reduce((highest, row) => Math.max(highest, Number(row.rank)), 0);

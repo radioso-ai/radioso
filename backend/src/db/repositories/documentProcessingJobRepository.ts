@@ -7,7 +7,7 @@ export type DocumentProcessingJobStatus = "queued" | "processing" | "completed" 
 export interface DocumentProcessingJobRecord {
   id: string;
   documentId: string;
-  accountId: string;
+  workspaceId: string;
   documentRevision: number;
   status: DocumentProcessingJobStatus;
   attemptCount: number;
@@ -20,7 +20,7 @@ export interface DocumentProcessingJobRecord {
 }
 
 export interface DocumentProcessingJobRepositoryPort {
-  enqueue(input: { documentId: string; accountId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord>;
+  enqueue(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord>;
   claimNext(now?: Date): Promise<DocumentProcessingJobRecord | null>;
   listProcessingJobs(): Promise<DocumentProcessingJobRecord[]>;
   markCompleted(jobId: string): Promise<void>;
@@ -29,7 +29,7 @@ export interface DocumentProcessingJobRepositoryPort {
   markFailedIfDocumentMatches(input: {
     jobId: string;
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     revision: number;
     errorMessage: string;
   }): Promise<boolean>;
@@ -39,7 +39,7 @@ export interface DocumentProcessingJobRepositoryPort {
 interface DocumentProcessingJobRow {
   id: string;
   document_id: string;
-  account_id: string;
+  workspace_id: string;
   document_revision: number;
   status: DocumentProcessingJobStatus;
   attempt_count: number;
@@ -54,7 +54,7 @@ interface DocumentProcessingJobRow {
 const mapJob = (row: DocumentProcessingJobRow): DocumentProcessingJobRecord => ({
   id: row.id,
   documentId: row.document_id,
-  accountId: row.account_id,
+  workspaceId: row.workspace_id,
   documentRevision: row.document_revision,
   status: row.status,
   attemptCount: row.attempt_count,
@@ -69,13 +69,13 @@ const mapJob = (row: DocumentProcessingJobRow): DocumentProcessingJobRecord => (
 export class DocumentProcessingJobRepository implements DocumentProcessingJobRepositoryPort {
   constructor(private readonly database: Database) {}
 
-  async enqueue(input: { documentId: string; accountId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord> {
+  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord> {
     const [row] = await this.database.query<DocumentProcessingJobRow>(
-      `INSERT INTO document_processing_jobs (id, document_id, account_id, document_revision, status)
+      `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
        VALUES ($1, $2, $3, $4, 'queued')
        RETURNING id,
                  document_id,
-                 account_id,
+                 workspace_id,
                  document_revision,
                  status,
                  attempt_count,
@@ -85,7 +85,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
                  completed_at,
                  created_at,
                  updated_at`,
-      [randomUUID(), input.documentId, input.accountId, input.documentRevision],
+      [randomUUID(), input.documentId, input.workspaceId, input.documentRevision],
     );
 
     return mapJob(row);
@@ -112,7 +112,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
          WHERE jobs.id = next_job.id
          RETURNING jobs.id,
                    jobs.document_id,
-                   jobs.account_id,
+                   jobs.workspace_id,
                    jobs.document_revision,
                    jobs.status,
                    jobs.attempt_count,
@@ -133,7 +133,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     const rows = await this.database.query<DocumentProcessingJobRow>(
       `SELECT id,
               document_id,
-              account_id,
+              workspace_id,
               document_revision,
               status,
               attempt_count,
@@ -189,7 +189,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
   async markFailedIfDocumentMatches(input: {
     jobId: string;
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     revision: number;
     errorMessage: string;
   }): Promise<boolean> {
@@ -201,10 +201,10 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
              failure_reason = $4,
              updated_at = NOW()
          WHERE id = $1
-           AND account_id = $2
+           AND workspace_id = $2
            AND revision = $3
          RETURNING id`,
-        [input.documentId, input.accountId, input.revision, input.errorMessage],
+        [input.documentId, input.workspaceId, input.revision, input.errorMessage],
       );
 
       if (documentResult.rows.length === 0) {

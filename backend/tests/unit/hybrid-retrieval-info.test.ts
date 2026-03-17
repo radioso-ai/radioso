@@ -16,6 +16,10 @@ describe("hybrid retrieval info", () => {
       finalContextCount: 3,
       candidateFallbackApplied: false,
       fallbackApplied: true,
+      rewriteEligible: true,
+      rewriteRan: true,
+      materialDisagreement: false,
+      continuityDecision: "reused",
       parsedQuery: {
         semanticQuery: "retreats",
         lexicalQuery: "retreats",
@@ -65,6 +69,14 @@ describe("hybrid retrieval info", () => {
       ],
       fallbackApplied: true,
       rerankStatus: "applied",
+      rewrite: {
+        status: "applied",
+        eligible: true,
+        ran: true,
+        materialDisagreement: false,
+        continuityDecision: "reused",
+        rejectionReason: undefined,
+      },
     });
   });
 });

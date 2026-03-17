@@ -42,7 +42,7 @@ describe("document subject search text", () => {
       },
     };
     const document = await documentRepository.create({
-      workspaceId: "account-1",
+      workspaceId: "workspace-1",
       title: "| Generic Catalog |",
       sourceContent: "## Premi\nPremi teaches meditation in summer camps.\n\nIn September 2015 she took the vows as Nayaswami.",
       markdownContent: "## Premi\nPremi teaches meditation in summer camps.\n\nIn September 2015 she took the vows as Nayaswami.",
@@ -74,7 +74,7 @@ describe("document subject search text", () => {
     await service.process({
       id: "job-1",
       documentId: document.id,
-      workspaceId: "account-1",
+      workspaceId: "workspace-1",
       documentRevision: document.revision,
       status: "processing",
       attemptCount: 1,

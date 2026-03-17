@@ -8,6 +8,7 @@ import type {
   WorkspaceTokenRecord,
   WorkspaceTokenRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
+import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
 import type {
   ChunkRecord,
   ChunkRepositoryPort,
@@ -132,6 +133,43 @@ export class InMemoryWorkspaceTokenRepository implements WorkspaceTokenRepositor
     if (item) {
       item.lastUsedAt = lastUsedAt;
     }
+  }
+}
+
+export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
+  private readonly items = new Map<string, WorkspaceRecord>();
+
+  async create(accountId: string, name: string): Promise<WorkspaceRecord> {
+    const record: WorkspaceRecord = {
+      id: randomUUID(),
+      accountId,
+      name,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findById(id: string): Promise<WorkspaceRecord | null> {
+    return this.items.get(id) ?? null;
+  }
+
+  async findByIdAndAccountId(workspaceId: string, accountId: string): Promise<WorkspaceRecord | null> {
+    const item = this.items.get(workspaceId);
+    return item && item.accountId === accountId ? item : null;
+  }
+
+  async listByAccountId(accountId: string): Promise<WorkspaceRecord[]> {
+    return [...this.items.values()].filter((w) => w.accountId === accountId);
+  }
+
+  async countByAccountId(accountId: string): Promise<number> {
+    return [...this.items.values()].filter((w) => w.accountId === accountId).length;
+  }
+
+  async deleteById(workspaceId: string): Promise<boolean> {
+    return this.items.delete(workspaceId);
   }
 }
 

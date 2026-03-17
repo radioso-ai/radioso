@@ -43,6 +43,7 @@ import {
   InMemoryMessageRepository,
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
+  InMemoryWorkspaceRepository,
 } from "./fakes.js";
 
 export const createTestEnv = (): Env => ({
@@ -256,28 +257,8 @@ export const createTestDependencies = (overrides: {
   };
   const chatGateway = overrides.chatGateway ?? defaultChatGateway;
 
-  const workspaceItems = new Map<string, { id: string; accountId: string; name: string; createdAt: Date; updatedAt: Date }>();
-  const workspaceService = new WorkspaceService({
-    async create(accountId: string, name: string) {
-      const record = { id: randomUUID(), accountId, name, createdAt: new Date(), updatedAt: new Date() };
-      workspaceItems.set(record.id, record);
-      return record;
-    },
-    async findById(id: string) { return workspaceItems.get(id) ?? null; },
-    async findByIdAndAccountId(workspaceId: string, accountId: string) {
-      const item = workspaceItems.get(workspaceId);
-      return item && item.accountId === accountId ? item : null;
-    },
-    async listByAccountId(accountId: string) {
-      return [...workspaceItems.values()].filter((w) => w.accountId === accountId);
-    },
-    async countByAccountId(accountId: string) {
-      return [...workspaceItems.values()].filter((w) => w.accountId === accountId).length;
-    },
-    async deleteById(workspaceId: string) {
-      return workspaceItems.delete(workspaceId);
-    },
-  });
+  const workspaceRepository = new InMemoryWorkspaceRepository();
+  const workspaceService = new WorkspaceService(workspaceRepository);
 
   return {
     dependencies: {

@@ -253,6 +253,12 @@ describe("chat integration", () => {
       },
       rerankStatus: expect.any(String),
       fallbackApplied: expect.any(Boolean),
+      rewrite: {
+        status: expect.any(String),
+        eligible: expect.any(Boolean),
+        ran: expect.any(Boolean),
+        materialDisagreement: expect.any(Boolean),
+      },
     });
     expect(chatAudit?.metadata?.retrieval).toMatchObject({
       rewriteStatus: expect.any(String),
@@ -260,6 +266,8 @@ describe("chat integration", () => {
       originalCandidateCount: expect.any(Number),
       normalizedCandidateCount: expect.any(Number),
       finalContextCount: expect.any(Number),
+      rewriteEligible: expect.any(Boolean),
+      rewriteRan: expect.any(Boolean),
     });
     expect(chatAudit?.metadata).toMatchObject({
       assistantMessageId: expect.any(String),
@@ -323,6 +331,61 @@ describe("chat integration", () => {
         }),
       }),
     ]);
+  });
+
+  it("preserves ambiguity for unresolved relation follow-ups", async () => {
+    const { app } = createTestApp();
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "ambiguity@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Narayani", content: "Narayani is a teacher and speaker." });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+      });
+
+    const first = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Tell me about Narayani", stream: false });
+    const second = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: first.body.conversationId,
+        query: "Does she work with Arudra?",
+        stream: false,
+      });
+
+    expect(second.status).toBe(200);
+    expect(second.body.retrievalInfo.rewrite).toMatchObject({
+      status: "rejected",
+      eligible: false,
+      ran: false,
+      materialDisagreement: false,
+      continuityDecision: "unresolved",
+      rejectionReason: "rewrite_unresolved",
+    });
   });
 
   it("returns the exact-match source for identifier-style queries", async () => {

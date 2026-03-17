@@ -8,15 +8,25 @@ export interface ConversationContextWindow {
   selectionReason: string;
 }
 
-export type RewriteStatus = "skipped" | "applied" | "fallback" | "rejected";
+export const REWRITE_STATUS = {
+  SKIPPED: "skipped",
+  APPLIED: "applied",
+  FALLBACK: "fallback",
+  REJECTED: "rejected",
+} as const;
 
-export type RewriteTurnKind =
-  | "fresh_subject"
-  | "referential_followup"
-  | "referential_relation"
-  | "explicit_recenter"
-  | "comparative"
-  | "ambiguous";
+export type RewriteStatus = (typeof REWRITE_STATUS)[keyof typeof REWRITE_STATUS];
+
+export const REWRITE_TURN_KIND = {
+  FRESH_SUBJECT: "fresh_subject",
+  REFERENTIAL_FOLLOWUP: "referential_followup",
+  REFERENTIAL_RELATION: "referential_relation",
+  EXPLICIT_RECENTER: "explicit_recenter",
+  COMPARATIVE: "comparative",
+  AMBIGUOUS: "ambiguous",
+} as const;
+
+export type RewriteTurnKind = (typeof REWRITE_TURN_KIND)[keyof typeof REWRITE_TURN_KIND];
 
 export interface StructuredRewriteResult {
   rewrittenQuery: string;

@@ -710,7 +710,7 @@ describe("edge cases", () => {
           conversationId: "c1",
           accountId: "a1",
           role: "user",
-          content: "Who is Narayani?",
+          content: "Who is Narayani, and does she collaborate with Arudra?",
           createdAt: new Date(),
         },
         {
@@ -804,5 +804,150 @@ describe("edge cases", () => {
     expect(result.diagnostics.rewriteStatus).toBe("rejected");
     expect(result.diagnostics.continuityDecision).toBe("unresolved");
     expect(result.diagnostics.rejectionReason).toBe("rewrite_unresolved");
+  });
+
+  it("does not ground a rewrite subject from assistant-only mentions", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "What did Arudra publish later?",
+          turnKind: "referential_followup",
+          proposedActiveSubject: "Arudra",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.78,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "What about her later work?",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [
+          {
+            id: "1",
+            conversationId: "c1",
+            accountId: "a1",
+            role: "user",
+            content: "Who is Narayani?",
+            createdAt: new Date(),
+          },
+          {
+            id: "2",
+            conversationId: "c1",
+            accountId: "a1",
+            role: "assistant",
+            content: "Narayani sometimes collaborates with Arudra.",
+            createdAt: new Date(),
+          },
+        ],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("rejected");
+    expect(result.rejectionReason).toBe("rewrite_subject_ungrounded");
+    expect(result.effectiveQuery).toBe("What about her later work?");
+  });
+
+  it("rejects rewritten retrieval when the proposed subject is unsupported in rewritten evidence", async () => {
+    let searchCallCount = 0;
+    const service = new RetrievalPipelineService(
+      {
+        async getForAccount() {
+          return {
+            accountId: "a1",
+            queryRewriteEnabled: true,
+            rerankEnabled: false,
+            vectorTopK: 20,
+            similarityThreshold: 0.2,
+            rerankTopK: 5,
+            warmthLevel: 5,
+            citationDisplayEnabled: true,
+            chunkingStrategy: "fixed_window",
+            attributeControls: defaultAttributeControls(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+      } as never,
+      {
+        async embedChunks() {
+          return [[1, 0, 0]];
+        },
+      } as never,
+      {
+        async search() {
+          searchCallCount += 1;
+          if (searchCallCount === 2) {
+            return [
+              {
+                chunkId: "c2",
+                documentId: "d2",
+                title: "Publication timeline",
+                content: "Later publications from the archive are listed chronologically.",
+                similarity: 0.88,
+              },
+            ];
+          }
+
+          return [
+            {
+              chunkId: "c1",
+              documentId: "d1",
+              title: "Arudra",
+              content: "Arudra later work and publications.",
+              similarity: 0.81,
+            },
+          ];
+        },
+      },
+      {
+        async search() {
+          return [];
+        },
+      },
+      new ConversationContextService(),
+      new QueryRewriteService({
+        async rewrite() {
+          return {
+            rewrittenQuery: "What did Arudra publish later?",
+            turnKind: "referential_followup",
+            proposedActiveSubject: "Arudra",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.93,
+          };
+        },
+      }),
+      new CandidatePreparationService(),
+      new AttributeMatchScoringService(),
+      new RerankService(),
+      new PromptContextSelectorService(),
+      new PromptBuilder(),
+      new RetrievalExecutionTelemetryService(),
+    );
+
+    const result = await service.run({
+      accountId: "a1",
+      query: "What about her later work?",
+      history: [
+        {
+          id: "1",
+          conversationId: "c1",
+          accountId: "a1",
+          role: "user",
+          content: "Who is Narayani, and does she collaborate with Arudra?",
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    expect(result.rewrittenQuery).toBe("What about her later work?");
+    expect(result.diagnostics.materialDisagreement).toBe(true);
+    expect(result.diagnostics.rejectionReason).toBe("rewrite_subject_not_supported_in_rewrite");
+    expect(result.diagnostics.rewrittenCandidateCount).toBe(1);
   });
 });

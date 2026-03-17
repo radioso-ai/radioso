@@ -6,7 +6,7 @@ import { notFound } from "../../shared/domain/errors.js";
 
 interface DocumentRow {
   id: string;
-  account_id: string;
+  workspace_id: string;
   title: string;
   source_content: string;
   markdown_content: string;
@@ -19,7 +19,7 @@ interface DocumentRow {
 
 const mapDocument = (row: DocumentRow): DocumentRecord => ({
   id: row.id,
-  accountId: row.account_id,
+  workspaceId: row.workspace_id,
   title: row.title,
   sourceContent: row.source_content,
   markdownContent: row.markdown_content,
@@ -34,7 +34,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
   constructor(private readonly database: Database) {}
 
   async createAndQueue(input: {
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
@@ -43,17 +43,17 @@ export class DocumentRepository implements DocumentRepositoryPort {
       const documentId = randomUUID();
       const [documentRow] = (
         await client.query<DocumentRow>(
-          `INSERT INTO documents (id, account_id, title, source_content, markdown_content, status, revision)
+          `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, revision)
            VALUES ($1, $2, $3, $4, $5, 'queued', 1)
-           RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
-          [documentId, input.accountId, input.title, input.sourceContent, input.markdownContent],
+           RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
+          [documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent],
         )
       ).rows;
 
       await client.query(
-        `INSERT INTO document_processing_jobs (id, document_id, account_id, document_revision, status)
+        `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
          VALUES ($1, $2, $3, $4, 'queued')`,
-        [randomUUID(), documentId, input.accountId, documentRow.revision],
+        [randomUUID(), documentId, input.workspaceId, documentRow.revision],
       );
 
       return mapDocument(documentRow);
@@ -61,17 +61,17 @@ export class DocumentRepository implements DocumentRepositoryPort {
   }
 
   async create(input: {
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
     status: string;
   }): Promise<DocumentRecord> {
     const [row] = await this.database.query<DocumentRow>(
-      `INSERT INTO documents (id, account_id, title, source_content, markdown_content, status, revision)
+      `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, revision)
        VALUES ($1, $2, $3, $4, $5, $6, 1)
-       RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
-      [randomUUID(), input.accountId, input.title, input.sourceContent, input.markdownContent, input.status],
+       RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
+      [randomUUID(), input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.status],
     );
 
     return mapDocument(row);
@@ -79,7 +79,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
   async updateAndQueue(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
@@ -95,9 +95,9 @@ export class DocumentRepository implements DocumentRepositoryPort {
              failed_at = NULL,
              failure_reason = NULL,
              updated_at = NOW()
-         WHERE id = $1 AND account_id = $2
-         RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
-        [input.documentId, input.accountId, input.title, input.sourceContent, input.markdownContent],
+         WHERE id = $1 AND workspace_id = $2
+         RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
+        [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent],
       );
       const [documentRow] = documentResult.rows;
 
@@ -106,33 +106,33 @@ export class DocumentRepository implements DocumentRepositoryPort {
       }
 
       await client.query(
-        `INSERT INTO document_processing_jobs (id, document_id, account_id, document_revision, status)
+        `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
          VALUES ($1, $2, $3, $4, 'queued')`,
-        [randomUUID(), input.documentId, input.accountId, documentRow.revision],
+        [randomUUID(), input.documentId, input.workspaceId, documentRow.revision],
       );
 
       return mapDocument(documentRow);
     });
   }
 
-  async listByAccountId(accountId: string): Promise<DocumentRecord[]> {
+  async listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]> {
     const rows = await this.database.query<DocumentRow>(
-      `SELECT id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at
+      `SELECT id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at
        FROM documents
-       WHERE account_id = $1
+       WHERE workspace_id = $1
        ORDER BY updated_at DESC`,
-      [accountId],
+      [workspaceId],
     );
 
     return rows.map(mapDocument);
   }
 
-  async findByIdAndAccountId(documentId: string, accountId: string): Promise<DocumentRecord | null> {
+  async findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null> {
     const [row] = await this.database.query<DocumentRow>(
-      `SELECT id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at
+      `SELECT id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at
        FROM documents
-       WHERE id = $1 AND account_id = $2`,
-      [documentId, accountId],
+       WHERE id = $1 AND workspace_id = $2`,
+      [documentId, workspaceId],
     );
 
     return row ? mapDocument(row) : null;
@@ -140,7 +140,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
   async update(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
@@ -156,11 +156,11 @@ export class DocumentRepository implements DocumentRepositoryPort {
            failed_at = NULL,
            failure_reason = NULL,
            updated_at = NOW()
-       WHERE id = $1 AND account_id = $2
-       RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
+       WHERE id = $1 AND workspace_id = $2
+       RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
       [
         input.documentId,
-        input.accountId,
+        input.workspaceId,
         input.title,
         input.sourceContent,
         input.markdownContent,
@@ -171,7 +171,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return mapDocument(row);
   }
 
-  async requeue(documentId: string, accountId: string): Promise<DocumentRecord> {
+  async requeue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
     const [row] = await this.database.query<DocumentRow>(
       `UPDATE documents
        SET status = 'queued',
@@ -179,15 +179,15 @@ export class DocumentRepository implements DocumentRepositoryPort {
            failed_at = NULL,
            failure_reason = NULL,
            updated_at = NOW()
-       WHERE id = $1 AND account_id = $2
-       RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
-      [documentId, accountId],
+       WHERE id = $1 AND workspace_id = $2
+       RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
+      [documentId, workspaceId],
     );
 
     return mapDocument(row);
   }
 
-  async requeueAndQueue(documentId: string, accountId: string): Promise<DocumentRecord> {
+  async requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
     return this.database.withTransaction(async (client) => {
       const documentResult = await client.query<DocumentRow>(
         `UPDATE documents
@@ -196,9 +196,9 @@ export class DocumentRepository implements DocumentRepositoryPort {
              failed_at = NULL,
              failure_reason = NULL,
              updated_at = NOW()
-         WHERE id = $1 AND account_id = $2
-         RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
-        [documentId, accountId],
+         WHERE id = $1 AND workspace_id = $2
+         RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
+        [documentId, workspaceId],
       );
       const [documentRow] = documentResult.rows;
 
@@ -207,9 +207,9 @@ export class DocumentRepository implements DocumentRepositoryPort {
       }
 
       await client.query(
-        `INSERT INTO document_processing_jobs (id, document_id, account_id, document_revision, status)
+        `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
          VALUES ($1, $2, $3, $4, 'queued')`,
-        [randomUUID(), documentId, accountId, documentRow.revision],
+        [randomUUID(), documentId, workspaceId, documentRow.revision],
       );
 
       return mapDocument(documentRow);
@@ -218,7 +218,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
   async setStatus(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     status: string;
     failureReason?: string | null;
   }): Promise<DocumentRecord> {
@@ -228,9 +228,9 @@ export class DocumentRepository implements DocumentRepositoryPort {
            failed_at = CASE WHEN $3 = 'failed' THEN NOW() ELSE NULL END,
            failure_reason = CASE WHEN $3 = 'failed' THEN $4 ELSE NULL END,
            updated_at = NOW()
-       WHERE id = $1 AND account_id = $2
-       RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
-      [input.documentId, input.accountId, input.status, input.failureReason ?? null],
+       WHERE id = $1 AND workspace_id = $2
+       RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
+      [input.documentId, input.workspaceId, input.status, input.failureReason ?? null],
     );
 
     return mapDocument(row);
@@ -238,7 +238,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
   async setStatusIfRevisionMatches(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     revision: number;
     status: string;
     failureReason?: string | null;
@@ -250,21 +250,21 @@ export class DocumentRepository implements DocumentRepositoryPort {
            failure_reason = CASE WHEN $4 = 'failed' THEN $5 ELSE NULL END,
            updated_at = NOW()
        WHERE id = $1
-         AND account_id = $2
+         AND workspace_id = $2
          AND revision = $3
-       RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
-      [input.documentId, input.accountId, input.revision, input.status, input.failureReason ?? null],
+       RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
+      [input.documentId, input.workspaceId, input.revision, input.status, input.failureReason ?? null],
     );
 
     return row ? mapDocument(row) : null;
   }
 
-  async deleteByIdAndAccountId(documentId: string, accountId: string): Promise<boolean> {
+  async deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean> {
     const rows = await this.database.query<{ id: string }>(
       `DELETE FROM documents
-       WHERE id = $1 AND account_id = $2
+       WHERE id = $1 AND workspace_id = $2
        RETURNING id`,
-      [documentId, accountId],
+      [documentId, workspaceId],
     );
 
     return rows.length > 0;

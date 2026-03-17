@@ -53,7 +53,7 @@ describe("edge cases", () => {
           {
             id: "1",
             conversationId: "c1",
-            accountId: "a1",
+            workspaceId: "a1",
             role: "user",
             content: "Tell me about the session cookie",
             createdAt: new Date(),
@@ -83,7 +83,7 @@ describe("edge cases", () => {
           {
             id: "1",
             conversationId: "c1",
-            accountId: "a1",
+            workspaceId: "a1",
             role: "user",
             content: "Tell me about the session cookie",
             createdAt: new Date(),
@@ -144,9 +144,9 @@ describe("edge cases", () => {
     const thresholdsSeen: number[] = [];
     const service = new RetrievalPipelineService(
       {
-        async getForAccount() {
+        async getForWorkspace() {
           return {
-            accountId: "a1",
+            workspaceId: "a1",
             queryRewriteEnabled: false,
             rerankEnabled: false,
             vectorTopK: 100,
@@ -199,7 +199,7 @@ describe("edge cases", () => {
     );
 
     const result = await service.run({
-      accountId: "a1",
+      workspaceId: "a1",
       query: "What is the API rate limit?",
       history: [],
     });
@@ -215,9 +215,9 @@ describe("edge cases", () => {
     const lexicalQueries: string[] = [];
     const service = new RetrievalPipelineService(
       {
-        async getForAccount() {
+        async getForWorkspace() {
           return {
-            accountId: "a1",
+            workspaceId: "a1",
             queryRewriteEnabled: false,
             rerankEnabled: false,
             vectorTopK: 20,
@@ -264,7 +264,7 @@ describe("edge cases", () => {
     );
 
     const result = await service.run({
-      accountId: "a1",
+      workspaceId: "a1",
       query: "Find retreats in Estonia under 300 EUR",
       history: [],
     });
@@ -293,9 +293,9 @@ describe("edge cases", () => {
     const lexicalQueries: string[] = [];
     const service = new RetrievalPipelineService(
       {
-        async getForAccount() {
+        async getForWorkspace() {
           return {
-            accountId: "a1",
+            workspaceId: "a1",
             queryRewriteEnabled: false,
             rerankEnabled: false,
             vectorTopK: 20,
@@ -338,7 +338,7 @@ describe("edge cases", () => {
     );
 
     const result = await service.run({
-      accountId: "a1",
+      workspaceId: "a1",
       query: "Find retreats in Estonia under 300 EUR",
       history: [],
     });
@@ -353,9 +353,9 @@ describe("edge cases", () => {
     const lexicalQueries: string[] = [];
     const service = new RetrievalPipelineService(
       {
-        async getForAccount() {
+        async getForWorkspace() {
           return {
-            accountId: "a1",
+            workspaceId: "a1",
             queryRewriteEnabled: false,
             rerankEnabled: false,
             vectorTopK: 20,
@@ -402,7 +402,7 @@ describe("edge cases", () => {
     );
 
     const result = await service.run({
-      accountId: "a1",
+      workspaceId: "a1",
       query: "Find retreats in Estonia under 300 EUR",
       history: [],
     });
@@ -415,9 +415,9 @@ describe("edge cases", () => {
   it("preserves original constraints when rewrite omits structured literals", async () => {
     const service = new RetrievalPipelineService(
       {
-        async getForAccount() {
+        async getForWorkspace() {
           return {
-            accountId: "a1",
+            workspaceId: "a1",
             queryRewriteEnabled: true,
             rerankEnabled: false,
             vectorTopK: 20,
@@ -490,13 +490,13 @@ describe("edge cases", () => {
     );
 
     const result = await service.run({
-      accountId: "a1",
+      workspaceId: "a1",
       query: "Is it under 300 EUR?",
       history: [
         {
           id: "1",
           conversationId: "c1",
-          accountId: "a1",
+          workspaceId: "a1",
           role: "user",
           content: "Tell me about the summer retreat",
           createdAt: new Date(),
@@ -529,9 +529,9 @@ describe("edge cases", () => {
     const embeddedQueries: string[] = [];
     const service = new RetrievalPipelineService(
       {
-        async getForAccount() {
+        async getForWorkspace() {
           return {
-            accountId: "a1",
+            workspaceId: "a1",
             queryRewriteEnabled: true,
             rerankEnabled: false,
             vectorTopK: 20,
@@ -604,13 +604,13 @@ describe("edge cases", () => {
     );
 
     const result = await service.run({
-      accountId: "a1",
+      workspaceId: "a1",
       query: "What about her later work?",
       history: [
         {
           id: "1",
           conversationId: "c1",
-          accountId: "a1",
+          workspaceId: "a1",
           role: "user",
           content: "Who is Narayani?",
           createdAt: new Date(),
@@ -628,9 +628,9 @@ describe("edge cases", () => {
   it("rejects a subject switch when raw retrieval only mentions the rewritten subject incidentally", async () => {
     const service = new RetrievalPipelineService(
       {
-        async getForAccount() {
+        async getForWorkspace() {
           return {
-            accountId: "a1",
+            workspaceId: "a1",
             queryRewriteEnabled: true,
             rerankEnabled: false,
             vectorTopK: 20,
@@ -702,13 +702,13 @@ describe("edge cases", () => {
     );
 
     const result = await service.run({
-      accountId: "a1",
+      workspaceId: "a1",
       query: "What about her later work?",
       history: [
         {
           id: "1",
           conversationId: "c1",
-          accountId: "a1",
+          workspaceId: "a1",
           role: "user",
           content: "Who is Narayani, and does she collaborate with Arudra?",
           createdAt: new Date(),
@@ -716,7 +716,7 @@ describe("edge cases", () => {
         {
           id: "2",
           conversationId: "c1",
-          accountId: "a1",
+          workspaceId: "a1",
           role: "assistant",
           content: "Narayani sometimes collaborates with Arudra.",
           createdAt: new Date(),
@@ -733,9 +733,9 @@ describe("edge cases", () => {
   it("preserves unresolved continuity decisions for blocked rewrites", async () => {
     const service = new RetrievalPipelineService(
       {
-        async getForAccount() {
+        async getForWorkspace() {
           return {
-            accountId: "a1",
+            workspaceId: "a1",
             queryRewriteEnabled: true,
             rerankEnabled: false,
             vectorTopK: 20,
@@ -787,13 +787,13 @@ describe("edge cases", () => {
     );
 
     const result = await service.run({
-      accountId: "a1",
+      workspaceId: "a1",
       query: "Does she work with Arudra?",
       history: [
         {
           id: "1",
           conversationId: "c1",
-          accountId: "a1",
+          workspaceId: "a1",
           role: "user",
           content: "Who is Narayani?",
           createdAt: new Date(),
@@ -828,7 +828,7 @@ describe("edge cases", () => {
           {
             id: "1",
             conversationId: "c1",
-            accountId: "a1",
+            workspaceId: "a1",
             role: "user",
             content: "Who is Narayani?",
             createdAt: new Date(),
@@ -836,7 +836,7 @@ describe("edge cases", () => {
           {
             id: "2",
             conversationId: "c1",
-            accountId: "a1",
+            workspaceId: "a1",
             role: "assistant",
             content: "Narayani sometimes collaborates with Arudra.",
             createdAt: new Date(),
@@ -856,9 +856,9 @@ describe("edge cases", () => {
     let searchCallCount = 0;
     const service = new RetrievalPipelineService(
       {
-        async getForAccount() {
+        async getForWorkspace() {
           return {
-            accountId: "a1",
+            workspaceId: "a1",
             queryRewriteEnabled: true,
             rerankEnabled: false,
             vectorTopK: 20,
@@ -931,13 +931,13 @@ describe("edge cases", () => {
     );
 
     const result = await service.run({
-      accountId: "a1",
+      workspaceId: "a1",
       query: "What about her later work?",
       history: [
         {
           id: "1",
           conversationId: "c1",
-          accountId: "a1",
+          workspaceId: "a1",
           role: "user",
           content: "Who is Narayani, and does she collaborate with Arudra?",
           createdAt: new Date(),

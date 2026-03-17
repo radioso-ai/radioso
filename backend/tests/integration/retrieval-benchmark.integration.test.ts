@@ -1,7 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp } from "../support/testApp.js";
+import { createTestApp, issueTestToken } from "../support/testApp.js";
 import {
   constraintQueries,
   directAnswerQueries,
@@ -15,14 +15,8 @@ describe("retrieval benchmark integration", () => {
   it("covers direct, follow-up, noisy-corpus, and fallback scenarios with fixture data", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "benchmark@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "benchmark@example.com");
+    const authorization = `Bearer ${token}`;
 
     for (const document of Object.values(retrievalFixtureDocuments)) {
       await request(app)
@@ -125,14 +119,8 @@ describe("retrieval benchmark integration", () => {
     });
 
     const setupAccount = async (app: ReturnType<typeof createTestApp>["app"], email: string) => {
-      const register = await request(app).post("/api/v1/auth/register").send({
-        email,
-        password: "verysecurepassword",
-      });
-      const token = await request(app)
-        .get("/api/v1/account/token")
-        .set("Cookie", register.headers["set-cookie"][0]);
-      const authorization = `Bearer ${token.body.token}`;
+      const { token } = await issueTestToken(app, email);
+      const authorization = `Bearer ${token}`;
 
       for (const document of Object.values(retrievalFixtureDocuments)) {
         await request(app)

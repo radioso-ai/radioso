@@ -7,7 +7,7 @@ import type {
 import type { RetrievalSettingsRepositoryPort } from "../../modules/settings/services/retrievalSettingsService.js";
 
 interface RetrievalSettingsRow {
-  account_id: string;
+  workspace_id: string;
   query_rewrite_enabled: boolean;
   rerank_enabled: boolean;
   vector_top_k: number;
@@ -22,7 +22,7 @@ interface RetrievalSettingsRow {
 }
 
 const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => ({
-  accountId: row.account_id,
+  workspaceId: row.workspace_id,
   queryRewriteEnabled: row.query_rewrite_enabled,
   rerankEnabled: row.rerank_enabled,
   vectorTopK: row.vector_top_k,
@@ -39,21 +39,21 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => ({
 export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryPort {
   constructor(private readonly database: Database) {}
 
-  async findByAccountId(accountId: string): Promise<RetrievalSettingsRecord | null> {
+  async findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null> {
     const [row] = await this.database.query<RetrievalSettingsRow>(
-      `SELECT account_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, chunking_strategy, attribute_controls, created_at, updated_at
+      `SELECT workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, chunking_strategy, attribute_controls, created_at, updated_at
        FROM retrieval_settings
-       WHERE account_id = $1`,
-      [accountId],
+       WHERE workspace_id = $1`,
+      [workspaceId],
     );
 
     return row ? mapSettings(row) : null;
   }
 
-  async upsert(accountId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
+  async upsert(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
     const [row] = await this.database.query<RetrievalSettingsRow>(
       `INSERT INTO retrieval_settings (
-         account_id,
+         workspace_id,
          query_rewrite_enabled,
          rerank_enabled,
          vector_top_k,
@@ -65,7 +65,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
          attribute_controls
        )
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
-       ON CONFLICT (account_id)
+       ON CONFLICT (workspace_id)
        DO UPDATE SET query_rewrite_enabled = EXCLUDED.query_rewrite_enabled,
                      rerank_enabled = EXCLUDED.rerank_enabled,
                      vector_top_k = EXCLUDED.vector_top_k,
@@ -76,9 +76,9 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
                      chunking_strategy = EXCLUDED.chunking_strategy,
                      attribute_controls = EXCLUDED.attribute_controls,
                      updated_at = NOW()
-       RETURNING account_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, chunking_strategy, attribute_controls, created_at, updated_at`,
+       RETURNING workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, chunking_strategy, attribute_controls, created_at, updated_at`,
       [
-        accountId,
+        workspaceId,
         input.queryRewriteEnabled,
         input.rerankEnabled,
         input.vectorTopK,

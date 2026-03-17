@@ -9,8 +9,11 @@ import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { ChunkRepository } from "../../src/db/repositories/chunkRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
+import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
+import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
@@ -143,6 +146,7 @@ describeIfDatabase("persistence integration", () => {
     const accountRepository = new AccountRepository(database);
     const documentRepository = new DocumentRepository(database);
     const chunkRepository = new ChunkRepository(database);
+    const jobRepository = new DocumentProcessingJobRepository(database);
     const vectorSearch = new PgVectorSearch(database);
 
     const capturedTexts: string[] = [];
@@ -155,13 +159,26 @@ describeIfDatabase("persistence integration", () => {
       },
     };
 
+    const auditService = new AuditService(createLogger("silent"), noopAuditRepository);
+    const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
+    const embeddingService = new EmbeddingService(embeddingGateway);
+    const processingWorker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      new DocumentProcessingService(
+        documentRepository,
+        chunkRepository,
+        embeddingService,
+        auditService,
+        retrievalSettingsService,
+        new ChunkingStrategyRegistry([new FixedWindowChunkingStrategy()]),
+      ),
+      auditService,
+      createLogger("silent"),
+    );
     const ingestionService = new DocumentIngestionService(
       documentRepository,
-      chunkRepository,
-      new EmbeddingService(embeddingGateway),
-      new AuditService(createLogger("silent"), noopAuditRepository),
-      new RetrievalSettingsService(new RetrievalSettingsRepository(database), new AuditService(createLogger("silent"), noopAuditRepository)),
-      new ChunkingStrategyRegistry([new FixedWindowChunkingStrategy()]),
+      auditService,
     );
 
     const account = await accountRepository.create({
@@ -179,6 +196,9 @@ describeIfDatabase("persistence integration", () => {
       title: "Audit Events",
       content: "Used for recording security-relevant activity.",
     });
+
+    await processingWorker.runOnce();
+    await processingWorker.runOnce();
 
     expect(capturedTexts.some((text) => text.startsWith("Title: Session Cookie"))).toBe(true);
 
@@ -202,7 +222,7 @@ describeIfDatabase("persistence integration", () => {
     await database.query("DELETE FROM chunks WHERE account_id = $1", [account.id]);
     await database.query("DELETE FROM documents WHERE account_id = $1", [account.id]);
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
-    expect(auditEvents.status).toBe("ready");
+    expect(auditEvents.status).toBe("queued");
   });
 
   it("deletes documents only within the matching account scope and cascades chunks", async () => {

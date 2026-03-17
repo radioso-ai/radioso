@@ -133,7 +133,7 @@ export interface DocumentCreateRequest {
 
 export interface DocumentCreateResponse {
   documentId: string
-  status: 'received' | 'normalized' | 'chunked' | 'embedded' | 'ready'
+  status: 'queued' | 'processing' | 'ready' | 'failed'
 }
 
 export interface DocumentSummary {
@@ -484,6 +484,12 @@ export const documentsApi = {
     return request<DocumentCreateResponse>(`/document/${documentId}`, {
       method: "PUT",
       body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async reprocessDocument(documentId: string): Promise<DocumentCreateResponse> {
+    return request<DocumentCreateResponse>(`/document/${documentId}/reprocess`, {
+      method: "POST",
     }, { withApiToken: true })
   },
 

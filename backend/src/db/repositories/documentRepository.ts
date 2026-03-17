@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { DocumentRecord, DocumentRepositoryPort } from "../../modules/documents/services/documentIngestionService.js";
 import type { Database } from "../../shared/infra/database.js";
+import { notFound } from "../../shared/domain/errors.js";
 
 interface DocumentRow {
   id: string;
@@ -84,22 +85,25 @@ export class DocumentRepository implements DocumentRepositoryPort {
     markdownContent: string;
   }): Promise<DocumentRecord> {
     return this.database.withTransaction(async (client) => {
-      const [documentRow] = (
-        await client.query<DocumentRow>(
-          `UPDATE documents
-           SET title = $3,
-               source_content = $4,
-               markdown_content = $5,
-               status = 'queued',
-               revision = revision + 1,
-               failed_at = NULL,
-               failure_reason = NULL,
-               updated_at = NOW()
-           WHERE id = $1 AND account_id = $2
-           RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
-          [input.documentId, input.accountId, input.title, input.sourceContent, input.markdownContent],
-        )
-      ).rows;
+      const documentResult = await client.query<DocumentRow>(
+        `UPDATE documents
+         SET title = $3,
+             source_content = $4,
+             markdown_content = $5,
+             status = 'queued',
+             revision = revision + 1,
+             failed_at = NULL,
+             failure_reason = NULL,
+             updated_at = NOW()
+         WHERE id = $1 AND account_id = $2
+         RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
+        [input.documentId, input.accountId, input.title, input.sourceContent, input.markdownContent],
+      );
+      const [documentRow] = documentResult.rows;
+
+      if (!documentRow) {
+        throw notFound("Document not found");
+      }
 
       await client.query(
         `INSERT INTO document_processing_jobs (id, document_id, account_id, document_revision, status)
@@ -185,19 +189,22 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
   async requeueAndQueue(documentId: string, accountId: string): Promise<DocumentRecord> {
     return this.database.withTransaction(async (client) => {
-      const [documentRow] = (
-        await client.query<DocumentRow>(
-          `UPDATE documents
-           SET status = 'queued',
-               revision = revision + 1,
-               failed_at = NULL,
-               failure_reason = NULL,
-               updated_at = NOW()
-           WHERE id = $1 AND account_id = $2
-           RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
-          [documentId, accountId],
-        )
-      ).rows;
+      const documentResult = await client.query<DocumentRow>(
+        `UPDATE documents
+         SET status = 'queued',
+             revision = revision + 1,
+             failed_at = NULL,
+             failure_reason = NULL,
+             updated_at = NOW()
+         WHERE id = $1 AND account_id = $2
+         RETURNING id, account_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at`,
+        [documentId, accountId],
+      );
+      const [documentRow] = documentResult.rows;
+
+      if (!documentRow) {
+        throw notFound("Document not found");
+      }
 
       await client.query(
         `INSERT INTO document_processing_jobs (id, document_id, account_id, document_revision, status)

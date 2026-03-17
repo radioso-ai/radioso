@@ -31,6 +31,7 @@ import type { MessageRecord, MessageRepositoryPort } from "../../src/db/reposito
 import type { RetrievalSettingsInput, RetrievalSettingsRecord } from "../../src/modules/settings/domain/retrievalSettings.js";
 import type { RetrievalSettingsRepositoryPort } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
+import { notFound } from "../../src/shared/domain/errors.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
 export class InMemoryAccountRepository implements AccountRepositoryPort {
@@ -309,7 +310,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   }): Promise<DocumentRecord> {
     const existing = this.items.get(input.documentId);
     if (!existing || existing.accountId !== input.accountId) {
-      throw new Error(`Document ${input.documentId} not found`);
+      throw notFound("Document not found");
     }
 
     const record: DocumentRecord = {
@@ -352,7 +353,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   async requeueAndQueue(documentId: string, accountId: string): Promise<DocumentRecord> {
     const existing = this.items.get(documentId);
     if (!existing || existing.accountId !== accountId) {
-      throw new Error(`Document ${documentId} not found`);
+      throw notFound("Document not found");
     }
 
     const record: DocumentRecord = {
@@ -386,8 +387,38 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 export class InMemoryChunkRepository implements ChunkRepositoryPort {
   readonly items = new Map<string, ChunkRecord[]>();
 
+  constructor(private documentRepository?: InMemoryDocumentRepository) {}
+
+  setDocumentRepository(documentRepository: InMemoryDocumentRepository): void {
+    this.documentRepository = documentRepository;
+  }
+
   async replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void> {
     this.items.set(documentId, chunks);
+  }
+
+  async publishForDocumentRevision(input: {
+    documentId: string;
+    accountId: string;
+    revision: number;
+    chunks: ChunkRecord[];
+  }): Promise<boolean> {
+    if (this.documentRepository) {
+      const document = this.documentRepository.items.get(input.documentId);
+      if (!document || document.accountId !== input.accountId || document.revision !== input.revision) {
+        return false;
+      }
+
+      this.documentRepository.items.set(input.documentId, {
+        ...document,
+        status: "ready",
+        failureReason: null,
+        updatedAt: new Date(),
+      });
+    }
+
+    this.items.set(input.documentId, input.chunks);
+    return true;
   }
 }
 

@@ -81,6 +81,12 @@ export interface DocumentRepositoryPort {
 
 export interface ChunkRepositoryPort {
   replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void>;
+  publishForDocumentRevision(input: {
+    documentId: string;
+    accountId: string;
+    revision: number;
+    chunks: ChunkRecord[];
+  }): Promise<boolean>;
 }
 
 export interface DocumentSummary {

@@ -76,7 +76,7 @@ export const createTestDependencies = (overrides: {
   const documentRepository = new InMemoryDocumentRepository();
   const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
   documentRepository.setJobRepository(documentProcessingJobRepository);
-  const chunkRepository = new InMemoryChunkRepository();
+  const chunkRepository = new InMemoryChunkRepository(documentRepository);
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
   const embeddingGateway: EmbeddingGateway = {

@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 
 import { createTestApp } from "../support/testApp.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
+import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import {
   createAuditService,
   InMemoryAccountRepository,
-  InMemoryAccountTokenRepository,
+  InMemoryWorkspaceRepository,
+  InMemoryWorkspaceTokenRepository,
   InMemorySessionRepository,
 } from "../support/fakes.js";
 import { createTestEnv } from "../support/testApp.js";
@@ -48,18 +50,24 @@ describe("auth integration", () => {
 
   it("returns the same single token on repeated retrieval", async () => {
     const { app } = createTestApp();
+    const cookie = (
+      await request(app).post("/api/v1/auth/register").send({
+        email: "repeat@example.com",
+        password: "verysecurepassword",
+      })
+    ).headers["set-cookie"][0];
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "repeat@example.com",
-      password: "verysecurepassword",
-    });
+    const workspaces = await request(app)
+      .get("/api/v1/workspace")
+      .set("Cookie", cookie);
+    const workspaceId = workspaces.body.workspaces[0].id;
 
     const first = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
+      .get(`/api/v1/account/workspaces/${workspaceId}/token`)
+      .set("Cookie", cookie);
     const second = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
+      .get(`/api/v1/account/workspaces/${workspaceId}/token`)
+      .set("Cookie", cookie);
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
@@ -71,39 +79,42 @@ describe("auth integration", () => {
     const auditService = createAuditService();
     const accountRepository = new InMemoryAccountRepository();
     const sessionRepository = new InMemorySessionRepository();
-    const accountTokenRepository = new InMemoryAccountTokenRepository();
+    const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
+    const workspaceRepository = new InMemoryWorkspaceRepository();
+    const workspaceService = new WorkspaceService(workspaceRepository);
     const authService = new AuthService({
       env,
       auditService,
       accountRepository,
       sessionRepository,
-      accountTokenRepository,
+      workspaceTokenRepository,
+      workspaceService,
     });
 
     const account = await accountRepository.create({
       email: "rotate@example.com",
       passwordHash: "hash",
     });
+    const workspace = await workspaceService.createDefault(account.id);
 
-    await accountTokenRepository.save({
+    await workspaceTokenRepository.save({
+      workspaceId: workspace.id,
       accountId: account.id,
       tokenPrefix: "sk_proj_",
       tokenHash: "stale-hash",
       encryptedToken: "not:a:valid-token",
     });
 
-    const result = await authService.getAccountTokenForAccount(account.id);
+    const result = await authService.getTokenForWorkspace(workspace.id, account.id);
 
     expect(result.token).toMatch(/^sk_proj_[a-f0-9]+$/);
     expect(auditService.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          accountId: account.id,
           eventType: "auth.token.read",
           eventStatus: "failure",
         }),
         expect.objectContaining({
-          accountId: account.id,
           eventType: "auth.token.create",
           eventStatus: "success",
         }),

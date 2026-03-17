@@ -10,10 +10,16 @@ const issueToken = async (app: ReturnType<typeof createTestApp>["app"]) => {
     email: "settings@example.com",
     password: "verysecurepassword",
   });
+  const cookie = register.headers["set-cookie"][0];
+
+  const workspaces = await request(app)
+    .get("/api/v1/workspace")
+    .set("Cookie", cookie);
+  const workspaceId = workspaces.body.workspaces[0].id;
 
   const token = await request(app)
-    .get("/api/v1/account/token")
-    .set("Cookie", register.headers["set-cookie"][0]);
+    .get(`/api/v1/account/workspaces/${workspaceId}/token`)
+    .set("Cookie", cookie);
 
   return token.body.token as string;
 };
@@ -29,7 +35,6 @@ describe("retrieval settings contract", () => {
 
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual([
-      "accountId",
       "attributeControls",
       "chunkingStrategy",
       "citationDisplayEnabled",
@@ -41,6 +46,7 @@ describe("retrieval settings contract", () => {
       "updatedAt",
       "vectorTopK",
       "warmthLevel",
+      "workspaceId",
     ]);
     expect(response.body.vectorTopK).toBe(15);
     expect(response.body.warmthLevel).toBe(5);
@@ -96,7 +102,6 @@ describe("retrieval settings contract", () => {
       ],
     });
     expect(Object.keys(response.body).sort()).toEqual([
-      "accountId",
       "attributeControls",
       "chunkingStrategy",
       "citationDisplayEnabled",
@@ -108,6 +113,7 @@ describe("retrieval settings contract", () => {
       "updatedAt",
       "vectorTopK",
       "warmthLevel",
+      "workspaceId",
     ]);
   });
 
@@ -160,10 +166,10 @@ describe("retrieval settings contract", () => {
     const retrievalSettingsSchema = spec.match(/RetrievalSettings:\n([\s\S]*?)\n    UpdateRetrievalSettingsRequest:/)?.[1] ?? "";
     const updateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    AttributeFamilyControl:/)?.[1] ?? "";
 
-    expect(retrievalSettingsSchema).toContain("- accountId");
+    expect(retrievalSettingsSchema).toContain("- workspaceId");
     expect(retrievalSettingsSchema).toContain("- createdAt");
     expect(retrievalSettingsSchema).toContain("- updatedAt");
-    expect(retrievalSettingsSchema).toContain("accountId:");
+    expect(retrievalSettingsSchema).toContain("workspaceId:");
     expect(retrievalSettingsSchema).toContain("format: uuid");
     expect(retrievalSettingsSchema).toContain("createdAt:");
     expect(retrievalSettingsSchema).toContain("format: date-time");

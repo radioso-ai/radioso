@@ -20,7 +20,7 @@ import { MessageSquareText, X } from 'lucide-react'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
-  timeStyle: 'short',
+  timeStyle: 'medium',
 })
 
 const formatTimestamp = (value: string) => formatter.format(new Date(value))
@@ -224,30 +224,38 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
                 </div>
 
                 <div className="space-y-4">
-                  {conversationDetail.messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`rounded-xl border p-4 ${
-                        message.role === 'user'
-                          ? 'border-primary/25 bg-primary/5'
-                          : 'border-border bg-card'
-                      }`}
-                    >
-                      <div className="mb-2 flex items-center justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-medium capitalize text-foreground">{message.role}</p>
-                          <p className="text-xs text-muted-foreground">{formatTimestamp(message.createdAt)}</p>
+                  {conversationDetail.messages.map((message, index) => {
+                    const previousMessage = index > 0 ? conversationDetail.messages[index - 1] : null
+                    const responseTimeMs =
+                      message.role === 'assistant' && previousMessage
+                        ? new Date(message.createdAt).getTime() - new Date(previousMessage.createdAt).getTime()
+                        : null
+
+                    return (
+                      <div
+                        key={message.id}
+                        className={`rounded-xl border p-4 ${
+                          message.role === 'user'
+                            ? 'border-primary/25 bg-primary/5'
+                            : 'border-border bg-card'
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-medium capitalize text-foreground">{message.role}</p>
+                            <p className="text-xs text-muted-foreground">{formatTimestamp(message.createdAt)}</p>
+                          </div>
+                          <p className="select-all font-mono text-xs text-muted-foreground">{message.id}</p>
                         </div>
-                        <p className="select-all font-mono text-xs text-muted-foreground">{message.id}</p>
+
+                        <p className="whitespace-pre-wrap text-sm text-foreground">{message.content}</p>
+
+                        {message.role === 'assistant' ? (
+                          <AssistantDebugSection debug={message.debug} responseTimeMs={responseTimeMs} />
+                        ) : null}
                       </div>
-
-                      <p className="whitespace-pre-wrap text-sm text-foreground">{message.content}</p>
-
-                      {message.role === 'assistant' ? (
-                        <AssistantDebugSection debug={message.debug} />
-                      ) : null}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             ) : (
@@ -279,10 +287,17 @@ function MetadataCard({
   )
 }
 
+const formatResponseTime = (ms: number): string => {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(2)}s`
+}
+
 function AssistantDebugSection({
   debug,
+  responseTimeMs,
 }: {
   debug: ChatConversationDetail['messages'][number]['debug']
+  responseTimeMs: number | null
 }) {
   if (!debug) {
     return (
@@ -306,6 +321,9 @@ function AssistantDebugSection({
           <MetadataCard label="Recorded" value={formatTimestamp(debug.recordedAt)} />
           <MetadataCard label="Streamed" value={debug.stream ? 'Yes' : 'No'} />
           <MetadataCard label="Citations" value={String(debug.citationCount)} />
+          {responseTimeMs !== null && responseTimeMs > 0 ? (
+            <MetadataCard label="Response time" value={formatResponseTime(responseTimeMs)} />
+          ) : null}
         </div>
 
         {debug.errorMessage ? (

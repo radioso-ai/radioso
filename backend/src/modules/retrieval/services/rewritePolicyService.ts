@@ -55,7 +55,10 @@ export class RewriteHallucinationGuard {
     history: MessageRecord[];
     rewrite: StructuredRewriteResult;
   }): { accepted: boolean; rejectionReason?: string } {
-    const knownText = [input.query, ...input.history.map((message) => message.content)].join(" ");
+    const knownText = [
+      input.query,
+      ...input.history.filter((message) => message.role === "user").map((message) => message.content),
+    ].join(" ");
     const normalizedKnown = knownText.toLowerCase();
     const proposed = input.rewrite.proposedActiveSubject?.trim();
 
@@ -132,11 +135,12 @@ export class RetrievalEvidenceComparisonService {
       };
     }
 
-    if (rewrittenSupport === NO_SUPPORT && rawSupport === NO_SUPPORT) {
+    if (rewrittenSupport === NO_SUPPORT) {
       return {
         materialDisagreement: true,
         continuityDecision: "rejected",
-        rejectionReason: "rewrite_subject_not_supported",
+        rejectionReason:
+          rawSupport === NO_SUPPORT ? "rewrite_subject_not_supported" : "rewrite_subject_not_supported_in_rewrite",
       };
     }
 

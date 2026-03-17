@@ -1,9 +1,14 @@
 import type { RetrievalExecutionDiagnostics } from "../../retrieval/domain/retrievalPipelineTypes.js";
-import type { AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
+import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import { extractRetrievalLogFields, type AppLogger } from "../../../shared/observability/logger.js";
 
 export interface AuditEventMetadata extends Record<string, unknown> {
   retrieval?: RetrievalExecutionDiagnostics;
+}
+
+interface ChatAnswerAuditMetadata extends AuditEventMetadata {
+  conversationId?: string;
+  carryForwardLiterals?: string[];
 }
 
 export interface AuditEventInput {
@@ -34,5 +39,28 @@ export class AuditService {
       },
       "audit_event",
     );
+  }
+
+  async getLatestSuccessfulChatAnswerMetadata(input: {
+    accountId: string;
+    conversationId: string;
+  }): Promise<ChatAnswerAuditMetadata | null> {
+    const events = await this.auditEventRepository.listChatAnswerEventsByConversationId(
+      input.accountId,
+      input.conversationId,
+    );
+    const latestSuccess = [...events]
+      .reverse()
+      .find((event) => event.eventStatus === "success" && this.matchesConversation(event, input.conversationId));
+
+    if (!latestSuccess) {
+      return null;
+    }
+
+    return latestSuccess.metadata as ChatAnswerAuditMetadata;
+  }
+
+  private matchesConversation(event: AuditEventRecord, conversationId: string): boolean {
+    return event.eventType === "chat.answer" && event.metadata.conversationId === conversationId;
   }
 }

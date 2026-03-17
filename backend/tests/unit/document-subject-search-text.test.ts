@@ -14,7 +14,7 @@ import {
 describe("document subject search text", () => {
   it("anchors later chunks to the document subject even when the chunk text omits the subject name", async () => {
     const documentRepository = new InMemoryDocumentRepository();
-    const chunkRepository = new InMemoryChunkRepository();
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const persistedSearchTexts: string[] = [];
     const embeddingService = new EmbeddingService({
       async embedTexts(texts: string[]): Promise<number[][]> {
@@ -53,6 +53,9 @@ describe("document subject search text", () => {
       {
         async replaceForDocument(documentId, chunks): Promise<void> {
           await chunkRepository.replaceForDocument(documentId, chunks);
+        },
+        async publishForDocumentRevision(input): Promise<boolean> {
+          return chunkRepository.publishForDocumentRevision(input);
         },
       },
       embeddingService,

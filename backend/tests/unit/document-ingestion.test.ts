@@ -13,6 +13,7 @@ import {
   InMemoryDocumentProcessingJobRepository,
   InMemoryDocumentRepository,
 } from "../support/fakes.js";
+import { notFound } from "../../src/shared/domain/errors.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
 describe("document ingestion", () => {
@@ -63,7 +64,7 @@ describe("document ingestion", () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
-    const chunkRepository = new InMemoryChunkRepository();
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const auditService = createAuditService();
     const ingestionService = new DocumentIngestionService(documentRepository, auditService);
     const processingWorker = new DocumentProcessingWorker(
@@ -107,7 +108,7 @@ describe("document ingestion", () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
-    const chunkRepository = new InMemoryChunkRepository();
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const auditService = createAuditService();
     const ingestionService = new DocumentIngestionService(documentRepository, auditService);
     const processingWorker = new DocumentProcessingWorker(
@@ -157,11 +158,123 @@ describe("document ingestion", () => {
     expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
   });
 
+  it("does not publish stale chunks after a newer revision becomes ready", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const auditService = createAuditService();
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+    let processingService!: DocumentProcessingService;
+    let newerRevisionPublished = false;
+
+    const first = await ingestionService.ingest({
+      accountId: "account-1",
+      title: "Versioned",
+      content: "First content",
+    });
+
+    processingService = new DocumentProcessingService(
+      documentRepository,
+      chunkRepository,
+      new EmbeddingService({
+        async embedTexts(texts: string[]): Promise<number[][]> {
+          if (!newerRevisionPublished) {
+            newerRevisionPublished = true;
+            await ingestionService.update({
+              accountId: "account-1",
+              documentId: first.documentId,
+              title: "Versioned",
+              content: "Second content",
+            });
+
+            const newerJob = await jobRepository.claimNext();
+            expect(newerJob?.documentRevision).toBe(2);
+            expect(await processingService.process(newerJob!)).toBe("completed");
+          }
+
+          return texts.map(() => [1, 2, 3]);
+        },
+      }),
+      auditService,
+      {
+        async getForAccount(accountId: string) {
+          return defaultRetrievalSettings(accountId);
+        },
+      },
+      new ChunkingStrategyRegistry([fixedWindowStrategy]),
+    );
+
+    const olderJob = await jobRepository.claimNext();
+    expect(olderJob?.documentRevision).toBe(1);
+    expect(await processingService.process(olderJob!)).toBe("stale");
+
+    const current = await documentRepository.findByIdAndAccountId(first.documentId, "account-1");
+    expect(current?.status).toBe("ready");
+    expect(current?.revision).toBe(2);
+    expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
+  });
+
+  it("returns not_found when update loses a delete race", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const service = new DocumentIngestionService(documentRepository, createAuditService());
+    const document = await documentRepository.create({
+      accountId: "account-1",
+      title: "Race",
+      sourceContent: "Race content",
+      markdownContent: "Race content",
+      status: "ready",
+    });
+
+    documentRepository.updateAndQueue = async () => {
+      throw notFound("Document not found");
+    };
+
+    await expect(
+      service.update({
+        accountId: "account-1",
+        documentId: document.id,
+        title: "Race",
+        content: "Updated content",
+      }),
+    ).rejects.toMatchObject({
+      code: "not_found",
+      statusCode: 404,
+      message: "Document not found",
+    });
+  });
+
+  it("returns not_found when reprocess loses a delete race", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const service = new DocumentIngestionService(documentRepository, createAuditService());
+    const document = await documentRepository.create({
+      accountId: "account-1",
+      title: "Race",
+      sourceContent: "Race content",
+      markdownContent: "Race content",
+      status: "ready",
+    });
+
+    documentRepository.requeueAndQueue = async () => {
+      throw notFound("Document not found");
+    };
+
+    await expect(
+      service.reprocess({
+        accountId: "account-1",
+        documentId: document.id,
+      }),
+    ).rejects.toMatchObject({
+      code: "not_found",
+      statusCode: 404,
+      message: "Document not found",
+    });
+  });
+
   it("marks a document failed after exhausting retries", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
-    const chunkRepository = new InMemoryChunkRepository();
     const auditService = createAuditService();
     const ingestionService = new DocumentIngestionService(documentRepository, auditService);
     const processingWorker = new DocumentProcessingWorker(
@@ -171,6 +284,9 @@ describe("document ingestion", () => {
         documentRepository,
         {
           async replaceForDocument(): Promise<void> {
+            throw new Error("chunk write failed");
+          },
+          async publishForDocumentRevision(): Promise<boolean> {
             throw new Error("chunk write failed");
           },
         },
@@ -210,7 +326,7 @@ describe("document ingestion", () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
-    const chunkRepository = new InMemoryChunkRepository();
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const auditService = createAuditService();
     const document = await documentRepository.create({
       accountId: "account-1",

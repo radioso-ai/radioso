@@ -24,13 +24,13 @@ describe("document ingestion", () => {
     const service = new DocumentIngestionService(documentRepository, createAuditService());
 
     const response = await service.ingest({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       title: "Queued",
       content: "Queued content",
     });
 
     expect(response.status).toBe("queued");
-    const [document] = await documentRepository.listByAccountId("account-1");
+    const [document] = await documentRepository.listByWorkspaceId("workspace-1");
     expect(document.status).toBe("queued");
     expect(document.revision).toBe(1);
     expect([...jobRepository.items.values()]).toHaveLength(1);
@@ -51,13 +51,13 @@ describe("document ingestion", () => {
 
     await expect(
       service.ingest({
-        accountId: "account-1",
+        workspaceId: "workspace-1",
         title: "Broken queue",
         content: "Broken queue content",
       }),
     ).rejects.toThrow("queue unavailable");
 
-    expect(await documentRepository.listByAccountId("account-1")).toHaveLength(0);
+    expect(await documentRepository.listByWorkspaceId("workspace-1")).toHaveLength(0);
   });
 
   it("processes queued jobs and marks the document ready", async () => {
@@ -80,8 +80,8 @@ describe("document ingestion", () => {
         }),
         auditService,
         {
-          async getForAccount(accountId: string) {
-            return defaultRetrievalSettings(accountId);
+          async getForWorkspace(workspaceId: string) {
+            return defaultRetrievalSettings(workspaceId);
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),
@@ -91,7 +91,7 @@ describe("document ingestion", () => {
     );
 
     const queued = await ingestionService.ingest({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       title: "Ready soon",
       content: "Ready soon",
     });
@@ -99,7 +99,7 @@ describe("document ingestion", () => {
     expect(queued.status).toBe("queued");
     expect(await processingWorker.runOnce()).toBe(true);
 
-    const [document] = await documentRepository.listByAccountId("account-1");
+    const [document] = await documentRepository.listByWorkspaceId("workspace-1");
     expect(document.status).toBe("ready");
     expect(chunkRepository.items.get(document.id)).toHaveLength(1);
   });
@@ -124,8 +124,8 @@ describe("document ingestion", () => {
         }),
         auditService,
         {
-          async getForAccount(accountId: string) {
-            return defaultRetrievalSettings(accountId);
+          async getForWorkspace(workspaceId: string) {
+            return defaultRetrievalSettings(workspaceId);
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),
@@ -135,24 +135,24 @@ describe("document ingestion", () => {
     );
 
     const first = await ingestionService.ingest({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       title: "Versioned",
       content: "First content",
     });
 
     await ingestionService.update({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       documentId: first.documentId,
       title: "Versioned",
       content: "Second content",
     });
 
     expect(await processingWorker.runOnce()).toBe(true);
-    const afterFirstRun = await documentRepository.findByIdAndAccountId(first.documentId, "account-1");
+    const afterFirstRun = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
     expect(afterFirstRun?.status).toBe("queued");
 
     expect(await processingWorker.runOnce()).toBe(true);
-    const current = await documentRepository.findByIdAndAccountId(first.documentId, "account-1");
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
     expect(current?.status).toBe("ready");
     expect(current?.revision).toBe(2);
     expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
@@ -169,7 +169,7 @@ describe("document ingestion", () => {
     let newerRevisionPublished = false;
 
     const first = await ingestionService.ingest({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       title: "Versioned",
       content: "First content",
     });
@@ -182,7 +182,7 @@ describe("document ingestion", () => {
           if (!newerRevisionPublished) {
             newerRevisionPublished = true;
             await ingestionService.update({
-              accountId: "account-1",
+              workspaceId: "workspace-1",
               documentId: first.documentId,
               title: "Versioned",
               content: "Second content",
@@ -198,8 +198,8 @@ describe("document ingestion", () => {
       }),
       auditService,
       {
-        async getForAccount(accountId: string) {
-          return defaultRetrievalSettings(accountId);
+        async getForWorkspace(workspaceId: string) {
+          return defaultRetrievalSettings(workspaceId);
         },
       },
       new ChunkingStrategyRegistry([fixedWindowStrategy]),
@@ -209,7 +209,7 @@ describe("document ingestion", () => {
     expect(olderJob?.documentRevision).toBe(1);
     expect(await processingService.process(olderJob!)).toBe("stale");
 
-    const current = await documentRepository.findByIdAndAccountId(first.documentId, "account-1");
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
     expect(current?.status).toBe("ready");
     expect(current?.revision).toBe(2);
     expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
@@ -219,7 +219,7 @@ describe("document ingestion", () => {
     const documentRepository = new InMemoryDocumentRepository();
     const service = new DocumentIngestionService(documentRepository, createAuditService());
     const document = await documentRepository.create({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       title: "Race",
       sourceContent: "Race content",
       markdownContent: "Race content",
@@ -232,7 +232,7 @@ describe("document ingestion", () => {
 
     await expect(
       service.update({
-        accountId: "account-1",
+        workspaceId: "workspace-1",
         documentId: document.id,
         title: "Race",
         content: "Updated content",
@@ -248,7 +248,7 @@ describe("document ingestion", () => {
     const documentRepository = new InMemoryDocumentRepository();
     const service = new DocumentIngestionService(documentRepository, createAuditService());
     const document = await documentRepository.create({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       title: "Race",
       sourceContent: "Race content",
       markdownContent: "Race content",
@@ -261,7 +261,7 @@ describe("document ingestion", () => {
 
     await expect(
       service.reprocess({
-        accountId: "account-1",
+        workspaceId: "workspace-1",
         documentId: document.id,
       }),
     ).rejects.toMatchObject({
@@ -297,8 +297,8 @@ describe("document ingestion", () => {
         }),
         auditService,
         {
-          async getForAccount(accountId: string) {
-            return defaultRetrievalSettings(accountId);
+          async getForWorkspace(workspaceId: string) {
+            return defaultRetrievalSettings(workspaceId);
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),
@@ -308,7 +308,7 @@ describe("document ingestion", () => {
     );
 
     await ingestionService.ingest({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       title: "Broken",
       content: "Broken content",
     });
@@ -317,7 +317,7 @@ describe("document ingestion", () => {
     expect(await processingWorker.runOnce(new Date(Date.now() + 2_000))).toBe(true);
     expect(await processingWorker.runOnce(new Date(Date.now() + 6_000))).toBe(true);
 
-    const [document] = await documentRepository.listByAccountId("account-1");
+    const [document] = await documentRepository.listByWorkspaceId("workspace-1");
     expect(document.status).toBe("failed");
     expect([...jobRepository.items.values()].at(-1)?.status).toBe("failed");
   });
@@ -329,7 +329,7 @@ describe("document ingestion", () => {
     const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const auditService = createAuditService();
     const document = await documentRepository.create({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       title: "Recovered",
       sourceContent: "Recovered content",
       markdownContent: "Recovered content",
@@ -337,13 +337,13 @@ describe("document ingestion", () => {
     });
     const job = await jobRepository.enqueue({
       documentId: document.id,
-      accountId: document.accountId,
+      workspaceId: document.workspaceId,
       documentRevision: document.revision,
     });
     await jobRepository.claimNext();
     await documentRepository.setStatusIfRevisionMatches({
       documentId: document.id,
-      accountId: document.accountId,
+      workspaceId: document.workspaceId,
       revision: document.revision,
       status: "ready",
       failureReason: null,
@@ -362,8 +362,8 @@ describe("document ingestion", () => {
         }),
         auditService,
         {
-          async getForAccount(accountId: string) {
-            return defaultRetrievalSettings(accountId);
+          async getForWorkspace(workspaceId: string) {
+            return defaultRetrievalSettings(workspaceId);
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),
@@ -375,7 +375,7 @@ describe("document ingestion", () => {
     await worker.start();
     await worker.stop();
 
-    const recovered = await documentRepository.findByIdAndAccountId(document.id, document.accountId);
+    const recovered = await documentRepository.findByIdAndWorkspaceId(document.id, document.workspaceId);
     expect(recovered?.status).toBe("ready");
     expect(jobRepository.items.get(job.id)?.status).toBe("completed");
   });

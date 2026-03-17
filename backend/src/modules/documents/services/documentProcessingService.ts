@@ -21,7 +21,7 @@ import { type EmbeddingService } from "../../retrieval/services/embeddingService
 import type { ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 
 export interface RetrievalSettingsReaderPort {
-  getForAccount(accountId: string): Promise<RetrievalSettingsRecord>;
+  getForWorkspace(workspaceId: string): Promise<RetrievalSettingsRecord>;
 }
 
 export interface ChunkingStrategyRegistryPort {
@@ -43,14 +43,14 @@ export class DocumentProcessingService {
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
     const markedProcessing = await this.documentRepository.setStatusIfRevisionMatches({
       documentId: job.documentId,
-      accountId: job.accountId,
+      workspaceId: job.workspaceId,
       revision: job.documentRevision,
       status: "processing",
       failureReason: null,
     });
 
     if (!markedProcessing) {
-      const document = await this.documentRepository.findByIdAndAccountId(job.documentId, job.accountId);
+      const document = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
       return document ? "stale" : "deleted";
     }
 
@@ -58,7 +58,7 @@ export class DocumentProcessingService {
       title: markedProcessing.title,
       content: normalizeMarkdown(markedProcessing.sourceContent),
     });
-    const settings = await this.retrievalSettingsService.getForAccount(job.accountId);
+    const settings = await this.retrievalSettingsService.getForWorkspace(job.workspaceId);
     const chunkingStrategy = this.chunkingStrategyRegistry.get(settings.chunkingStrategy);
     const chunks = await chunkingStrategy.chunk({
       title: markedProcessing.title,
@@ -87,7 +87,7 @@ export class DocumentProcessingService {
     const persistedChunks: ChunkRecord[] = enrichedChunks.map((chunk, index) => ({
       id: randomUUID(),
       documentId: markedProcessing.id,
-      accountId: job.accountId,
+      workspaceId: job.workspaceId,
       chunkIndex: chunk.chunkIndex,
       content: chunk.content,
       searchText: chunk.searchText,
@@ -100,18 +100,18 @@ export class DocumentProcessingService {
 
     const published = await this.chunkRepository.publishForDocumentRevision({
       documentId: markedProcessing.id,
-      accountId: job.accountId,
+      workspaceId: job.workspaceId,
       revision: job.documentRevision,
       chunks: persistedChunks,
     });
 
     if (!published) {
-      const currentDocument = await this.documentRepository.findByIdAndAccountId(job.documentId, job.accountId);
+      const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
       return currentDocument ? "stale" : "deleted";
     }
 
     await this.auditService.record({
-      accountId: job.accountId,
+      workspaceId: job.workspaceId,
       eventType: "document.process",
       eventStatus: "success",
       metadata: {

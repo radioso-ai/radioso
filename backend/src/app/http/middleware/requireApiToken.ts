@@ -15,6 +15,7 @@ export const requireApiToken = (dependencies: AppDependencies): RequestHandler =
 
       const token = authorization.slice("Bearer ".length);
       const session = await dependencies.authService.authenticateApiToken(token);
+      res.locals.workspaceId = session.workspaceId;
       res.locals.accountId = session.accountId;
       next();
     } catch (error) {

@@ -4,13 +4,13 @@ import { DocumentDeletionService } from "../../src/modules/documents/services/do
 import { createAuditService } from "../support/fakes.js";
 
 describe("document deletion", () => {
-  it("deletes an account-scoped document and records a success audit event", async () => {
+  it("deletes a workspace-scoped document and records a success audit event", async () => {
     const deleted: string[] = [];
     const auditService = createAuditService();
     const service = new DocumentDeletionService(
       {
-        async deleteByIdAndAccountId(documentId: string, accountId: string): Promise<boolean> {
-          if (documentId === "doc-1" && accountId === "account-1") {
+        async deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean> {
+          if (documentId === "doc-1" && workspaceId === "workspace-1") {
             deleted.push(documentId);
             return true;
           }
@@ -22,14 +22,14 @@ describe("document deletion", () => {
     );
 
     await service.delete({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       documentId: "doc-1",
     });
 
     expect(deleted).toEqual(["doc-1"]);
     expect(auditService.events).toContainEqual(
       expect.objectContaining({
-        accountId: "account-1",
+        workspaceId: "workspace-1",
         eventType: "document.delete",
         eventStatus: "success",
         metadata: { documentId: "doc-1" },
@@ -37,11 +37,11 @@ describe("document deletion", () => {
     );
   });
 
-  it("throws a not_found error when the document does not belong to the account", async () => {
+  it("throws a not_found error when the document does not belong to the workspace", async () => {
     const auditService = createAuditService();
     const service = new DocumentDeletionService(
       {
-        async deleteByIdAndAccountId(): Promise<boolean> {
+        async deleteByIdAndWorkspaceId(): Promise<boolean> {
           return false;
         },
       },
@@ -50,7 +50,7 @@ describe("document deletion", () => {
 
     await expect(
       service.delete({
-        accountId: "account-2",
+        workspaceId: "workspace-2",
         documentId: "doc-missing",
       }),
     ).rejects.toMatchObject({
@@ -60,7 +60,7 @@ describe("document deletion", () => {
     });
     expect(auditService.events).toContainEqual(
       expect.objectContaining({
-        accountId: "account-2",
+        workspaceId: "workspace-2",
         eventType: "document.delete",
         eventStatus: "failure",
         metadata: {

@@ -1,7 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 
+import request from "supertest";
 import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
+import { randomUUID } from "node:crypto";
+
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
@@ -25,13 +28,14 @@ import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
+import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import {
   createAuditService,
   InMemoryAuditEventRepository,
   InMemoryAccountRepository,
-  InMemoryAccountTokenRepository,
+  InMemoryWorkspaceTokenRepository,
   InMemoryChunkRepository,
   InMemoryConversationRepository,
   InMemoryDocumentRepository,
@@ -39,6 +43,7 @@ import {
   InMemoryMessageRepository,
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
+  InMemoryWorkspaceRepository,
 } from "./fakes.js";
 
 export const createTestEnv = (): Env => ({
@@ -71,7 +76,7 @@ export const createTestDependencies = (overrides: {
   const auditService = createAuditService(auditEventRepository);
   const accountRepository = new InMemoryAccountRepository();
   const sessionRepository = new InMemorySessionRepository();
-  const accountTokenRepository = new InMemoryAccountTokenRepository();
+  const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
   const documentRepository = new InMemoryDocumentRepository();
   const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
@@ -95,7 +100,7 @@ export const createTestDependencies = (overrides: {
       const rows: RetrievedChunk[] = [];
       for (const [documentId, chunks] of chunkRepository.items.entries()) {
         const document = documentRepository.items.get(documentId);
-        if (!document || document.accountId !== input.accountId || document.status !== "ready") {
+        if (!document || document.workspaceId !== input.workspaceId || document.status !== "ready") {
           continue;
         }
         for (const chunk of chunks) {
@@ -122,7 +127,7 @@ export const createTestDependencies = (overrides: {
       const rows: RetrievedChunk[] = [];
       for (const [documentId, chunks] of chunkRepository.items.entries()) {
         const document = documentRepository.items.get(documentId);
-        if (!document || document.accountId !== input.accountId || document.status !== "ready") {
+        if (!document || document.workspaceId !== input.workspaceId || document.status !== "ready") {
           continue;
         }
         for (const chunk of chunks) {
@@ -309,6 +314,9 @@ export const createTestDependencies = (overrides: {
   };
   const chatGateway = overrides.chatGateway ?? defaultChatGateway;
 
+  const workspaceRepository = new InMemoryWorkspaceRepository();
+  const workspaceService = new WorkspaceService(workspaceRepository);
+
   return {
     dependencies: {
       env,
@@ -319,8 +327,10 @@ export const createTestDependencies = (overrides: {
         auditService,
         accountRepository,
         sessionRepository,
-        accountTokenRepository,
+        workspaceTokenRepository,
+        workspaceService,
       }),
+      workspaceService,
       retrievalSettingsService,
       documentIngestionService,
       documentProcessingWorker,
@@ -362,6 +372,32 @@ export const createTestApp = (overrides: {
     dependencies,
     repositories,
   };
+};
+
+/**
+ * Registers a test user, lists workspaces, and issues a workspace token.
+ * Returns both the bearer token and the session cookie.
+ */
+export const issueTestToken = async (
+  app: ReturnType<typeof createTestApp>["app"],
+  email = `test-${randomUUID()}@example.com`,
+): Promise<{ token: string; cookie: string; workspaceId: string }> => {
+  const register = await request(app).post("/api/v1/auth/register").send({
+    email,
+    password: "verysecurepassword",
+  });
+  const cookie: string = register.headers["set-cookie"][0];
+
+  const workspaces = await request(app)
+    .get("/api/v1/workspace")
+    .set("Cookie", cookie);
+  const workspaceId: string = workspaces.body.workspaces[0].id;
+
+  const tokenResponse = await request(app)
+    .get(`/api/v1/account/workspaces/${workspaceId}/token`)
+    .set("Cookie", cookie);
+
+  return { token: tokenResponse.body.token, cookie, workspaceId };
 };
 
 const keywordScore = (content: string, query: string): number => {

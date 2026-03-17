@@ -50,11 +50,11 @@ export class RetrievalPipelineService {
   ) {}
 
   async run(input: {
-    accountId: string;
+    workspaceId: string;
     query: string;
     history: MessageRecord[];
   }): Promise<RetrievalPipelineResult> {
-    const settings = await this.retrievalSettingsService.getForAccount(input.accountId);
+    const settings = await this.retrievalSettingsService.getForWorkspace(input.workspaceId);
     const contextWindow = this.conversationContextService.select({
       history: input.history,
       query: input.query,
@@ -83,7 +83,7 @@ export class RetrievalPipelineService {
     const lexicalQuery = parsedQuery.lexicalQuery || rewrittenQuery.effectiveQuery;
     const [originalEmbedding] = await this.embeddingService.embedChunks([originalSemanticQuery]);
     const originalSearch = await this.searchWithFallback({
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       queryEmbedding: originalEmbedding ?? [],
       topK: settings.vectorTopK,
       similarityThreshold: settings.similarityThreshold,
@@ -97,7 +97,7 @@ export class RetrievalPipelineService {
     if (rewrittenQuery.retrievalEligible && rewrittenQuery.effectiveQuery !== input.query) {
       const [rewrittenEmbedding] = await this.embeddingService.embedChunks([rewrittenSemanticQuery]);
       rewrittenSearch = await this.searchWithFallback({
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         queryEmbedding: rewrittenEmbedding ?? [],
         topK: settings.vectorTopK,
         similarityThreshold: settings.similarityThreshold,
@@ -129,7 +129,7 @@ export class RetrievalPipelineService {
     const activeParsedQuery =
       rewrittenQuery.retrievalEligible && !rewriteValidation.materialDisagreement ? parsedQuery : originalPreparedQuery;
     const lexicalContexts = await this.lexicalSearch.search({
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       query: activeParsedQuery.lexicalQuery || activeQuery,
       topK: HYBRID_RETRIEVAL_DEFAULTS.lexicalTopK,
     });
@@ -196,13 +196,13 @@ export class RetrievalPipelineService {
   }
 
   private async searchWithFallback(input: {
-    accountId: string;
+    workspaceId: string;
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
   }): Promise<{ contexts: RetrievedChunk[]; fallbackApplied: boolean }> {
     const rows = await this.vectorSearch.search({
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       queryEmbedding: input.queryEmbedding,
       topK: input.topK,
       similarityThreshold: input.similarityThreshold,

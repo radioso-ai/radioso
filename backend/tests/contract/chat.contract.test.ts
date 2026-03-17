@@ -13,9 +13,16 @@ const getBearerToken = async (app: ReturnType<typeof createTestApp>["app"]) => {
     email: "chat@example.com",
     password: "verysecurepassword",
   });
+  const cookie = register.headers["set-cookie"][0];
+
+  const workspaces = await request(app)
+    .get("/api/v1/workspace")
+    .set("Cookie", cookie);
+  const workspaceId = workspaces.body.workspaces[0].id;
+
   const token = await request(app)
-    .get("/api/v1/account/token")
-    .set("Cookie", register.headers["set-cookie"][0]);
+    .get(`/api/v1/account/workspaces/${workspaceId}/token`)
+    .set("Cookie", cookie);
   return token.body.token as string;
 };
 
@@ -74,7 +81,7 @@ describe("chat contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       conversationId: chat.body.conversationId,
-      accountId: expect.any(String),
+      workspaceId: expect.any(String),
       messageCount: 2,
       userMessageCount: 1,
       assistantMessageCount: 1,

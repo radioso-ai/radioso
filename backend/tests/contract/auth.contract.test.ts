@@ -1,7 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp } from "../support/testApp.js";
+import { createTestApp, issueTestToken } from "../support/testApp.js";
 
 describe("auth contract", () => {
   it("registers a user and sets a session cookie", async () => {
@@ -40,18 +40,8 @@ describe("auth contract", () => {
   it("returns the active account token for a session-authenticated account", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "token@example.com",
-      password: "verysecurepassword",
-    });
+    const { token } = await issueTestToken(app, "token@example.com");
 
-    const response = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      token: expect.stringMatching(/^sk_proj_[a-f0-9]+$/),
-    });
+    expect(token).toMatch(/^sk_proj_[a-f0-9]+$/);
   });
 });

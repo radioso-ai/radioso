@@ -2,7 +2,8 @@ import { getEnv, type Env } from "../config/env.js";
 import { ChatService, OpenAIChatGateway } from "../../modules/chat/services/chatService.js";
 import { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
-import { AccountTokenRepository } from "../../db/repositories/accountTokenRepository.js";
+import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
+import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { ChunkRepository } from "../../db/repositories/chunkRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
@@ -13,6 +14,7 @@ import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSett
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
 import { AuditService } from "../../modules/audit/services/auditService.js";
+import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
 import { DocumentProcessingService } from "../../modules/documents/services/documentProcessingService.js";
@@ -99,11 +101,14 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new MessageRepository(database),
     auditEventRepository,
   );
+  const workspaceRepository = new WorkspaceRepository(database);
+  const workspaceService = new WorkspaceService(workspaceRepository);
   const authService = new AuthService({
     env,
     accountRepository: new AccountRepository(database),
     sessionRepository: new SessionRepository(database),
-    accountTokenRepository: new AccountTokenRepository(database),
+    workspaceTokenRepository: new WorkspaceTokenRepository(database),
+    workspaceService,
     auditService,
   });
 
@@ -112,6 +117,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     logger,
     authService,
     auditService,
+    workspaceService,
     retrievalSettingsService,
     documentIngestionService,
     documentProcessingWorker,

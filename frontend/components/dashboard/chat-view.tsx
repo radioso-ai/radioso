@@ -9,6 +9,7 @@ import { Send } from 'lucide-react'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
 import { documentsApi } from '@/lib/api'
 import { useChatSession } from '@/lib/chat-context'
+import { useWorkspace } from '@/lib/workspace-context'
 
 interface ChatViewProps {
   accountId: string
@@ -17,7 +18,8 @@ interface ChatViewProps {
 
 export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
   const [input, setInput] = useState('')
-  const { messages, isLoading, sendMessage } = useChatSession(accountId)
+  const { activeWorkspaceId } = useWorkspace()
+  const { messages, isLoading, sendMessage } = useChatSession(activeWorkspaceId ?? accountId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {

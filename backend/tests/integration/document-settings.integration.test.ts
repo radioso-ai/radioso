@@ -1,24 +1,18 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp } from "../support/testApp.js";
+import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { defaultAttributeControls } from "../../src/modules/settings/domain/retrievalSettings.js";
 
 describe("document and settings integration", () => {
   it("rejects invalid settings payloads", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "invalid-settings@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
+    const { token } = await issueTestToken(app, "invalid-settings@example.com");
 
     const response = await request(app)
       .put("/api/v1/settings/retrieval")
-      .set("Authorization", `Bearer ${token.body.token}`)
+      .set("Authorization", `Bearer ${token}`)
       .send({
         queryRewriteEnabled: false,
         rerankEnabled: false,
@@ -47,14 +41,8 @@ describe("document and settings integration", () => {
   it("updates settings and accepts a document for async processing for the same account", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "workflow@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "workflow@example.com");
+    const authorization = `Bearer ${token}`;
 
     const settings = await request(app)
       .put("/api/v1/settings/retrieval")
@@ -86,24 +74,11 @@ describe("document and settings integration", () => {
   it("keeps attribute-family controls account scoped", async () => {
     const { app } = createTestApp();
 
-    const firstRegister = await request(app).post("/api/v1/auth/register").send({
-      email: "controls-one@example.com",
-      password: "verysecurepassword",
-    });
-    const secondRegister = await request(app).post("/api/v1/auth/register").send({
-      email: "controls-two@example.com",
-      password: "verysecurepassword",
-    });
+    const { token: firstToken } = await issueTestToken(app, "controls-one@example.com");
+    const { token: secondToken } = await issueTestToken(app, "controls-two@example.com");
 
-    const firstToken = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", firstRegister.headers["set-cookie"][0]);
-    const secondToken = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", secondRegister.headers["set-cookie"][0]);
-
-    const firstAuthorization = `Bearer ${firstToken.body.token}`;
-    const secondAuthorization = `Bearer ${secondToken.body.token}`;
+    const firstAuthorization = `Bearer ${firstToken}`;
+    const secondAuthorization = `Bearer ${secondToken}`;
 
     const firstUpdate = await request(app)
       .put("/api/v1/settings/retrieval")

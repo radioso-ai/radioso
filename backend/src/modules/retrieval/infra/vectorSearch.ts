@@ -17,7 +17,7 @@ export interface RetrievedChunk {
 
 export interface VectorSearchPort {
   search(input: {
-    accountId: string;
+    workspaceId: string;
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
@@ -41,7 +41,7 @@ export class PgVectorSearch implements VectorSearchPort {
   constructor(private readonly database: Database) {}
 
   async search(input: {
-    accountId: string;
+    workspaceId: string;
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
@@ -59,13 +59,13 @@ export class PgVectorSearch implements VectorSearchPort {
               1 - (c.embedding <=> $2::vector) AS similarity
        FROM chunks c
        JOIN documents d ON d.id = c.document_id
-       WHERE c.account_id = $1
+       WHERE c.workspace_id = $1
          AND d.status = 'ready'
          AND c.embedding IS NOT NULL
          AND 1 - (c.embedding <=> $2::vector) >= $3
        ORDER BY c.embedding <=> $2::vector ASC
        LIMIT $4`,
-      [input.accountId, `[${input.queryEmbedding.join(",")}]`, input.similarityThreshold, input.topK],
+      [input.workspaceId, `[${input.queryEmbedding.join(",")}]`, input.similarityThreshold, input.topK],
     );
 
     return rows.map((row) => ({

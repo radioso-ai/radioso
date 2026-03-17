@@ -10,6 +10,7 @@ import { DocumentsView } from './documents-view'
 import { SettingsView } from './settings-view'
 import { TokenView } from './token-view'
 import { buildAccountRoute, type DashboardSection } from '@/lib/dashboard-routes'
+import { useWorkspace } from '@/lib/workspace-context'
 
 interface DashboardShellProps {
   accountId: string
@@ -23,6 +24,7 @@ export function DashboardShell({
   selectedDocumentId,
 }: DashboardShellProps) {
   const router = useRouter()
+  const { activeWorkspaceId } = useWorkspace()
 
   const openDocument = (documentId: string | null) => {
     router.push(buildAccountRoute(accountId, 'documents', documentId ?? undefined))
@@ -35,7 +37,7 @@ export function DashboardShell({
         <header className="flex h-12 items-center border-b border-border px-4 md:hidden">
           <SidebarTrigger />
         </header>
-        <div className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 flex-col md:h-screen">
+        <div key={activeWorkspaceId} className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 flex-col md:h-screen">
           {currentView === 'chat' && (
             <ChatView accountId={accountId} onOpenDocument={openDocument} />
           )}

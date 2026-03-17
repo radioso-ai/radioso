@@ -1,6 +1,8 @@
 const API_BASE = `${process.env.NEXT_PUBLIC_API_BASE_PATH ?? "/backend/api/v1"}`;
 const STREAMING_API_PATH = '/api/chat/stream'
 const API_TOKEN_STORAGE_KEY = "hivec.apiToken";
+const WORKSPACE_TOKENS_STORAGE_KEY = "hivec.workspaceTokens";
+const ACTIVE_WORKSPACE_STORAGE_KEY = "hivec.activeWorkspaceId";
 
 const getStoredApiToken = (): string | null => {
   if (typeof window === "undefined") {
@@ -21,6 +23,48 @@ const setStoredApiToken = (token: string | null) => {
   }
 
   window.localStorage.removeItem(API_TOKEN_STORAGE_KEY);
+};
+
+const getWorkspaceTokenMap = (): Record<string, string> => {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(window.localStorage.getItem(WORKSPACE_TOKENS_STORAGE_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+};
+
+const setWorkspaceToken = (workspaceId: string, token: string) => {
+  if (typeof window === "undefined") return;
+  const map = getWorkspaceTokenMap();
+  map[workspaceId] = token;
+  window.localStorage.setItem(WORKSPACE_TOKENS_STORAGE_KEY, JSON.stringify(map));
+};
+
+const getWorkspaceToken = (workspaceId: string): string | null => {
+  return getWorkspaceTokenMap()[workspaceId] ?? null;
+};
+
+export const activateWorkspaceToken = (workspaceId: string): boolean => {
+  const token = getWorkspaceToken(workspaceId);
+  if (!token) return false;
+  setStoredApiToken(token);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
+  }
+  return true;
+};
+
+export const getStoredActiveWorkspaceId = (): string | null => {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+};
+
+export const clearWorkspaceStorage = () => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(API_TOKEN_STORAGE_KEY);
+  window.localStorage.removeItem(WORKSPACE_TOKENS_STORAGE_KEY);
+  window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
 };
 
 const buildError = async (response: Response): Promise<ErrorResponse> => {
@@ -251,7 +295,7 @@ export interface ChatConversationTurn {
 
 export interface ChatConversationDetail {
   conversationId: string
-  accountId: string
+  workspaceId: string
   createdAt: string
   updatedAt: string
   messageCount: number
@@ -410,6 +454,41 @@ const streamChatEvents = async (
   }
 }
 
+// Workspace types
+export interface Workspace {
+  id: string
+  accountId: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
+// Workspace API
+export const workspaceApi = {
+  async list(): Promise<Workspace[]> {
+    const response = await request<{ workspaces: Workspace[] }>("/workspace", {
+      method: "GET",
+    }, { withSession: true })
+    return response.workspaces
+  },
+
+  async create(name: string): Promise<Workspace> {
+    return request<Workspace>("/workspace", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }, { withSession: true })
+  },
+
+  async getWorkspaceToken(workspaceId: string): Promise<string> {
+    const response = await request<AccountTokenResponse>(`/account/workspaces/${workspaceId}/token`, {
+      method: "GET",
+    }, { withSession: true })
+    setWorkspaceToken(workspaceId, response.token)
+    setStoredApiToken(response.token)
+    return response.token
+  },
+}
+
 // Auth API
 export const authApi = {
   async register(data: RegisterRequest): Promise<RegisterResponse> {
@@ -425,21 +504,6 @@ export const authApi = {
       body: JSON.stringify(data),
     }, { withSession: true })
   }
-}
-
-// Account API
-export const accountApi = {
-  async getToken(): Promise<AccountTokenResponse> {
-    const response = await request<AccountTokenResponse>("/account/token", {
-      method: "GET",
-    }, { withSession: true })
-    setStoredApiToken(response.token)
-    return response
-  },
-
-  clearToken() {
-    setStoredApiToken(null)
-  },
 }
 
 // Settings API

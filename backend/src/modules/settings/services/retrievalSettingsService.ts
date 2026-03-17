@@ -8,8 +8,8 @@ import {
 import type { AuditService } from "../../audit/services/auditService.js";
 
 export interface RetrievalSettingsRepositoryPort {
-  findByAccountId(accountId: string): Promise<RetrievalSettingsRecord | null>;
-  upsert(accountId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord>;
+  findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null>;
+  upsert(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord>;
 }
 
 export class RetrievalSettingsService {
@@ -18,8 +18,8 @@ export class RetrievalSettingsService {
     private readonly auditService: AuditService,
   ) {}
 
-  async getForAccount(accountId: string): Promise<RetrievalSettingsRecord> {
-    const existing = await this.repository.findByAccountId(accountId);
+  async getForWorkspace(workspaceId: string): Promise<RetrievalSettingsRecord> {
+    const existing = await this.repository.findByWorkspaceId(workspaceId);
 
     if (existing) {
       const normalized = validateRetrievalSettings({
@@ -32,22 +32,22 @@ export class RetrievalSettingsService {
       };
     }
 
-    const defaults = defaultRetrievalSettings(accountId);
-    return this.repository.upsert(accountId, defaults);
+    const defaults = defaultRetrievalSettings(workspaceId);
+    return this.repository.upsert(workspaceId, defaults);
   }
 
-  async updateForAccount(accountId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
+  async updateForWorkspace(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
     try {
-      const settings = await this.repository.upsert(accountId, validateRetrievalSettings(input));
+      const settings = await this.repository.upsert(workspaceId, validateRetrievalSettings(input));
       await this.auditService.record({
-        accountId,
+        workspaceId,
         eventType: "settings.update",
         eventStatus: "success",
       });
       return settings;
     } catch (error) {
       await this.auditService.record({
-        accountId,
+        workspaceId,
         eventType: "settings.update",
         eventStatus: "failure",
       });

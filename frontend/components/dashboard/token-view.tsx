@@ -5,19 +5,24 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import { accountApi } from '@/lib/api'
+import { workspaceApi } from '@/lib/api'
+import { useWorkspace } from '@/lib/workspace-context'
 import { Copy, Check, Key } from 'lucide-react'
 
 export function TokenView() {
+  const { activeWorkspaceId, activeWorkspace } = useWorkspace()
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
+    if (!activeWorkspaceId) return
+
+    setIsLoading(true)
     const loadToken = async () => {
       try {
-        const data = await accountApi.getToken()
-        setToken(data.token)
+        const fetchedToken = await workspaceApi.getWorkspaceToken(activeWorkspaceId)
+        setToken(fetchedToken)
       } catch (error) {
         console.error('Failed to load token:', error)
       } finally {
@@ -25,7 +30,7 @@ export function TokenView() {
       }
     }
     loadToken()
-  }, [])
+  }, [activeWorkspaceId])
 
   const handleCopy = async () => {
     if (!token) return
@@ -46,7 +51,9 @@ export function TokenView() {
     <div className="flex flex-col h-full">
       <div className="border-b border-border px-6 py-4">
         <h1 className="text-lg font-medium text-foreground">API Token</h1>
-        <p className="text-sm text-muted-foreground">Your API key for programmatic access</p>
+        <p className="text-sm text-muted-foreground">
+          API key for <span className="font-medium">{activeWorkspace?.name ?? 'this workspace'}</span>
+        </p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">

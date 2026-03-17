@@ -19,8 +19,8 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
 
   router.get("/", requireApiToken(dependencies), async (_req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
-      const documents = await dependencies.documentIngestionService.listForAccount(accountId);
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const documents = await dependencies.documentIngestionService.listForWorkspace(workspaceId);
       res.status(200).json({ documents });
     } catch (error) {
       next(error);
@@ -29,9 +29,9 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
 
   router.post("/", requireApiToken(dependencies), validateBody(documentSchema), async (req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
+      const { workspaceId } = res.locals as { workspaceId: string };
       const result = await dependencies.documentIngestionService.ingest({
-        accountId,
+        workspaceId,
         title: req.body.title,
         content: req.body.content,
       });
@@ -43,9 +43,9 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
 
   router.get("/:documentId", requireApiToken(dependencies), async (req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
+      const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
-      const document = await dependencies.documentIngestionService.getDocument(accountId, documentId);
+      const document = await dependencies.documentIngestionService.getDocument(workspaceId, documentId);
       res.status(200).json(document);
     } catch (error) {
       next(error);
@@ -54,10 +54,10 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
 
   router.put("/:documentId", requireApiToken(dependencies), validateBody(documentSchema), async (req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
+      const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
       const result = await dependencies.documentIngestionService.update({
-        accountId,
+        workspaceId,
         documentId,
         title: req.body.title,
         content: req.body.content,
@@ -70,10 +70,10 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
 
   router.post("/:documentId/reprocess", requireApiToken(dependencies), async (req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
+      const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
       const result = await dependencies.documentIngestionService.reprocess({
-        accountId,
+        workspaceId,
         documentId,
       });
       res.status(202).json(result);
@@ -84,10 +84,10 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
 
   router.delete("/:documentId", requireApiToken(dependencies), async (req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
+      const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
       await dependencies.documentDeletionService.delete({
-        accountId,
+        workspaceId,
         documentId,
       });
       res.status(204).send();

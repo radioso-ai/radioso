@@ -6,6 +6,7 @@ import type { DocumentProcessingWorker } from "../../modules/documents/services/
 import type { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { AuditService } from "../../modules/audit/services/auditService.js";
+import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import type { Env } from "../config/env.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 
@@ -14,6 +15,7 @@ export interface AppDependencies {
   logger: AppLogger;
   authService: AuthService;
   auditService: AuditService;
+  workspaceService: WorkspaceService;
   retrievalSettingsService: RetrievalSettingsService;
   documentIngestionService: DocumentIngestionService;
   documentProcessingWorker: DocumentProcessingWorker;

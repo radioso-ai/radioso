@@ -8,6 +8,7 @@ export interface AuditEventMetadata extends Record<string, unknown> {
 
 export interface AuditEventInput {
   accountId?: string | null;
+  workspaceId?: string | null;
   eventType: string;
   eventStatus: "success" | "failure";
   metadata?: AuditEventMetadata;
@@ -22,6 +23,7 @@ export class AuditService {
   async record(event: AuditEventInput): Promise<void> {
     await this.auditEventRepository.create({
       accountId: event.accountId,
+      workspaceId: event.workspaceId,
       eventType: event.eventType,
       eventStatus: event.eventStatus,
       metadata: event.metadata,

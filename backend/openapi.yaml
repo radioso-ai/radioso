@@ -422,7 +422,7 @@ components:
     RetrievalSettings:
       type: object
       required:
-        - accountId
+        - workspaceId
         - queryRewriteEnabled
         - rerankEnabled
         - vectorTopK
@@ -435,7 +435,7 @@ components:
         - createdAt
         - updatedAt
       properties:
-        accountId:
+        workspaceId:
           type: string
           format: uuid
         queryRewriteEnabled:
@@ -659,7 +659,7 @@ components:
       type: object
       required:
         - conversationId
-        - accountId
+        - workspaceId
         - createdAt
         - updatedAt
         - messageCount
@@ -670,7 +670,7 @@ components:
         conversationId:
           type: string
           format: uuid
-        accountId:
+        workspaceId:
           type: string
           format: uuid
         createdAt:

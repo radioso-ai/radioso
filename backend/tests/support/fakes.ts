@@ -3,10 +3,10 @@ import { randomUUID } from "node:crypto";
 import type {
   AccountRecord,
   AccountRepositoryPort,
-  AccountTokenRecord,
-  AccountTokenRepositoryPort,
   SessionRecord,
   SessionRepositoryPort,
+  WorkspaceTokenRecord,
+  WorkspaceTokenRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
 import type {
   ChunkRecord,
@@ -93,25 +93,28 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
   }
 }
 
-export class InMemoryAccountTokenRepository implements AccountTokenRepositoryPort {
-  private readonly items = new Map<string, AccountTokenRecord>();
+export class InMemoryWorkspaceTokenRepository implements WorkspaceTokenRepositoryPort {
+  private readonly items = new Map<string, WorkspaceTokenRecord>();
 
-  async findByAccountId(accountId: string): Promise<AccountTokenRecord | null> {
-    return this.items.get(accountId) ?? null;
+  async findByWorkspaceId(workspaceId: string): Promise<WorkspaceTokenRecord | null> {
+    return [...this.items.values()].find((item) => item.workspaceId === workspaceId) ?? null;
   }
 
-  async findByTokenHash(tokenHash: string): Promise<AccountTokenRecord | null> {
+  async findByTokenHash(tokenHash: string): Promise<WorkspaceTokenRecord | null> {
     return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
   }
 
   async save(params: {
+    workspaceId: string;
     accountId: string;
     tokenPrefix: string;
     tokenHash: string;
     encryptedToken: string;
-  }): Promise<AccountTokenRecord> {
-    const existing = this.items.get(params.accountId);
-    const record: AccountTokenRecord = {
+  }): Promise<WorkspaceTokenRecord> {
+    const existing = [...this.items.values()].find((item) => item.workspaceId === params.workspaceId);
+    const record: WorkspaceTokenRecord = {
+      id: existing?.id ?? randomUUID(),
+      workspaceId: params.workspaceId,
       accountId: params.accountId,
       tokenPrefix: params.tokenPrefix,
       tokenHash: params.tokenHash,
@@ -120,12 +123,12 @@ export class InMemoryAccountTokenRepository implements AccountTokenRepositoryPor
       lastUsedAt: existing?.lastUsedAt ?? null,
     };
 
-    this.items.set(params.accountId, record);
+    this.items.set(record.id, record);
     return record;
   }
 
-  async touch(accountId: string, lastUsedAt: Date): Promise<void> {
-    const item = this.items.get(accountId);
+  async touch(workspaceId: string, lastUsedAt: Date): Promise<void> {
+    const item = [...this.items.values()].find((i) => i.workspaceId === workspaceId);
     if (item) {
       item.lastUsedAt = lastUsedAt;
     }
@@ -135,14 +138,14 @@ export class InMemoryAccountTokenRepository implements AccountTokenRepositoryPor
 export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRepositoryPort {
   private readonly items = new Map<string, RetrievalSettingsRecord>();
 
-  async findByAccountId(accountId: string): Promise<RetrievalSettingsRecord | null> {
-    return this.items.get(accountId) ?? null;
+  async findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null> {
+    return this.items.get(workspaceId) ?? null;
   }
 
-  async upsert(accountId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
-    const existing = this.items.get(accountId);
+  async upsert(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
+    const existing = this.items.get(workspaceId);
     const record: RetrievalSettingsRecord = {
-      accountId,
+      workspaceId,
       queryRewriteEnabled: input.queryRewriteEnabled,
       rerankEnabled: input.rerankEnabled,
       vectorTopK: input.vectorTopK,
@@ -155,7 +158,7 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };
-    this.items.set(accountId, record);
+    this.items.set(workspaceId, record);
     return record;
   }
 }
@@ -170,14 +173,14 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   }
 
   async createAndQueue(input: {
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
   }): Promise<DocumentRecord> {
     const record: DocumentRecord = {
       id: randomUUID(),
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       title: input.title,
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
@@ -190,7 +193,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 
     await this.jobRepository?.enqueue({
       documentId: record.id,
-      accountId: record.accountId,
+      workspaceId: record.workspaceId,
       documentRevision: record.revision,
     });
     this.items.set(record.id, record);
@@ -198,7 +201,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   }
 
   async create(input: {
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
@@ -206,7 +209,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   }): Promise<DocumentRecord> {
     const record: DocumentRecord = {
       id: randomUUID(),
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       title: input.title,
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
@@ -220,25 +223,25 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async listByAccountId(accountId: string): Promise<DocumentRecord[]> {
+  async listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]> {
     return [...this.items.values()]
-      .filter((item) => item.accountId === accountId)
+      .filter((item) => item.workspaceId === workspaceId)
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   }
 
-  async findByIdAndAccountId(documentId: string, accountId: string): Promise<DocumentRecord | null> {
+  async findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null> {
     const item = this.items.get(documentId);
-    return item && item.accountId === accountId ? item : null;
+    return item && item.workspaceId === workspaceId ? item : null;
   }
 
   async setStatus(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     status: string;
     failureReason?: string | null;
   }): Promise<DocumentRecord> {
     const existing = this.items.get(input.documentId);
-    if (!existing || existing.accountId !== input.accountId) {
+    if (!existing || existing.workspaceId !== input.workspaceId) {
       throw new Error(`Document ${input.documentId} not found`);
     }
 
@@ -254,13 +257,13 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 
   async setStatusIfRevisionMatches(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     revision: number;
     status: string;
     failureReason?: string | null;
   }): Promise<DocumentRecord | null> {
     const existing = this.items.get(input.documentId);
-    if (!existing || existing.accountId !== input.accountId || existing.revision !== input.revision) {
+    if (!existing || existing.workspaceId !== input.workspaceId || existing.revision !== input.revision) {
       return null;
     }
 
@@ -276,14 +279,14 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 
   async update(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
     status: string;
   }): Promise<DocumentRecord> {
     const existing = this.items.get(input.documentId);
-    if (!existing || existing.accountId !== input.accountId) {
+    if (!existing || existing.workspaceId !== input.workspaceId) {
       throw new Error(`Document ${input.documentId} not found`);
     }
 
@@ -303,13 +306,13 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 
   async updateAndQueue(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     title: string;
     sourceContent: string;
     markdownContent: string;
   }): Promise<DocumentRecord> {
     const existing = this.items.get(input.documentId);
-    if (!existing || existing.accountId !== input.accountId) {
+    if (!existing || existing.workspaceId !== input.workspaceId) {
       throw notFound("Document not found");
     }
 
@@ -326,16 +329,16 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 
     await this.jobRepository?.enqueue({
       documentId: record.id,
-      accountId: record.accountId,
+      workspaceId: record.workspaceId,
       documentRevision: record.revision,
     });
     this.items.set(record.id, record);
     return record;
   }
 
-  async requeue(documentId: string, accountId: string): Promise<DocumentRecord> {
+  async requeue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
     const existing = this.items.get(documentId);
-    if (!existing || existing.accountId !== accountId) {
+    if (!existing || existing.workspaceId !== workspaceId) {
       throw new Error(`Document ${documentId} not found`);
     }
 
@@ -350,9 +353,9 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async requeueAndQueue(documentId: string, accountId: string): Promise<DocumentRecord> {
+  async requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
     const existing = this.items.get(documentId);
-    if (!existing || existing.accountId !== accountId) {
+    if (!existing || existing.workspaceId !== workspaceId) {
       throw notFound("Document not found");
     }
 
@@ -366,16 +369,16 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 
     await this.jobRepository?.enqueue({
       documentId: record.id,
-      accountId: record.accountId,
+      workspaceId: record.workspaceId,
       documentRevision: record.revision,
     });
     this.items.set(record.id, record);
     return record;
   }
 
-  async deleteByIdAndAccountId(documentId: string, accountId: string): Promise<boolean> {
+  async deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean> {
     const existing = this.items.get(documentId);
-    if (!existing || existing.accountId !== accountId) {
+    if (!existing || existing.workspaceId !== workspaceId) {
       return false;
     }
 
@@ -399,13 +402,13 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
 
   async publishForDocumentRevision(input: {
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     revision: number;
     chunks: ChunkRecord[];
   }): Promise<boolean> {
     if (this.documentRepository) {
       const document = this.documentRepository.items.get(input.documentId);
-      if (!document || document.accountId !== input.accountId || document.revision !== input.revision) {
+      if (!document || document.workspaceId !== input.workspaceId || document.revision !== input.revision) {
         return false;
       }
 
@@ -431,11 +434,11 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     this.documentRepository = documentRepository;
   }
 
-  async enqueue(input: { documentId: string; accountId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord> {
+  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord> {
     const record: DocumentProcessingJobRecord = {
       id: randomUUID(),
       documentId: input.documentId,
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       documentRevision: input.documentRevision,
       status: "queued",
       attemptCount: 0,
@@ -502,14 +505,14 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
   async markFailedIfDocumentMatches(input: {
     jobId: string;
     documentId: string;
-    accountId: string;
+    workspaceId: string;
     revision: number;
     errorMessage: string;
   }): Promise<boolean> {
     const documentRepository = this.documentRepository;
     const document = documentRepository?.items.get(input.documentId);
     const existingJob = this.items.get(input.jobId);
-    if (!documentRepository || !existingJob || !document || document.accountId !== input.accountId || document.revision !== input.revision) {
+    if (!documentRepository || !existingJob || !document || document.workspaceId !== input.workspaceId || document.revision !== input.revision) {
       return false;
     }
 
@@ -555,10 +558,10 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
 export class InMemoryConversationRepository implements ConversationRepositoryPort {
   readonly items = new Map<string, ConversationRecord>();
 
-  async create(accountId: string): Promise<ConversationRecord> {
+  async create(workspaceId: string): Promise<ConversationRecord> {
     const record: ConversationRecord = {
       id: randomUUID(),
-      accountId,
+      workspaceId,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -566,14 +569,14 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     return record;
   }
 
-  async findByIdAndAccountId(conversationId: string, accountId: string): Promise<ConversationRecord | null> {
+  async findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null> {
     const item = this.items.get(conversationId);
-    return item && item.accountId === accountId ? item : null;
+    return item && item.workspaceId === workspaceId ? item : null;
   }
 
-  async listByAccountId(accountId: string): Promise<ConversationRecord[]> {
+  async listByWorkspaceId(workspaceId: string): Promise<ConversationRecord[]> {
     return [...this.items.values()]
-      .filter((item) => item.accountId === accountId)
+      .filter((item) => item.workspaceId === workspaceId)
       .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
   }
 
@@ -594,14 +597,14 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
 
   async create(input: {
     conversationId: string;
-    accountId: string;
+    workspaceId: string;
     role: "user" | "assistant" | "system";
     content: string;
   }): Promise<MessageRecord> {
     const record: MessageRecord = {
       id: randomUUID(),
       conversationId: input.conversationId,
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       role: input.role,
       content: input.content,
       createdAt: new Date(),
@@ -618,6 +621,7 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
 
   async create(input: {
     accountId?: string | null;
+    workspaceId?: string | null;
     eventType: string;
     eventStatus: string;
     metadata?: Record<string, unknown>;
@@ -625,6 +629,7 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     const record: AuditEventRecord = {
       id: randomUUID(),
       accountId: input.accountId ?? null,
+      workspaceId: input.workspaceId ?? null,
       eventType: input.eventType,
       eventStatus: input.eventStatus,
       metadata: input.metadata ?? {},
@@ -634,10 +639,10 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     return record;
   }
 
-  async listChatAnswerEventsByConversationId(accountId: string, conversationId: string): Promise<AuditEventRecord[]> {
+  async listChatAnswerEventsByConversationId(workspaceId: string, conversationId: string): Promise<AuditEventRecord[]> {
     return this.items.filter((event) => {
       return (
-        event.accountId === accountId &&
+        event.workspaceId === workspaceId &&
         event.eventType === "chat.answer" &&
         event.metadata.conversationId === conversationId
       );

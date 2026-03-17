@@ -12,10 +12,6 @@ const NO_SUPPORT = 0;
 const INCIDENTAL_SUPPORT = 1;
 const CENTERED_SUPPORT = 2;
 
-const RELATION_PATTERN = /\b(with|about|vs\.?|versus|compared to|than)\b/i;
-const ENTITY_PATTERN = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g;
-const QUESTION_WORDS = new Set(["What", "Who", "When", "Where", "Why", "How", "Is", "Are", "Does", "Do", "Can", "And", "But", "Or"]);
-
 export class RewriteEligibilityService {
   evaluate(input: {
     originalQuery: string;
@@ -72,16 +68,6 @@ export class RewriteHallucinationGuard {
       }
     }
 
-    const explicitEntities = this.extractEntities(input.query);
-    if (
-      explicitEntities.length > 0 &&
-      input.rewrite.turnKind === "fresh_subject" &&
-      proposed &&
-      !explicitEntities.some((entity) => entity.toLowerCase() === proposed.toLowerCase())
-    ) {
-      return { accepted: false, rejectionReason: "rewrite_explicit_subject_mismatch" };
-    }
-
     if (
       input.rewrite.turnKind === "referential_relation" &&
       proposed &&
@@ -90,20 +76,7 @@ export class RewriteHallucinationGuard {
       return { accepted: false, rejectionReason: "rewrite_relation_subject_collision" };
     }
 
-    if (
-      explicitEntities.length === 1 &&
-      proposed &&
-      !RELATION_PATTERN.test(input.query) &&
-      explicitEntities[0]?.toLowerCase() !== proposed.toLowerCase()
-    ) {
-      return { accepted: false, rejectionReason: "rewrite_explicit_subject_mismatch" };
-    }
-
     return { accepted: true };
-  }
-
-  private extractEntities(text: string): string[] {
-    return [...new Set((text.match(ENTITY_PATTERN) ?? []).filter((entity) => !QUESTION_WORDS.has(entity)))];
   }
 }
 

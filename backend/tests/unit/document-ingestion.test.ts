@@ -17,8 +17,9 @@ import { createLogger } from "../../src/shared/observability/logger.js";
 
 describe("document ingestion", () => {
   it("queues new documents instead of processing them inline", async () => {
-    const jobRepository = new InMemoryDocumentProcessingJobRepository();
-    const documentRepository = new InMemoryDocumentRepository(jobRepository);
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
     const service = new DocumentIngestionService(documentRepository, createAuditService());
 
     const response = await service.ingest({
@@ -35,8 +36,9 @@ describe("document ingestion", () => {
   });
 
   it("does not persist a new document when durable queue creation fails", async () => {
-    const jobRepository = new InMemoryDocumentProcessingJobRepository();
-    const documentRepository = new InMemoryDocumentRepository(jobRepository);
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
     const service = new DocumentIngestionService(
       documentRepository,
       createAuditService(),
@@ -58,8 +60,9 @@ describe("document ingestion", () => {
   });
 
   it("processes queued jobs and marks the document ready", async () => {
-    const jobRepository = new InMemoryDocumentProcessingJobRepository();
-    const documentRepository = new InMemoryDocumentRepository(jobRepository);
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
     const chunkRepository = new InMemoryChunkRepository();
     const auditService = createAuditService();
     const ingestionService = new DocumentIngestionService(documentRepository, auditService);
@@ -101,8 +104,9 @@ describe("document ingestion", () => {
   });
 
   it("skips stale jobs when a newer revision is queued", async () => {
-    const jobRepository = new InMemoryDocumentProcessingJobRepository();
-    const documentRepository = new InMemoryDocumentRepository(jobRepository);
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
     const chunkRepository = new InMemoryChunkRepository();
     const auditService = createAuditService();
     const ingestionService = new DocumentIngestionService(documentRepository, auditService);
@@ -154,8 +158,9 @@ describe("document ingestion", () => {
   });
 
   it("marks a document failed after exhausting retries", async () => {
-    const jobRepository = new InMemoryDocumentProcessingJobRepository();
-    const documentRepository = new InMemoryDocumentRepository(jobRepository);
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
     const chunkRepository = new InMemoryChunkRepository();
     const auditService = createAuditService();
     const ingestionService = new DocumentIngestionService(documentRepository, auditService);
@@ -198,11 +203,13 @@ describe("document ingestion", () => {
 
     const [document] = await documentRepository.listByAccountId("account-1");
     expect(document.status).toBe("failed");
+    expect([...jobRepository.items.values()].at(-1)?.status).toBe("failed");
   });
 
   it("does not downgrade a ready document during worker startup recovery", async () => {
-    const jobRepository = new InMemoryDocumentProcessingJobRepository();
-    const documentRepository = new InMemoryDocumentRepository(jobRepository);
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
     const chunkRepository = new InMemoryChunkRepository();
     const auditService = createAuditService();
     const document = await documentRepository.create({

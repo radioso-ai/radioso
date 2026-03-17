@@ -171,20 +171,47 @@ export const createTestDependencies = (overrides: {
     async rewrite(input) {
       const lastUserContext =
         [...input.contextMessages].reverse().find((message) => message.role === "user")?.content ?? "";
-      const normalizedContext = lastUserContext
-        .replace(/^tell me about\s+/i, "")
-        .replace(/^what is\s+/i, "")
-        .trim();
+      const normalizedContext = normalizeRewriteContext(lastUserContext);
 
       if (/used for/i.test(input.query) && normalizedContext.length > 0) {
         return {
           rewrittenQuery: `${normalizedContext} used for`.trim(),
+          turnKind: "referential_followup",
+          proposedActiveSubject: normalizedContext,
+          relatedEntities: [],
+          unresolved: false,
           confidence: 0.95,
+        };
+      }
+
+      if (/who is it for/i.test(input.query) && normalizedContext.length > 0) {
+        return {
+          rewrittenQuery: `${normalizedContext} audience`.trim(),
+          turnKind: "referential_followup",
+          proposedActiveSubject: normalizedContext,
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        };
+      }
+
+      if (/work with/i.test(input.query) && normalizedContext.length > 0) {
+        return {
+          rewrittenQuery: input.query.trim(),
+          turnKind: "referential_relation",
+          proposedActiveSubject: normalizedContext,
+          relatedEntities: ["Arudra"],
+          unresolved: true,
+          confidence: 0.75,
         };
       }
 
       return {
         rewrittenQuery: `${lastUserContext} ${input.query}`.trim(),
+        turnKind: "referential_followup",
+        proposedActiveSubject: normalizedContext || undefined,
+        relatedEntities: [],
+        unresolved: false,
         confidence: 0.9,
       };
     },
@@ -214,6 +241,36 @@ export const createTestDependencies = (overrides: {
     auditService,
     createLogger("silent"),
   );
+  const documentIngestionService = new DocumentIngestionService(
+    documentRepository,
+    auditService,
+  );
+  const drainDocumentProcessingQueue = async () => {
+    for (let iteration = 0; iteration < 20; iteration += 1) {
+      const processed = await documentProcessingWorker.runOnce();
+      if (!processed) {
+        break;
+      }
+    }
+  };
+  const originalIngest = documentIngestionService.ingest.bind(documentIngestionService);
+  documentIngestionService.ingest = async (input) => {
+    const result = await originalIngest(input);
+    await drainDocumentProcessingQueue();
+    return result;
+  };
+  const originalUpdate = documentIngestionService.update.bind(documentIngestionService);
+  documentIngestionService.update = async (input) => {
+    const result = await originalUpdate(input);
+    await drainDocumentProcessingQueue();
+    return result;
+  };
+  const originalReprocess = documentIngestionService.reprocess.bind(documentIngestionService);
+  documentIngestionService.reprocess = async (input) => {
+    const result = await originalReprocess(input);
+    await drainDocumentProcessingQueue();
+    return result;
+  };
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
     embeddingService,
@@ -265,10 +322,7 @@ export const createTestDependencies = (overrides: {
         accountTokenRepository,
       }),
       retrievalSettingsService,
-      documentIngestionService: new DocumentIngestionService(
-        documentRepository,
-        auditService,
-      ),
+      documentIngestionService,
       documentProcessingWorker,
       documentDeletionService: new DocumentDeletionService(
         documentRepository,
@@ -355,6 +409,16 @@ const normalizeTerms = (text: string): string[] =>
     .map((term) => term.replace(/(ing|ed|es|s)$/i, ""))
     .filter((term) => term.length > 2)
     .filter((term) => !STOP_WORDS.has(term));
+
+const normalizeRewriteContext = (text: string): string =>
+  text
+    .trim()
+    .replace(/^tell me about\s+/i, "")
+    .replace(/^what is\s+/i, "")
+    .replace(/^what does\s+/i, "")
+    .replace(/\s+explain\??$/i, "")
+    .replace(/[?.!]+$/g, "")
+    .trim();
 
 const hashTerm = (term: string): number => {
   let hash = 0;

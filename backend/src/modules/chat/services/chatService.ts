@@ -101,7 +101,8 @@ export class ChatService {
   ) {}
 
   async answer(input: {
-    accountId: string;
+    workspaceId: string;
+    accountId?: string;
     conversationId?: string;
     query: string;
     stream: boolean;
@@ -121,12 +122,13 @@ export class ChatService {
 
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         role: "assistant",
         content: presentation.answer,
       });
       assistantMessageId = assistantMessage.id;
       await this.finalizeAssistantTurn({
+        workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: session.conversation.id,
         userMessageId: session.userMessage.id,
@@ -150,7 +152,8 @@ export class ChatService {
   }
 
   async *streamAnswer(input: {
-    accountId: string;
+    workspaceId: string;
+    accountId?: string;
     conversationId?: string;
     query: string;
     stream: boolean;
@@ -200,12 +203,13 @@ export class ChatService {
 
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         role: "assistant",
         content: presentation.answer,
       });
       assistantMessageId = assistantMessage.id;
       await this.finalizeAssistantTurn({
+        workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: session.conversation.id,
         userMessageId: session.userMessage.id,
@@ -230,26 +234,26 @@ export class ChatService {
   }
 
   private async prepareSession(input: {
-    accountId: string;
+    workspaceId: string;
     conversationId?: string;
     query: string;
   }): Promise<PreparedSession> {
     const conversation = input.conversationId
-      ? await this.ensureConversation(input.conversationId, input.accountId)
+      ? await this.ensureConversation(input.conversationId, input.workspaceId)
       : null;
     const history = conversation
       ? await this.messageRepository.listByConversationId(conversation.id)
       : [];
     const retrieval = await this.retrievalPipeline.run({
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       query: input.query,
       history,
     });
-    const persistedConversation = conversation ?? await this.conversationRepository.create(input.accountId);
+    const persistedConversation = conversation ?? await this.conversationRepository.create(input.workspaceId);
 
     const userMessage = await this.messageRepository.create({
       conversationId: persistedConversation.id,
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       role: "user",
       content: input.query,
     });
@@ -292,7 +296,8 @@ export class ChatService {
   }
 
   private async finalizeAssistantTurn(input: {
-    accountId: string;
+    workspaceId: string;
+    accountId?: string;
     conversationId: string;
     userMessageId: string;
     assistantMessageId: string;
@@ -303,6 +308,7 @@ export class ChatService {
     await this.conversationRepository.touch(input.conversationId);
     await this.auditService.record({
       accountId: input.accountId,
+      workspaceId: input.workspaceId,
       eventType: "chat.answer",
       eventStatus: "success",
       metadata: {
@@ -318,7 +324,8 @@ export class ChatService {
 
   private async recordFailure(
     input: {
-      accountId: string;
+      workspaceId: string;
+      accountId?: string;
       conversationId?: string;
       query: string;
       stream: boolean;
@@ -332,7 +339,7 @@ export class ChatService {
     if (session && !assistantMessageId) {
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
-        accountId: input.accountId,
+        workspaceId: input.workspaceId,
         role: "assistant",
         content: "Sorry, something went wrong. Please try again.",
       });
@@ -342,6 +349,7 @@ export class ChatService {
 
     await this.auditService.record({
       accountId: input.accountId,
+      workspaceId: input.workspaceId,
       eventType: "chat.answer",
       eventStatus: "failure",
       metadata: {
@@ -357,8 +365,8 @@ export class ChatService {
     });
   }
 
-  private async ensureConversation(conversationId: string, accountId: string) {
-    const conversation = await this.conversationRepository.findByIdAndAccountId(conversationId, accountId);
+  private async ensureConversation(conversationId: string, workspaceId: string) {
+    const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
     if (!conversation) {
       throw notFound("Conversation not found");

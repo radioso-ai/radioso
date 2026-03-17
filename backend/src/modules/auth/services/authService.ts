@@ -1,6 +1,7 @@
 import type { Env } from "../../../app/config/env.js";
 import { conflict, unauthorized } from "../../../shared/domain/errors.js";
 import type { AuditService } from "../../audit/services/auditService.js";
+import type { WorkspaceService } from "../../workspace/services/workspaceService.js";
 import {
   decryptSecret,
   encryptSecret,
@@ -32,7 +33,9 @@ export interface SessionRecord {
   revokedAt: Date | null;
 }
 
-export interface AccountTokenRecord {
+export interface WorkspaceTokenRecord {
+  id: string;
+  workspaceId: string;
   accountId: string;
   tokenPrefix: string;
   tokenHash: string;
@@ -53,23 +56,25 @@ export interface SessionRepositoryPort {
   touch(sessionId: string, lastSeenAt: Date): Promise<void>;
 }
 
-export interface AccountTokenRepositoryPort {
-  findByAccountId(accountId: string): Promise<AccountTokenRecord | null>;
-  findByTokenHash(tokenHash: string): Promise<AccountTokenRecord | null>;
+export interface WorkspaceTokenRepositoryPort {
+  findByWorkspaceId(workspaceId: string): Promise<WorkspaceTokenRecord | null>;
+  findByTokenHash(tokenHash: string): Promise<WorkspaceTokenRecord | null>;
   save(params: {
+    workspaceId: string;
     accountId: string;
     tokenPrefix: string;
     tokenHash: string;
     encryptedToken: string;
-  }): Promise<AccountTokenRecord>;
-  touch(accountId: string, lastUsedAt: Date): Promise<void>;
+  }): Promise<WorkspaceTokenRecord>;
+  touch(workspaceId: string, lastUsedAt: Date): Promise<void>;
 }
 
 interface AuthServiceDependencies {
   env: Env;
   accountRepository: AccountRepositoryPort;
   sessionRepository: SessionRepositoryPort;
-  accountTokenRepository: AccountTokenRepositoryPort;
+  workspaceTokenRepository: WorkspaceTokenRepositoryPort;
+  workspaceService: WorkspaceService;
   auditService: AuditService;
 }
 
@@ -91,6 +96,7 @@ export class AuthService {
 
     const passwordHash = await hashPassword(input.password);
     const account = await this.dependencies.accountRepository.create({ email, passwordHash });
+    await this.dependencies.workspaceService.createDefault(account.id);
     const sessionCookie = await this.createSessionCookie(account.id);
 
     await this.dependencies.auditService.record({
@@ -139,15 +145,18 @@ export class AuthService {
     return { accountId: session.accountId };
   }
 
-  async getAccountTokenForAccount(accountId: string): Promise<{ token: string }> {
-    const existing = await this.dependencies.accountTokenRepository.findByAccountId(accountId);
+  async getTokenForWorkspace(workspaceId: string, accountId: string): Promise<{ token: string }> {
+    await this.dependencies.workspaceService.validateOwnership(workspaceId, accountId);
+
+    const existing = await this.dependencies.workspaceTokenRepository.findByWorkspaceId(workspaceId);
 
     if (existing) {
       try {
         const token = decryptSecret(existing.encryptedToken, this.dependencies.env.SESSION_COOKIE_SECRET);
-        await this.dependencies.accountTokenRepository.touch(accountId, new Date());
+        await this.dependencies.workspaceTokenRepository.touch(workspaceId, new Date());
         await this.dependencies.auditService.record({
           accountId,
+          workspaceId,
           eventType: "auth.token.read",
           eventStatus: "success",
         });
@@ -155,6 +164,7 @@ export class AuthService {
       } catch {
         await this.dependencies.auditService.record({
           accountId,
+          workspaceId,
           eventType: "auth.token.read",
           eventStatus: "failure",
           metadata: { reason: "decrypt_failed" },
@@ -162,29 +172,25 @@ export class AuthService {
       }
     }
 
-    return this.issueAccountToken(accountId);
+    return this.issueWorkspaceToken(workspaceId, accountId);
   }
 
-  async getAccountTokenForSession(sessionToken: string): Promise<{ token: string }> {
-    const session = await this.authenticateSession(sessionToken);
-    return this.getAccountTokenForAccount(session.accountId);
-  }
-
-  async authenticateApiToken(token: string): Promise<{ accountId: string }> {
+  async authenticateApiToken(token: string): Promise<{ workspaceId: string; accountId: string }> {
     const tokenHash = sha256(token);
-    const accountToken = await this.dependencies.accountTokenRepository.findByTokenHash(tokenHash);
+    const workspaceToken = await this.dependencies.workspaceTokenRepository.findByTokenHash(tokenHash);
 
-    if (!accountToken) {
+    if (!workspaceToken) {
       throw unauthorized();
     }
 
-    await this.dependencies.accountTokenRepository.touch(accountToken.accountId, new Date());
-    return { accountId: accountToken.accountId };
+    await this.dependencies.workspaceTokenRepository.touch(workspaceToken.workspaceId, new Date());
+    return { workspaceId: workspaceToken.workspaceId, accountId: workspaceToken.accountId };
   }
 
-  private async issueAccountToken(accountId: string): Promise<{ token: string }> {
+  private async issueWorkspaceToken(workspaceId: string, accountId: string): Promise<{ token: string }> {
     const token = generateApiToken();
-    await this.dependencies.accountTokenRepository.save({
+    await this.dependencies.workspaceTokenRepository.save({
+      workspaceId,
       accountId,
       tokenPrefix: tokenPrefix(),
       tokenHash: sha256(token),
@@ -193,6 +199,7 @@ export class AuthService {
 
     await this.dependencies.auditService.record({
       accountId,
+      workspaceId,
       eventType: "auth.token.create",
       eventStatus: "success",
     });

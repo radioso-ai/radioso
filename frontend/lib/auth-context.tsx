@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
-import { accountApi } from '@/lib/api'
+import { clearWorkspaceStorage } from '@/lib/api'
 
 interface User {
   userId: string
@@ -38,11 +38,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         const parsedUser = JSON.parse(storedUser) as User
-        await accountApi.getToken()
         setUser(parsedUser)
       } catch {
         window.localStorage.removeItem(AUTH_STORAGE_KEY)
-        accountApi.clearToken()
+        clearWorkspaceStorage()
       } finally {
         setIsBootstrapping(false)
       }
@@ -57,7 +56,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextUser))
     }
 
-    await accountApi.getToken()
     setUser(nextUser)
   }, [])
 
@@ -66,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(AUTH_STORAGE_KEY)
     }
-    accountApi.clearToken()
+    clearWorkspaceStorage()
   }, [])
 
   return (

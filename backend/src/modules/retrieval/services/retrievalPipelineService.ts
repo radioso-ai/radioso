@@ -47,12 +47,12 @@ export class RetrievalPipelineService {
   ) {}
 
   async run(input: {
-    accountId: string;
+    workspaceId: string;
     query: string;
     history: MessageRecord[];
     rewriteCarryForwardLiterals?: string[];
   }): Promise<RetrievalPipelineResult> {
-    const settings = await this.retrievalSettingsService.getForAccount(input.accountId);
+    const settings = await this.retrievalSettingsService.getForWorkspace(input.workspaceId);
     const contextWindow = this.conversationContextService.select({
       history: input.history,
       query: input.query,
@@ -83,7 +83,7 @@ export class RetrievalPipelineService {
     const activeSemanticQuery = activeParsedQuery.semanticQuery || activeQuery;
     const [activeEmbedding] = await this.embeddingService.embedChunks([activeSemanticQuery]);
     const activeSearch = await this.searchWithFallback({
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       queryEmbedding: activeEmbedding ?? [],
       topK: settings.vectorTopK,
       similarityThreshold: settings.similarityThreshold,
@@ -99,7 +99,7 @@ export class RetrievalPipelineService {
             ? ("rejected" as const)
             : ("unchanged" as const);
     const lexicalContexts = await this.lexicalSearch.search({
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       query: activeParsedQuery.lexicalQuery || activeQuery,
       topK: HYBRID_RETRIEVAL_DEFAULTS.lexicalTopK,
     });
@@ -166,13 +166,13 @@ export class RetrievalPipelineService {
   }
 
   private async searchWithFallback(input: {
-    accountId: string;
+    workspaceId: string;
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
   }): Promise<{ contexts: RetrievedChunk[]; fallbackApplied: boolean }> {
     const rows = await this.vectorSearch.search({
-      accountId: input.accountId,
+      workspaceId: input.workspaceId,
       queryEmbedding: input.queryEmbedding,
       topK: input.topK,
       similarityThreshold: input.similarityThreshold,

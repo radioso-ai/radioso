@@ -6,6 +6,7 @@ import { createAuthRoutes } from "./authRoutes.js";
 import { createChatRoutes } from "./chatRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
 import { createSettingsRoutes } from "./settingsRoutes.js";
+import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 
 export const createApiRouter = (dependencies: AppDependencies): Router => {
   const router = Router();
@@ -15,6 +16,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   });
   router.use("/api/v1/auth", createAuthRoutes(dependencies));
   router.use("/api/v1/account", createAccountRoutes(dependencies));
+  router.use("/api/v1/workspace", createWorkspaceRoutes(dependencies));
   router.use("/api/v1/settings", createSettingsRoutes(dependencies));
   router.use("/api/v1/document", createDocumentRoutes(dependencies));
   router.use("/api/v1/chat", createChatRoutes(dependencies));

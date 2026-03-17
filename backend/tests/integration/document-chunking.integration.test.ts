@@ -1,20 +1,14 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp } from "../support/testApp.js";
+import { createTestApp, issueTestToken } from "../support/testApp.js";
 
 describe("document chunking integration", () => {
   it("applies the structured strategy to newly ingested documents", async () => {
     const { app, repositories } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "structured-ingest@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "structured-ingest@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .put("/api/v1/settings/retrieval")
@@ -59,14 +53,8 @@ Only future ingests change.`,
   it("does not rewrite existing chunks until the document is updated", async () => {
     const { app, repositories } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "strategy-update@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "strategy-update@example.com");
+    const authorization = `Bearer ${token}`;
 
     const created = await request(app)
       .post("/api/v1/document/")

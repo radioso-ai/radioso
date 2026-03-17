@@ -81,7 +81,7 @@ describe("retrieval settings and chunking", () => {
   });
 
   it("uses a modestly broader default candidate pool", () => {
-    const defaults = defaultRetrievalSettings("account-1");
+    const defaults = defaultRetrievalSettings("workspace-1");
 
     expect(defaults.vectorTopK).toBe(15);
     expect(defaults.similarityThreshold).toBe(0.2);

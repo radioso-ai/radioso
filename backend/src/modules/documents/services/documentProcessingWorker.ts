@@ -32,7 +32,7 @@ export class DocumentProcessingWorker {
     this.running = true;
     const inFlightJobs = await this.jobRepository.listProcessingJobs();
     await Promise.all(inFlightJobs.map(async (job) => {
-      const document = await this.documentRepository.findByIdAndAccountId(job.documentId, job.accountId);
+      const document = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
       if (!document) {
         await this.jobRepository.markSkipped(job.id, "document_deleted");
         return;
@@ -51,7 +51,7 @@ export class DocumentProcessingWorker {
       await this.jobRepository.reschedule(job.id, new Date(), "worker_restarted");
       await this.documentRepository.setStatusIfRevisionMatches({
         documentId: job.documentId,
-        accountId: job.accountId,
+        workspaceId: job.workspaceId,
         revision: job.documentRevision,
         status: "queued",
         failureReason: null,
@@ -113,13 +113,13 @@ export class DocumentProcessingWorker {
       await this.jobRepository.reschedule(job.id, new Date(Date.now() + delayMs), message);
       await this.documentRepository.setStatusIfRevisionMatches({
         documentId: job.documentId,
-        accountId: job.accountId,
+        workspaceId: job.workspaceId,
         revision: job.documentRevision,
         status: "queued",
         failureReason: null,
       });
       await this.auditService.record({
-        accountId: job.accountId,
+        workspaceId: job.workspaceId,
         eventType: "document.process",
         eventStatus: "failure",
         metadata: {
@@ -136,16 +136,16 @@ export class DocumentProcessingWorker {
     const markedFailed = await this.jobRepository.markFailedIfDocumentMatches({
       jobId: job.id,
       documentId: job.documentId,
-      accountId: job.accountId,
+      workspaceId: job.workspaceId,
       revision: job.documentRevision,
       errorMessage: message,
     });
     if (!markedFailed) {
-      const currentDocument = await this.documentRepository.findByIdAndAccountId(job.documentId, job.accountId);
+      const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
       await this.jobRepository.markSkipped(job.id, currentDocument ? "stale_revision" : "document_deleted");
     }
     await this.auditService.record({
-      accountId: job.accountId,
+      workspaceId: job.workspaceId,
       eventType: "document.process",
       eventStatus: "failure",
       metadata: {

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/lib/auth-context'
+import { WorkspaceProvider } from '@/lib/workspace-context'
 import { ChatProvider } from '@/lib/chat-context'
 import './globals.css'
 
@@ -42,7 +43,9 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
-            <ChatProvider>{children}</ChatProvider>
+            <WorkspaceProvider>
+              <ChatProvider>{children}</ChatProvider>
+            </WorkspaceProvider>
           </AuthProvider>
         </ThemeProvider>
         <Analytics />

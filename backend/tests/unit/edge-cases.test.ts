@@ -624,4 +624,185 @@ describe("edge cases", () => {
     expect(result.contexts[0]?.title).toBe("Freya");
     expect(embeddedQueries).toEqual(["What about her later work?"]);
   });
+
+  it("rejects a subject switch when raw retrieval only mentions the rewritten subject incidentally", async () => {
+    const service = new RetrievalPipelineService(
+      {
+        async getForAccount() {
+          return {
+            accountId: "a1",
+            queryRewriteEnabled: true,
+            rerankEnabled: false,
+            vectorTopK: 20,
+            similarityThreshold: 0.2,
+            rerankTopK: 5,
+            warmthLevel: 5,
+            citationDisplayEnabled: true,
+            chunkingStrategy: "fixed_window",
+            attributeControls: defaultAttributeControls(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+      } as never,
+      {
+        async embedChunks(chunks: string[]) {
+          return chunks.map((chunk) => [chunk.toLowerCase().includes("tomas") ? 1 : 0, 0, 0]);
+        },
+      } as never,
+      {
+        async search(input) {
+          if ((input.queryEmbedding[0] ?? 0) === 1) {
+            return [
+              {
+                chunkId: "c2",
+                documentId: "d2",
+                title: "Tomas",
+                content: "Tomas later work and publications.",
+                similarity: 0.95,
+              },
+            ];
+          }
+
+          return [
+            {
+              chunkId: "c1",
+              documentId: "d1",
+              title: "Freya",
+              content: "Freya sometimes collaborates with Tomas on events.",
+              similarity: 0.75,
+            },
+          ];
+        },
+      },
+      {
+        async search() {
+          return [];
+        },
+      },
+      new ConversationContextService(),
+      new QueryRewriteService({
+        async rewrite() {
+          return {
+            rewrittenQuery: "What did Tomas publish later?",
+            turnKind: "referential_followup",
+            proposedActiveSubject: "Tomas",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.95,
+          };
+        },
+      }),
+      new CandidatePreparationService(),
+      new AttributeMatchScoringService(),
+      new RerankService(),
+      new PromptContextSelectorService(),
+      new PromptBuilder(),
+      new RetrievalExecutionTelemetryService(),
+    );
+
+    const result = await service.run({
+      accountId: "a1",
+      query: "What about her later work?",
+      history: [
+        {
+          id: "1",
+          conversationId: "c1",
+          accountId: "a1",
+          role: "user",
+          content: "Who is Freya?",
+          createdAt: new Date(),
+        },
+        {
+          id: "2",
+          conversationId: "c1",
+          accountId: "a1",
+          role: "assistant",
+          content: "Freya sometimes collaborates with Tomas.",
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    expect(result.rewrittenQuery).toBe("What about her later work?");
+    expect(result.diagnostics.materialDisagreement).toBe(true);
+    expect(result.diagnostics.rejectionReason).toBe("rewrite_subject_only_incidental_in_raw");
+    expect(result.diagnostics.rewrittenCandidateCount).toBe(1);
+  });
+
+  it("preserves unresolved continuity decisions for blocked rewrites", async () => {
+    const service = new RetrievalPipelineService(
+      {
+        async getForAccount() {
+          return {
+            accountId: "a1",
+            queryRewriteEnabled: true,
+            rerankEnabled: false,
+            vectorTopK: 20,
+            similarityThreshold: 0.2,
+            rerankTopK: 5,
+            warmthLevel: 5,
+            citationDisplayEnabled: true,
+            chunkingStrategy: "fixed_window",
+            attributeControls: defaultAttributeControls(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+      } as never,
+      {
+        async embedChunks() {
+          return [[1, 0, 0]];
+        },
+      } as never,
+      {
+        async search() {
+          return [];
+        },
+      },
+      {
+        async search() {
+          return [];
+        },
+      },
+      new ConversationContextService(),
+      new QueryRewriteService({
+        async rewrite() {
+          return {
+            rewrittenQuery: "Does Freya work with Tomas?",
+            turnKind: "referential_relation",
+            proposedActiveSubject: "Freya",
+            relatedEntities: ["Tomas"],
+            unresolved: true,
+            confidence: 0.78,
+          };
+        },
+      }),
+      new CandidatePreparationService(),
+      new AttributeMatchScoringService(),
+      new RerankService(),
+      new PromptContextSelectorService(),
+      new PromptBuilder(),
+      new RetrievalExecutionTelemetryService(),
+    );
+
+    const result = await service.run({
+      accountId: "a1",
+      query: "Does she work with Tomas?",
+      history: [
+        {
+          id: "1",
+          conversationId: "c1",
+          accountId: "a1",
+          role: "user",
+          content: "Who is Freya?",
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    expect(result.diagnostics.rewriteStatus).toBe("rejected");
+    expect(result.diagnostics.continuityDecision).toBe("unresolved");
+    expect(result.diagnostics.rejectionReason).toBe("rewrite_unresolved");
+  });
 });

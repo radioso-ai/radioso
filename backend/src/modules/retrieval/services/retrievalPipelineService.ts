@@ -112,7 +112,12 @@ export class RetrievalPipelineService {
         })
       : {
           materialDisagreement: false,
-          continuityDecision: rewrittenQuery.rejectionReason ? ("rejected" as const) : ("unchanged" as const),
+          continuityDecision:
+            rewrittenQuery.rejectionReason === "rewrite_unresolved"
+              ? ("unresolved" as const)
+              : rewrittenQuery.rejectionReason
+                ? ("rejected" as const)
+                : ("unchanged" as const),
           rejectionReason: rewrittenQuery.rejectionReason,
         };
     const rewrittenContexts =
@@ -162,7 +167,7 @@ export class RetrievalPipelineService {
       rewriteStatus: rewrittenQuery.status,
       rerankStatus: reranked.status,
       originalCandidateCount: originalContexts.length,
-      rewrittenCandidateCount: rewrittenContexts.length,
+      rewrittenCandidateCount: rewrittenSearch.contexts.length,
       lexicalCandidateCount: lexicalContexts.length,
       normalizedCandidateCount: scoredCandidates.candidates.length,
       finalContextCount: contexts.length,

@@ -65,7 +65,7 @@ describe("edge cases", () => {
     });
 
     expect(result.status).toBe("fallback");
-    expect(result.effectiveQuery).toBe("What is the session cookie used for?");
+    expect(result.effectiveQuery).toBe("What is it used for?");
   });
 
   it("does not heuristic-rewrite a standalone short query against prior context", async () => {
@@ -473,6 +473,10 @@ describe("edge cases", () => {
         async rewrite() {
           return {
             rewrittenQuery: "summer retreat pricing",
+            turnKind: "referential_followup",
+            proposedActiveSubject: "summer retreat",
+            relatedEntities: [],
+            unresolved: false,
             confidence: 0.9,
           };
         },
@@ -519,5 +523,105 @@ describe("edge cases", () => {
         }),
       ]),
     );
+  });
+
+  it("drops rewritten retrieval candidates when rewrite evidence materially disagrees", async () => {
+    const embeddedQueries: string[] = [];
+    const service = new RetrievalPipelineService(
+      {
+        async getForAccount() {
+          return {
+            accountId: "a1",
+            queryRewriteEnabled: true,
+            rerankEnabled: false,
+            vectorTopK: 20,
+            similarityThreshold: 0.2,
+            rerankTopK: 5,
+            warmthLevel: 5,
+            citationDisplayEnabled: true,
+            chunkingStrategy: "fixed_window",
+            attributeControls: defaultAttributeControls(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+      } as never,
+      {
+        async embedChunks(chunks: string[]) {
+          embeddedQueries.push(...chunks);
+          return chunks.map(() => [1, 0, 0]);
+        },
+      } as never,
+      {
+        async search(input) {
+          if ((input.queryEmbedding[0] ?? 0) > 25) {
+            return [
+              {
+                chunkId: "c2",
+                documentId: "d2",
+                title: "Arudra",
+                content: "Arudra later work.",
+                similarity: 0.9,
+              },
+            ];
+          }
+
+          return [
+            {
+              chunkId: "c1",
+              documentId: "d1",
+              title: "Narayani",
+              content: "Narayani later work.",
+              similarity: 0.8,
+            },
+          ];
+        },
+      },
+      {
+        async search() {
+          return [];
+        },
+      },
+      new ConversationContextService(),
+      new QueryRewriteService({
+        async rewrite() {
+          return {
+            rewrittenQuery: "What did Arudra publish later?",
+            turnKind: "referential_followup",
+            proposedActiveSubject: "Arudra",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.9,
+          };
+        },
+      }),
+      new CandidatePreparationService(),
+      new AttributeMatchScoringService(),
+      new RerankService(),
+      new PromptContextSelectorService(),
+      new PromptBuilder(),
+      new RetrievalExecutionTelemetryService(),
+    );
+
+    const result = await service.run({
+      accountId: "a1",
+      query: "What about her later work?",
+      history: [
+        {
+          id: "1",
+          conversationId: "c1",
+          accountId: "a1",
+          role: "user",
+          content: "Who is Narayani?",
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    expect(result.rewrittenQuery).toBe("What about her later work?");
+    expect(result.diagnostics.materialDisagreement).toBe(false);
+    expect(result.diagnostics.rejectionReason).toBe("rewrite_subject_ungrounded");
+    expect(result.contexts[0]?.title).toBe("Narayani");
+    expect(embeddedQueries).toEqual(["What about her later work?"]);
   });
 });

@@ -43,6 +43,10 @@ describe("chat retrieval domain", () => {
       async rewrite(input) {
         return {
           rewrittenQuery: `session cookie usage ${input.query}`,
+          turnKind: "referential_followup",
+          proposedActiveSubject: "session cookie",
+          relatedEntities: [],
+          unresolved: false,
           confidence: 0.9,
         };
       },
@@ -61,6 +65,7 @@ describe("chat retrieval domain", () => {
     expect(result.status).toBe("applied");
     expect(result.effectiveQuery).toContain("session cookie");
     expect(result.originalQuery).toBe("What is it used for?");
+    expect(result.structuredResult?.proposedActiveSubject).toBe("session cookie");
   });
 
   it("falls back to the original query when rewrite fails", async () => {
@@ -81,7 +86,67 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.status).toBe("fallback");
-    expect(result.effectiveQuery).toContain("session cookie");
+    expect(result.effectiveQuery).toBe("What is it used for?");
+    expect(result.rewriteApplied).toBe(false);
+  });
+
+  it("rejects unresolved rewrites from running rewritten retrieval", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Does Narayani work with Arudra?",
+          turnKind: "ambiguous",
+          proposedActiveSubject: "Narayani",
+          relatedEntities: ["Arudra"],
+          unresolved: true,
+          confidence: 0.7,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Does she work with Arudra?",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [message("Who is Narayani?")],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("rejected");
+    expect(result.retrievalEligible).toBe(false);
+    expect(result.rejectionReason).toBe("rewrite_unresolved");
+    expect(result.effectiveQuery).toBe("Does she work with Arudra?");
+  });
+
+  it("rejects hallucinated subjects that are not grounded in the turn or context", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "What did Arudra publish later?",
+          turnKind: "referential_followup",
+          proposedActiveSubject: "Arudra",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "What about her later work?",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [message("Who is Narayani?")],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("rejected");
+    expect(result.rejectionReason).toBe("rewrite_subject_ungrounded");
+    expect(result.effectiveQuery).toBe("What about her later work?");
   });
 
   it("deduplicates candidates across original and rewritten retrieval paths", () => {

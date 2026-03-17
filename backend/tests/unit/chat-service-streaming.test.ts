@@ -106,6 +106,102 @@ describe("chat service streaming", () => {
       { role: "user", content: "What does this page do?" },
       { role: "assistant", content: "full answer" },
     ]);
+    expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual(["Intro"]);
+  });
+
+  it("loads literal-only carry-forward from the previous successful answer", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const capturedInputs: Array<{ rewriteCarryForwardLiterals?: string[] }> = [];
+    const retrievalPipeline = {
+      async run(input: { query: string; rewriteCarryForwardLiterals?: string[] }) {
+        capturedInputs.push({ rewriteCarryForwardLiterals: input.rewriteCarryForwardLiterals });
+        return {
+          rewrittenQuery: input.query,
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "La mia anima ricorda Swami Kriyananda",
+              content: "full answer",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [
+            {
+              documentId: "doc-1",
+              chunkId: "chunk-1",
+              title: "La mia anima ricorda Swami Kriyananda",
+            },
+          ],
+          diagnostics: {
+            rewriteStatus: "applied",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            rewriteProposal: {
+              rewrittenQuery: "Can I buy Narayani's book?",
+              turnKind: "referential_followup",
+              proposedActiveSubject: "Narayani",
+              relatedEntities: [],
+              unresolved: false,
+              confidence: 0.9,
+            },
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            warmthLevel: 5,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "full answer[[1]]";
+      },
+      async *streamAnswer() {
+        yield "full answer[[1]]";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    const first = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Can I buy her book?",
+      stream: false,
+    });
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: first.conversationId,
+      query: "how much is it?",
+      stream: false,
+    });
+
+    expect(capturedInputs[0]?.rewriteCarryForwardLiterals).toBeUndefined();
+    expect(capturedInputs[1]?.rewriteCarryForwardLiterals).toEqual([
+      "Narayani",
+      "La mia anima ricorda Swami Kriyananda",
+    ]);
   });
 
   it("includes the normalized final answer in the done event when a malformed anchor is truncated during streaming", async () => {

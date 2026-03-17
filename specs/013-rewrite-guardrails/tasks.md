@@ -86,6 +86,18 @@
 - [x] T019 Run targeted Vitest coverage for retrieval rewrite, pipeline, and chat diagnostics from /Users/dm/code/hivec-rewrite-guardrails/backend/tests/
 - [x] T020 Mark completed tasks and summarize validation evidence in /Users/dm/code/hivec-rewrite-guardrails/specs/013-rewrite-guardrails/tasks.md
 
+---
+
+## Phase 7: Post-Implementation Alignment
+
+**Purpose**: Record the implementation changes that deviated from the earlier dual-retrieval plan
+
+- [x] T021 Simplify retrieval orchestration to one active semantic query path in /Users/dm/code/hivec/backend/src/modules/retrieval/services/retrievalPipelineService.ts
+- [x] T022 Add a dedicated fast rerank model configuration in /Users/dm/code/hivec/backend/src/app/config/env.ts and /Users/dm/code/hivec/backend/src/app/server/dependencies.ts
+- [x] T023 Tighten rewrite prompt rules against meta-language and checklist expansions in /Users/dm/code/hivec/backend/src/modules/retrieval/services/queryRewriteService.ts
+- [x] T024 Add bounded carry-forward rewrite context from the previous assistant answer in /Users/dm/code/hivec/backend/src/modules/retrieval/services/conversationContextService.ts
+- [x] T025 Update rewrite and retrieval regression tests to match the shipped behavior in /Users/dm/code/hivec/backend/tests/
+
 ## Dependencies & Execution Order
 
 - Phase 1 completes first.
@@ -108,3 +120,8 @@
 - `npm run build` passed.
 - `npm run test:integration -- tests/integration/document-chunking.integration.test.ts tests/integration/chat.integration.test.ts tests/integration/retrieval-benchmark.integration.test.ts`
   passed after updating the in-memory test harness to eagerly drain queued document-processing jobs.
+- `npx vitest run tests/unit/chat-retrieval.domain.test.ts tests/unit/edge-cases.test.ts tests/unit/hybrid-retrieval-info.test.ts`
+  passed after tightening rewrite noise handling and adding carry-forward rewrite hints.
+- `npx vitest run tests/integration/chat.integration.test.ts`
+  passed after simplifying the retrieval pipeline to one active semantic search path.
+- Backend runtime now uses `OPENAI_RERANK_MODEL=gpt-4.1-mini` with low-token rerank requests.

@@ -69,6 +69,7 @@ export const createTestDependencies = (overrides: {
   chatGateway?: ChatGateway;
   chunkingSimilarityPort?: ChunkingSimilarityPort;
   lexicalSearch?: LexicalSearchPort;
+  queryRewriteGateway?: QueryRewriteGateway;
   rerankGateway?: RerankGateway;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = createTestEnv();
@@ -172,7 +173,7 @@ export const createTestDependencies = (overrides: {
     new FixedWindowChunkingStrategy(),
     new StructuredSemanticChunkingStrategy(chunkingSimilarityPort),
   ]);
-  const queryRewriteGateway: QueryRewriteGateway = {
+  const defaultQueryRewriteGateway: QueryRewriteGateway = {
     async rewrite(input) {
       const lastUserContext =
         [...input.contextMessages].reverse().find((message) => message.role === "user")?.content ?? "";
@@ -221,6 +222,7 @@ export const createTestDependencies = (overrides: {
       };
     },
   };
+  const queryRewriteGateway = overrides.queryRewriteGateway ?? defaultQueryRewriteGateway;
   const defaultRerankGateway: RerankGateway = {
     async rerank(input) {
       return input.contexts.map((context) => ({
@@ -364,6 +366,7 @@ export const createTestApp = (overrides: {
   chatGateway?: ChatGateway;
   chunkingSimilarityPort?: ChunkingSimilarityPort;
   lexicalSearch?: LexicalSearchPort;
+  queryRewriteGateway?: QueryRewriteGateway;
   rerankGateway?: RerankGateway;
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);

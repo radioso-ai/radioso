@@ -133,14 +133,17 @@ export class DocumentProcessingWorker {
       return;
     }
 
-    await this.jobRepository.markFailed(job.id, message);
-    await this.documentRepository.setStatusIfRevisionMatches({
+    const markedFailed = await this.jobRepository.markFailedIfDocumentMatches({
+      jobId: job.id,
       documentId: job.documentId,
       accountId: job.accountId,
       revision: job.documentRevision,
-      status: "failed",
-      failureReason: message,
+      errorMessage: message,
     });
+    if (!markedFailed) {
+      const currentDocument = await this.documentRepository.findByIdAndAccountId(job.documentId, job.accountId);
+      await this.jobRepository.markSkipped(job.id, currentDocument ? "stale_revision" : "document_deleted");
+    }
     await this.auditService.record({
       accountId: job.accountId,
       eventType: "document.process",

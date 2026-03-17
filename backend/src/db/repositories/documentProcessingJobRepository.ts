@@ -26,6 +26,13 @@ export interface DocumentProcessingJobRepositoryPort {
   markCompleted(jobId: string): Promise<void>;
   markSkipped(jobId: string, reason: string): Promise<void>;
   markFailed(jobId: string, errorMessage: string): Promise<void>;
+  markFailedIfDocumentMatches(input: {
+    jobId: string;
+    documentId: string;
+    accountId: string;
+    revision: number;
+    errorMessage: string;
+  }): Promise<boolean>;
   reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void>;
 }
 
@@ -177,6 +184,45 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
        WHERE id = $1`,
       [jobId, errorMessage],
     );
+  }
+
+  async markFailedIfDocumentMatches(input: {
+    jobId: string;
+    documentId: string;
+    accountId: string;
+    revision: number;
+    errorMessage: string;
+  }): Promise<boolean> {
+    return this.database.withTransaction(async (client) => {
+      const documentResult = await client.query(
+        `UPDATE documents
+         SET status = 'failed',
+             failed_at = NOW(),
+             failure_reason = $4,
+             updated_at = NOW()
+         WHERE id = $1
+           AND account_id = $2
+           AND revision = $3
+         RETURNING id`,
+        [input.documentId, input.accountId, input.revision, input.errorMessage],
+      );
+
+      if (documentResult.rows.length === 0) {
+        return false;
+      }
+
+      await client.query(
+        `UPDATE document_processing_jobs
+         SET status = 'failed',
+             last_error = $2,
+             completed_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $1`,
+        [input.jobId, input.errorMessage],
+      );
+
+      return true;
+    });
   }
 
   async reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void> {

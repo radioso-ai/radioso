@@ -21,8 +21,5 @@ export const unauthorized = (message = "Unauthorized"): AppError =>
 export const conflict = (message: string): AppError =>
   new AppError(409, "conflict", message);
 
-export const forbidden = (message = "Forbidden"): AppError =>
-  new AppError(403, "forbidden", message);
-
 export const notFound = (message: string): AppError =>
   new AppError(404, "not_found", message);

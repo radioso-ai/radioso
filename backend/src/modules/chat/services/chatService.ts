@@ -102,6 +102,7 @@ export class ChatService {
 
   async answer(input: {
     workspaceId: string;
+    accountId?: string;
     conversationId?: string;
     query: string;
     stream: boolean;
@@ -128,6 +129,7 @@ export class ChatService {
       assistantMessageId = assistantMessage.id;
       await this.finalizeAssistantTurn({
         workspaceId: input.workspaceId,
+        accountId: input.accountId,
         conversationId: session.conversation.id,
         userMessageId: session.userMessage.id,
         assistantMessageId,
@@ -151,6 +153,7 @@ export class ChatService {
 
   async *streamAnswer(input: {
     workspaceId: string;
+    accountId?: string;
     conversationId?: string;
     query: string;
     stream: boolean;
@@ -207,6 +210,7 @@ export class ChatService {
       assistantMessageId = assistantMessage.id;
       await this.finalizeAssistantTurn({
         workspaceId: input.workspaceId,
+        accountId: input.accountId,
         conversationId: session.conversation.id,
         userMessageId: session.userMessage.id,
         assistantMessageId,
@@ -293,6 +297,7 @@ export class ChatService {
 
   private async finalizeAssistantTurn(input: {
     workspaceId: string;
+    accountId?: string;
     conversationId: string;
     userMessageId: string;
     assistantMessageId: string;
@@ -302,6 +307,7 @@ export class ChatService {
   }): Promise<void> {
     await this.conversationRepository.touch(input.conversationId);
     await this.auditService.record({
+      accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType: "chat.answer",
       eventStatus: "success",
@@ -319,6 +325,7 @@ export class ChatService {
   private async recordFailure(
     input: {
       workspaceId: string;
+      accountId?: string;
       conversationId?: string;
       query: string;
       stream: boolean;
@@ -341,6 +348,7 @@ export class ChatService {
     }
 
     await this.auditService.record({
+      accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType: "chat.answer",
       eventStatus: "failure",

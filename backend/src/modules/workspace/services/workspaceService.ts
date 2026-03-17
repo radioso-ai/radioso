@@ -1,5 +1,5 @@
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
-import { badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
+import { badRequest, notFound } from "../../../shared/domain/errors.js";
 
 export class WorkspaceService {
   constructor(private readonly workspaceRepository: WorkspaceRepositoryPort) {}
@@ -24,20 +24,10 @@ export class WorkspaceService {
   async validateOwnership(workspaceId: string, accountId: string): Promise<WorkspaceRecord> {
     const workspace = await this.workspaceRepository.findByIdAndAccountId(workspaceId, accountId);
     if (!workspace) {
-      throw forbidden("Workspace not found or not owned by this account");
+      throw notFound("Workspace not found");
     }
 
     return workspace;
   }
 
-  async delete(workspaceId: string, accountId: string): Promise<void> {
-    await this.validateOwnership(workspaceId, accountId);
-
-    const count = await this.workspaceRepository.countByAccountId(accountId);
-    if (count <= 1) {
-      throw badRequest("Cannot delete the last workspace");
-    }
-
-    await this.workspaceRepository.deleteById(workspaceId);
-  }
 }

@@ -1,3 +1,8 @@
+-- Migration 005: Multi-workspace support
+-- ROLLBACK: This migration drops account_id columns and the account_tokens table.
+-- A rollback script must recreate these columns, backfill from workspace ownership,
+-- and recreate account_tokens from workspace_tokens. See specs/014-multi-workspace/plan.md.
+
 -- Phase 1: Create workspaces table
 CREATE TABLE IF NOT EXISTS workspaces (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -45,16 +50,17 @@ ALTER TABLE document_processing_jobs ADD COLUMN IF NOT EXISTS workspace_id UUID 
 ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES workspaces(id);
 
 -- Phase 5: Backfill workspace_id from account ownership
-UPDATE documents SET workspace_id = w.id FROM workspaces w WHERE w.account_id = documents.account_id AND documents.workspace_id IS NULL;
-UPDATE chunks SET workspace_id = w.id FROM workspaces w WHERE w.account_id = chunks.account_id AND chunks.workspace_id IS NULL;
-UPDATE conversations SET workspace_id = w.id FROM workspaces w WHERE w.account_id = conversations.account_id AND conversations.workspace_id IS NULL;
-UPDATE messages SET workspace_id = w.id FROM workspaces w WHERE w.account_id = messages.account_id AND messages.workspace_id IS NULL;
-UPDATE document_processing_jobs SET workspace_id = w.id FROM workspaces w WHERE w.account_id = document_processing_jobs.account_id AND document_processing_jobs.workspace_id IS NULL;
-UPDATE audit_events SET workspace_id = w.id FROM workspaces w WHERE w.account_id = audit_events.account_id AND audit_events.workspace_id IS NULL;
+-- Use DISTINCT ON to handle the (unlikely) case where an account has multiple workspaces at backfill time
+UPDATE documents SET workspace_id = w.id FROM (SELECT DISTINCT ON (account_id) id, account_id FROM workspaces ORDER BY account_id, created_at ASC) w WHERE w.account_id = documents.account_id AND documents.workspace_id IS NULL;
+UPDATE chunks SET workspace_id = w.id FROM (SELECT DISTINCT ON (account_id) id, account_id FROM workspaces ORDER BY account_id, created_at ASC) w WHERE w.account_id = chunks.account_id AND chunks.workspace_id IS NULL;
+UPDATE conversations SET workspace_id = w.id FROM (SELECT DISTINCT ON (account_id) id, account_id FROM workspaces ORDER BY account_id, created_at ASC) w WHERE w.account_id = conversations.account_id AND conversations.workspace_id IS NULL;
+UPDATE messages SET workspace_id = w.id FROM (SELECT DISTINCT ON (account_id) id, account_id FROM workspaces ORDER BY account_id, created_at ASC) w WHERE w.account_id = messages.account_id AND messages.workspace_id IS NULL;
+UPDATE document_processing_jobs SET workspace_id = w.id FROM (SELECT DISTINCT ON (account_id) id, account_id FROM workspaces ORDER BY account_id, created_at ASC) w WHERE w.account_id = document_processing_jobs.account_id AND document_processing_jobs.workspace_id IS NULL;
+UPDATE audit_events SET workspace_id = w.id FROM (SELECT DISTINCT ON (account_id) id, account_id FROM workspaces ORDER BY account_id, created_at ASC) w WHERE w.account_id = audit_events.account_id AND audit_events.workspace_id IS NULL;
 
 -- Backfill retrieval_settings: need to handle the PK change
 -- First backfill workspace_id
-UPDATE retrieval_settings SET workspace_id = w.id FROM workspaces w WHERE w.account_id = retrieval_settings.account_id AND retrieval_settings.workspace_id IS NULL;
+UPDATE retrieval_settings SET workspace_id = w.id FROM (SELECT DISTINCT ON (account_id) id, account_id FROM workspaces ORDER BY account_id, created_at ASC) w WHERE w.account_id = retrieval_settings.account_id AND retrieval_settings.workspace_id IS NULL;
 
 -- Phase 6: Make workspace_id NOT NULL on workspace-scoped tables
 ALTER TABLE documents ALTER COLUMN workspace_id SET NOT NULL;

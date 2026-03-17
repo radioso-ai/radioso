@@ -1,0 +1,49 @@
+openapi: 3.1.0
+info:
+  title: Document Processing API
+  version: 0.1.0
+paths:
+  /api/v1/document/:
+    post:
+      summary: Accept a new document for background processing
+      responses:
+        "202":
+          description: Document accepted for async processing
+  /api/v1/document/{documentId}:
+    put:
+      summary: Accept a document update for background processing
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "202":
+          description: Document update accepted for async processing
+    get:
+      summary: Read document details including current processing state
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Document details
+  /api/v1/document/{documentId}/reprocess:
+    post:
+      summary: Requeue a failed or existing document for background processing
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "202":
+          description: Document reprocess accepted

@@ -98,17 +98,14 @@ export class DocumentProcessingService {
       createdAt: new Date(),
     }));
 
-    await this.chunkRepository.replaceForDocument(markedProcessing.id, persistedChunks);
-
-    const readyDocument = await this.documentRepository.setStatusIfRevisionMatches({
+    const published = await this.chunkRepository.publishForDocumentRevision({
       documentId: markedProcessing.id,
       accountId: job.accountId,
       revision: job.documentRevision,
-      status: "ready",
-      failureReason: null,
+      chunks: persistedChunks,
     });
 
-    if (!readyDocument) {
+    if (!published) {
       const currentDocument = await this.documentRepository.findByIdAndAccountId(job.documentId, job.accountId);
       return currentDocument ? "stale" : "deleted";
     }
@@ -118,8 +115,8 @@ export class DocumentProcessingService {
       eventType: "document.process",
       eventStatus: "success",
       metadata: {
-        documentId: readyDocument.id,
-        revision: readyDocument.revision,
+        documentId: markedProcessing.id,
+        revision: job.documentRevision,
       },
     });
 

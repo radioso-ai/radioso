@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { Database } from "../../shared/infra/database.js";
 
 export interface WorkspaceTokenRecord {
@@ -80,13 +82,13 @@ export class WorkspaceTokenRepository implements WorkspaceTokenRepositoryPort {
   }): Promise<WorkspaceTokenRecord> {
     const [row] = await this.database.query<WorkspaceTokenRow>(
       `INSERT INTO workspace_tokens (id, workspace_id, account_id, token_prefix, token_hash, encrypted_token)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (workspace_id)
        DO UPDATE SET token_prefix = EXCLUDED.token_prefix,
                      token_hash = EXCLUDED.token_hash,
                      encrypted_token = EXCLUDED.encrypted_token
        RETURNING id, workspace_id, account_id, token_prefix, token_hash, encrypted_token, created_at, last_used_at`,
-      [params.workspaceId, params.accountId, params.tokenPrefix, params.tokenHash, params.encryptedToken],
+      [randomUUID(), params.workspaceId, params.accountId, params.tokenPrefix, params.tokenHash, params.encryptedToken],
     );
 
     return mapToken(row);

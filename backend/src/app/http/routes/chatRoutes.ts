@@ -51,12 +51,13 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
 
   router.post("/", requireApiToken(dependencies), validateBody(chatSchema), async (req, res, next) => {
     try {
-      const { workspaceId } = res.locals as { workspaceId: string };
+      const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
       if (req.body.stream) {
         await sendChatSse(
           res,
           dependencies.chatService.streamAnswer({
             workspaceId,
+            accountId,
             query: req.body.query,
             stream: req.body.stream,
             conversationId: req.body.conversationId,
@@ -67,6 +68,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
 
       const result = await dependencies.chatService.answer({
         workspaceId,
+        accountId,
         query: req.body.query,
         stream: req.body.stream,
         conversationId: req.body.conversationId,

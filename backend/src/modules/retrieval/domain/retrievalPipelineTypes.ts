@@ -6,6 +6,7 @@ export interface ConversationContextWindow {
   selectedMessages: MessageRecord[];
   truncated: boolean;
   selectionReason: string;
+  rewriteCarryForwardLiterals?: string[];
 }
 
 export const REWRITE_STATUS = {

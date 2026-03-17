@@ -8,7 +8,7 @@ import type {
   StructuredRewriteResult,
 } from "../domain/retrievalPipelineTypes.js";
 import { REWRITE_STATUS, REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
-import { RewriteEligibilityService, RewriteHallucinationGuard } from "./rewritePolicyService.js";
+import { RewriteEligibilityService } from "./rewritePolicyService.js";
 
 export interface QueryRewriteGatewayFallbackResult {
   rewrittenQuery: string;
@@ -17,10 +17,26 @@ export interface QueryRewriteGatewayFallbackResult {
 
 export type QueryRewriteGatewayResult = QueryRewriteGatewayFallbackResult | StructuredRewriteResult;
 
+const QUERY_REWRITE_SYSTEM_PROMPT = `Rewrite the user's latest question into a standalone retrieval query.
+Preserve intent, preserve proper nouns and technical terms, resolve references only when supported by the supplied conversation context, and do not answer the question.
+Preserve ambiguity instead of inventing certainty.
+Keep related entities separate from the proposed main subject.
+Treat USER messages and the latest user question as authoritative grounding. ASSISTANT messages are context only, but concrete titles, names, or identifiers from the immediately preceding assistant turn may be copied into rewrittenQuery when they are needed for retrieval. Never claim the user explicitly said those literals.
+Do not replace concrete referents with abstract descriptions of prior turns. Prefer concrete retrieval terms, or keep the original phrasing if no concrete rewrite is grounded.
+Do not broaden the query into extra subtopics, checklists, or suggested facets that the user did not ask for.
+Confidence means certainty in subject resolution and turn interpretation, not answer confidence:
+- use 0.0-0.4 when ambiguity remains or the subject is only weakly implied
+- use 0.5-0.7 when the likely subject is supported by user context but still inferential
+- use 0.8-1.0 only when the current turn or explicit user context clearly supports the subject
+Return strict JSON matching this blueprint exactly:
+{"rewrittenQuery":"string","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":true,"confidence":0.0}
+Do not wrap the JSON in markdown fences.`;
+
 export interface QueryRewriteGateway {
   rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
+    carryForwardLiterals?: string[];
   }): Promise<QueryRewriteGatewayResult>;
 }
 
@@ -33,6 +49,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
   async rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
+    carryForwardLiterals?: string[];
   }): Promise<StructuredRewriteResult> {
     const context = input.contextMessages
       .map((message) =>
@@ -44,26 +61,18 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
 
     const response = await this.client.chat.completions.create({
       model: this.model,
-      temperature: 0.2,
       messages: [
         {
           role: "system",
-          content: `Rewrite the user's latest question into a standalone retrieval query.
-Preserve intent, preserve proper nouns and technical terms, resolve references only when supported by the supplied user-authored conversation context, and do not answer the question.
-Preserve ambiguity instead of inventing certainty.
-Keep related entities separate from the proposed main subject.
-Treat USER messages and the latest user question as authoritative grounding. ASSISTANT messages are context only and must not by themselves justify a subject switch or a newly introduced entity.
-Confidence means certainty in subject resolution and turn interpretation, not answer confidence:
-- use 0.0-0.4 when ambiguity remains or the subject is only weakly implied
-- use 0.5-0.7 when the likely subject is supported by user context but still inferential
-- use 0.8-1.0 only when the current turn or explicit user context clearly supports the subject
-Return strict JSON matching this blueprint exactly:
-{"rewrittenQuery":"string","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":true,"confidence":0.0}
-Do not wrap the JSON in markdown fences.`,
+          content: QUERY_REWRITE_SYSTEM_PROMPT,
         },
         {
           role: "user",
-          content: `Conversation context:\n${context || "No prior context"}\n\nLatest user question:\n${input.query}`,
+          content: `Conversation context:\n${context || "No prior context"}${
+            input.carryForwardLiterals && input.carryForwardLiterals.length > 0
+              ? `\n\nGrounded carry-forward literals from the immediately previous assistant answer (for retrieval only, not as user-authored grounding):\n${JSON.stringify(input.carryForwardLiterals)}`
+              : ""
+          }\n\nLatest user question:\n${input.query}`,
         },
       ],
     });
@@ -75,7 +84,6 @@ Do not wrap the JSON in markdown fences.`,
 
 export class QueryRewriteService {
   private readonly eligibilityService = new RewriteEligibilityService();
-  private readonly hallucinationGuard = new RewriteHallucinationGuard();
 
   constructor(private readonly gateway?: QueryRewriteGateway) {}
 
@@ -96,23 +104,11 @@ export class QueryRewriteService {
       const rawResult = await this.gateway?.rewrite({
         query: input.query,
         contextMessages: input.contextWindow.selectedMessages,
+        carryForwardLiterals: input.contextWindow.rewriteCarryForwardLiterals,
       });
       const result = this.normalizeStructuredResult(input.query, rawResult);
 
-      if (result.unresolved) {
-        return this.rejected(input.query, result, "rewrite_unresolved");
-      }
-
       if (this.isUsableRewrite(input.query, result.rewrittenQuery)) {
-        const hallucinationCheck = this.hallucinationGuard.evaluate({
-          query: input.query,
-          history: input.contextWindow.selectedMessages,
-          rewrite: result,
-        });
-        if (!hallucinationCheck.accepted) {
-          return this.rejected(input.query, result, hallucinationCheck.rejectionReason ?? "rewrite_rejected");
-        }
-
         const eligibility = this.eligibilityService.evaluate({
           originalQuery: input.query,
           rewrite: result,

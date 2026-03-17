@@ -6,6 +6,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   OPENAI_API_KEY: z.string().min(1),
   OPENAI_CHAT_MODEL: z.string().min(1),
+  OPENAI_RERANK_MODEL: z.string().min(1).optional(),
   OPENAI_VECTOR_MODEL: z.string().min(1),
   SESSION_COOKIE_NAME: z.string().min(1).default("hivec_session"),
   SESSION_COOKIE_SECRET: z.string().min(16),

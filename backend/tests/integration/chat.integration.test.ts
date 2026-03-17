@@ -383,7 +383,7 @@ describe("chat integration", () => {
       eligible: false,
       ran: false,
       materialDisagreement: false,
-      continuityDecision: "rejected",
+      continuityDecision: "unresolved",
       rejectionReason: "rewrite_unresolved",
     });
   });

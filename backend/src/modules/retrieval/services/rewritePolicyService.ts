@@ -8,6 +8,10 @@ export interface RewriteValidationResult {
   rejectionReason?: string;
 }
 
+const NO_SUPPORT = 0;
+const INCIDENTAL_SUPPORT = 1;
+const CENTERED_SUPPORT = 2;
+
 const RELATION_PATTERN = /\b(with|about|vs\.?|versus|compared to|than)\b/i;
 const ENTITY_PATTERN = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g;
 const QUESTION_WORDS = new Set(["What", "Who", "When", "Where", "Why", "How", "Is", "Are", "Does", "Do", "Can", "And", "But", "Or"]);
@@ -115,10 +119,10 @@ export class RetrievalEvidenceComparisonService {
       };
     }
 
-    const rawSupport = this.countEntitySupport(input.rawContexts, subject);
-    const rewrittenSupport = this.countEntitySupport(input.rewrittenContexts, subject);
+    const rawSupport = this.strongestEntitySupport(input.rawContexts, subject);
+    const rewrittenSupport = this.strongestEntitySupport(input.rewrittenContexts, subject);
     const competingEntity = input.rewrite.relatedEntities.find((entity) => entity.toLowerCase() !== subject.toLowerCase());
-    const competingSupport = competingEntity ? this.countEntitySupport(input.rawContexts, competingEntity) : 0;
+    const competingSupport = competingEntity ? this.strongestEntitySupport(input.rawContexts, competingEntity) : NO_SUPPORT;
 
     if (input.rewrite.unresolved) {
       return {
@@ -128,7 +132,7 @@ export class RetrievalEvidenceComparisonService {
       };
     }
 
-    if (rewrittenSupport === 0 && rawSupport === 0) {
+    if (rewrittenSupport === NO_SUPPORT && rawSupport === NO_SUPPORT) {
       return {
         materialDisagreement: true,
         continuityDecision: "rejected",
@@ -136,7 +140,15 @@ export class RetrievalEvidenceComparisonService {
       };
     }
 
-    if (competingSupport > rawSupport && rewrittenSupport > 0) {
+    if (rawSupport === INCIDENTAL_SUPPORT) {
+      return {
+        materialDisagreement: true,
+        continuityDecision: "rejected",
+        rejectionReason: "rewrite_subject_only_incidental_in_raw",
+      };
+    }
+
+    if (competingSupport > rawSupport && rewrittenSupport > NO_SUPPORT) {
       return {
         materialDisagreement: true,
         continuityDecision: "rejected",
@@ -146,15 +158,26 @@ export class RetrievalEvidenceComparisonService {
 
     return {
       materialDisagreement: false,
-      continuityDecision: rawSupport > 0 || rewrittenSupport > 0 ? "reused" : "unchanged",
+      continuityDecision: rawSupport > NO_SUPPORT || rewrittenSupport > NO_SUPPORT ? "reused" : "unchanged",
     };
   }
 
-  private countEntitySupport(contexts: RetrievedChunk[], entity: string): number {
+  private strongestEntitySupport(contexts: RetrievedChunk[], entity: string): number {
     const needle = entity.toLowerCase();
-    return contexts.reduce((count, context) => {
+    return contexts.reduce((best, context) => {
       const haystack = `${context.title} ${context.content}`.toLowerCase();
-      return haystack.includes(needle) ? count + 1 : count;
-    }, 0);
+      if (!haystack.includes(needle)) {
+        return best;
+      }
+
+      const normalizedTitle = context.title.toLowerCase();
+      const normalizedContent = context.content.toLowerCase().trim();
+      const support =
+        normalizedTitle.includes(needle) || normalizedContent.startsWith(needle)
+          ? CENTERED_SUPPORT
+          : INCIDENTAL_SUPPORT;
+
+      return Math.max(best, support);
+    }, NO_SUPPORT);
   }
 }

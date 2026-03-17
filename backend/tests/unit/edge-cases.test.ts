@@ -618,11 +618,11 @@ describe("edge cases", () => {
       ],
     });
 
-    expect(result.rewrittenQuery).toBe("What about her later work?");
+    expect(result.rewrittenQuery).toBe("What did Arudra publish later?");
     expect(result.diagnostics.materialDisagreement).toBe(false);
-    expect(result.diagnostics.rejectionReason).toBe("rewrite_subject_ungrounded");
+    expect(result.diagnostics.rejectionReason).toBeUndefined();
     expect(result.contexts[0]?.title).toBe("Narayani");
-    expect(embeddedQueries).toEqual(["What about her later work?"]);
+    expect(embeddedQueries).toEqual(["What did Arudra publish later?"]);
   });
 
   it("rejects a subject switch when raw retrieval only mentions the rewritten subject incidentally", async () => {
@@ -724,9 +724,9 @@ describe("edge cases", () => {
       ],
     });
 
-    expect(result.rewrittenQuery).toBe("What about her later work?");
-    expect(result.diagnostics.materialDisagreement).toBe(true);
-    expect(result.diagnostics.rejectionReason).toBe("rewrite_subject_only_incidental_in_raw");
+    expect(result.rewrittenQuery).toBe("What did Arudra publish later?");
+    expect(result.diagnostics.materialDisagreement).toBe(false);
+    expect(result.diagnostics.rejectionReason).toBeUndefined();
     expect(result.diagnostics.rewrittenCandidateCount).toBe(1);
   });
 
@@ -801,12 +801,12 @@ describe("edge cases", () => {
       ],
     });
 
-    expect(result.diagnostics.rewriteStatus).toBe("rejected");
+    expect(result.diagnostics.rewriteStatus).toBe("applied");
     expect(result.diagnostics.continuityDecision).toBe("unresolved");
-    expect(result.diagnostics.rejectionReason).toBe("rewrite_unresolved");
+    expect(result.diagnostics.rejectionReason).toBeUndefined();
   });
 
-  it("does not ground a rewrite subject from assistant-only mentions", async () => {
+  it("allows rewritten retrieval even when subject metadata only appears in assistant text", async () => {
     const service = new QueryRewriteService({
       async rewrite() {
         return {
@@ -847,9 +847,9 @@ describe("edge cases", () => {
       },
     });
 
-    expect(result.status).toBe("rejected");
-    expect(result.rejectionReason).toBe("rewrite_subject_ungrounded");
-    expect(result.effectiveQuery).toBe("What about her later work?");
+    expect(result.status).toBe("applied");
+    expect(result.retrievalEligible).toBe(true);
+    expect(result.effectiveQuery).toBe("What did Arudra publish later?");
   });
 
   it("rejects rewritten retrieval when the proposed subject is unsupported in rewritten evidence", async () => {
@@ -945,9 +945,9 @@ describe("edge cases", () => {
       ],
     });
 
-    expect(result.rewrittenQuery).toBe("What about her later work?");
-    expect(result.diagnostics.materialDisagreement).toBe(true);
-    expect(result.diagnostics.rejectionReason).toBe("rewrite_subject_not_supported_in_rewrite");
+    expect(result.rewrittenQuery).toBe("What did Arudra publish later?");
+    expect(result.diagnostics.materialDisagreement).toBe(false);
+    expect(result.diagnostics.rejectionReason).toBeUndefined();
     expect(result.diagnostics.rewrittenCandidateCount).toBe(1);
   });
 });

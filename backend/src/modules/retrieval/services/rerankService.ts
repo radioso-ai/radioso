@@ -10,6 +10,9 @@ export interface RerankGateway {
 }
 
 export class OpenAISemanticRerankGateway implements RerankGateway {
+  private static readonly TEMPERATURE = 0.2;
+  private static readonly MAX_COMPLETION_TOKENS = 100;
+
   constructor(
     private readonly client: OpenAI,
     private readonly model: string,
@@ -25,7 +28,8 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
 
     const response = await this.client.chat.completions.create({
       model: this.model,
-      temperature: 0,
+      temperature: OpenAISemanticRerankGateway.TEMPERATURE,
+      max_completion_tokens: OpenAISemanticRerankGateway.MAX_COMPLETION_TOKENS,
       messages: [
         {
           role: "system",

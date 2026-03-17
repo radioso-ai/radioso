@@ -7,19 +7,21 @@ import type {
   RewriteTurnKind,
   StructuredRewriteResult,
 } from "../domain/retrievalPipelineTypes.js";
+import { REWRITE_STATUS, REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
 import { RewriteEligibilityService, RewriteHallucinationGuard } from "./rewritePolicyService.js";
+
+export interface QueryRewriteGatewayFallbackResult {
+  rewrittenQuery: string;
+  confidence: number;
+}
+
+export type QueryRewriteGatewayResult = QueryRewriteGatewayFallbackResult | StructuredRewriteResult;
 
 export interface QueryRewriteGateway {
   rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
-  }): Promise<
-    | {
-        rewrittenQuery: string;
-        confidence: number;
-      }
-    | StructuredRewriteResult
-  >;
+  }): Promise<QueryRewriteGatewayResult>;
 }
 
 export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
@@ -33,7 +35,11 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
     contextMessages: MessageRecord[];
   }): Promise<StructuredRewriteResult> {
     const context = input.contextMessages
-      .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+      .map((message) =>
+        `${message.role.toUpperCase()}: ${message.content}${
+          message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
+        }`,
+      )
       .join("\n");
 
     const response = await this.client.chat.completions.create({
@@ -42,8 +48,18 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
       messages: [
         {
           role: "system",
-          content:
-            "Rewrite the user's latest question into a standalone retrieval query. Preserve intent, preserve proper nouns and technical terms, resolve references from the supplied conversation context, and do not answer the question. Return strict JSON with keys rewrittenQuery, turnKind, proposedActiveSubject, relatedEntities, unresolved, confidence. Preserve ambiguity, do not invent unsupported subjects, and keep related entities separate from the main subject.",
+          content: `Rewrite the user's latest question into a standalone retrieval query.
+Preserve intent, preserve proper nouns and technical terms, resolve references only when supported by the supplied user-authored conversation context, and do not answer the question.
+Preserve ambiguity instead of inventing certainty.
+Keep related entities separate from the proposed main subject.
+Treat USER messages and the latest user question as authoritative grounding. ASSISTANT messages are context only and must not by themselves justify a subject switch or a newly introduced entity.
+Confidence means certainty in subject resolution and turn interpretation, not answer confidence:
+- use 0.0-0.4 when ambiguity remains or the subject is only weakly implied
+- use 0.5-0.7 when the likely subject is supported by user context but still inferential
+- use 0.8-1.0 only when the current turn or explicit user context clearly supports the subject
+Return strict JSON matching this blueprint exactly:
+{"rewrittenQuery":"string","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":true,"confidence":0.0}
+Do not wrap the JSON in markdown fences.`,
         },
         {
           role: "user",
@@ -111,7 +127,7 @@ export class QueryRewriteService {
           effectiveQuery: eligibility.eligible ? result.rewrittenQuery : input.query,
           rewriteApplied: eligibility.eligible,
           retrievalEligible: eligibility.eligible,
-          status: eligibility.eligible ? "applied" : "rejected",
+          status: eligibility.eligible ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
           confidence: result.confidence ?? 0.5,
           structuredResult: result,
           rejectionReason: eligibility.rejectionReason,
@@ -139,7 +155,7 @@ export class QueryRewriteService {
       effectiveQuery: query,
       rewriteApplied: false,
       retrievalEligible: false,
-      status: "skipped",
+      status: REWRITE_STATUS.SKIPPED,
       confidence: 0,
     };
   }
@@ -151,7 +167,7 @@ export class QueryRewriteService {
       effectiveQuery: query,
       rewriteApplied: false,
       retrievalEligible: false,
-      status: "fallback",
+      status: REWRITE_STATUS.FALLBACK,
       confidence: 0,
       fallbackReason: reason,
     };
@@ -172,7 +188,7 @@ export class QueryRewriteService {
       effectiveQuery: query,
       rewriteApplied: false,
       retrievalEligible: false,
-      status: "rejected",
+      status: REWRITE_STATUS.REJECTED,
       confidence: rewrite.confidence,
       structuredResult: rewrite,
       rejectionReason: reason,
@@ -193,7 +209,7 @@ export class QueryRewriteService {
 
   private normalizeStructuredResult(
     originalQuery: string,
-    result?: { rewrittenQuery: string; confidence: number } | StructuredRewriteResult,
+    result?: QueryRewriteGatewayResult,
   ): StructuredRewriteResult {
     if (result && "turnKind" in result) {
       return {
@@ -208,7 +224,7 @@ export class QueryRewriteService {
 
     return {
       rewrittenQuery: this.normalizeRewrite(result?.rewrittenQuery ?? originalQuery),
-      turnKind: "referential_followup",
+      turnKind: REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP,
       proposedActiveSubject: undefined,
       relatedEntities: [],
       unresolved: false,
@@ -218,15 +234,15 @@ export class QueryRewriteService {
 
   private normalizeTurnKind(turnKind?: string): RewriteTurnKind {
     switch (turnKind) {
-      case "fresh_subject":
-      case "referential_followup":
-      case "referential_relation":
-      case "explicit_recenter":
-      case "comparative":
-      case "ambiguous":
+      case REWRITE_TURN_KIND.FRESH_SUBJECT:
+      case REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP:
+      case REWRITE_TURN_KIND.REFERENTIAL_RELATION:
+      case REWRITE_TURN_KIND.EXPLICIT_RECENTER:
+      case REWRITE_TURN_KIND.COMPARATIVE:
+      case REWRITE_TURN_KIND.AMBIGUOUS:
         return turnKind;
       default:
-        return "ambiguous";
+        return REWRITE_TURN_KIND.AMBIGUOUS;
     }
   }
 
@@ -249,7 +265,8 @@ const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
 
   return {
     rewrittenQuery: typeof parsed.rewrittenQuery === "string" ? parsed.rewrittenQuery : "",
-    turnKind: typeof parsed.turnKind === "string" ? (parsed.turnKind as RewriteTurnKind) : "ambiguous",
+    turnKind:
+      typeof parsed.turnKind === "string" ? (parsed.turnKind as RewriteTurnKind) : REWRITE_TURN_KIND.AMBIGUOUS,
     proposedActiveSubject: typeof parsed.proposedActiveSubject === "string" ? parsed.proposedActiveSubject : undefined,
     relatedEntities: Array.isArray(parsed.relatedEntities)
       ? parsed.relatedEntities.filter((entity): entity is string => typeof entity === "string")

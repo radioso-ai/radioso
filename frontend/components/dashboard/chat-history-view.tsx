@@ -218,8 +218,8 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
                     <span className="select-all font-mono text-foreground">{conversationDetail.conversationId}</span>
                   </p>
                   <p>
-                    Account{' '}
-                    <span className="select-all font-mono text-foreground">{conversationDetail.accountId}</span>
+                    Workspace{' '}
+                    <span className="select-all font-mono text-foreground">{conversationDetail.workspaceId}</span>
                   </p>
                 </div>
 

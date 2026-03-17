@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Spinner } from '@/components/ui/spinner'
 import { Send } from 'lucide-react'
-import { AssistantMessageContent, type CitationOpenResult } from './chat-citations'
+import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
 import { documentsApi } from '@/lib/api'
 import { useChatSession } from '@/lib/chat-context'
 
@@ -91,15 +91,13 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
                 key={message.id}
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                <div
-                  className={`max-w-[80%] rounded-lg px-4 py-3 ${
-                    message.role === 'user'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-foreground'
-                  }`}
-                >
-                  {message.role === 'assistant' ? (
-                    message.status === 'streaming' && !message.content ? (
+                {message.role === 'user' ? (
+                  <div className="max-w-[80%] rounded-lg bg-primary px-4 py-3 text-primary-foreground">
+                    <p className="text-sm whitespace-pre-wrap">{linkifyText(message.content)}</p>
+                  </div>
+                ) : (
+                  <div className="max-w-[80%] text-foreground">
+                    {message.status === 'streaming' && !message.content ? (
                       <Spinner className="h-4 w-4" />
                     ) : (
                       <AssistantMessageContent
@@ -108,11 +106,9 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
                         answerSegments={message.answerSegments}
                         onOpenDocument={handleOpenCitation}
                       />
-                    )
-                  ) : (
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
             <div ref={messagesEndRef} />
@@ -120,8 +116,8 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
         )}
       </div>
 
-      <div className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto flex gap-3">
+      <div className="shrink-0 border-t border-border bg-background p-4">
+        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto flex items-end gap-3">
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -130,7 +126,7 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
             className="min-h-[44px] max-h-32 resize-none"
             disabled={isLoading}
           />
-          <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
+          <Button type="submit" size="icon" className="h-[44px] w-[44px] shrink-0" disabled={isLoading || !input.trim()}>
             <Send className="w-4 h-4" />
             <span className="sr-only">Send message</span>
           </Button>

@@ -35,7 +35,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
         title: req.body.title,
         content: req.body.content,
       });
-      res.status(201).json(result);
+      res.status(202).json(result);
     } catch (error) {
       next(error);
     }
@@ -62,7 +62,21 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
         title: req.body.title,
         content: req.body.content,
       });
-      res.status(200).json(result);
+      res.status(202).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/:documentId/reprocess", requireApiToken(dependencies), async (req, res, next) => {
+    try {
+      const { accountId } = res.locals as { accountId: string };
+      const { documentId } = documentParamsSchema.parse(req.params);
+      const result = await dependencies.documentIngestionService.reprocess({
+        accountId,
+        documentId,
+      });
+      res.status(202).json(result);
     } catch (error) {
       next(error);
     }

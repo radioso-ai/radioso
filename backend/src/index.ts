@@ -18,6 +18,8 @@ await runMigrations(env.DATABASE_URL, startupLogger);
 const dependencies = buildDependencies(env);
 const app = createApp(dependencies);
 
+await dependencies.documentProcessingWorker.start();
+
 app.listen(env.PORT, () => {
   dependencies.logger.info({ port: env.PORT }, "Hivec backend listening");
 });

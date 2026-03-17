@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { FileText, Pencil, Plus, Trash2 } from 'lucide-react'
+import { FileText, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -87,6 +87,8 @@ export function DocumentsView({
   const [deleteCandidate, setDeleteCandidate] = useState<DocumentSummary | null>(null)
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null)
   const [deleteErrorById, setDeleteErrorById] = useState<Record<string, string>>({})
+  const [retryingDocumentId, setRetryingDocumentId] = useState<string | null>(null)
+  const [retryErrorById, setRetryErrorById] = useState<Record<string, string>>({})
 
   const loadDocuments = useCallback(async () => {
     try {
@@ -102,6 +104,23 @@ export function DocumentsView({
   useEffect(() => {
     void loadDocuments()
   }, [loadDocuments])
+
+  useEffect(() => {
+    const hasActiveProcessing = documents.some((document) => {
+      const normalizedStatus = document.status.toLowerCase()
+      return normalizedStatus === 'queued' || normalizedStatus === 'processing'
+    })
+
+    if (!hasActiveProcessing) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadDocuments()
+    }, 2000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [documents, loadDocuments])
 
   useEffect(() => {
     setCurrentPage((page) => {
@@ -262,6 +281,27 @@ export function DocumentsView({
       }))
     } finally {
       setDeletingDocumentId(null)
+    }
+  }
+
+  const handleRetry = async (documentId: string) => {
+    setRetryingDocumentId(documentId)
+    setRetryErrorById((current) => {
+      const next = { ...current }
+      delete next[documentId]
+      return next
+    })
+
+    try {
+      const response = await documentsApi.reprocessDocument(documentId)
+      await upsertDocument(response.documentId)
+    } catch (error) {
+      setRetryErrorById((current) => ({
+        ...current,
+        [documentId]: getErrorMessage(error, 'Failed to retry document processing. Please try again.'),
+      }))
+    } finally {
+      setRetryingDocumentId(null)
     }
   }
 
@@ -481,6 +521,8 @@ export function DocumentsView({
             <div className="grid w-full gap-3">
               {paginatedDocuments.map((doc) => {
                 const deleteError = deleteErrorById[doc.id]
+                const retryError = retryErrorById[doc.id]
+                const isFailed = doc.status.toLowerCase() === 'failed'
                 return (
                   <div
                     key={doc.id}
@@ -512,11 +554,25 @@ export function DocumentsView({
                     </button>
                     <div className="flex items-center gap-2">
                       <DocumentStatus status={doc.status} />
+                      {isFailed ? (
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-full border border-border px-2.5 py-1 text-muted-foreground hover:bg-accent/40 disabled:opacity-50"
+                          onClick={() => void handleRetry(doc.id)}
+                          disabled={retryingDocumentId === doc.id}
+                        >
+                          {retryingDocumentId === doc.id ? (
+                            <Spinner className="h-3.5 w-3.5" />
+                          ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="inline-flex items-center justify-center rounded-full border border-border px-2.5 py-1 text-destructive hover:bg-destructive/10 disabled:opacity-50"
                         onClick={() => setDeleteCandidate(doc)}
-                        disabled={deletingDocumentId === doc.id}
+                        disabled={deletingDocumentId === doc.id || retryingDocumentId === doc.id}
                       >
                         {deletingDocumentId === doc.id ? (
                           <Spinner className="h-3.5 w-3.5" />
@@ -526,6 +582,9 @@ export function DocumentsView({
                       </button>
                       {deleteError ? (
                         <p className="max-w-56 text-xs text-destructive">{deleteError}</p>
+                      ) : null}
+                      {retryError ? (
+                        <p className="max-w-56 text-xs text-destructive sm:text-right">{retryError}</p>
                       ) : null}
                     </div>
                   </div>

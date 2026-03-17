@@ -334,7 +334,20 @@ describe("chat integration", () => {
   });
 
   it("preserves ambiguity for unresolved relation follow-ups", async () => {
-    const { app } = createTestApp();
+    const { app } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite() {
+          return {
+            rewrittenQuery: "Does Freya work with Tomas?",
+            turnKind: "referential_relation",
+            proposedActiveSubject: "Freya",
+            relatedEntities: ["Tomas"],
+            unresolved: true,
+            confidence: 0.62,
+          };
+        },
+      },
+    });
 
     const register = await request(app).post("/api/v1/auth/register").send({
       email: "ambiguity@example.com",
@@ -379,12 +392,88 @@ describe("chat integration", () => {
 
     expect(second.status).toBe(200);
     expect(second.body.retrievalInfo.rewrite).toMatchObject({
-      status: "rejected",
-      eligible: false,
-      ran: false,
+      status: "applied",
+      eligible: true,
+      ran: true,
       materialDisagreement: false,
       continuityDecision: "unresolved",
-      rejectionReason: "rewrite_unresolved",
+    });
+  });
+
+  it("uses rewritten retrieval for unresolved single-subject followups", async () => {
+    const { app } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite() {
+          return {
+            rewrittenQuery: "Can I buy Freya's book La mia anima ricorda Swami Selan?",
+            turnKind: "referential_followup",
+            proposedActiveSubject: "Freya",
+            relatedEntities: [],
+            unresolved: true,
+            confidence: 0.62,
+          };
+        },
+      },
+    });
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "book-followup@example.com",
+      password: "verysecurepassword",
+    });
+    const token = await request(app)
+      .get("/api/v1/account/token")
+      .set("Cookie", register.headers["set-cookie"][0]);
+    const authorization = `Bearer ${token.body.token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Freya Rennick Archivi - Valmora Books",
+        content:
+          "Freya Rennick. La mia anima ricorda Swami Selan. Aggiungi al carrello. Prezzo 18,00 euro.",
+      });
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Freya Profile",
+        content: "Freya is the author of La mia anima ricorda Swami Selan.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: true,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+      });
+
+    const first = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Who is Freya?", stream: false });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: first.body.conversationId,
+        query: "Can I buy her book?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.retrievalInfo.rewrite).toMatchObject({
+      status: "applied",
+      eligible: true,
+      ran: true,
     });
   });
 

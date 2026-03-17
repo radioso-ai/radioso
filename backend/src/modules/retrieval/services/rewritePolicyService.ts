@@ -17,10 +17,6 @@ export class RewriteEligibilityService {
     originalQuery: string;
     rewrite: StructuredRewriteResult;
   }): { eligible: boolean; rejectionReason?: string } {
-    if (input.rewrite.unresolved) {
-      return { eligible: false, rejectionReason: "rewrite_unresolved" };
-    }
-
     if (!this.isMateriallyDifferent(input.originalQuery, input.rewrite.rewrittenQuery)) {
       return { eligible: false, rejectionReason: "rewrite_not_materially_different" };
     }

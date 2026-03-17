@@ -82,7 +82,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new QueryRewriteService(new OpenAIQueryRewriteGateway(openai.client, openai.chatModel)),
     new CandidatePreparationService(),
     new AttributeMatchScoringService(),
-    new RerankService(new OpenAISemanticRerankGateway(openai.client, openai.chatModel)),
+    new RerankService(new OpenAISemanticRerankGateway(openai.client, env.OPENAI_RERANK_MODEL ?? openai.chatModel)),
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),

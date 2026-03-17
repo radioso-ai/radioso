@@ -17,7 +17,6 @@ import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import { HYBRID_RETRIEVAL_DEFAULTS } from "../domain/hybridRetrievalConfig.js";
 import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
 import type { AttributeFamilyControl } from "../../settings/domain/retrievalSettings.js";
-import { RetrievalEvidenceComparisonService } from "./rewritePolicyService.js";
 
 export interface RetrievalPipelineResult {
   rewrittenQuery: string;
@@ -32,8 +31,6 @@ export interface RetrievalPipelineResult {
 }
 
 export class RetrievalPipelineService {
-  private readonly rewriteEvidenceComparisonService = new RetrievalEvidenceComparisonService();
-
   constructor(
     private readonly retrievalSettingsService: RetrievalSettingsService,
     private readonly embeddingService: EmbeddingService,
@@ -53,11 +50,13 @@ export class RetrievalPipelineService {
     accountId: string;
     query: string;
     history: MessageRecord[];
+    rewriteCarryForwardLiterals?: string[];
   }): Promise<RetrievalPipelineResult> {
     const settings = await this.retrievalSettingsService.getForAccount(input.accountId);
     const contextWindow = this.conversationContextService.select({
       history: input.history,
       query: input.query,
+      rewriteCarryForwardLiterals: input.rewriteCarryForwardLiterals,
     });
     const originalParsedQuery = parseQueryConstraints(input.query);
     const originalPreparedQuery = this.applyAttributeControlsToQuery(
@@ -79,55 +78,26 @@ export class RetrievalPipelineService {
         : rewrittenParsedQuery,
       settings.attributeControls,
     );
-    const rewrittenSemanticQuery = parsedQuery.semanticQuery || rewrittenQuery.effectiveQuery;
-    const lexicalQuery = parsedQuery.lexicalQuery || rewrittenQuery.effectiveQuery;
-    const [originalEmbedding] = await this.embeddingService.embedChunks([originalSemanticQuery]);
-    const originalSearch = await this.searchWithFallback({
+    const activeQuery = rewrittenQuery.retrievalEligible ? rewrittenQuery.effectiveQuery : input.query;
+    const activeParsedQuery = rewrittenQuery.retrievalEligible ? parsedQuery : originalPreparedQuery;
+    const activeSemanticQuery = activeParsedQuery.semanticQuery || activeQuery;
+    const [activeEmbedding] = await this.embeddingService.embedChunks([activeSemanticQuery]);
+    const activeSearch = await this.searchWithFallback({
       accountId: input.accountId,
-      queryEmbedding: originalEmbedding ?? [],
+      queryEmbedding: activeEmbedding ?? [],
       topK: settings.vectorTopK,
       similarityThreshold: settings.similarityThreshold,
     });
-    const originalContexts = originalSearch.contexts;
-
-    let rewrittenSearch: { contexts: RetrievedChunk[]; fallbackApplied: boolean } = {
-      contexts: [],
-      fallbackApplied: false,
-    };
-    if (rewrittenQuery.retrievalEligible && rewrittenQuery.effectiveQuery !== input.query) {
-      const [rewrittenEmbedding] = await this.embeddingService.embedChunks([rewrittenSemanticQuery]);
-      rewrittenSearch = await this.searchWithFallback({
-        accountId: input.accountId,
-        queryEmbedding: rewrittenEmbedding ?? [],
-        topK: settings.vectorTopK,
-        similarityThreshold: settings.similarityThreshold,
-      });
-    }
-    const rewriteValidation = rewrittenQuery.retrievalEligible && rewrittenQuery.structuredResult
-      ? this.rewriteEvidenceComparisonService.compare({
-          query: input.query,
-          rewrite: rewrittenQuery.structuredResult,
-          rawContexts: originalContexts,
-          rewrittenContexts: rewrittenSearch.contexts,
-        })
-      : {
-          materialDisagreement: false,
-          continuityDecision:
-            rewrittenQuery.rejectionReason === "rewrite_unresolved"
-              ? ("unresolved" as const)
-              : rewrittenQuery.rejectionReason
-                ? ("rejected" as const)
-                : ("unchanged" as const),
-          rejectionReason: rewrittenQuery.rejectionReason,
-        };
-    const rewrittenContexts =
-      rewrittenQuery.retrievalEligible && !rewriteValidation.materialDisagreement ? rewrittenSearch.contexts : [];
-    const activeQuery =
-      rewrittenQuery.retrievalEligible && !rewriteValidation.materialDisagreement
-        ? rewrittenQuery.effectiveQuery
-        : input.query;
-    const activeParsedQuery =
-      rewrittenQuery.retrievalEligible && !rewriteValidation.materialDisagreement ? parsedQuery : originalPreparedQuery;
+    const originalContexts = rewrittenQuery.retrievalEligible ? [] : activeSearch.contexts;
+    const rewrittenContexts = rewrittenQuery.retrievalEligible ? activeSearch.contexts : [];
+    const continuityDecision =
+      rewrittenQuery.structuredResult?.unresolved
+        ? ("unresolved" as const)
+        : rewrittenQuery.retrievalEligible
+          ? ("updated" as const)
+          : rewrittenQuery.rejectionReason
+            ? ("rejected" as const)
+            : ("unchanged" as const);
     const lexicalContexts = await this.lexicalSearch.search({
       accountId: input.accountId,
       query: activeParsedQuery.lexicalQuery || activeQuery,
@@ -167,19 +137,19 @@ export class RetrievalPipelineService {
       rewriteStatus: rewrittenQuery.status,
       rerankStatus: reranked.status,
       originalCandidateCount: originalContexts.length,
-      rewrittenCandidateCount: rewrittenSearch.contexts.length,
+      rewrittenCandidateCount: rewrittenContexts.length,
       lexicalCandidateCount: lexicalContexts.length,
       normalizedCandidateCount: scoredCandidates.candidates.length,
       finalContextCount: contexts.length,
       parsedQuery: activeParsedQuery,
       appliedConstraints: scoredCandidates.appliedConstraints,
-      candidateFallbackApplied: originalSearch.fallbackApplied || rewrittenSearch.fallbackApplied || scoredCandidates.fallbackApplied,
+      candidateFallbackApplied: activeSearch.fallbackApplied || scoredCandidates.fallbackApplied,
       rewriteEligible: rewrittenQuery.retrievalEligible,
       rewriteRan: rewrittenQuery.retrievalEligible && rewrittenQuery.effectiveQuery !== input.query,
-      materialDisagreement: rewriteValidation.materialDisagreement,
-      continuityDecision: rewriteValidation.continuityDecision,
+      materialDisagreement: false,
+      continuityDecision,
       rewriteProposal: rewrittenQuery.structuredResult,
-      rejectionReason: rewrittenQuery.rejectionReason ?? rewriteValidation.rejectionReason,
+      rejectionReason: rewrittenQuery.rejectionReason,
     });
 
     return {

@@ -4,7 +4,7 @@ import type { ConversationContextWindow } from "../domain/retrievalPipelineTypes
 const MAX_CONTEXT_MESSAGES = 4;
 
 export class ConversationContextService {
-  select(input: { history: MessageRecord[]; query: string }): ConversationContextWindow {
+  select(input: { history: MessageRecord[]; query: string; rewriteCarryForwardLiterals?: string[] }): ConversationContextWindow {
     void input.query;
 
     if (input.history.length <= MAX_CONTEXT_MESSAGES) {
@@ -12,6 +12,7 @@ export class ConversationContextService {
         selectedMessages: input.history,
         truncated: false,
         selectionReason: input.history.length === 0 ? "no-history" : "full-history",
+        rewriteCarryForwardLiterals: input.rewriteCarryForwardLiterals,
       };
     }
 
@@ -19,6 +20,7 @@ export class ConversationContextService {
       selectedMessages: input.history.slice(-MAX_CONTEXT_MESSAGES),
       truncated: true,
       selectionReason: "recent-window",
+      rewriteCarryForwardLiterals: input.rewriteCarryForwardLiterals,
     };
   }
 }

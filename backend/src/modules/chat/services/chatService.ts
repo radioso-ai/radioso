@@ -41,6 +41,10 @@ interface PreparedSession {
   userMessage: MessageRecord;
 }
 
+interface ChatAnswerAuditMetadata {
+  carryForwardLiterals?: string[];
+}
+
 interface PresentedAnswer {
   answer: string;
   citations?: ChatCitation[];
@@ -91,6 +95,8 @@ export class OpenAIChatGateway implements ChatGateway {
 export class ChatService {
   private readonly answerPresentationService = new AnswerPresentationService();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
+  private static readonly MAX_CARRY_FORWARD_LITERALS = 6;
+  private static readonly MAX_CARRY_FORWARD_LITERAL_LENGTH = 120;
 
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
@@ -240,10 +246,14 @@ export class ChatService {
     const history = conversation
       ? await this.messageRepository.listByConversationId(conversation.id)
       : [];
+    const carryForwardLiterals = conversation
+      ? await this.loadRewriteCarryForwardLiterals(input.accountId, conversation.id)
+      : undefined;
     const retrieval = await this.retrievalPipeline.run({
       accountId: input.accountId,
       query: input.query,
       history,
+      rewriteCarryForwardLiterals: carryForwardLiterals,
     });
     const persistedConversation = conversation ?? await this.conversationRepository.create(input.accountId);
 
@@ -311,6 +321,10 @@ export class ChatService {
         assistantMessageId: input.assistantMessageId,
         stream: input.stream,
         citationCount: input.citations.length,
+        carryForwardLiterals: this.buildCarryForwardLiterals({
+          diagnostics: input.diagnostics,
+          citations: input.citations,
+        }),
         retrieval: input.diagnostics,
       },
     });
@@ -365,5 +379,52 @@ export class ChatService {
     }
 
     return conversation;
+  }
+
+  private async loadRewriteCarryForwardLiterals(
+    accountId: string,
+    conversationId: string,
+  ): Promise<string[] | undefined> {
+    const metadata = await this.auditService.getLatestSuccessfulChatAnswerMetadata({
+      accountId,
+      conversationId,
+    }) as ChatAnswerAuditMetadata | null;
+
+    const literals = metadata?.carryForwardLiterals?.filter((value): value is string => typeof value === "string");
+    return literals && literals.length > 0 ? literals : undefined;
+  }
+
+  private buildCarryForwardLiterals(input: {
+    diagnostics: PreparedSession["retrieval"]["diagnostics"];
+    citations: ChatCitation[];
+  }): string[] {
+    const candidates = [
+      input.diagnostics.rewriteProposal?.proposedActiveSubject,
+      ...(input.diagnostics.rewriteProposal?.relatedEntities ?? []),
+      ...input.citations.map((citation) => citation.title),
+    ];
+
+    const unique: string[] = [];
+    for (const value of candidates) {
+      if (typeof value !== "string") {
+        continue;
+      }
+
+      const literal = value.trim();
+      if (literal.length === 0 || literal.length > ChatService.MAX_CARRY_FORWARD_LITERAL_LENGTH) {
+        continue;
+      }
+
+      if (unique.includes(literal)) {
+        continue;
+      }
+
+      unique.push(literal);
+      if (unique.length >= ChatService.MAX_CARRY_FORWARD_LITERALS) {
+        break;
+      }
+    }
+
+    return unique;
   }
 }

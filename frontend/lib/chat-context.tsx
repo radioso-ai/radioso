@@ -34,8 +34,8 @@ interface ChatSession {
 }
 
 interface ChatContextValue {
-  getSession: (accountId: string) => ChatSession
-  sendMessage: (accountId: string, content: string) => Promise<void>
+  getSession: (workspaceId: string) => ChatSession
+  sendMessage: (workspaceId: string, content: string) => Promise<void>
 }
 
 const EMPTY_SESSION: ChatSession = {
@@ -240,7 +240,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
 }
 
-export const useChatSession = (accountId: string) => {
+export const useChatSession = (workspaceId: string) => {
   const context = useContext(ChatContext)
 
   if (!context) {
@@ -248,7 +248,7 @@ export const useChatSession = (accountId: string) => {
   }
 
   return {
-    ...context.getSession(accountId),
-    sendMessage: (content: string) => context.sendMessage(accountId, content),
+    ...context.getSession(workspaceId),
+    sendMessage: (content: string) => context.sendMessage(workspaceId, content),
   }
 }

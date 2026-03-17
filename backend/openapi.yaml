@@ -9,6 +9,7 @@ servers:
 tags:
   - name: Auth
   - name: Account
+  - name: Workspace
   - name: Settings
   - name: Documents
   - name: Chat
@@ -71,13 +72,63 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/account/token:
+  /api/v1/workspace:
     get:
-      tags: [Account]
-      summary: Return the single active API token for the authenticated account
-      operationId: getAccountToken
+      tags: [Workspace]
+      summary: List workspaces for the authenticated account
+      operationId: listWorkspaces
       security:
         - sessionCookie: []
+      responses:
+        '200':
+          description: Workspaces returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [Workspace]
+      summary: Create a new workspace
+      operationId: createWorkspace
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceCreateRequest'
+      responses:
+        '201':
+          description: Workspace created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/account/workspaces/{workspaceId}/token:
+    get:
+      tags: [Account]
+      summary: Return the API token for a specific workspace
+      operationId: getWorkspaceToken
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
           description: Token returned
@@ -87,6 +138,8 @@ paths:
                 $ref: '#/components/schemas/AccountTokenResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
   /api/v1/settings/retrieval:
@@ -419,6 +472,40 @@ components:
         token:
           type: string
           pattern: '^sk_proj_[A-Za-z0-9]+$'
+    Workspace:
+      type: object
+      required: [id, accountId, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    WorkspaceListResponse:
+      type: object
+      required: [workspaces]
+      properties:
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+    WorkspaceCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
     RetrievalSettings:
       type: object
       required:

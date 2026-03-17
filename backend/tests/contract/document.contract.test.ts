@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createTestApp } from "../support/testApp.js";
 
 describe("document contract", () => {
-  it("creates a document for a bearer-authenticated account", async () => {
+  it("accepts a document for background processing for a bearer-authenticated account", async () => {
     const { app } = createTestApp();
 
     const register = await request(app).post("/api/v1/auth/register").send({
@@ -23,14 +23,14 @@ describe("document contract", () => {
         content: "This is a content to be parsed",
       });
 
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(202);
     expect(response.body).toMatchObject({
       documentId: expect.any(String),
-      status: "ready",
+      status: "queued",
     });
   });
 
-  it("returns and updates a document for a bearer-authenticated account", async () => {
+  it("returns, updates, and reprocesses a document for a bearer-authenticated account", async () => {
     const { app } = createTestApp();
 
     const register = await request(app).post("/api/v1/auth/register").send({
@@ -58,8 +58,8 @@ describe("document contract", () => {
       id: createResponse.body.documentId,
       title: "Original title",
       content: "Original content",
-      status: "ready",
-      ragStatus: "processed",
+      status: "queued",
+      ragStatus: "pending",
     });
 
     const updateResponse = await request(app)
@@ -70,10 +70,20 @@ describe("document contract", () => {
         content: "Updated content",
       });
 
-    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.status).toBe(202);
     expect(updateResponse.body).toMatchObject({
       documentId: createResponse.body.documentId,
-      status: "ready",
+      status: "queued",
+    });
+
+    const reprocessResponse = await request(app)
+      .post(`/api/v1/document/${createResponse.body.documentId}/reprocess`)
+      .set("Authorization", `Bearer ${token.body.token}`);
+
+    expect(reprocessResponse.status).toBe(202);
+    expect(reprocessResponse.body).toMatchObject({
+      documentId: createResponse.body.documentId,
+      status: "queued",
     });
 
     const listResponse = await request(app)
@@ -85,8 +95,8 @@ describe("document contract", () => {
       expect.objectContaining({
         id: createResponse.body.documentId,
         title: "Updated title",
-        status: "ready",
-        ragStatus: "processed",
+        status: "queued",
+        ragStatus: "pending",
       }),
     ]);
   });

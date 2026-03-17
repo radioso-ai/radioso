@@ -53,6 +53,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
        FROM chunks c
        JOIN documents d ON d.id = c.document_id
        WHERE c.account_id = $1
+         AND d.status = 'ready'
          AND plainto_tsquery('simple', $2) @@ to_tsvector('simple', coalesce(c.search_text, c.content, ''))
        ORDER BY rank DESC, c.chunk_index ASC
        LIMIT $3`,

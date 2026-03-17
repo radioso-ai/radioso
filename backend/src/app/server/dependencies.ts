@@ -7,6 +7,7 @@ import { AuditEventRepository } from "../../db/repositories/auditEventRepository
 import { ChunkRepository } from "../../db/repositories/chunkRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { DocumentRepository } from "../../db/repositories/documentRepository.js";
+import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
@@ -14,6 +15,8 @@ import { AuthService } from "../../modules/auth/services/authService.js";
 import { AuditService } from "../../modules/audit/services/auditService.js";
 import { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
+import { DocumentProcessingService } from "../../modules/documents/services/documentProcessingService.js";
+import { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
 import { PgLexicalSearch } from "../../modules/retrieval/infra/lexicalSearch.js";
 import { PgVectorSearch } from "../../modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../modules/retrieval/services/candidatePreparationService.js";
@@ -44,17 +47,30 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
   const embeddingService = new EmbeddingService(new OpenAIEmbeddingGateway(openai.client, openai.vectorModel));
   const documentRepository = new DocumentRepository(database);
+  const documentProcessingJobRepository = new DocumentProcessingJobRepository(database);
+  const chunkRepository = new ChunkRepository(database);
   const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
     new FixedWindowChunkingStrategy(),
     new StructuredSemanticChunkingStrategy(embeddingService),
   ]);
-  const documentIngestionService = new DocumentIngestionService(
+  const documentProcessingService = new DocumentProcessingService(
     documentRepository,
-    new ChunkRepository(database),
+    chunkRepository,
     embeddingService,
     auditService,
     retrievalSettingsService,
     chunkingStrategyRegistry,
+  );
+  const documentIngestionService = new DocumentIngestionService(
+    documentRepository,
+    auditService,
+  );
+  const documentProcessingWorker = new DocumentProcessingWorker(
+    documentRepository,
+    documentProcessingJobRepository,
+    documentProcessingService,
+    auditService,
+    logger,
   );
   const documentDeletionService = new DocumentDeletionService(documentRepository, auditService);
   const retrievalPipeline = new RetrievalPipelineService(
@@ -98,6 +114,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     auditService,
     retrievalSettingsService,
     documentIngestionService,
+    documentProcessingWorker,
     documentDeletionService,
     chatService,
     chatHistoryService,

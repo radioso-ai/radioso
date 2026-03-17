@@ -14,7 +14,7 @@ export interface AttributeFamilyControl {
 }
 
 export interface RetrievalSettingsRecord {
-  accountId: string;
+  workspaceId: string;
   queryRewriteEnabled: boolean;
   rerankEnabled: boolean;
   vectorTopK: number;
@@ -47,8 +47,8 @@ export const defaultAttributeControls = (): AttributeFamilyControl[] =>
     mode: "boost_only",
   }));
 
-export const defaultRetrievalSettings = (accountId: string): RetrievalSettingsRecord => ({
-  accountId,
+export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettingsRecord => ({
+  workspaceId,
   queryRewriteEnabled: false,
   rerankEnabled: false,
   vectorTopK: 15,

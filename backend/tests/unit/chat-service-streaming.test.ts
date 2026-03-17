@@ -61,7 +61,7 @@ describe("chat service streaming", () => {
     const events: ChatStreamEvent[] = [];
 
     for await (const event of service.streamAnswer({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       query: "What does this page do?",
       stream: true,
     })) {
@@ -183,12 +183,14 @@ describe("chat service streaming", () => {
     );
 
     const first = await service.answer({
+      workspaceId: "workspace-1",
       accountId: "account-1",
       query: "Can I buy her book?",
       stream: false,
     });
 
     await service.answer({
+      workspaceId: "workspace-1",
       accountId: "account-1",
       conversationId: first.conversationId,
       query: "how much is it?",
@@ -260,7 +262,7 @@ describe("chat service streaming", () => {
     let doneEvent: Extract<ChatStreamEvent, { type: "done" }> | undefined;
 
     for await (const event of service.streamAnswer({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       query: "What does this page do?",
       stream: true,
     })) {
@@ -349,7 +351,7 @@ describe("chat service streaming", () => {
     );
 
     await expect(service.answer({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       query: "What does this page do?",
       stream: false,
     })).rejects.toThrow("touch failed");
@@ -388,7 +390,7 @@ describe("chat service streaming", () => {
     );
 
     await expect(service.answer({
-      accountId: "account-1",
+      workspaceId: "workspace-1",
       query: "What does this page do?",
       stream: false,
     })).rejects.toThrow("retrieval failed");

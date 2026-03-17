@@ -1,23 +1,17 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp } from "../support/testApp.js";
+import { createTestApp, issueTestToken } from "../support/testApp.js";
 
 describe("document contract", () => {
   it("accepts a document for background processing for a bearer-authenticated account", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "document@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
+    const { token } = await issueTestToken(app, "document@example.com");
 
     const response = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token.body.token}`)
+      .set("Authorization", `Bearer ${token}`)
       .send({
         title: "Introduction to Test",
         content: "This is a content to be parsed",
@@ -33,17 +27,11 @@ describe("document contract", () => {
   it("returns, updates, and reprocesses a document for a bearer-authenticated account", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "document-edit@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
+    const { token } = await issueTestToken(app, "document-edit@example.com");
 
     const createResponse = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token.body.token}`)
+      .set("Authorization", `Bearer ${token}`)
       .send({
         title: "Original title",
         content: "Original content",
@@ -51,7 +39,7 @@ describe("document contract", () => {
 
     const getResponse = await request(app)
       .get(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token.body.token}`);
+      .set("Authorization", `Bearer ${token}`);
 
     expect(getResponse.status).toBe(200);
     expect(getResponse.body).toMatchObject({
@@ -64,7 +52,7 @@ describe("document contract", () => {
 
     const updateResponse = await request(app)
       .put(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token.body.token}`)
+      .set("Authorization", `Bearer ${token}`)
       .send({
         title: "Updated title",
         content: "Updated content",
@@ -78,7 +66,7 @@ describe("document contract", () => {
 
     const reprocessResponse = await request(app)
       .post(`/api/v1/document/${createResponse.body.documentId}/reprocess`)
-      .set("Authorization", `Bearer ${token.body.token}`);
+      .set("Authorization", `Bearer ${token}`);
 
     expect(reprocessResponse.status).toBe(202);
     expect(reprocessResponse.body).toMatchObject({
@@ -88,7 +76,7 @@ describe("document contract", () => {
 
     const listResponse = await request(app)
       .get("/api/v1/document/")
-      .set("Authorization", `Bearer ${token.body.token}`);
+      .set("Authorization", `Bearer ${token}`);
 
     expect(listResponse.status).toBe(200);
     expect(listResponse.body.documents).toEqual([
@@ -104,17 +92,11 @@ describe("document contract", () => {
   it("deletes a document for a bearer-authenticated account", async () => {
     const { app } = createTestApp();
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "document-delete@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
+    const { token } = await issueTestToken(app, "document-delete@example.com");
 
     const createResponse = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token.body.token}`)
+      .set("Authorization", `Bearer ${token}`)
       .send({
         title: "Disposable title",
         content: "Disposable content",
@@ -122,14 +104,14 @@ describe("document contract", () => {
 
     const deleteResponse = await request(app)
       .delete(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token.body.token}`);
+      .set("Authorization", `Bearer ${token}`);
 
     expect(deleteResponse.status).toBe(204);
     expect(deleteResponse.body).toEqual({});
 
     const listResponse = await request(app)
       .get("/api/v1/document/")
-      .set("Authorization", `Bearer ${token.body.token}`);
+      .set("Authorization", `Bearer ${token}`);
 
     expect(listResponse.status).toBe(200);
     expect(listResponse.body.documents).toEqual([]);
@@ -138,25 +120,12 @@ describe("document contract", () => {
   it("returns not_found when deleting a document outside the authenticated account", async () => {
     const { app } = createTestApp();
 
-    const ownerRegister = await request(app).post("/api/v1/auth/register").send({
-      email: "document-delete-owner@example.com",
-      password: "verysecurepassword",
-    });
-    const ownerToken = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", ownerRegister.headers["set-cookie"][0]);
-
-    const intruderRegister = await request(app).post("/api/v1/auth/register").send({
-      email: "document-delete-intruder@example.com",
-      password: "verysecurepassword",
-    });
-    const intruderToken = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", intruderRegister.headers["set-cookie"][0]);
+    const { token: ownerToken } = await issueTestToken(app, "document-delete-owner@example.com");
+    const { token: intruderToken } = await issueTestToken(app, "document-delete-intruder@example.com");
 
     const createResponse = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${ownerToken.body.token}`)
+      .set("Authorization", `Bearer ${ownerToken}`)
       .send({
         title: "Protected title",
         content: "Protected content",
@@ -164,7 +133,7 @@ describe("document contract", () => {
 
     const deleteResponse = await request(app)
       .delete(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${intruderToken.body.token}`);
+      .set("Authorization", `Bearer ${intruderToken}`);
 
     expect(deleteResponse.status).toBe(404);
     expect(deleteResponse.body).toMatchObject({

@@ -40,6 +40,7 @@ import {
   buildAccountRoute,
   type DashboardSection,
 } from '@/lib/dashboard-routes'
+import { WorkspaceSwitcher } from './workspace-switcher'
 
 interface AppSidebarProps {
   accountId: string
@@ -68,6 +69,10 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
           </span>
         </div>
       </SidebarHeader>
+
+      <div className="px-2">
+        <WorkspaceSwitcher />
+      </div>
 
       <SidebarContent>
         <SidebarGroup>

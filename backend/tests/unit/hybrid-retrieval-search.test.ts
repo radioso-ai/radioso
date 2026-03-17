@@ -95,7 +95,7 @@ describe("hybrid retrieval search", () => {
     } as never);
 
     const results = await search.search({
-      accountId: "a1",
+      workspaceId: "a1",
       query: "guide",
       topK: 5,
     });

@@ -162,7 +162,11 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
 export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   readonly items = new Map<string, DocumentRecord>();
 
-  constructor(private readonly jobRepository?: InMemoryDocumentProcessingJobRepository) {}
+  constructor(private jobRepository?: InMemoryDocumentProcessingJobRepository) {}
+
+  setJobRepository(jobRepository: InMemoryDocumentProcessingJobRepository): void {
+    this.jobRepository = jobRepository;
+  }
 
   async createAndQueue(input: {
     accountId: string;
@@ -390,6 +394,12 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
 export class InMemoryDocumentProcessingJobRepository implements DocumentProcessingJobRepositoryPort {
   readonly items = new Map<string, DocumentProcessingJobRecord>();
 
+  constructor(private documentRepository?: InMemoryDocumentRepository) {}
+
+  setDocumentRepository(documentRepository: InMemoryDocumentRepository): void {
+    this.documentRepository = documentRepository;
+  }
+
   async enqueue(input: { documentId: string; accountId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord> {
     const record: DocumentProcessingJobRecord = {
       id: randomUUID(),
@@ -456,6 +466,36 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
       lastError: errorMessage,
       completedAt: new Date(),
     });
+  }
+
+  async markFailedIfDocumentMatches(input: {
+    jobId: string;
+    documentId: string;
+    accountId: string;
+    revision: number;
+    errorMessage: string;
+  }): Promise<boolean> {
+    const documentRepository = this.documentRepository;
+    const document = documentRepository?.items.get(input.documentId);
+    const existingJob = this.items.get(input.jobId);
+    if (!documentRepository || !existingJob || !document || document.accountId !== input.accountId || document.revision !== input.revision) {
+      return false;
+    }
+
+    documentRepository.items.set(input.documentId, {
+      ...document,
+      status: "failed",
+      failureReason: input.errorMessage,
+      updatedAt: new Date(),
+    });
+
+    this.update(input.jobId, {
+      status: "failed",
+      lastError: input.errorMessage,
+      completedAt: new Date(),
+    });
+
+    return true;
   }
 
   async reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void> {

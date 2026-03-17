@@ -73,8 +73,9 @@ export const createTestDependencies = (overrides: {
   const sessionRepository = new InMemorySessionRepository();
   const accountTokenRepository = new InMemoryAccountTokenRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
-  const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository();
-  const documentRepository = new InMemoryDocumentRepository(documentProcessingJobRepository);
+  const documentRepository = new InMemoryDocumentRepository();
+  const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+  documentRepository.setJobRepository(documentProcessingJobRepository);
   const chunkRepository = new InMemoryChunkRepository();
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();

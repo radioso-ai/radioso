@@ -12,6 +12,12 @@ export class RetrievalExecutionTelemetryService {
     parsedQuery?: import("../domain/structuredAttributes.js").ParsedQueryInterpretation;
     appliedConstraints?: import("../domain/structuredAttributes.js").AppliedConstraint[];
     candidateFallbackApplied: boolean;
+    rewriteEligible?: boolean;
+    rewriteRan?: boolean;
+    materialDisagreement?: boolean;
+    continuityDecision?: import("../domain/retrievalPipelineTypes.js").ContinuityDecision;
+    rewriteProposal?: import("../domain/retrievalPipelineTypes.js").StructuredRewriteResult;
+    rejectionReason?: string;
   }): RetrievalExecutionDiagnostics {
     return {
       ...input,

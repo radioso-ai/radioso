@@ -12,7 +12,7 @@ import { RerankService } from "../../src/modules/retrieval/services/rerankServic
 const message = (content: string, role: MessageRecord["role"] = "user"): MessageRecord => ({
   id: content,
   conversationId: "c1",
-  accountId: "a1",
+  workspaceId: "a1",
   role,
   content,
   createdAt: new Date(),

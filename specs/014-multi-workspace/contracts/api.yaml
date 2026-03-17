@@ -1,0 +1,116 @@
+openapi: 3.0.3
+info:
+  title: Hivec Multi-Workspace API Changes
+  version: 014-multi-workspace
+  description: New and modified endpoints for multi-workspace support
+
+paths:
+  # ── New: Workspace CRUD ──────────────────────────────────────────
+  /api/v1/workspace:
+    get:
+      summary: List workspaces for the authenticated account
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: List of workspaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspaces:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkspaceSummary"
+    post:
+      summary: Create a new workspace
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+      responses:
+        "201":
+          description: Workspace created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSummary"
+
+  # ── Modified: Token endpoint now workspace-scoped ────────────────
+  /api/v1/account/workspaces/{workspaceId}/token:
+    get:
+      summary: Get or create API token for a workspace
+      description: |
+        Session-authenticated. Returns the API token for the given workspace.
+        Creates one if none exists. Validates the account owns the workspace.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: API token for the workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "403":
+          description: Account does not own this workspace
+        "404":
+          description: Workspace not found
+
+  # ── Unchanged endpoints (workspace resolved from API token) ──────
+  # All existing endpoints under /api/v1/document, /api/v1/chat,
+  # /api/v1/settings remain unchanged in their HTTP contract.
+  # The middleware now resolves workspaceId (instead of accountId)
+  # from the Bearer token. No request/response schema changes.
+
+components:
+  schemas:
+    WorkspaceSummary:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TokenResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+    bearerToken:
+      type: http
+      scheme: bearer

@@ -28,7 +28,12 @@ export class PromptBuilder {
           locations: [],
         });
         const prefix = attributeSummary ? `Attributes: ${attributeSummary}\n` : "";
-        return `Result ${index + 1} (${context.title}): ${prefix}${context.content}`;
+        // Currently renders sourceUrl; extend as more metadata keys become prompt-relevant.
+        // Sanitize to prevent prompt injection via newlines or control characters.
+        const rawSourceUrl = typeof context.metadata?.sourceUrl === "string" ? context.metadata.sourceUrl : "";
+        const sanitizedSourceUrl = rawSourceUrl.replace(/[\n\r\t\x00-\x1f]/g, "").slice(0, 2048);
+        const metadataLine = sanitizedSourceUrl ? `Source: ${sanitizedSourceUrl}\n` : "";
+        return `Result ${index + 1} (${context.title}): ${prefix}${metadataLine}${context.content}`;
       })
       .join("\n\n");
     const warmthInstruction = this.getWarmthInstruction(input.settings.warmthLevel);

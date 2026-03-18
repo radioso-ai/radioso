@@ -215,6 +215,54 @@ describe("document ingestion", () => {
     expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
   });
 
+  it("propagates document metadata to chunks during processing", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const auditService = createAuditService();
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+    const processingWorker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      new DocumentProcessingService(
+        documentRepository,
+        chunkRepository,
+        new EmbeddingService({
+          async embedTexts(texts: string[]): Promise<number[][]> {
+            return texts.map(() => [1, 2, 3]);
+          },
+        }),
+        auditService,
+        {
+          async getForWorkspace(workspaceId: string) {
+            return defaultRetrievalSettings(workspaceId);
+          },
+        },
+        new ChunkingStrategyRegistry([fixedWindowStrategy]),
+      ),
+      auditService,
+      createLogger("silent"),
+    );
+
+    const queued = await ingestionService.ingest({
+      workspaceId: "workspace-1",
+      title: "Metadata doc",
+      content: "Content with metadata",
+      metadata: { sourceUrl: "https://example.com" },
+    });
+
+    expect(await processingWorker.runOnce()).toBe(true);
+
+    const [document] = await documentRepository.listByWorkspaceId("workspace-1");
+    expect(document.status).toBe("ready");
+
+    const chunks = chunkRepository.items.get(queued.documentId);
+    expect(chunks).toBeDefined();
+    expect(chunks).toHaveLength(1);
+    expect(chunks![0]!.metadata).toEqual({ sourceUrl: "https://example.com" });
+  });
+
   it("returns not_found when update loses a delete race", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const service = new DocumentIngestionService(documentRepository, createAuditService());

@@ -225,6 +225,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     title: string;
     sourceContent: string;
     markdownContent: string;
+    metadata?: Record<string, unknown>;
   }): Promise<DocumentRecord> {
     const record: DocumentRecord = {
       id: randomUUID(),
@@ -232,6 +233,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       title: input.title,
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
+      metadata: input.metadata ?? {},
       status: "queued",
       revision: 1,
       failureReason: null,
@@ -254,6 +256,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     sourceContent: string;
     markdownContent: string;
     status: string;
+    metadata?: Record<string, unknown>;
   }): Promise<DocumentRecord> {
     const record: DocumentRecord = {
       id: randomUUID(),
@@ -261,6 +264,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       title: input.title,
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
+      metadata: input.metadata ?? {},
       status: input.status,
       revision: 1,
       failureReason: null,
@@ -296,6 +300,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     const record: DocumentRecord = {
       ...existing,
       status: input.status,
+      metadata: existing.metadata ?? {},
       failureReason: input.status === "failed" ? (input.failureReason ?? null) : null,
       updatedAt: new Date(),
     };
@@ -318,6 +323,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     const record: DocumentRecord = {
       ...existing,
       status: input.status,
+      metadata: existing.metadata ?? {},
       failureReason: input.status === "failed" ? (input.failureReason ?? null) : null,
       updatedAt: new Date(),
     };
@@ -332,6 +338,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     sourceContent: string;
     markdownContent: string;
     status: string;
+    metadata?: Record<string, unknown>;
   }): Promise<DocumentRecord> {
     const existing = this.items.get(input.documentId);
     if (!existing || existing.workspaceId !== input.workspaceId) {
@@ -343,6 +350,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       title: input.title,
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
+      metadata: input.metadata ?? existing.metadata ?? {},
       status: input.status,
       revision: existing.revision + 1,
       failureReason: null,
@@ -358,6 +366,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     title: string;
     sourceContent: string;
     markdownContent: string;
+    metadata?: Record<string, unknown>;
   }): Promise<DocumentRecord> {
     const existing = this.items.get(input.documentId);
     if (!existing || existing.workspaceId !== input.workspaceId) {
@@ -369,6 +378,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       title: input.title,
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
+      metadata: input.metadata ?? existing.metadata ?? {},
       status: "queued",
       revision: existing.revision + 1,
       failureReason: null,
@@ -393,6 +403,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     const record: DocumentRecord = {
       ...existing,
       status: "queued",
+      metadata: existing.metadata ?? {},
       revision: existing.revision + 1,
       failureReason: null,
       updatedAt: new Date(),
@@ -410,6 +421,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     const record: DocumentRecord = {
       ...existing,
       status: "queued",
+      metadata: existing.metadata ?? {},
       revision: existing.revision + 1,
       failureReason: null,
       updatedAt: new Date(),

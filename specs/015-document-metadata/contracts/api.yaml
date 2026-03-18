@@ -1,0 +1,46 @@
+# Document Metadata API Contract Changes
+# These are ADDITIONS to the existing openapi.yaml
+
+# DocumentCreateRequest gains optional metadata field:
+#
+# DocumentCreateRequest:
+#   type: object
+#   required: [title, content]
+#   properties:
+#     title:
+#       type: string
+#     content:
+#       type: string
+#     metadata:                          # NEW
+#       type: object
+#       additionalProperties: true
+#       description: Optional key-value metadata (max 16 KB serialized)
+#       example:
+#         sourceUrl: "https://example.com/doc"
+#         language: "en"
+#         author: "Jane Doe"
+
+# DocumentSummary and DocumentDetails gain metadata field:
+#
+# DocumentSummary:
+#   properties:
+#     metadata:
+#       type: object
+#       additionalProperties: true
+#
+# DocumentDetails:
+#   properties:
+#     metadata:
+#       type: object
+#       additionalProperties: true
+
+# ChatMessageRequest gains optional metadataFilter field:
+#
+# ChatMessageRequest:
+#   properties:
+#     metadataFilter:                    # NEW
+#       type: object
+#       additionalProperties: true
+#       description: Filter retrieval to chunks matching these metadata key-value pairs
+#       example:
+#         language: "en"

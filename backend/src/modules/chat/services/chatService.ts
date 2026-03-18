@@ -112,6 +112,7 @@ export class ChatService {
     conversationId?: string;
     query: string;
     stream: boolean;
+    metadataFilter?: Record<string, unknown>;
   }): Promise<{
     conversationId: string;
     answer: string;
@@ -163,6 +164,7 @@ export class ChatService {
     conversationId?: string;
     query: string;
     stream: boolean;
+    metadataFilter?: Record<string, unknown>;
   }): AsyncIterable<ChatStreamEvent> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
@@ -244,6 +246,7 @@ export class ChatService {
     accountId?: string;
     conversationId?: string;
     query: string;
+    metadataFilter?: Record<string, unknown>;
   }): Promise<PreparedSession> {
     const conversation = input.conversationId
       ? await this.ensureConversation(input.conversationId, input.workspaceId)
@@ -259,6 +262,7 @@ export class ChatService {
       query: input.query,
       history,
       rewriteCarryForwardLiterals: carryForwardLiterals,
+      metadataFilter: input.metadataFilter,
     });
     const persistedConversation = conversation ?? await this.conversationRepository.create(input.workspaceId);
 

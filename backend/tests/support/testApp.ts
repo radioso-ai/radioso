@@ -29,6 +29,8 @@ import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retri
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
+import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
+import { WhatsAppPlugin } from "../../src/modules/connectors/plugins/whatsapp/whatsappPlugin.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import {
@@ -44,6 +46,7 @@ import {
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
   InMemoryWorkspaceRepository,
+  InMemoryConnectorDatabase,
 } from "./fakes.js";
 
 export const createTestEnv = (): Env => ({
@@ -56,6 +59,7 @@ export const createTestEnv = (): Env => ({
   SESSION_COOKIE_NAME: "hivec_session",
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
   SESSION_TTL_HOURS: 168,
+  CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
 });
 
 interface TestRepositories {
@@ -71,6 +75,8 @@ export const createTestDependencies = (overrides: {
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
   rerankGateway?: RerankGateway;
+  whatsappFetch?: typeof fetch;
+  whatsappDebounceMs?: number;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = createTestEnv();
   const auditEventRepository = new InMemoryAuditEventRepository();
@@ -318,9 +324,16 @@ export const createTestDependencies = (overrides: {
 
   const workspaceRepository = new InMemoryWorkspaceRepository();
   const workspaceService = new WorkspaceService(workspaceRepository);
+  const connectorRegistry = new ConnectorRegistry();
+  connectorRegistry.register(new WhatsAppPlugin({
+    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    fetch: overrides.whatsappFetch,
+    debounceMs: overrides.whatsappDebounceMs,
+  }));
+  connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
+  const connectorDb = new InMemoryConnectorDatabase();
 
-  return {
-    dependencies: {
+  const dependencies: AppDependencies = {
       env,
       logger: createLogger("silent"),
       auditService,
@@ -352,7 +365,20 @@ export const createTestDependencies = (overrides: {
         messageRepository,
         auditEventRepository,
       ),
-    },
+      connectorRegistry,
+      connectorDb: connectorDb as any,
+    };
+
+  void connectorRegistry.initializeAll({
+    db: connectorDb as any,
+    logger: dependencies.logger,
+    chatService: dependencies.chatService,
+    connectorRegistry,
+    router: connectorRegistry.getRouter(),
+  });
+
+  return {
+    dependencies,
     repositories: {
       retrievalSettingsRepository,
       documentRepository,
@@ -368,6 +394,8 @@ export const createTestApp = (overrides: {
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
   rerankGateway?: RerankGateway;
+  whatsappFetch?: typeof fetch;
+  whatsappDebounceMs?: number;
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);
   return {

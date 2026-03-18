@@ -321,6 +321,51 @@ export interface ErrorResponse {
   }
 }
 
+export interface ConnectorFieldOption {
+  value: string
+  label: string
+}
+
+export interface ConnectorConfigField {
+  key: string
+  type: 'text' | 'secret' | 'toggle' | 'select'
+  label: string
+  required: boolean
+  defaultValue?: string
+  placeholder?: string
+  helpText?: string
+  options?: ConnectorFieldOption[]
+}
+
+export interface ConnectorSummary {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  errorStatus: string | null
+}
+
+export interface ConnectorDetail extends ConnectorSummary {
+  schema: ConnectorConfigField[]
+  config: Record<string, string>
+  webhookUrl: string | null
+}
+
+export interface ConnectorValidationIssue {
+  key: string
+  message: string
+}
+
+export interface ConnectorValidationErrorResponse {
+  error: string
+  fields: ConnectorValidationIssue[]
+}
+
+export interface ConnectorConflictErrorResponse {
+  error: string
+  detail: string
+}
+
 const requireApiToken = () => {
   const token = getStoredApiToken()
 
@@ -520,6 +565,43 @@ export const settingsApi = {
       body: JSON.stringify(data),
     }, { withApiToken: true })
   }
+}
+
+export const connectorsApi = {
+  async listConnectors(): Promise<ConnectorSummary[]> {
+    const response = await request<{ connectors: ConnectorSummary[] }>('/connectors', {
+      method: 'GET',
+    }, { withApiToken: true })
+    return response.connectors
+  },
+
+  async getConnector(connectorId: string): Promise<ConnectorDetail> {
+    return request<ConnectorDetail>(`/connectors/${connectorId}`, {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async saveConnectorConfig(
+    connectorId: string,
+    config: Record<string, string | number | boolean>
+  ): Promise<ConnectorDetail> {
+    return request<ConnectorDetail>(`/connectors/${connectorId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ config }),
+    }, { withApiToken: true })
+  },
+
+  async enableConnector(connectorId: string): Promise<ConnectorDetail> {
+    return request<ConnectorDetail>(`/connectors/${connectorId}/enable`, {
+      method: 'POST',
+    }, { withApiToken: true })
+  },
+
+  async disableConnector(connectorId: string): Promise<ConnectorDetail> {
+    return request<ConnectorDetail>(`/connectors/${connectorId}/disable`, {
+      method: 'POST',
+    }, { withApiToken: true })
+  },
 }
 
 // Documents API

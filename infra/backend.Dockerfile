@@ -9,6 +9,7 @@ FROM deps AS build
 
 COPY tsconfig.json ./
 COPY openapi.yaml ./
+COPY scripts ./scripts
 COPY src ./src
 RUN npm run build
 
@@ -22,7 +23,6 @@ RUN npm ci --omit=dev
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/openapi.yaml ./openapi.yaml
-COPY --from=build /app/src/db/migrations ./dist/src/db/migrations
 
 EXPOSE 8080
 

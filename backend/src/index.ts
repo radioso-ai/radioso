@@ -16,6 +16,14 @@ const startupLogger = createLogger();
 await runMigrations(env.DATABASE_URL, startupLogger);
 
 const dependencies = buildDependencies(env);
+await dependencies.connectorRegistry.runMigrations(dependencies.connectorDb);
+await dependencies.connectorRegistry.initializeAll({
+  db: dependencies.connectorDb,
+  logger: dependencies.logger,
+  chatService: dependencies.chatService,
+  connectorRegistry: dependencies.connectorRegistry,
+  router: dependencies.connectorRegistry.getRouter(),
+});
 const app = createApp(dependencies);
 
 await dependencies.documentProcessingWorker.start();

@@ -1,0 +1,430 @@
+import type { Router } from "express";
+import { Router as createRouter } from "express";
+
+import type { Database } from "../../../shared/infra/database.js";
+import type {
+  ConnectorPlugin,
+  ConnectorContext,
+  ConnectorSummary,
+  ConnectorDetail,
+  ConnectorValidationIssue,
+} from "../domain/connectorPlugin.js";
+import type { ConfigFieldDefinition } from "../domain/configSchema.js";
+import { encryptField, decryptField, maskSecret } from "./configEncryption.js";
+
+interface ConnectorSaveSuccess {
+  kind: "success";
+}
+
+interface ConnectorValidationFailure {
+  kind: "validation_error";
+  issues: ConnectorValidationIssue[];
+}
+
+interface ConnectorConflictFailure {
+  kind: "conflict";
+  detail: string;
+}
+
+export type ConnectorMutationResult =
+  | ConnectorSaveSuccess
+  | ConnectorValidationFailure
+  | ConnectorConflictFailure;
+
+export class ConnectorRegistry {
+  private readonly plugins = new Map<string, ConnectorPlugin>();
+  private readonly router: Router;
+  private encryptionKey: string | undefined;
+
+  constructor() {
+    this.router = createRouter();
+  }
+
+  getRouter(): Router {
+    return this.router;
+  }
+
+  register(plugin: ConnectorPlugin): void {
+    if (this.plugins.has(plugin.id)) {
+      throw new Error(`Connector "${plugin.id}" is already registered`);
+    }
+    this.plugins.set(plugin.id, plugin);
+  }
+
+  listPlugins(): Array<{ id: string; name: string; description: string }> {
+    return [...this.plugins.values()].map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+    }));
+  }
+
+  getPlugin(id: string): ConnectorPlugin | undefined {
+    return this.plugins.get(id);
+  }
+
+  async runMigrations(db: Database): Promise<void> {
+    for (const plugin of this.plugins.values()) {
+      await plugin.migrate(db);
+    }
+  }
+
+  async initializeAll(context: ConnectorContext): Promise<void> {
+    for (const plugin of this.plugins.values()) {
+      try {
+        await plugin.initialize(context);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        context.logger.error({ connectorId: plugin.id, err: message }, `Connector "${plugin.id}" failed to initialize`);
+      }
+    }
+  }
+
+  async shutdownAll(): Promise<void> {
+    for (const plugin of this.plugins.values()) {
+      try {
+        await plugin.shutdown();
+      } catch {
+        // Best-effort shutdown — log and continue
+      }
+    }
+  }
+
+  // ── Config persistence ──────────────────────────────────────────────
+
+  setEncryptionKey(key: string): void {
+    this.encryptionKey = key;
+  }
+
+  async listConnectors(db: Database, workspaceId: string): Promise<ConnectorSummary[]> {
+    const configs = await db.query<{
+      connector_id: string;
+      enabled: boolean;
+      error_status: string | null;
+    }>(
+      `SELECT connector_id, enabled, error_status FROM connector_configs WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+    const configMap = new Map(configs.map((c) => [c.connector_id, c]));
+
+    return [...this.plugins.values()].map((plugin) => {
+      const config = configMap.get(plugin.id);
+      return {
+        id: plugin.id,
+        name: plugin.name,
+        description: plugin.description,
+        enabled: config?.enabled ?? false,
+        errorStatus: config?.error_status ?? null,
+        webhookPath: plugin.getWebhookPath(),
+      };
+    });
+  }
+
+  async getConnectorDetail(
+    db: Database,
+    workspaceId: string,
+    connectorId: string,
+  ): Promise<ConnectorDetail | null> {
+    const plugin = this.plugins.get(connectorId);
+    if (!plugin) return null;
+
+    const rows = await db.query<{
+      enabled: boolean;
+      config_data: Record<string, string>;
+      error_status: string | null;
+    }>(
+      `SELECT enabled, config_data, error_status FROM connector_configs WHERE workspace_id = $1 AND connector_id = $2`,
+      [workspaceId, connectorId],
+    );
+
+    const row = rows[0];
+    const schema = plugin.configSchema();
+
+    let maskedConfig: Record<string, string> | null = {};
+    if (row) {
+      maskedConfig = this.maskSecrets(row.config_data, schema);
+    }
+
+    return {
+      id: plugin.id,
+      name: plugin.name,
+      description: plugin.description,
+      enabled: row?.enabled ?? false,
+      errorStatus: row?.error_status ?? null,
+      webhookPath: plugin.getWebhookPath(),
+      configSchema: schema,
+      config: maskedConfig,
+    };
+  }
+
+  async saveConfig(
+    db: Database,
+    workspaceId: string,
+    connectorId: string,
+    configData: Record<string, unknown>,
+  ): Promise<ConnectorMutationResult> {
+    const plugin = this.plugins.get(connectorId);
+    if (!plugin) {
+      return {
+        kind: "validation_error",
+        issues: [{ key: "connector", message: `Unknown connector: ${connectorId}` }],
+      };
+    }
+
+    const schema = plugin.configSchema();
+    const normalizedInput = this.normalizeConfigData(configData);
+    const existingRow = await db.query<{
+      config_data: Record<string, string>;
+    }>(
+      `SELECT config_data FROM connector_configs WHERE workspace_id = $1 AND connector_id = $2`,
+      [workspaceId, connectorId],
+    );
+    const existingStoredConfig = existingRow[0]?.config_data ?? {};
+    const existingPlainConfig = this.decryptSecrets(existingStoredConfig, schema);
+    const mergedPlainConfig = {
+      ...existingPlainConfig,
+      ...normalizedInput,
+    };
+
+    const issues = this.validateConfig(plugin, schema, mergedPlainConfig, false);
+    if (issues.length > 0) {
+      return { kind: "validation_error", issues };
+    }
+
+    // Unique channel enforcement (FR-012)
+    const uniqueField = plugin.uniqueChannelField();
+    if (uniqueField && mergedPlainConfig[uniqueField]) {
+      const conflicts = await db.query<{ workspace_id: string }>(
+        `SELECT workspace_id FROM connector_configs
+         WHERE connector_id = $1 AND enabled = true AND workspace_id != $2
+           AND config_data->>$3 = $4`,
+        [connectorId, workspaceId, uniqueField, mergedPlainConfig[uniqueField]],
+      );
+      if (conflicts.length > 0) {
+        return {
+          kind: "conflict",
+          detail: `${this.labelForField(schema, uniqueField)} is already configured in another workspace.`,
+        };
+      }
+    }
+
+    const storedUpdates = this.encryptSecrets(normalizedInput, schema);
+    const mergedStoredConfig = {
+      ...existingStoredConfig,
+      ...storedUpdates,
+    };
+
+    await db.query(
+      `INSERT INTO connector_configs (workspace_id, connector_id, config_data, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (workspace_id, connector_id)
+       DO UPDATE SET config_data = $3, error_status = NULL, updated_at = NOW()`,
+      [workspaceId, connectorId, JSON.stringify(mergedStoredConfig)],
+    );
+
+    return { kind: "success" };
+  }
+
+  async enableConnector(
+    db: Database,
+    workspaceId: string,
+    connectorId: string,
+  ): Promise<ConnectorMutationResult> {
+    const plugin = this.plugins.get(connectorId);
+    if (!plugin) {
+      return {
+        kind: "validation_error",
+        issues: [{ key: "connector", message: `Unknown connector: ${connectorId}` }],
+      };
+    }
+
+    const rows = await db.query<{ config_data: Record<string, string> }>(
+      `SELECT config_data FROM connector_configs WHERE workspace_id = $1 AND connector_id = $2`,
+      [workspaceId, connectorId],
+    );
+
+    if (rows.length === 0) {
+      return {
+        kind: "validation_error",
+        issues: [{ key: "config", message: "Save configuration before enabling" }],
+      };
+    }
+
+    const schema = plugin.configSchema();
+    const storedConfig = rows[0].config_data;
+    const config = this.decryptSecrets(storedConfig, schema);
+    const issues = this.validateConfig(plugin, schema, config, true);
+    if (issues.length > 0) {
+      return { kind: "validation_error", issues };
+    }
+
+    // Unique channel enforcement on enable
+    const uniqueField = plugin.uniqueChannelField();
+    if (uniqueField && config[uniqueField]) {
+      const conflicts = await db.query<{ workspace_id: string }>(
+        `SELECT workspace_id FROM connector_configs
+         WHERE connector_id = $1 AND enabled = true AND workspace_id != $2
+           AND config_data->>$3 = $4`,
+        [connectorId, workspaceId, uniqueField, storedConfig[uniqueField] ?? config[uniqueField]],
+      );
+      if (conflicts.length > 0) {
+        return {
+          kind: "conflict",
+          detail: `${this.labelForField(schema, uniqueField)} is already configured in another workspace.`,
+        };
+      }
+    }
+
+    await db.query(
+      `UPDATE connector_configs SET enabled = true, error_status = NULL, updated_at = NOW()
+       WHERE workspace_id = $1 AND connector_id = $2`,
+      [workspaceId, connectorId],
+    );
+
+    return { kind: "success" };
+  }
+
+  async disableConnector(
+    db: Database,
+    workspaceId: string,
+    connectorId: string,
+  ): Promise<void> {
+    await db.query(
+      `UPDATE connector_configs SET enabled = false, updated_at = NOW()
+       WHERE workspace_id = $1 AND connector_id = $2`,
+      [workspaceId, connectorId],
+    );
+  }
+
+  async getDecryptedConfig(
+    db: Database,
+    workspaceId: string,
+    connectorId: string,
+  ): Promise<{ enabled: boolean; config: Record<string, string> } | null> {
+    const rows = await db.query<{
+      enabled: boolean;
+      config_data: Record<string, string>;
+    }>(
+      `SELECT enabled, config_data FROM connector_configs WHERE workspace_id = $1 AND connector_id = $2`,
+      [workspaceId, connectorId],
+    );
+
+    if (rows.length === 0) return null;
+
+    const plugin = this.plugins.get(connectorId);
+    if (!plugin) return null;
+
+    const schema = plugin.configSchema();
+    const decrypted = this.decryptSecrets(rows[0].config_data, schema);
+    return { enabled: rows[0].enabled, config: decrypted };
+  }
+
+  async setErrorStatus(
+    db: Database,
+    workspaceId: string,
+    connectorId: string,
+    errorStatus: string | null,
+  ): Promise<void> {
+    await db.query(
+      `UPDATE connector_configs SET error_status = $3, updated_at = NOW()
+       WHERE workspace_id = $1 AND connector_id = $2`,
+      [workspaceId, connectorId, errorStatus],
+    );
+  }
+
+  // ── Encryption helpers ──────────────────────────────────────────────
+
+  private encryptSecrets(
+    config: Record<string, string>,
+    schema: ConfigFieldDefinition[],
+  ): Record<string, string> {
+    if (!this.encryptionKey) return config;
+
+    const secretKeys = new Set(schema.filter((f) => f.type === "secret").map((f) => f.key));
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(config)) {
+      result[key] = secretKeys.has(key) ? encryptField(value, this.encryptionKey) : value;
+    }
+    return result;
+  }
+
+  private decryptSecrets(
+    config: Record<string, string>,
+    schema: ConfigFieldDefinition[],
+  ): Record<string, string> {
+    if (!this.encryptionKey) return config;
+
+    const secretKeys = new Set(schema.filter((f) => f.type === "secret").map((f) => f.key));
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(config)) {
+      result[key] = secretKeys.has(key) ? decryptField(value, this.encryptionKey) : value;
+    }
+    return result;
+  }
+
+  private maskSecrets(
+    config: Record<string, string>,
+    schema: ConfigFieldDefinition[],
+  ): Record<string, string> {
+    const secretKeys = new Set(schema.filter((f) => f.type === "secret").map((f) => f.key));
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(config)) {
+      if (secretKeys.has(key)) {
+        // Decrypt then mask so we show last 4 chars of the actual value
+        const decrypted = this.tryDecryptValue(value);
+        result[key] = maskSecret(decrypted);
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
+  private tryDecryptValue(value: string): string {
+    if (!this.encryptionKey) return value;
+    try {
+      return decryptField(value, this.encryptionKey);
+    } catch {
+      return value;
+    }
+  }
+
+  private normalizeConfigData(config: Record<string, unknown>): Record<string, string> {
+    const normalized: Record<string, string> = {};
+    for (const [key, value] of Object.entries(config)) {
+      if (value === null || value === undefined) {
+        continue;
+      }
+      normalized[key] = typeof value === "string" ? value.trim() : String(value);
+    }
+    return normalized;
+  }
+
+  private validateConfig(
+    plugin: ConnectorPlugin,
+    schema: ConfigFieldDefinition[],
+    config: Record<string, string>,
+    requireAllFields: boolean,
+  ): ConnectorValidationIssue[] {
+    const issues: ConnectorValidationIssue[] = [];
+
+    for (const field of schema) {
+      const value = config[field.key];
+      if (!value) {
+        if (requireAllFields && field.required) {
+          issues.push({
+            key: field.key,
+            message: `${field.label} is required`,
+          });
+        }
+      }
+    }
+
+    issues.push(...plugin.validateConfig(config));
+    return issues;
+  }
+
+  private labelForField(schema: ConfigFieldDefinition[], key: string): string {
+    return schema.find((field) => field.key === key)?.label ?? key;
+  }
+}

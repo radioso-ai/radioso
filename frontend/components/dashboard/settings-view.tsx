@@ -1,6 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { Save } from 'lucide-react'
+
+import { ConnectorsTab } from '@/components/dashboard/connectors/connectors-tab'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
@@ -10,11 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { settingsApi, RetrievalSettings } from '@/lib/api'
-import { Save } from 'lucide-react'
 
 const chunkingStrategyOptions: Array<{
   value: RetrievalSettings['chunkingStrategy']
@@ -75,7 +78,7 @@ const attributeModeLabels: Record<
   },
 }
 
-export function SettingsView() {
+function RetrievalSettingsPanel() {
   const [settings, setSettings] = useState<RetrievalSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -92,7 +95,7 @@ export function SettingsView() {
         setIsLoading(false)
       }
     }
-    loadSettings()
+    void loadSettings()
   }, [])
 
   const updateSetting = <K extends keyof RetrievalSettings>(
@@ -152,8 +155,8 @@ export function SettingsView() {
     <div className="flex flex-col h-full">
       <div className="border-b border-border px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-medium text-foreground">Settings</h1>
-          <p className="text-sm text-muted-foreground">Configure retrieval parameters</p>
+          <h2 className="text-lg font-medium text-foreground">Retrieval Settings</h2>
+          <p className="text-sm text-muted-foreground">Tune retrieval and response behavior</p>
         </div>
         <Button size="sm" onClick={handleSave} disabled={!hasChanges || isSaving}>
           {isSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
@@ -419,6 +422,44 @@ export function SettingsView() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+export function SettingsView() {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border px-6 py-4">
+        <h1 className="text-lg font-medium text-foreground">Settings</h1>
+        <p className="text-sm text-muted-foreground">
+          Configure retrieval behavior and external chat channels.
+        </p>
+      </div>
+
+      <Tabs defaultValue="retrieval" className="flex flex-1 flex-col">
+        <div className="border-b border-border px-6 py-3">
+          <TabsList>
+            <TabsTrigger value="retrieval">Retrieval</TabsTrigger>
+            <TabsTrigger value="connectors">Chat Connectors</TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="retrieval" className="flex-1 overflow-hidden">
+          <RetrievalSettingsPanel />
+        </TabsContent>
+
+        <TabsContent value="connectors" className="flex-1 overflow-y-auto p-6">
+          <div className="mb-6 max-w-3xl">
+            <h2 className="text-lg font-medium text-foreground">Chat Connectors</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Connect external messaging channels to this workspace. Connector config is
+              schema-driven, so new connector types appear here automatically once the backend
+              registers them.
+            </p>
+          </div>
+          <ConnectorsTab />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

@@ -11,6 +11,7 @@ const envSchema = z.object({
   SESSION_COOKIE_NAME: z.string().min(1).default("hivec_session"),
   SESSION_COOKIE_SECRET: z.string().min(16),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
+  CONNECTOR_ENCRYPTION_KEY: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -26,6 +26,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL 16 with pgvector extension (014-multi-workspace)
 - TypeScript / Node.js 22 + Express, Zod, pg (node-postgres) (015-document-metadata)
 - PostgreSQL 16 with pgvector — JSONB columns with GIN indexes (015-document-metadata)
+- TypeScript / Node.js (backend), TypeScript / React + Next.js (frontend) + Express.js, pg (PostgreSQL driver), Vitest (testing), Shadcn/ui (frontend components) (016-chat-connectors)
+- PostgreSQL with `pgvector` extension (016-chat-connectors)
 
 
 ## Project Structure
@@ -45,6 +47,6 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 016-chat-connectors: Added TypeScript / Node.js (backend), TypeScript / React + Next.js (frontend) + Express.js, pg (PostgreSQL driver), Vitest (testing), Shadcn/ui (frontend components)
 - 015-document-metadata: Added TypeScript / Node.js 22 + Express, Zod, pg (node-postgres)
 - 014-multi-workspace: Added TypeScript (Node.js backend, Next.js frontend) + Express, Next.js 14, React, shadcn/ui, Zod, pg (node-postgres), OpenAI SDK
-- 012-async-document-processing: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Vitest, Supertest, Next.js App Router

@@ -18,6 +18,11 @@ export class WorkspaceService {
   }
 
   async createDefault(accountId: string): Promise<WorkspaceRecord> {
+    const existing = await this.workspaceRepository.listByAccountId(accountId);
+    if (existing.length > 0) {
+      return existing.find((workspace) => workspace.name === "Default") ?? existing[0];
+    }
+
     return this.workspaceRepository.create(accountId, "Default");
   }
 

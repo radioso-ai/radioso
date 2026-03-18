@@ -692,6 +692,10 @@ components:
         content:
           type: string
           minLength: 1
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Optional key-value metadata (max 16 KB serialized)
     DocumentCreateResponse:
       type: object
       required: [documentId, status]
@@ -722,6 +726,10 @@ components:
         updatedAt:
           type: string
           format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+          default: {}
     DocumentDetails:
       allOf:
         - $ref: '#/components/schemas/DocumentSummary'
@@ -751,6 +759,10 @@ components:
           type: string
           format: uuid
           description: Omit to start a new conversation
+        metadataFilter:
+          type: object
+          additionalProperties: true
+          description: Filter retrieval to chunks matching these metadata key-value pairs
     ChatResponse:
       type: object
       required: [conversationId, answer, retrievalInfo]

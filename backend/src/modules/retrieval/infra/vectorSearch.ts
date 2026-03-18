@@ -57,9 +57,9 @@ export class PgVectorSearch implements VectorSearchPort {
       input.topK,
     ];
 
-    const metadataClause = input.metadataFilter ? `AND c.metadata @> $5::jsonb` : "";
+    const metadataClause = input.metadataFilter && Object.keys(input.metadataFilter).length > 0 ? `AND c.metadata @> $5::jsonb` : "";
 
-    if (input.metadataFilter) {
+    if (input.metadataFilter && Object.keys(input.metadataFilter).length > 0) {
       params.push(JSON.stringify(input.metadataFilter));
     }
 

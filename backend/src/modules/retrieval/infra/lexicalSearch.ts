@@ -40,9 +40,9 @@ export class PgLexicalSearch implements LexicalSearchPort {
     }
 
     const params: unknown[] = [input.workspaceId, normalizedQuery, input.topK];
-    const metadataClause = input.metadataFilter ? `AND c.metadata @> $4::jsonb` : "";
+    const metadataClause = input.metadataFilter && Object.keys(input.metadataFilter).length > 0 ? `AND c.metadata @> $4::jsonb` : "";
 
-    if (input.metadataFilter) {
+    if (input.metadataFilter && Object.keys(input.metadataFilter).length > 0) {
       params.push(JSON.stringify(input.metadataFilter));
     }
 

@@ -16,9 +16,13 @@ CREATE INDEX IF NOT EXISTS idx_workspaces_account_id ON workspaces (account_id);
 
 -- Phase 2: Create default workspace for each existing account
 INSERT INTO workspaces (id, account_id, name)
-SELECT gen_random_uuid(), id, 'Default'
-FROM accounts
-ON CONFLICT DO NOTHING;
+SELECT gen_random_uuid(), a.id, 'Default'
+FROM accounts a
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM workspaces w
+  WHERE w.account_id = a.id
+);
 
 -- Phase 3: Create workspace_tokens table (replaces account_tokens)
 CREATE TABLE IF NOT EXISTS workspace_tokens (

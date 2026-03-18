@@ -24,6 +24,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL 16+ with `pgvector`; additive job/revision columns and processing-job table (012-async-document-processing)
 - TypeScript (Node.js backend, Next.js frontend) + Express, Next.js 14, React, shadcn/ui, Zod, pg (node-postgres), OpenAI SDK (014-multi-workspace)
 - PostgreSQL 16 with pgvector extension (014-multi-workspace)
+- Node.js (TypeScript) backend, React (TypeScript) frontend + Express, Zod (validation), React, Tailwind CSS, shadcn/ui components (016-workspace-mgmt)
+- PostgreSQL with `pgvector` — workspaces table already has ON DELETE CASCADE on all child FK references (016-workspace-mgmt)
 
 
 ## Project Structure
@@ -43,7 +45,6 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 016-workspace-mgmt: Added Node.js (TypeScript) backend, React (TypeScript) frontend + Express, Zod (validation), React, Tailwind CSS, shadcn/ui components
 - 014-multi-workspace: Added TypeScript (Node.js backend, Next.js frontend) + Express, Next.js 14, React, shadcn/ui, Zod, pg (node-postgres), OpenAI SDK
 - 012-async-document-processing: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Vitest, Supertest, Next.js App Router
-- 010-precise-citations: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, OpenAI SDK, pg, Zod, Pino, Vitest, Supertest, Next.js App Router, existing chat streaming route
->>>>>>> main

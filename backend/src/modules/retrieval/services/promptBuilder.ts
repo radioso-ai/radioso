@@ -28,6 +28,7 @@ export class PromptBuilder {
           locations: [],
         });
         const prefix = attributeSummary ? `Attributes: ${attributeSummary}\n` : "";
+        // Currently renders sourceUrl; extend as more metadata keys become prompt-relevant.
         const metadataLine = context.metadata?.sourceUrl ? `Source: ${context.metadata.sourceUrl}\n` : "";
         return `Result ${index + 1} (${context.title}): ${prefix}${metadataLine}${context.content}`;
       })

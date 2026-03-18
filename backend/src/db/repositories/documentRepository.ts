@@ -99,12 +99,11 @@ export class DocumentRepository implements DocumentRepositoryPort {
              revision = revision + 1,
              failed_at = NULL,
              failure_reason = NULL,
-             updated_at = NOW()${input.metadata !== undefined ? ",\n             metadata = $6::jsonb" : ""}
+             updated_at = NOW(),
+             metadata = COALESCE($6::jsonb, metadata)
          WHERE id = $1 AND workspace_id = $2
          RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
-        input.metadata !== undefined
-          ? [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, JSON.stringify(input.metadata)]
-          : [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent],
+        [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.metadata ? JSON.stringify(input.metadata) : null],
       );
       const [documentRow] = documentResult.rows;
 
@@ -163,12 +162,11 @@ export class DocumentRepository implements DocumentRepositoryPort {
            revision = revision + 1,
            failed_at = NULL,
            failure_reason = NULL,
-           updated_at = NOW()${input.metadata !== undefined ? ",\n           metadata = $7::jsonb" : ""}
+           updated_at = NOW(),
+           metadata = COALESCE($7::jsonb, metadata)
        WHERE id = $1 AND workspace_id = $2
        RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
-      input.metadata !== undefined
-        ? [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.status, JSON.stringify(input.metadata)]
-        : [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.status],
+      [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.status, input.metadata ? JSON.stringify(input.metadata) : null],
     );
 
     return mapDocument(row);

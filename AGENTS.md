@@ -48,4 +48,3 @@ tests/
 - 015-document-metadata: Added TypeScript / Node.js 22 + Express, Zod, pg (node-postgres)
 - 014-multi-workspace: Added TypeScript (Node.js backend, Next.js frontend) + Express, Next.js 14, React, shadcn/ui, Zod, pg (node-postgres), OpenAI SDK
 - 012-async-document-processing: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Vitest, Supertest, Next.js App Router
->>>>>>> main

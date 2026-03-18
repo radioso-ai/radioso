@@ -99,14 +99,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const deleteWorkspace = useCallback(async (workspaceId: string) => {
     await workspaceApi.delete(workspaceId)
     removeWorkspaceToken(workspaceId)
-    setWorkspaces((prev) => {
-      const remaining = prev.filter((w) => w.id !== workspaceId)
-      if (workspaceId === activeWorkspaceId && remaining.length > 0) {
-        void switchWorkspace(remaining[0].id)
-      }
-      return remaining
-    })
-  }, [activeWorkspaceId, switchWorkspace])
+    const remaining = workspaces.filter((w) => w.id !== workspaceId)
+    setWorkspaces(remaining)
+    if (workspaceId === activeWorkspaceId && remaining.length > 0) {
+      await switchWorkspace(remaining[0].id)
+    }
+  }, [workspaces, activeWorkspaceId, switchWorkspace])
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null
 

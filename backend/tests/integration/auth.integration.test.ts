@@ -81,7 +81,7 @@ describe("auth integration", () => {
     const sessionRepository = new InMemorySessionRepository();
     const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
     const workspaceRepository = new InMemoryWorkspaceRepository();
-    const workspaceService = new WorkspaceService(workspaceRepository);
+    const workspaceService = new WorkspaceService(workspaceRepository, auditService);
     const authService = new AuthService({
       env,
       auditService,
@@ -120,5 +120,24 @@ describe("auth integration", () => {
         }),
       ]),
     );
+  });
+
+  it("does not create a second default workspace for the same account", async () => {
+    const auditService = createAuditService();
+    const workspaceRepository = new InMemoryWorkspaceRepository();
+    const workspaceService = new WorkspaceService(workspaceRepository, auditService);
+    const accountRepository = new InMemoryAccountRepository();
+    const account = await accountRepository.create({
+      email: "default-workspace@example.com",
+      passwordHash: "hash",
+    });
+
+    const first = await workspaceService.createDefault(account.id);
+    const second = await workspaceService.createDefault(account.id);
+    const workspaces = await workspaceRepository.listByAccountId(account.id);
+
+    expect(second.id).toBe(first.id);
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0]?.name).toBe("Default");
   });
 });

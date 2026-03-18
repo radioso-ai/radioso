@@ -11,6 +11,7 @@ const chatSchema = z.object({
   query: z.string().min(1),
   stream: z.boolean(),
   conversationId: z.string().uuid().optional(),
+  metadataFilter: z.record(z.unknown()).optional(),
 });
 
 const conversationParamsSchema = z.object({
@@ -61,6 +62,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
             query: req.body.query,
             stream: req.body.stream,
             conversationId: req.body.conversationId,
+            metadataFilter: req.body.metadataFilter,
           }),
         );
         return;
@@ -72,6 +74,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
         query: req.body.query,
         stream: req.body.stream,
         conversationId: req.body.conversationId,
+        metadataFilter: req.body.metadataFilter,
       });
       sendChatJson(res, result);
     } catch (error) {

@@ -544,4 +544,65 @@ describe("chat retrieval domain", () => {
     expect(result.prompt).toContain("[[1]]");
     expect(result.citations).toEqual([{ documentId: "d1", chunkId: "c1", title: "Intro" }]);
   });
+
+  it("includes a Source line in the prompt when context has a sourceUrl in metadata", () => {
+    const builder = new PromptBuilder();
+    const result = builder.build({
+      query: "What is this about?",
+      history: [],
+      settings: {
+        warmthLevel: 5,
+      },
+      contexts: [
+        {
+          chunkId: "c1",
+          documentId: "d1",
+          title: "External Doc",
+          content: "Some content from an external source.",
+          similarity: 0.9,
+          retrievalSources: ["semantic_original"],
+          retrievalText: "External Doc Some content from an external source.",
+          semanticScore: 0.9,
+          lexicalScore: 0,
+          relevanceScore: 0.9,
+          rerankPosition: 0,
+          promptPosition: 0,
+          estimatedTokenCost: 10,
+          metadata: { sourceUrl: "https://example.com/doc" },
+        },
+      ],
+    });
+
+    expect(result.prompt).toContain("Source: https://example.com/doc");
+  });
+
+  it("does not include a Source line in the prompt when context has no sourceUrl", () => {
+    const builder = new PromptBuilder();
+    const result = builder.build({
+      query: "What is this about?",
+      history: [],
+      settings: {
+        warmthLevel: 5,
+      },
+      contexts: [
+        {
+          chunkId: "c2",
+          documentId: "d2",
+          title: "Internal Doc",
+          content: "Some content without a source URL.",
+          similarity: 0.8,
+          retrievalSources: ["semantic_original"],
+          retrievalText: "Internal Doc Some content without a source URL.",
+          semanticScore: 0.8,
+          lexicalScore: 0,
+          relevanceScore: 0.85,
+          rerankPosition: 0,
+          promptPosition: 0,
+          estimatedTokenCost: 8,
+        },
+      ],
+    });
+
+    expect(result.prompt).not.toContain("Source:");
+  });
 });

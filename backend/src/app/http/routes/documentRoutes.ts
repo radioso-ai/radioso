@@ -8,6 +8,10 @@ import { validateBody } from "../middleware/validate.js";
 const documentSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
+  metadata: z.record(z.unknown()).optional().refine(
+    (val) => !val || JSON.stringify(val).length <= 16384,
+    { message: "Metadata must be 16 KB or less" },
+  ),
 });
 
 const documentParamsSchema = z.object({
@@ -34,6 +38,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
         workspaceId,
         title: req.body.title,
         content: req.body.content,
+        metadata: req.body.metadata,
       });
       res.status(202).json(result);
     } catch (error) {
@@ -61,6 +66,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
         documentId,
         title: req.body.title,
         content: req.body.content,
+        metadata: req.body.metadata,
       });
       res.status(202).json(result);
     } catch (error) {

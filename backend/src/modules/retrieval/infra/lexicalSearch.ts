@@ -7,6 +7,7 @@ export interface LexicalSearchPort {
     workspaceId: string;
     query: string;
     topK: number;
+    metadataFilter?: Record<string, unknown>;
   }): Promise<RetrievedChunk[]>;
 }
 
@@ -20,6 +21,7 @@ interface LexicalSearchRow {
   chunk_index: number;
   start_offset: number | null;
   end_offset: number | null;
+  metadata: Record<string, unknown> | null;
   rank: number;
 }
 
@@ -30,10 +32,18 @@ export class PgLexicalSearch implements LexicalSearchPort {
     workspaceId: string;
     query: string;
     topK: number;
+    metadataFilter?: Record<string, unknown>;
   }): Promise<RetrievedChunk[]> {
     const normalizedQuery = input.query.trim();
     if (!normalizedQuery) {
       return [];
+    }
+
+    const params: unknown[] = [input.workspaceId, normalizedQuery, input.topK];
+    const metadataClause = input.metadataFilter ? `AND c.metadata @> $4::jsonb` : "";
+
+    if (input.metadataFilter) {
+      params.push(JSON.stringify(input.metadataFilter));
     }
 
     const rows = await this.database.query<LexicalSearchRow>(
@@ -46,6 +56,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
               c.chunk_index,
               c.start_offset,
               c.end_offset,
+              c.metadata,
               ts_rank_cd(
                 to_tsvector('simple', coalesce(c.search_text, c.content, '')),
                 plainto_tsquery('simple', $2)
@@ -55,9 +66,10 @@ export class PgLexicalSearch implements LexicalSearchPort {
        WHERE c.workspace_id = $1
          AND d.status = 'ready'
          AND plainto_tsquery('simple', $2) @@ to_tsvector('simple', coalesce(c.search_text, c.content, ''))
+         ${metadataClause}
        ORDER BY rank DESC, c.chunk_index ASC
        LIMIT $3`,
-      [input.workspaceId, normalizedQuery, input.topK],
+      params,
     );
 
     const maxRank = rows.reduce((highest, row) => Math.max(highest, Number(row.rank)), 0);
@@ -73,6 +85,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
       chunkIndex: row.chunk_index,
       startOffset: row.start_offset,
       endOffset: row.end_offset,
+      metadata: row.metadata ?? {},
     }));
   }
 }

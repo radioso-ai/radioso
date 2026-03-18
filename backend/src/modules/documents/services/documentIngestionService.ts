@@ -14,6 +14,7 @@ export interface DocumentRecord {
   failureReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  metadata: Record<string, unknown>;
 }
 
 export interface ChunkRecord {
@@ -27,6 +28,7 @@ export interface ChunkRecord {
   embedding: number[];
   startOffset: number;
   endOffset: number;
+  metadata?: Record<string, unknown>;
   createdAt: Date;
 }
 
@@ -36,6 +38,7 @@ export interface DocumentRepositoryPort {
     title: string;
     sourceContent: string;
     markdownContent: string;
+    metadata?: Record<string, unknown>;
   }): Promise<DocumentRecord>;
   create(input: {
     workspaceId: string;
@@ -43,6 +46,7 @@ export interface DocumentRepositoryPort {
     sourceContent: string;
     markdownContent: string;
     status: string;
+    metadata?: Record<string, unknown>;
   }): Promise<DocumentRecord>;
   setStatus(input: {
     documentId: string;
@@ -66,6 +70,7 @@ export interface DocumentRepositoryPort {
     sourceContent: string;
     markdownContent: string;
     status: string;
+    metadata?: Record<string, unknown>;
   }): Promise<DocumentRecord>;
   updateAndQueue(input: {
     documentId: string;
@@ -73,6 +78,7 @@ export interface DocumentRepositoryPort {
     title: string;
     sourceContent: string;
     markdownContent: string;
+    metadata?: Record<string, unknown>;
   }): Promise<DocumentRecord>;
   requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
   requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
@@ -96,6 +102,7 @@ export interface DocumentSummary {
   ragStatus: "processed" | "pending";
   createdAt: Date;
   updatedAt: Date;
+  metadata: Record<string, unknown>;
 }
 
 export interface DocumentDetails extends DocumentSummary {
@@ -108,13 +115,14 @@ export class DocumentIngestionService {
     private readonly auditService: AuditService,
   ) {}
 
-  async ingest(input: { workspaceId: string; title: string; content: string }): Promise<{ documentId: string; status: string }> {
+  async ingest(input: { workspaceId: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<{ documentId: string; status: string }> {
     try {
       const document = await this.documentRepository.createAndQueue({
         workspaceId: input.workspaceId,
         title: input.title,
         sourceContent: input.content,
         markdownContent: normalizeMarkdown(input.content),
+        metadata: input.metadata,
       });
 
       await this.auditService.record({
@@ -145,7 +153,7 @@ export class DocumentIngestionService {
     }
   }
 
-  async update(input: { workspaceId: string; documentId: string; title: string; content: string }): Promise<{ documentId: string; status: string }> {
+  async update(input: { workspaceId: string; documentId: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<{ documentId: string; status: string }> {
     await this.getDocument(input.workspaceId, input.documentId);
 
     try {
@@ -155,6 +163,7 @@ export class DocumentIngestionService {
         title: input.title,
         sourceContent: input.content,
         markdownContent: normalizeMarkdown(input.content),
+        metadata: input.metadata,
       });
 
       await this.auditService.record({
@@ -243,6 +252,7 @@ export class DocumentIngestionService {
       ragStatus: document.status === "ready" ? "processed" : "pending",
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
+      metadata: document.metadata,
     };
   }
 

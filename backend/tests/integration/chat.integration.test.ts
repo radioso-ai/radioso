@@ -605,6 +605,49 @@ describe("chat integration", () => {
     expect(response.body.retrievalInfo.candidateCounts.lexical).toBe(0);
   });
 
+  it("accepts metadataFilter in the request body and returns a successful response", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "metadata-filter@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "English Guide",
+        content: "This guide covers the English API documentation for external users.",
+        metadata: { language: "en" },
+      });
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Spanish Guide",
+        content: "Esta guía cubre la documentación de la API en español para usuarios externos.",
+        metadata: { language: "es" },
+      });
+
+    // The in-memory fake does not apply @> JSON containment filtering on chunk metadata,
+    // so we cannot assert that only English chunks are returned here. The test verifies
+    // that metadataFilter is a valid request field that is accepted without errors and
+    // that the pipeline runs to completion.
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        query: "What does the guide cover?",
+        stream: false,
+        metadataFilter: { language: "en" },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveProperty("answer");
+    expect(response.body).toHaveProperty("conversationId");
+    expect(response.body).toHaveProperty("retrievalInfo");
+  });
+
   it("handles legacy chunks without search text or structured attributes", async () => {
     const { app, repositories } = createTestApp();
 

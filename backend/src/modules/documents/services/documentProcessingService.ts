@@ -95,6 +95,7 @@ export class DocumentProcessingService {
       embedding: embeddings[index] ?? [],
       startOffset: chunk.startOffset,
       endOffset: chunk.endOffset,
+      metadata: markedProcessing.metadata ?? {},
       createdAt: new Date(),
     }));
 

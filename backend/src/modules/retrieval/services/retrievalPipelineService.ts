@@ -51,6 +51,7 @@ export class RetrievalPipelineService {
     query: string;
     history: MessageRecord[];
     rewriteCarryForwardLiterals?: string[];
+    metadataFilter?: Record<string, unknown>;
   }): Promise<RetrievalPipelineResult> {
     const settings = await this.retrievalSettingsService.getForWorkspace(input.workspaceId);
     const contextWindow = this.conversationContextService.select({
@@ -87,6 +88,7 @@ export class RetrievalPipelineService {
       queryEmbedding: activeEmbedding ?? [],
       topK: settings.vectorTopK,
       similarityThreshold: settings.similarityThreshold,
+      metadataFilter: input.metadataFilter,
     });
     const originalContexts = rewrittenQuery.retrievalEligible ? [] : activeSearch.contexts;
     const rewrittenContexts = rewrittenQuery.retrievalEligible ? activeSearch.contexts : [];
@@ -102,6 +104,7 @@ export class RetrievalPipelineService {
       workspaceId: input.workspaceId,
       query: activeParsedQuery.lexicalQuery || activeQuery,
       topK: HYBRID_RETRIEVAL_DEFAULTS.lexicalTopK,
+      metadataFilter: input.metadataFilter,
     });
 
     const normalizedCandidates = this.candidatePreparationService.prepare({
@@ -170,12 +173,14 @@ export class RetrievalPipelineService {
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
+    metadataFilter?: Record<string, unknown>;
   }): Promise<{ contexts: RetrievedChunk[]; fallbackApplied: boolean }> {
     const rows = await this.vectorSearch.search({
       workspaceId: input.workspaceId,
       queryEmbedding: input.queryEmbedding,
       topK: input.topK,
       similarityThreshold: input.similarityThreshold,
+      metadataFilter: input.metadataFilter,
     });
 
     return {

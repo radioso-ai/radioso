@@ -50,6 +50,29 @@ Only future ingests change.`,
     expect(storedChunks.some((chunk) => chunk.content.includes("What changes now?"))).toBe(true);
   });
 
+  it("propagates document metadata to every chunk produced during processing", async () => {
+    const { app, repositories } = createTestApp();
+
+    const { token } = await issueTestToken(app, "metadata-propagation@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const document = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Source Guide",
+        content: "This guide explains how to use the API for external integrations.",
+        metadata: { sourceUrl: "https://example.com", language: "en" },
+      });
+
+    expect(document.status).toBe(202);
+    const storedChunks = repositories.chunkRepository.items.get(document.body.documentId) ?? [];
+    expect(storedChunks.length).toBeGreaterThan(0);
+    for (const chunk of storedChunks) {
+      expect(chunk.metadata).toMatchObject({ sourceUrl: "https://example.com", language: "en" });
+    }
+  });
+
   it("does not rewrite existing chunks until the document is updated", async () => {
     const { app, repositories } = createTestApp();
 

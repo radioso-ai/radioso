@@ -12,7 +12,7 @@ const chatSchema = z.object({
   stream: z.boolean(),
   conversationId: z.string().uuid().optional(),
   metadataFilter: z.record(z.unknown()).optional().refine(
-    (val) => !val || JSON.stringify(val).length <= 16384,
+    (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= 16384,
     { message: "Metadata filter must be 16 KB or less" },
   ),
 });

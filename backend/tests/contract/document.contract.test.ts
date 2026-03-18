@@ -117,6 +117,101 @@ describe("document contract", () => {
     expect(listResponse.body.documents).toEqual([]);
   });
 
+  it("persists and returns document metadata on POST and GET", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-metadata@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Metadata document",
+        content: "Content with metadata",
+        metadata: { sourceUrl: "https://example.com", language: "en" },
+      });
+
+    expect(createResponse.status).toBe(202);
+
+    const getResponse = await request(app)
+      .get(`/api/v1/document/${createResponse.body.documentId}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.body).toMatchObject({
+      id: createResponse.body.documentId,
+      metadata: { sourceUrl: "https://example.com", language: "en" },
+    });
+  });
+
+  it("returns empty metadata object when document is created without metadata", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-no-metadata@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "No metadata document",
+        content: "Content without metadata",
+      });
+
+    expect(createResponse.status).toBe(202);
+
+    const getResponse = await request(app)
+      .get(`/api/v1/document/${createResponse.body.documentId}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.body).toMatchObject({
+      id: createResponse.body.documentId,
+      metadata: {},
+    });
+  });
+
+  it("preserves metadata on PUT without metadata and replaces on PUT with metadata", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-put-metadata@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Original",
+        content: "Original content",
+        metadata: { sourceUrl: "https://example.com", language: "en" },
+      });
+
+    // PUT without metadata — existing metadata should be preserved
+    await request(app)
+      .put(`/api/v1/document/${createResponse.body.documentId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Updated", content: "Updated content" });
+
+    const afterNoMetadataUpdate = await request(app)
+      .get(`/api/v1/document/${createResponse.body.documentId}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(afterNoMetadataUpdate.body.metadata).toEqual({
+      sourceUrl: "https://example.com",
+      language: "en",
+    });
+
+    // PUT with metadata — should replace
+    await request(app)
+      .put(`/api/v1/document/${createResponse.body.documentId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Updated again", content: "Updated content again", metadata: { language: "fr" } });
+
+    const afterMetadataUpdate = await request(app)
+      .get(`/api/v1/document/${createResponse.body.documentId}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(afterMetadataUpdate.body.metadata).toEqual({ language: "fr" });
+  });
+
   it("returns not_found when deleting a document outside the authenticated account", async () => {
     const { app } = createTestApp();
 

@@ -5,7 +5,7 @@ import { badRequest, notFound } from "../../../shared/domain/errors.js";
 export class WorkspaceService {
   constructor(
     private readonly workspaceRepository: WorkspaceRepositoryPort,
-    private readonly auditService?: AuditService,
+    private readonly auditService: AuditService,
   ) {}
 
   async create(accountId: string, name: string): Promise<WorkspaceRecord> {
@@ -43,7 +43,7 @@ export class WorkspaceService {
 
     const updated = await this.workspaceRepository.updateName(workspaceId, trimmedName);
 
-    await this.auditService?.record({
+    await this.auditService.record({
       accountId,
       workspaceId,
       eventType: "workspace.renamed",
@@ -62,14 +62,14 @@ export class WorkspaceService {
       throw badRequest("Cannot delete the last workspace");
     }
 
-    await this.workspaceRepository.deleteById(workspaceId);
-
-    await this.auditService?.record({
+    await this.auditService.record({
       accountId,
       workspaceId: null,
       eventType: "workspace.deleted",
       eventStatus: "success",
       metadata: { deletedWorkspaceId: workspaceId, deletedWorkspaceName: workspace.name },
     });
+
+    await this.workspaceRepository.deleteById(workspaceId);
   }
 }

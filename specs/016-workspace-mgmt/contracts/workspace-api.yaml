@@ -1,0 +1,118 @@
+openapi: 3.0.3
+info:
+  title: Workspace Management API
+  version: 1.0.0
+  description: Endpoints for renaming and deleting workspaces.
+
+paths:
+  /api/v1/workspace/{workspaceId}:
+    patch:
+      summary: Rename a workspace
+      description: Updates the name of a workspace owned by the authenticated account.
+      operationId: renameWorkspace
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  description: New workspace name (trimmed server-side)
+      responses:
+        "200":
+          description: Workspace renamed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workspace"
+        "400":
+          description: Invalid name (empty or too long)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Not authenticated
+        "404":
+          description: Workspace not found or not owned by account
+
+    delete:
+      summary: Delete a workspace
+      description: >
+        Permanently deletes a workspace and all associated data (documents,
+        chunks, conversations, messages, retrieval settings, tokens, processing
+        jobs). Cannot delete the last remaining workspace on the account.
+      operationId: deleteWorkspace
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Workspace deleted successfully (no content)
+        "400":
+          description: Cannot delete last workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Not authenticated
+        "404":
+          description: Workspace not found or not owned by account
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+
+  schemas:
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        accountId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        details:
+          type: object
+          description: Additional error details (optional)

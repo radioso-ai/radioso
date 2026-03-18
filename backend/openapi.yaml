@@ -115,6 +115,65 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v1/workspace/{workspaceId}:
+    patch:
+      tags: [Workspace]
+      summary: Rename a workspace
+      operationId: renameWorkspace
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceRenameRequest'
+      responses:
+        '200':
+          description: Workspace renamed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Workspace]
+      summary: Delete a workspace and all its data
+      operationId: deleteWorkspace
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Workspace deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/v1/account/workspaces/{workspaceId}/token:
     get:
       tags: [Account]
@@ -499,6 +558,14 @@ components:
           items:
             $ref: '#/components/schemas/Workspace'
     WorkspaceCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+    WorkspaceRenameRequest:
       type: object
       required: [name]
       properties:

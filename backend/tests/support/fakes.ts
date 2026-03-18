@@ -168,6 +168,16 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     return [...this.items.values()].filter((w) => w.accountId === accountId).length;
   }
 
+  async updateName(workspaceId: string, name: string): Promise<WorkspaceRecord> {
+    const item = this.items.get(workspaceId);
+    if (!item) {
+      throw new Error(`Workspace ${workspaceId} not found`);
+    }
+    const updated = { ...item, name, updatedAt: new Date() };
+    this.items.set(workspaceId, updated);
+    return updated;
+  }
+
   async deleteById(workspaceId: string): Promise<boolean> {
     return this.items.delete(workspaceId);
   }

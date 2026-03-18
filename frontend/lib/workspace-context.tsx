@@ -12,6 +12,7 @@ import {
   workspaceApi,
   activateWorkspaceToken,
   clearWorkspaceStorage,
+  removeWorkspaceToken,
   getStoredActiveWorkspaceId,
   type Workspace,
 } from '@/lib/api'
@@ -24,6 +25,8 @@ interface WorkspaceContextValue {
   isLoading: boolean
   switchWorkspace: (workspaceId: string) => Promise<void>
   createWorkspace: (name: string) => Promise<Workspace>
+  renameWorkspace: (workspaceId: string, name: string) => Promise<Workspace>
+  deleteWorkspace: (workspaceId: string) => Promise<void>
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
@@ -87,6 +90,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return workspace
   }, [switchWorkspace])
 
+  const renameWorkspace = useCallback(async (workspaceId: string, name: string) => {
+    const updated = await workspaceApi.rename(workspaceId, name)
+    setWorkspaces((prev) => prev.map((w) => (w.id === workspaceId ? updated : w)))
+    return updated
+  }, [])
+
+  const deleteWorkspace = useCallback(async (workspaceId: string) => {
+    await workspaceApi.delete(workspaceId)
+    removeWorkspaceToken(workspaceId)
+    const remaining = workspaces.filter((w) => w.id !== workspaceId)
+    setWorkspaces(remaining)
+    if (workspaceId === activeWorkspaceId && remaining.length > 0) {
+      await switchWorkspace(remaining[0].id)
+    }
+  }, [workspaces, activeWorkspaceId, switchWorkspace])
+
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null
 
   return (
@@ -98,6 +117,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         isLoading,
         switchWorkspace,
         createWorkspace,
+        renameWorkspace,
+        deleteWorkspace,
       }}
     >
       {children}

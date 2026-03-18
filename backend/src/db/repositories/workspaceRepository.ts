@@ -32,6 +32,7 @@ export interface WorkspaceRepositoryPort {
   findByIdAndAccountId(workspaceId: string, accountId: string): Promise<WorkspaceRecord | null>;
   listByAccountId(accountId: string): Promise<WorkspaceRecord[]>;
   countByAccountId(accountId: string): Promise<number>;
+  updateName(workspaceId: string, name: string): Promise<WorkspaceRecord>;
   deleteById(workspaceId: string): Promise<boolean>;
 }
 
@@ -90,6 +91,21 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
     );
 
     return parseInt(row.count, 10);
+  }
+
+  async updateName(workspaceId: string, name: string): Promise<WorkspaceRecord> {
+    const [row] = await this.database.query<WorkspaceRow>(
+      `UPDATE workspaces SET name = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, account_id, name, created_at, updated_at`,
+      [name, workspaceId],
+    );
+
+    if (!row) {
+      throw new Error(`Workspace ${workspaceId} not found`);
+    }
+
+    return mapWorkspace(row);
   }
 
   async deleteById(workspaceId: string): Promise<boolean> {

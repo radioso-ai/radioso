@@ -67,6 +67,13 @@ export const clearWorkspaceStorage = () => {
   window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
 };
 
+export const removeWorkspaceToken = (workspaceId: string) => {
+  if (typeof window === "undefined") return;
+  const map = getWorkspaceTokenMap();
+  delete map[workspaceId];
+  window.localStorage.setItem(WORKSPACE_TOKENS_STORAGE_KEY, JSON.stringify(map));
+};
+
 const buildError = async (response: Response): Promise<ErrorResponse> => {
   try {
     return await response.json();
@@ -486,6 +493,19 @@ export const workspaceApi = {
     setWorkspaceToken(workspaceId, response.token)
     setStoredApiToken(response.token)
     return response.token
+  },
+
+  async rename(workspaceId: string, name: string): Promise<Workspace> {
+    return request<Workspace>(`/workspace/${workspaceId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }, { withSession: true })
+  },
+
+  async delete(workspaceId: string): Promise<void> {
+    await request<void>(`/workspace/${workspaceId}`, {
+      method: "DELETE",
+    }, { withSession: true })
   },
 }
 

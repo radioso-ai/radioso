@@ -102,7 +102,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     auditEventRepository,
   );
   const workspaceRepository = new WorkspaceRepository(database);
-  const workspaceService = new WorkspaceService(workspaceRepository);
+  const workspaceService = new WorkspaceService(workspaceRepository, auditService);
   const authService = new AuthService({
     env,
     accountRepository: new AccountRepository(database),

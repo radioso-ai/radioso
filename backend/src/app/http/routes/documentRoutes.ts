@@ -9,7 +9,7 @@ const documentSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
   metadata: z.record(z.unknown()).optional().refine(
-    (val) => !val || JSON.stringify(val).length <= 16384,
+    (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= 16384,
     { message: "Metadata must be 16 KB or less" },
   ),
 });

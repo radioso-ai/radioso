@@ -1,6 +1,7 @@
 import { emptyStructuredAttributes } from "../domain/structuredAttributes.js";
 import type { Database } from "../../../shared/infra/database.js";
 import type { RetrievedChunk } from "./vectorSearch.js";
+import { hasNonEmptyFilter } from "./vectorSearch.js";
 
 export interface LexicalSearchPort {
   search(input: {
@@ -40,9 +41,10 @@ export class PgLexicalSearch implements LexicalSearchPort {
     }
 
     const params: unknown[] = [input.workspaceId, normalizedQuery, input.topK];
-    const metadataClause = input.metadataFilter && Object.keys(input.metadataFilter).length > 0 ? `AND c.metadata @> $4::jsonb` : "";
+    const hasFilter = hasNonEmptyFilter(input.metadataFilter);
+    const metadataClause = hasFilter ? `AND c.metadata @> $4::jsonb` : "";
 
-    if (input.metadataFilter && Object.keys(input.metadataFilter).length > 0) {
+    if (hasFilter) {
       params.push(JSON.stringify(input.metadataFilter));
     }
 

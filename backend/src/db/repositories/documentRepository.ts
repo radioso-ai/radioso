@@ -103,7 +103,8 @@ export class DocumentRepository implements DocumentRepositoryPort {
              metadata = COALESCE($6::jsonb, metadata)
          WHERE id = $1 AND workspace_id = $2
          RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
-        [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.metadata ? JSON.stringify(input.metadata) : null],
+        // undefined metadata preserves existing value (COALESCE falls through); {} explicitly clears it.
+        [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.metadata !== undefined ? JSON.stringify(input.metadata) : null],
       );
       const [documentRow] = documentResult.rows;
 
@@ -166,7 +167,8 @@ export class DocumentRepository implements DocumentRepositoryPort {
            metadata = COALESCE($7::jsonb, metadata)
        WHERE id = $1 AND workspace_id = $2
        RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
-      [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.status, input.metadata ? JSON.stringify(input.metadata) : null],
+      // undefined metadata preserves existing value (COALESCE falls through); {} explicitly clears it.
+      [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.status, input.metadata !== undefined ? JSON.stringify(input.metadata) : null],
     );
 
     return mapDocument(row);

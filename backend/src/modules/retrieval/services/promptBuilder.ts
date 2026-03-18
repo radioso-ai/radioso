@@ -28,7 +28,8 @@ export class PromptBuilder {
           locations: [],
         });
         const prefix = attributeSummary ? `Attributes: ${attributeSummary}\n` : "";
-        return `Result ${index + 1} (${context.title}): ${prefix}${context.content}`;
+        const metadataLine = context.metadata?.sourceUrl ? `Source: ${context.metadata.sourceUrl}\n` : "";
+        return `Result ${index + 1} (${context.title}): ${prefix}${metadataLine}${context.content}`;
       })
       .join("\n\n");
     const warmthInstruction = this.getWarmthInstruction(input.settings.warmthLevel);

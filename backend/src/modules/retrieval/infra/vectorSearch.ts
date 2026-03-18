@@ -13,6 +13,7 @@ export interface RetrievedChunk {
   chunkIndex?: number;
   startOffset?: number | null;
   endOffset?: number | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface VectorSearchPort {
@@ -21,6 +22,7 @@ export interface VectorSearchPort {
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
+    metadataFilter?: Record<string, unknown>;
   }): Promise<RetrievedChunk[]>;
 }
 
@@ -35,6 +37,7 @@ interface VectorSearchRow {
   chunk_index: number;
   start_offset: number | null;
   end_offset: number | null;
+  metadata: Record<string, unknown> | null;
 }
 
 export class PgVectorSearch implements VectorSearchPort {
@@ -45,7 +48,21 @@ export class PgVectorSearch implements VectorSearchPort {
     queryEmbedding: number[];
     topK: number;
     similarityThreshold: number;
+    metadataFilter?: Record<string, unknown>;
   }): Promise<RetrievedChunk[]> {
+    const params: unknown[] = [
+      input.workspaceId,
+      `[${input.queryEmbedding.join(",")}]`,
+      input.similarityThreshold,
+      input.topK,
+    ];
+
+    const metadataClause = input.metadataFilter ? `AND c.metadata @> $5::jsonb` : "";
+
+    if (input.metadataFilter) {
+      params.push(JSON.stringify(input.metadataFilter));
+    }
+
     const rows = await this.database.query<VectorSearchRow>(
       `SELECT c.id AS chunk_id,
               c.document_id,
@@ -56,6 +73,7 @@ export class PgVectorSearch implements VectorSearchPort {
               c.chunk_index,
               c.start_offset,
               c.end_offset,
+              c.metadata,
               1 - (c.embedding <=> $2::vector) AS similarity
        FROM chunks c
        JOIN documents d ON d.id = c.document_id
@@ -63,9 +81,10 @@ export class PgVectorSearch implements VectorSearchPort {
          AND d.status = 'ready'
          AND c.embedding IS NOT NULL
          AND 1 - (c.embedding <=> $2::vector) >= $3
+         ${metadataClause}
        ORDER BY c.embedding <=> $2::vector ASC
        LIMIT $4`,
-      [input.workspaceId, `[${input.queryEmbedding.join(",")}]`, input.similarityThreshold, input.topK],
+      params,
     );
 
     return rows.map((row) => ({
@@ -79,6 +98,7 @@ export class PgVectorSearch implements VectorSearchPort {
       chunkIndex: row.chunk_index,
       startOffset: row.start_offset,
       endOffset: row.end_offset,
+      metadata: row.metadata ?? {},
     }));
   }
 }

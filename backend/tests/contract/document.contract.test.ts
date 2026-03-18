@@ -117,6 +117,59 @@ describe("document contract", () => {
     expect(listResponse.body.documents).toEqual([]);
   });
 
+  it("persists and returns document metadata on POST and GET", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-metadata@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Metadata document",
+        content: "Content with metadata",
+        metadata: { sourceUrl: "https://example.com", language: "en" },
+      });
+
+    expect(createResponse.status).toBe(202);
+
+    const getResponse = await request(app)
+      .get(`/api/v1/document/${createResponse.body.documentId}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.body).toMatchObject({
+      id: createResponse.body.documentId,
+      metadata: { sourceUrl: "https://example.com", language: "en" },
+    });
+  });
+
+  it("returns empty metadata object when document is created without metadata", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-no-metadata@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "No metadata document",
+        content: "Content without metadata",
+      });
+
+    expect(createResponse.status).toBe(202);
+
+    const getResponse = await request(app)
+      .get(`/api/v1/document/${createResponse.body.documentId}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.body).toMatchObject({
+      id: createResponse.body.documentId,
+      metadata: {},
+    });
+  });
+
   it("returns not_found when deleting a document outside the authenticated account", async () => {
     const { app } = createTestApp();
 

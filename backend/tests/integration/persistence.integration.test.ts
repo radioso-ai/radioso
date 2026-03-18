@@ -48,12 +48,7 @@ describeIfDatabase("persistence integration", () => {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const migrationsPath = path.resolve(__dirname, "../../src/db/migrations");
 
-  let database: Database;
-  let workspaceRepository: WorkspaceRepository;
-
-  beforeAll(async () => {
-    database = new Database(integrationDatabaseUrl!);
-    workspaceRepository = new WorkspaceRepository(database);
+  const runAllMigrations = async (database: Database) => {
     const migrationFiles = (await readdir(migrationsPath))
       .filter((file) => file.endsWith(".sql"))
       .sort();
@@ -62,6 +57,15 @@ describeIfDatabase("persistence integration", () => {
       const migrationSql = await readFile(path.join(migrationsPath, migrationFile), "utf8");
       await database.pool.query(migrationSql);
     }
+  };
+
+  let database: Database;
+  let workspaceRepository: WorkspaceRepository;
+
+  beforeAll(async () => {
+    database = new Database(integrationDatabaseUrl!);
+    workspaceRepository = new WorkspaceRepository(database);
+    await runAllMigrations(database);
   });
 
   afterAll(async () => {
@@ -147,6 +151,25 @@ describeIfDatabase("persistence integration", () => {
     await database.query("DELETE FROM documents WHERE workspace_id = $1 OR workspace_id = $2", [workspaceA.id, workspaceB.id]);
     await database.query("DELETE FROM workspaces WHERE id = $1 OR id = $2", [workspaceA.id, workspaceB.id]);
     await database.query("DELETE FROM accounts WHERE id = $1 OR id = $2", [accountA.id, accountB.id]);
+  });
+
+  it("does not create duplicate default workspaces when migrations rerun", async () => {
+    const accountRepository = new AccountRepository(database);
+    const account = await accountRepository.create({
+      email: `migration-default-${randomUUID()}@example.com`,
+      passwordHash: "hash-default",
+    });
+
+    await runAllMigrations(database);
+    await runAllMigrations(database);
+
+    const workspaces = await workspaceRepository.listByAccountId(account.id);
+
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0]?.name).toBe("Default");
+
+    await database.query("DELETE FROM workspaces WHERE account_id = $1", [account.id]);
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
   it("stores raw chunk content while generating title-aware retrieval embeddings", async () => {

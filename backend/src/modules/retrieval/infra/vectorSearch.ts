@@ -57,9 +57,10 @@ export class PgVectorSearch implements VectorSearchPort {
       input.topK,
     ];
 
-    const metadataClause = input.metadataFilter && Object.keys(input.metadataFilter).length > 0 ? `AND c.metadata @> $5::jsonb` : "";
+    const hasMetadataFilter = hasNonEmptyFilter(input.metadataFilter);
+    const metadataClause = hasMetadataFilter ? `AND c.metadata @> $5::jsonb` : "";
 
-    if (input.metadataFilter && Object.keys(input.metadataFilter).length > 0) {
+    if (hasMetadataFilter) {
       params.push(JSON.stringify(input.metadataFilter));
     }
 
@@ -102,3 +103,6 @@ export class PgVectorSearch implements VectorSearchPort {
     }));
   }
 }
+
+export const hasNonEmptyFilter = (filter?: Record<string, unknown>): filter is Record<string, unknown> =>
+  filter !== undefined && Object.keys(filter).length > 0;

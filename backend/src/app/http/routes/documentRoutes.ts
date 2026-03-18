@@ -8,7 +8,7 @@ import { validateBody } from "../middleware/validate.js";
 const documentSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
-  metadata: z.record(z.unknown()).optional().refine(
+  metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional().refine(
     (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= 16384,
     { message: "Metadata must be 16 KB or less" },
   ),

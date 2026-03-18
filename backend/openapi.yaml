@@ -641,7 +641,7 @@ components:
           enum: [received, normalized, chunked, embedded, ready]
     DocumentSummary:
       type: object
-      required: [id, title, status, ragStatus, createdAt, updatedAt, metadata]
+      required: [id, title, status, ragStatus, createdAt, updatedAt]
       properties:
         id:
           type: string

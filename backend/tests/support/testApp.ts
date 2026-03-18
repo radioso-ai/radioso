@@ -323,7 +323,7 @@ export const createTestDependencies = (overrides: {
   const chatGateway = overrides.chatGateway ?? defaultChatGateway;
 
   const workspaceRepository = new InMemoryWorkspaceRepository();
-  const workspaceService = new WorkspaceService(workspaceRepository);
+  const workspaceService = new WorkspaceService(workspaceRepository, auditService);
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.register(new WhatsAppPlugin({
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,

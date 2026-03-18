@@ -104,7 +104,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     auditEventRepository,
   );
   const workspaceRepository = new WorkspaceRepository(database);
-  const workspaceService = new WorkspaceService(workspaceRepository);
+  const workspaceService = new WorkspaceService(workspaceRepository, auditService);
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.register(new WhatsAppPlugin({
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,

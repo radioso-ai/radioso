@@ -13,6 +13,7 @@ resource "google_service_account" "frontend" {
 # --- Backend Cloud Run service ---
 
 resource "google_cloud_run_v2_service" "backend" {
+  count    = var.deploy_services ? 1 : 0
   name     = "${local.service_name}-backend"
   location = var.region
 
@@ -36,10 +37,6 @@ resource "google_cloud_run_v2_service" "backend" {
         container_port = 8080
       }
 
-      env {
-        name  = "PORT"
-        value = "8080"
-      }
       env {
         name  = "NODE_ENV"
         value = "production"
@@ -67,6 +64,13 @@ resource "google_cloud_run_v2_service" "backend" {
       env {
         name  = "SESSION_TTL_HOURS"
         value = tostring(var.session_ttl_hours)
+      }
+      dynamic "env" {
+        for_each = var.connector_public_base_url == null ? [] : [var.connector_public_base_url]
+        content {
+          name  = "CONNECTOR_PUBLIC_BASE_URL"
+          value = env.value
+        }
       }
 
       # Secrets from Secret Manager
@@ -108,7 +112,8 @@ resource "google_cloud_run_v2_service" "backend" {
 
 # Public access for backend (needed for webhook connectors)
 resource "google_cloud_run_v2_service_iam_member" "backend_public" {
-  name     = google_cloud_run_v2_service.backend.name
+  count    = var.deploy_services ? 1 : 0
+  name     = google_cloud_run_v2_service.backend[0].name
   location = var.region
   role     = "roles/run.invoker"
   member   = "allUsers"
@@ -117,6 +122,7 @@ resource "google_cloud_run_v2_service_iam_member" "backend_public" {
 # --- Frontend Cloud Run service ---
 
 resource "google_cloud_run_v2_service" "frontend" {
+  count    = var.deploy_services ? 1 : 0
   name     = "${local.service_name}-frontend"
   location = var.region
 
@@ -137,7 +143,7 @@ resource "google_cloud_run_v2_service" "frontend" {
 
       env {
         name  = "BACKEND_INTERNAL_URL"
-        value = google_cloud_run_v2_service.backend.uri
+        value = google_cloud_run_v2_service.backend[0].uri
       }
     }
   }
@@ -145,7 +151,8 @@ resource "google_cloud_run_v2_service" "frontend" {
 
 # Public access for frontend
 resource "google_cloud_run_v2_service_iam_member" "frontend_public" {
-  name     = google_cloud_run_v2_service.frontend.name
+  count    = var.deploy_services ? 1 : 0
+  name     = google_cloud_run_v2_service.frontend[0].name
   location = var.region
   role     = "roles/run.invoker"
   member   = "allUsers"

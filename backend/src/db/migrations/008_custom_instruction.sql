@@ -1,2 +1,2 @@
 ALTER TABLE retrieval_settings
-ADD COLUMN custom_instruction TEXT NOT NULL DEFAULT '';
+ADD COLUMN IF NOT EXISTS custom_instruction TEXT NOT NULL DEFAULT '';

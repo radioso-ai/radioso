@@ -14,11 +14,29 @@ variable "region" {
 variable "backend_image" {
   description = "Full image URL for the backend Cloud Run service (e.g. us-central1-docker.pkg.dev/PROJECT/hivec/backend:latest)"
   type        = string
+  default     = null
+
+  validation {
+    condition     = !var.deploy_services || var.backend_image != null
+    error_message = "backend_image must be set when deploy_services is true."
+  }
 }
 
 variable "frontend_image" {
   description = "Full image URL for the frontend Cloud Run service (e.g. us-central1-docker.pkg.dev/PROJECT/hivec/frontend:latest)"
   type        = string
+  default     = null
+
+  validation {
+    condition     = !var.deploy_services || var.frontend_image != null
+    error_message = "frontend_image must be set when deploy_services is true."
+  }
+}
+
+variable "deploy_services" {
+  description = "Whether to create the backend and frontend Cloud Run services. Set false on the first apply to create shared infrastructure before images exist."
+  type        = bool
+  default     = true
 }
 
 # --- Database ---
@@ -105,4 +123,10 @@ variable "session_ttl_hours" {
   description = "Session TTL in hours"
   type        = number
   default     = 168
+}
+
+variable "connector_public_base_url" {
+  description = "Optional public base URL used by connector callbacks. Set this to the backend public URL or custom domain after the service exists."
+  type        = string
+  default     = null
 }

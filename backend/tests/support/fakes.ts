@@ -35,6 +35,40 @@ import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { notFound } from "../../src/shared/domain/errors.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
+interface InMemoryConnectorConfigRecord {
+  id: string;
+  workspaceId: string;
+  connectorId: string;
+  enabled: boolean;
+  configData: Record<string, string>;
+  errorStatus: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface InMemoryConnectorContactRecord {
+  id: string;
+  waId: string;
+  profileName: string | null;
+  workspaceId: string;
+  conversationId: string;
+  firstSeenAt: Date;
+  lastMessageAt: Date;
+}
+
+interface InMemoryConnectorMessageLogRecord {
+  id: string;
+  wamid: string;
+  direction: "inbound" | "outbound";
+  workspaceId: string;
+  waId: string;
+  messageType: string;
+  payload: Record<string, unknown>;
+  status: "received" | "processing" | "replied" | "failed";
+  errorDetails: string | null;
+  createdAt: Date;
+}
+
 export class InMemoryAccountRepository implements AccountRepositoryPort {
   private readonly items = new Map<string, AccountRecord>();
 
@@ -209,6 +243,449 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
     };
     this.items.set(workspaceId, record);
     return record;
+  }
+}
+
+export class InMemoryConnectorDatabase {
+  readonly configs = new Map<string, InMemoryConnectorConfigRecord>();
+  readonly contacts = new Map<string, InMemoryConnectorContactRecord>();
+  readonly messageLogs = new Map<string, InMemoryConnectorMessageLogRecord>();
+
+  async query<T>(text: string, params: unknown[] = []): Promise<T[]> {
+    const sql = text.replace(/\s+/g, " ").trim();
+
+    if (sql.startsWith("SELECT connector_id, enabled, error_status FROM connector_configs WHERE workspace_id = $1")) {
+      const [workspaceId] = params as [string];
+      return [...this.configs.values()]
+        .filter((config) => config.workspaceId === workspaceId)
+        .map((config) => ({
+          connector_id: config.connectorId,
+          enabled: config.enabled,
+          error_status: config.errorStatus,
+        }) as T);
+    }
+
+    if (sql.startsWith("SELECT enabled, config_data, error_status FROM connector_configs WHERE workspace_id = $1 AND connector_id = $2")) {
+      const [workspaceId, connectorId] = params as [string, string];
+      const config = this.configs.get(this.key(workspaceId, connectorId));
+      return config
+        ? [
+            {
+              enabled: config.enabled,
+              config_data: config.configData,
+              error_status: config.errorStatus,
+            } as T,
+          ]
+        : [];
+    }
+
+    if (sql.startsWith("SELECT enabled, config_data FROM connector_configs WHERE workspace_id = $1 AND connector_id = $2")) {
+      const [workspaceId, connectorId] = params as [string, string];
+      const config = this.configs.get(this.key(workspaceId, connectorId));
+      return config
+        ? [
+            {
+              enabled: config.enabled,
+              config_data: config.configData,
+            } as T,
+          ]
+        : [];
+    }
+
+    if (sql.startsWith("SELECT config_data FROM connector_configs WHERE workspace_id = $1 AND connector_id = $2")) {
+      const [workspaceId, connectorId] = params as [string, string];
+      const config = this.configs.get(this.key(workspaceId, connectorId));
+      return config ? [{ config_data: config.configData } as T] : [];
+    }
+
+    if (sql.startsWith("SELECT workspace_id FROM connector_configs")) {
+      const [connectorId, workspaceId, fieldKey, fieldValue] = params as [string, string, string, string];
+      return [...this.configs.values()]
+        .filter(
+          (config) =>
+            config.connectorId === connectorId &&
+            config.enabled &&
+            config.workspaceId !== workspaceId &&
+            config.configData[fieldKey] === fieldValue,
+        )
+        .map((config) => ({ workspace_id: config.workspaceId }) as T);
+    }
+
+    if (sql.startsWith("INSERT INTO connector_configs")) {
+      const [workspaceId, connectorId, rawConfig] = params as [string, string, string];
+      const key = this.key(workspaceId, connectorId);
+      const existing = this.configs.get(key);
+      const configData =
+        typeof rawConfig === "string" ? (JSON.parse(rawConfig) as Record<string, string>) : (rawConfig as Record<string, string>);
+      this.configs.set(key, {
+        id: existing?.id ?? randomUUID(),
+        workspaceId,
+        connectorId,
+        enabled: existing?.enabled ?? false,
+        configData,
+        errorStatus: null,
+        createdAt: existing?.createdAt ?? new Date(),
+        updatedAt: new Date(),
+      });
+      return [];
+    }
+
+    if (sql.startsWith("UPDATE connector_configs SET enabled = true")) {
+      const [workspaceId, connectorId] = params as [string, string];
+      const config = this.configs.get(this.key(workspaceId, connectorId));
+      if (config) {
+        config.enabled = true;
+        config.errorStatus = null;
+        config.updatedAt = new Date();
+      }
+      return [];
+    }
+
+    if (sql.startsWith("UPDATE connector_configs SET enabled = false")) {
+      const [workspaceId, connectorId] = params as [string, string];
+      const config = this.configs.get(this.key(workspaceId, connectorId));
+      if (config) {
+        config.enabled = false;
+        config.updatedAt = new Date();
+      }
+      return [];
+    }
+
+    if (sql.startsWith("UPDATE connector_configs SET error_status = $3")) {
+      const [workspaceId, connectorId, errorStatus] = params as [string, string, string | null];
+      const config = this.configs.get(this.key(workspaceId, connectorId));
+      if (config) {
+        config.errorStatus = errorStatus;
+        config.updatedAt = new Date();
+      }
+      return [];
+    }
+
+    if (sql.startsWith("SELECT wamid FROM connector_whatsapp_message_log WHERE wamid = $1")) {
+      const [wamid] = params as [string];
+      const record = this.messageLogs.get(wamid);
+      return record ? [{ wamid: record.wamid } as T] : [];
+    }
+
+    if (
+      sql.startsWith(
+        "SELECT id, wamid, direction, workspace_id, wa_id, message_type, payload, status, error_details, created_at FROM connector_whatsapp_message_log WHERE wamid = $1",
+      )
+    ) {
+      const [wamid] = params as [string];
+      const record = this.messageLogs.get(wamid);
+      return record
+        ? [
+            {
+              id: record.id,
+              wamid: record.wamid,
+              direction: record.direction,
+              workspace_id: record.workspaceId,
+              wa_id: record.waId,
+              message_type: record.messageType,
+              payload: record.payload,
+              status: record.status,
+              error_details: record.errorDetails,
+              created_at: record.createdAt,
+            } as T,
+          ]
+        : [];
+    }
+
+    if (
+      sql.startsWith(
+        "SELECT id, wamid, direction, workspace_id, wa_id, message_type, payload, status, error_details, created_at FROM connector_whatsapp_message_log WHERE direction = 'inbound' AND status IN ('received', 'processing') ORDER BY created_at ASC",
+      )
+    ) {
+      return [...this.messageLogs.values()]
+        .filter((record) => record.direction === "inbound" && (record.status === "received" || record.status === "processing"))
+        .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+        .map((record) => ({
+          id: record.id,
+          wamid: record.wamid,
+          direction: record.direction,
+          workspace_id: record.workspaceId,
+          wa_id: record.waId,
+          message_type: record.messageType,
+          payload: record.payload,
+          status: record.status,
+          error_details: record.errorDetails,
+          created_at: record.createdAt,
+        }) as T);
+    }
+
+    if (
+      sql.startsWith(
+        "INSERT INTO connector_whatsapp_message_log ( id, wamid, direction, workspace_id, wa_id, message_type, payload, status, error_details ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, wamid, direction, workspace_id, wa_id, message_type, payload, status, error_details, created_at",
+      )
+    ) {
+      const [id, wamid, direction, workspaceId, waId, messageType, rawPayload, status, errorDetails] = params as [
+        string,
+        string,
+        "inbound" | "outbound",
+        string,
+        string,
+        string,
+        string | Record<string, unknown>,
+        InMemoryConnectorMessageLogRecord["status"],
+        string | null,
+      ];
+      const payload =
+        typeof rawPayload === "string"
+          ? (JSON.parse(rawPayload) as Record<string, unknown>)
+          : rawPayload;
+      const record: InMemoryConnectorMessageLogRecord = {
+        id,
+        wamid,
+        direction,
+        workspaceId,
+        waId,
+        messageType,
+        payload,
+        status,
+        errorDetails,
+        createdAt: new Date(),
+      };
+      this.messageLogs.set(wamid, record);
+      return [
+        {
+          id: record.id,
+          wamid: record.wamid,
+          direction: record.direction,
+          workspace_id: record.workspaceId,
+          wa_id: record.waId,
+          message_type: record.messageType,
+          payload: record.payload,
+          status: record.status,
+          error_details: record.errorDetails,
+          created_at: record.createdAt,
+        } as T,
+      ];
+    }
+
+    if (sql.startsWith("INSERT INTO connector_whatsapp_message_log")) {
+      const [wamid, direction, workspaceId, waId, messageType, rawPayload, status, errorDetails] = params as [
+        string,
+        "inbound" | "outbound",
+        string,
+        string,
+        string,
+        string | Record<string, unknown>,
+        InMemoryConnectorMessageLogRecord["status"],
+        string | null,
+      ];
+      const payload =
+        typeof rawPayload === "string"
+          ? (JSON.parse(rawPayload) as Record<string, unknown>)
+          : rawPayload;
+      this.messageLogs.set(wamid, {
+        id: randomUUID(),
+        wamid,
+        direction,
+        workspaceId,
+        waId,
+        messageType,
+        payload,
+        status,
+        errorDetails,
+        createdAt: new Date(),
+      });
+      return [];
+    }
+
+    if (sql.startsWith("UPDATE connector_whatsapp_message_log SET status = $2, error_details = $3 WHERE wamid = $1")) {
+      const [wamid, status, errorDetails] = params as [
+        string,
+        InMemoryConnectorMessageLogRecord["status"],
+        string | null,
+      ];
+      const record = this.messageLogs.get(wamid);
+      if (record) {
+        record.status = status;
+        record.errorDetails = errorDetails;
+      }
+      return [];
+    }
+
+    if (sql.startsWith("DELETE FROM connector_whatsapp_message_log WHERE created_at < $1")) {
+      const [cutoff] = params as [Date];
+      for (const [wamid, record] of this.messageLogs.entries()) {
+        if (record.createdAt < cutoff) {
+          this.messageLogs.delete(wamid);
+        }
+      }
+      return [];
+    }
+
+    if (sql.startsWith("SELECT wa_id, profile_name, workspace_id, conversation_id, first_seen_at, last_message_at FROM connector_whatsapp_contacts")) {
+      const [workspaceId, waId] = params as [string, string];
+      const record = this.findContact(workspaceId, waId);
+      return record
+        ? [
+            {
+              wa_id: record.waId,
+              profile_name: record.profileName,
+              workspace_id: record.workspaceId,
+              conversation_id: record.conversationId,
+              first_seen_at: record.firstSeenAt,
+              last_message_at: record.lastMessageAt,
+            } as T,
+          ]
+        : [];
+    }
+
+    if (
+      sql.startsWith(
+        "SELECT id, wa_id, profile_name, workspace_id, conversation_id, first_seen_at, last_message_at FROM connector_whatsapp_contacts WHERE workspace_id = $1 AND wa_id = $2",
+      )
+    ) {
+      const [workspaceId, waId] = params as [string, string];
+      const record = this.findContact(workspaceId, waId);
+      return record
+        ? [
+            {
+              id: record.id,
+              wa_id: record.waId,
+              profile_name: record.profileName,
+              workspace_id: record.workspaceId,
+              conversation_id: record.conversationId,
+              first_seen_at: record.firstSeenAt,
+              last_message_at: record.lastMessageAt,
+            } as T,
+          ]
+        : [];
+    }
+
+    if (
+      sql.startsWith(
+        "INSERT INTO connector_whatsapp_contacts ( id, wa_id, profile_name, workspace_id, conversation_id, last_message_at ) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (workspace_id, wa_id) DO UPDATE SET profile_name = EXCLUDED.profile_name, conversation_id = EXCLUDED.conversation_id, last_message_at = EXCLUDED.last_message_at RETURNING id, wa_id, profile_name, workspace_id, conversation_id, first_seen_at, last_message_at",
+      )
+    ) {
+      const [id, waId, profileName, workspaceId, conversationId, lastMessageAt] = params as [
+        string,
+        string,
+        string | null,
+        string,
+        string,
+        Date,
+      ];
+      const key = this.contactKey(workspaceId, waId);
+      const existing = this.contacts.get(key);
+      const record: InMemoryConnectorContactRecord = {
+        id: existing?.id ?? id,
+        waId,
+        profileName,
+        workspaceId,
+        conversationId,
+        firstSeenAt: existing?.firstSeenAt ?? lastMessageAt,
+        lastMessageAt,
+      };
+      this.contacts.set(key, record);
+      return [
+        {
+          id: record.id,
+          wa_id: record.waId,
+          profile_name: record.profileName,
+          workspace_id: record.workspaceId,
+          conversation_id: record.conversationId,
+          first_seen_at: record.firstSeenAt,
+          last_message_at: record.lastMessageAt,
+        } as T,
+      ];
+    }
+
+    if (sql.startsWith("INSERT INTO connector_whatsapp_contacts")) {
+      const [waId, profileName, workspaceId, conversationId, lastMessageAt] = params as [
+        string,
+        string | null,
+        string,
+        string,
+        Date,
+      ];
+      const key = this.contactKey(workspaceId, waId);
+      const existing = this.contacts.get(key);
+      this.contacts.set(key, {
+        id: existing?.id ?? randomUUID(),
+        waId,
+        profileName,
+        workspaceId,
+        conversationId,
+        firstSeenAt: existing?.firstSeenAt ?? lastMessageAt,
+        lastMessageAt,
+      });
+      return [];
+    }
+
+    return [];
+  }
+
+  insertMessageLog(input: {
+    wamid: string;
+    workspaceId: string;
+    waId: string;
+    messageType: string;
+    payload: Record<string, unknown>;
+    status: InMemoryConnectorMessageLogRecord["status"];
+    direction?: InMemoryConnectorMessageLogRecord["direction"];
+    errorDetails?: string | null;
+    createdAt?: Date;
+  }): void {
+    this.messageLogs.set(input.wamid, {
+      id: randomUUID(),
+      wamid: input.wamid,
+      direction: input.direction ?? "inbound",
+      workspaceId: input.workspaceId,
+      waId: input.waId,
+      messageType: input.messageType,
+      payload: input.payload,
+      status: input.status,
+      errorDetails: input.errorDetails ?? null,
+      createdAt: input.createdAt ?? new Date(),
+    });
+  }
+
+  async insertInboundMessageLog(input: {
+    wamid: string;
+    workspaceId: string;
+    waId: string;
+    messageType: string;
+    payload: Record<string, unknown>;
+  }): Promise<void> {
+    this.insertMessageLog({
+      ...input,
+      direction: "inbound",
+      status: "received",
+    });
+  }
+
+  insertContact(input: {
+    workspaceId: string;
+    waId: string;
+    profileName: string | null;
+    conversationId: string;
+    lastMessageAt: Date;
+  }): void {
+    this.contacts.set(this.contactKey(input.workspaceId, input.waId), {
+      id: randomUUID(),
+      waId: input.waId,
+      profileName: input.profileName,
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+      firstSeenAt: input.lastMessageAt,
+      lastMessageAt: input.lastMessageAt,
+    });
+  }
+
+  findContact(workspaceId: string, waId: string): InMemoryConnectorContactRecord | undefined {
+    return this.contacts.get(this.contactKey(workspaceId, waId));
+  }
+
+  private key(workspaceId: string, connectorId: string): string {
+    return `${workspaceId}:${connectorId}`;
+  }
+
+  private contactKey(workspaceId: string, waId: string): string {
+    return `${workspaceId}:${waId}`;
   }
 }
 
@@ -619,10 +1096,11 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
 export class InMemoryConversationRepository implements ConversationRepositoryPort {
   readonly items = new Map<string, ConversationRecord>();
 
-  async create(workspaceId: string): Promise<ConversationRecord> {
+  async create(workspaceId: string, sourceChannel: string | null = null): Promise<ConversationRecord> {
     const record: ConversationRecord = {
       id: randomUUID(),
       workspaceId,
+      sourceChannel,
       createdAt: new Date(),
       updatedAt: new Date(),
     };

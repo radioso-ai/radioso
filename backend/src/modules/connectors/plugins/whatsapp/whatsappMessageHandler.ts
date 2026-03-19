@@ -3,7 +3,7 @@ import type {
   ConnectorDatabasePort,
   ConnectorLogger,
   ConnectorStatePort,
-} from "../../domain/connectorPlugin.js";
+} from "@hivec/connector-api";
 import type { WhatsAppPersistencePort } from "./whatsappPersistence.js";
 import { PostgresWhatsAppPersistence } from "./whatsappPersistence.js";
 import { WhatsAppClient, WhatsAppClientError } from "./whatsappClient.js";

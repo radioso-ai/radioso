@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ConnectorPlugin, ConnectorContext } from "../../../src/modules/connectors/domain/connectorPlugin.js";
-import type { ConfigFieldDefinition } from "../../../src/modules/connectors/domain/configSchema.js";
+import type { ConfigFieldDefinition, ConnectorContext, ConnectorPlugin } from "@hivec/connector-api";
 import { ConnectorRegistry } from "../../../src/modules/connectors/services/connectorRegistry.js";
 
 /** Minimal fake plugin for testing the registry. */

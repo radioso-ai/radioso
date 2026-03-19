@@ -18,6 +18,7 @@
     "test:persistence": "vitest run tests/integration/persistence.integration.test.ts"
   },
   "dependencies": {
+    "@hivec/connector-api": "file:../packages/connector-api",
     "bcryptjs": "^2.4.3",
     "cookie": "^1.0.2",
     "cookie-parser": "^1.4.7",

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { ConnectorDatabasePort } from "../../domain/connectorPlugin.js";
+import type { ConnectorDatabasePort } from "@hivec/connector-api";
 
 export interface WhatsAppContactRecord {
   id: string;

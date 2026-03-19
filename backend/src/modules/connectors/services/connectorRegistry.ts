@@ -11,8 +11,8 @@ import type {
   ConnectorSummary,
   ConnectorDetail,
   ConnectorValidationIssue,
-} from "../domain/connectorPlugin.js";
-import type { ConfigFieldDefinition } from "../domain/configSchema.js";
+  ConfigFieldDefinition,
+} from "@hivec/connector-api";
 import { encryptField, decryptField, maskSecret } from "./configEncryption.js";
 
 interface ConnectorSaveSuccess {

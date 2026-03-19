@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { Router, type Request } from "express";
 
-import type { ConnectorLogger, ConnectorStatePort } from "../../domain/connectorPlugin.js";
+import type { ConnectorLogger, ConnectorStatePort } from "@hivec/connector-api";
 import type { WhatsAppMessageHandler, WhatsAppInboundMessage } from "./whatsappMessageHandler.js";
 import type { WhatsAppPersistencePort } from "./whatsappPersistence.js";
 

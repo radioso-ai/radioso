@@ -23,8 +23,8 @@ services:
   backend:
     container_name: hivec-backend
     build:
-      context: ../backend
-      dockerfile: ../infra/backend.Dockerfile
+      context: ..
+      dockerfile: infra/backend.Dockerfile
     env_file:
       - ../backend/.env
     depends_on:

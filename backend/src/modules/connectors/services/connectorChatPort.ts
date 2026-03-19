@@ -1,5 +1,5 @@
 import type { ChatService } from "../../chat/services/chatService.js";
-import type { ConnectorChatPort } from "../domain/connectorPlugin.js";
+import type { ConnectorChatPort } from "@hivec/connector-api";
 
 export const createConnectorChatPort = (chatService: ChatService): ConnectorChatPort => ({
   answer: async (input) => {

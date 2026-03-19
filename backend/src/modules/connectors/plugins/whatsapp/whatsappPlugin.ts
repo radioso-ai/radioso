@@ -6,8 +6,8 @@ import type {
   ConnectorLogger,
   ConnectorPlugin,
   ConnectorValidationIssue,
-} from "../../domain/connectorPlugin.js";
-import type { ConfigFieldDefinition } from "../../domain/configSchema.js";
+  ConfigFieldDefinition,
+} from "@hivec/connector-api";
 import { WhatsAppClient } from "./whatsappClient.js";
 import { WhatsAppMessageHandler } from "./whatsappMessageHandler.js";
 import { PostgresWhatsAppPersistence } from "./whatsappPersistence.js";

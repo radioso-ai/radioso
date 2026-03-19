@@ -1,4 +1,4 @@
-import type { ConnectorLogger } from "../../domain/connectorPlugin.js";
+import type { ConnectorLogger } from "@hivec/connector-api";
 
 interface WhatsAppClientOptions {
   fetch?: typeof fetch;

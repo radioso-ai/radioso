@@ -1,11 +1,11 @@
 output "frontend_url" {
   description = "Public URL of the Hivec frontend"
-  value       = google_cloud_run_v2_service.frontend.uri
+  value       = try(google_cloud_run_v2_service.frontend[0].uri, null)
 }
 
 output "backend_url" {
   description = "Public URL of the Hivec backend API"
-  value       = google_cloud_run_v2_service.backend.uri
+  value       = try(google_cloud_run_v2_service.backend[0].uri, null)
 }
 
 output "cloud_sql_connection_name" {

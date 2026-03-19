@@ -133,6 +133,7 @@ export class RetrievalPipelineService {
       history: input.history,
       settings: {
         warmthLevel: settings.warmthLevel,
+        customInstruction: settings.customInstruction,
       },
       contexts,
     });

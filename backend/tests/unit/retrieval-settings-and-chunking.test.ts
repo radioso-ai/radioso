@@ -20,6 +20,7 @@ describe("retrieval settings and chunking", () => {
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
         attributeControls: defaultAttributeControls(),
+        customInstruction: "",
       }),
     ).toThrow("vectorTopK must be between 1 and 300");
   });
@@ -36,6 +37,7 @@ describe("retrieval settings and chunking", () => {
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
         attributeControls: defaultAttributeControls(),
+        customInstruction: "",
       }),
     ).toThrow("warmthLevel must be between 1 and 10");
   });
@@ -52,6 +54,7 @@ describe("retrieval settings and chunking", () => {
         citationDisplayEnabled: true,
         chunkingStrategy: "unsupported" as never,
         attributeControls: defaultAttributeControls(),
+        customInstruction: "",
       }),
     ).toThrow("chunkingStrategy must be a supported strategy");
   });
@@ -68,6 +71,7 @@ describe("retrieval settings and chunking", () => {
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
         attributeControls: defaultAttributeControls().slice(0, 2),
+        customInstruction: "",
       }),
     ).toThrow("attributeControls must include every supported family");
   });
@@ -94,5 +98,41 @@ describe("retrieval settings and chunking", () => {
       { family: "money_value", enabled: true, mode: "boost_only" },
       { family: "location", enabled: true, mode: "boost_only" },
     ]);
+    expect(defaults.customInstruction).toBe("");
+  });
+
+  it("rejects customInstruction exceeding 2000 characters", () => {
+    expect(() =>
+      validateRetrievalSettings({
+        queryRewriteEnabled: false,
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+        attributeControls: defaultAttributeControls(),
+        customInstruction: "a".repeat(2001),
+      }),
+    ).toThrow("customInstruction must not exceed 2000 characters");
+  });
+
+  it("accepts valid customInstruction values", () => {
+    const baseInput = {
+      queryRewriteEnabled: false,
+      rerankEnabled: false,
+      vectorTopK: 15,
+      similarityThreshold: 0.2,
+      rerankTopK: 5,
+      warmthLevel: 5,
+      citationDisplayEnabled: true,
+      chunkingStrategy: "fixed_window" as const,
+      attributeControls: defaultAttributeControls(),
+    };
+
+    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "" })).toBeDefined();
+    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "Cite paragraph numbers" })).toBeDefined();
+    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "a".repeat(2000) })).toBeDefined();
   });
 });

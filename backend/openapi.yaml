@@ -586,6 +586,7 @@ components:
         - citationDisplayEnabled
         - chunkingStrategy
         - attributeControls
+        - customInstruction
         - createdAt
         - updatedAt
       properties:
@@ -622,6 +623,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AttributeFamilyControl'
+        customInstruction:
+          type: string
+          maxLength: 2000
+          default: ""
         createdAt:
           type: string
           format: date-time
@@ -670,6 +675,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AttributeFamilyControl'
+        customInstruction:
+          type: string
+          maxLength: 2000
     AttributeFamilyControl:
       type: object
       required: [family, enabled, mode]

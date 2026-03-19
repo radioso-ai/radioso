@@ -39,6 +39,7 @@ describe("retrieval settings contract", () => {
       "chunkingStrategy",
       "citationDisplayEnabled",
       "createdAt",
+      "customInstruction",
       "queryRewriteEnabled",
       "rerankEnabled",
       "rerankTopK",
@@ -52,6 +53,7 @@ describe("retrieval settings contract", () => {
     expect(response.body.warmthLevel).toBe(5);
     expect(response.body.citationDisplayEnabled).toBe(true);
     expect(response.body.chunkingStrategy).toBe("fixed_window");
+    expect(response.body.customInstruction).toBe("");
     expect(response.body.attributeControls).toEqual([
       { family: "date_point", enabled: true, mode: "boost_only" },
       { family: "date_range", enabled: true, mode: "boost_only" },
@@ -72,17 +74,18 @@ describe("retrieval settings contract", () => {
         rerankEnabled: true,
         vectorTopK: 12,
         similarityThreshold: 0.4,
-      rerankTopK: 6,
-      warmthLevel: 8,
-      citationDisplayEnabled: false,
-      chunkingStrategy: "structured_semantic",
-      attributeControls: [
-        { family: "date_point", enabled: true, mode: "hard_filter" },
-        { family: "date_range", enabled: true, mode: "boost_only" },
-        { family: "money_value", enabled: false, mode: "boost_only" },
-        { family: "location", enabled: true, mode: "boost_only" },
-      ],
-    });
+        rerankTopK: 6,
+        warmthLevel: 8,
+        citationDisplayEnabled: false,
+        chunkingStrategy: "structured_semantic",
+        customInstruction: "Always cite the paragraph number from the Immigration Act.",
+        attributeControls: [
+          { family: "date_point", enabled: true, mode: "hard_filter" },
+          { family: "date_range", enabled: true, mode: "boost_only" },
+          { family: "money_value", enabled: false, mode: "boost_only" },
+          { family: "location", enabled: true, mode: "boost_only" },
+        ],
+      });
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
@@ -94,6 +97,7 @@ describe("retrieval settings contract", () => {
       warmthLevel: 8,
       citationDisplayEnabled: false,
       chunkingStrategy: "structured_semantic",
+      customInstruction: "Always cite the paragraph number from the Immigration Act.",
       attributeControls: [
         { family: "date_point", enabled: true, mode: "hard_filter" },
         { family: "date_range", enabled: true, mode: "boost_only" },
@@ -106,6 +110,7 @@ describe("retrieval settings contract", () => {
       "chunkingStrategy",
       "citationDisplayEnabled",
       "createdAt",
+      "customInstruction",
       "queryRewriteEnabled",
       "rerankEnabled",
       "rerankTopK",
@@ -134,6 +139,7 @@ describe("retrieval settings contract", () => {
         warmthLevel: 8,
         citationDisplayEnabled: false,
         chunkingStrategy: "structured_semantic",
+        customInstruction: "Cite paragraph numbers.",
         attributeControls: [
           { family: "date_point", enabled: true, mode: "hard_filter" },
           { family: "date_range", enabled: false, mode: "boost_only" },
@@ -159,6 +165,7 @@ describe("retrieval settings contract", () => {
     expect(firstUpdate.status).toBe(200);
     expect(secondUpdate.status).toBe(200);
     expect(secondUpdate.body.attributeControls).toEqual(firstUpdate.body.attributeControls);
+    expect(secondUpdate.body.customInstruction).toBe("Cite paragraph numbers.");
   });
 
   it("documents attributeControls as optional for the update request schema", () => {

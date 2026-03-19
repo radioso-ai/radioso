@@ -605,4 +605,52 @@ describe("chat retrieval domain", () => {
 
     expect(result.prompt).not.toContain("Source:");
   });
+
+  it("includes custom instruction block in prompt when customInstruction is non-empty", () => {
+    const builder = new PromptBuilder();
+    const result = builder.build({
+      query: "What are the work permit requirements?",
+      history: [],
+      settings: {
+        warmthLevel: 5,
+        customInstruction: "Always cite the paragraph number from the Immigration Act.",
+      },
+      contexts: [],
+    });
+
+    expect(result.prompt).toContain("Workspace-specific instructions:");
+    expect(result.prompt).toContain("Always cite the paragraph number from the Immigration Act.");
+  });
+
+  it("omits custom instruction block when customInstruction is empty", () => {
+    const builder = new PromptBuilder();
+    const result = builder.build({
+      query: "What are the work permit requirements?",
+      history: [],
+      settings: {
+        warmthLevel: 5,
+        customInstruction: "",
+      },
+      contexts: [],
+    });
+
+    expect(result.prompt).not.toContain("Workspace-specific instructions:");
+  });
+
+  it("sanitizes control characters from customInstruction but preserves newlines and tabs", () => {
+    const builder = new PromptBuilder();
+    const result = builder.build({
+      query: "test",
+      history: [],
+      settings: {
+        warmthLevel: 5,
+        customInstruction: "Line one\nLine two\tTabbed\x00Null\x01Control",
+      },
+      contexts: [],
+    });
+
+    expect(result.prompt).toContain("Line one\nLine two\tTabbed");
+    expect(result.prompt).not.toContain("\x00");
+    expect(result.prompt).not.toContain("\x01");
+  });
 });

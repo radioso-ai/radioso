@@ -17,6 +17,7 @@ interface RetrievalSettingsRow {
   citation_display_enabled: boolean;
   chunking_strategy: RetrievalSettingsRecord["chunkingStrategy"];
   attribute_controls: AttributeFamilyControl[];
+  custom_instruction: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -32,6 +33,7 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => ({
   citationDisplayEnabled: row.citation_display_enabled,
   chunkingStrategy: row.chunking_strategy,
   attributeControls: row.attribute_controls,
+  customInstruction: row.custom_instruction,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -41,7 +43,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
 
   async findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null> {
     const [row] = await this.database.query<RetrievalSettingsRow>(
-      `SELECT workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, chunking_strategy, attribute_controls, created_at, updated_at
+      `SELECT workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, chunking_strategy, attribute_controls, custom_instruction, created_at, updated_at
        FROM retrieval_settings
        WHERE workspace_id = $1`,
       [workspaceId],
@@ -62,9 +64,10 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
          warmth_level,
          citation_display_enabled,
          chunking_strategy,
-         attribute_controls
+         attribute_controls,
+         custom_instruction
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
        ON CONFLICT (workspace_id)
        DO UPDATE SET query_rewrite_enabled = EXCLUDED.query_rewrite_enabled,
                      rerank_enabled = EXCLUDED.rerank_enabled,
@@ -75,8 +78,9 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
                      citation_display_enabled = EXCLUDED.citation_display_enabled,
                      chunking_strategy = EXCLUDED.chunking_strategy,
                      attribute_controls = EXCLUDED.attribute_controls,
+                     custom_instruction = EXCLUDED.custom_instruction,
                      updated_at = NOW()
-       RETURNING workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, chunking_strategy, attribute_controls, created_at, updated_at`,
+       RETURNING workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, chunking_strategy, attribute_controls, custom_instruction, created_at, updated_at`,
       [
         workspaceId,
         input.queryRewriteEnabled,
@@ -88,6 +92,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
         input.citationDisplayEnabled,
         input.chunkingStrategy,
         JSON.stringify(input.attributeControls),
+        input.customInstruction,
       ],
     );
 

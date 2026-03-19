@@ -203,6 +203,7 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       citationDisplayEnabled: input.citationDisplayEnabled,
       chunkingStrategy: input.chunkingStrategy,
       attributeControls: input.attributeControls,
+      customInstruction: input.customInstruction,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };

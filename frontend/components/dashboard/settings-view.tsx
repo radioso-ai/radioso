@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Save, Trash2 } from 'lucide-react'
+import { Check, Copy, Key, Save, Trash2 } from 'lucide-react'
 
 import { ConnectorsTab } from '@/components/dashboard/connectors/connectors-tab'
 import { Button } from '@/components/ui/button'
@@ -28,7 +28,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { settingsApi, RetrievalSettings } from '@/lib/api'
+import { settingsApi, workspaceApi, RetrievalSettings } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const chunkingStrategyOptions: Array<{
@@ -90,12 +90,8 @@ const attributeModeLabels: Record<
   },
 }
 
-function RetrievalSettingsPanel() {
-  const { activeWorkspace, workspaces, renameWorkspace, deleteWorkspace } = useWorkspace()
-  const [settings, setSettings] = useState<RetrievalSettings | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
-  const [hasChanges, setHasChanges] = useState(false)
+function GeneralTab() {
+  const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace } = useWorkspace()
 
   // Workspace name editing
   const [workspaceName, setWorkspaceName] = useState(activeWorkspace?.name ?? '')
@@ -110,9 +106,249 @@ function RetrievalSettingsPanel() {
   const isLastWorkspace = workspaces.length <= 1
   const deleteConfirmValid = deleteConfirmName === activeWorkspace?.name
 
+  // API token
+  const [token, setToken] = useState<string | null>(null)
+  const [isTokenLoading, setIsTokenLoading] = useState(true)
+  const [copied, setCopied] = useState(false)
+
   useEffect(() => {
     setWorkspaceName(activeWorkspace?.name ?? '')
   }, [activeWorkspace?.name])
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return
+    setIsTokenLoading(true)
+    const loadToken = async () => {
+      try {
+        const fetchedToken = await workspaceApi.getWorkspaceToken(activeWorkspaceId)
+        setToken(fetchedToken)
+      } catch (error) {
+        console.error('Failed to load token:', error)
+      } finally {
+        setIsTokenLoading(false)
+      }
+    }
+    loadToken()
+  }, [activeWorkspaceId])
+
+  const handleCopy = async () => {
+    if (!token) return
+    await navigator.clipboard.writeText(token)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleRename = async () => {
+    if (!activeWorkspace || !hasNameChange) return
+    const trimmed = workspaceName.trim()
+    if (!trimmed || trimmed.length > 100) {
+      setRenameError('Name must be between 1 and 100 characters')
+      return
+    }
+    setIsRenameSaving(true)
+    setRenameError(null)
+    try {
+      await renameWorkspace(activeWorkspace.id, trimmed)
+    } catch {
+      setRenameError('Failed to rename workspace')
+    } finally {
+      setIsRenameSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!activeWorkspace || !deleteConfirmValid) return
+    setIsDeleting(true)
+    try {
+      await deleteWorkspace(activeWorkspace.id)
+      setDeleteDialogOpen(false)
+      setDeleteConfirmName('')
+    } catch {
+      setIsDeleting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-xl space-y-8">
+          <div className="space-y-6">
+            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">
+              Workspace
+            </h2>
+
+            <div className="space-y-3">
+              <Label htmlFor="workspaceName" className="text-foreground">Workspace Name</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="workspaceName"
+                  value={workspaceName}
+                  onChange={(e) => {
+                    setWorkspaceName(e.target.value)
+                    setRenameError(null)
+                  }}
+                  maxLength={100}
+                  className="flex-1"
+                />
+                <Button
+                  size="sm"
+                  onClick={handleRename}
+                  disabled={!hasNameChange || isRenameSaving}
+                >
+                  {isRenameSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                  Save
+                </Button>
+              </div>
+              {renameError && (
+                <p className="text-sm text-destructive">{renameError}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">
+              API Token
+            </h2>
+
+            {isTokenLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Spinner className="w-5 h-5" />
+              </div>
+            ) : (
+              <>
+                <div className="p-4 bg-card border border-border rounded-lg space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Key className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-foreground">API Key</h3>
+                      <p className="text-sm text-muted-foreground">Use this key to authenticate API requests</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="token" className="sr-only">API Token</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="token"
+                        value={token || ''}
+                        readOnly
+                        className="font-mono text-sm"
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={handleCopy}
+                        disabled={!token}
+                      >
+                        {copied ? (
+                          <Check className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                        <span className="sr-only">Copy token</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="rounded bg-muted/50 p-3 space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      Include this token in the Authorization header of your API requests:
+                    </p>
+                    <code className="block p-2 bg-card border border-border rounded text-sm font-mono text-foreground overflow-x-auto">
+                      Authorization: Bearer {token?.slice(0, 15)}...
+                    </code>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="space-y-4 rounded-md border border-destructive/50 p-4">
+            <h2 className="text-sm font-medium text-destructive uppercase tracking-wide">
+              Danger Zone
+            </h2>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">Delete this workspace</p>
+                <p className="text-sm text-muted-foreground">
+                  Permanently delete this workspace and all its documents, chats, and settings. This action cannot be undone.
+                </p>
+              </div>
+
+              <Dialog open={deleteDialogOpen} onOpenChange={(open) => {
+                setDeleteDialogOpen(open)
+                if (!open) {
+                  setDeleteConfirmName('')
+                  setIsDeleting(false)
+                }
+              }}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={isLastWorkspace}
+                    title={isLastWorkspace ? 'Cannot delete the last workspace' : undefined}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Delete workspace</DialogTitle>
+                    <DialogDescription>
+                      This will permanently delete the workspace <strong>{activeWorkspace?.name}</strong> and
+                      all its documents, conversations, and settings. This action cannot be undone.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2 py-2">
+                    <Label htmlFor="deleteConfirm" className="text-foreground">
+                      Type <strong>{activeWorkspace?.name}</strong> to confirm
+                    </Label>
+                    <Input
+                      id="deleteConfirm"
+                      value={deleteConfirmName}
+                      onChange={(e) => setDeleteConfirmName(e.target.value)}
+                      placeholder={activeWorkspace?.name}
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDelete}
+                      disabled={!deleteConfirmValid || isDeleting}
+                    >
+                      {isDeleting ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                      Delete workspace
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {isLastWorkspace && (
+              <p className="text-sm text-muted-foreground">
+                You cannot delete your only workspace. Create another workspace first.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RetrievalSettingsPanel() {
+  const [settings, setSettings] = useState<RetrievalSettings | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [hasChanges, setHasChanges] = useState(false)
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -150,36 +386,6 @@ function RetrievalSettingsPanel() {
       ),
     })
     setHasChanges(true)
-  }
-
-  const handleRename = async () => {
-    if (!activeWorkspace || !hasNameChange) return
-    const trimmed = workspaceName.trim()
-    if (!trimmed || trimmed.length > 100) {
-      setRenameError('Name must be between 1 and 100 characters')
-      return
-    }
-    setIsRenameSaving(true)
-    setRenameError(null)
-    try {
-      await renameWorkspace(activeWorkspace.id, trimmed)
-    } catch {
-      setRenameError('Failed to rename workspace')
-    } finally {
-      setIsRenameSaving(false)
-    }
-  }
-
-  const handleDelete = async () => {
-    if (!activeWorkspace || !deleteConfirmValid) return
-    setIsDeleting(true)
-    try {
-      await deleteWorkspace(activeWorkspace.id)
-      setDeleteDialogOpen(false)
-      setDeleteConfirmName('')
-    } catch {
-      setIsDeleting(false)
-    }
   }
 
   const handleSave = async () => {
@@ -226,39 +432,6 @@ function RetrievalSettingsPanel() {
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-xl space-y-8">
-          <div className="space-y-6">
-            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">
-              Workspace
-            </h2>
-
-            <div className="space-y-3">
-              <Label htmlFor="workspaceName" className="text-foreground">Workspace Name</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="workspaceName"
-                  value={workspaceName}
-                  onChange={(e) => {
-                    setWorkspaceName(e.target.value)
-                    setRenameError(null)
-                  }}
-                  maxLength={100}
-                  className="flex-1"
-                />
-                <Button
-                  size="sm"
-                  onClick={handleRename}
-                  disabled={!hasNameChange || isRenameSaving}
-                >
-                  {isRenameSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                  Save
-                </Button>
-              </div>
-              {renameError && (
-                <p className="text-sm text-destructive">{renameError}</p>
-              )}
-            </div>
-          </div>
-
           <div className="space-y-6">
             <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">
               Response Style
@@ -532,80 +705,6 @@ function RetrievalSettingsPanel() {
               </p>
             </div>
           </div>
-
-          <div className="space-y-4 rounded-md border border-destructive/50 p-4">
-            <h2 className="text-sm font-medium text-destructive uppercase tracking-wide">
-              Danger Zone
-            </h2>
-
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-foreground">Delete this workspace</p>
-                <p className="text-sm text-muted-foreground">
-                  Permanently delete this workspace and all its documents, chats, and settings. This action cannot be undone.
-                </p>
-              </div>
-
-              <Dialog open={deleteDialogOpen} onOpenChange={(open) => {
-                setDeleteDialogOpen(open)
-                if (!open) {
-                  setDeleteConfirmName('')
-                  setIsDeleting(false)
-                }
-              }}>
-                <DialogTrigger asChild>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={isLastWorkspace}
-                    title={isLastWorkspace ? 'Cannot delete the last workspace' : undefined}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Delete workspace</DialogTitle>
-                    <DialogDescription>
-                      This will permanently delete the workspace <strong>{activeWorkspace?.name}</strong> and
-                      all its documents, conversations, and settings. This action cannot be undone.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-2 py-2">
-                    <Label htmlFor="deleteConfirm" className="text-foreground">
-                      Type <strong>{activeWorkspace?.name}</strong> to confirm
-                    </Label>
-                    <Input
-                      id="deleteConfirm"
-                      value={deleteConfirmName}
-                      onChange={(e) => setDeleteConfirmName(e.target.value)}
-                      placeholder={activeWorkspace?.name}
-                    />
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      onClick={handleDelete}
-                      disabled={!deleteConfirmValid || isDeleting}
-                    >
-                      {isDeleting ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
-                      Delete workspace
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            {isLastWorkspace && (
-              <p className="text-sm text-muted-foreground">
-                You cannot delete your only workspace. Create another workspace first.
-              </p>
-            )}
-          </div>
         </div>
       </div>
     </div>
@@ -622,13 +721,18 @@ export function SettingsView() {
         </p>
       </div>
 
-      <Tabs defaultValue="retrieval" className="flex flex-1 flex-col">
+      <Tabs defaultValue="general" className="flex flex-1 flex-col">
         <div className="border-b border-border px-6 py-3">
           <TabsList>
+            <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="retrieval">Retrieval</TabsTrigger>
             <TabsTrigger value="connectors">Chat Connectors</TabsTrigger>
           </TabsList>
         </div>
+
+        <TabsContent value="general" className="flex-1 overflow-hidden">
+          <GeneralTab />
+        </TabsContent>
 
         <TabsContent value="retrieval" className="flex-1 overflow-hidden">
           <RetrievalSettingsPanel />

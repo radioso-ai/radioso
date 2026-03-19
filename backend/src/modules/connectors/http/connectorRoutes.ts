@@ -21,21 +21,31 @@ const buildWebhookUrl = (
   req: Parameters<Parameters<Router["get"]>[1]>[0],
   webhookPath: string,
   workspaceId: string,
+  explicitBaseUrl?: string,
 ): string => {
-  const host = req.get("host");
-  const protocol = req.protocol ?? "http";
-  return `${protocol}://${host}${webhookPath.replace(":workspaceId", workspaceId)}`;
+  if (explicitBaseUrl) {
+    return `${explicitBaseUrl.replace(/\/$/, "")}${webhookPath.replace(":workspaceId", workspaceId)}`;
+  }
+
+  const forwardedProto = req.get("x-forwarded-proto");
+  const forwardedHost = req.get("x-forwarded-host");
+  const forwardedPrefix = req.get("x-forwarded-prefix") ?? "";
+  const host = forwardedHost ?? req.get("host");
+  const protocol = forwardedProto ?? req.protocol ?? "http";
+  const prefix = forwardedPrefix.endsWith("/") ? forwardedPrefix.slice(0, -1) : forwardedPrefix;
+  return `${protocol}://${host}${prefix}${webhookPath.replace(":workspaceId", workspaceId)}`;
 };
 
 const presentDetail = (
   req: Parameters<Parameters<Router["get"]>[1]>[0],
   workspaceId: string,
   detail: ConnectorDetail,
+  explicitBaseUrl?: string,
 ) => ({
   ...presentSummary(detail),
   schema: detail.configSchema,
   config: detail.config ?? {},
-  webhookUrl: buildWebhookUrl(req, detail.webhookPath, workspaceId),
+  webhookUrl: buildWebhookUrl(req, detail.webhookPath, workspaceId, explicitBaseUrl),
 });
 
 const validationError = (issues: ConnectorValidationIssue[]) => ({
@@ -74,7 +84,7 @@ export const createConnectorRoutes = (dependencies: AppDependencies): Router => 
         res.status(404).json({ error: "Connector not found" });
         return;
       }
-      res.status(200).json(presentDetail(req, workspaceId, detail));
+      res.status(200).json(presentDetail(req, workspaceId, detail, dependencies.env.CONNECTOR_PUBLIC_BASE_URL));
     } catch (error) {
       next(error);
     }
@@ -105,7 +115,7 @@ export const createConnectorRoutes = (dependencies: AppDependencies): Router => 
         return;
       }
       const detail = await registry.getConnectorDetail(db, workspaceId, req.params.connectorId);
-      res.status(200).json(presentDetail(req, workspaceId, detail!));
+      res.status(200).json(presentDetail(req, workspaceId, detail!, dependencies.env.CONNECTOR_PUBLIC_BASE_URL));
     } catch (error) {
       next(error);
     }
@@ -129,7 +139,7 @@ export const createConnectorRoutes = (dependencies: AppDependencies): Router => 
         return;
       }
       const detail = await registry.getConnectorDetail(db, workspaceId, req.params.connectorId);
-      res.status(200).json(presentDetail(req, workspaceId, detail!));
+      res.status(200).json(presentDetail(req, workspaceId, detail!, dependencies.env.CONNECTOR_PUBLIC_BASE_URL));
     } catch (error) {
       next(error);
     }
@@ -145,7 +155,7 @@ export const createConnectorRoutes = (dependencies: AppDependencies): Router => 
       }
       await registry.disableConnector(db, workspaceId, req.params.connectorId);
       const detail = await registry.getConnectorDetail(db, workspaceId, req.params.connectorId);
-      res.status(200).json(presentDetail(req, workspaceId, detail!));
+      res.status(200).json(presentDetail(req, workspaceId, detail!, dependencies.env.CONNECTOR_PUBLIC_BASE_URL));
     } catch (error) {
       next(error);
     }

@@ -97,6 +97,9 @@ const request = async <T>(
   if (!headers.has("Content-Type") && init.body) {
     headers.set("Content-Type", "application/json");
   }
+  if (!headers.has("X-Forwarded-Prefix")) {
+    headers.set("X-Forwarded-Prefix", "/backend");
+  }
 
   if (options.withApiToken) {
     const token = getStoredApiToken();

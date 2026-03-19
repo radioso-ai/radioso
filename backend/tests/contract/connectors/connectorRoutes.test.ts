@@ -35,13 +35,16 @@ describe("connector management contract", () => {
 
     const saveResponse = await request(app)
       .put("/api/v1/connectors/whatsapp")
+      .set("Host", "localhost:3000")
+      .set("X-Forwarded-Proto", "https")
+      .set("X-Forwarded-Prefix", "/backend")
       .set("Authorization", authorization)
       .send({ config: validConfig });
 
     expect(saveResponse.status).toBe(200);
     expect(saveResponse.body.schema).toHaveLength(6);
     expect(saveResponse.body.enabled).toBe(false);
-    expect(saveResponse.body.webhookUrl).toContain(`/api/connectors/whatsapp/${workspaceId}/webhook`);
+    expect(saveResponse.body.webhookUrl).toBe(`https://localhost:3000/backend/api/connectors/whatsapp/${workspaceId}/webhook`);
     expect(saveResponse.body.config).toMatchObject({
       phone_number_id: "15551234567",
       business_account_id: "987654321",
@@ -53,12 +56,15 @@ describe("connector management contract", () => {
 
     const detailResponse = await request(app)
       .get("/api/v1/connectors/whatsapp")
+      .set("Host", "localhost:3000")
+      .set("X-Forwarded-Proto", "https")
+      .set("X-Forwarded-Prefix", "/backend")
       .set("Authorization", authorization);
 
     expect(detailResponse.status).toBe(200);
     expect(detailResponse.body).toMatchObject({
       ...saveResponse.body,
-      webhookUrl: expect.stringContaining(`/api/connectors/whatsapp/${workspaceId}/webhook`),
+      webhookUrl: `https://localhost:3000/backend/api/connectors/whatsapp/${workspaceId}/webhook`,
     });
   });
 

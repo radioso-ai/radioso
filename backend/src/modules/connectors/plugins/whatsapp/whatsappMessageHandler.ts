@@ -23,6 +23,7 @@ export interface WhatsAppInboundMessage {
   waId: string;
   profileName: string | null;
   wamid: string;
+  phoneNumberId: string | null;
   timestamp: Date;
   type: string;
   textBody?: string;
@@ -94,6 +95,9 @@ export class WhatsAppMessageHandler {
 
     const configRecord = await this.options.state.getConfig(first.workspaceId);
     if (!configRecord?.enabled) {
+      for (const message of messages) {
+        await this.persistence.updateMessageLogStatus(message.wamid, "failed", "Connector disabled before batch processing");
+      }
       return;
     }
 

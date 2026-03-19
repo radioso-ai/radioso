@@ -11,7 +11,7 @@ import type {
 import { WhatsAppClient } from "./whatsappClient.js";
 import { WhatsAppMessageHandler } from "./whatsappMessageHandler.js";
 import { PostgresWhatsAppPersistence } from "./whatsappPersistence.js";
-import { createWhatsAppWebhookRouter } from "./whatsappWebhook.js";
+import { createWhatsAppWebhookRouter, findInboundMessageInPayload } from "./whatsappWebhook.js";
 
 const MIGRATION_NAME = "whatsapp/migration.sql";
 
@@ -143,6 +143,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
     );
 
     await this.cleanupExpiredMessageLogs(context.db, context.logger);
+    await this.recoverPendingInboundMessages(persistence, this.messageHandler, context.logger);
     this.cleanupTimer = setInterval(() => {
       void this.cleanupExpiredMessageLogs(context.db, context.logger);
     }, this.cleanupIntervalMs);
@@ -192,5 +193,23 @@ export class WhatsAppPlugin implements ConnectorPlugin {
       [cutoff],
     );
     logger.info({ connectorId: this.id, cutoff: cutoff.toISOString() }, "WhatsApp message log cleanup completed");
+  }
+
+  private async recoverPendingInboundMessages(
+    persistence: PostgresWhatsAppPersistence,
+    messageHandler: WhatsAppMessageHandler,
+    logger: ConnectorLogger,
+  ): Promise<void> {
+    const pendingLogs = await persistence.listRecoverableInboundLogs();
+    for (const log of pendingLogs) {
+      const message = findInboundMessageInPayload(log.workspaceId, log.payload, log.wamid);
+      if (!message) {
+        await persistence.updateMessageLogStatus(log.wamid, "failed", "Unable to recover inbound payload after restart");
+        logger.warn({ connectorId: this.id, wamid: log.wamid }, "WhatsApp recovery skipped malformed inbound payload");
+        continue;
+      }
+
+      await messageHandler.handleInboundMessage(message);
+    }
   }
 }

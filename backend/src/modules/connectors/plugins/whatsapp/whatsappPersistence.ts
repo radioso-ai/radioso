@@ -50,6 +50,7 @@ export interface WhatsAppPersistencePort {
     status: "received" | "processing" | "replied" | "failed",
     errorDetails?: string | null,
   ): Promise<void>;
+  listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]>;
   nextLocalOutboundWamid(): string;
 }
 
@@ -198,6 +199,17 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
        WHERE wamid = $1`,
       [wamid, status, errorDetails ?? null],
     );
+  }
+
+  async listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]> {
+    const rows = await this.db.query<WhatsAppMessageLogRow>(
+      `SELECT id, wamid, direction, workspace_id, wa_id, message_type, payload, status, error_details, created_at
+       FROM connector_whatsapp_message_log
+       WHERE direction = 'inbound' AND status IN ('received', 'processing')
+       ORDER BY created_at ASC`,
+    );
+
+    return rows.map(mapMessageLog);
   }
 
   nextLocalOutboundWamid(): string {

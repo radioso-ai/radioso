@@ -175,6 +175,7 @@ describe("createWhatsAppWebhookRouter", () => {
         waId: "14155551234",
         profileName: "Alicia",
         wamid: "wamid-inbound-1",
+        phoneNumberId: "15550001111",
         type: "text",
         textBody: "Hello there",
       }),
@@ -248,6 +249,48 @@ describe("createWhatsAppWebhookRouter", () => {
 
     await Promise.resolve();
 
+    expect(handler.handleInboundMessage).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges but ignores messages for a different configured phone number", async () => {
+    const workspaceId = "workspace-phone-mismatch";
+    const { app, db, handler } = await createApp(workspaceId);
+    const payload = JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: "15559999999" },
+                contacts: [{ wa_id: "14155550000", profile: { name: "Wrong Number" } }],
+                messages: [
+                  {
+                    id: "wamid-wrong-phone",
+                    from: "14155550000",
+                    timestamp: "1710752400",
+                    type: "text",
+                    text: { body: "should be ignored" },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const response = await request(app)
+      .post(`/${workspaceId}/webhook`)
+      .set("Content-Type", "application/json")
+      .set("X-Hub-Signature-256", signPayload(payload))
+      .send(payload);
+
+    expect(response.status).toBe(200);
+
+    await Promise.resolve();
+
+    expect(db.messageLogs.get("wamid-wrong-phone")).toBeUndefined();
     expect(handler.handleInboundMessage).not.toHaveBeenCalled();
   });
 });

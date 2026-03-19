@@ -108,4 +108,23 @@ describe("ConnectorRegistry", () => {
     await registry.initializeAll(context);
     expect(events).toContain("init-succeeds");
   });
+
+  it("reads legacy plaintext secrets after encryption is enabled", async () => {
+    const registry = new ConnectorRegistry();
+    registry.register(createFakePlugin({
+      configSchema: () => [
+        { key: "api_key", label: "API Key", type: "secret", required: true },
+      ],
+    }));
+    registry.setEncryptionKey(Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"));
+
+    const db = {
+      query: async <T>() => [{ enabled: true, config_data: { api_key: "legacy-plaintext-token" } } as T],
+    };
+
+    await expect(registry.getDecryptedConfig(db as any, "workspace-1", "fake")).resolves.toEqual({
+      enabled: true,
+      config: { api_key: "legacy-plaintext-token" },
+    });
+  });
 });

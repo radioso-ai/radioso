@@ -279,4 +279,124 @@ describe("WhatsAppPlugin", () => {
 
     await plugin.shutdown();
   });
+
+  it("requeues recoverable inbound logs on startup", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-18T10:00:00.000Z"));
+
+    const workspaceId = "workspace-recovery";
+    const db = new InMemoryConnectorDatabase();
+    const plugin = new WhatsAppPlugin({
+      debounceMs: 10,
+      cleanupIntervalMs: 60_000,
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ messages: [{ id: "wamid-out-recovered" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    });
+    const registry = await createRegistry(db, plugin, workspaceId);
+    const logger = createLogger();
+    const chat = {
+      answer: vi.fn(async () => ({
+        conversationId: "conversation-recovered",
+        answer: "Recovered answer",
+      })),
+    } as any;
+
+    db.insertMessageLog({
+      wamid: "wamid-recover",
+      workspaceId,
+      waId: "14155551234",
+      messageType: "text",
+      payload: {
+        object: "whatsapp_business_account",
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  contacts: [{ wa_id: "14155551234", profile: { name: "Alicia" } }],
+                  messages: [
+                    {
+                      id: "wamid-recover",
+                      from: "14155551234",
+                      timestamp: "1710752400",
+                      type: "text",
+                      text: { body: "recover me" },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+      status: "received",
+      createdAt: new Date("2026-03-18T09:59:00.000Z"),
+    });
+    db.insertMessageLog({
+      wamid: "wamid-expired",
+      workspaceId,
+      waId: "14155550000",
+      messageType: "text",
+      payload: {
+        object: "whatsapp_business_account",
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  contacts: [{ wa_id: "14155550000", profile: { name: "Expired" } }],
+                  messages: [
+                    {
+                      id: "wamid-expired",
+                      from: "14155550000",
+                      timestamp: "1710752400",
+                      type: "text",
+                      text: { body: "do not recover" },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+      status: "received",
+      createdAt: new Date("2025-11-01T10:00:00.000Z"),
+    });
+
+    await plugin.initialize({
+      db: db as any,
+      logger,
+      chat,
+      state: {
+        getConfig: async (currentWorkspaceId: string) =>
+          registry.getDecryptedConfig(db as any, currentWorkspaceId, "whatsapp"),
+        setErrorStatus: async (currentWorkspaceId: string, errorStatus: string | null) =>
+          registry.setErrorStatus(db as any, currentWorkspaceId, "whatsapp", errorStatus),
+      },
+      http: { mount: vi.fn() },
+    });
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(chat.answer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId,
+        query: "recover me",
+      }),
+    );
+    expect(chat.answer).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "do not recover",
+      }),
+    );
+    expect(db.messageLogs.get("wamid-recover")?.status).toBe("replied");
+    expect(db.messageLogs.has("wamid-expired")).toBe(false);
+
+    await plugin.shutdown();
+  });
 });

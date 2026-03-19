@@ -394,6 +394,28 @@ export class InMemoryConnectorDatabase {
 
     if (
       sql.startsWith(
+        "SELECT id, wamid, direction, workspace_id, wa_id, message_type, payload, status, error_details, created_at FROM connector_whatsapp_message_log WHERE direction = 'inbound' AND status IN ('received', 'processing') ORDER BY created_at ASC",
+      )
+    ) {
+      return [...this.messageLogs.values()]
+        .filter((record) => record.direction === "inbound" && (record.status === "received" || record.status === "processing"))
+        .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+        .map((record) => ({
+          id: record.id,
+          wamid: record.wamid,
+          direction: record.direction,
+          workspace_id: record.workspaceId,
+          wa_id: record.waId,
+          message_type: record.messageType,
+          payload: record.payload,
+          status: record.status,
+          error_details: record.errorDetails,
+          created_at: record.createdAt,
+        }) as T);
+    }
+
+    if (
+      sql.startsWith(
         "INSERT INTO connector_whatsapp_message_log ( id, wamid, direction, workspace_id, wa_id, message_type, payload, status, error_details ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, wamid, direction, workspace_id, wa_id, message_type, payload, status, error_details, created_at",
       )
     ) {

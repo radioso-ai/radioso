@@ -370,7 +370,7 @@ export class ConnectorRegistry {
     const secretKeys = new Set(schema.filter((f) => f.type === "secret").map((f) => f.key));
     const result: Record<string, string> = {};
     for (const [key, value] of Object.entries(config)) {
-      result[key] = secretKeys.has(key) ? decryptField(value, this.encryptionKey) : value;
+      result[key] = secretKeys.has(key) ? this.tryDecryptValue(value) : value;
     }
     return result;
   }

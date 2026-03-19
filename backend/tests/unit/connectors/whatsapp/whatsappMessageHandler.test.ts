@@ -96,6 +96,7 @@ describe("WhatsAppMessageHandler", () => {
       waId: "14155551234",
       profileName: "Alicia",
       wamid: "wamid-in-1",
+      phoneNumberId: "15550001111",
       timestamp: new Date("2026-03-18T10:00:00.000Z"),
       type: "text",
       textBody: "First line",
@@ -106,6 +107,7 @@ describe("WhatsAppMessageHandler", () => {
       waId: "14155551234",
       profileName: "Alicia",
       wamid: "wamid-in-2",
+      phoneNumberId: "15550001111",
       timestamp: new Date("2026-03-18T10:00:01.000Z"),
       type: "text",
       textBody: "Second line",
@@ -209,6 +211,7 @@ describe("WhatsAppMessageHandler", () => {
       waId: "14155550001",
       profileName: "Nina",
       wamid: "wamid-1",
+      phoneNumberId: "15550001111",
       timestamp: new Date("2026-03-18T10:00:00.000Z"),
       type: "text",
       textBody: "hello",
@@ -228,6 +231,7 @@ describe("WhatsAppMessageHandler", () => {
       waId: "14155550001",
       profileName: "Nina",
       wamid: "wamid-2",
+      phoneNumberId: "15550001111",
       timestamp: new Date("2026-03-18T10:10:00.000Z"),
       type: "text",
       textBody: "follow up",
@@ -255,6 +259,7 @@ describe("WhatsAppMessageHandler", () => {
       waId: "14155550001",
       profileName: "Nina",
       wamid: "wamid-3",
+      phoneNumberId: "15550001111",
       timestamp: new Date("2026-03-19T11:30:00.000Z"),
       type: "text",
       textBody: "next day",
@@ -304,6 +309,7 @@ describe("WhatsAppMessageHandler", () => {
       waId: "14155558888",
       profileName: "Chris",
       wamid: "wamid-image",
+      phoneNumberId: "15550001111",
       timestamp: new Date("2026-03-18T10:00:00.000Z"),
       type: "image",
       payload: { image: true },
@@ -363,6 +369,7 @@ describe("WhatsAppMessageHandler", () => {
       waId: "14155559999",
       profileName: "Alicia",
       wamid: "wamid-auth-error",
+      phoneNumberId: "15550001111",
       timestamp: new Date("2026-03-18T10:00:00.000Z"),
       type: "text",
       textBody: "hello",
@@ -375,5 +382,56 @@ describe("WhatsAppMessageHandler", () => {
     expect(
       [...db.messageLogs.values()].find((record) => record.direction === "outbound" && record.status === "failed"),
     ).toBeDefined();
+  });
+
+  it("marks buffered rows failed when the connector is disabled before flush", async () => {
+    const db = new InMemoryConnectorDatabase();
+    const workspaceId = "workspace-disabled-flush";
+    const registry = await createRegistry(db, workspaceId);
+    const chat = {
+      answer: vi.fn(),
+    } as any;
+    const client = {
+      sendTextMessage: vi.fn(),
+    };
+
+    await db.insertInboundMessageLog({
+      wamid: "wamid-disabled-before-flush",
+      workspaceId,
+      waId: "14155550009",
+      messageType: "text",
+      payload: { body: "queued then disabled" },
+    });
+
+    const handler = new WhatsAppMessageHandler({
+      db: db as any,
+      logger,
+      chat,
+      state: createState(db, registry),
+      client,
+      debounceMs: 3000,
+    });
+
+    await handler.handleInboundMessage({
+      workspaceId,
+      waId: "14155550009",
+      profileName: "Dana",
+      wamid: "wamid-disabled-before-flush",
+      phoneNumberId: "15550001111",
+      timestamp: new Date("2026-03-18T10:00:00.000Z"),
+      type: "text",
+      textBody: "queued then disabled",
+      payload: { body: "queued then disabled" },
+    });
+
+    await registry.disableConnector(db as any, workspaceId, "whatsapp");
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(chat.answer).not.toHaveBeenCalled();
+    expect(client.sendTextMessage).not.toHaveBeenCalled();
+    expect(db.messageLogs.get("wamid-disabled-before-flush")).toMatchObject({
+      status: "failed",
+      errorDetails: "Connector disabled before batch processing",
+    });
   });
 });

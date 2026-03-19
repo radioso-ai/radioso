@@ -27,6 +27,27 @@ const app = createApp(dependencies);
 
 await dependencies.documentProcessingWorker.start();
 
-app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, () => {
   dependencies.logger.info({ port: env.PORT }, "Hivec backend listening");
+});
+
+let shuttingDown = false;
+const shutdown = async (signal: string) => {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  dependencies.logger.info({ signal }, "Hivec backend shutting down");
+  server.close(() => {
+    dependencies.logger.info({ signal }, "HTTP server closed");
+  });
+  await dependencies.documentProcessingWorker.stop();
+  await dependencies.connectorRegistry.shutdownAll();
+};
+
+process.once("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+process.once("SIGTERM", () => {
+  void shutdown("SIGTERM");
 });

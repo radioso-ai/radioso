@@ -363,14 +363,14 @@ export function DocumentsView({
               disabled={isSaving}
             />
           </div>
-          <div className="flex min-h-0 flex-1 flex-col space-y-2">
+          <div className="space-y-2 flex-shrink-0">
             <Label htmlFor="content">Content</Label>
             <Textarea
               id="content"
               value={formValues.content}
               onChange={(e) => setFormValues((current) => ({ ...current, content: e.target.value }))}
               placeholder="Paste your document content here..."
-              className="h-full min-h-[320px] flex-1 resize-none overflow-y-auto [field-sizing:fixed]"
+              className="min-h-[320px] resize-none overflow-y-auto [field-sizing:fixed]"
               disabled={isSaving}
             />
           </div>

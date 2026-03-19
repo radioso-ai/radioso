@@ -28,6 +28,7 @@ const updateSettingsSchema = z.object({
       }),
     )
     .optional(),
+  customInstruction: z.string().max(2000).optional(),
 });
 
 export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
@@ -50,6 +51,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
       const settings = await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
         ...req.body,
         attributeControls: req.body.attributeControls ?? existing.attributeControls,
+        customInstruction: req.body.customInstruction ?? existing.customInstruction,
       });
       res.status(200).json(settings);
     } catch (error) {

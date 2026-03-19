@@ -24,6 +24,7 @@ export interface RetrievalSettingsRecord {
   citationDisplayEnabled: boolean;
   chunkingStrategy: ChunkingStrategyId;
   attributeControls: AttributeFamilyControl[];
+  customInstruction: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -38,6 +39,7 @@ export interface RetrievalSettingsInput {
   citationDisplayEnabled: boolean;
   chunkingStrategy: ChunkingStrategyId;
   attributeControls: AttributeFamilyControl[];
+  customInstruction: string;
 }
 
 export const defaultAttributeControls = (): AttributeFamilyControl[] =>
@@ -58,6 +60,7 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   citationDisplayEnabled: true,
   chunkingStrategy: "fixed_window",
   attributeControls: defaultAttributeControls(),
+  customInstruction: "",
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -102,6 +105,13 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
 
   if (seenFamilies.size !== attributeFamilyIds.length) {
     throw badRequest("attributeControls must include every supported family");
+  }
+
+  if (typeof input.customInstruction !== "string") {
+    throw badRequest("customInstruction must be a string");
+  }
+  if (input.customInstruction.length > 2000) {
+    throw badRequest("customInstruction must not exceed 2000 characters");
   }
 
   return input;

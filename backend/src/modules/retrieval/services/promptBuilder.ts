@@ -14,6 +14,7 @@ export class PromptBuilder {
     contexts: FinalPromptContext[];
     settings: {
       warmthLevel: number;
+      customInstruction?: string;
     };
   }): PromptBuildResult {
     const historySection = input.history
@@ -37,11 +38,13 @@ export class PromptBuilder {
       })
       .join("\n\n");
     const warmthInstruction = this.getWarmthInstruction(input.settings.warmthLevel);
+    const customInstructionBlock = this.renderCustomInstruction(input.settings.customInstruction);
 
     return {
       prompt: [
         "You are a retrieval-grounded assistant.",
         warmthInstruction,
+        ...(customInstructionBlock ? [customInstructionBlock] : []),
         "Answer only from the retrieved context when relevant.",
         "Cite any claim grounded in a retrieved result using [[n]] immediately after the claim, where n is the matching Result number.",
         "Use only numeric double-bracket anchors such as [[1]] or [[1]][[2]].",
@@ -75,5 +78,12 @@ export class PromptBuilder {
     }
 
     return `Use a warm, considerate tone. Acknowledge the user's questions. Warmth:${warmthLevel} out of 10`;
+  }
+
+  private renderCustomInstruction(customInstruction?: string): string | null {
+    if (!customInstruction) return null;
+    const sanitized = customInstruction.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+    if (!sanitized.trim()) return null;
+    return `Workspace-specific instructions:\n${sanitized}`;
   }
 }

@@ -4,6 +4,76 @@ import { ChatService, type ChatGateway, type ChatStreamEvent } from "../../src/m
 import { createAuditService, InMemoryConversationRepository, InMemoryMessageRepository } from "../support/fakes.js";
 
 describe("chat service streaming", () => {
+  it("does not require usage capture for non-streaming answers", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Intro",
+              content: "full answer",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            warmthLevel: 5,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "full answer[[1]]";
+      },
+      async *streamAnswer() {
+        yield "full answer[[1]]";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does this page do?",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("full answer");
+    const [conversationId] = conversationRepository.items.keys();
+    const persisted = await messageRepository.listByConversationId(conversationId!);
+    expect(persisted.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
   it("persists the normalized assistant answer only after the stream completes", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

@@ -1342,6 +1342,48 @@ export class InMemoryUsageEventRepository implements UsageEventRepositoryPort {
       .filter((item) => item.accountId === accountId)
       .sort((left, right) => left.occurredAt.getTime() - right.occurredAt.getTime());
   }
+
+  async aggregateDailyByAccountId(accountId: string): Promise<Array<{
+    usageDate: string;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    usageEventCount: number;
+    unavailableEventCount: number;
+  }>> {
+    const grouped = new Map<string, {
+      usageDate: string;
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+      usageEventCount: number;
+      unavailableEventCount: number;
+    }>();
+
+    for (const event of this.items) {
+      if (event.accountId !== accountId) {
+        continue;
+      }
+
+      const usageDate = toUtcDate(event.occurredAt);
+      const current = grouped.get(usageDate) ?? {
+        usageDate,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        usageEventCount: 0,
+        unavailableEventCount: 0,
+      };
+      current.promptTokens += event.promptTokens ?? 0;
+      current.completionTokens += event.completionTokens ?? 0;
+      current.totalTokens += event.totalTokens ?? 0;
+      current.usageEventCount += 1;
+      current.unavailableEventCount += event.usageAvailable ? 0 : 1;
+      grouped.set(usageDate, current);
+    }
+
+    return [...grouped.values()].sort((left, right) => left.usageDate.localeCompare(right.usageDate));
+  }
 }
 
 export class InMemoryAuditService extends AuditService {

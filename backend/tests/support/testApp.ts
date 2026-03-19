@@ -220,6 +220,21 @@ export const createTestDependencies = (overrides: {
       const promptTokens =
         estimateTokenCount(input.query) +
         input.contextMessages.reduce((sum, message) => sum + estimateTokenCount(message.content), 0);
+      const recordRewriteUsage = async (rewrittenQuery: string) => {
+        const completionTokens = estimateTokenCount(rewrittenQuery);
+        await usageCaptureService.observe({
+          operationKey: randomUUID(),
+          sourceArea: "retrieval",
+          operationType: "query_rewrite",
+          model: env.OPENAI_CHAT_MODEL,
+          eventStatus: "success",
+          usageAvailable: true,
+          promptTokens,
+          completionTokens,
+          totalTokens: promptTokens + completionTokens,
+          metadata: { query: input.query },
+        });
+      };
       const lastUserContext =
         [...input.contextMessages].reverse().find((message) => message.role === "user")?.content ?? "";
       const normalizedContext = normalizeRewriteContext(lastUserContext);
@@ -233,18 +248,7 @@ export const createTestDependencies = (overrides: {
           unresolved: false,
           confidence: 0.95,
         };
-        await usageCaptureService.observe({
-          operationKey: randomUUID(),
-          sourceArea: "retrieval",
-          operationType: "query_rewrite",
-          model: env.OPENAI_CHAT_MODEL,
-          eventStatus: "success",
-          usageAvailable: true,
-          promptTokens,
-          completionTokens: estimateTokenCount(result.rewrittenQuery),
-          totalTokens: promptTokens + estimateTokenCount(result.rewrittenQuery),
-          metadata: { query: input.query },
-        });
+        await recordRewriteUsage(result.rewrittenQuery);
         return result;
       }
 
@@ -257,18 +261,7 @@ export const createTestDependencies = (overrides: {
           unresolved: false,
           confidence: 0.9,
         };
-        await usageCaptureService.observe({
-          operationKey: randomUUID(),
-          sourceArea: "retrieval",
-          operationType: "query_rewrite",
-          model: env.OPENAI_CHAT_MODEL,
-          eventStatus: "success",
-          usageAvailable: true,
-          promptTokens,
-          completionTokens: estimateTokenCount(result.rewrittenQuery),
-          totalTokens: promptTokens + estimateTokenCount(result.rewrittenQuery),
-          metadata: { query: input.query },
-        });
+        await recordRewriteUsage(result.rewrittenQuery);
         return result;
       }
 
@@ -281,18 +274,7 @@ export const createTestDependencies = (overrides: {
           unresolved: true,
           confidence: 0.75,
         };
-        await usageCaptureService.observe({
-          operationKey: randomUUID(),
-          sourceArea: "retrieval",
-          operationType: "query_rewrite",
-          model: env.OPENAI_CHAT_MODEL,
-          eventStatus: "success",
-          usageAvailable: true,
-          promptTokens,
-          completionTokens: estimateTokenCount(result.rewrittenQuery),
-          totalTokens: promptTokens + estimateTokenCount(result.rewrittenQuery),
-          metadata: { query: input.query },
-        });
+        await recordRewriteUsage(result.rewrittenQuery);
         return result;
       }
 
@@ -304,18 +286,7 @@ export const createTestDependencies = (overrides: {
         unresolved: false,
         confidence: 0.9,
       };
-      await usageCaptureService.observe({
-        operationKey: randomUUID(),
-        sourceArea: "retrieval",
-        operationType: "query_rewrite",
-        model: env.OPENAI_CHAT_MODEL,
-        eventStatus: "success",
-        usageAvailable: true,
-        promptTokens,
-        completionTokens: estimateTokenCount(result.rewrittenQuery),
-        totalTokens: promptTokens + estimateTokenCount(result.rewrittenQuery),
-        metadata: { query: input.query },
-      });
+      await recordRewriteUsage(result.rewrittenQuery);
       return result;
     },
   };

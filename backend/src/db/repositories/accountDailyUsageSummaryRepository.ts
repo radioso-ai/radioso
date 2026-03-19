@@ -139,6 +139,11 @@ export class AccountDailyUsageSummaryRepository implements AccountDailyUsageSumm
     }>;
   }): Promise<void> {
     await this.database.withTransaction(async (client) => {
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`,
+        ["account_usage_summary", input.accountId],
+      );
+
       await client.query(`DELETE FROM account_daily_usage_summaries WHERE account_id = $1`, [input.accountId]);
 
       for (const row of input.rows) {

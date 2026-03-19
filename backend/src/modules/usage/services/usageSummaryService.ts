@@ -1,5 +1,4 @@
 import type {
-  AccountDailyUsageSummaryRecord,
   AccountDailyUsageSummaryRepositoryPort,
   AccountMonthlyUsageSummaryRecord,
 } from "../../../db/repositories/accountDailyUsageSummaryRepository.js";
@@ -129,45 +128,11 @@ export class UsageSummaryService {
   }
 
   async rebuildAccountDailySummaries(accountId: string): Promise<void> {
-    const events = await this.usageEventRepository.listByAccountId(accountId);
-    const grouped = new Map<string, AccountDailyUsageSummaryRecord>();
-
-    for (const event of events) {
-      const usageDate = toUtcDate(event.occurredAt);
-      const current = grouped.get(usageDate) ?? {
-        accountId,
-        usageDate,
-        promptTokens: 0,
-        completionTokens: 0,
-        totalTokens: 0,
-        usageEventCount: 0,
-        unavailableEventCount: 0,
-        updatedAt: new Date(),
-      };
-
-      current.usageEventCount += 1;
-      if (event.usageAvailable) {
-        current.promptTokens += event.promptTokens ?? 0;
-        current.completionTokens += event.completionTokens ?? 0;
-        current.totalTokens += event.totalTokens ?? 0;
-      } else {
-        current.unavailableEventCount += 1;
-      }
-      grouped.set(usageDate, current);
-    }
+    const grouped = await this.usageEventRepository.aggregateDailyByAccountId(accountId);
 
     await this.accountDailyUsageSummaryRepository.replaceAllForAccount({
       accountId,
-      rows: [...grouped.values()]
-        .sort((left, right) => left.usageDate.localeCompare(right.usageDate))
-        .map((row) => ({
-          usageDate: row.usageDate,
-          promptTokens: row.promptTokens,
-          completionTokens: row.completionTokens,
-          totalTokens: row.totalTokens,
-          usageEventCount: row.usageEventCount,
-          unavailableEventCount: row.unavailableEventCount,
-        })),
+      rows: grouped,
     });
   }
 }

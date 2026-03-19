@@ -3,6 +3,8 @@ CREATE TABLE IF NOT EXISTS usage_events (
   operation_key TEXT NOT NULL UNIQUE,
   account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   workspace_id UUID REFERENCES workspaces(id) ON DELETE SET NULL,
+  -- Conversation/message/document references intentionally remain nullable and
+  -- unfkeyed so historical usage can outlive routine cleanup of those records.
   conversation_id UUID,
   user_message_id UUID,
   assistant_message_id UUID,

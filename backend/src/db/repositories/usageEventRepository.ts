@@ -50,6 +50,14 @@ export interface UsageEventRepositoryPort {
   record(input: UsageEventInsertInput): Promise<{ inserted: boolean; record: UsageEventRecord | null }>;
   listByAssistantMessageIds(assistantMessageIds: string[]): Promise<UsageEventRecord[]>;
   listByAccountId(accountId: string): Promise<UsageEventRecord[]>;
+  aggregateDailyByAccountId(accountId: string): Promise<Array<{
+    usageDate: string;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    usageEventCount: number;
+    unavailableEventCount: number;
+  }>>;
 }
 
 interface UsageEventRow {
@@ -103,6 +111,11 @@ export class UsageEventRepository implements UsageEventRepositoryPort {
 
   async record(input: UsageEventInsertInput): Promise<{ inserted: boolean; record: UsageEventRecord | null }> {
     return this.database.withTransaction(async (client) => {
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`,
+        ["account_usage_summary", input.accountId],
+      );
+
       const inserted = await client.query<UsageEventRow>(
         `INSERT INTO usage_events (
            id, operation_key, account_id, workspace_id, conversation_id, user_message_id,
@@ -217,5 +230,45 @@ export class UsageEventRepository implements UsageEventRepositoryPort {
     );
 
     return rows.map(mapUsageEvent);
+  }
+
+  async aggregateDailyByAccountId(accountId: string): Promise<Array<{
+    usageDate: string;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    usageEventCount: number;
+    unavailableEventCount: number;
+  }>> {
+    const rows = await this.database.query<{
+      usage_date: string;
+      prompt_tokens: number | string;
+      completion_tokens: number | string;
+      total_tokens: number | string;
+      usage_event_count: number | string;
+      unavailable_event_count: number | string;
+    }>(
+      `SELECT
+          (occurred_at AT TIME ZONE 'UTC')::date::text AS usage_date,
+          SUM(COALESCE(prompt_tokens, 0)) AS prompt_tokens,
+          SUM(COALESCE(completion_tokens, 0)) AS completion_tokens,
+          SUM(COALESCE(total_tokens, 0)) AS total_tokens,
+          COUNT(*) AS usage_event_count,
+          SUM(CASE WHEN usage_available THEN 0 ELSE 1 END) AS unavailable_event_count
+       FROM usage_events
+       WHERE account_id = $1
+       GROUP BY 1
+       ORDER BY 1 ASC`,
+      [accountId],
+    );
+
+    return rows.map((row) => ({
+      usageDate: row.usage_date,
+      promptTokens: Number(row.prompt_tokens),
+      completionTokens: Number(row.completion_tokens),
+      totalTokens: Number(row.total_tokens),
+      usageEventCount: Number(row.usage_event_count),
+      unavailableEventCount: Number(row.unavailable_event_count),
+    }));
   }
 }

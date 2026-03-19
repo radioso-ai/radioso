@@ -213,7 +213,7 @@ export class ChatService {
             content: presentation.answer,
           });
           assistantMessageId = assistantMessage.id;
-          await this.usageCaptureService.flushCurrentScope({
+          await this.usageCaptureService?.flushCurrentScope({
             accountId,
             workspaceId: input.workspaceId,
             conversationId: session.conversation.id,
@@ -248,7 +248,7 @@ export class ChatService {
             assistantMessageId,
             error,
           );
-          await this.usageCaptureService.flushCurrentScope({
+          await this.usageCaptureService?.flushCurrentScope({
             accountId,
             workspaceId: input.workspaceId,
             conversationId: failure.conversationId,

@@ -8,6 +8,11 @@ const workspaceParamsSchema = z.object({
   workspaceId: z.string().uuid(),
 });
 
+const usageQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).optional(),
+  months: z.coerce.number().int().min(1).max(24).optional(),
+});
+
 export const createAccountRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
 
@@ -17,6 +22,21 @@ export const createAccountRoutes = (dependencies: AppDependencies): Router => {
       const { workspaceId } = workspaceParamsSchema.parse(req.params);
       const result = await dependencies.authService.getTokenForWorkspace(workspaceId, accountId);
       res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/usage", requireSession(dependencies), async (req, res, next) => {
+    try {
+      const { accountId } = res.locals as { accountId: string };
+      const query = usageQuerySchema.parse(req.query);
+      const usage = await dependencies.usageSummaryService.getAccountUsageSummary({
+        accountId,
+        days: query.days,
+        months: query.months,
+      });
+      res.status(200).json(usage);
     } catch (error) {
       next(error);
     }

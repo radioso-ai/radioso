@@ -1,4 +1,4 @@
-export type DashboardSection = 'chat' | 'history' | 'documents' | 'settings' | 'token'
+export type DashboardSection = 'chat' | 'history' | 'documents' | 'settings' | 'token' | 'usage'
 
 export interface ParsedDashboardRoute {
   section: DashboardSection
@@ -34,7 +34,7 @@ export const parseDashboardSegments = (
     return null
   }
 
-  if (section === 'chat' || section === 'history' || section === 'settings' || section === 'token') {
+  if (section === 'chat' || section === 'history' || section === 'settings' || section === 'token' || section === 'usage') {
     return maybeDocumentId ? null : { section }
   }
 

@@ -201,6 +201,39 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v1/account/usage:
+    get:
+      tags: [Account]
+      summary: Return account-wide token usage across all workspaces
+      operationId: getAccountUsage
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: days
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+        - in: query
+          name: months
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 24
+      responses:
+        '200':
+          description: Account usage summary returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountUsageSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/v1/settings/retrieval:
     get:
       tags: [Settings]
@@ -531,6 +564,79 @@ components:
         token:
           type: string
           pattern: '^sk_proj_[A-Za-z0-9]+$'
+    TokenUsageTotals:
+      type: object
+      required: [promptTokens, completionTokens, totalTokens]
+      properties:
+        promptTokens:
+          type: integer
+          minimum: 0
+        completionTokens:
+          type: integer
+          minimum: 0
+        totalTokens:
+          type: integer
+          minimum: 0
+    UsageBreakdownItem:
+      type: object
+      required: [operationType, model, status, usageAvailable, recordedAt]
+      properties:
+        operationType:
+          type: string
+        model:
+          type: string
+        status:
+          type: string
+        usageAvailable:
+          type: boolean
+        promptTokens:
+          type: integer
+          minimum: 0
+          nullable: true
+        completionTokens:
+          type: integer
+          minimum: 0
+          nullable: true
+        totalTokens:
+          type: integer
+          minimum: 0
+          nullable: true
+        recordedAt:
+          type: string
+          format: date-time
+    DailyUsageRow:
+      type: object
+      required: [date, totals]
+      properties:
+        date:
+          type: string
+          format: date
+        totals:
+          $ref: '#/components/schemas/TokenUsageTotals'
+    MonthlyUsageRow:
+      type: object
+      required: [month, totals]
+      properties:
+        month:
+          type: string
+        totals:
+          $ref: '#/components/schemas/TokenUsageTotals'
+    AccountUsageSummary:
+      type: object
+      required: [today, currentMonth, daily, monthly]
+      properties:
+        today:
+          $ref: '#/components/schemas/TokenUsageTotals'
+        currentMonth:
+          $ref: '#/components/schemas/TokenUsageTotals'
+        daily:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyUsageRow'
+        monthly:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonthlyUsageRow'
     Workspace:
       type: object
       required: [id, accountId, name, createdAt, updatedAt]
@@ -898,6 +1004,12 @@ components:
         citationCount:
           type: integer
           minimum: 0
+        usageTotals:
+          $ref: '#/components/schemas/TokenUsageTotals'
+        usageBreakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsageBreakdownItem'
         retrievalInfo:
           $ref: '#/components/schemas/RetrievalInfo'
         errorMessage:

@@ -292,6 +292,8 @@ export interface ChatConversationTurnDebug {
   recordedAt: string
   stream: boolean
   citationCount: number
+  usageTotals?: TokenUsageTotals
+  usageBreakdown?: UsageBreakdownItem[]
   retrievalInfo?: RetrievalInfo
   errorMessage?: string | null
 }
@@ -317,6 +319,36 @@ export interface ChatConversationDetail {
 
 export interface ChatHistoryListResponse {
   conversations: ChatConversationSummary[]
+}
+
+export interface TokenUsageTotals {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
+export interface UsageBreakdownItem {
+  operationType: string
+  model: string
+  status: string
+  usageAvailable: boolean
+  promptTokens?: number | null
+  completionTokens?: number | null
+  totalTokens?: number | null
+  recordedAt: string
+}
+
+export interface AccountUsageSummary {
+  today: TokenUsageTotals
+  currentMonth: TokenUsageTotals
+  daily: Array<{
+    date: string
+    totals: TokenUsageTotals
+  }>
+  monthly: Array<{
+    month: string
+    totals: TokenUsageTotals
+  }>
 }
 
 interface ChatStreamHandlers {
@@ -554,6 +586,23 @@ export const workspaceApi = {
   async delete(workspaceId: string): Promise<void> {
     await request<void>(`/workspace/${workspaceId}`, {
       method: "DELETE",
+    }, { withSession: true })
+  },
+}
+
+export const accountApi = {
+  async getUsage(params: { days?: number; months?: number } = {}): Promise<AccountUsageSummary> {
+    const search = new URLSearchParams()
+    if (params.days) {
+      search.set('days', String(params.days))
+    }
+    if (params.months) {
+      search.set('months', String(params.months))
+    }
+
+    const suffix = search.toString() ? `?${search.toString()}` : ''
+    return request<AccountUsageSummary>(`/account/usage${suffix}`, {
+      method: 'GET',
     }, { withSession: true })
   },
 }

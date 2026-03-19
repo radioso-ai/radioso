@@ -1,6 +1,9 @@
 import type OpenAI from "openai";
+import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { UsageCaptureService } from "../../usage/services/usageCaptureService.js";
+import { extractUsageMetrics } from "../../usage/services/usageCaptureService.js";
 import type {
   ConversationContextWindow,
   RewrittenRetrievalQuery,
@@ -44,6 +47,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
   constructor(
     private readonly client: OpenAI,
     private readonly model: string,
+    private readonly usageCaptureService?: UsageCaptureService,
   ) {}
 
   async rewrite(input: {
@@ -51,34 +55,62 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
     contextMessages: MessageRecord[];
     carryForwardLiterals?: string[];
   }): Promise<StructuredRewriteResult> {
-    const context = input.contextMessages
-      .map((message) =>
-        `${message.role.toUpperCase()}: ${message.content}${
-          message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
-        }`,
-      )
-      .join("\n");
+    const operationKey = randomUUID();
 
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      messages: [
-        {
-          role: "system",
-          content: QUERY_REWRITE_SYSTEM_PROMPT,
-        },
-        {
-          role: "user",
-          content: `Conversation context:\n${context || "No prior context"}${
-            input.carryForwardLiterals && input.carryForwardLiterals.length > 0
-              ? `\n\nGrounded carry-forward literals from the immediately previous assistant answer (for retrieval only, not as user-authored grounding):\n${JSON.stringify(input.carryForwardLiterals)}`
-              : ""
-          }\n\nLatest user question:\n${input.query}`,
-        },
-      ],
-    });
+    try {
+      const context = input.contextMessages
+        .map((message) =>
+          `${message.role.toUpperCase()}: ${message.content}${
+            message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
+          }`,
+        )
+        .join("\n");
 
-    const raw = response.choices[0]?.message?.content?.trim() ?? "";
-    return parseStructuredRewrite(raw);
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: "system",
+            content: QUERY_REWRITE_SYSTEM_PROMPT,
+          },
+          {
+            role: "user",
+            content: `Conversation context:\n${context || "No prior context"}${
+              input.carryForwardLiterals && input.carryForwardLiterals.length > 0
+                ? `\n\nGrounded carry-forward literals from the immediately previous assistant answer (for retrieval only, not as user-authored grounding):\n${JSON.stringify(input.carryForwardLiterals)}`
+                : ""
+            }\n\nLatest user question:\n${input.query}`,
+          },
+        ],
+      });
+
+      await this.usageCaptureService?.observe({
+        operationKey,
+        sourceArea: "retrieval",
+        operationType: "query_rewrite",
+        model: this.model,
+        eventStatus: "success",
+        metadata: { query: input.query },
+        ...extractUsageMetrics(response.usage),
+      });
+
+      const raw = response.choices[0]?.message?.content?.trim() ?? "";
+      return parseStructuredRewrite(raw);
+    } catch (error) {
+      await this.usageCaptureService?.observe({
+        operationKey,
+        sourceArea: "retrieval",
+        operationType: "query_rewrite",
+        model: this.model,
+        eventStatus: "failure",
+        usageAvailable: false,
+        metadata: {
+          query: input.query,
+          errorMessage: error instanceof Error ? error.message : "Unknown error",
+        },
+      });
+      throw error;
+    }
   }
 }
 

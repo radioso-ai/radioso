@@ -7,6 +7,8 @@ import type { RetrievalSettingsService } from "../../modules/settings/services/r
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { AuditService } from "../../modules/audit/services/auditService.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
+import type { UsageCaptureService } from "../../modules/usage/services/usageCaptureService.js";
+import type { UsageSummaryService } from "../../modules/usage/services/usageSummaryService.js";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
@@ -18,6 +20,8 @@ export interface AppDependencies {
   authService: AuthService;
   auditService: AuditService;
   workspaceService: WorkspaceService;
+  usageCaptureService: UsageCaptureService;
+  usageSummaryService: UsageSummaryService;
   retrievalSettingsService: RetrievalSettingsService;
   documentIngestionService: DocumentIngestionService;
   documentProcessingWorker: DocumentProcessingWorker;

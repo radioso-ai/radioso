@@ -33,6 +33,7 @@ import {
   Moon,
   Sun,
   Monitor,
+  BarChart3,
   ChevronUp,
   User,
 } from 'lucide-react'
@@ -145,6 +146,13 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
                   <p className="text-xs text-muted-foreground">{user?.email}</p>
                 </div>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href={buildAccountRoute(accountId, 'usage')}>
+                    <BarChart3 className="w-4 h-4 mr-2" />
+                    Usage
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setTheme('light')}>
                   <Sun className="w-4 h-4 mr-2" />
                   Light
@@ -160,7 +168,6 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
                   System
                   {theme === 'system' && <span className="ml-auto text-xs">✓</span>}
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
                   <LogOut className="w-4 h-4 mr-2" />
                   Sign out

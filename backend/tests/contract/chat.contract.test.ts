@@ -105,6 +105,62 @@ describe("chat contract", () => {
     });
   });
 
+  it("returns assistant turn usage details in conversation history when usage events are recorded", async () => {
+    const { app } = createTestApp();
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "chat-usage@example.com",
+      password: "verysecurepassword",
+    });
+    const cookie = register.headers["set-cookie"][0];
+    const workspaces = await request(app)
+      .get("/api/v1/workspace")
+      .set("Cookie", cookie);
+    const workspaceId = workspaces.body.workspaces[0].id as string;
+
+    const token = await request(app)
+      .get(`/api/v1/account/workspaces/${workspaceId}/token`)
+      .set("Cookie", cookie);
+    const authorization = `Bearer ${token.body.token as string}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+
+    const chat = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does this page do?", stream: false });
+
+    const response = await request(app)
+      .get(`/api/v1/chat/history/${chat.body.conversationId}`)
+      .set("Authorization", authorization);
+
+    expect(response.status).toBe(200);
+    expect(response.body.messages[1].debug).toMatchObject({
+      usageTotals: {
+        promptTokens: expect.any(Number),
+        completionTokens: expect.any(Number),
+        totalTokens: expect.any(Number),
+      },
+      usageBreakdown: expect.arrayContaining([
+        expect.objectContaining({
+          operationType: "embedding",
+          model: "text-embedding-3-small",
+          usageAvailable: true,
+        }),
+        expect.objectContaining({
+          operationType: "chat_answer",
+          model: "gpt-5-mini",
+          usageAvailable: true,
+          totalTokens: expect.any(Number),
+        }),
+      ]),
+    });
+    expect(response.body.workspaceId).toBe(workspaceId);
+    expect(response.body.messages[1].debug.usageTotals.totalTokens).toBeGreaterThan(0);
+  });
+
   it("rejects an invalid history conversation id with a client error", async () => {
     const { app } = createTestApp();
     const token = await getBearerToken(app);

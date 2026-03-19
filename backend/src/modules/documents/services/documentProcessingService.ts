@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { DocumentProcessingJobRecord } from "../../../db/repositories/documentProcessingJobRepository.js";
+import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import { normalizeMarkdown, type ChunkingStrategy } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 import {
   emptyStructuredAttributes,
@@ -19,6 +20,7 @@ import type {
 } from "./documentIngestionService.js";
 import { type EmbeddingService } from "../../retrieval/services/embeddingService.js";
 import type { ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
+import type { UsageCaptureService } from "../../usage/services/usageCaptureService.js";
 
 export interface RetrievalSettingsReaderPort {
   getForWorkspace(workspaceId: string): Promise<RetrievalSettingsRecord>;
@@ -38,9 +40,31 @@ export class DocumentProcessingService {
     private readonly auditService: AuditService,
     private readonly retrievalSettingsService: RetrievalSettingsReaderPort,
     private readonly chunkingStrategyRegistry: ChunkingStrategyRegistryPort,
+    private readonly workspaceRepository?: WorkspaceRepositoryPort,
+    private readonly usageCaptureService?: UsageCaptureService,
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
+    const workspace = this.workspaceRepository
+      ? await this.workspaceRepository.findById(job.workspaceId)
+      : null;
+
+    if (!this.usageCaptureService) {
+      return this.processWithinScope(job);
+    }
+
+    return this.usageCaptureService.runInScope(
+      {
+        accountId: workspace?.accountId,
+        workspaceId: job.workspaceId,
+        documentId: job.documentId,
+        processingJobId: job.id,
+      },
+      () => this.processWithinScope(job),
+    );
+  }
+
+  private async processWithinScope(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
     const markedProcessing = await this.documentRepository.setStatusIfRevisionMatches({
       documentId: job.documentId,
       workspaceId: job.workspaceId,

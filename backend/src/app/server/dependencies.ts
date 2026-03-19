@@ -10,6 +10,8 @@ import { ConversationRepository } from "../../db/repositories/conversationReposi
 import { DocumentRepository } from "../../db/repositories/documentRepository.js";
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
+import { UsageEventRepository } from "../../db/repositories/usageEventRepository.js";
+import { AccountDailyUsageSummaryRepository } from "../../db/repositories/accountDailyUsageSummaryRepository.js";
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
@@ -37,6 +39,8 @@ import { OpenAIEmbeddingGateway, EmbeddingService } from "../../modules/retrieva
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
+import { UsageCaptureService } from "../../modules/usage/services/usageCaptureService.js";
+import { UsageSummaryService } from "../../modules/usage/services/usageSummaryService.js";
 import { Database } from "../../shared/infra/database.js";
 import { OpenAIClients } from "../../shared/infra/openaiClient.js";
 import { createLogger } from "../../shared/observability/logger.js";
@@ -47,9 +51,19 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const database = new Database(env.DATABASE_URL);
   const auditEventRepository = new AuditEventRepository(database);
   const auditService = new AuditService(logger, auditEventRepository);
+  const usageEventRepository = new UsageEventRepository(database);
+  const accountDailyUsageSummaryRepository = new AccountDailyUsageSummaryRepository(database);
+  const usageCaptureService = new UsageCaptureService(usageEventRepository);
+  const usageSummaryService = new UsageSummaryService(
+    usageEventRepository,
+    accountDailyUsageSummaryRepository,
+  );
   const openai = new OpenAIClients(env.OPENAI_API_KEY, env.OPENAI_CHAT_MODEL, env.OPENAI_VECTOR_MODEL);
   const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
-  const embeddingService = new EmbeddingService(new OpenAIEmbeddingGateway(openai.client, openai.vectorModel));
+  const workspaceRepository = new WorkspaceRepository(database);
+  const embeddingService = new EmbeddingService(
+    new OpenAIEmbeddingGateway(openai.client, openai.vectorModel, usageCaptureService),
+  );
   const documentRepository = new DocumentRepository(database);
   const documentProcessingJobRepository = new DocumentProcessingJobRepository(database);
   const chunkRepository = new ChunkRepository(database);
@@ -64,6 +78,8 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     auditService,
     retrievalSettingsService,
     chunkingStrategyRegistry,
+    workspaceRepository,
+    usageCaptureService,
   );
   const documentIngestionService = new DocumentIngestionService(
     documentRepository,
@@ -83,10 +99,12 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new PgVectorSearch(database),
     new PgLexicalSearch(database),
     new ConversationContextService(),
-    new QueryRewriteService(new OpenAIQueryRewriteGateway(openai.client, openai.chatModel)),
+    new QueryRewriteService(new OpenAIQueryRewriteGateway(openai.client, openai.chatModel, usageCaptureService)),
     new CandidatePreparationService(),
     new AttributeMatchScoringService(),
-    new RerankService(new OpenAISemanticRerankGateway(openai.client, env.OPENAI_RERANK_MODEL ?? openai.chatModel)),
+    new RerankService(
+      new OpenAISemanticRerankGateway(openai.client, env.OPENAI_RERANK_MODEL ?? openai.chatModel, usageCaptureService),
+    ),
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
@@ -95,15 +113,17 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new ConversationRepository(database),
     new MessageRepository(database),
     retrievalPipeline,
-    new OpenAIChatGateway(openai.client, openai.chatModel),
+    new OpenAIChatGateway(openai.client, openai.chatModel, usageCaptureService),
     auditService,
+    workspaceRepository,
+    usageCaptureService,
   );
   const chatHistoryService = new ChatHistoryService(
     new ConversationRepository(database),
     new MessageRepository(database),
     auditEventRepository,
+    usageSummaryService,
   );
-  const workspaceRepository = new WorkspaceRepository(database);
   const workspaceService = new WorkspaceService(workspaceRepository, auditService);
   const connectorRegistry = new ConnectorRegistry();
   registerBuiltInConnectors(connectorRegistry);
@@ -125,6 +145,8 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     authService,
     auditService,
     workspaceService,
+    usageCaptureService,
+    usageSummaryService,
     retrievalSettingsService,
     documentIngestionService,
     documentProcessingWorker,

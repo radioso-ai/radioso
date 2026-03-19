@@ -32,6 +32,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL with `pgvector` extension (016-chat-connectors)
 - HCL (Terraform >= 1.5) + `hashicorp/google` provider (~> 5.x), `hashicorp/google-beta` provider (~> 5.x) (018-terraform-gcp-deploy)
 - GCS bucket for Terraform remote state; Cloud SQL PostgreSQL 16 for application data (018-terraform-gcp-deploy)
+- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js App Router (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js, shadcn/ui, Radix UI primitives, Lucide icons (019-token-usage-ledger)
+- PostgreSQL 16+ with `pgvector`; additive usage ledger and daily summary tables (019-token-usage-ledger)
 
 
 ## Project Structure
@@ -51,6 +53,6 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 019-token-usage-ledger: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js App Router (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js, shadcn/ui, Radix UI primitives, Lucide icons
 - 018-terraform-gcp-deploy: Added HCL (Terraform >= 1.5) + `hashicorp/google` provider (~> 5.x), `hashicorp/google-beta` provider (~> 5.x)
 - 016-chat-connectors: Added TypeScript / Node.js (backend), TypeScript / React + Next.js (frontend) + Express.js, pg (PostgreSQL driver), Vitest (testing), Shadcn/ui (frontend components)
-- 016-workspace-mgmt: Added Node.js (TypeScript) backend, React (TypeScript) frontend + Express, Zod (validation), React, Tailwind CSS, shadcn/ui components

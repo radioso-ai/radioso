@@ -291,6 +291,130 @@ describe("chat integration", () => {
     ]);
   });
 
+  it("records attributable token usage for successful chat turns in history", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "usage-success@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: true,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does the page explain?", stream: false });
+
+    expect(response.status).toBe(200);
+
+    const history = await request(app)
+      .get("/api/v1/chat/history")
+      .set("Authorization", authorization);
+    const detail = await request(app)
+      .get(`/api/v1/chat/history/${history.body.conversations[0].id}`)
+      .set("Authorization", authorization);
+
+    const assistantMessage = detail.body.messages.find((message: { role: string }) => message.role === "assistant");
+
+    expect(assistantMessage?.debug.usageTotals).toEqual({
+      promptTokens: expect.any(Number),
+      completionTokens: expect.any(Number),
+      totalTokens: expect.any(Number),
+    });
+    expect(assistantMessage?.debug.usageTotals.totalTokens).toBeGreaterThan(0);
+    expect(assistantMessage?.debug.usageBreakdown).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ operationType: "embedding", usageAvailable: true, status: "success" }),
+        expect.objectContaining({ operationType: "chat_answer", usageAvailable: true, status: "success" }),
+      ]),
+    );
+  });
+
+  it("records usage-unavailable breakdown entries for failed chat turns", async () => {
+    let usageCaptureService: { observe: (input: Record<string, unknown>) => Promise<void> } | undefined;
+    const failingGateway: ChatGateway = {
+      async answer() {
+        await usageCaptureService?.observe({
+          operationKey: "chat-failure-turn",
+          sourceArea: "chat",
+          operationType: "chat_answer",
+          model: "gpt-5-mini",
+          eventStatus: "failure",
+          usageAvailable: false,
+        });
+        throw new Error("upstream unavailable");
+      },
+      async *streamAnswer() {
+        await usageCaptureService?.observe({
+          operationKey: "chat-failure-turn-stream",
+          sourceArea: "chat",
+          operationType: "chat_answer",
+          model: "gpt-5-mini",
+          eventStatus: "failure",
+          usageAvailable: false,
+        });
+        throw new Error("upstream unavailable");
+      },
+    };
+    const { app, dependencies } = createTestApp({ chatGateway: failingGateway });
+    usageCaptureService = dependencies.usageCaptureService;
+
+    const { token } = await issueTestToken(app, "usage-failure@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
+
+    const failure = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does the page explain?", stream: false });
+
+    expect(failure.status).toBe(500);
+
+    const history = await request(app)
+      .get("/api/v1/chat/history")
+      .set("Authorization", authorization);
+    const detail = await request(app)
+      .get(`/api/v1/chat/history/${history.body.conversations[0].id}`)
+      .set("Authorization", authorization);
+
+    const assistantMessage = detail.body.messages.find((message: { role: string }) => message.role === "assistant");
+
+    expect(assistantMessage?.debug.usageTotals).toEqual({
+      promptTokens: expect.any(Number),
+      completionTokens: expect.any(Number),
+      totalTokens: expect.any(Number),
+    });
+    expect(assistantMessage?.debug.usageBreakdown).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operationType: "chat_answer",
+          usageAvailable: false,
+          status: "failure",
+        }),
+      ]),
+    );
+  });
+
   it("preserves ambiguity for unresolved relation follow-ups", async () => {
     const { app } = createTestApp({
       queryRewriteGateway: {
@@ -307,14 +431,8 @@ describe("chat integration", () => {
       },
     });
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "ambiguity@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "ambiguity@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")
@@ -374,14 +492,8 @@ describe("chat integration", () => {
       },
     });
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "book-followup@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "book-followup@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")

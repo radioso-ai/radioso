@@ -1,5 +1,8 @@
 import type OpenAI from "openai";
+import { randomUUID } from "node:crypto";
 
+import type { UsageCaptureService } from "../../usage/services/usageCaptureService.js";
+import { extractUsageMetrics } from "../../usage/services/usageCaptureService.js";
 import type { RetrievedCandidate, RerankedCandidate, RerankStatus } from "../domain/retrievalPipelineTypes.js";
 
 export interface RerankGateway {
@@ -16,35 +19,65 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
   constructor(
     private readonly client: OpenAI,
     private readonly model: string,
+    private readonly usageCaptureService?: UsageCaptureService,
   ) {}
 
   async rerank(input: {
     query: string;
     contexts: RetrievedCandidate[];
   }): Promise<Array<{ chunkId: string; relevanceScore: number }>> {
-    const candidates = input.contexts
-      .map((context, index) => `${index + 1}. ${context.chunkId} | ${context.retrievalText.slice(0, 500)}`)
-      .join("\n");
+    const operationKey = randomUUID();
 
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      temperature: OpenAISemanticRerankGateway.TEMPERATURE,
-      max_completion_tokens: OpenAISemanticRerankGateway.MAX_COMPLETION_TOKENS,
-      messages: [
-        {
-          role: "system",
-          content:
-            'Score each candidate chunk for answer relevance to the query. Return only valid JSON as an array of objects with keys "chunkId" and "relevanceScore" where relevanceScore is between 0 and 1.',
-        },
-        {
-          role: "user",
-          content: `Query:\n${input.query}\n\nCandidates:\n${candidates}`,
-        },
-      ],
-    });
+    try {
+      const candidates = input.contexts
+        .map((context, index) => `${index + 1}. ${context.chunkId} | ${context.retrievalText.slice(0, 500)}`)
+        .join("\n");
 
-    const content = response.choices[0]?.message?.content?.trim() ?? "[]";
-    return parseRerankScores(content);
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        temperature: OpenAISemanticRerankGateway.TEMPERATURE,
+        max_completion_tokens: OpenAISemanticRerankGateway.MAX_COMPLETION_TOKENS,
+        messages: [
+          {
+            role: "system",
+            content:
+              'Score each candidate chunk for answer relevance to the query. Return only valid JSON as an array of objects with keys "chunkId" and "relevanceScore" where relevanceScore is between 0 and 1.',
+          },
+          {
+            role: "user",
+            content: `Query:\n${input.query}\n\nCandidates:\n${candidates}`,
+          },
+        ],
+      });
+
+      await this.usageCaptureService?.observe({
+        operationKey,
+        sourceArea: "retrieval",
+        operationType: "semantic_rerank",
+        model: this.model,
+        eventStatus: "success",
+        metadata: { candidateCount: input.contexts.length, query: input.query },
+        ...extractUsageMetrics(response.usage),
+      });
+
+      const content = response.choices[0]?.message?.content?.trim() ?? "[]";
+      return parseRerankScores(content);
+    } catch (error) {
+      await this.usageCaptureService?.observe({
+        operationKey,
+        sourceArea: "retrieval",
+        operationType: "semantic_rerank",
+        model: this.model,
+        eventStatus: "failure",
+        usageAvailable: false,
+        metadata: {
+          candidateCount: input.contexts.length,
+          query: input.query,
+          errorMessage: error instanceof Error ? error.message : "Unknown error",
+        },
+      });
+      throw error;
+    }
   }
 }
 

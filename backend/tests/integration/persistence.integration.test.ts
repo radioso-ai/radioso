@@ -7,9 +7,11 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
+import { AccountDailyUsageSummaryRepository } from "../../src/db/repositories/accountDailyUsageSummaryRepository.js";
 import { ChunkRepository } from "../../src/db/repositories/chunkRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
+import { UsageEventRepository } from "../../src/db/repositories/usageEventRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
@@ -151,6 +153,63 @@ describeIfDatabase("persistence integration", () => {
     await database.query("DELETE FROM documents WHERE workspace_id = $1 OR workspace_id = $2", [workspaceA.id, workspaceB.id]);
     await database.query("DELETE FROM workspaces WHERE id = $1 OR id = $2", [workspaceA.id, workspaceB.id]);
     await database.query("DELETE FROM accounts WHERE id = $1 OR id = $2", [accountA.id, accountB.id]);
+  });
+
+  it("records usage events once and updates the daily rollup once per operation key", async () => {
+    const accountRepository = new AccountRepository(database);
+    const usageEventRepository = new UsageEventRepository(database);
+    const summaryRepository = new AccountDailyUsageSummaryRepository(database);
+
+    const account = await accountRepository.create({
+      email: `usage-persist-${randomUUID()}@example.com`,
+      passwordHash: "hash-usage",
+    });
+    const workspace = await workspaceRepository.create(account.id, "Usage Workspace");
+
+    const occurredAt = new Date("2026-03-19T14:30:00.000Z");
+    await usageEventRepository.record({
+      operationKey: "persist-usage-1",
+      accountId: account.id,
+      workspaceId: workspace.id,
+      sourceArea: "chat",
+      operationType: "chat_answer",
+      model: "gpt-5-mini",
+      eventStatus: "success",
+      usageAvailable: true,
+      promptTokens: 21,
+      completionTokens: 9,
+      totalTokens: 30,
+      occurredAt,
+    });
+    await usageEventRepository.record({
+      operationKey: "persist-usage-1",
+      accountId: account.id,
+      workspaceId: workspace.id,
+      sourceArea: "chat",
+      operationType: "chat_answer",
+      model: "gpt-5-mini",
+      eventStatus: "success",
+      usageAvailable: true,
+      promptTokens: 21,
+      completionTokens: 9,
+      totalTokens: 30,
+      occurredAt,
+    });
+
+    const summary = await summaryRepository.findByAccountIdAndDate(account.id, "2026-03-19");
+
+    expect(summary).toMatchObject({
+      promptTokens: 21,
+      completionTokens: 9,
+      totalTokens: 30,
+      usageEventCount: 1,
+      unavailableEventCount: 0,
+    });
+
+    await database.query("DELETE FROM usage_events WHERE account_id = $1", [account.id]);
+    await database.query("DELETE FROM account_daily_usage_summaries WHERE account_id = $1", [account.id]);
+    await database.query("DELETE FROM workspaces WHERE id = $1", [workspace.id]);
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
   it("does not create duplicate default workspaces when migrations rerun", async () => {

@@ -28,6 +28,8 @@ import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
+import { UsageCaptureService } from "../../src/modules/usage/services/usageCaptureService.js";
+import { UsageSummaryService } from "../../src/modules/usage/services/usageSummaryService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
@@ -48,6 +50,8 @@ import {
   InMemorySessionRepository,
   InMemoryWorkspaceRepository,
   InMemoryConnectorDatabase,
+  InMemoryUsageEventRepository,
+  InMemoryAccountDailyUsageSummaryRepository,
 } from "./fakes.js";
 
 export const createTestEnv = (): Env => ({
@@ -62,6 +66,15 @@ export const createTestEnv = (): Env => ({
   SESSION_TTL_HOURS: 168,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
 });
+
+const estimateTokenCount = (text: string): number => {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return 0;
+  }
+
+  return trimmed.split(/\s+/).length;
+};
 
 interface TestRepositories {
   retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
@@ -86,6 +99,14 @@ export const createTestDependencies = (overrides: {
   const sessionRepository = new InMemorySessionRepository();
   const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
+  const accountDailyUsageSummaryRepository = new InMemoryAccountDailyUsageSummaryRepository();
+  const usageEventRepository = new InMemoryUsageEventRepository(accountDailyUsageSummaryRepository);
+  const usageCaptureService = new UsageCaptureService(usageEventRepository);
+  const usageSummaryService = new UsageSummaryService(
+    usageEventRepository,
+    accountDailyUsageSummaryRepository,
+  );
+  const workspaceRepository = new InMemoryWorkspaceRepository();
   const documentRepository = new InMemoryDocumentRepository();
   const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
   documentRepository.setJobRepository(documentProcessingJobRepository);
@@ -94,6 +115,20 @@ export const createTestDependencies = (overrides: {
   const messageRepository = new InMemoryMessageRepository();
   const embeddingGateway: EmbeddingGateway = {
     async embedTexts(texts: string[]): Promise<number[][]> {
+      const promptTokens = texts.reduce((sum, text) => sum + estimateTokenCount(text), 0);
+      await usageCaptureService.observe({
+        operationKey: randomUUID(),
+        sourceArea: "retrieval",
+        operationType: "embedding",
+        model: env.OPENAI_VECTOR_MODEL,
+        eventStatus: "success",
+        usageAvailable: true,
+        promptTokens,
+        completionTokens: 0,
+        totalTokens: promptTokens,
+        metadata: { inputCount: texts.length },
+      });
+
       return texts.map((text) => [text.length, text.split(" ").length, 1]);
     },
   };
@@ -182,12 +217,15 @@ export const createTestDependencies = (overrides: {
   ]);
   const defaultQueryRewriteGateway: QueryRewriteGateway = {
     async rewrite(input) {
+      const promptTokens =
+        estimateTokenCount(input.query) +
+        input.contextMessages.reduce((sum, message) => sum + estimateTokenCount(message.content), 0);
       const lastUserContext =
         [...input.contextMessages].reverse().find((message) => message.role === "user")?.content ?? "";
       const normalizedContext = normalizeRewriteContext(lastUserContext);
 
       if (/used for/i.test(input.query) && normalizedContext.length > 0) {
-        return {
+        const result = {
           rewrittenQuery: `${normalizedContext} used for`.trim(),
           turnKind: "referential_followup",
           proposedActiveSubject: normalizedContext,
@@ -195,10 +233,23 @@ export const createTestDependencies = (overrides: {
           unresolved: false,
           confidence: 0.95,
         };
+        await usageCaptureService.observe({
+          operationKey: randomUUID(),
+          sourceArea: "retrieval",
+          operationType: "query_rewrite",
+          model: env.OPENAI_CHAT_MODEL,
+          eventStatus: "success",
+          usageAvailable: true,
+          promptTokens,
+          completionTokens: estimateTokenCount(result.rewrittenQuery),
+          totalTokens: promptTokens + estimateTokenCount(result.rewrittenQuery),
+          metadata: { query: input.query },
+        });
+        return result;
       }
 
       if (/who is it for/i.test(input.query) && normalizedContext.length > 0) {
-        return {
+        const result = {
           rewrittenQuery: `${normalizedContext} audience`.trim(),
           turnKind: "referential_followup",
           proposedActiveSubject: normalizedContext,
@@ -206,10 +257,23 @@ export const createTestDependencies = (overrides: {
           unresolved: false,
           confidence: 0.9,
         };
+        await usageCaptureService.observe({
+          operationKey: randomUUID(),
+          sourceArea: "retrieval",
+          operationType: "query_rewrite",
+          model: env.OPENAI_CHAT_MODEL,
+          eventStatus: "success",
+          usageAvailable: true,
+          promptTokens,
+          completionTokens: estimateTokenCount(result.rewrittenQuery),
+          totalTokens: promptTokens + estimateTokenCount(result.rewrittenQuery),
+          metadata: { query: input.query },
+        });
+        return result;
       }
 
       if (/work with/i.test(input.query) && normalizedContext.length > 0) {
-        return {
+        const result = {
           rewrittenQuery: input.query.trim(),
           turnKind: "referential_relation",
           proposedActiveSubject: normalizedContext,
@@ -217,9 +281,22 @@ export const createTestDependencies = (overrides: {
           unresolved: true,
           confidence: 0.75,
         };
+        await usageCaptureService.observe({
+          operationKey: randomUUID(),
+          sourceArea: "retrieval",
+          operationType: "query_rewrite",
+          model: env.OPENAI_CHAT_MODEL,
+          eventStatus: "success",
+          usageAvailable: true,
+          promptTokens,
+          completionTokens: estimateTokenCount(result.rewrittenQuery),
+          totalTokens: promptTokens + estimateTokenCount(result.rewrittenQuery),
+          metadata: { query: input.query },
+        });
+        return result;
       }
 
-      return {
+      const result = {
         rewrittenQuery: `${lastUserContext} ${input.query}`.trim(),
         turnKind: "referential_followup",
         proposedActiveSubject: normalizedContext || undefined,
@@ -227,11 +304,40 @@ export const createTestDependencies = (overrides: {
         unresolved: false,
         confidence: 0.9,
       };
+      await usageCaptureService.observe({
+        operationKey: randomUUID(),
+        sourceArea: "retrieval",
+        operationType: "query_rewrite",
+        model: env.OPENAI_CHAT_MODEL,
+        eventStatus: "success",
+        usageAvailable: true,
+        promptTokens,
+        completionTokens: estimateTokenCount(result.rewrittenQuery),
+        totalTokens: promptTokens + estimateTokenCount(result.rewrittenQuery),
+        metadata: { query: input.query },
+      });
+      return result;
     },
   };
   const queryRewriteGateway = overrides.queryRewriteGateway ?? defaultQueryRewriteGateway;
   const defaultRerankGateway: RerankGateway = {
     async rerank(input) {
+      const promptTokens =
+        estimateTokenCount(input.query) +
+        input.contexts.reduce((sum, context) => sum + estimateTokenCount(context.content), 0);
+      await usageCaptureService.observe({
+        operationKey: randomUUID(),
+        sourceArea: "retrieval",
+        operationType: "semantic_rerank",
+        model: env.OPENAI_CHAT_MODEL,
+        eventStatus: "success",
+        usageAvailable: true,
+        promptTokens,
+        completionTokens: input.contexts.length,
+        totalTokens: promptTokens + input.contexts.length,
+        metadata: { candidateCount: input.contexts.length, query: input.query },
+      });
+
       return input.contexts.map((context) => ({
         chunkId: context.chunkId,
         relevanceScore: keywordScore(`${context.title} ${context.content}`, input.query),
@@ -247,6 +353,8 @@ export const createTestDependencies = (overrides: {
     auditService,
     retrievalSettingsService,
     chunkingStrategyRegistry,
+    workspaceRepository,
+    usageCaptureService,
   );
   const documentProcessingWorker = new DocumentProcessingWorker(
     documentRepository,
@@ -299,22 +407,54 @@ export const createTestDependencies = (overrides: {
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
   );
+  const buildChatAnswer = (input: { query: string; history: Array<{ content: string }>; prompt: string }) => {
+    const warmthMatch = input.prompt.match(/Warmth:(\d+)/);
+    const warmthLevel = warmthMatch ? Number(warmthMatch[1]) : 5;
+    const firstContext = input.prompt
+      .match(/Result 1 \([^)]+\): ([\s\S]*?)(?:\n\n|$)/)?.[1]
+      ?.trim();
+
+    if (firstContext) {
+      return `Warmth:${warmthLevel} ${firstContext}[[1]]`.trim();
+    }
+
+    return `Warmth:${warmthLevel} history:${input.history.length} ${input.query}`.trim();
+  };
   const defaultChatGateway: ChatGateway = {
     async answer(input): Promise<string> {
-      const warmthMatch = input.prompt.match(/Warmth:(\d+)/);
-      const warmthLevel = warmthMatch ? Number(warmthMatch[1]) : 5;
-      const firstContext = input.prompt
-        .match(/Result 1 \([^)]+\): ([\s\S]*?)(?:\n\n|$)/)?.[1]
-        ?.trim();
-
-      if (firstContext) {
-        return `Warmth:${warmthLevel} ${firstContext}[[1]]`.trim();
-      }
-
-      return `Warmth:${warmthLevel} history:${input.history.length} ${input.query}`.trim();
+      const content = buildChatAnswer(input);
+      const promptTokens = estimateTokenCount(input.prompt);
+      const completionTokens = estimateTokenCount(content);
+      await usageCaptureService.observe({
+        operationKey: randomUUID(),
+        sourceArea: "chat",
+        operationType: "chat_answer",
+        model: env.OPENAI_CHAT_MODEL,
+        eventStatus: "success",
+        usageAvailable: true,
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens,
+        metadata: { query: input.query },
+      });
+      return content;
     },
     async *streamAnswer(input) {
-      const content = await this.answer(input);
+      const content = buildChatAnswer(input);
+      const promptTokens = estimateTokenCount(input.prompt);
+      const completionTokens = estimateTokenCount(content);
+      await usageCaptureService.observe({
+        operationKey: randomUUID(),
+        sourceArea: "chat",
+        operationType: "chat_answer",
+        model: env.OPENAI_CHAT_MODEL,
+        eventStatus: "success",
+        usageAvailable: true,
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens,
+        metadata: { query: input.query, stream: true },
+      });
       const midpoint = Math.max(1, Math.ceil(content.length / 2));
       yield content.slice(0, midpoint);
       await delay(5);
@@ -323,7 +463,6 @@ export const createTestDependencies = (overrides: {
   };
   const chatGateway = overrides.chatGateway ?? defaultChatGateway;
 
-  const workspaceRepository = new InMemoryWorkspaceRepository();
   const workspaceService = new WorkspaceService(workspaceRepository, auditService);
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.register(new WhatsAppPlugin({
@@ -346,6 +485,8 @@ export const createTestDependencies = (overrides: {
         workspaceService,
       }),
       workspaceService,
+      usageCaptureService,
+      usageSummaryService,
       retrievalSettingsService,
       documentIngestionService,
       documentProcessingWorker,
@@ -359,11 +500,14 @@ export const createTestDependencies = (overrides: {
         retrievalPipeline,
         chatGateway,
         auditService,
+        workspaceRepository,
+        usageCaptureService,
       ),
       chatHistoryService: new ChatHistoryService(
         conversationRepository,
         messageRepository,
         auditEventRepository,
+        usageSummaryService,
       ),
       connectorRegistry,
       connectorDb: connectorDb as any,

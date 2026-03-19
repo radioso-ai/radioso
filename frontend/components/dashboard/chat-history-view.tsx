@@ -308,6 +308,8 @@ function AssistantDebugSection({
   }
 
   const retrievalInfo = debug.retrievalInfo
+  const usageTotals = debug.usageTotals
+  const usageBreakdown = debug.usageBreakdown ?? []
 
   return (
     <details className="mt-4 rounded-lg border border-border/70 bg-background/70 p-3 text-xs text-muted-foreground">
@@ -321,6 +323,7 @@ function AssistantDebugSection({
           <MetadataCard label="Recorded" value={formatTimestamp(debug.recordedAt)} />
           <MetadataCard label="Streamed" value={debug.stream ? 'Yes' : 'No'} />
           <MetadataCard label="Citations" value={String(debug.citationCount)} />
+          {usageTotals ? <MetadataCard label="Total tokens" value={String(usageTotals.totalTokens)} /> : null}
           {responseTimeMs !== null && responseTimeMs > 0 ? (
             <MetadataCard label="Response time" value={formatResponseTime(responseTimeMs)} />
           ) : null}
@@ -331,6 +334,46 @@ function AssistantDebugSection({
             {debug.errorMessage}
           </div>
         ) : null}
+
+        <div className="space-y-1">
+          <p className="font-medium text-foreground">Token usage</p>
+          {usageTotals ? (
+            <p>
+              Prompt {usageTotals.promptTokens} · Completion {usageTotals.completionTokens}
+              {' · '}Total {usageTotals.totalTokens}
+            </p>
+          ) : (
+            <p>No provider-reported token totals were available for this turn.</p>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <p className="font-medium text-foreground">Usage breakdown</p>
+          {usageBreakdown.length > 0 ? (
+            <div className="space-y-2">
+              {usageBreakdown.map((item, index) => (
+                <div
+                  key={`${item.operationType}-${item.recordedAt}-${index}`}
+                  className="rounded-lg border border-border/70 bg-card px-3 py-2"
+                >
+                  <p className="font-medium text-foreground">
+                    {item.operationType} · {item.model}
+                  </p>
+                  <p className="mt-1">
+                    {item.usageAvailable
+                      ? `Prompt ${item.promptTokens ?? 0} · Completion ${item.completionTokens ?? 0} · Total ${item.totalTokens ?? 0}`
+                      : 'Usage unavailable'}
+                  </p>
+                  <p className="mt-1">
+                    Status: {item.status} · Recorded {formatTimestamp(item.recordedAt)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p>No token usage was recorded for this assistant turn.</p>
+          )}
+        </div>
 
         {retrievalInfo?.parsedQuery ? (
           <div className="space-y-1">

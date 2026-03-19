@@ -29,6 +29,16 @@ import type {
 } from "../../src/db/repositories/auditEventRepository.js";
 import type { AuditEventInput } from "../../src/modules/audit/services/auditService.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
+import type {
+  AccountDailyUsageSummaryRecord,
+  AccountDailyUsageSummaryRepositoryPort,
+  AccountMonthlyUsageSummaryRecord,
+} from "../../src/db/repositories/accountDailyUsageSummaryRepository.js";
+import type {
+  UsageEventInsertInput,
+  UsageEventRecord,
+  UsageEventRepositoryPort,
+} from "../../src/db/repositories/usageEventRepository.js";
 import type { RetrievalSettingsInput, RetrievalSettingsRecord } from "../../src/modules/settings/domain/retrievalSettings.js";
 import type { RetrievalSettingsRepositoryPort } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
@@ -1186,6 +1196,151 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
         event.metadata.conversationId === conversationId
       );
     });
+  }
+}
+
+const toUtcDate = (value: Date): string => value.toISOString().slice(0, 10);
+const toUtcMonth = (value: string): string => value.slice(0, 7);
+
+export class InMemoryAccountDailyUsageSummaryRepository implements AccountDailyUsageSummaryRepositoryPort {
+  readonly items = new Map<string, AccountDailyUsageSummaryRecord>();
+
+  async findByAccountIdAndDate(accountId: string, usageDate: string): Promise<AccountDailyUsageSummaryRecord | null> {
+    return this.items.get(`${accountId}:${usageDate}`) ?? null;
+  }
+
+  async listRecentByAccountId(accountId: string, days: number): Promise<AccountDailyUsageSummaryRecord[]> {
+    return [...this.items.values()]
+      .filter((row) => row.accountId === accountId)
+      .sort((left, right) => right.usageDate.localeCompare(left.usageDate))
+      .slice(0, days);
+  }
+
+  async listRecentMonthsByAccountId(accountId: string, months: number): Promise<AccountMonthlyUsageSummaryRecord[]> {
+    const grouped = new Map<string, AccountMonthlyUsageSummaryRecord>();
+
+    for (const row of this.items.values()) {
+      if (row.accountId !== accountId) {
+        continue;
+      }
+
+      const month = toUtcMonth(row.usageDate);
+      const current = grouped.get(month) ?? {
+        month,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        usageEventCount: 0,
+        unavailableEventCount: 0,
+      };
+      current.promptTokens += row.promptTokens;
+      current.completionTokens += row.completionTokens;
+      current.totalTokens += row.totalTokens;
+      current.usageEventCount += row.usageEventCount;
+      current.unavailableEventCount += row.unavailableEventCount;
+      grouped.set(month, current);
+    }
+
+    return [...grouped.values()]
+      .sort((left, right) => right.month.localeCompare(left.month))
+      .slice(0, months);
+  }
+
+  async replaceAllForAccount(input: {
+    accountId: string;
+    rows: Array<{
+      usageDate: string;
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+      usageEventCount: number;
+      unavailableEventCount: number;
+    }>;
+  }): Promise<void> {
+    for (const key of [...this.items.keys()]) {
+      if (key.startsWith(`${input.accountId}:`)) {
+        this.items.delete(key);
+      }
+    }
+
+    for (const row of input.rows) {
+      this.items.set(`${input.accountId}:${row.usageDate}`, {
+        accountId: input.accountId,
+        usageDate: row.usageDate,
+        promptTokens: row.promptTokens,
+        completionTokens: row.completionTokens,
+        totalTokens: row.totalTokens,
+        usageEventCount: row.usageEventCount,
+        unavailableEventCount: row.unavailableEventCount,
+        updatedAt: new Date(),
+      });
+    }
+  }
+}
+
+export class InMemoryUsageEventRepository implements UsageEventRepositoryPort {
+  readonly items: UsageEventRecord[] = [];
+
+  constructor(
+    private readonly summaryRepository: InMemoryAccountDailyUsageSummaryRepository = new InMemoryAccountDailyUsageSummaryRepository(),
+  ) {}
+
+  async record(input: UsageEventInsertInput): Promise<{ inserted: boolean; record: UsageEventRecord | null }> {
+    if (this.items.some((item) => item.operationKey === input.operationKey)) {
+      return { inserted: false, record: null };
+    }
+
+    const record: UsageEventRecord = {
+      id: randomUUID(),
+      operationKey: input.operationKey,
+      accountId: input.accountId,
+      workspaceId: input.workspaceId ?? null,
+      conversationId: input.conversationId ?? null,
+      userMessageId: input.userMessageId ?? null,
+      assistantMessageId: input.assistantMessageId ?? null,
+      documentId: input.documentId ?? null,
+      processingJobId: input.processingJobId ?? null,
+      sourceArea: input.sourceArea,
+      operationType: input.operationType,
+      model: input.model,
+      eventStatus: input.eventStatus,
+      usageAvailable: input.usageAvailable,
+      promptTokens: input.promptTokens ?? null,
+      completionTokens: input.completionTokens ?? null,
+      totalTokens: input.totalTokens ?? null,
+      metadata: input.metadata ?? {},
+      occurredAt: input.occurredAt,
+      createdAt: new Date(),
+    };
+    this.items.push(record);
+
+    const usageDate = toUtcDate(input.occurredAt);
+    const existing = await this.summaryRepository.findByAccountIdAndDate(input.accountId, usageDate);
+    const next: AccountDailyUsageSummaryRecord = {
+      accountId: input.accountId,
+      usageDate,
+      promptTokens: (existing?.promptTokens ?? 0) + (input.promptTokens ?? 0),
+      completionTokens: (existing?.completionTokens ?? 0) + (input.completionTokens ?? 0),
+      totalTokens: (existing?.totalTokens ?? 0) + (input.totalTokens ?? 0),
+      usageEventCount: (existing?.usageEventCount ?? 0) + 1,
+      unavailableEventCount: (existing?.unavailableEventCount ?? 0) + (input.usageAvailable ? 0 : 1),
+      updatedAt: new Date(),
+    };
+    this.summaryRepository.items.set(`${input.accountId}:${usageDate}`, next);
+
+    return { inserted: true, record };
+  }
+
+  async listByAssistantMessageIds(assistantMessageIds: string[]): Promise<UsageEventRecord[]> {
+    return this.items
+      .filter((item) => item.assistantMessageId !== null && assistantMessageIds.includes(item.assistantMessageId))
+      .sort((left, right) => left.occurredAt.getTime() - right.occurredAt.getTime());
+  }
+
+  async listByAccountId(accountId: string): Promise<UsageEventRecord[]> {
+    return this.items
+      .filter((item) => item.accountId === accountId)
+      .sort((left, right) => left.occurredAt.getTime() - right.occurredAt.getTime());
   }
 }
 

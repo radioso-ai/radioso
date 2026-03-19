@@ -7,6 +7,7 @@ import type {
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalExecutionDiagnostics } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
+import type { UsageSummaryService, TokenUsageTotals, UsageBreakdownItem } from "../../usage/services/usageSummaryService.js";
 
 export interface ChatConversationSummary {
   id: string;
@@ -24,6 +25,8 @@ export interface ChatConversationTurnDebug {
   recordedAt: string;
   stream: boolean;
   citationCount: number;
+  usageTotals?: TokenUsageTotals;
+  usageBreakdown?: UsageBreakdownItem[];
   retrievalInfo?: RetrievalInfo;
   errorMessage?: string | null;
 }
@@ -75,6 +78,7 @@ export class ChatHistoryService {
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
     private readonly auditEventRepository: AuditEventRepositoryPort,
+    private readonly usageSummaryService?: UsageSummaryService,
   ) {}
 
   async listConversations(workspaceId: string): Promise<ChatConversationSummary[]> {
@@ -102,7 +106,13 @@ export class ChatHistoryService {
       this.auditEventRepository.listChatAnswerEventsByConversationId(workspaceId, conversation.id),
     ]);
 
-    const debugByAssistantMessageId = this.buildDebugIndex(auditEvents);
+    const assistantMessageIds = messages
+      .filter((message) => message.role === "assistant")
+      .map((message) => message.id);
+    const usageByAssistantMessageId = this.usageSummaryService
+      ? await this.usageSummaryService.listTurnUsageByAssistantMessageIds(assistantMessageIds)
+      : new Map<string, { usageTotals?: TokenUsageTotals; usageBreakdown: UsageBreakdownItem[] }>();
+    const debugByAssistantMessageId = this.buildDebugIndex(auditEvents, usageByAssistantMessageId);
     const userMessageCount = messages.filter((message) => message.role === "user").length;
     const assistantMessageCount = messages.filter((message) => message.role === "assistant").length;
 
@@ -143,6 +153,7 @@ export class ChatHistoryService {
 
   private buildDebugIndex(
     auditEvents: AuditEventRecord[],
+    usageByAssistantMessageId: Map<string, { usageTotals?: TokenUsageTotals; usageBreakdown: UsageBreakdownItem[] }>,
   ): Map<string, ChatConversationTurnDebug> {
     const index = new Map<string, ChatConversationTurnDebug>();
 
@@ -157,6 +168,8 @@ export class ChatHistoryService {
         recordedAt: toIsoString(event.createdAt),
         stream: Boolean(metadata.stream),
         citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : 0,
+        usageTotals: usageByAssistantMessageId.get(metadata.assistantMessageId)?.usageTotals,
+        usageBreakdown: usageByAssistantMessageId.get(metadata.assistantMessageId)?.usageBreakdown,
         retrievalInfo: metadata.retrieval
           ? this.retrievalInfoPresenter.present(metadata.retrieval as RetrievalExecutionDiagnostics)
           : undefined,

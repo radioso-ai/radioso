@@ -1,0 +1,22 @@
+# Required
+project_id     = "your-gcp-project-id"
+backend_image  = "us-central1-docker.pkg.dev/your-project/hivec/backend:latest"
+frontend_image = "us-central1-docker.pkg.dev/your-project/hivec/frontend:latest"
+
+# Secrets — set via TF_VAR_* env vars or a .tfvars file NOT committed to git
+# openai_api_key           = ""
+# session_cookie_secret    = ""
+# connector_encryption_key = ""
+
+# Optional overrides (defaults shown)
+# region                  = "us-central1"
+# db_tier                 = "db-f1-micro"
+# db_deletion_protection  = false
+# backend_min_instances   = 0
+# backend_max_instances   = 2
+# frontend_min_instances  = 0
+# frontend_max_instances  = 2
+# openai_chat_model       = "gpt-5-mini"
+# openai_rerank_model     = "gpt-4.1-mini"
+# openai_vector_model     = "text-embedding-3-small"
+# session_ttl_hours       = 168

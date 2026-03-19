@@ -35,6 +35,8 @@ import { RetrievalPipelineService } from "../../modules/retrieval/services/retri
 import { RetrievalExecutionTelemetryService } from "../../modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import { OpenAIEmbeddingGateway, EmbeddingService } from "../../modules/retrieval/services/embeddingService.js";
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
+import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
+import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { Database } from "../../shared/infra/database.js";
 import { OpenAIClients } from "../../shared/infra/openaiClient.js";
 import { createLogger } from "../../shared/observability/logger.js";
@@ -103,6 +105,11 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   );
   const workspaceRepository = new WorkspaceRepository(database);
   const workspaceService = new WorkspaceService(workspaceRepository, auditService);
+  const connectorRegistry = new ConnectorRegistry();
+  registerBuiltInConnectors(connectorRegistry);
+  if (env.CONNECTOR_ENCRYPTION_KEY) {
+    connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY);
+  }
   const authService = new AuthService({
     env,
     accountRepository: new AccountRepository(database),
@@ -124,5 +131,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     documentDeletionService,
     chatService,
     chatHistoryService,
+    connectorRegistry,
+    connectorDb: database,
   };
 };

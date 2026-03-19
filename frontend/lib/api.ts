@@ -169,6 +169,7 @@ export interface RetrievalSettings {
   citationDisplayEnabled: boolean
   chunkingStrategy: 'fixed_window' | 'structured_semantic'
   attributeControls: AttributeFamilyControl[]
+  customInstruction: string
 }
 
 export interface AttributeFamilyControl {

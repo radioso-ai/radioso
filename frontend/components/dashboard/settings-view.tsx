@@ -27,6 +27,7 @@ import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import { settingsApi, RetrievalSettings } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -299,6 +300,25 @@ function RetrievalSettingsPanel() {
                 checked={settings.citationDisplayEnabled}
                 onCheckedChange={(checked) => updateSetting('citationDisplayEnabled', checked)}
               />
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="customInstruction" className="text-foreground">Custom Instruction</Label>
+                <p className="text-sm text-muted-foreground">
+                  Give the assistant specific instructions for this workspace. For example: &quot;Always cite the paragraph number when referencing legal provisions&quot; or &quot;Include a direct URL instead of saying visit their website.&quot;
+                </p>
+              </div>
+              <Textarea
+                id="customInstruction"
+                value={settings.customInstruction}
+                onChange={(e) => updateSetting('customInstruction', e.target.value.slice(0, 2000))}
+                placeholder="e.g. Always cite the specific section of the Act when referencing legal provisions."
+                rows={4}
+              />
+              <p className="text-xs text-muted-foreground text-right">
+                {settings.customInstruction.length} / 2000
+              </p>
             </div>
 
             <p className="text-sm text-muted-foreground">

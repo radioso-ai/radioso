@@ -1,20 +1,21 @@
 import { readFile } from "node:fs/promises";
 
-import type { Database } from "../../../../shared/infra/database.js";
 import type {
   ConnectorContext,
+  ConnectorDatabasePort,
+  ConnectorLogger,
   ConnectorPlugin,
   ConnectorValidationIssue,
 } from "../../domain/connectorPlugin.js";
 import type { ConfigFieldDefinition } from "../../domain/configSchema.js";
 import { WhatsAppClient } from "./whatsappClient.js";
 import { WhatsAppMessageHandler } from "./whatsappMessageHandler.js";
+import { PostgresWhatsAppPersistence } from "./whatsappPersistence.js";
 import { createWhatsAppWebhookRouter } from "./whatsappWebhook.js";
 
 const MIGRATION_NAME = "whatsapp/migration.sql";
 
 interface WhatsAppPluginOptions {
-  encryptionKey?: string;
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   debounceMs?: number;
@@ -90,26 +91,24 @@ export class WhatsAppPlugin implements ConnectorPlugin {
     ];
   }
 
-  async migrate(db: Database): Promise<void> {
-    await db.withTransaction(async (client) => {
-      const existing = await client.query<{ migration_name: string }>(
-        `SELECT migration_name
-         FROM connector_migrations
-         WHERE connector_id = $1 AND migration_name = $2`,
-        [this.id, MIGRATION_NAME],
-      );
-      if (existing.rows.length > 0) {
-        return;
-      }
+  async migrate(db: ConnectorDatabasePort): Promise<void> {
+    const existing = await db.query<{ migration_name: string }>(
+      `SELECT migration_name
+       FROM connector_migrations
+       WHERE connector_id = $1 AND migration_name = $2`,
+      [this.id, MIGRATION_NAME],
+    );
+    if (existing.length > 0) {
+      return;
+    }
 
-      const sql = await readFile(new URL("./migration.sql", import.meta.url), "utf8");
-      await client.query(sql);
-      await client.query(
-        `INSERT INTO connector_migrations (connector_id, migration_name)
-         VALUES ($1, $2)`,
-        [this.id, MIGRATION_NAME],
-      );
-    });
+    const sql = await readFile(new URL("./migration.sql", import.meta.url), "utf8");
+    await db.query(sql);
+    await db.query(
+      `INSERT INTO connector_migrations (connector_id, migration_name)
+       VALUES ($1, $2)`,
+      [this.id, MIGRATION_NAME],
+    );
   }
 
   async initialize(context: ConnectorContext): Promise<void> {
@@ -122,21 +121,23 @@ export class WhatsAppPlugin implements ConnectorPlugin {
       fetch: this.fetchImpl,
       sleep: this.sleep,
     });
+    const persistence = new PostgresWhatsAppPersistence(context.db);
     this.messageHandler = new WhatsAppMessageHandler({
       db: context.db,
       logger: context.logger,
-      chatService: context.chatService,
-      connectorRegistry: context.connectorRegistry,
+      chat: context.chat,
+      state: context.state,
       client,
+      persistence,
       debounceMs: this.debounceMs,
     });
 
-    context.router.use(
+    context.http.mount(
       `/${this.id}`,
       createWhatsAppWebhookRouter({
         logger: context.logger,
-        db: context.db,
-        connectorRegistry: context.connectorRegistry,
+        state: context.state,
+        persistence,
         messageHandler: this.messageHandler,
       }),
     );
@@ -183,7 +184,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
     return issues;
   }
 
-  private async cleanupExpiredMessageLogs(db: Database, logger: ConnectorContext["logger"]): Promise<void> {
+  private async cleanupExpiredMessageLogs(db: ConnectorDatabasePort, logger: ConnectorLogger): Promise<void> {
     const cutoff = new Date(Date.now() - WhatsAppPlugin.MESSAGE_LOG_RETENTION_MS);
     await db.query(
       `DELETE FROM connector_whatsapp_message_log

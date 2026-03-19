@@ -4,6 +4,7 @@ import { getEnv } from "./app/config/env.js";
 import { createApp } from "./app/server/createApp.js";
 import { buildDependencies } from "./app/server/dependencies.js";
 import { runMigrations } from "./db/runMigrations.js";
+import { createConnectorChatPort } from "./modules/connectors/services/connectorChatPort.js";
 import { createLogger } from "./shared/observability/logger.js";
 
 if (existsSync(".env")) {
@@ -20,9 +21,7 @@ await dependencies.connectorRegistry.runMigrations(dependencies.connectorDb);
 await dependencies.connectorRegistry.initializeAll({
   db: dependencies.connectorDb,
   logger: dependencies.logger,
-  chatService: dependencies.chatService,
-  connectorRegistry: dependencies.connectorRegistry,
-  router: dependencies.connectorRegistry.getRouter(),
+  chat: createConnectorChatPort(dependencies.chatService),
 });
 const app = createApp(dependencies);
 

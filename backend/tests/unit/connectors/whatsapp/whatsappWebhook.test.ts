@@ -6,6 +6,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { ConnectorRegistry } from "../../../../src/modules/connectors/services/connectorRegistry.js";
 import { WhatsAppPlugin } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappPlugin.js";
+import { PostgresWhatsAppPersistence } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappPersistence.js";
 import { createWhatsAppWebhookRouter } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappWebhook.js";
 import { InMemoryConnectorDatabase } from "../../../support/fakes.js";
 
@@ -61,9 +62,12 @@ describe("createWhatsAppWebhookRouter", () => {
     app.use(
       "/",
       createWhatsAppWebhookRouter({
-        db: db as any,
         logger,
-        connectorRegistry: registry,
+        state: {
+          getConfig: async (currentWorkspaceId: string) =>
+            registry.getDecryptedConfig(db as any, currentWorkspaceId, "whatsapp"),
+        },
+        persistence: new PostgresWhatsAppPersistence(db as any),
         messageHandler: handler,
       }),
     );

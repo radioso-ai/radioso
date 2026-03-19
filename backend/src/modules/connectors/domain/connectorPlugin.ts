@@ -1,19 +1,50 @@
 import type { Router } from "express";
-import type { Database } from "../../../shared/infra/database.js";
-import type { AppLogger } from "../../../shared/observability/logger.js";
-import type { ChatService } from "../../chat/services/chatService.js";
-import type { ConnectorRegistry } from "../services/connectorRegistry.js";
+import type { QueryResultRow } from "pg";
 import type { ConfigFieldDefinition } from "./configSchema.js";
 
 /**
- * Scoped API surface passed to each connector plugin at initialization.
+ * Connector-owned host ports. Concrete app services are adapted into these ports by the registry.
  */
+export interface ConnectorLogger {
+  info(entry: unknown, message?: string): void;
+  warn(entry: unknown, message?: string): void;
+  error(entry: unknown, message?: string): void;
+}
+
+export interface ConnectorDatabasePort {
+  query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
+}
+
+export interface ConnectorChatPort {
+  answer(input: {
+    workspaceId: string;
+    conversationId?: string;
+    query: string;
+    sourceChannel?: string | null;
+  }): Promise<{
+    conversationId: string;
+    answer: string;
+  }>;
+}
+
+export interface ConnectorStatePort {
+  getConfig(workspaceId: string): Promise<{
+    enabled: boolean;
+    config: Record<string, string>;
+  } | null>;
+  setErrorStatus(workspaceId: string, errorStatus: string | null): Promise<void>;
+}
+
+export interface ConnectorHttpHost {
+  mount(path: string, router: Router): void;
+}
+
 export interface ConnectorContext {
-  db: Database;
-  logger: AppLogger;
-  chatService: ChatService;
-  connectorRegistry: ConnectorRegistry;
-  router: Router;
+  db: ConnectorDatabasePort;
+  logger: ConnectorLogger;
+  chat: ConnectorChatPort;
+  state: ConnectorStatePort;
+  http: ConnectorHttpHost;
 }
 
 /**
@@ -36,7 +67,7 @@ export interface ConnectorPlugin {
    * Run connector-specific database migrations.
    * Called after core migrations, before initialize().
    */
-  migrate(db: Database): Promise<void>;
+  migrate(db: ConnectorDatabasePort): Promise<void>;
 
   /**
    * Start the connector: mount webhook routes, start background jobs, etc.

@@ -1,10 +1,13 @@
 import type { Router } from "express";
 import { Router as createRouter } from "express";
 
-import type { Database } from "../../../shared/infra/database.js";
 import type {
   ConnectorPlugin,
-  ConnectorContext,
+  ConnectorDatabasePort,
+  ConnectorChatPort,
+  ConnectorHttpHost,
+  ConnectorLogger,
+  ConnectorStatePort,
   ConnectorSummary,
   ConnectorDetail,
   ConnectorValidationIssue,
@@ -63,16 +66,26 @@ export class ConnectorRegistry {
     return this.plugins.get(id);
   }
 
-  async runMigrations(db: Database): Promise<void> {
+  async runMigrations(db: ConnectorDatabasePort): Promise<void> {
     for (const plugin of this.plugins.values()) {
       await plugin.migrate(db);
     }
   }
 
-  async initializeAll(context: ConnectorContext): Promise<void> {
+  async initializeAll(context: {
+    db: ConnectorDatabasePort;
+    logger: ConnectorLogger;
+    chat: ConnectorChatPort;
+  }): Promise<void> {
     for (const plugin of this.plugins.values()) {
       try {
-        await plugin.initialize(context);
+        await plugin.initialize({
+          db: context.db,
+          logger: context.logger,
+          chat: context.chat,
+          state: this.createPluginState(context.db, plugin.id),
+          http: this.createHttpHost(),
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         context.logger.error({ connectorId: plugin.id, err: message }, `Connector "${plugin.id}" failed to initialize`);
@@ -96,7 +109,7 @@ export class ConnectorRegistry {
     this.encryptionKey = key;
   }
 
-  async listConnectors(db: Database, workspaceId: string): Promise<ConnectorSummary[]> {
+  async listConnectors(db: ConnectorDatabasePort, workspaceId: string): Promise<ConnectorSummary[]> {
     const configs = await db.query<{
       connector_id: string;
       enabled: boolean;
@@ -121,7 +134,7 @@ export class ConnectorRegistry {
   }
 
   async getConnectorDetail(
-    db: Database,
+    db: ConnectorDatabasePort,
     workspaceId: string,
     connectorId: string,
   ): Promise<ConnectorDetail | null> {
@@ -158,7 +171,7 @@ export class ConnectorRegistry {
   }
 
   async saveConfig(
-    db: Database,
+    db: ConnectorDatabasePort,
     workspaceId: string,
     connectorId: string,
     configData: Record<string, unknown>,
@@ -226,7 +239,7 @@ export class ConnectorRegistry {
   }
 
   async enableConnector(
-    db: Database,
+    db: ConnectorDatabasePort,
     workspaceId: string,
     connectorId: string,
   ): Promise<ConnectorMutationResult> {
@@ -285,7 +298,7 @@ export class ConnectorRegistry {
   }
 
   async disableConnector(
-    db: Database,
+    db: ConnectorDatabasePort,
     workspaceId: string,
     connectorId: string,
   ): Promise<void> {
@@ -297,7 +310,7 @@ export class ConnectorRegistry {
   }
 
   async getDecryptedConfig(
-    db: Database,
+    db: ConnectorDatabasePort,
     workspaceId: string,
     connectorId: string,
   ): Promise<{ enabled: boolean; config: Record<string, string> } | null> {
@@ -320,7 +333,7 @@ export class ConnectorRegistry {
   }
 
   async setErrorStatus(
-    db: Database,
+    db: ConnectorDatabasePort,
     workspaceId: string,
     connectorId: string,
     errorStatus: string | null,
@@ -426,5 +439,21 @@ export class ConnectorRegistry {
 
   private labelForField(schema: ConfigFieldDefinition[], key: string): string {
     return schema.find((field) => field.key === key)?.label ?? key;
+  }
+
+  private createPluginState(db: ConnectorDatabasePort, connectorId: string): ConnectorStatePort {
+    return {
+      getConfig: async (workspaceId) => this.getDecryptedConfig(db, workspaceId, connectorId),
+      setErrorStatus: async (workspaceId, errorStatus) =>
+        this.setErrorStatus(db, workspaceId, connectorId, errorStatus),
+    };
+  }
+
+  private createHttpHost(): ConnectorHttpHost {
+    return {
+      mount: (path, router) => {
+        this.router.use(path, router);
+      },
+    };
   }
 }

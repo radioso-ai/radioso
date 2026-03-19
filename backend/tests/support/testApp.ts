@@ -30,6 +30,7 @@ import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retriev
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
+import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
 import { WhatsAppPlugin } from "../../src/modules/connectors/plugins/whatsapp/whatsappPlugin.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
@@ -326,7 +327,6 @@ export const createTestDependencies = (overrides: {
   const workspaceService = new WorkspaceService(workspaceRepository, auditService);
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.register(new WhatsAppPlugin({
-    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     fetch: overrides.whatsappFetch,
     debounceMs: overrides.whatsappDebounceMs,
   }));
@@ -372,9 +372,7 @@ export const createTestDependencies = (overrides: {
   void connectorRegistry.initializeAll({
     db: connectorDb as any,
     logger: dependencies.logger,
-    chatService: dependencies.chatService,
-    connectorRegistry,
-    router: connectorRegistry.getRouter(),
+    chat: createConnectorChatPort(dependencies.chatService),
   });
 
   return {

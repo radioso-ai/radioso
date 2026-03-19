@@ -1,16 +1,18 @@
-import type { ChatService } from "../../../chat/services/chatService.js";
-import type { ConnectorRegistry } from "../../services/connectorRegistry.js";
-import type { AppLogger } from "../../../../shared/observability/logger.js";
-import type { Database } from "../../../../shared/infra/database.js";
+import type {
+  ConnectorChatPort,
+  ConnectorDatabasePort,
+  ConnectorLogger,
+  ConnectorStatePort,
+} from "../../domain/connectorPlugin.js";
 import type { WhatsAppPersistencePort } from "./whatsappPersistence.js";
 import { PostgresWhatsAppPersistence } from "./whatsappPersistence.js";
 import { WhatsAppClient, WhatsAppClientError } from "./whatsappClient.js";
 
 interface WhatsAppMessageHandlerOptions {
-  db: Database;
-  logger: AppLogger;
-  chatService: ChatService;
-  connectorRegistry: Pick<ConnectorRegistry, "getDecryptedConfig" | "setErrorStatus">;
+  db: ConnectorDatabasePort;
+  logger: ConnectorLogger;
+  chat: ConnectorChatPort;
+  state: Pick<ConnectorStatePort, "getConfig" | "setErrorStatus">;
   client: Pick<WhatsAppClient, "sendTextMessage">;
   persistence?: WhatsAppPersistencePort;
   debounceMs?: number;
@@ -90,11 +92,7 @@ export class WhatsAppMessageHandler {
       await this.persistence.updateMessageLogStatus(message.wamid, "processing");
     }
 
-    const configRecord = await this.options.connectorRegistry.getDecryptedConfig(
-      this.options.db,
-      first.workspaceId,
-      "whatsapp",
-    );
+    const configRecord = await this.options.state.getConfig(first.workspaceId);
     if (!configRecord?.enabled) {
       return;
     }
@@ -130,11 +128,10 @@ export class WhatsAppMessageHandler {
       .join("\n");
 
     try {
-      const response = await this.options.chatService.answer({
+      const response = await this.options.chat.answer({
         workspaceId: first.workspaceId,
         conversationId: canContinueConversation ? contact.conversationId : undefined,
         query: combinedText,
-        stream: false,
         sourceChannel: "whatsapp",
       });
 
@@ -197,12 +194,7 @@ export class WhatsAppMessageHandler {
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";
       if (error instanceof WhatsAppClientError && error.statusCode === 401) {
-        await this.options.connectorRegistry.setErrorStatus(
-          this.options.db,
-          input.workspaceId,
-          "whatsapp",
-          detail,
-        );
+        await this.options.state.setErrorStatus(input.workspaceId, detail);
       }
       await this.persistence.createMessageLog({
         wamid: this.persistence.nextLocalOutboundWamid(),

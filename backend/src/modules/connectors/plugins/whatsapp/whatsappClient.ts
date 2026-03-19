@@ -1,9 +1,9 @@
-import type { AppLogger } from "../../../../shared/observability/logger.js";
+import type { ConnectorLogger } from "../../domain/connectorPlugin.js";
 
 interface WhatsAppClientOptions {
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
-  logger: AppLogger;
+  logger: ConnectorLogger;
 }
 
 export class WhatsAppClientError extends Error {

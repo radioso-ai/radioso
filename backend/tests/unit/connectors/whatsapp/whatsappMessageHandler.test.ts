@@ -42,11 +42,17 @@ describe("WhatsAppMessageHandler", () => {
     return registry;
   };
 
+  const createState = (db: InMemoryConnectorDatabase, registry: ConnectorRegistry) => ({
+    getConfig: async (workspaceId: string) => registry.getDecryptedConfig(db as any, workspaceId, "whatsapp"),
+    setErrorStatus: async (workspaceId: string, errorStatus: string | null) =>
+      registry.setErrorStatus(db as any, workspaceId, "whatsapp", errorStatus),
+  });
+
   it("debounces rapid messages into one chat turn and marks logs replied", async () => {
     const db = new InMemoryConnectorDatabase();
     const workspaceId = "workspace-1";
     const registry = await createRegistry(db, workspaceId);
-    const chatService = {
+    const chat = {
       answer: vi.fn(async () => ({
         conversationId: "conversation-1",
         answer: "Combined answer",
@@ -79,8 +85,8 @@ describe("WhatsAppMessageHandler", () => {
     const handler = new WhatsAppMessageHandler({
       db: db as any,
       logger,
-      chatService,
-      connectorRegistry: registry,
+      chat,
+      state: createState(db, registry),
       client,
       debounceMs: 3000,
     });
@@ -108,8 +114,8 @@ describe("WhatsAppMessageHandler", () => {
 
     await vi.advanceTimersByTimeAsync(3000);
 
-    expect(chatService.answer).toHaveBeenCalledTimes(1);
-    expect(chatService.answer).toHaveBeenCalledWith(
+    expect(chat.answer).toHaveBeenCalledTimes(1);
+    expect(chat.answer).toHaveBeenCalledWith(
       expect.objectContaining({
         workspaceId,
         query: "First line\nSecond line",
@@ -143,7 +149,7 @@ describe("WhatsAppMessageHandler", () => {
     const db = new InMemoryConnectorDatabase();
     const workspaceId = "workspace-2";
     const registry = await createRegistry(db, workspaceId);
-    const chatService = {
+    const chat = {
       answer: vi
         .fn()
         .mockResolvedValueOnce({
@@ -185,8 +191,8 @@ describe("WhatsAppMessageHandler", () => {
     const handler = new WhatsAppMessageHandler({
       db: db as any,
       logger,
-      chatService,
-      connectorRegistry: registry,
+      chat,
+      state: createState(db, registry),
       client,
       debounceMs: 3000,
     });
@@ -229,7 +235,7 @@ describe("WhatsAppMessageHandler", () => {
     });
     await vi.advanceTimersByTimeAsync(3000);
 
-    expect(chatService.answer).toHaveBeenNthCalledWith(
+    expect(chat.answer).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         conversationId: "conversation-a",
@@ -256,7 +262,7 @@ describe("WhatsAppMessageHandler", () => {
     });
     await vi.advanceTimersByTimeAsync(3000);
 
-    expect(chatService.answer).toHaveBeenNthCalledWith(
+    expect(chat.answer).toHaveBeenNthCalledWith(
       3,
       expect.not.objectContaining({
         conversationId: "conversation-a",
@@ -269,7 +275,7 @@ describe("WhatsAppMessageHandler", () => {
     const db = new InMemoryConnectorDatabase();
     const workspaceId = "workspace-3";
     const registry = await createRegistry(db, workspaceId);
-    const chatService = {
+    const chat = {
       answer: vi.fn(),
     } as any;
     const client = {
@@ -287,8 +293,8 @@ describe("WhatsAppMessageHandler", () => {
     const handler = new WhatsAppMessageHandler({
       db: db as any,
       logger,
-      chatService,
-      connectorRegistry: registry,
+      chat,
+      state: createState(db, registry),
       client,
       debounceMs: 3000,
     });
@@ -304,7 +310,7 @@ describe("WhatsAppMessageHandler", () => {
     });
     await vi.advanceTimersByTimeAsync(3000);
 
-    expect(chatService.answer).not.toHaveBeenCalled();
+    expect(chat.answer).not.toHaveBeenCalled();
     expect(client.sendTextMessage).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
@@ -318,7 +324,7 @@ describe("WhatsAppMessageHandler", () => {
     const db = new InMemoryConnectorDatabase();
     const workspaceId = "workspace-auth-error";
     const registry = await createRegistry(db, workspaceId);
-    const chatService = {
+    const chat = {
       answer: vi.fn(async () => ({
         conversationId: "conversation-auth-error",
         answer: "Will fail to send",
@@ -346,8 +352,8 @@ describe("WhatsAppMessageHandler", () => {
     const handler = new WhatsAppMessageHandler({
       db: db as any,
       logger,
-      chatService,
-      connectorRegistry: registry,
+      chat,
+      state: createState(db, registry),
       client,
       debounceMs: 3000,
     });

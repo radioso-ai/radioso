@@ -128,7 +128,7 @@ describe("WhatsAppPlugin", () => {
     });
     const registry = await createRegistry(db, plugin, workspaceId);
     const logger = createLogger();
-    const chatService = {
+    const chat = {
       answer: vi.fn(async () => ({
         conversationId: "conversation-1",
         answer: "Hello back",
@@ -139,14 +139,23 @@ describe("WhatsAppPlugin", () => {
         },
       })),
     } as any;
-    const router = Router();
+    const mountedRouter = Router();
 
     await plugin.initialize({
       db: db as any,
       logger,
-      chatService,
-      connectorRegistry: registry,
-      router,
+      chat,
+      state: {
+        getConfig: async (currentWorkspaceId: string) =>
+          registry.getDecryptedConfig(db as any, currentWorkspaceId, "whatsapp"),
+        setErrorStatus: async (currentWorkspaceId: string, errorStatus: string | null) =>
+          registry.setErrorStatus(db as any, currentWorkspaceId, "whatsapp", errorStatus),
+      },
+      http: {
+        mount: (path, router) => {
+          mountedRouter.use(path, router);
+        },
+      },
     });
 
     const app = express();
@@ -157,7 +166,7 @@ describe("WhatsAppPlugin", () => {
         },
       }),
     );
-    app.use("/", router);
+    app.use("/", mountedRouter);
 
     const payload = JSON.stringify({
       object: "whatsapp_business_account",
@@ -240,12 +249,14 @@ describe("WhatsAppPlugin", () => {
     await plugin.initialize({
       db: db as any,
       logger,
-      chatService: { answer: vi.fn() } as any,
-      connectorRegistry: {
-        getDecryptedConfig: vi.fn(async () => null),
+      chat: { answer: vi.fn() } as any,
+      state: {
+        getConfig: vi.fn(async () => null),
         setErrorStatus: vi.fn(async () => {}),
-      } as any,
-      router: Router(),
+      },
+      http: {
+        mount: vi.fn(),
+      },
     });
 
     expect(db.messageLogs.has("wamid-old-startup")).toBe(false);

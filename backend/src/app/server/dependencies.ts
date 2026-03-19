@@ -36,7 +36,7 @@ import { RetrievalExecutionTelemetryService } from "../../modules/retrieval/serv
 import { OpenAIEmbeddingGateway, EmbeddingService } from "../../modules/retrieval/services/embeddingService.js";
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
-import { WhatsAppPlugin } from "../../modules/connectors/plugins/whatsapp/whatsappPlugin.js";
+import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { Database } from "../../shared/infra/database.js";
 import { OpenAIClients } from "../../shared/infra/openaiClient.js";
 import { createLogger } from "../../shared/observability/logger.js";
@@ -106,9 +106,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const workspaceRepository = new WorkspaceRepository(database);
   const workspaceService = new WorkspaceService(workspaceRepository, auditService);
   const connectorRegistry = new ConnectorRegistry();
-  connectorRegistry.register(new WhatsAppPlugin({
-    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
-  }));
+  registerBuiltInConnectors(connectorRegistry);
   if (env.CONNECTOR_ENCRYPTION_KEY) {
     connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY);
   }

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../../../shared/infra/database.js";
+import type { ConnectorDatabasePort } from "../../domain/connectorPlugin.js";
 
 export interface WhatsAppContactRecord {
   id: string;
@@ -100,7 +100,7 @@ const mapMessageLog = (row: WhatsAppMessageLogRow): WhatsAppMessageLogRecord => 
 });
 
 export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: ConnectorDatabasePort) {}
 
   async findContact(workspaceId: string, waId: string): Promise<WhatsAppContactRecord | null> {
     const [row] = await this.db.query<WhatsAppContactRow>(

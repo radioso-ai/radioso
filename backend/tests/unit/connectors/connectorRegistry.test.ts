@@ -1,4 +1,3 @@
-import { Router } from "express";
 import { describe, expect, it } from "vitest";
 
 import type { ConnectorPlugin, ConnectorContext } from "../../../src/modules/connectors/domain/connectorPlugin.js";
@@ -75,13 +74,11 @@ describe("ConnectorRegistry", () => {
       shutdown: async () => { events.push("shutdown-x"); },
     }));
 
-    const context: ConnectorContext = {
+    const context = {
       db: {} as any,
-      logger: { info: () => {}, error: () => {}, warn: () => {}, child: () => ({}) } as any,
-      chatService: {} as any,
-      connectorRegistry: registry,
-      router: Router(),
-    };
+      logger: { info: () => {}, error: () => {}, warn: () => {} } as any,
+      chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
+    } satisfies Pick<ConnectorContext, "db" | "logger" | "chat">;
 
     await registry.initializeAll(context);
     expect(events).toContain("init-x");
@@ -102,13 +99,11 @@ describe("ConnectorRegistry", () => {
       initialize: async () => { events.push("init-succeeds"); },
     }));
 
-    const context: ConnectorContext = {
+    const context = {
       db: {} as any,
-      logger: { info: () => {}, error: () => {}, warn: () => {}, child: () => ({}) } as any,
-      chatService: {} as any,
-      connectorRegistry: registry,
-      router: Router(),
-    };
+      logger: { info: () => {}, error: () => {}, warn: () => {} } as any,
+      chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
+    } satisfies Pick<ConnectorContext, "db" | "logger" | "chat">;
 
     // Should not throw
     await registry.initializeAll(context);

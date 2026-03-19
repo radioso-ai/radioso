@@ -2,16 +2,14 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { Router, type Request } from "express";
 
-import type { Database } from "../../../../shared/infra/database.js";
-import type { AppLogger } from "../../../../shared/observability/logger.js";
-import type { ConnectorRegistry } from "../../services/connectorRegistry.js";
+import type { ConnectorLogger, ConnectorStatePort } from "../../domain/connectorPlugin.js";
 import type { WhatsAppMessageHandler, WhatsAppInboundMessage } from "./whatsappMessageHandler.js";
-import { PostgresWhatsAppPersistence } from "./whatsappPersistence.js";
+import type { WhatsAppPersistencePort } from "./whatsappPersistence.js";
 
 interface WhatsAppWebhookRouterOptions {
-  db: Database;
-  logger: AppLogger;
-  connectorRegistry: Pick<ConnectorRegistry, "getDecryptedConfig">;
+  logger: ConnectorLogger;
+  state: Pick<ConnectorStatePort, "getConfig">;
+  persistence: Pick<WhatsAppPersistencePort, "findMessageLogByWamid" | "createMessageLog">;
   messageHandler: Pick<WhatsAppMessageHandler, "handleInboundMessage">;
 }
 
@@ -29,18 +27,17 @@ interface WorkspaceParams {
 }
 
 export const createWhatsAppWebhookRouter = ({
-  db,
   logger,
-  connectorRegistry,
+  state,
+  persistence,
   messageHandler,
 }: WhatsAppWebhookRouterOptions): Router => {
   const router = Router({ mergeParams: true });
-  const persistence = new PostgresWhatsAppPersistence(db);
 
   router.get("/:workspaceId/webhook", async (req: Request<WorkspaceParams>, res, next) => {
     try {
       const workspaceId = req.params.workspaceId;
-      const config = await connectorRegistry.getDecryptedConfig(db, workspaceId, "whatsapp");
+      const config = await state.getConfig(workspaceId);
       if (!config) {
         res.sendStatus(404);
         return;
@@ -68,7 +65,7 @@ export const createWhatsAppWebhookRouter = ({
   router.post("/:workspaceId/webhook", async (req: Request<WorkspaceParams> & WebhookRequest, res, next) => {
     try {
       const workspaceId = req.params.workspaceId;
-      const config = await connectorRegistry.getDecryptedConfig(db, workspaceId, "whatsapp");
+      const config = await state.getConfig(workspaceId);
       if (!config) {
         res.sendStatus(404);
         return;

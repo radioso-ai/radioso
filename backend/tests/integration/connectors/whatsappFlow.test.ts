@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { createConnectorChatPort } from "../../../src/modules/connectors/services/connectorChatPort.js";
 import { createLogger } from "../../../src/shared/observability/logger.js";
 import { createTestApp, issueTestToken } from "../../support/testApp.js";
 
@@ -53,9 +54,7 @@ describe("WhatsApp integration flow", () => {
     await dependencies.connectorRegistry.initializeAll({
       db: dependencies.connectorDb,
       logger: createLogger("silent"),
-      chatService: dependencies.chatService,
-      connectorRegistry: dependencies.connectorRegistry,
-      router: dependencies.connectorRegistry.getRouter(),
+      chat: createConnectorChatPort(dependencies.chatService),
     });
 
     const payload = JSON.stringify({

@@ -7,6 +7,8 @@ import type { RetrievalSettingsService } from "../../modules/settings/services/r
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { AuditService } from "../../modules/audit/services/auditService.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
+import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
+import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 
@@ -22,4 +24,6 @@ export interface AppDependencies {
   documentDeletionService: DocumentDeletionService;
   chatService: ChatService;
   chatHistoryService: ChatHistoryService;
+  connectorRegistry: ConnectorRegistry;
+  connectorDb: Database;
 }

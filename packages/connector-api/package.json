@@ -1,0 +1,16 @@
+{
+  "name": "@hivec/connector-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts"
+    }
+  },
+  "peerDependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.16.3"
+  }
+}

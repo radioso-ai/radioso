@@ -7,9 +7,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
     "dev": "node --import tsx ./src/index.ts",
-    "start": "node ./dist/index.js",
+    "start": "node ./dist/src/index.js",
+    "smoke:connectors:whatsapp": "node --import tsx ./scripts/whatsappConnectorSmoke.ts",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
@@ -17,6 +18,7 @@
     "test:persistence": "vitest run tests/integration/persistence.integration.test.ts"
   },
   "dependencies": {
+    "@hivec/connector-api": "file:../packages/connector-api",
     "bcryptjs": "^2.4.3",
     "cookie": "^1.0.2",
     "cookie-parser": "^1.4.7",

@@ -10,6 +10,7 @@ import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/serv
 
 export interface ChatConversationSummary {
   id: string;
+  sourceChannel: string | null;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -38,6 +39,7 @@ export interface ChatConversationTurn {
 export interface ChatConversationDetail {
   conversationId: string;
   workspaceId: string;
+  sourceChannel: string | null;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -107,6 +109,7 @@ export class ChatHistoryService {
     return {
       conversationId: conversation.id,
       workspaceId: conversation.workspaceId,
+      sourceChannel: conversation.sourceChannel,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),
       messageCount: messages.length,
@@ -128,6 +131,7 @@ export class ChatHistoryService {
   ): ChatConversationSummary {
     return {
       id: conversation.id,
+      sourceChannel: conversation.sourceChannel,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),
       messageCount: messages.length,

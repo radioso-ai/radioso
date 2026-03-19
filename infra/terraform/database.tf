@@ -20,11 +20,6 @@ resource "google_sql_database_instance" "postgres" {
       enable_private_path_for_google_cloud_services = true
     }
 
-    database_flags {
-      name  = "cloudsql.enable_pgvector"
-      value = "on"
-    }
-
     backup_configuration {
       enabled = true
     }

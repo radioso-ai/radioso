@@ -32,6 +32,7 @@ describe("anonymousRateLimiter", () => {
 
   it("allows messages under the limit", () => {
     const { req, res, next, wasNextCalled } = createMockReqRes({
+      workspaceId: "workspace-1",
       anonymousSessionId: "session-1",
       anonymousRateLimit: 5,
     });
@@ -48,6 +49,7 @@ describe("anonymousRateLimiter", () => {
     // Send messages up to the limit
     for (let i = 0; i < limit; i++) {
       const { req, res, next } = createMockReqRes({
+        workspaceId: "workspace-1",
         anonymousSessionId: sessionId,
         anonymousRateLimit: limit,
       });
@@ -56,6 +58,7 @@ describe("anonymousRateLimiter", () => {
 
     // The next one should be rejected
     const { req, res, next, getStatus, getBody, wasNextCalled } = createMockReqRes({
+      workspaceId: "workspace-1",
       anonymousSessionId: sessionId,
       anonymousRateLimit: limit,
     });
@@ -73,6 +76,7 @@ describe("anonymousRateLimiter", () => {
     // Fill session A
     for (let i = 0; i < limit; i++) {
       const { req, res, next } = createMockReqRes({
+        workspaceId: "workspace-1",
         anonymousSessionId: "session-a",
         anonymousRateLimit: limit,
       });
@@ -81,6 +85,7 @@ describe("anonymousRateLimiter", () => {
 
     // Session B should still be allowed
     const { req, res, next, wasNextCalled } = createMockReqRes({
+      workspaceId: "workspace-1",
       anonymousSessionId: "session-b",
       anonymousRateLimit: limit,
     });
@@ -103,6 +108,7 @@ describe("anonymousRateLimiter", () => {
     // First request with limit=1
     const { req: req1, res: res1, next: next1 } = createMockReqRes({
       anonymousSessionId: sessionId,
+      workspaceId: "workspace-1",
       anonymousRateLimit: 1,
     });
     anonymousRateLimiter(req1, res1, next1);
@@ -110,11 +116,32 @@ describe("anonymousRateLimiter", () => {
     // Second request — should be rejected even though a higher limit could allow it
     const { req, res, next, getStatus, wasNextCalled } = createMockReqRes({
       anonymousSessionId: sessionId,
+      workspaceId: "workspace-1",
       anonymousRateLimit: 1,
     });
     anonymousRateLimiter(req, res, next);
 
     expect(wasNextCalled()).toBe(false);
     expect(getStatus()).toBe(429);
+  });
+
+  it("scopes rate limiting by workspace as well as session", () => {
+    const sessionId = "shared-session";
+
+    const { req: req1, res: res1, next: next1 } = createMockReqRes({
+      workspaceId: "workspace-a",
+      anonymousSessionId: sessionId,
+      anonymousRateLimit: 1,
+    });
+    anonymousRateLimiter(req1, res1, next1);
+
+    const { req, res, next, wasNextCalled } = createMockReqRes({
+      workspaceId: "workspace-b",
+      anonymousSessionId: sessionId,
+      anonymousRateLimit: 1,
+    });
+    anonymousRateLimiter(req, res, next);
+
+    expect(wasNextCalled()).toBe(true);
   });
 });

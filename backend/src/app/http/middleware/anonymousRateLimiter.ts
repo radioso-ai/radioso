@@ -27,9 +27,10 @@ const cleanup = (now: number) => {
 
 export const anonymousRateLimiter: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
   const sessionId = res.locals.anonymousSessionId as string | undefined;
+  const workspaceId = res.locals.workspaceId as string | undefined;
   const limit = (res.locals.anonymousRateLimit as number | undefined) ?? 10;
 
-  if (!sessionId) {
+  if (!sessionId || !workspaceId) {
     next();
     return;
   }
@@ -37,10 +38,11 @@ export const anonymousRateLimiter: RequestHandler = (req: Request, res: Response
   const now = Date.now();
   cleanup(now);
 
-  let entry = sessions.get(sessionId);
+  const key = `${workspaceId}:${sessionId}`;
+  let entry = sessions.get(key);
   if (!entry) {
     entry = { timestamps: [] };
-    sessions.set(sessionId, entry);
+    sessions.set(key, entry);
   }
 
   // Remove timestamps outside the window

@@ -78,7 +78,7 @@ describe("resolveAnonymousSession", () => {
     const middleware = resolveAnonymousSession(workspaceRepository);
     const { req, res, next } = createMockReqRes(
       { token: "test-token-1234567890" },
-      { anon_session: "existing-session-id" },
+      { [`anon_session_${workspace.id}`]: "existing-session-id" },
     );
 
     await middleware(req, res, next);
@@ -99,7 +99,7 @@ describe("resolveAnonymousSession", () => {
 
     await middleware(req, res, next);
 
-    expect(setCookieName).toBe("anon_session");
+    expect(setCookieName).toBe(`anon_session_${workspace.id}`);
     expect(res.locals.anonymousSessionId).toBeDefined();
     expect(typeof res.locals.anonymousSessionId).toBe("string");
   });

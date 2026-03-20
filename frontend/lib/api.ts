@@ -76,7 +76,43 @@ export const removeWorkspaceToken = (workspaceId: string) => {
 
 const buildError = async (response: Response): Promise<ErrorResponse> => {
   try {
-    return await response.json();
+    const payload = await response.json();
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "error" in payload &&
+      payload.error &&
+      typeof payload.error === "object"
+    ) {
+      return payload as ErrorResponse;
+    }
+
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "code" in payload &&
+      typeof payload.code === "string" &&
+      "message" in payload &&
+      typeof payload.message === "string"
+    ) {
+      return {
+        error: {
+          code: payload.code,
+          message: payload.message,
+          retryAfterSeconds:
+            "retryAfterSeconds" in payload && typeof payload.retryAfterSeconds === "number"
+              ? payload.retryAfterSeconds
+              : undefined,
+        },
+      };
+    }
+
+    return {
+      error: {
+        code: "HTTP_ERROR",
+        message: `Request failed with status ${response.status}`,
+      },
+    };
   } catch {
     return {
       error: {
@@ -334,6 +370,7 @@ export interface ErrorResponse {
   error: {
     code: string
     message: string
+    retryAfterSeconds?: number
   }
 }
 

@@ -8,15 +8,23 @@ describe("public chat contract", () => {
     resetRateLimiterState();
   });
 
-  const enableAnonymousChat = async (app: any, token: string) => {
+  const enableAnonymousChat = async (app: any, token: string, anonymousRateLimit?: number) => {
     const response = await request(app)
       .put("/api/v1/settings/general")
       .set("Authorization", `Bearer ${token}`)
-      .send({ anonymousChatEnabled: true });
+      .send({
+        anonymousChatEnabled: true,
+        ...(anonymousRateLimit ? { anonymousRateLimit } : {}),
+      });
     // Extract the chat token from the URL
     const url: string = response.body.anonymousChatUrl;
     return url.split("/chat/")[1];
   };
+
+  const findAnonymousCookie = (cookies: string[] | string | undefined) =>
+    (Array.isArray(cookies) ? cookies : [cookies]).find((cookie: string | undefined) =>
+      typeof cookie === "string" && cookie.startsWith("anon_session_"),
+    );
 
   it("POST /api/v1/public/chat/:token creates conversation and returns response", async () => {
     const { app } = createTestApp();
@@ -40,9 +48,7 @@ describe("public chat contract", () => {
     // Should set anon_session cookie
     const cookies = response.headers["set-cookie"];
     expect(cookies).toBeDefined();
-    const anonCookie = (Array.isArray(cookies) ? cookies : [cookies]).find((c: string) =>
-      c.startsWith("anon_session="),
-    );
+    const anonCookie = findAnonymousCookie(cookies);
     expect(anonCookie).toBeDefined();
   });
 
@@ -62,9 +68,7 @@ describe("public chat contract", () => {
       .send({ query: "hello", stream: false });
 
     const cookies = first.headers["set-cookie"];
-    const anonCookie = (Array.isArray(cookies) ? cookies : [cookies]).find((c: string) =>
-      c.startsWith("anon_session="),
-    );
+    const anonCookie = findAnonymousCookie(cookies);
 
     // Second request with cookie and conversationId
     const second = await request(app)
@@ -92,9 +96,7 @@ describe("public chat contract", () => {
       .send({ query: "test", stream: false });
 
     const cookies = chat.headers["set-cookie"];
-    const anonCookie = (Array.isArray(cookies) ? cookies : [cookies]).find((c: string) =>
-      c.startsWith("anon_session="),
-    );
+    const anonCookie = findAnonymousCookie(cookies);
 
     // List conversations
     const list = await request(app)
@@ -121,9 +123,7 @@ describe("public chat contract", () => {
       .send({ query: "question", stream: false });
 
     const cookies = chat.headers["set-cookie"];
-    const anonCookie = (Array.isArray(cookies) ? cookies : [cookies]).find((c: string) =>
-      c.startsWith("anon_session="),
-    );
+    const anonCookie = findAnonymousCookie(cookies);
 
     const detail = await request(app)
       .get(`/api/v1/public/chat/${chatToken}/history/${chat.body.conversationId}`)
@@ -170,16 +170,7 @@ describe("public chat contract", () => {
       .set("Authorization", `Bearer ${bearerToken}`)
       .send({ title: "Doc", content: "Content" });
 
-    // Enable with very low rate limit
-    await request(app)
-      .put("/api/v1/settings/general")
-      .set("Authorization", `Bearer ${bearerToken}`)
-      .send({ anonymousChatEnabled: true, anonymousRateLimit: 1 });
-
-    const settings = await request(app)
-      .get("/api/v1/settings/general")
-      .set("Authorization", `Bearer ${bearerToken}`);
-    const chatToken = settings.body.anonymousChatUrl.split("/chat/")[1];
+    const chatToken = await enableAnonymousChat(app, bearerToken, 1);
 
     // First message should succeed
     const first = await request(app)
@@ -188,9 +179,7 @@ describe("public chat contract", () => {
     expect(first.status).toBe(200);
 
     const cookies = first.headers["set-cookie"];
-    const anonCookie = (Array.isArray(cookies) ? cookies : [cookies]).find((c: string) =>
-      c.startsWith("anon_session="),
-    );
+    const anonCookie = findAnonymousCookie(cookies);
 
     // Second message should be rate limited
     const second = await request(app)

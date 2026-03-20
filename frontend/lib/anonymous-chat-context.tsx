@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -13,7 +14,9 @@ import {
   publicChatApi,
   type AnswerSegment,
   type Citation,
+  type ChatConversationDetail,
   type ChatStreamCompletion,
+  type ErrorResponse,
   type RetrievalInfo,
 } from '@/lib/api'
 
@@ -30,6 +33,8 @@ export interface ChatMessage {
 interface AnonymousChatContextValue {
   messages: ChatMessage[]
   isLoading: boolean
+  isHydrating: boolean
+  isUnavailable: boolean
   rateLimitError: string | null
   retryAfterSeconds: number | null
   sendMessage: (content: string) => Promise<void>
@@ -37,17 +42,28 @@ interface AnonymousChatContextValue {
 
 const AnonymousChatContext = createContext<AnonymousChatContextValue | null>(null)
 
-const getErrorMessage = (error: unknown) => {
+const getErrorResponse = (error: unknown): ErrorResponse['error'] | null => {
   if (
     error &&
     typeof error === 'object' &&
     'error' in error &&
     error.error &&
     typeof error.error === 'object' &&
+    'code' in error.error &&
+    typeof error.error.code === 'string' &&
     'message' in error.error &&
     typeof error.error.message === 'string'
   ) {
-    return error.error.message
+    return error.error as ErrorResponse['error']
+  }
+
+  return null
+}
+
+const getErrorMessage = (error: unknown) => {
+  const structuredError = getErrorResponse(error)
+  if (structuredError) {
+    return structuredError.message
   }
 
   if (error instanceof Error && error.message) {
@@ -58,24 +74,27 @@ const getErrorMessage = (error: unknown) => {
 }
 
 const isRateLimitError = (error: unknown): { message: string; retryAfterSeconds: number } | null => {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'error' in error &&
-    error.error &&
-    typeof error.error === 'object' &&
-    'code' in error.error &&
-    error.error.code === 'rate_limit_exceeded' &&
-    'message' in error.error &&
-    typeof error.error.message === 'string'
-  ) {
-    const retryAfter = 'retryAfterSeconds' in error.error
-      ? Number(error.error.retryAfterSeconds)
-      : 60
-    return { message: error.error.message, retryAfterSeconds: retryAfter }
+  const structuredError = getErrorResponse(error)
+  if (structuredError?.code !== 'rate_limit_exceeded') {
+    return null
   }
-  return null
+
+  return {
+    message: structuredError.message,
+    retryAfterSeconds: Number(structuredError.retryAfterSeconds ?? 60),
+  }
 }
+
+const toChatMessages = (detail: ChatConversationDetail): ChatMessage[] =>
+  detail.messages
+    .filter((message): message is typeof message & { role: 'user' | 'assistant' } => message.role !== 'system')
+    .map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      retrievalInfo: message.debug?.retrievalInfo,
+      status: 'complete' as const,
+    }))
 
 export function AnonymousChatProvider({
   token,
@@ -87,8 +106,55 @@ export function AnonymousChatProvider({
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
+  const [isHydrating, setIsHydrating] = useState(true)
+  const [isUnavailable, setIsUnavailable] = useState(false)
   const [rateLimitError, setRateLimitError] = useState<string | null>(null)
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const hydrateConversation = async () => {
+      setIsHydrating(true)
+      setIsUnavailable(false)
+      setMessages([])
+      setConversationId(undefined)
+      setRateLimitError(null)
+      setRetryAfterSeconds(null)
+
+      try {
+        const conversations = await publicChatApi.listConversations(token)
+        if (cancelled) return
+
+        if (conversations.length === 0) {
+          setIsHydrating(false)
+          return
+        }
+
+        const detail = await publicChatApi.getConversationDetail(token, conversations[0].id)
+        if (cancelled) return
+
+        setConversationId(detail.conversationId)
+        setMessages(toChatMessages(detail))
+      } catch (error) {
+        if (cancelled) return
+        const structuredError = getErrorResponse(error)
+        if (structuredError?.code === 'not_found') {
+          setIsUnavailable(true)
+        }
+      } finally {
+        if (!cancelled) {
+          setIsHydrating(false)
+        }
+      }
+    }
+
+    void hydrateConversation()
+
+    return () => {
+      cancelled = true
+    }
+  }, [token])
 
   const applyCompletion = useCallback(
     (assistantMessageId: string, completion: ChatStreamCompletion) => {
@@ -117,7 +183,7 @@ export function AnonymousChatProvider({
   const sendMessage = useCallback(
     async (content: string) => {
       const query = content.trim()
-      if (!query || isLoading) return
+      if (!query || isLoading || isHydrating || isUnavailable) return
 
       setRateLimitError(null)
       setRetryAfterSeconds(null)
@@ -187,10 +253,7 @@ export function AnonymousChatProvider({
         if (rateLimit) {
           setRateLimitError(rateLimit.message)
           setRetryAfterSeconds(rateLimit.retryAfterSeconds)
-          // Remove the empty assistant message
-          setMessages((prev) => prev.filter((m) => m.id !== assistantMessageId))
-          // Also remove the user message since it wasn't processed
-          setMessages((prev) => prev.filter((m) => m.id !== userMessage.id))
+          setMessages((prev) => prev.filter((message) => message.id !== assistantMessageId && message.id !== userMessage.id))
           setIsLoading(false)
           return
         }
@@ -211,18 +274,20 @@ export function AnonymousChatProvider({
         setIsLoading(false)
       }
     },
-    [applyCompletion, conversationId, isLoading, token],
+    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, token],
   )
 
   const value = useMemo<AnonymousChatContextValue>(
     () => ({
       messages,
       isLoading,
+      isHydrating,
+      isUnavailable,
       rateLimitError,
       retryAfterSeconds,
       sendMessage,
     }),
-    [messages, isLoading, rateLimitError, retryAfterSeconds, sendMessage],
+    [messages, isLoading, isHydrating, isUnavailable, rateLimitError, retryAfterSeconds, sendMessage],
   )
 
   return (

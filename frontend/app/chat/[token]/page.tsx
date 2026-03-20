@@ -7,8 +7,8 @@ import { Send, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Spinner } from '@/components/ui/spinner'
+import { AssistantMessageContent, linkifyText } from '@/components/dashboard/chat-citations'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
-import { publicChatApi } from '@/lib/api'
 
 function ChatUnavailable() {
   return (
@@ -51,7 +51,15 @@ function RateLimitBanner({ message, retryAfterSeconds }: { message: string; retr
 
 function AnonymousChatContent() {
   const [input, setInput] = useState('')
-  const { messages, isLoading, rateLimitError, retryAfterSeconds, sendMessage } = useAnonymousChat()
+  const {
+    messages,
+    isLoading,
+    isHydrating,
+    isUnavailable,
+    rateLimitError,
+    retryAfterSeconds,
+    sendMessage,
+  } = useAnonymousChat()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -75,6 +83,18 @@ function AnonymousChatContent() {
       e.preventDefault()
       handleSubmit(e)
     }
+  }
+
+  if (isHydrating) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <Spinner className="h-6 w-6" />
+      </div>
+    )
+  }
+
+  if (isUnavailable) {
+    return <ChatUnavailable />
   }
 
   return (
@@ -104,14 +124,19 @@ function AnonymousChatContent() {
               >
                 {message.role === 'user' ? (
                   <div className="max-w-[80%] rounded-lg bg-primary px-4 py-3 text-primary-foreground">
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    <p className="text-sm whitespace-pre-wrap">{linkifyText(message.content)}</p>
                   </div>
                 ) : (
                   <div className="max-w-[80%] text-foreground">
                     {message.status === 'streaming' && !message.content ? (
                       <Spinner className="h-4 w-4" />
                     ) : (
-                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      <AssistantMessageContent
+                        content={message.content}
+                        citations={message.citations}
+                        answerSegments={message.answerSegments}
+                        onOpenDocument={async () => 'unavailable'}
+                      />
                     )}
                   </div>
                 )}
@@ -153,32 +178,6 @@ function AnonymousChatContent() {
 }
 
 function PublicChatPageInner({ token }: { token: string }) {
-  const [isAvailable, setIsAvailable] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    const checkAvailability = async () => {
-      try {
-        await publicChatApi.listConversations(token)
-        setIsAvailable(true)
-      } catch {
-        setIsAvailable(false)
-      }
-    }
-    void checkAvailability()
-  }, [token])
-
-  if (isAvailable === null) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <Spinner className="h-6 w-6" />
-      </div>
-    )
-  }
-
-  if (!isAvailable) {
-    return <ChatUnavailable />
-  }
-
   return (
     <AnonymousChatProvider token={token}>
       <AnonymousChatContent />

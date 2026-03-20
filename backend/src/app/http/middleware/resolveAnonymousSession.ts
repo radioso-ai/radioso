@@ -1,21 +1,26 @@
 import { randomUUID } from "node:crypto";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
+import { z } from "zod";
 
 import { notFound } from "../../../shared/domain/errors.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
+const anonymousTokenParamsSchema = z.object({
+  token: z.string().min(1),
+});
 
 export const resolveAnonymousSession = (workspaceRepository: WorkspaceRepositoryPort): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const token = req.params.token;
+      const parsedParams = anonymousTokenParamsSchema.safeParse(req.params);
 
-      if (!token) {
+      if (!parsedParams.success) {
         next(notFound("Not found"));
         return;
       }
 
+      const { token } = parsedParams.data;
       const workspace = await workspaceRepository.findByAnonymousChatToken(token);
 
       if (!workspace || !workspace.anonymousChatEnabled) {

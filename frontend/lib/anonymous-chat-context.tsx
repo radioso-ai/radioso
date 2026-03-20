@@ -32,6 +32,7 @@ export interface ChatMessage {
 
 interface AnonymousChatContextValue {
   messages: ChatMessage[]
+  workspaceName: string | null
   isLoading: boolean
   isHydrating: boolean
   isUnavailable: boolean
@@ -98,6 +99,11 @@ const toChatMessages = (detail: ChatConversationDetail): ChatMessage[] =>
       status: 'complete' as const,
     }))
 
+const getLatestAssistantMessage = (detail: ChatConversationDetail): ChatMessage | null => {
+  const assistantMessages = toChatMessages(detail).filter((message) => message.role === 'assistant')
+  return assistantMessages.at(-1) ?? null
+}
+
 export function AnonymousChatProvider({
   token,
   children,
@@ -106,6 +112,7 @@ export function AnonymousChatProvider({
   children: ReactNode
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [workspaceName, setWorkspaceName] = useState<string | null>(null)
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
   const [isHydrating, setIsHydrating] = useState(true)
@@ -120,20 +127,23 @@ export function AnonymousChatProvider({
       setIsHydrating(true)
       setIsUnavailable(false)
       setMessages([])
+      setWorkspaceName(null)
       setConversationId(undefined)
       setRateLimitError(null)
       setRetryAfterSeconds(null)
 
       try {
-        const conversations = await publicChatApi.listConversations(token)
+        const response = await publicChatApi.listConversations(token)
         if (cancelled) return
 
-        if (conversations.length === 0) {
+        setWorkspaceName(response.workspaceName ?? null)
+
+        if (response.conversations.length === 0) {
           setIsHydrating(false)
           return
         }
 
-        const detail = await publicChatApi.getConversationDetail(token, conversations[0].id)
+        const detail = await publicChatApi.getConversationDetail(token, response.conversations[0].id)
         if (cancelled) return
 
         setConversationId(detail.conversationId)
@@ -180,6 +190,39 @@ export function AnonymousChatProvider({
       )
     },
     [],
+  )
+
+  const recoverAssistantMessage = useCallback(
+    async (nextConversationId: string | undefined, assistantMessageId: string) => {
+      if (!nextConversationId) {
+        return false
+      }
+
+      const detail = await publicChatApi.getConversationDetail(token, nextConversationId)
+      const assistantMessage = getLatestAssistantMessage(detail)
+      if (!assistantMessage) {
+        return false
+      }
+
+      setConversationId(detail.conversationId)
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantMessageId
+            ? {
+                ...message,
+                content: assistantMessage.content,
+                citations: assistantMessage.citations,
+                answerSegments: assistantMessage.answerSegments,
+                retrievalInfo: assistantMessage.retrievalInfo,
+                status: 'complete' as const,
+              }
+            : message,
+        ),
+      )
+      setIsLoading(false)
+      return true
+    },
+    [token],
   )
 
   const sendMessage = useCallback(
@@ -241,9 +284,19 @@ export function AnonymousChatProvider({
           },
         )
 
+        const nextConversationId = completion.conversationId ?? conversationId
+        const needsRecovery = !completion.answer?.trim()
+
+        if (needsRecovery) {
+          const recovered = await recoverAssistantMessage(nextConversationId, assistantMessageId)
+          if (recovered) {
+            return
+          }
+        }
+
         if (!didComplete) {
           applyCompletion(assistantMessageId, {
-            conversationId: completion.conversationId,
+            conversationId: nextConversationId,
             answer: completion.answer,
             citations: completion.citations,
             answerSegments: completion.answerSegments,
@@ -276,12 +329,13 @@ export function AnonymousChatProvider({
         setIsLoading(false)
       }
     },
-    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, token],
+    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, recoverAssistantMessage, token],
   )
 
   const value = useMemo<AnonymousChatContextValue>(
     () => ({
       messages,
+      workspaceName,
       isLoading,
       isHydrating,
       isUnavailable,
@@ -289,7 +343,7 @@ export function AnonymousChatProvider({
       retryAfterSeconds,
       sendMessage,
     }),
-    [messages, isLoading, isHydrating, isUnavailable, rateLimitError, retryAfterSeconds, sendMessage],
+    [messages, workspaceName, isLoading, isHydrating, isUnavailable, rateLimitError, retryAfterSeconds, sendMessage],
   )
 
   return (

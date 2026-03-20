@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, Copy, Key, Save, Trash2 } from 'lucide-react'
+import { Check, Copy, ExternalLink, Key, Save, Trash2 } from 'lucide-react'
 
 import { ConnectorsTab } from '@/components/dashboard/connectors/connectors-tab'
 import { Button } from '@/components/ui/button'
@@ -358,13 +358,23 @@ function GeneralTab() {
                   <>
                     <div className="space-y-2">
                       <Label htmlFor="anonChatUrl" className="text-foreground">Public Chat URL</Label>
-                      <div className="flex gap-2">
-                        <Input
+                      <div className="flex flex-wrap items-start gap-2">
+                        <p
                           id="anonChatUrl"
-                          value={anonSettings.anonymousChatUrl}
-                          readOnly
-                          className="font-mono text-sm"
-                        />
+                          className="min-w-[320px] flex-1 break-all rounded-md border border-border bg-card px-3 py-2 font-mono text-sm text-foreground"
+                        >
+                          {anonSettings.anonymousChatUrl}
+                        </p>
+                        <Button asChild variant="secondary">
+                          <a
+                            href={anonSettings.anonymousChatUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            Try the chat
+                          </a>
+                        </Button>
                         <Button
                           variant="outline"
                           size="icon"
@@ -378,6 +388,9 @@ function GeneralTab() {
                           <span className="sr-only">Copy URL</span>
                         </Button>
                       </div>
+                      <p className="break-all rounded-md border border-border bg-card px-3 py-2 font-mono text-sm text-foreground">
+                        {anonSettings.anonymousChatUrl}
+                      </p>
                       <p className="text-sm text-muted-foreground">
                         Share this link with anyone you want to give chat access to.
                       </p>

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
+import { badRequest } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { anonymousRateLimiter } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
@@ -12,11 +13,13 @@ const anonymousChatSchema = z.object({
   conversationId: z.string().uuid().optional(),
 });
 
+const publicConversationParamsSchema = z.object({
+  conversationId: z.string().uuid(),
+});
+
 export const createPublicChatRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
   const sessionMiddleware = resolveAnonymousSession(dependencies.workspaceRepository);
-  const toSingleParam = (value: string | string[] | undefined): string | undefined =>
-    Array.isArray(value) ? value[0] : value;
 
   // POST /api/v1/public/chat/:token — send a message
   router.post(
@@ -62,8 +65,9 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
   // GET /api/v1/public/chat/:token — list conversations for this anonymous session
   router.get("/:token", sessionMiddleware, async (_req, res, next) => {
     try {
-      const { workspaceId, anonymousSessionId } = res.locals as {
+      const { workspaceId, workspaceName, anonymousSessionId } = res.locals as {
         workspaceId: string;
+        workspaceName: string;
         anonymousSessionId: string;
       };
 
@@ -89,7 +93,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
         }),
       );
 
-      res.status(200).json({ conversations: summaries });
+      res.status(200).json({ workspaceName, conversations: summaries });
     } catch (error) {
       next(error);
     }
@@ -99,12 +103,12 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
   router.get("/:token/history/:conversationId", sessionMiddleware, async (req, res, next) => {
     try {
       const { anonymousSessionId } = res.locals as { anonymousSessionId: string };
-      const conversationId = toSingleParam(req.params.conversationId);
-
-      if (!conversationId) {
-        res.status(404).json({ error: { code: "not_found", message: "Conversation not found" } });
+      const parsedParams = publicConversationParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
         return;
       }
+      const { conversationId } = parsedParams.data;
 
       // Verify the conversation belongs to this anonymous session, not just the workspace
       const conversation = await dependencies.conversationRepository.findByIdAndAnonymousSession(

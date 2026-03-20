@@ -7,6 +7,7 @@ import { Send, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Spinner } from '@/components/ui/spinner'
+import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { AssistantMessageContent, linkifyText } from '@/components/dashboard/chat-citations'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 
@@ -53,6 +54,7 @@ function AnonymousChatContent() {
   const [input, setInput] = useState('')
   const {
     messages,
+    workspaceName,
     isLoading,
     isHydrating,
     isUnavailable,
@@ -100,7 +102,7 @@ function AnonymousChatContent() {
   return (
     <>
       <div className="shrink-0 border-b border-border px-6 py-4">
-        <h1 className="text-lg font-medium text-foreground">Chat</h1>
+        <h1 className="text-lg font-medium text-foreground">{workspaceName ?? 'Chat'}</h1>
         <p className="text-sm text-muted-foreground">Ask questions and get AI-powered answers</p>
       </div>
 
@@ -127,9 +129,9 @@ function AnonymousChatContent() {
                     <p className="text-sm whitespace-pre-wrap">{linkifyText(message.content)}</p>
                   </div>
                 ) : (
-                  <div className="max-w-[80%] text-foreground">
+                  <div className="max-w-[80%] rounded-lg border border-border bg-card px-4 py-3 text-foreground">
                     {message.status === 'streaming' && !message.content ? (
-                      <Spinner className="h-4 w-4" />
+                      <TypingIndicator />
                     ) : (
                       <AssistantMessageContent
                         content={message.content}

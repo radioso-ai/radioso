@@ -363,6 +363,7 @@ export interface ChatConversationDetail {
 }
 
 export interface ChatHistoryListResponse {
+  workspaceName?: string
   conversations: ChatConversationSummary[]
 }
 
@@ -491,33 +492,37 @@ const streamChatEvents = async (
       return
     }
 
-    if (eventName === 'conversation') {
-      const payload = JSON.parse(data) as ChatStreamConversation
-      conversationId = payload.conversationId
-      handlers.onConversation?.(payload)
+    const payload = JSON.parse(data) as
+      | (ChatStreamConversation & { type?: 'conversation' })
+      | (ChatStreamChunk & { type?: 'chunk' })
+      | (ChatStreamCompletion & { type?: 'done' })
+
+    const normalizedEventName =
+      eventName === 'message' && 'type' in payload && typeof payload.type === 'string'
+        ? payload.type
+        : eventName
+
+    if (normalizedEventName === 'conversation') {
+      const conversationPayload = payload as ChatStreamConversation
+      conversationId = conversationPayload.conversationId
+      handlers.onConversation?.(conversationPayload)
       return
     }
 
-    if (eventName === 'chunk') {
-      const payload = JSON.parse(data) as ChatStreamChunk
-      answer = `${answer}${payload.text}`
-      handlers.onChunk?.(payload)
+    if (normalizedEventName === 'chunk') {
+      const chunkPayload = payload as ChatStreamChunk
+      answer = `${answer}${chunkPayload.text}`
+      handlers.onChunk?.(chunkPayload)
       return
     }
 
-    if (eventName === 'done') {
-      const payload = JSON.parse(data) as {
-        conversationId?: string
-        answer?: string
-        citations?: Citation[]
-        answerSegments?: AnswerSegment[]
-        retrievalInfo?: RetrievalInfo
-      }
-      conversationId = payload.conversationId ?? conversationId
-      answer = payload.answer ?? answer
-      citations = payload.citations
-      answerSegments = payload.answerSegments
-      retrievalInfo = payload.retrievalInfo
+    if (normalizedEventName === 'done') {
+      const completionPayload = payload as ChatStreamCompletion
+      conversationId = completionPayload.conversationId ?? conversationId
+      answer = completionPayload.answer ?? answer
+      citations = completionPayload.citations
+      answerSegments = completionPayload.answerSegments
+      retrievalInfo = completionPayload.retrievalInfo
       handlers.onDone?.({
         conversationId,
         answer,
@@ -868,12 +873,11 @@ export const publicChatApi = {
     return streamChatEvents(response, handlers)
   },
 
-  async listConversations(token: string): Promise<ChatConversationSummary[]> {
-    const response = await request<ChatHistoryListResponse>(`/public/chat/${token}`, {
+  async listConversations(token: string): Promise<ChatHistoryListResponse> {
+    return request<ChatHistoryListResponse>(`/public/chat/${token}`, {
       method: 'GET',
       credentials: 'include',
     })
-    return response.conversations
   },
 
   async getConversationDetail(token: string, conversationId: string): Promise<ChatConversationDetail> {

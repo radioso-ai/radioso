@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
-    "dev": "node --import tsx ./src/index.ts",
+    "dev": "tsx watch ./src/index.ts",
     "start": "node ./dist/src/index.js",
     "smoke:connectors:whatsapp": "node --import tsx ./scripts/whatsappConnectorSmoke.ts",
     "test": "vitest run",

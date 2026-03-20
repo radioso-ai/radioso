@@ -63,6 +63,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DocumentDetails"
+    put:
+      summary: Update and reprocess an inline-text document
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentCreateRequest"
+      responses:
+        "202":
+          description: Inline-text document updated and queued
+        "409":
+          description: Imported documents must be edited by replacing or re-importing the source file
   /api/v1/document/{documentId}/reprocess:
     post:
       summary: Reprocess a document using the current source of truth

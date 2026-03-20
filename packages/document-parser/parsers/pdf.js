@@ -1,7 +1,6 @@
-import { createRequire } from "node:module";
+import { loadDependency } from "./loadDependency.js";
 
-const require = createRequire(`${process.cwd()}/package.json`);
-const pdfParse = require("pdf-parse");
+const pdfParse = loadDependency("pdf-parse");
 
 export const parsePdf = async ({ buffer }) => {
   const result = await pdfParse(buffer);

@@ -1,7 +1,7 @@
 import type { AuditService } from "../../audit/services/auditService.js";
 import { normalizeMarkdown } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 import type { StructuredAttributes } from "../../retrieval/domain/structuredAttributes.js";
-import { notFound } from "../../../shared/domain/errors.js";
+import { conflict, notFound } from "../../../shared/domain/errors.js";
 
 export type DocumentSourceKind = "inline_text" | "uploaded_file";
 
@@ -194,9 +194,12 @@ export class DocumentIngestionService {
   }
 
   async update(input: { workspaceId: string; documentId: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<{ documentId: string; status: string }> {
-    await this.getDocument(input.workspaceId, input.documentId);
-
     try {
+      const existing = await this.getDocument(input.workspaceId, input.documentId);
+      if (existing.sourceKind === "uploaded_file") {
+        throw conflict("Imported documents cannot be updated through the inline document API");
+      }
+
       const document = await this.documentRepository.updateAndQueue({
         documentId: input.documentId,
         workspaceId: input.workspaceId,

@@ -74,7 +74,8 @@ describe("document deletion", () => {
     );
   });
 
-  it("deletes a stored source object before removing an uploaded document", async () => {
+  it("removes the document record before attempting uploaded source cleanup", async () => {
+    const callOrder: string[] = [];
     const deletedObjects: string[] = [];
     const auditService = createAuditService();
     const service = new DocumentDeletionService(
@@ -106,6 +107,7 @@ describe("document deletion", () => {
           };
         },
         async deleteByIdAndWorkspaceId() {
+          callOrder.push("db");
           return true;
         },
       },
@@ -117,6 +119,7 @@ describe("document deletion", () => {
           throw new Error("unused");
         },
         async delete(input) {
+          callOrder.push("storage");
           deletedObjects.push(input.objectPath);
         },
       },
@@ -128,11 +131,13 @@ describe("document deletion", () => {
       documentId: "doc-1",
     });
 
+    expect(callOrder).toEqual(["db", "storage"]);
     expect(deletedObjects).toEqual(["objects/doc-1"]);
   });
 
-  it("fails safely when uploaded document source cleanup fails", async () => {
+  it("deletes the document even when uploaded source cleanup fails", async () => {
     const auditService = createAuditService();
+    let deleted = false;
     const service = new DocumentDeletionService(
       {
         async findByIdAndWorkspaceId() {
@@ -158,6 +163,7 @@ describe("document deletion", () => {
           };
         },
         async deleteByIdAndWorkspaceId() {
+          deleted = true;
           return true;
         },
       },
@@ -175,16 +181,23 @@ describe("document deletion", () => {
       auditService,
     );
 
-    await expect(
-      service.delete({
-        workspaceId: "workspace-1",
-        documentId: "doc-1",
-      }),
-    ).rejects.toMatchObject({
-      statusCode: 503,
-      code: "service_unavailable",
-      message: "Failed to delete stored document source",
+    await service.delete({
+      workspaceId: "workspace-1",
+      documentId: "doc-1",
     });
+
+    expect(deleted).toBe(true);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.delete",
+        eventStatus: "failure",
+        metadata: {
+          documentId: "doc-1",
+          reason: "gcs unavailable",
+        },
+      }),
+    );
   });
 
   it("throws a not_found error when the document does not belong to the workspace", async () => {

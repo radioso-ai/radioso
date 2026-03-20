@@ -154,6 +154,39 @@ describe("document contract", () => {
     ]);
   });
 
+  it("rejects inline updates for imported documents", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-import-update@example.com");
+
+    const importResponse = await request(app)
+      .post("/api/v1/document/import")
+      .set("Authorization", `Bearer ${token}`)
+      .field("title", "Imported text")
+      .attach("file", Buffer.from("Imported content"), {
+        filename: "import.txt",
+        contentType: "text/plain",
+      });
+
+    expect(importResponse.status).toBe(202);
+
+    const updateResponse = await request(app)
+      .put(`/api/v1/document/${importResponse.body.documentId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Updated title",
+        content: "Updated content",
+      });
+
+    expect(updateResponse.status).toBe(409);
+    expect(updateResponse.body).toMatchObject({
+      error: {
+        code: "conflict",
+        message: "Imported documents cannot be updated through the inline document API",
+      },
+    });
+  });
+
   it("deletes a document for a bearer-authenticated account", async () => {
     const { app } = createTestApp();
 

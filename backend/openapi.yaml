@@ -350,7 +350,7 @@ paths:
           $ref: '#/components/responses/InternalError'
     put:
       tags: [Documents]
-      summary: Update and reprocess a document for the authenticated account
+      summary: Update and reprocess an inline-text document for the authenticated account
       operationId: updateDocument
       security:
         - bearerAuth: []
@@ -376,6 +376,12 @@ paths:
                 $ref: '#/components/schemas/DocumentCreateResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Imported documents must be edited by replacing or re-importing the source file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':

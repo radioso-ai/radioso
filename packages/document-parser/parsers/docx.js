@@ -1,7 +1,6 @@
-import { createRequire } from "node:module";
+import { loadDependency } from "./loadDependency.js";
 
-const require = createRequire(`${process.cwd()}/package.json`);
-const mammoth = require("mammoth");
+const mammoth = loadDependency("mammoth");
 
 export const parseDocx = async ({ buffer }) => {
   const result = await mammoth.extractRawText({ buffer });

@@ -218,6 +218,55 @@ describe("document ingestion", () => {
     expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
   });
 
+  it("rejects inline updates for imported documents", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const auditService = createAuditService();
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+
+    const imported = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Imported",
+      sourceContent: "Parsed content",
+      markdownContent: "Parsed content",
+      status: "ready",
+      sourceKind: "uploaded_file",
+      sourceFilename: "import.txt",
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: "bucket",
+      sourceStorageObject: "objects/doc-1",
+      sourceStorageGeneration: "1",
+      sourceSizeBytes: 14,
+    });
+
+    await expect(
+      ingestionService.update({
+        workspaceId: "workspace-1",
+        documentId: imported.id,
+        title: "Edited",
+        content: "Edited content",
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: "Imported documents cannot be updated through the inline document API",
+    });
+
+    const persisted = await documentRepository.findByIdAndWorkspaceId(imported.id, "workspace-1");
+    expect(persisted?.sourceKind).toBe("uploaded_file");
+    expect(persisted?.sourceStorageObject).toBe("objects/doc-1");
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.update",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          documentId: imported.id,
+          reason: "Imported documents cannot be updated through the inline document API",
+        }),
+      }),
+    );
+  });
+
   it("propagates document metadata to chunks during processing", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

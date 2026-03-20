@@ -1,7 +1,6 @@
-import { createRequire } from "node:module";
+import { loadDependency } from "./loadDependency.js";
 
-const require = createRequire(`${process.cwd()}/package.json`);
-const XLSX = require("xlsx");
+const XLSX = loadDependency("xlsx");
 
 const renderSheet = (workbook, sheetName) => {
   const worksheet = workbook.Sheets[sheetName];

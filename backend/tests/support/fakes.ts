@@ -756,7 +756,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   async listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]> {
     return [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null> {

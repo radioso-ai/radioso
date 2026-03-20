@@ -15,6 +15,7 @@ const envSchema = z.object({
   CONNECTOR_PUBLIC_BASE_URL: z.string().url().optional(),
   DOCUMENT_STORAGE_BUCKET: z.string().min(1).optional(),
   DOCUMENT_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
+  PUBLIC_CHAT_BASE_URL: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

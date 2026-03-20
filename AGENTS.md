@@ -34,6 +34,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - GCS bucket for Terraform remote state; Cloud SQL PostgreSQL 16 for application data (018-terraform-gcp-deploy)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend), ESM local package under `/packages` + Express, Zod, `pg`, Vitest, Supertest, `@google-cloud/storage`, route-scoped multipart parsing, and file-format parsers for PDF, DOCX, TXT, and XLSX (020-document-import-gcs)
 - PostgreSQL 16 for document metadata and extracted text; GCP Cloud Storage bucket for original uploaded files (020-document-import-gcs)
+- TypeScript (Node.js backend, Next.js 16 / React 19 frontend) + Express, Next.js App Router, Shadcn/Radix UI, Tailwind CSS (020-anon-chat-access)
+- PostgreSQL with `pgvector` (existing) (020-anon-chat-access)
 
 
 ## Project Structure
@@ -54,5 +56,6 @@ tests/
 
 ## Recent Changes
 - 020-document-import-gcs: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend), ESM local package under `/packages` + Express, Zod, `pg`, Vitest, Supertest, `@google-cloud/storage`, route-scoped multipart parsing, and file-format parsers for PDF, DOCX, TXT, and XLSX
+- 020-anon-chat-access: Added TypeScript (Node.js backend, Next.js 16 / React 19 frontend) + Express, Next.js App Router, Shadcn/Radix UI, Tailwind CSS
 - 018-terraform-gcp-deploy: Added HCL (Terraform >= 1.5) + `hashicorp/google` provider (~> 5.x), `hashicorp/google-beta` provider (~> 5.x)
 - 016-chat-connectors: Added TypeScript / Node.js (backend), TypeScript / React + Next.js (frontend) + Express.js, pg (PostgreSQL driver), Vitest (testing), Shadcn/ui (frontend components)

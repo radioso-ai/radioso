@@ -188,6 +188,9 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       id: randomUUID(),
       accountId,
       name,
+      anonymousChatEnabled: false,
+      anonymousChatToken: null,
+      anonymousRateLimit: 10,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -204,6 +207,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     return item && item.accountId === accountId ? item : null;
   }
 
+  async findByAnonymousChatToken(token: string): Promise<WorkspaceRecord | null> {
+    return [...this.items.values()].find((w) => w.anonymousChatToken === token) ?? null;
+  }
+
   async listByAccountId(accountId: string): Promise<WorkspaceRecord[]> {
     return [...this.items.values()].filter((w) => w.accountId === accountId);
   }
@@ -218,6 +225,27 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
     const updated = { ...item, name, updatedAt: new Date() };
+    this.items.set(workspaceId, updated);
+    return updated;
+  }
+
+  async updateAnonymousChatSettings(
+    workspaceId: string,
+    enabled: boolean,
+    token: string | null,
+    rateLimit: number,
+  ): Promise<WorkspaceRecord> {
+    const item = this.items.get(workspaceId);
+    if (!item) {
+      throw new Error(`Workspace ${workspaceId} not found`);
+    }
+    const updated = {
+      ...item,
+      anonymousChatEnabled: enabled,
+      anonymousChatToken: token,
+      anonymousRateLimit: rateLimit,
+      updatedAt: new Date(),
+    };
     this.items.set(workspaceId, updated);
     return updated;
   }
@@ -1161,11 +1189,12 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
 export class InMemoryConversationRepository implements ConversationRepositoryPort {
   readonly items = new Map<string, ConversationRecord>();
 
-  async create(workspaceId: string, sourceChannel: string | null = null): Promise<ConversationRecord> {
+  async create(workspaceId: string, sourceChannel: string | null = null, anonymousSessionId: string | null = null): Promise<ConversationRecord> {
     const record: ConversationRecord = {
       id: randomUUID(),
       workspaceId,
       sourceChannel,
+      anonymousSessionId,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -1182,6 +1211,17 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     return [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)
       .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+  }
+
+  async listByAnonymousSession(workspaceId: string, anonymousSessionId: string): Promise<ConversationRecord[]> {
+    return [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId && item.anonymousSessionId === anonymousSessionId)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+  }
+
+  async findByIdAndAnonymousSession(conversationId: string, anonymousSessionId: string): Promise<ConversationRecord | null> {
+    const item = this.items.get(conversationId);
+    return item && item.anonymousSessionId === anonymousSessionId ? item : null;
   }
 
   async touch(conversationId: string): Promise<void> {

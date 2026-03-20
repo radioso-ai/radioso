@@ -115,16 +115,18 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
   );
+  const conversationRepository = new ConversationRepository(database);
+  const messageRepository = new MessageRepository(database);
   const chatService = new ChatService(
-    new ConversationRepository(database),
-    new MessageRepository(database),
+    conversationRepository,
+    messageRepository,
     retrievalPipeline,
     new OpenAIChatGateway(openai.client, openai.chatModel),
     auditService,
   );
   const chatHistoryService = new ChatHistoryService(
-    new ConversationRepository(database),
-    new MessageRepository(database),
+    conversationRepository,
+    messageRepository,
     auditEventRepository,
   );
   const workspaceRepository = new WorkspaceRepository(database);
@@ -156,6 +158,9 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     documentDeletionService,
     chatService,
     chatHistoryService,
+    workspaceRepository,
+    conversationRepository,
+    messageRepository,
     connectorRegistry,
     connectorDb: database,
   };

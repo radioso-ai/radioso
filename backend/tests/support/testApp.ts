@@ -66,6 +66,7 @@ export const createTestEnv = (): Env => ({
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
   DOCUMENT_STORAGE_BUCKET: "test-document-imports",
   DOCUMENT_UPLOAD_MAX_BYTES: 10 * 1024 * 1024,
+  PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
 });
 
 interface TestRepositories {
@@ -381,6 +382,9 @@ export const createTestDependencies = (overrides: {
         messageRepository,
         auditEventRepository,
       ),
+      workspaceRepository,
+      conversationRepository,
+      messageRepository,
       connectorRegistry,
       connectorDb: connectorDb as any,
     };

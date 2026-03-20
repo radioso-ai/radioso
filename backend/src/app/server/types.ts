@@ -7,6 +7,9 @@ import type { RetrievalSettingsService } from "../../modules/settings/services/r
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { AuditService } from "../../modules/audit/services/auditService.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
+import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
+import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
+import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
@@ -24,6 +27,9 @@ export interface AppDependencies {
   documentDeletionService: DocumentDeletionService;
   chatService: ChatService;
   chatHistoryService: ChatHistoryService;
+  workspaceRepository: WorkspaceRepositoryPort;
+  conversationRepository: ConversationRepositoryPort;
+  messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
   connectorDb: Database;
 }

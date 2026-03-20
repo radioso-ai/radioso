@@ -7,6 +7,7 @@ import { Send, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Spinner } from '@/components/ui/spinner'
+import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { AssistantMessageContent, linkifyText } from '@/components/dashboard/chat-citations'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 
@@ -127,9 +128,9 @@ function AnonymousChatContent() {
                     <p className="text-sm whitespace-pre-wrap">{linkifyText(message.content)}</p>
                   </div>
                 ) : (
-                  <div className="max-w-[80%] text-foreground">
+                  <div className="max-w-[80%] rounded-lg border border-border bg-card px-4 py-3 text-foreground">
                     {message.status === 'streaming' && !message.content ? (
-                      <Spinner className="h-4 w-4" />
+                      <TypingIndicator />
                     ) : (
                       <AssistantMessageContent
                         content={message.content}

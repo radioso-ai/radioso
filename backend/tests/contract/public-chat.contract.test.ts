@@ -114,13 +114,13 @@ describe("public chat contract", () => {
     await request(app)
       .post("/api/v1/document/")
       .set("Authorization", `Bearer ${bearerToken}`)
-      .send({ title: "Doc", content: "Info" });
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
 
     const chatToken = await enableAnonymousChat(app, bearerToken);
 
     const chat = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ query: "question", stream: false });
+      .send({ query: "What does this page do?", stream: false });
 
     const cookies = chat.headers["set-cookie"];
     const anonCookie = findAnonymousCookie(cookies);
@@ -132,6 +132,15 @@ describe("public chat contract", () => {
     expect(detail.status).toBe(200);
     expect(detail.body.messages).toBeDefined();
     expect(detail.body.messages.length).toBeGreaterThanOrEqual(2); // user + assistant
+    expect(detail.body.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "assistant",
+          citations: expect.any(Array),
+          answerSegments: expect.any(Array),
+        }),
+      ]),
+    );
   });
 
   it("invalid token returns 404", async () => {

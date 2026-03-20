@@ -43,6 +43,8 @@ interface PreparedSession {
 
 interface ChatAnswerAuditMetadata {
   carryForwardLiterals?: string[];
+  citations?: ChatCitation[];
+  answerSegments?: AnswerSegment[];
 }
 
 interface PresentedAnswer {
@@ -143,6 +145,7 @@ export class ChatService {
         userMessageId: session.userMessage.id,
         assistantMessageId,
         citations: presentation.citations ?? [],
+        answerSegments: presentation.answerSegments,
         diagnostics: session.retrieval.diagnostics,
         stream: input.stream,
       });
@@ -227,6 +230,7 @@ export class ChatService {
         userMessageId: session.userMessage.id,
         assistantMessageId,
         citations: presentation.citations ?? [],
+        answerSegments: presentation.answerSegments,
         diagnostics: session.retrieval.diagnostics,
         stream: input.stream,
       });
@@ -324,6 +328,7 @@ export class ChatService {
     userMessageId: string;
     assistantMessageId: string;
     citations: ChatCitation[];
+    answerSegments?: AnswerSegment[];
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
     stream: boolean;
   }): Promise<void> {
@@ -339,6 +344,8 @@ export class ChatService {
         assistantMessageId: input.assistantMessageId,
         stream: input.stream,
         citationCount: input.citations.length,
+        citations: input.citations,
+        answerSegments: input.answerSegments,
         carryForwardLiterals: this.buildCarryForwardLiterals({
           diagnostics: input.diagnostics,
           citations: input.citations,

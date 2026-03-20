@@ -92,6 +92,8 @@ describe("chat contract", () => {
         }),
         expect.objectContaining({
           role: "assistant",
+          citations: expect.any(Array),
+          answerSegments: expect.any(Array),
           debug: expect.objectContaining({
             eventStatus: "success",
             stream: false,

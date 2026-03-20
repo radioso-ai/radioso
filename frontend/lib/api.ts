@@ -341,6 +341,8 @@ export interface ChatConversationTurn {
   role: 'user' | 'assistant' | 'system'
   content: string
   createdAt: string
+  citations?: Citation[]
+  answerSegments?: AnswerSegment[]
   debug?: ChatConversationTurnDebug
 }
 

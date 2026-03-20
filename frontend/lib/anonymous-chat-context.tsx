@@ -92,6 +92,8 @@ const toChatMessages = (detail: ChatConversationDetail): ChatMessage[] =>
       id: message.id,
       role: message.role,
       content: message.content,
+      citations: message.citations,
+      answerSegments: message.answerSegments,
       retrievalInfo: message.debug?.retrievalInfo,
       status: 'complete' as const,
     }))

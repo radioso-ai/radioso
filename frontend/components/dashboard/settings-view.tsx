@@ -358,13 +358,13 @@ function GeneralTab() {
                   <>
                     <div className="space-y-2">
                       <Label htmlFor="anonChatUrl" className="text-foreground">Public Chat URL</Label>
-                      <div className="flex flex-wrap gap-2">
-                        <Input
+                      <div className="flex flex-wrap items-start gap-2">
+                        <p
                           id="anonChatUrl"
-                          value={anonSettings.anonymousChatUrl}
-                          readOnly
-                          className="min-w-[320px] flex-1 font-mono text-sm"
-                        />
+                          className="min-w-[320px] flex-1 break-all rounded-md border border-border bg-card px-3 py-2 font-mono text-sm text-foreground"
+                        >
+                          {anonSettings.anonymousChatUrl}
+                        </p>
                         <Button asChild variant="secondary">
                           <a
                             href={anonSettings.anonymousChatUrl}

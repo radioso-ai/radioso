@@ -98,6 +98,11 @@ const toChatMessages = (detail: ChatConversationDetail): ChatMessage[] =>
       status: 'complete' as const,
     }))
 
+const getLatestAssistantMessage = (detail: ChatConversationDetail): ChatMessage | null => {
+  const assistantMessages = toChatMessages(detail).filter((message) => message.role === 'assistant')
+  return assistantMessages.at(-1) ?? null
+}
+
 export function AnonymousChatProvider({
   token,
   children,
@@ -182,6 +187,39 @@ export function AnonymousChatProvider({
     [],
   )
 
+  const recoverAssistantMessage = useCallback(
+    async (nextConversationId: string | undefined, assistantMessageId: string) => {
+      if (!nextConversationId) {
+        return false
+      }
+
+      const detail = await publicChatApi.getConversationDetail(token, nextConversationId)
+      const assistantMessage = getLatestAssistantMessage(detail)
+      if (!assistantMessage) {
+        return false
+      }
+
+      setConversationId(detail.conversationId)
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantMessageId
+            ? {
+                ...message,
+                content: assistantMessage.content,
+                citations: assistantMessage.citations,
+                answerSegments: assistantMessage.answerSegments,
+                retrievalInfo: assistantMessage.retrievalInfo,
+                status: 'complete' as const,
+              }
+            : message,
+        ),
+      )
+      setIsLoading(false)
+      return true
+    },
+    [token],
+  )
+
   const sendMessage = useCallback(
     async (content: string) => {
       const query = content.trim()
@@ -241,9 +279,19 @@ export function AnonymousChatProvider({
           },
         )
 
+        const nextConversationId = completion.conversationId ?? conversationId
+        const needsRecovery = !completion.answer?.trim()
+
+        if (needsRecovery) {
+          const recovered = await recoverAssistantMessage(nextConversationId, assistantMessageId)
+          if (recovered) {
+            return
+          }
+        }
+
         if (!didComplete) {
           applyCompletion(assistantMessageId, {
-            conversationId: completion.conversationId,
+            conversationId: nextConversationId,
             answer: completion.answer,
             citations: completion.citations,
             answerSegments: completion.answerSegments,
@@ -276,7 +324,7 @@ export function AnonymousChatProvider({
         setIsLoading(false)
       }
     },
-    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, token],
+    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, recoverAssistantMessage, token],
   )
 
   const value = useMemo<AnonymousChatContextValue>(

@@ -11,6 +11,7 @@ import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/serv
 export interface ChatConversationSummary {
   id: string;
   sourceChannel: string | null;
+  anonymousSessionId: string | null;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -132,6 +133,7 @@ export class ChatHistoryService {
     return {
       id: conversation.id,
       sourceChannel: conversation.sourceChannel,
+      anonymousSessionId: conversation.anonymousSessionId ?? null,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),
       messageCount: messages.length,

@@ -13,6 +13,7 @@ const envSchema = z.object({
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
   CONNECTOR_ENCRYPTION_KEY: z.string().min(1).optional(),
   CONNECTOR_PUBLIC_BASE_URL: z.string().url().optional(),
+  PUBLIC_CHAT_BASE_URL: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -281,6 +281,8 @@ export interface ChatStreamCompletion {
 
 export interface ChatConversationSummary {
   id: string
+  sourceChannel: string | null
+  anonymousSessionId: string | null
   createdAt: string
   updatedAt: string
   messageCount: number
@@ -309,6 +311,7 @@ export interface ChatConversationTurn {
 export interface ChatConversationDetail {
   conversationId: string
   workspaceId: string
+  sourceChannel: string | null
   createdAt: string
   updatedAt: string
   messageCount: number
@@ -731,5 +734,96 @@ export const chatApi = {
     return request<ChatConversationDetail>(`/chat/history/${conversationId}`, {
       method: 'GET',
     }, { withApiToken: true })
+  },
+}
+
+// General Settings types
+export interface GeneralSettings {
+  anonymousChatEnabled: boolean
+  anonymousChatUrl: string | null
+  anonymousRateLimit: number
+}
+
+// General Settings API
+export const generalSettingsApi = {
+  async getGeneralSettings(): Promise<GeneralSettings> {
+    return request<GeneralSettings>('/settings/general', {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async updateGeneralSettings(data: {
+    anonymousChatEnabled: boolean
+    anonymousRateLimit?: number
+  }): Promise<GeneralSettings> {
+    return request<GeneralSettings>('/settings/general', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+}
+
+// Public Chat API (anonymous, cookie-based auth)
+export const publicChatApi = {
+  async sendMessage(token: string, data: { query: string; stream: boolean; conversationId?: string }): Promise<ChatResponse> {
+    return request<ChatResponse>(`/public/chat/${token}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async streamMessage(
+    token: string,
+    data: { query: string; stream: boolean; conversationId?: string },
+    handlers: ChatStreamHandlers = {},
+  ): Promise<ChatResponse> {
+    const response = await fetch(`${API_BASE}/public/chat/${token}`, {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    const contentType = response.headers.get('content-type') ?? ''
+
+    if (!contentType.includes('text/event-stream')) {
+      const payload = (await response.json()) as ChatResponse
+      handlers.onConversation?.({ conversationId: payload.conversationId })
+      if (payload.answer) {
+        handlers.onChunk?.({ text: payload.answer })
+      }
+      handlers.onDone?.({
+        conversationId: payload.conversationId,
+        answer: payload.answer,
+        citations: payload.citations,
+        answerSegments: payload.answerSegments,
+        retrievalInfo: payload.retrievalInfo,
+      })
+      return payload
+    }
+
+    return streamChatEvents(response, handlers)
+  },
+
+  async listConversations(token: string): Promise<ChatConversationSummary[]> {
+    const response = await request<ChatHistoryListResponse>(`/public/chat/${token}`, {
+      method: 'GET',
+      credentials: 'include',
+    })
+    return response.conversations
+  },
+
+  async getConversationDetail(token: string, conversationId: string): Promise<ChatConversationDetail> {
+    return request<ChatConversationDetail>(`/public/chat/${token}/history/${conversationId}`, {
+      method: 'GET',
+      credentials: 'include',
+    })
   },
 }

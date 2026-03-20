@@ -114,6 +114,7 @@ export class ChatService {
     stream: boolean;
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
+    anonymousSessionId?: string | null;
   }): Promise<{
     conversationId: string;
     answer: string;
@@ -167,6 +168,7 @@ export class ChatService {
     stream: boolean;
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
+    anonymousSessionId?: string | null;
   }): AsyncIterable<ChatStreamEvent> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
@@ -250,9 +252,10 @@ export class ChatService {
     query: string;
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
+    anonymousSessionId?: string | null;
   }): Promise<PreparedSession> {
     const conversation = input.conversationId
-      ? await this.ensureConversation(input.conversationId, input.workspaceId)
+      ? await this.ensureConversation(input.conversationId, input.workspaceId, input.anonymousSessionId)
       : null;
     const history = conversation
       ? await this.messageRepository.listByConversationId(conversation.id)
@@ -268,7 +271,7 @@ export class ChatService {
       metadataFilter: input.metadataFilter,
     });
     const persistedConversation =
-      conversation ?? await this.conversationRepository.create(input.workspaceId, input.sourceChannel ?? null);
+      conversation ?? await this.conversationRepository.create(input.workspaceId, input.sourceChannel ?? null, input.anonymousSessionId ?? null);
 
     const userMessage = await this.messageRepository.create({
       conversationId: persistedConversation.id,
@@ -388,7 +391,16 @@ export class ChatService {
     });
   }
 
-  private async ensureConversation(conversationId: string, workspaceId: string) {
+  private async ensureConversation(conversationId: string, workspaceId: string, anonymousSessionId?: string | null) {
+    // When an anonymous session is provided, verify the conversation belongs to that session
+    if (anonymousSessionId) {
+      const conversation = await this.conversationRepository.findByIdAndAnonymousSession(conversationId, anonymousSessionId);
+      if (!conversation || conversation.workspaceId !== workspaceId) {
+        throw notFound("Conversation not found");
+      }
+      return conversation;
+    }
+
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
     if (!conversation) {

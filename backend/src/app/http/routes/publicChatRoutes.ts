@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
+import { badRequest } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { anonymousRateLimiter } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
@@ -10,6 +11,10 @@ const anonymousChatSchema = z.object({
   query: z.string().min(1),
   stream: z.boolean().default(false),
   conversationId: z.string().uuid().optional(),
+});
+
+const publicConversationParamsSchema = z.object({
+  conversationId: z.string().uuid(),
 });
 
 export const createPublicChatRoutes = (dependencies: AppDependencies): Router => {
@@ -97,7 +102,12 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
   router.get("/:token/history/:conversationId", sessionMiddleware, async (req, res, next) => {
     try {
       const { anonymousSessionId } = res.locals as { anonymousSessionId: string };
-      const { conversationId } = req.params;
+      const parsedParams = publicConversationParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      const { conversationId } = parsedParams.data;
 
       // Verify the conversation belongs to this anonymous session, not just the workspace
       const conversation = await dependencies.conversationRepository.findByIdAndAnonymousSession(

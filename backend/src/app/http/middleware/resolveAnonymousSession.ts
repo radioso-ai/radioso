@@ -42,6 +42,7 @@ export const resolveAnonymousSession = (workspaceRepository: WorkspaceRepository
       }
 
       res.locals.workspaceId = workspace.id;
+      res.locals.workspaceName = workspace.name;
       res.locals.anonymousSessionId = sessionId;
       res.locals.anonymousRateLimit = workspace.anonymousRateLimit;
       next();

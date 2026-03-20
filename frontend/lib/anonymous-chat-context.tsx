@@ -32,6 +32,7 @@ export interface ChatMessage {
 
 interface AnonymousChatContextValue {
   messages: ChatMessage[]
+  workspaceName: string | null
   isLoading: boolean
   isHydrating: boolean
   isUnavailable: boolean
@@ -111,6 +112,7 @@ export function AnonymousChatProvider({
   children: ReactNode
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [workspaceName, setWorkspaceName] = useState<string | null>(null)
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
   const [isHydrating, setIsHydrating] = useState(true)
@@ -125,20 +127,23 @@ export function AnonymousChatProvider({
       setIsHydrating(true)
       setIsUnavailable(false)
       setMessages([])
+      setWorkspaceName(null)
       setConversationId(undefined)
       setRateLimitError(null)
       setRetryAfterSeconds(null)
 
       try {
-        const conversations = await publicChatApi.listConversations(token)
+        const response = await publicChatApi.listConversations(token)
         if (cancelled) return
 
-        if (conversations.length === 0) {
+        setWorkspaceName(response.workspaceName ?? null)
+
+        if (response.conversations.length === 0) {
           setIsHydrating(false)
           return
         }
 
-        const detail = await publicChatApi.getConversationDetail(token, conversations[0].id)
+        const detail = await publicChatApi.getConversationDetail(token, response.conversations[0].id)
         if (cancelled) return
 
         setConversationId(detail.conversationId)
@@ -330,6 +335,7 @@ export function AnonymousChatProvider({
   const value = useMemo<AnonymousChatContextValue>(
     () => ({
       messages,
+      workspaceName,
       isLoading,
       isHydrating,
       isUnavailable,
@@ -337,7 +343,7 @@ export function AnonymousChatProvider({
       retryAfterSeconds,
       sendMessage,
     }),
-    [messages, isLoading, isHydrating, isUnavailable, rateLimitError, retryAfterSeconds, sendMessage],
+    [messages, workspaceName, isLoading, isHydrating, isUnavailable, rateLimitError, retryAfterSeconds, sendMessage],
   )
 
   return (

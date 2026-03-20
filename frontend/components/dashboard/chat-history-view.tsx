@@ -163,6 +163,11 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
                   </p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  {conversation.sourceChannel === 'anonymous' && (
+                    <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-amber-700 dark:text-amber-400">
+                      Anonymous
+                    </span>
+                  )}
                   <span className="rounded-full bg-muted px-2.5 py-1">
                     {conversation.messageCount} messages
                   </span>

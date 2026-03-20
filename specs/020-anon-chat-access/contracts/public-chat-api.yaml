@@ -1,0 +1,258 @@
+openapi: 3.1.0
+info:
+  title: Anonymous Chat API
+  version: 1.0.0
+  description: Public endpoints for anonymous (unauthenticated) chat access.
+
+paths:
+  /api/v1/public/chat/{token}:
+    post:
+      operationId: anonymousChat
+      summary: Send a message as an anonymous user
+      description: |
+        Accepts a chat query from an anonymous user. Identifies the user via the
+        `anon_session` cookie (set automatically on first request). Returns a bot
+        response using the workspace's configured knowledge base and LLM settings.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 22
+            maxLength: 22
+          description: The workspace's public chat token from the shareable URL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                  description: The user's chat message.
+                stream:
+                  type: boolean
+                  default: false
+                  description: Whether to stream the response via SSE.
+                conversationId:
+                  type: string
+                  format: uuid
+                  description: Continue an existing conversation. If omitted, a new conversation is created.
+      responses:
+        '200':
+          description: Chat response (non-streaming)
+          headers:
+            Set-Cookie:
+              description: Sets `anon_session` cookie on first request.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE stream (when stream=true)
+        '404':
+          description: Workspace not found or anonymous chat is disabled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded for this anonymous session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+
+    get:
+      operationId: anonymousChatHistory
+      summary: Get conversation history for an anonymous user
+      description: |
+        Returns the conversation history for the current anonymous session
+        (identified by the `anon_session` cookie).
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of conversations for this anonymous session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationList'
+        '404':
+          description: Workspace not found or anonymous chat is disabled.
+
+  /api/v1/public/chat/{token}/history/{conversationId}:
+    get:
+      operationId: anonymousConversationDetail
+      summary: Get a specific anonymous conversation
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Full conversation with messages.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationDetail'
+        '404':
+          description: Conversation not found or does not belong to this session.
+
+  /api/v1/settings/general:
+    get:
+      operationId: getGeneralSettings
+      summary: Get general workspace settings (authenticated)
+      description: Returns general settings including anonymous chat toggle state and public URL.
+      security:
+        - BearerToken: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneralSettings'
+
+    put:
+      operationId: updateGeneralSettings
+      summary: Update general workspace settings (authenticated)
+      security:
+        - BearerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                anonymousChatEnabled:
+                  type: boolean
+                anonymousRateLimit:
+                  type: integer
+                  minimum: 1
+                  maximum: 60
+                  description: Max anonymous messages per session per minute.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneralSettings'
+
+components:
+  schemas:
+    ChatResponse:
+      type: object
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            type: object
+
+    ConversationList:
+      type: object
+      properties:
+        conversations:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              preview:
+                type: string
+              messageCount:
+                type: integer
+              createdAt:
+                type: string
+                format: date-time
+              updatedAt:
+                type: string
+                format: date-time
+
+    ConversationDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+                enum: [user, assistant]
+              content:
+                type: string
+              createdAt:
+                type: string
+                format: date-time
+
+    GeneralSettings:
+      type: object
+      properties:
+        anonymousChatEnabled:
+          type: boolean
+        anonymousChatUrl:
+          type: string
+          nullable: true
+          description: Full public URL when enabled, null when disabled.
+        anonymousRateLimit:
+          type: integer
+          minimum: 1
+          maximum: 60
+          default: 10
+          description: Max anonymous messages per session per minute.
+
+    RateLimitError:
+      type: object
+      properties:
+        code:
+          type: string
+          example: rate_limit_exceeded
+        message:
+          type: string
+          example: "Rate limit exceeded. Please wait before sending another message."
+        retryAfterSeconds:
+          type: integer
+          description: Seconds until the user can send another message.
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+  securitySchemes:
+    BearerToken:
+      type: http
+      scheme: bearer

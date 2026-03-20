@@ -61,6 +61,7 @@ export const createTestEnv = (): Env => ({
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
   SESSION_TTL_HOURS: 168,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
+  PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
 });
 
 interface TestRepositories {
@@ -365,6 +366,9 @@ export const createTestDependencies = (overrides: {
         messageRepository,
         auditEventRepository,
       ),
+      workspaceRepository,
+      conversationRepository,
+      messageRepository,
       connectorRegistry,
       connectorDb: connectorDb as any,
     };

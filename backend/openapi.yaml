@@ -649,6 +649,7 @@ components:
         - warmthLevel
         - citationDisplayEnabled
         - chunkingStrategy
+        - inferenceAnswerEnabled
       properties:
         queryRewriteEnabled:
           type: boolean

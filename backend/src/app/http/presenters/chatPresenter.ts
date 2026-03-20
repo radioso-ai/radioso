@@ -12,9 +12,10 @@ export const sendChatJson = (
     citations?: ChatCitation[];
     answerSegments?: AnswerSegment[];
     retrievalInfo: RetrievalInfo;
+    source?: "retrieval" | "inference";
   },
 ): void => {
-  res.status(200).json(payload);
+  res.status(200).json({ ...payload, source: payload.source ?? "retrieval" });
 };
 
 export const sendChatSse = (
@@ -60,6 +61,7 @@ export const sendChatSse = (
         citations: event.citations,
         answerSegments: event.answerSegments,
         retrievalInfo: event.retrievalInfo,
+        source: event.source ?? "retrieval",
       });
     }
 

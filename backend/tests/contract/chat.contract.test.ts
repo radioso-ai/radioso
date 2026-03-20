@@ -135,7 +135,7 @@ describe("chat contract", () => {
       .send({ query: "What does this page do?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo"]);
+    expect(Object.keys(response.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo", "source"]);
     expect(response.body.conversationId).toBeDefined();
     expect(response.body.answer).toContain("This page parses content");
     expect(Array.isArray(response.body.citations)).toBe(true);
@@ -304,7 +304,7 @@ describe("chat contract", () => {
       });
 
     expect(second.status).toBe(200);
-    expect(Object.keys(second.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo"]);
+    expect(Object.keys(second.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo", "source"]);
     expect(second.body.conversationId).toBe(first.body.conversationId);
   });
 
@@ -330,6 +330,7 @@ describe("chat contract", () => {
         warmthLevel: 5,
         citationDisplayEnabled: false,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
       });
 
     const response = await request(app)
@@ -338,7 +339,7 @@ describe("chat contract", () => {
       .send({ query: "Can you cook Flan?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "conversationId", "retrievalInfo"]);
+    expect(Object.keys(response.body).sort()).toEqual(["answer", "conversationId", "retrievalInfo", "source"]);
     expect(response.body.answer).toContain("could not find relevant information");
     expect(response.body).not.toHaveProperty("citations");
     expect(response.body).not.toHaveProperty("answerSegments");

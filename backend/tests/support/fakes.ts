@@ -238,6 +238,7 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       chunkingStrategy: input.chunkingStrategy,
       attributeControls: input.attributeControls,
       customInstruction: input.customInstruction,
+      inferenceAnswerEnabled: input.inferenceAnswerEnabled,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };

@@ -106,6 +106,7 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
                         content={message.content}
                         citations={message.citations}
                         answerSegments={message.answerSegments}
+                        source={message.source}
                         onOpenDocument={handleOpenCitation}
                       />
                     )}

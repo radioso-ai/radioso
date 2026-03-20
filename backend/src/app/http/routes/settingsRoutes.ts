@@ -29,6 +29,7 @@ const updateSettingsSchema = z.object({
     )
     .optional(),
   customInstruction: z.string().max(2000).optional(),
+  inferenceAnswerEnabled: z.boolean(),
 });
 
 export const createSettingsRoutes = (dependencies: AppDependencies): Router => {

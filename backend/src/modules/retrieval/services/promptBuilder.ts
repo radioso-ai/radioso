@@ -68,6 +68,36 @@ export class PromptBuilder {
     };
   }
 
+  buildInferencePrompt(input: {
+    query: string;
+    history: MessageRecord[];
+    settings: {
+      warmthLevel: number;
+      customInstruction?: string;
+    };
+  }): string {
+    const historySection = input.history
+      .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+      .join("\n");
+    const warmthInstruction = this.getWarmthInstruction(input.settings.warmthLevel);
+    const customInstructionBlock = this.renderCustomInstruction(input.settings.customInstruction);
+
+    return [
+      "You are a helpful assistant.",
+      warmthInstruction,
+      ...(customInstructionBlock ? [customInstructionBlock] : []),
+      "No relevant documents were found for this query. Answer from your general knowledge if appropriate.",
+      "Clearly indicate that your answer is not based on the user's documents.",
+      "Do not use citation markers like [[n]].",
+      "Do not end the answer with a question unless you genuinely need clarification to answer correctly.",
+      "Do not ask a follow-up question just to continue the conversation.",
+      "",
+      `Conversation History:\n${historySection || "No prior history"}`,
+      "",
+      `User Question:\n${input.query}`,
+    ].join("\n");
+  }
+
   private getWarmthInstruction(warmthLevel: number): string {
     if (warmthLevel <= 3) {
       return `Use a terse, direct tone, short answers to the point, don't suggest any help.  Warmth:${warmthLevel} out of 10`;

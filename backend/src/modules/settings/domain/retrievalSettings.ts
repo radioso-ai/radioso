@@ -25,6 +25,7 @@ export interface RetrievalSettingsRecord {
   chunkingStrategy: ChunkingStrategyId;
   attributeControls: AttributeFamilyControl[];
   customInstruction: string;
+  inferenceAnswerEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +41,7 @@ export interface RetrievalSettingsInput {
   chunkingStrategy: ChunkingStrategyId;
   attributeControls: AttributeFamilyControl[];
   customInstruction: string;
+  inferenceAnswerEnabled: boolean;
 }
 
 export const defaultAttributeControls = (): AttributeFamilyControl[] =>
@@ -61,6 +63,7 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   chunkingStrategy: "fixed_window",
   attributeControls: defaultAttributeControls(),
   customInstruction: "",
+  inferenceAnswerEnabled: false,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -112,6 +115,10 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   }
   if (input.customInstruction.length > 2000) {
     throw badRequest("customInstruction must not exceed 2000 characters");
+  }
+
+  if (typeof input.inferenceAnswerEnabled !== "boolean") {
+    throw badRequest("inferenceAnswerEnabled must be a boolean");
   }
 
   return input;

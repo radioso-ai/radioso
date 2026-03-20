@@ -30,6 +30,7 @@ describe("chat integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
       });
 
     const first = await request(app)
@@ -118,6 +119,7 @@ describe("chat integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
       });
 
     const strictResponse = await request(app)
@@ -140,6 +142,7 @@ describe("chat integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
       });
 
     const firstFollowUp = await request(app)
@@ -194,6 +197,7 @@ describe("chat integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
       });
 
     const response = await request(app)
@@ -333,6 +337,7 @@ describe("chat integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
       });
 
     const first = await request(app)
@@ -411,6 +416,7 @@ describe("chat integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
       });
 
     const first = await request(app)
@@ -485,6 +491,7 @@ describe("chat integration", () => {
         warmthLevel: 9,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
       });
 
     const response = await request(app)
@@ -519,6 +526,7 @@ describe("chat integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: false,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
       });
 
     const response = await request(app)
@@ -560,6 +568,7 @@ describe("chat integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
       });
 
     const response = await request(app)

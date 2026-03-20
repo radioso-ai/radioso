@@ -56,6 +56,7 @@ describe("document and settings integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "structured_semantic",
+        inferenceAnswerEnabled: false,
       });
     const document = await request(app)
       .post("/api/v1/document/")
@@ -92,6 +93,7 @@ describe("document and settings integration", () => {
         warmthLevel: 6,
         citationDisplayEnabled: true,
         chunkingStrategy: "structured_semantic",
+        inferenceAnswerEnabled: false,
         attributeControls: defaultAttributeControls().map((control) =>
           control.family === "location"
             ? { ...control, enabled: false }

@@ -40,6 +40,7 @@ describe("retrieval settings contract", () => {
       "citationDisplayEnabled",
       "createdAt",
       "customInstruction",
+      "inferenceAnswerEnabled",
       "queryRewriteEnabled",
       "rerankEnabled",
       "rerankTopK",
@@ -79,6 +80,7 @@ describe("retrieval settings contract", () => {
         citationDisplayEnabled: false,
         chunkingStrategy: "structured_semantic",
         customInstruction: "Always cite the paragraph number from the Immigration Act.",
+        inferenceAnswerEnabled: false,
         attributeControls: [
           { family: "date_point", enabled: true, mode: "hard_filter" },
           { family: "date_range", enabled: true, mode: "boost_only" },
@@ -98,6 +100,7 @@ describe("retrieval settings contract", () => {
       citationDisplayEnabled: false,
       chunkingStrategy: "structured_semantic",
       customInstruction: "Always cite the paragraph number from the Immigration Act.",
+      inferenceAnswerEnabled: false,
       attributeControls: [
         { family: "date_point", enabled: true, mode: "hard_filter" },
         { family: "date_range", enabled: true, mode: "boost_only" },
@@ -111,6 +114,7 @@ describe("retrieval settings contract", () => {
       "citationDisplayEnabled",
       "createdAt",
       "customInstruction",
+      "inferenceAnswerEnabled",
       "queryRewriteEnabled",
       "rerankEnabled",
       "rerankTopK",
@@ -140,6 +144,7 @@ describe("retrieval settings contract", () => {
         citationDisplayEnabled: false,
         chunkingStrategy: "structured_semantic",
         customInstruction: "Cite paragraph numbers.",
+        inferenceAnswerEnabled: false,
         attributeControls: [
           { family: "date_point", enabled: true, mode: "hard_filter" },
           { family: "date_range", enabled: false, mode: "boost_only" },
@@ -160,6 +165,7 @@ describe("retrieval settings contract", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
       });
 
     expect(firstUpdate.status).toBe(200);

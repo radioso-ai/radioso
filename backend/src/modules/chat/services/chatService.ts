@@ -6,6 +6,7 @@ import type { ConversationRecord, ConversationRepositoryPort } from "../../../db
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
+import { PromptBuilder } from "../../retrieval/services/promptBuilder.js";
 import { AnswerPresentationService, type AnswerSegment, type ChatCitation } from "./answerPresentationService.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 
@@ -32,6 +33,7 @@ export type ChatStreamEvent =
       citations?: ChatCitation[];
       answerSegments?: AnswerSegment[];
       retrievalInfo: RetrievalInfo;
+      source?: "retrieval" | "inference";
     };
 
 interface PreparedSession {
@@ -104,6 +106,7 @@ export class ChatService {
     private readonly retrievalPipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
+    private readonly promptBuilder: PromptBuilder = new PromptBuilder(),
   ) {}
 
   async answer(input: {
@@ -120,6 +123,7 @@ export class ChatService {
     citations?: ChatCitation[];
     answerSegments?: AnswerSegment[];
     retrievalInfo: RetrievalInfo;
+    source?: "retrieval" | "inference";
   }> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
@@ -152,6 +156,7 @@ export class ChatService {
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
         retrievalInfo: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),
+        source: presentation.source,
       };
     } catch (error) {
       await this.recordFailure(input, session, assistantMessageId, error);
@@ -181,8 +186,34 @@ export class ChatService {
 
       let rawAnswer = "";
       const sanitizer = new CitationAnchorSanitizer();
+      let answerSource: "retrieval" | "inference" = "retrieval";
 
-      if (session.retrieval.contexts.length === 0) {
+      if (session.retrieval.contexts.length === 0 && (session.retrieval.responseSettings?.inferenceAnswerEnabled ?? false)) {
+        answerSource = "inference";
+        try {
+          const inferencePrompt = this.promptBuilder.buildInferencePrompt({
+            query: input.query,
+            history: session.history,
+            settings: {
+              warmthLevel: session.retrieval.responseSettings?.warmthLevel ?? 5,
+              customInstruction: undefined,
+            },
+          });
+          for await (const text of this.chatGateway.streamAnswer({
+            query: input.query,
+            history: session.history,
+            prompt: inferencePrompt,
+          })) {
+            if (!text) continue;
+            rawAnswer = `${rawAnswer}${text}`;
+            yield { type: "chunk", text };
+          }
+        } catch {
+          answerSource = "retrieval";
+          rawAnswer = "I could not find relevant information in your documents.";
+          yield { type: "chunk", text: rawAnswer };
+        }
+      } else if (session.retrieval.contexts.length === 0) {
         rawAnswer = "I could not find relevant information in your documents.";
         yield {
           type: "chunk",
@@ -236,6 +267,7 @@ export class ChatService {
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
         retrievalInfo: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),
+        source: answerSource,
       };
     } catch (error) {
       await this.recordFailure(input, session, assistantMessageId, error);
@@ -288,17 +320,47 @@ export class ChatService {
   private async generateAnswerPresentation(
     session: PreparedSession,
     query: string,
-  ): Promise<PresentedAnswer> {
-    const answer =
-      session.retrieval.contexts.length === 0
-        ? "I could not find relevant information in your documents."
-        : await this.chatGateway.answer({
+  ): Promise<PresentedAnswer & { source: "retrieval" | "inference" }> {
+    if (session.retrieval.contexts.length === 0) {
+      const inferenceEnabled = session.retrieval.responseSettings?.inferenceAnswerEnabled ?? false;
+
+      if (inferenceEnabled) {
+        try {
+          const inferencePrompt = this.promptBuilder.buildInferencePrompt({
             query,
             history: session.history,
-            prompt: session.retrieval.prompt,
+            settings: {
+              warmthLevel: session.retrieval.responseSettings?.warmthLevel ?? 5,
+              customInstruction: undefined,
+            },
           });
+          const answer = await this.chatGateway.answer({
+            query,
+            history: session.history,
+            prompt: inferencePrompt,
+          });
+          return { answer, source: "inference" };
+        } catch {
+          return {
+            answer: "I could not find relevant information in your documents.",
+            source: "retrieval",
+          };
+        }
+      }
 
-    return this.presentAnswer(session, answer);
+      return {
+        answer: "I could not find relevant information in your documents.",
+        source: "retrieval",
+      };
+    }
+
+    const answer = await this.chatGateway.answer({
+      query,
+      history: session.history,
+      prompt: session.retrieval.prompt,
+    });
+
+    return { ...this.presentAnswer(session, answer), source: "retrieval" };
   }
 
   private presentAnswer(session: PreparedSession, answer: string): PresentedAnswer {

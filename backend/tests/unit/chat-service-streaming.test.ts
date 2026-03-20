@@ -83,6 +83,7 @@ describe("chat service streaming", () => {
       answer: "full answer",
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer", citationIndices: [0] }],
+      source: "retrieval",
       retrievalInfo: expect.objectContaining({
         parsedQuery: {
           semanticQuery: "page do",
@@ -282,6 +283,7 @@ describe("chat service streaming", () => {
       answer: "full answer  marker",
       citations: undefined,
       answerSegments: undefined,
+      source: "retrieval",
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,

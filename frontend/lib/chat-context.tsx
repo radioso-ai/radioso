@@ -24,6 +24,7 @@ export interface ChatMessage {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   retrievalInfo?: RetrievalInfo
+  source?: 'retrieval' | 'inference'
   status: 'complete' | 'streaming' | 'error'
 }
 
@@ -108,6 +109,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
                 retrievalInfo: completion.retrievalInfo,
+                source: completion.source,
                 status: 'complete',
               }
             : message,
@@ -198,6 +200,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             citations: completion.citations,
             answerSegments: completion.answerSegments,
             retrievalInfo: completion.retrievalInfo,
+            source: completion.source,
           })
         }
       } catch (error) {

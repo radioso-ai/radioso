@@ -21,6 +21,7 @@ describe("retrieval settings and chunking", () => {
         chunkingStrategy: "fixed_window",
         attributeControls: defaultAttributeControls(),
         customInstruction: "",
+        inferenceAnswerEnabled: false,
       }),
     ).toThrow("vectorTopK must be between 1 and 300");
   });
@@ -38,6 +39,7 @@ describe("retrieval settings and chunking", () => {
         chunkingStrategy: "fixed_window",
         attributeControls: defaultAttributeControls(),
         customInstruction: "",
+        inferenceAnswerEnabled: false,
       }),
     ).toThrow("warmthLevel must be between 1 and 10");
   });
@@ -55,6 +57,7 @@ describe("retrieval settings and chunking", () => {
         chunkingStrategy: "unsupported" as never,
         attributeControls: defaultAttributeControls(),
         customInstruction: "",
+        inferenceAnswerEnabled: false,
       }),
     ).toThrow("chunkingStrategy must be a supported strategy");
   });
@@ -72,6 +75,7 @@ describe("retrieval settings and chunking", () => {
         chunkingStrategy: "fixed_window",
         attributeControls: defaultAttributeControls().slice(0, 2),
         customInstruction: "",
+        inferenceAnswerEnabled: false,
       }),
     ).toThrow("attributeControls must include every supported family");
   });
@@ -114,8 +118,27 @@ describe("retrieval settings and chunking", () => {
         chunkingStrategy: "fixed_window",
         attributeControls: defaultAttributeControls(),
         customInstruction: "a".repeat(2001),
+        inferenceAnswerEnabled: false,
       }),
     ).toThrow("customInstruction must not exceed 2000 characters");
+  });
+
+  it("rejects non-boolean inferenceAnswerEnabled", () => {
+    expect(() =>
+      validateRetrievalSettings({
+        queryRewriteEnabled: false,
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+        attributeControls: defaultAttributeControls(),
+        customInstruction: "",
+        inferenceAnswerEnabled: "yes" as unknown as boolean,
+      }),
+    ).toThrow("inferenceAnswerEnabled must be a boolean");
   });
 
   it("accepts valid customInstruction values", () => {
@@ -129,6 +152,7 @@ describe("retrieval settings and chunking", () => {
       citationDisplayEnabled: true,
       chunkingStrategy: "fixed_window" as const,
       attributeControls: defaultAttributeControls(),
+      inferenceAnswerEnabled: false,
     };
 
     expect(validateRetrievalSettings({ ...baseInput, customInstruction: "" })).toBeDefined();

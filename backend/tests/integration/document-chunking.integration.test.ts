@@ -22,6 +22,7 @@ describe("document chunking integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "structured_semantic",
+        inferenceAnswerEnabled: false,
       });
 
     const document = await request(app)
@@ -101,6 +102,7 @@ Only future ingests change.`,
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "structured_semantic",
+        inferenceAnswerEnabled: false,
       });
 
     expect(settings.status).toBe(200);

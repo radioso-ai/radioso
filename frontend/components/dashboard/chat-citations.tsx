@@ -49,6 +49,7 @@ interface AssistantMessageContentProps {
   content: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  source?: 'retrieval' | 'inference'
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
 }
 
@@ -107,6 +108,7 @@ export function AssistantMessageContent({
   content,
   citations = [],
   answerSegments,
+  source,
   onOpenDocument,
 }: AssistantMessageContentProps) {
   const [citationNotice, setCitationNotice] = useState<{ scope: string; message: string } | null>(null)
@@ -174,6 +176,11 @@ export function AssistantMessageContent({
       <div className="text-sm whitespace-pre-wrap break-words">
         {contentNodes}
       </div>
+      {source === 'inference' ? (
+        <p className="text-xs text-muted-foreground italic border-l-2 border-muted-foreground/30 pl-2" role="status">
+          Answered from general knowledge — not based on your documents
+        </p>
+      ) : null}
       {citationNotice && citationNotice.scope === noticeScope ? (
         <p className="text-xs text-amber-300" role="status">
           {citationNotice.message}

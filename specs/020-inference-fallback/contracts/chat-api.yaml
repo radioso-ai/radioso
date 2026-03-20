@@ -1,0 +1,56 @@
+# Chat API Contract Changes
+# Only the delta for the inference fallback feature is shown.
+
+paths:
+  /chat:
+    post:
+      summary: Send a chat message (non-streaming)
+      responses:
+        200:
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+
+  /chat/stream:
+    post:
+      summary: Send a chat message (SSE streaming)
+      responses:
+        200:
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                description: >
+                  Events: "conversation" (conversationId), "chunk" (text),
+                  "done" (full ChatResponse payload)
+
+components:
+  schemas:
+    ChatResponse:
+      type: object
+      properties:
+        conversationId:
+          type: string
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCitation'
+          nullable: true
+        answerSegments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnswerSegment'
+          nullable: true
+        retrievalInfo:
+          $ref: '#/components/schemas/RetrievalInfo'
+        source:
+          type: string
+          enum: [retrieval, inference]
+          default: retrieval
+          description: >
+            Indicates answer provenance. "retrieval" for document-grounded
+            answers, "inference" for general-knowledge fallback answers.

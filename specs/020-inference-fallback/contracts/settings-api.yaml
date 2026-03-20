@@ -1,0 +1,49 @@
+# Settings API Contract Changes
+# Only the delta for the inference fallback feature is shown.
+
+paths:
+  /settings/retrieval:
+    get:
+      summary: Get retrieval settings for current workspace
+      responses:
+        200:
+          description: Current retrieval settings (with defaults for missing fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+    put:
+      summary: Update retrieval settings for current workspace
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetrievalSettingsInput'
+      responses:
+        200:
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+
+components:
+  schemas:
+    RetrievalSettings:
+      type: object
+      properties:
+        # ... existing fields unchanged ...
+        inferenceAnswerEnabled:
+          type: boolean
+          default: false
+          description: >
+            When true, generate LLM answers from general knowledge
+            when no documents match a query.
+
+    RetrievalSettingsInput:
+      type: object
+      properties:
+        # ... existing fields unchanged ...
+        inferenceAnswerEnabled:
+          type: boolean
+          description: Enable or disable inference-based fallback answers.

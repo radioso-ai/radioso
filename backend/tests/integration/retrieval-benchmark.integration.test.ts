@@ -37,6 +37,7 @@ describe("retrieval benchmark integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
+        inferenceAnswerEnabled: false,
         attributeControls: [
           { family: "date_point", enabled: true, mode: "hard_filter" },
           { family: "date_range", enabled: true, mode: "boost_only" },

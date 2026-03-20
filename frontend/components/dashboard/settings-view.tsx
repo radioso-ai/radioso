@@ -475,6 +475,20 @@ function RetrievalSettingsPanel() {
               />
             </div>
 
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="inferenceAnswer" className="text-foreground">Inference Fallback</Label>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  When no documents match, answer from general knowledge instead of showing a no-results message.
+                </p>
+              </div>
+              <Switch
+                id="inferenceAnswer"
+                checked={settings.inferenceAnswerEnabled}
+                onCheckedChange={(checked) => updateSetting('inferenceAnswerEnabled', checked)}
+              />
+            </div>
+
             <div className="space-y-3">
               <div className="space-y-1">
                 <Label htmlFor="customInstruction" className="text-foreground">Custom Instruction</Label>

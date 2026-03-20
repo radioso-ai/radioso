@@ -173,6 +173,7 @@ export interface RetrievalSettings {
   chunkingStrategy: 'fixed_window' | 'structured_semantic'
   attributeControls: AttributeFamilyControl[]
   customInstruction: string
+  inferenceAnswerEnabled: boolean
 }
 
 export interface AttributeFamilyControl {
@@ -261,6 +262,7 @@ export interface ChatResponse {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   retrievalInfo: RetrievalInfo
+  source?: 'retrieval' | 'inference'
 }
 
 export interface ChatStreamConversation {
@@ -277,6 +279,7 @@ export interface ChatStreamCompletion {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   retrievalInfo?: RetrievalInfo
+  source?: 'retrieval' | 'inference'
 }
 
 export interface ChatConversationSummary {
@@ -433,6 +436,7 @@ const streamChatEvents = async (
   let citations: Citation[] | undefined
   let answerSegments: AnswerSegment[] | undefined
   let retrievalInfo: RetrievalInfo | undefined
+  let source: 'retrieval' | 'inference' | undefined
 
   const flushEvent = (rawEvent: string) => {
     if (!rawEvent.trim()) {
@@ -466,18 +470,21 @@ const streamChatEvents = async (
         citations?: Citation[]
         answerSegments?: AnswerSegment[]
         retrievalInfo?: RetrievalInfo
+        source?: 'retrieval' | 'inference'
       }
       conversationId = payload.conversationId ?? conversationId
       answer = payload.answer ?? answer
       citations = payload.citations
       answerSegments = payload.answerSegments
       retrievalInfo = payload.retrievalInfo
+      source = payload.source
       handlers.onDone?.({
         conversationId,
         answer,
         citations,
         answerSegments,
         retrievalInfo,
+        source,
       })
     }
   }
@@ -509,6 +516,7 @@ const streamChatEvents = async (
     citations,
     answerSegments,
     retrievalInfo: retrievalInfo!,
+    source,
   }
 }
 

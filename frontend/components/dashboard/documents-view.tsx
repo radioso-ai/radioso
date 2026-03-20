@@ -49,6 +49,19 @@ interface DocumentsViewProps {
 const EMPTY_FORM = {
   title: '',
   content: '',
+  metadata: '',
+}
+
+const parseMetadata = (raw: string): Record<string, string | number | boolean | null> | null => {
+  const trimmed = raw.trim()
+  if (!trimmed) return {}
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+    return parsed
+  } catch {
+    return null
+  }
 }
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
@@ -84,6 +97,7 @@ export function DocumentsView({
   const [editorMode, setEditorMode] = useState<EditorMode>('create')
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null)
   const [formValues, setFormValues] = useState(EMPTY_FORM)
+  const [metadataError, setMetadataError] = useState<string | null>(null)
   const [deleteCandidate, setDeleteCandidate] = useState<DocumentSummary | null>(null)
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null)
   const [deleteErrorById, setDeleteErrorById] = useState<Record<string, string>>({})
@@ -133,6 +147,7 @@ export function DocumentsView({
     setEditorMode('create')
     setEditingDocumentId(null)
     setFormValues(EMPTY_FORM)
+    setMetadataError(null)
     setIsDocumentLoading(false)
   }, [])
 
@@ -149,9 +164,13 @@ export function DocumentsView({
 
     try {
       const document = await documentsApi.getDocument(documentId)
+      const metadataStr = Object.keys(document.metadata ?? {}).length > 0
+        ? JSON.stringify(document.metadata, null, 2)
+        : ''
       setFormValues({
         title: document.title,
         content: document.content,
+        metadata: metadataStr,
       })
     } catch (error) {
       console.error('Failed to load document:', error)
@@ -196,7 +215,7 @@ export function DocumentsView({
     setDocuments((currentDocuments) => {
       const withoutCurrent = currentDocuments.filter((document) => document.id !== documentId)
       return [nextDocument, ...withoutCurrent].sort(
-        (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+        (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
       )
     })
   }
@@ -215,12 +234,20 @@ export function DocumentsView({
     e.preventDefault()
     if (!formValues.title.trim() || !formValues.content.trim()) return
 
+    const metadata = parseMetadata(formValues.metadata)
+    if (metadata === null) {
+      setMetadataError('Invalid JSON. Must be an object with string, number, boolean, or null values.')
+      return
+    }
+
+    setMetadataError(null)
     setIsSaving(true)
 
     try {
       const payload = {
         title: formValues.title.trim(),
         content: formValues.content.trim(),
+        ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
       }
       const response = editingDocumentId
         ? await documentsApi.updateDocument(editingDocumentId, payload)
@@ -336,16 +363,33 @@ export function DocumentsView({
               disabled={isSaving}
             />
           </div>
-          <div className="flex min-h-0 flex-1 flex-col space-y-2">
+          <div className="space-y-2 flex-shrink-0">
             <Label htmlFor="content">Content</Label>
             <Textarea
               id="content"
               value={formValues.content}
               onChange={(e) => setFormValues((current) => ({ ...current, content: e.target.value }))}
               placeholder="Paste your document content here..."
-              className="h-full min-h-[320px] flex-1 resize-none overflow-y-auto [field-sizing:fixed]"
+              className="min-h-[320px] resize-none overflow-y-auto [field-sizing:fixed]"
               disabled={isSaving}
             />
+          </div>
+          <div className="space-y-2 flex-shrink-0">
+            <Label htmlFor="metadata">Metadata (JSON)</Label>
+            <Textarea
+              id="metadata"
+              value={formValues.metadata}
+              onChange={(e) => {
+                setFormValues((current) => ({ ...current, metadata: e.target.value }))
+                setMetadataError(null)
+              }}
+              placeholder='{"key": "value"}'
+              className="min-h-[80px] resize-none font-mono text-sm"
+              disabled={isSaving}
+            />
+            {metadataError ? (
+              <p className="text-sm text-destructive">{metadataError}</p>
+            ) : null}
           </div>
         </div>
         <div className="mt-4 flex flex-shrink-0 justify-end gap-2 border-t pt-4">
@@ -550,6 +594,18 @@ export function DocumentsView({
                         <p className="mt-1 text-sm text-muted-foreground">
                           Updated {formatDate(doc.updatedAt)}
                         </p>
+                        {doc.metadata && Object.keys(doc.metadata).length > 0 ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {Object.entries(doc.metadata).map(([key, value]) => (
+                              <span
+                                key={key}
+                                className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                              >
+                                {key}: {String(value)}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     </button>
                     <div className="flex items-center gap-2">

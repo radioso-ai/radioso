@@ -28,7 +28,6 @@ import {
   History,
   FileText,
   Settings,
-  Key,
   LogOut,
   Moon,
   Sun,
@@ -50,7 +49,6 @@ interface AppSidebarProps {
 const navItems = [
   { id: 'documents' as const, label: 'Documents', icon: FileText },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
-  { id: 'token' as const, label: 'API Token', icon: Key },
 ]
 
 export function AppSidebar({ accountId, currentView }: AppSidebarProps) {

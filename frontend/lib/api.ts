@@ -184,6 +184,7 @@ export interface AttributeFamilyControl {
 export interface DocumentCreateRequest {
   title: string
   content: string
+  metadata?: Record<string, string | number | boolean | null>
 }
 
 export interface DocumentCreateResponse {
@@ -198,6 +199,7 @@ export interface DocumentSummary {
   ragStatus: 'processed' | 'pending'
   createdAt: string
   updatedAt: string
+  metadata: Record<string, string | number | boolean | null>
 }
 
 export interface DocumentDetails extends DocumentSummary {

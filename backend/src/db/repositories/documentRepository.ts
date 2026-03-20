@@ -127,7 +127,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
       `SELECT id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata
        FROM documents
        WHERE workspace_id = $1
-       ORDER BY updated_at DESC`,
+       ORDER BY created_at DESC`,
       [workspaceId],
     );
 

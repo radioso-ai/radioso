@@ -8,7 +8,6 @@ import { ChatView } from './chat-view'
 import { ChatHistoryView } from './chat-history-view'
 import { DocumentsView } from './documents-view'
 import { SettingsView } from './settings-view'
-import { TokenView } from './token-view'
 import { buildAccountRoute, type DashboardSection } from '@/lib/dashboard-routes'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -49,7 +48,6 @@ export function DashboardShell({
             />
           )}
           {currentView === 'settings' && <SettingsView />}
-          {currentView === 'token' && <TokenView />}
         </div>
       </SidebarInset>
     </SidebarProvider>

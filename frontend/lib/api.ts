@@ -359,6 +359,7 @@ export interface ChatConversationDetail {
 }
 
 export interface ChatHistoryListResponse {
+  workspaceName?: string
   conversations: ChatConversationSummary[]
 }
 
@@ -855,12 +856,11 @@ export const publicChatApi = {
     return streamChatEvents(response, handlers)
   },
 
-  async listConversations(token: string): Promise<ChatConversationSummary[]> {
-    const response = await request<ChatHistoryListResponse>(`/public/chat/${token}`, {
+  async listConversations(token: string): Promise<ChatHistoryListResponse> {
+    return request<ChatHistoryListResponse>(`/public/chat/${token}`, {
       method: 'GET',
       credentials: 'include',
     })
-    return response.conversations
   },
 
   async getConversationDetail(token: string, conversationId: string): Promise<ChatConversationDetail> {

@@ -65,8 +65,9 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
   // GET /api/v1/public/chat/:token — list conversations for this anonymous session
   router.get("/:token", sessionMiddleware, async (_req, res, next) => {
     try {
-      const { workspaceId, anonymousSessionId } = res.locals as {
+      const { workspaceId, workspaceName, anonymousSessionId } = res.locals as {
         workspaceId: string;
+        workspaceName: string;
         anonymousSessionId: string;
       };
 
@@ -92,7 +93,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
         }),
       );
 
-      res.status(200).json({ conversations: summaries });
+      res.status(200).json({ workspaceName, conversations: summaries });
     } catch (error) {
       next(error);
     }

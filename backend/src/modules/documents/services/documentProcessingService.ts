@@ -19,6 +19,7 @@ import type {
 } from "./documentIngestionService.js";
 import { type EmbeddingService } from "../../retrieval/services/embeddingService.js";
 import type { ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
+import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
 
 export interface RetrievalSettingsReaderPort {
   getForWorkspace(workspaceId: string): Promise<RetrievalSettingsRecord>;
@@ -30,6 +31,37 @@ export interface ChunkingStrategyRegistryPort {
 
 export type DocumentProcessingOutcome = "completed" | "stale" | "deleted";
 
+export interface DocumentSourceContentServicePort {
+  materialize(document: {
+    id: string;
+    workspaceId: string;
+    title: string;
+    sourceContent: string;
+    markdownContent: string;
+    status: string;
+    revision: number;
+    metadata: Record<string, unknown>;
+    sourceKind: "inline_text" | "uploaded_file";
+    sourceFilename?: string | null;
+    sourceMimeType?: string | null;
+    sourceStorageBucket?: string | null;
+    sourceStorageObject?: string | null;
+    sourceStorageGeneration?: string | null;
+    sourceSizeBytes?: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }): Promise<MaterializedDocumentContent>;
+}
+
+const inlineDocumentSourceContentService: DocumentSourceContentServicePort = {
+  async materialize(document) {
+    return {
+      sourceContent: document.sourceContent,
+      markdownContent: document.markdownContent,
+    };
+  },
+};
+
 export class DocumentProcessingService {
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
@@ -38,6 +70,7 @@ export class DocumentProcessingService {
     private readonly auditService: AuditService,
     private readonly retrievalSettingsService: RetrievalSettingsReaderPort,
     private readonly chunkingStrategyRegistry: ChunkingStrategyRegistryPort,
+    private readonly documentSourceContentService: DocumentSourceContentServicePort = inlineDocumentSourceContentService,
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -54,21 +87,39 @@ export class DocumentProcessingService {
       return document ? "stale" : "deleted";
     }
 
+    const materializedContent = await this.documentSourceContentService.materialize(markedProcessing);
+    const documentWithContent =
+      materializedContent.sourceContent !== markedProcessing.sourceContent ||
+      materializedContent.markdownContent !== markedProcessing.markdownContent
+        ? await this.documentRepository.updateDerivedContentForRevision({
+            documentId: markedProcessing.id,
+            workspaceId: job.workspaceId,
+            revision: job.documentRevision,
+            sourceContent: materializedContent.sourceContent,
+            markdownContent: materializedContent.markdownContent,
+          })
+        : markedProcessing;
+
+    if (!documentWithContent) {
+      const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
+      return currentDocument ? "stale" : "deleted";
+    }
+
     const documentSubject = deriveDocumentSubject({
-      title: markedProcessing.title,
-      content: normalizeMarkdown(markedProcessing.sourceContent),
+      title: documentWithContent.title,
+      content: normalizeMarkdown(documentWithContent.sourceContent),
     });
     const settings = await this.retrievalSettingsService.getForWorkspace(job.workspaceId);
     const chunkingStrategy = this.chunkingStrategyRegistry.get(settings.chunkingStrategy);
     const chunks = await chunkingStrategy.chunk({
-      title: markedProcessing.title,
-      content: markedProcessing.markdownContent,
+      title: documentWithContent.title,
+      content: documentWithContent.markdownContent,
     });
     const enrichedChunks = chunks.map((chunk) => {
       const structuredAttributes = normalizeStructuredAttributes(extractRawStructuredAttributes(chunk.content));
       const attributeText = renderStructuredAttributeSummary(structuredAttributes);
       const searchText = renderSearchText({
-        title: markedProcessing.title,
+        title: documentWithContent.title,
         subjectLabel: documentSubject,
         sectionPath: deriveChunkSection(chunk.content),
         attributeText,
@@ -86,7 +137,7 @@ export class DocumentProcessingService {
     );
     const persistedChunks: ChunkRecord[] = enrichedChunks.map((chunk, index) => ({
       id: randomUUID(),
-      documentId: markedProcessing.id,
+      documentId: documentWithContent.id,
       workspaceId: job.workspaceId,
       chunkIndex: chunk.chunkIndex,
       content: chunk.content,
@@ -95,12 +146,12 @@ export class DocumentProcessingService {
       embedding: embeddings[index] ?? [],
       startOffset: chunk.startOffset,
       endOffset: chunk.endOffset,
-      metadata: markedProcessing.metadata ?? {},
+      metadata: documentWithContent.metadata ?? {},
       createdAt: new Date(),
     }));
 
     const published = await this.chunkRepository.publishForDocumentRevision({
-      documentId: markedProcessing.id,
+      documentId: documentWithContent.id,
       workspaceId: job.workspaceId,
       revision: job.documentRevision,
       chunks: persistedChunks,
@@ -112,11 +163,11 @@ export class DocumentProcessingService {
     }
 
     await this.auditService.record({
-      workspaceId: job.workspaceId,
-      eventType: "document.process",
-      eventStatus: "success",
-      metadata: {
-        documentId: markedProcessing.id,
+        workspaceId: job.workspaceId,
+        eventType: "document.process",
+        eventStatus: "success",
+        metadata: {
+        documentId: documentWithContent.id,
         revision: job.documentRevision,
       },
     });

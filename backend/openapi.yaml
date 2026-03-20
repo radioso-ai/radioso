@@ -275,8 +275,42 @@ paths:
             schema:
               $ref: '#/components/schemas/DocumentCreateRequest'
       responses:
-        '201':
-          description: Document accepted and processed
+        '202':
+          description: Document accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/document/import:
+    post:
+      tags: [Documents]
+      summary: Import a supported document file for the authenticated account
+      operationId: importDocument
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                title:
+                  type: string
+                  minLength: 1
+      responses:
+        '202':
+          description: Document import accepted and queued
           content:
             application/json:
               schema:
@@ -334,8 +368,8 @@ paths:
             schema:
               $ref: '#/components/schemas/DocumentCreateRequest'
       responses:
-        '200':
-          description: Document updated and processed
+        '202':
+          description: Document updated and queued
           content:
             application/json:
               schema:
@@ -364,6 +398,33 @@ paths:
       responses:
         '204':
           description: Document deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/document/{documentId}/reprocess:
+    post:
+      tags: [Documents]
+      summary: Requeue a document for processing
+      operationId: reprocessDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Document reprocessing requested
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentCreateResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -713,10 +774,10 @@ components:
           format: uuid
         status:
           type: string
-          enum: [received, normalized, chunked, embedded, ready]
+          enum: [queued, processing, ready, failed]
     DocumentSummary:
       type: object
-      required: [id, title, status, ragStatus, createdAt, updatedAt]
+      required: [id, title, status, ragStatus, createdAt, updatedAt, metadata, sourceKind]
       properties:
         id:
           type: string
@@ -738,6 +799,17 @@ components:
           type: object
           additionalProperties: true
           default: {}
+        sourceKind:
+          type: string
+          enum: [inline_text, uploaded_file]
+        sourceFilename:
+          type:
+            - string
+            - 'null'
+        sourceMimeType:
+          type:
+            - string
+            - 'null'
     DocumentDetails:
       allOf:
         - $ref: '#/components/schemas/DocumentSummary'

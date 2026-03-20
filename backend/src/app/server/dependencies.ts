@@ -17,8 +17,11 @@ import { AuditService } from "../../modules/audit/services/auditService.js";
 import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
+import { DocumentImportService } from "../../modules/documents/services/documentImportService.js";
 import { DocumentProcessingService } from "../../modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
+import { DocumentSourceContentService } from "../../modules/documents/services/documentSourceContentService.js";
+import { GcsDocumentStorage, type DocumentStoragePort } from "../../modules/documents/infra/gcsDocumentStorage.js";
 import { PgLexicalSearch } from "../../modules/retrieval/infra/lexicalSearch.js";
 import { PgVectorSearch } from "../../modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../modules/retrieval/services/candidatePreparationService.js";
@@ -38,6 +41,7 @@ import { RetrievalSettingsService } from "../../modules/settings/services/retrie
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { Database } from "../../shared/infra/database.js";
+import { AppError } from "../../shared/domain/errors.js";
 import { OpenAIClients } from "../../shared/infra/openaiClient.js";
 import { createLogger } from "../../shared/observability/logger.js";
 import type { AppDependencies } from "./types.js";
@@ -51,6 +55,20 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
   const embeddingService = new EmbeddingService(new OpenAIEmbeddingGateway(openai.client, openai.vectorModel));
   const documentRepository = new DocumentRepository(database);
+  const documentStorage: DocumentStoragePort = env.DOCUMENT_STORAGE_BUCKET
+    ? new GcsDocumentStorage(env.DOCUMENT_STORAGE_BUCKET)
+    : {
+        async upload() {
+          throw new AppError(503, "service_unavailable", "Document import storage is not configured");
+        },
+        async read() {
+          throw new AppError(503, "service_unavailable", "Document import storage is not configured");
+        },
+        async delete() {
+          throw new AppError(503, "service_unavailable", "Document import storage is not configured");
+        },
+      };
+  const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingJobRepository = new DocumentProcessingJobRepository(database);
   const chunkRepository = new ChunkRepository(database);
   const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
@@ -64,10 +82,16 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     auditService,
     retrievalSettingsService,
     chunkingStrategyRegistry,
+    documentSourceContentService,
   );
   const documentIngestionService = new DocumentIngestionService(
     documentRepository,
     auditService,
+  );
+  const documentImportService = new DocumentImportService(
+    documentRepository,
+    auditService,
+    documentStorage,
   );
   const documentProcessingWorker = new DocumentProcessingWorker(
     documentRepository,
@@ -76,7 +100,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     auditService,
     logger,
   );
-  const documentDeletionService = new DocumentDeletionService(documentRepository, auditService);
+  const documentDeletionService = new DocumentDeletionService(documentRepository, documentStorage, auditService);
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
     embeddingService,
@@ -127,6 +151,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     workspaceService,
     retrievalSettingsService,
     documentIngestionService,
+    documentImportService,
     documentProcessingWorker,
     documentDeletionService,
     chatService,

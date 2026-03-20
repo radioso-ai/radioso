@@ -52,6 +52,8 @@ const EMPTY_FORM = {
   metadata: '',
 }
 
+const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.docx,.xlsx'
+
 const parseMetadata = (raw: string): Record<string, string | number | boolean | null> | null => {
   const trimmed = raw.trim()
   if (!trimmed) return {}
@@ -92,11 +94,16 @@ export function DocumentsView({
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [isDocumentLoading, setIsDocumentLoading] = useState(false)
   const [editorMode, setEditorMode] = useState<EditorMode>('create')
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null)
   const [formValues, setFormValues] = useState(EMPTY_FORM)
+  const [importTitle, setImportTitle] = useState('')
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
   const [metadataError, setMetadataError] = useState<string | null>(null)
   const [deleteCandidate, setDeleteCandidate] = useState<DocumentSummary | null>(null)
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null)
@@ -156,6 +163,17 @@ export function DocumentsView({
     setIsDialogOpen(true)
   }
 
+  const resetImportDialog = useCallback(() => {
+    setImportTitle('')
+    setImportFile(null)
+    setImportError(null)
+  }, [])
+
+  const openImportDialog = () => {
+    resetImportDialog()
+    setIsImportDialogOpen(true)
+  }
+
   const openEditDialog = useCallback(async (documentId: string) => {
     setIsDialogOpen(true)
     setEditorMode('edit')
@@ -164,6 +182,12 @@ export function DocumentsView({
 
     try {
       const document = await documentsApi.getDocument(documentId)
+      if (document.sourceKind !== 'inline_text') {
+        setIsDialogOpen(false)
+        onSelectedDocumentChange?.(null)
+        resetEditor()
+        return
+      }
       const metadataStr = Object.keys(document.metadata ?? {}).length > 0
         ? JSON.stringify(document.metadata, null, 2)
         : ''
@@ -230,6 +254,13 @@ export function DocumentsView({
     }
   }
 
+  const handleImportDialogChange = (open: boolean) => {
+    setIsImportDialogOpen(open)
+    if (!open && !isImporting) {
+      resetImportDialog()
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formValues.title.trim() || !formValues.content.trim()) return
@@ -263,6 +294,28 @@ export function DocumentsView({
       console.error(`Failed to ${editingDocumentId ? 'update' : 'create'} document:`, error)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleImportSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!importFile) {
+      setImportError('Choose a supported file to import.')
+      return
+    }
+
+    setImportError(null)
+    setIsImporting(true)
+
+    try {
+      const response = await documentsApi.importDocument(importFile, importTitle)
+      await upsertDocument(response.documentId)
+      setIsImportDialogOpen(false)
+      resetImportDialog()
+    } catch (error) {
+      setImportError(getErrorMessage(error, 'Failed to import document. Please try again.'))
+    } finally {
+      setIsImporting(false)
     }
   }
 
@@ -482,10 +535,16 @@ export function DocumentsView({
           <h1 className="text-lg font-medium text-foreground">Documents</h1>
           <p className="text-sm text-muted-foreground">Manage your knowledge base</p>
         </div>
-        <Button size="sm" onClick={openCreateDialog}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Document
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={openImportDialog}>
+            <FileText className="mr-2 h-4 w-4" />
+            Import File
+          </Button>
+          <Button size="sm" onClick={openCreateDialog}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Document
+          </Button>
+        </div>
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
@@ -499,6 +558,64 @@ export function DocumentsView({
             </DialogDescription>
           </DialogHeader>
           {renderDialogBody()}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isImportDialogOpen} onOpenChange={handleImportDialogChange}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Document</DialogTitle>
+            <DialogDescription>
+              Upload a PDF, TXT, DOCX, or XLSX file to add it to your knowledge base.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleImportSubmit} className="mt-4 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="importFile">File</Label>
+              <Input
+                id="importFile"
+                type="file"
+                accept={SUPPORTED_IMPORT_EXTENSIONS}
+                disabled={isImporting}
+                onChange={(event) => {
+                  setImportFile(event.target.files?.[0] ?? null)
+                  setImportError(null)
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="importTitle">Title override (optional)</Label>
+              <Input
+                id="importTitle"
+                value={importTitle}
+                onChange={(event) => {
+                  setImportTitle(event.target.value)
+                  setImportError(null)
+                }}
+                placeholder="Use the filename by default"
+                disabled={isImporting}
+              />
+            </div>
+            {importError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {importError}
+              </p>
+            ) : null}
+            <div className="flex justify-end gap-2 border-t pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleImportDialogChange(false)}
+                disabled={isImporting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isImporting || !importFile}>
+                {isImporting ? <Spinner className="mr-2" /> : null}
+                Import Document
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -554,10 +671,16 @@ export function DocumentsView({
             <p className="mb-4 max-w-sm text-sm text-muted-foreground">
               Add documents to your knowledge base to start asking questions.
             </p>
-            <Button size="sm" onClick={openCreateDialog}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add your first document
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={openImportDialog}>
+                <FileText className="mr-2 h-4 w-4" />
+                Import your first file
+              </Button>
+              <Button size="sm" onClick={openCreateDialog}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add your first document
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="w-full space-y-4">
@@ -567,6 +690,7 @@ export function DocumentsView({
                 const deleteError = deleteErrorById[doc.id]
                 const retryError = retryErrorById[doc.id]
                 const isFailed = doc.status.toLowerCase() === 'failed'
+                const isImported = doc.sourceKind === 'uploaded_file'
                 return (
                   <div
                     key={doc.id}
@@ -574,11 +698,16 @@ export function DocumentsView({
                   >
                     <button
                       type="button"
-                      onClick={() =>
-                        onSelectedDocumentChange
-                          ? onSelectedDocumentChange(doc.id)
-                          : void openEditDialog(doc.id)
-                      }
+                      onClick={() => {
+                        if (isImported) {
+                          return
+                        }
+                        if (onSelectedDocumentChange) {
+                          onSelectedDocumentChange(doc.id)
+                          return
+                        }
+                        void openEditDialog(doc.id)
+                      }}
                       className="flex min-w-0 items-start gap-4 text-left"
                     >
                       <div className="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-muted">
@@ -589,11 +718,18 @@ export function DocumentsView({
                           <h3 className="text-sm font-medium text-foreground [overflow-wrap:anywhere]">
                             {doc.title}
                           </h3>
-                          <Pencil className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                          {isImported ? null : (
+                            <Pencil className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                          )}
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">
                           Updated {formatDate(doc.updatedAt)}
                         </p>
+                        {isImported && doc.sourceFilename ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Imported from {doc.sourceFilename}
+                          </p>
+                        ) : null}
                         {doc.metadata && Object.keys(doc.metadata).length > 0 ? (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {Object.entries(doc.metadata).map(([key, value]) => (

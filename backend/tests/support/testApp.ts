@@ -10,8 +10,10 @@ import { ChatService, type ChatGateway } from "../../src/modules/chat/services/c
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
+import { DocumentSourceContentService } from "../../src/modules/documents/services/documentSourceContentService.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { StructuredSemanticChunkingStrategy, type ChunkingSimilarityPort } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
@@ -42,6 +44,7 @@ import {
   InMemoryChunkRepository,
   InMemoryConversationRepository,
   InMemoryDocumentRepository,
+  InMemoryDocumentStorage,
   InMemoryDocumentProcessingJobRepository,
   InMemoryMessageRepository,
   InMemoryRetrievalSettingsRepository,
@@ -61,6 +64,8 @@ export const createTestEnv = (): Env => ({
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
   SESSION_TTL_HOURS: 168,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
+  DOCUMENT_STORAGE_BUCKET: "test-document-imports",
+  DOCUMENT_UPLOAD_MAX_BYTES: 10 * 1024 * 1024,
 });
 
 interface TestRepositories {
@@ -90,6 +95,7 @@ export const createTestDependencies = (overrides: {
   const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
   documentRepository.setJobRepository(documentProcessingJobRepository);
   const chunkRepository = new InMemoryChunkRepository(documentRepository);
+  const documentStorage = new InMemoryDocumentStorage();
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
   const embeddingGateway: EmbeddingGateway = {
@@ -240,6 +246,7 @@ export const createTestDependencies = (overrides: {
   };
   const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
   const retrievalSettingsService = new RetrievalSettingsService(retrievalSettingsRepository, auditService);
+  const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingService = new DocumentProcessingService(
     documentRepository,
     chunkRepository,
@@ -247,6 +254,7 @@ export const createTestDependencies = (overrides: {
     auditService,
     retrievalSettingsService,
     chunkingStrategyRegistry,
+    documentSourceContentService,
   );
   const documentProcessingWorker = new DocumentProcessingWorker(
     documentRepository,
@@ -257,6 +265,16 @@ export const createTestDependencies = (overrides: {
   );
   const documentIngestionService = new DocumentIngestionService(
     documentRepository,
+    auditService,
+  );
+  const documentImportService = new DocumentImportService(
+    documentRepository,
+    auditService,
+    documentStorage,
+  );
+  const documentDeletionService = new DocumentDeletionService(
+    documentRepository,
+    documentStorage,
     auditService,
   );
   const drainDocumentProcessingQueue = async () => {
@@ -345,14 +363,12 @@ export const createTestDependencies = (overrides: {
         workspaceTokenRepository,
         workspaceService,
       }),
-      workspaceService,
-      retrievalSettingsService,
-      documentIngestionService,
-      documentProcessingWorker,
-      documentDeletionService: new DocumentDeletionService(
-        documentRepository,
-        auditService,
-      ),
+    workspaceService,
+    retrievalSettingsService,
+    documentIngestionService,
+    documentImportService,
+    documentProcessingWorker,
+    documentDeletionService,
       chatService: new ChatService(
         conversationRepository,
         messageRepository,

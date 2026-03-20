@@ -2,6 +2,7 @@ import type { ChatService } from "../../modules/chat/services/chatService.js";
 import type { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
 import type { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import type { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
+import type { DocumentImportService } from "../../modules/documents/services/documentImportService.js";
 import type { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
 import type { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
@@ -20,6 +21,7 @@ export interface AppDependencies {
   workspaceService: WorkspaceService;
   retrievalSettingsService: RetrievalSettingsService;
   documentIngestionService: DocumentIngestionService;
+  documentImportService: DocumentImportService;
   documentProcessingWorker: DocumentProcessingWorker;
   documentDeletionService: DocumentDeletionService;
   chatService: ChatService;

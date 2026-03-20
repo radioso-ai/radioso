@@ -325,6 +325,63 @@ describeIfDatabase("persistence integration", () => {
     await database.query("DELETE FROM accounts WHERE id = $1 OR id = $2", [ownerAccount.id, otherAccount.id]);
   });
 
+  it("persists uploaded document source metadata and derived content updates", async () => {
+    const accountRepository = new AccountRepository(database);
+    const documentRepository = new DocumentRepository(database);
+
+    const account = await accountRepository.create({
+      email: `imported-source-${randomUUID()}@example.com`,
+      passwordHash: "hash-source",
+    });
+    const workspace = await workspaceRepository.create(account.id, "Imported Workspace");
+
+    const document = await documentRepository.create({
+      workspaceId: workspace.id,
+      title: "Imported notes",
+      sourceContent: "",
+      markdownContent: "",
+      status: "queued",
+      sourceKind: "uploaded_file",
+      sourceFilename: "notes.txt",
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: "test-bucket",
+      sourceStorageObject: "workspaces/test/documents/notes.txt",
+      sourceStorageGeneration: "1",
+      sourceSizeBytes: 12,
+    });
+
+    expect(document.sourceKind).toBe("uploaded_file");
+    expect(document.sourceStorageObject).toBe("workspaces/test/documents/notes.txt");
+
+    const updated = await documentRepository.updateDerivedContentForRevision({
+      documentId: document.id,
+      workspaceId: workspace.id,
+      revision: document.revision,
+      sourceContent: "Imported body",
+      markdownContent: "Imported body",
+    });
+
+    expect(updated?.sourceContent).toBe("Imported body");
+
+    const persisted = await documentRepository.findByIdAndWorkspaceId(document.id, workspace.id);
+    expect(persisted).toMatchObject({
+      sourceKind: "uploaded_file",
+      sourceFilename: "notes.txt",
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: "test-bucket",
+      sourceStorageObject: "workspaces/test/documents/notes.txt",
+      sourceStorageGeneration: "1",
+      sourceSizeBytes: 12,
+      sourceContent: "Imported body",
+    });
+
+    const deleted = await documentRepository.deleteByIdAndWorkspaceId(document.id, workspace.id);
+    expect(deleted).toBe(true);
+
+    await database.query("DELETE FROM workspaces WHERE id = $1", [workspace.id]);
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
+  });
+
   it("records retrieval execution metadata without exposing new response fields", async () => {
     const logger = {
       info: vi.fn(),

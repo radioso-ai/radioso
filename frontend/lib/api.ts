@@ -93,8 +93,9 @@ const request = async <T>(
   options: { withSession?: boolean; withApiToken?: boolean } = {},
 ): Promise<T> => {
   const headers = new Headers(init.headers);
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
 
-  if (!headers.has("Content-Type") && init.body) {
+  if (!headers.has("Content-Type") && init.body && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
   if (!headers.has("X-Forwarded-Prefix")) {
@@ -200,6 +201,9 @@ export interface DocumentSummary {
   createdAt: string
   updatedAt: string
   metadata: Record<string, string | number | boolean | null>
+  sourceKind: 'inline_text' | 'uploaded_file'
+  sourceFilename?: string | null
+  sourceMimeType?: string | null
 }
 
 export interface DocumentDetails extends DocumentSummary {
@@ -668,6 +672,19 @@ export const documentsApi = {
   async deleteDocument(documentId: string): Promise<void> {
     await request<void>(`/document/${documentId}`, {
       method: "DELETE",
+    }, { withApiToken: true })
+  },
+
+  async importDocument(file: File, title?: string): Promise<DocumentCreateResponse> {
+    const formData = new FormData()
+    formData.set("file", file)
+    if (title?.trim()) {
+      formData.set("title", title.trim())
+    }
+
+    return request<DocumentCreateResponse>("/document/import", {
+      method: "POST",
+      body: formData,
     }, { withApiToken: true })
   }
 }

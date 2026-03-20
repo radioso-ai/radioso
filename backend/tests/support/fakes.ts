@@ -12,8 +12,12 @@ import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repo
 import type {
   ChunkRecord,
   ChunkRepositoryPort,
+  DocumentCreateInput,
+  DocumentDerivedContentUpdateInput,
+  DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
+  DocumentUpdateInput,
 } from "../../src/modules/documents/services/documentIngestionService.js";
 import type {
   DocumentProcessingJobRecord,
@@ -32,6 +36,12 @@ import type { MessageRecord, MessageRepositoryPort } from "../../src/db/reposito
 import type { RetrievalSettingsInput, RetrievalSettingsRecord } from "../../src/modules/settings/domain/retrievalSettings.js";
 import type { RetrievalSettingsRepositoryPort } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
+import type {
+  DocumentStorageDeleteInput,
+  DocumentStoragePort,
+  DocumentStorageReadInput,
+  DocumentStorageUploadInput,
+} from "../../src/modules/documents/infra/gcsDocumentStorage.js";
 import { notFound } from "../../src/shared/domain/errors.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
@@ -698,13 +708,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     this.jobRepository = jobRepository;
   }
 
-  async createAndQueue(input: {
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord> {
+  async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
     const record: DocumentRecord = {
       id: randomUUID(),
       workspaceId: input.workspaceId,
@@ -712,6 +716,13 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? {},
+      sourceKind: input.sourceKind ?? "inline_text",
+      sourceFilename: input.sourceFilename ?? null,
+      sourceMimeType: input.sourceMimeType ?? null,
+      sourceStorageBucket: input.sourceStorageBucket ?? null,
+      sourceStorageObject: input.sourceStorageObject ?? null,
+      sourceStorageGeneration: input.sourceStorageGeneration ?? null,
+      sourceSizeBytes: input.sourceSizeBytes ?? null,
       status: "queued",
       revision: 1,
       failureReason: null,
@@ -728,14 +739,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async create(input: {
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    status: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord> {
+  async create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord> {
     const record: DocumentRecord = {
       id: randomUUID(),
       workspaceId: input.workspaceId,
@@ -743,6 +747,13 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? {},
+      sourceKind: input.sourceKind ?? "inline_text",
+      sourceFilename: input.sourceFilename ?? null,
+      sourceMimeType: input.sourceMimeType ?? null,
+      sourceStorageBucket: input.sourceStorageBucket ?? null,
+      sourceStorageObject: input.sourceStorageObject ?? null,
+      sourceStorageGeneration: input.sourceStorageGeneration ?? null,
+      sourceSizeBytes: input.sourceSizeBytes ?? null,
       status: input.status,
       revision: 1,
       failureReason: null,
@@ -809,15 +820,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async update(input: {
-    documentId: string;
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    status: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord> {
+  async update(input: DocumentUpdateInput): Promise<DocumentRecord> {
     const existing = this.items.get(input.documentId);
     if (!existing || existing.workspaceId !== input.workspaceId) {
       throw new Error(`Document ${input.documentId} not found`);
@@ -829,6 +832,13 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? existing.metadata ?? {},
+      sourceKind: input.sourceKind ?? existing.sourceKind,
+      sourceFilename: input.sourceFilename ?? existing.sourceFilename ?? null,
+      sourceMimeType: input.sourceMimeType ?? existing.sourceMimeType ?? null,
+      sourceStorageBucket: input.sourceStorageBucket ?? existing.sourceStorageBucket ?? null,
+      sourceStorageObject: input.sourceStorageObject ?? existing.sourceStorageObject ?? null,
+      sourceStorageGeneration: input.sourceStorageGeneration ?? existing.sourceStorageGeneration ?? null,
+      sourceSizeBytes: input.sourceSizeBytes ?? existing.sourceSizeBytes ?? null,
       status: input.status,
       revision: existing.revision + 1,
       failureReason: null,
@@ -838,14 +848,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async updateAndQueue(input: {
-    documentId: string;
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord> {
+  async updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord> {
     const existing = this.items.get(input.documentId);
     if (!existing || existing.workspaceId !== input.workspaceId) {
       throw notFound("Document not found");
@@ -857,6 +860,13 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? existing.metadata ?? {},
+      sourceKind: input.sourceKind ?? existing.sourceKind,
+      sourceFilename: input.sourceFilename ?? existing.sourceFilename ?? null,
+      sourceMimeType: input.sourceMimeType ?? existing.sourceMimeType ?? null,
+      sourceStorageBucket: input.sourceStorageBucket ?? existing.sourceStorageBucket ?? null,
+      sourceStorageObject: input.sourceStorageObject ?? existing.sourceStorageObject ?? null,
+      sourceStorageGeneration: input.sourceStorageGeneration ?? existing.sourceStorageGeneration ?? null,
+      sourceSizeBytes: input.sourceSizeBytes ?? existing.sourceSizeBytes ?? null,
       status: "queued",
       revision: existing.revision + 1,
       failureReason: null,
@@ -914,6 +924,22 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
+  async updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null> {
+    const existing = this.items.get(input.documentId);
+    if (!existing || existing.workspaceId !== input.workspaceId || existing.revision !== input.revision) {
+      return null;
+    }
+
+    const record: DocumentRecord = {
+      ...existing,
+      sourceContent: input.sourceContent,
+      markdownContent: input.markdownContent,
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
   async deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean> {
     const existing = this.items.get(documentId);
     if (!existing || existing.workspaceId !== workspaceId) {
@@ -922,6 +948,45 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 
     this.items.delete(documentId);
     return true;
+  }
+}
+
+export class InMemoryDocumentStorage implements DocumentStoragePort {
+  readonly objects = new Map<string, { buffer: Buffer; generation: string; sizeBytes: number }>();
+  deleteFailures = new Set<string>();
+
+  async upload(input: DocumentStorageUploadInput) {
+    const objectPath = `workspaces/${input.workspaceId}/documents/${input.documentId}/${input.filename}`;
+    const generation = `${this.objects.size + 1}`;
+    this.objects.set(objectPath, {
+      buffer: Buffer.from(input.buffer),
+      generation,
+      sizeBytes: input.buffer.length,
+    });
+
+    return {
+      bucket: "test-document-imports",
+      objectPath,
+      generation,
+      sizeBytes: input.buffer.length,
+    };
+  }
+
+  async read(input: DocumentStorageReadInput): Promise<Buffer> {
+    const existing = this.objects.get(input.objectPath);
+    if (!existing) {
+      throw new Error(`Missing object ${input.objectPath}`);
+    }
+
+    return Buffer.from(existing.buffer);
+  }
+
+  async delete(input: DocumentStorageDeleteInput): Promise<void> {
+    if (this.deleteFailures.has(input.objectPath)) {
+      throw new Error(`Failed to delete ${input.objectPath}`);
+    }
+
+    this.objects.delete(input.objectPath);
   }
 }
 

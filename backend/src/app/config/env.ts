@@ -13,6 +13,8 @@ const envSchema = z.object({
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
   CONNECTOR_ENCRYPTION_KEY: z.string().min(1).optional(),
   CONNECTOR_PUBLIC_BASE_URL: z.string().url().optional(),
+  DOCUMENT_STORAGE_BUCKET: z.string().min(1).optional(),
+  DOCUMENT_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
 });
 
 export type Env = z.infer<typeof envSchema>;

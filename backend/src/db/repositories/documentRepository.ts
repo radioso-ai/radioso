@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import type { DocumentRecord, DocumentRepositoryPort } from "../../modules/documents/services/documentIngestionService.js";
+import type {
+  DocumentCreateInput,
+  DocumentDerivedContentUpdateInput,
+  DocumentQueueUpdateInput,
+  DocumentRecord,
+  DocumentRepositoryPort,
+  DocumentUpdateInput,
+} from "../../modules/documents/services/documentIngestionService.js";
 import type { Database } from "../../shared/infra/database.js";
 import { notFound } from "../../shared/domain/errors.js";
 
@@ -16,6 +23,13 @@ interface DocumentRow {
   created_at: Date;
   updated_at: Date;
   metadata: Record<string, unknown>;
+  source_kind: "inline_text" | "uploaded_file";
+  source_filename: string | null;
+  source_mime_type: string | null;
+  source_storage_bucket: string | null;
+  source_storage_object: string | null;
+  source_storage_generation: string | null;
+  source_size_bytes: number | null;
 }
 
 const mapDocument = (row: DocumentRow): DocumentRecord => ({
@@ -30,26 +44,78 @@ const mapDocument = (row: DocumentRow): DocumentRecord => ({
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
   metadata: row.metadata ?? {},
+  sourceKind: row.source_kind,
+  sourceFilename: row.source_filename,
+  sourceMimeType: row.source_mime_type,
+  sourceStorageBucket: row.source_storage_bucket,
+  sourceStorageObject: row.source_storage_object,
+  sourceStorageGeneration: row.source_storage_generation,
+  sourceSizeBytes: row.source_size_bytes,
 });
+
+const documentSelect = `
+  id,
+  workspace_id,
+  title,
+  source_content,
+  markdown_content,
+  status,
+  revision,
+  failure_reason,
+  created_at,
+  updated_at,
+  metadata,
+  source_kind,
+  source_filename,
+  source_mime_type,
+  source_storage_bucket,
+  source_storage_object,
+  source_storage_generation,
+  source_size_bytes
+`;
 
 export class DocumentRepository implements DocumentRepositoryPort {
   constructor(private readonly database: Database) {}
 
-  async createAndQueue(input: {
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord> {
+  async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
     return this.database.withTransaction(async (client) => {
       const documentId = randomUUID();
       const [documentRow] = (
         await client.query<DocumentRow>(
-          `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, revision, metadata)
-           VALUES ($1, $2, $3, $4, $5, 'queued', 1, $6::jsonb)
-           RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
-          [documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, JSON.stringify(input.metadata ?? {})],
+          `INSERT INTO documents (
+             id,
+             workspace_id,
+             title,
+             source_content,
+             markdown_content,
+             status,
+             revision,
+             metadata,
+             source_kind,
+             source_filename,
+             source_mime_type,
+             source_storage_bucket,
+             source_storage_object,
+             source_storage_generation,
+             source_size_bytes
+           )
+           VALUES ($1, $2, $3, $4, $5, 'queued', 1, $6::jsonb, $7, $8, $9, $10, $11, $12, $13)
+           RETURNING ${documentSelect}`,
+          [
+            documentId,
+            input.workspaceId,
+            input.title,
+            input.sourceContent,
+            input.markdownContent,
+            JSON.stringify(input.metadata ?? {}),
+            input.sourceKind ?? "inline_text",
+            input.sourceFilename ?? null,
+            input.sourceMimeType ?? null,
+            input.sourceStorageBucket ?? null,
+            input.sourceStorageObject ?? null,
+            input.sourceStorageGeneration ?? null,
+            input.sourceSizeBytes ?? null,
+          ],
         )
       ).rows;
 
@@ -63,32 +129,49 @@ export class DocumentRepository implements DocumentRepositoryPort {
     });
   }
 
-  async create(input: {
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    status: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord> {
+  async create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord> {
     const [row] = await this.database.query<DocumentRow>(
-      `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, revision, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, 1, $7::jsonb)
-       RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
-      [randomUUID(), input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.status, JSON.stringify(input.metadata ?? {})],
+      `INSERT INTO documents (
+         id,
+         workspace_id,
+         title,
+         source_content,
+         markdown_content,
+         status,
+         revision,
+         metadata,
+         source_kind,
+         source_filename,
+         source_mime_type,
+         source_storage_bucket,
+         source_storage_object,
+         source_storage_generation,
+         source_size_bytes
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, 1, $7::jsonb, $8, $9, $10, $11, $12, $13, $14)
+       RETURNING ${documentSelect}`,
+      [
+        randomUUID(),
+        input.workspaceId,
+        input.title,
+        input.sourceContent,
+        input.markdownContent,
+        input.status,
+        JSON.stringify(input.metadata ?? {}),
+        input.sourceKind ?? "inline_text",
+        input.sourceFilename ?? null,
+        input.sourceMimeType ?? null,
+        input.sourceStorageBucket ?? null,
+        input.sourceStorageObject ?? null,
+        input.sourceStorageGeneration ?? null,
+        input.sourceSizeBytes ?? null,
+      ],
     );
 
     return mapDocument(row);
   }
 
-  async updateAndQueue(input: {
-    documentId: string;
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord> {
+  async updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord> {
     return this.database.withTransaction(async (client) => {
       const documentResult = await client.query<DocumentRow>(
         `UPDATE documents
@@ -100,11 +183,31 @@ export class DocumentRepository implements DocumentRepositoryPort {
              failed_at = NULL,
              failure_reason = NULL,
              updated_at = NOW(),
-             metadata = COALESCE($6::jsonb, metadata)
+             metadata = COALESCE($6::jsonb, metadata),
+             source_kind = COALESCE($7, source_kind),
+             source_filename = COALESCE($8, source_filename),
+             source_mime_type = COALESCE($9, source_mime_type),
+             source_storage_bucket = COALESCE($10, source_storage_bucket),
+             source_storage_object = COALESCE($11, source_storage_object),
+             source_storage_generation = COALESCE($12, source_storage_generation),
+             source_size_bytes = COALESCE($13, source_size_bytes)
          WHERE id = $1 AND workspace_id = $2
-         RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
-        // undefined metadata preserves existing value (COALESCE falls through); {} explicitly clears it.
-        [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.metadata !== undefined ? JSON.stringify(input.metadata) : null],
+         RETURNING ${documentSelect}`,
+        [
+          input.documentId,
+          input.workspaceId,
+          input.title,
+          input.sourceContent,
+          input.markdownContent,
+          input.metadata !== undefined ? JSON.stringify(input.metadata) : null,
+          input.sourceKind ?? null,
+          input.sourceFilename ?? null,
+          input.sourceMimeType ?? null,
+          input.sourceStorageBucket ?? null,
+          input.sourceStorageObject ?? null,
+          input.sourceStorageGeneration ?? null,
+          input.sourceSizeBytes ?? null,
+        ],
       );
       const [documentRow] = documentResult.rows;
 
@@ -124,7 +227,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
   async listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]> {
     const rows = await this.database.query<DocumentRow>(
-      `SELECT id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata
+      `SELECT ${documentSelect}
        FROM documents
        WHERE workspace_id = $1
        ORDER BY created_at DESC`,
@@ -136,7 +239,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
   async findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null> {
     const [row] = await this.database.query<DocumentRow>(
-      `SELECT id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata
+      `SELECT ${documentSelect}
        FROM documents
        WHERE id = $1 AND workspace_id = $2`,
       [documentId, workspaceId],
@@ -145,15 +248,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return row ? mapDocument(row) : null;
   }
 
-  async update(input: {
-    documentId: string;
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    status: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord> {
+  async update(input: DocumentUpdateInput): Promise<DocumentRecord> {
     const [row] = await this.database.query<DocumentRow>(
       `UPDATE documents
        SET title = $3,
@@ -164,14 +259,51 @@ export class DocumentRepository implements DocumentRepositoryPort {
            failed_at = NULL,
            failure_reason = NULL,
            updated_at = NOW(),
-           metadata = COALESCE($7::jsonb, metadata)
+           metadata = COALESCE($7::jsonb, metadata),
+           source_kind = COALESCE($8, source_kind),
+           source_filename = COALESCE($9, source_filename),
+           source_mime_type = COALESCE($10, source_mime_type),
+           source_storage_bucket = COALESCE($11, source_storage_bucket),
+           source_storage_object = COALESCE($12, source_storage_object),
+           source_storage_generation = COALESCE($13, source_storage_generation),
+           source_size_bytes = COALESCE($14, source_size_bytes)
        WHERE id = $1 AND workspace_id = $2
-       RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
-      // undefined metadata preserves existing value (COALESCE falls through); {} explicitly clears it.
-      [input.documentId, input.workspaceId, input.title, input.sourceContent, input.markdownContent, input.status, input.metadata !== undefined ? JSON.stringify(input.metadata) : null],
+       RETURNING ${documentSelect}`,
+      [
+        input.documentId,
+        input.workspaceId,
+        input.title,
+        input.sourceContent,
+        input.markdownContent,
+        input.status,
+        input.metadata !== undefined ? JSON.stringify(input.metadata) : null,
+        input.sourceKind ?? null,
+        input.sourceFilename ?? null,
+        input.sourceMimeType ?? null,
+        input.sourceStorageBucket ?? null,
+        input.sourceStorageObject ?? null,
+        input.sourceStorageGeneration ?? null,
+        input.sourceSizeBytes ?? null,
+      ],
     );
 
     return mapDocument(row);
+  }
+
+  async updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null> {
+    const [row] = await this.database.query<DocumentRow>(
+      `UPDATE documents
+       SET source_content = $4,
+           markdown_content = $5,
+           updated_at = NOW()
+       WHERE id = $1
+         AND workspace_id = $2
+         AND revision = $3
+       RETURNING ${documentSelect}`,
+      [input.documentId, input.workspaceId, input.revision, input.sourceContent, input.markdownContent],
+    );
+
+    return row ? mapDocument(row) : null;
   }
 
   async requeue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
@@ -183,7 +315,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
            failure_reason = NULL,
            updated_at = NOW()
        WHERE id = $1 AND workspace_id = $2
-       RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
+       RETURNING ${documentSelect}`,
       [documentId, workspaceId],
     );
 
@@ -200,7 +332,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
              failure_reason = NULL,
              updated_at = NOW()
          WHERE id = $1 AND workspace_id = $2
-         RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
+         RETURNING ${documentSelect}`,
         [documentId, workspaceId],
       );
       const [documentRow] = documentResult.rows;
@@ -232,7 +364,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
            failure_reason = CASE WHEN $3 = 'failed' THEN $4 ELSE NULL END,
            updated_at = NOW()
        WHERE id = $1 AND workspace_id = $2
-       RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
+       RETURNING ${documentSelect}`,
       [input.documentId, input.workspaceId, input.status, input.failureReason ?? null],
     );
 
@@ -255,7 +387,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
        WHERE id = $1
          AND workspace_id = $2
          AND revision = $3
-       RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
+       RETURNING ${documentSelect}`,
       [input.documentId, input.workspaceId, input.revision, input.status, input.failureReason ?? null],
     );
 

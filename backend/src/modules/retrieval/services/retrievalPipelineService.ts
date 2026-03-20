@@ -27,6 +27,7 @@ export interface RetrievalPipelineResult {
     warmthLevel: number;
     citationDisplayEnabled: boolean;
     inferenceAnswerEnabled: boolean;
+    customInstruction: string;
   };
   diagnostics: RetrievalExecutionDiagnostics;
 }
@@ -166,6 +167,7 @@ export class RetrievalPipelineService {
         warmthLevel: settings.warmthLevel,
         citationDisplayEnabled: settings.citationDisplayEnabled,
         inferenceAnswerEnabled: settings.inferenceAnswerEnabled,
+        customInstruction: settings.customInstruction,
       },
       diagnostics,
     };

@@ -587,6 +587,7 @@ components:
         - chunkingStrategy
         - attributeControls
         - customInstruction
+        - inferenceAnswerEnabled
         - createdAt
         - updatedAt
       properties:
@@ -627,6 +628,10 @@ components:
           type: string
           maxLength: 2000
           default: ""
+        inferenceAnswerEnabled:
+          type: boolean
+          default: false
+          description: When true, generate LLM answers from general knowledge when no documents match
         createdAt:
           type: string
           format: date-time
@@ -678,6 +683,9 @@ components:
         customInstruction:
           type: string
           maxLength: 2000
+        inferenceAnswerEnabled:
+          type: boolean
+          description: Enable or disable inference-based fallback answers
     AttributeFamilyControl:
       type: object
       required: [family, enabled, mode]
@@ -790,6 +798,11 @@ components:
             $ref: '#/components/schemas/AnswerSegment'
         retrievalInfo:
           $ref: '#/components/schemas/RetrievalInfo'
+        source:
+          type: string
+          enum: [retrieval, inference]
+          default: retrieval
+          description: Answer provenance — retrieval for document-grounded, inference for general-knowledge fallback
     ChatHistoryListResponse:
       type: object
       required: [conversations]

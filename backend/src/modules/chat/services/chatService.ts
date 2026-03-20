@@ -132,6 +132,22 @@ export class ChatService {
       session = await this.prepareSession(input);
       const presentation = await this.generateAnswerPresentation(session, input.query);
 
+      if (presentation.inferenceError) {
+        await this.auditService.record({
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          eventType: "chat.answer",
+          eventStatus: "failure",
+          metadata: {
+            stage: "inference_fallback",
+            conversationId: session.conversation.id,
+            userMessageId: session.userMessage.id,
+            stream: input.stream,
+            errorMessage: presentation.inferenceError instanceof Error ? presentation.inferenceError.message : "Unknown inference error",
+          },
+        });
+      }
+
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
         workspaceId: input.workspaceId,
@@ -196,7 +212,7 @@ export class ChatService {
             history: session.history,
             settings: {
               warmthLevel: session.retrieval.responseSettings?.warmthLevel ?? 5,
-              customInstruction: undefined,
+              customInstruction: session.retrieval.responseSettings?.customInstruction,
             },
           });
           for await (const text of this.chatGateway.streamAnswer({
@@ -208,10 +224,23 @@ export class ChatService {
             rawAnswer = `${rawAnswer}${text}`;
             yield { type: "chunk", text };
           }
-        } catch {
+        } catch (inferenceError) {
           answerSource = "retrieval";
           rawAnswer = "I could not find relevant information in your documents.";
           yield { type: "chunk", text: rawAnswer };
+          await this.auditService.record({
+            accountId: input.accountId,
+            workspaceId: input.workspaceId,
+            eventType: "chat.answer",
+            eventStatus: "failure",
+            metadata: {
+              stage: "inference_fallback",
+              conversationId: session.conversation.id,
+              userMessageId: session.userMessage.id,
+              stream: input.stream,
+              errorMessage: inferenceError instanceof Error ? inferenceError.message : "Unknown inference error",
+            },
+          });
         }
       } else if (session.retrieval.contexts.length === 0) {
         rawAnswer = "I could not find relevant information in your documents.";
@@ -320,7 +349,7 @@ export class ChatService {
   private async generateAnswerPresentation(
     session: PreparedSession,
     query: string,
-  ): Promise<PresentedAnswer & { source: "retrieval" | "inference" }> {
+  ): Promise<PresentedAnswer & { source: "retrieval" | "inference"; inferenceError?: unknown }> {
     if (session.retrieval.contexts.length === 0) {
       const inferenceEnabled = session.retrieval.responseSettings?.inferenceAnswerEnabled ?? false;
 
@@ -331,7 +360,7 @@ export class ChatService {
             history: session.history,
             settings: {
               warmthLevel: session.retrieval.responseSettings?.warmthLevel ?? 5,
-              customInstruction: undefined,
+              customInstruction: session.retrieval.responseSettings?.customInstruction,
             },
           });
           const answer = await this.chatGateway.answer({
@@ -340,10 +369,11 @@ export class ChatService {
             prompt: inferencePrompt,
           });
           return { answer, source: "inference" };
-        } catch {
+        } catch (inferenceError) {
           return {
             answer: "I could not find relevant information in your documents.",
             source: "retrieval",
+            inferenceError,
           };
         }
       }

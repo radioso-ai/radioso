@@ -1,4 +1,16 @@
 @import 'tailwindcss';
+
+@keyframes typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
 @import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));

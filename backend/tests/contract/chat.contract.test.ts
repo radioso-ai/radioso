@@ -92,6 +92,8 @@ describe("chat contract", () => {
         }),
         expect.objectContaining({
           role: "assistant",
+          citations: expect.any(Array),
+          answerSegments: expect.any(Array),
           debug: expect.objectContaining({
             eventStatus: "success",
             stream: false,
@@ -348,6 +350,52 @@ describe("chat contract", () => {
       fallbackApplied: expect.any(Boolean),
       rerankStatus: expect.any(String),
     });
+  });
+
+  it("includes sourceChannel in history summaries so admins can identify anonymous conversations", async () => {
+    const { app } = createTestApp();
+    const token = await getBearerToken(app);
+    const authorization = `Bearer ${token}`;
+
+    // Enable anonymous chat
+    await request(app)
+      .put("/api/v1/settings/general")
+      .set("Authorization", authorization)
+      .send({ anonymousChatEnabled: true, anonymousRateLimit: 10 });
+
+    const settings = await request(app)
+      .get("/api/v1/settings/general")
+      .set("Authorization", authorization);
+    const publicUrl = settings.body.anonymousChatUrl as string;
+    const publicToken = publicUrl.split("/").pop()!;
+
+    // Ingest a document so chat can answer
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+
+    // Send an anonymous chat message
+    const anonChat = await request(app)
+      .post(`/api/v1/public/chat/${publicToken}`)
+      .send({ query: "What does this page do?", stream: false });
+    expect(anonChat.status).toBe(200);
+
+    // Admin lists chat history — should include anonymous conversation with sourceChannel
+    const history = await request(app)
+      .get("/api/v1/chat/history")
+      .set("Authorization", authorization);
+
+    expect(history.status).toBe(200);
+    expect(history.body.conversations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: anonChat.body.conversationId,
+          sourceChannel: "anonymous",
+          messageCount: 2,
+        }),
+      ]),
+    );
   });
 
   it("documents the chat history endpoints in the shared OpenAPI contract", () => {

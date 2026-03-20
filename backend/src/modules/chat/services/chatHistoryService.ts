@@ -6,11 +6,13 @@ import type {
 } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalExecutionDiagnostics } from "../../retrieval/domain/retrievalPipelineTypes.js";
+import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 
 export interface ChatConversationSummary {
   id: string;
   sourceChannel: string | null;
+  anonymousSessionId: string | null;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -33,6 +35,8 @@ export interface ChatConversationTurn {
   role: MessageRecord["role"];
   content: string;
   createdAt: string;
+  citations?: ChatCitation[];
+  answerSegments?: AnswerSegment[];
   debug?: ChatConversationTurnDebug;
 }
 
@@ -52,8 +56,15 @@ interface ChatAuditMetadata {
   assistantMessageId?: string;
   stream?: boolean;
   citationCount?: number;
+  citations?: ChatCitation[];
+  answerSegments?: AnswerSegment[];
   retrieval?: unknown;
   errorMessage?: string;
+}
+
+interface AssistantTurnArtifacts {
+  citations?: ChatCitation[];
+  answerSegments?: AnswerSegment[];
 }
 
 const toIsoString = (value: Date): string => value.toISOString();
@@ -102,6 +113,7 @@ export class ChatHistoryService {
       this.auditEventRepository.listChatAnswerEventsByConversationId(workspaceId, conversation.id),
     ]);
 
+    const artifactsByAssistantMessageId = this.buildArtifactsIndex(auditEvents);
     const debugByAssistantMessageId = this.buildDebugIndex(auditEvents);
     const userMessageCount = messages.filter((message) => message.role === "user").length;
     const assistantMessageCount = messages.filter((message) => message.role === "assistant").length;
@@ -120,6 +132,8 @@ export class ChatHistoryService {
         role: message.role,
         content: message.content,
         createdAt: toIsoString(message.createdAt),
+        citations: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.citations : undefined,
+        answerSegments: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.answerSegments : undefined,
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
       })),
     };
@@ -132,6 +146,7 @@ export class ChatHistoryService {
     return {
       id: conversation.id,
       sourceChannel: conversation.sourceChannel,
+      anonymousSessionId: conversation.anonymousSessionId ?? null,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),
       messageCount: messages.length,
@@ -161,6 +176,26 @@ export class ChatHistoryService {
           ? this.retrievalInfoPresenter.present(metadata.retrieval as RetrievalExecutionDiagnostics)
           : undefined,
         errorMessage: metadata.errorMessage ?? null,
+      });
+    }
+
+    return index;
+  }
+
+  private buildArtifactsIndex(
+    auditEvents: AuditEventRecord[],
+  ): Map<string, AssistantTurnArtifacts> {
+    const index = new Map<string, AssistantTurnArtifacts>();
+
+    for (const event of auditEvents) {
+      const metadata = event.metadata as ChatAuditMetadata;
+      if (!metadata.assistantMessageId) {
+        continue;
+      }
+
+      index.set(metadata.assistantMessageId, {
+        citations: metadata.citations,
+        answerSegments: metadata.answerSegments,
       });
     }
 

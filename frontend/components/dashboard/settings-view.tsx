@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, Copy, Key, Save, Trash2 } from 'lucide-react'
+import { Check, Copy, ExternalLink, Key, Save, Trash2 } from 'lucide-react'
 
 import { ConnectorsTab } from '@/components/dashboard/connectors/connectors-tab'
 import { Button } from '@/components/ui/button'
@@ -28,7 +28,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { settingsApi, workspaceApi, RetrievalSettings } from '@/lib/api'
+import { settingsApi, generalSettingsApi, workspaceApi, RetrievalSettings, GeneralSettings } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const chunkingStrategyOptions: Array<{
@@ -111,6 +111,12 @@ function GeneralTab() {
   const [isTokenLoading, setIsTokenLoading] = useState(true)
   const [copied, setCopied] = useState(false)
 
+  // Anonymous chat
+  const [anonSettings, setAnonSettings] = useState<GeneralSettings | null>(null)
+  const [isAnonLoading, setIsAnonLoading] = useState(true)
+  const [isAnonSaving, setIsAnonSaving] = useState(false)
+  const [anonUrlCopied, setAnonUrlCopied] = useState(false)
+
   useEffect(() => {
     setWorkspaceName(activeWorkspace?.name ?? '')
   }, [activeWorkspace?.name])
@@ -131,11 +137,68 @@ function GeneralTab() {
     loadToken()
   }, [activeWorkspaceId])
 
+  useEffect(() => {
+    setIsAnonLoading(true)
+    const loadAnonSettings = async () => {
+      try {
+        const data = await generalSettingsApi.getGeneralSettings()
+        setAnonSettings(data)
+      } catch (error) {
+        console.error('Failed to load anonymous chat settings:', error)
+      } finally {
+        setIsAnonLoading(false)
+      }
+    }
+    void loadAnonSettings()
+  }, [activeWorkspaceId])
+
   const handleCopy = async () => {
     if (!token) return
     await navigator.clipboard.writeText(token)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleAnonToggle = async (enabled: boolean) => {
+    setIsAnonSaving(true)
+    try {
+      const updated = await generalSettingsApi.updateGeneralSettings({
+        anonymousChatEnabled: enabled,
+        anonymousRateLimit: anonSettings?.anonymousRateLimit ?? 10,
+      })
+      setAnonSettings(updated)
+    } catch (error) {
+      console.error('Failed to update anonymous chat settings:', error)
+    } finally {
+      setIsAnonSaving(false)
+    }
+  }
+
+  const handleAnonRateLimitChange = async (value: number) => {
+    if (!anonSettings) return
+    setAnonSettings({ ...anonSettings, anonymousRateLimit: value })
+  }
+
+  const handleAnonRateLimitCommit = async (value: number) => {
+    setIsAnonSaving(true)
+    try {
+      const updated = await generalSettingsApi.updateGeneralSettings({
+        anonymousChatEnabled: anonSettings?.anonymousChatEnabled ?? false,
+        anonymousRateLimit: value,
+      })
+      setAnonSettings(updated)
+    } catch (error) {
+      console.error('Failed to update rate limit:', error)
+    } finally {
+      setIsAnonSaving(false)
+    }
+  }
+
+  const handleAnonUrlCopy = async () => {
+    if (!anonSettings?.anonymousChatUrl) return
+    await navigator.clipboard.writeText(anonSettings.anonymousChatUrl)
+    setAnonUrlCopied(true)
+    setTimeout(() => setAnonUrlCopied(false), 2000)
   }
 
   const handleRename = async () => {
@@ -262,6 +325,103 @@ function GeneralTab() {
                   </div>
                 </div>
               </>
+            )}
+          </div>
+
+          <div className="space-y-6">
+            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">
+              Anonymous Chat Access
+            </h2>
+
+            {isAnonLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Spinner className="w-5 h-5" />
+              </div>
+            ) : anonSettings ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="anonChatToggle" className="text-foreground">Enable Anonymous Chat</Label>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Allow unauthenticated users to chat via a public link.
+                    </p>
+                  </div>
+                  <Switch
+                    id="anonChatToggle"
+                    checked={anonSettings.anonymousChatEnabled}
+                    onCheckedChange={handleAnonToggle}
+                    disabled={isAnonSaving}
+                  />
+                </div>
+
+                {anonSettings.anonymousChatEnabled && anonSettings.anonymousChatUrl && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="anonChatUrl" className="text-foreground">Public Chat URL</Label>
+                      <div className="flex flex-wrap items-start gap-2">
+                        <p
+                          id="anonChatUrl"
+                          className="min-w-[320px] flex-1 break-all rounded-md border border-border bg-card px-3 py-2 font-mono text-sm text-foreground"
+                        >
+                          {anonSettings.anonymousChatUrl}
+                        </p>
+                        <Button asChild variant="secondary">
+                          <a
+                            href={anonSettings.anonymousChatUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            Try the chat
+                          </a>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={handleAnonUrlCopy}
+                        >
+                          {anonUrlCopied ? (
+                            <Check className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                          <span className="sr-only">Copy URL</span>
+                        </Button>
+                      </div>
+                      <p className="break-all rounded-md border border-border bg-card px-3 py-2 font-mono text-sm text-foreground">
+                        {anonSettings.anonymousChatUrl}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Share this link with anyone you want to give chat access to.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="anonRateLimit" className="text-foreground">Rate Limit</Label>
+                        <span className="text-sm text-muted-foreground font-mono">
+                          {anonSettings.anonymousRateLimit} msg/min
+                        </span>
+                      </div>
+                      <Slider
+                        id="anonRateLimit"
+                        min={1}
+                        max={60}
+                        step={1}
+                        value={[anonSettings.anonymousRateLimit]}
+                        onValueChange={([value]) => handleAnonRateLimitChange(value)}
+                        onValueCommit={([value]) => handleAnonRateLimitCommit(value)}
+                        disabled={isAnonSaving}
+                      />
+                      <p className="text-sm text-muted-foreground">
+                        Maximum messages per minute for each anonymous user session.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Failed to load anonymous chat settings.</p>
             )}
           </div>
 

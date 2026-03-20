@@ -76,7 +76,43 @@ export const removeWorkspaceToken = (workspaceId: string) => {
 
 const buildError = async (response: Response): Promise<ErrorResponse> => {
   try {
-    return await response.json();
+    const payload = await response.json();
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "error" in payload &&
+      payload.error &&
+      typeof payload.error === "object"
+    ) {
+      return payload as ErrorResponse;
+    }
+
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "code" in payload &&
+      typeof payload.code === "string" &&
+      "message" in payload &&
+      typeof payload.message === "string"
+    ) {
+      return {
+        error: {
+          code: payload.code,
+          message: payload.message,
+          retryAfterSeconds:
+            "retryAfterSeconds" in payload && typeof payload.retryAfterSeconds === "number"
+              ? payload.retryAfterSeconds
+              : undefined,
+        },
+      };
+    }
+
+    return {
+      error: {
+        code: "HTTP_ERROR",
+        message: `Request failed with status ${response.status}`,
+      },
+    };
   } catch {
     return {
       error: {
@@ -280,10 +316,13 @@ export interface ChatStreamCompletion {
   answerSegments?: AnswerSegment[]
   retrievalInfo?: RetrievalInfo
   source?: 'retrieval' | 'inference'
+  source?: 'retrieval' | 'inference'
 }
 
 export interface ChatConversationSummary {
   id: string
+  sourceChannel: string | null
+  anonymousSessionId: string | null
   createdAt: string
   updatedAt: string
   messageCount: number
@@ -306,12 +345,15 @@ export interface ChatConversationTurn {
   role: 'user' | 'assistant' | 'system'
   content: string
   createdAt: string
+  citations?: Citation[]
+  answerSegments?: AnswerSegment[]
   debug?: ChatConversationTurnDebug
 }
 
 export interface ChatConversationDetail {
   conversationId: string
   workspaceId: string
+  sourceChannel: string | null
   createdAt: string
   updatedAt: string
   messageCount: number
@@ -321,6 +363,7 @@ export interface ChatConversationDetail {
 }
 
 export interface ChatHistoryListResponse {
+  workspaceName?: string
   conversations: ChatConversationSummary[]
 }
 
@@ -334,6 +377,7 @@ export interface ErrorResponse {
   error: {
     code: string
     message: string
+    retryAfterSeconds?: number
   }
 }
 
@@ -449,35 +493,38 @@ const streamChatEvents = async (
       return
     }
 
-    if (eventName === 'conversation') {
-      const payload = JSON.parse(data) as ChatStreamConversation
-      conversationId = payload.conversationId
-      handlers.onConversation?.(payload)
+    const payload = JSON.parse(data) as
+      | (ChatStreamConversation & { type?: 'conversation' })
+      | (ChatStreamChunk & { type?: 'chunk' })
+      | (ChatStreamCompletion & { type?: 'done' })
+
+    const normalizedEventName =
+      eventName === 'message' && 'type' in payload && typeof payload.type === 'string'
+        ? payload.type
+        : eventName
+
+    if (normalizedEventName === 'conversation') {
+      const conversationPayload = payload as ChatStreamConversation
+      conversationId = conversationPayload.conversationId
+      handlers.onConversation?.(conversationPayload)
       return
     }
 
-    if (eventName === 'chunk') {
-      const payload = JSON.parse(data) as ChatStreamChunk
-      answer = `${answer}${payload.text}`
-      handlers.onChunk?.(payload)
+    if (normalizedEventName === 'chunk') {
+      const chunkPayload = payload as ChatStreamChunk
+      answer = `${answer}${chunkPayload.text}`
+      handlers.onChunk?.(chunkPayload)
       return
     }
 
-    if (eventName === 'done') {
-      const payload = JSON.parse(data) as {
-        conversationId?: string
-        answer?: string
-        citations?: Citation[]
-        answerSegments?: AnswerSegment[]
-        retrievalInfo?: RetrievalInfo
-        source?: 'retrieval' | 'inference'
-      }
-      conversationId = payload.conversationId ?? conversationId
-      answer = payload.answer ?? answer
-      citations = payload.citations
-      answerSegments = payload.answerSegments
-      retrievalInfo = payload.retrievalInfo
-      source = payload.source
+    if (normalizedEventName === 'done') {
+      const completionPayload = payload as ChatStreamCompletion
+      conversationId = completionPayload.conversationId ?? conversationId
+      answer = completionPayload.answer ?? answer
+      citations = completionPayload.citations
+      answerSegments = completionPayload.answerSegments
+      retrievalInfo = completionPayload.retrievalInfo
+      source = completionPayload.source
       handlers.onDone?.({
         conversationId,
         answer,
@@ -739,5 +786,95 @@ export const chatApi = {
     return request<ChatConversationDetail>(`/chat/history/${conversationId}`, {
       method: 'GET',
     }, { withApiToken: true })
+  },
+}
+
+// General Settings types
+export interface GeneralSettings {
+  anonymousChatEnabled: boolean
+  anonymousChatUrl: string | null
+  anonymousRateLimit: number
+}
+
+// General Settings API
+export const generalSettingsApi = {
+  async getGeneralSettings(): Promise<GeneralSettings> {
+    return request<GeneralSettings>('/settings/general', {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async updateGeneralSettings(data: {
+    anonymousChatEnabled: boolean
+    anonymousRateLimit?: number
+  }): Promise<GeneralSettings> {
+    return request<GeneralSettings>('/settings/general', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+}
+
+// Public Chat API (anonymous, cookie-based auth)
+export const publicChatApi = {
+  async sendMessage(token: string, data: { query: string; stream: boolean; conversationId?: string }): Promise<ChatResponse> {
+    return request<ChatResponse>(`/public/chat/${token}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async streamMessage(
+    token: string,
+    data: { query: string; stream: boolean; conversationId?: string },
+    handlers: ChatStreamHandlers = {},
+  ): Promise<ChatResponse> {
+    const response = await fetch(`${API_BASE}/public/chat/${token}`, {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    const contentType = response.headers.get('content-type') ?? ''
+
+    if (!contentType.includes('text/event-stream')) {
+      const payload = (await response.json()) as ChatResponse
+      handlers.onConversation?.({ conversationId: payload.conversationId })
+      if (payload.answer) {
+        handlers.onChunk?.({ text: payload.answer })
+      }
+      handlers.onDone?.({
+        conversationId: payload.conversationId,
+        answer: payload.answer,
+        citations: payload.citations,
+        answerSegments: payload.answerSegments,
+        retrievalInfo: payload.retrievalInfo,
+      })
+      return payload
+    }
+
+    return streamChatEvents(response, handlers)
+  },
+
+  async listConversations(token: string): Promise<ChatHistoryListResponse> {
+    return request<ChatHistoryListResponse>(`/public/chat/${token}`, {
+      method: 'GET',
+      credentials: 'include',
+    })
+  },
+
+  async getConversationDetail(token: string, conversationId: string): Promise<ChatConversationDetail> {
+    return request<ChatConversationDetail>(`/public/chat/${token}/history/${conversationId}`, {
+      method: 'GET',
+      credentials: 'include',
+    })
   },
 }

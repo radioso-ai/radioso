@@ -1,11 +1,11 @@
-# Implementation Plan: Document Import and GCS Storage
+# Implementation Plan: Core Document Import and GCS Storage
 
 **Branch**: `020-document-import-gcs` | **Date**: 2026-03-20 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/020-document-import-gcs/spec.md`
 
 ## Summary
 
-Add a default-on document import flow to the existing Documents UI, backed by a new local parser package under `/packages`, a backend multipart upload API, and GCP Cloud Storage for original uploaded files. The backend will preserve the existing text-based document flow while adding a file-backed path that stores binary source files, parses them during async processing, and supports reprocessing from the stored original object.
+Add a default-on document import flow to the existing Documents UI as a core backend capability, backed by a new local parser package under `/packages`, a backend multipart upload API, and GCP Cloud Storage for original uploaded files. The backend will preserve the existing text-based document flow while adding a file-backed path that stores binary source files, parses them during async processing, and supports reprocessing from the stored original object.
 
 ## Technical Context
 
@@ -30,7 +30,7 @@ Add a default-on document import flow to the existing Documents UI, backed by a 
 - **LLM provider remains GPT-5.2**: PASS — no LLM integration changes.
 - **Secrets and keys managed via `.env`**: PASS — bucket configuration will be added to backend env handling and `.env.example`; local credentials rely on non-committed standard GCP credential env.
 - **Customer data handling and auditability addressed**: PASS — original files move to GCS with explicit workspace-scoped storage metadata, deletion handling, and audit events on import/process/delete failure paths.
-- **Module boundaries explicit**: PASS — route parsing, orchestration, file parsing, object storage, and persistence are separated into explicit modules and ports.
+- **Module boundaries explicit**: PASS — route parsing, orchestration, file parsing, object storage, and persistence are separated into explicit backend layers and ports, while file parsing stays isolated in an internal package.
 - **Responsibility-limited files identified**: PASS — `documentRoutes.ts`, `documentIngestionService.ts`, `documentProcessingService.ts`, `frontend/lib/api.ts`, and `documents-view.tsx` remain thin/orchestration-focused.
 - **Architecture/refactor stories needed first**: PASS — no blocking refactor is required if import logic lands in new focused modules rather than existing document services.
 
@@ -97,7 +97,7 @@ packages/
         └── xlsx.js
 ```
 
-**Structure Decision**: Keep application changes in the existing backend/frontend layout and introduce one new local runtime package under `/packages`. Backend orchestration lives in focused document services, object storage lives behind a GCS adapter, and file extraction logic lives only in the parser package. The existing document route and service files remain thin entry points rather than becoming format- or storage-aware god objects.
+**Structure Decision**: Keep document import in the existing backend/frontend application layout as core product functionality and introduce one local runtime package under `/packages` only for file extraction. Backend orchestration lives in focused document services, object storage lives behind a GCS adapter, and file extraction logic lives only in the parser package. The existing document route and service files remain thin entry points rather than becoming format- or storage-aware god objects.
 
 ## Module Ownership & Seams
 
@@ -148,7 +148,7 @@ No constitution violations to justify.
 ### Phase 4: User Story 3 (P3) reprocess and cleanup
 
 1. Reprocess uploaded files by re-reading the original stored object.
-2. Delete file-backed documents by deleting the stored object before removing the DB row.
+2. Delete file-backed documents by removing the DB row first and then attempting stored-object cleanup so transient database failures cannot erase the source file first.
 3. Validate recoverable failure behavior for missing objects and storage cleanup errors.
 
 ### Phase 5: Polish and validation

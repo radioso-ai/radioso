@@ -1,9 +1,9 @@
-# Feature Specification: Document Import and GCS Storage
+# Feature Specification: Core Document Import and GCS Storage
 
 **Feature Branch**: `020-document-import-gcs`  
 **Created**: 2026-03-20  
 **Status**: Draft  
-**Input**: User description: "Add a document parser package in /packages, backend file upload API with GCS-backed storage, and document import in the Documents frontend."
+**Input**: User description: "Add core document import with a parser package in /packages, a backend file upload API with GCS-backed storage, and document import in the Documents frontend."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -77,10 +77,10 @@ A workspace user can reprocess an imported document without re-uploading the fil
 
 ## Architecture Constraints *(mandatory)*
 
-- **Boundary Rule**: `frontend/components/dashboard/documents-view.tsx` owns import UI only; backend HTTP routes own request parsing and auth only; document orchestration services own import/reprocess workflow; a dedicated storage adapter owns object storage access; the new `/packages` parser module owns file-type detection and text extraction only; repositories remain responsible for database persistence only.
+- **Boundary Rule**: `frontend/components/dashboard/documents-view.tsx` owns import UI only; backend HTTP routes own request parsing and auth only; document orchestration services own import/reprocess workflow; a dedicated storage adapter owns object storage access; the new `/packages` parser package owns file-type detection and text extraction only; repositories remain responsible for database persistence only.
 - **Encapsulation Rule**: `backend/src/modules/documents/services/documentIngestionService.ts` must remain orchestration-focused and must not absorb multipart parsing, GCS client setup, or file-format-specific extraction logic. `frontend/lib/api.ts` must remain a thin transport client and must not encode parsing rules.
 - **New Seams Required**:
-  - A new package under `/packages` for document parsing that is importable without backend/core dependencies.
+  - A new internal package under `/packages` for document parsing that is importable without backend/core dependencies.
   - A dedicated backend document import service that coordinates storage, parser execution, and handoff into the existing async document-processing flow.
   - A storage port and GCS-backed adapter for saving, reading, and deleting original uploaded files.
   - A document source model that distinguishes imported files from manually entered text without forcing binary data into existing text-only code paths.
@@ -98,7 +98,7 @@ A workspace user can reprocess an imported document without re-uploading the fil
 - **FR-002**: Users MUST be able to upload a supported file from the Documents screen using the same authenticated workspace context as existing document actions.
 - **FR-003**: System MUST accept file uploads through a backend document upload API that creates a workspace-scoped document record and queues asynchronous processing.
 - **FR-004**: System MUST store the original uploaded file in a GCP Cloud Storage bucket before the document is marked ready for retrieval.
-- **FR-005**: System MUST use a parser module in `/packages` that can be imported independently of backend/core code and returns normalized textual content for supported file types.
+- **FR-005**: System MUST use an internal parser package in `/packages` that can be imported independently of backend/core code and returns normalized textual content for supported file types.
 - **FR-006**: System MUST feed extracted content from imported files into the existing document processing and retrieval pipeline so imported files behave like other documents in chat and search.
 - **FR-007**: System MUST preserve source details for imported documents, including original filename, detected file type, and enough storage metadata to support reprocessing and deletion.
 - **FR-008**: System MUST allow users to reprocess an imported document from the stored original file without requiring a new upload.

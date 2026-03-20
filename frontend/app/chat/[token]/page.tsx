@@ -72,6 +72,14 @@ function AnonymousChatContent() {
     scrollToBottom()
   }, [isLoading, messages])
 
+  useEffect(() => {
+    if (!workspaceName) {
+      return
+    }
+
+    document.title = workspaceName
+  }, [workspaceName])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
@@ -102,7 +110,7 @@ function AnonymousChatContent() {
   return (
     <>
       <div className="shrink-0 border-b border-border px-6 py-4">
-        <h1 className="text-lg font-medium text-foreground">{workspaceName ?? 'Chat'}</h1>
+        <h1 className="text-lg font-medium text-foreground">{workspaceName}</h1>
         <p className="text-sm text-muted-foreground">Ask questions and get AI-powered answers</p>
       </div>
 

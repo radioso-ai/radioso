@@ -9,6 +9,7 @@ import type { RetrievalPipelineService } from "../../retrieval/services/retrieva
 import { PromptBuilder } from "../../retrieval/services/promptBuilder.js";
 import { AnswerPresentationService, type AnswerSegment, type ChatCitation } from "./answerPresentationService.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
+import { createLogger, type AppLogger } from "../../../shared/observability/logger.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -102,6 +103,8 @@ export class ChatService {
   private static readonly MAX_CARRY_FORWARD_LITERALS = 6;
   private static readonly MAX_CARRY_FORWARD_LITERAL_LENGTH = 120;
 
+  private readonly logger: AppLogger;
+
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
@@ -109,7 +112,10 @@ export class ChatService {
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly promptBuilder: PromptBuilder = new PromptBuilder(),
-  ) {}
+    logger?: AppLogger,
+  ) {
+    this.logger = logger ?? createLogger();
+  }
 
   async answer(input: {
     workspaceId: string;
@@ -211,6 +217,7 @@ export class ChatService {
 
       if (session.retrieval.contexts.length === 0 && (session.retrieval.responseSettings?.inferenceAnswerEnabled ?? false)) {
         answerSource = "inference";
+        this.logger.debug({ workspaceId: input.workspaceId, conversationId: session.conversation.id }, "inference fallback applied: no document contexts matched, using model inference");
         try {
           const inferencePrompt = this.promptBuilder.buildInferencePrompt({
             query: input.query,
@@ -361,6 +368,7 @@ export class ChatService {
       const inferenceEnabled = session.retrieval.responseSettings?.inferenceAnswerEnabled ?? false;
 
       if (inferenceEnabled) {
+        this.logger.debug({ workspaceId: session.conversation.workspaceId, conversationId: session.conversation.id }, "inference fallback applied: no document contexts matched, using model inference");
         try {
           const inferencePrompt = this.promptBuilder.buildInferencePrompt({
             query,

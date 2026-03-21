@@ -1,10 +1,10 @@
 <!--
 Sync Impact Report
-- Version change: 1.2.0 to 1.3.0
+- Version change: 1.3.0 to 1.4.0
 - Modified principles: none
-- Added sections: VI. Modularity and Encapsulation
+- Added sections: VIII. Code-First API Contracts
 - Removed sections: none
-- Templates requiring updates: `.specify/templates/spec-template.md`, `.specify/templates/plan-template.md`, `.specify/templates/tasks-template.md`, `.specify/templates/constitution-template.md`
+- Templates requiring updates: `.specify/templates/plan-template.md`, `.codex/prompts/speckit.plan.md`, `.codex/prompts/speckit.implement.md`
 - Follow-up TODOs: none
 -->
 # Botobot Front Desk AI Constitution
@@ -56,6 +56,15 @@ least-privilege access, transmit data securely, and provide clear audit trails
 for access to sensitive data. User-facing flows MUST fail safely and degrade
 predictably when dependencies are unavailable.
 
+### VIII. Code-First API Contracts
+Backend HTTP contract changes MUST be defined in the code-first OpenAPI registry
+at `backend/src/app/http/openapi/document.ts`, using the same Zod-backed request
+and response schemas that govern runtime behavior where practical. The checked-in
+`backend/openapi.yaml` and `backend/openapi.json` files are generated artifacts
+and MUST NOT be hand-edited. Any feature that changes routes, auth, payloads,
+status codes, or error shapes MUST regenerate the OpenAPI outputs and keep
+contract tests aligned with the generated spec.
+
 ## Additional Constraints
 
 No additional constraints beyond the Core Principles at this time.
@@ -69,6 +78,9 @@ No additional constraints beyond the Core Principles at this time.
 - Each feature MUST include a constitution check in plan.md and confirm that
   stack, TDD, secret-management rules, and modular boundary expectations are
   satisfied.
+- Backend API changes MUST update the code-first OpenAPI registry and regenerate
+  `backend/openapi.yaml` / `backend/openapi.json` rather than editing those
+  generated files directly.
 - PR review MUST verify compliance with these principles before merge.
 
 ## Governance
@@ -83,4 +95,4 @@ Compliance is enforced during plan/spec/task reviews and PR reviews. The
 constitution version, ratification date, and last amended date MUST be updated
 whenever changes are made.
 
-**Version**: 1.3.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-03-09
+**Version**: 1.4.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-03-21

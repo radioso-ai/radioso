@@ -307,14 +307,8 @@ describe("chat integration", () => {
       },
     });
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "ambiguity@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "ambiguity@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")
@@ -374,14 +368,8 @@ describe("chat integration", () => {
       },
     });
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "book-followup@example.com",
-      password: "verysecurepassword",
-    });
-    const token = await request(app)
-      .get("/api/v1/account/token")
-      .set("Cookie", register.headers["set-cookie"][0]);
-    const authorization = `Bearer ${token.body.token}`;
+    const { token } = await issueTestToken(app, "book-followup@example.com");
+    const authorization = `Bearer ${token}`;
 
     await request(app)
       .post("/api/v1/document/")

@@ -46,8 +46,8 @@ describe("document contract", () => {
       id: createResponse.body.documentId,
       title: "Original title",
       content: "Original content",
-      status: "queued",
-      ragStatus: "pending",
+      status: "ready",
+      ragStatus: "processed",
     });
 
     const updateResponse = await request(app)
@@ -83,8 +83,8 @@ describe("document contract", () => {
       expect.objectContaining({
         id: createResponse.body.documentId,
         title: "Updated title",
-        status: "queued",
-        ragStatus: "pending",
+        status: "ready",
+        ragStatus: "processed",
       }),
     ]);
   });

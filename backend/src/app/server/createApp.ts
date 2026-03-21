@@ -1,8 +1,10 @@
 import cookieParser from "cookie-parser";
 import express from "express";
+import swaggerUi from "swagger-ui-express";
 
 import { createHttpLogger } from "../../shared/observability/logger.js";
 import { errorHandler } from "../http/middleware/errorHandler.js";
+import { createOpenApiDocument } from "../http/openapi/document.js";
 import { createApiRouter } from "../http/routes/index.js";
 import type { AppDependencies } from "./types.js";
 
@@ -24,6 +26,13 @@ export const createApp = (dependencies: AppDependencies) => {
     next();
   });
   app.use(cookieParser());
+  if (dependencies.env.NODE_ENV !== "test") {
+    const openApiDocument = createOpenApiDocument();
+    app.get("/openapi.json", (_req, res) => {
+      res.status(200).json(openApiDocument);
+    });
+    app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
+  }
   app.use(createApiRouter(dependencies));
   app.use(errorHandler);
 

@@ -1,6 +1,5 @@
-import type OpenAI from "openai";
-
 import { notFound } from "../../../shared/domain/errors.js";
+import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -53,46 +52,29 @@ interface PresentedAnswer {
   answerSegments?: AnswerSegment[];
 }
 
-export class OpenAIChatGateway implements ChatGateway {
-  constructor(
-    private readonly client: OpenAI,
-    private readonly model: string,
-  ) {}
+export class ModelChatGateway implements ChatGateway {
+  constructor(private readonly client: TextGenerationClient) {}
 
   async answer(input: { query: string; history: MessageRecord[]; prompt: string }): Promise<string> {
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      messages: [
-        {
-          role: "user",
-          content: input.prompt,
-        },
-      ],
+    const response = await this.client.complete({
+      prompt: input.prompt,
     });
 
-    return response.choices[0]?.message?.content ?? "I could not generate an answer.";
+    return response || "I could not generate an answer.";
   }
 
   async *streamAnswer(input: { query: string; history: MessageRecord[]; prompt: string }): AsyncIterable<string> {
-    const stream = await this.client.chat.completions.create({
-      model: this.model,
-      stream: true,
-      messages: [
-        {
-          role: "user",
-          content: input.prompt,
-        },
-      ],
-    });
-
-    for await (const chunk of stream) {
-      const text = chunk.choices[0]?.delta?.content ?? "";
-      if (text.length > 0) {
-        yield text;
+    for await (const chunk of this.client.stream({
+      prompt: input.prompt,
+    })) {
+      if (chunk.length > 0) {
+        yield chunk;
       }
     }
   }
 }
+
+export class OpenAIChatGateway extends ModelChatGateway {}
 
 export class ChatService {
   private readonly answerPresentationService = new AnswerPresentationService();

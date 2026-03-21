@@ -1,5 +1,5 @@
 import { getEnv, type Env } from "../config/env.js";
-import { ChatService, OpenAIChatGateway } from "../../modules/chat/services/chatService.js";
+import { ChatService } from "../../modules/chat/services/chatService.js";
 import { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
@@ -29,16 +29,17 @@ import { PromptContextSelectorService } from "../../modules/retrieval/services/p
 import { ChunkingStrategyRegistry } from "../../modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { StructuredSemanticChunkingStrategy } from "../../modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
-import { OpenAIQueryRewriteGateway, QueryRewriteService } from "../../modules/retrieval/services/queryRewriteService.js";
-import { OpenAISemanticRerankGateway, RerankService } from "../../modules/retrieval/services/rerankService.js";
+import { QueryRewriteService } from "../../modules/retrieval/services/queryRewriteService.js";
+import { RerankService } from "../../modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../modules/retrieval/services/retrievalPipelineService.js";
 import { RetrievalExecutionTelemetryService } from "../../modules/retrieval/services/retrievalExecutionTelemetryService.js";
-import { OpenAIEmbeddingGateway, EmbeddingService } from "../../modules/retrieval/services/embeddingService.js";
+import { EmbeddingService } from "../../modules/retrieval/services/embeddingService.js";
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { Database } from "../../shared/infra/database.js";
-import { OpenAIClients } from "../../shared/infra/openaiClient.js";
+import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
+import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
 import { createLogger } from "../../shared/observability/logger.js";
 import type { AppDependencies } from "./types.js";
 
@@ -47,9 +48,10 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const database = new Database(env.DATABASE_URL);
   const auditEventRepository = new AuditEventRepository(database);
   const auditService = new AuditService(logger, auditEventRepository);
-  const openai = new OpenAIClients(env.OPENAI_API_KEY, env.OPENAI_CHAT_MODEL, env.OPENAI_VECTOR_MODEL);
+  const llmRegistry = new LlmProviderRegistry(resolveLlmConfig(env));
+  logger.info({ llmProviders: llmRegistry.describe() }, "Resolved LLM providers");
   const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
-  const embeddingService = new EmbeddingService(new OpenAIEmbeddingGateway(openai.client, openai.vectorModel));
+  const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway());
   const documentRepository = new DocumentRepository(database);
   const documentProcessingJobRepository = new DocumentProcessingJobRepository(database);
   const chunkRepository = new ChunkRepository(database);
@@ -83,10 +85,10 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new PgVectorSearch(database),
     new PgLexicalSearch(database),
     new ConversationContextService(),
-    new QueryRewriteService(new OpenAIQueryRewriteGateway(openai.client, openai.chatModel)),
+    new QueryRewriteService(llmRegistry.createRewriteGateway()),
     new CandidatePreparationService(),
     new AttributeMatchScoringService(),
-    new RerankService(new OpenAISemanticRerankGateway(openai.client, env.OPENAI_RERANK_MODEL ?? openai.chatModel)),
+    new RerankService(llmRegistry.createRerankGateway()),
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
@@ -97,7 +99,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     conversationRepository,
     messageRepository,
     retrievalPipeline,
-    new OpenAIChatGateway(openai.client, openai.chatModel),
+    llmRegistry.createChatGateway(),
     auditService,
   );
   const chatHistoryService = new ChatHistoryService(

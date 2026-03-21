@@ -129,7 +129,7 @@ export const resolveLlmConfig = (env: ProviderEnv): ResolvedLlmConfig => {
   const rerankModel = resolveTextModel(rerankProvider, env.LLM_RERANK_MODEL, env.OPENAI_RERANK_MODEL ?? env.OPENAI_CHAT_MODEL);
   const rerank = resolveCapability("rerank", rerankProvider, rerankModel, env);
 
-  const embeddingProvider = asProvider(env.LLM_EMBEDDING_PROVIDER, "LLM_EMBEDDING_PROVIDER") ?? sharedProvider;
+  const embeddingProvider = asProvider(env.LLM_EMBEDDING_PROVIDER, "LLM_EMBEDDING_PROVIDER") ?? DEFAULT_PROVIDER;
   const embeddingModel = resolveEmbeddingModel(embeddingProvider, env.LLM_EMBEDDING_MODEL, env.OPENAI_VECTOR_MODEL);
   const embeddings = resolveCapability("embeddings", embeddingProvider, embeddingModel, env);
 

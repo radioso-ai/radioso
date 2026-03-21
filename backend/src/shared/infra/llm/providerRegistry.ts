@@ -3,7 +3,7 @@ import { ModelEmbeddingGateway } from "../../../modules/retrieval/services/embed
 import { ModelQueryRewriteGateway } from "../../../modules/retrieval/services/queryRewriteService.js";
 import { ModelRerankGateway } from "../../../modules/retrieval/services/rerankService.js";
 import { ClaudeTextGenerationClient } from "./claudeProvider.js";
-import { GeminiEmbeddingClient, GeminiTextGenerationClient } from "./geminiProvider.js";
+import { GeminiTextGenerationClient } from "./geminiProvider.js";
 import { OpenAIEmbeddingClient, OpenAITextGenerationClient } from "./openaiProvider.js";
 import {
   type EmbeddingClient,
@@ -17,7 +17,8 @@ import {
 
 export { ProviderConfigurationError } from "./providerTypes.js";
 
-const supportsEmbeddings = (config: LlmCapabilityConfig): boolean => config.provider !== "claude";
+const supportsEmbeddings = (config: LlmCapabilityConfig): boolean =>
+  config.provider === "openai" || config.provider === "openai-compatible";
 
 export class LlmProviderRegistry {
   constructor(private readonly config: ResolvedLlmConfig) {
@@ -77,7 +78,6 @@ export class LlmProviderRegistry {
       case "openai-compatible":
         return new OpenAIEmbeddingClient(config);
       case "gemini":
-        return new GeminiEmbeddingClient(config);
       case "claude":
         throw new ProviderConfigurationError(`Provider ${config.provider} does not support embeddings`);
     }

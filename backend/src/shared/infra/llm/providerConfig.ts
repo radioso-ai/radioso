@@ -13,6 +13,8 @@ const PROVIDERS: LlmProviderName[] = ["openai", "openai-compatible", "gemini", "
 const DEFAULT_PROVIDER: LlmProviderName = "openai";
 const DEFAULT_CHAT_MODEL = "gpt-5.2";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+const DEFAULT_GEMINI_TEXT_MODEL = "gemini-2.5-flash";
+const DEFAULT_CLAUDE_TEXT_MODEL = "claude-sonnet-4-5";
 
 const asProvider = (value: string | number | undefined, field: string): LlmProviderName | undefined => {
   if (value === undefined) {
@@ -68,25 +70,67 @@ const resolveCapability = (
   baseUrl: resolveBaseUrl(provider, env),
 });
 
+const resolveTextModel = (
+  provider: LlmProviderName,
+  overrideValue: string | number | undefined,
+  legacyOpenAiValue: string | number | undefined,
+): string => {
+  if (typeof overrideValue === "string" && overrideValue.trim().length > 0) {
+    return overrideValue.trim();
+  }
+
+  if ((provider === "openai" || provider === "openai-compatible") && typeof legacyOpenAiValue === "string" && legacyOpenAiValue.trim().length > 0) {
+    return legacyOpenAiValue.trim();
+  }
+
+  switch (provider) {
+    case "openai":
+    case "openai-compatible":
+      return DEFAULT_CHAT_MODEL;
+    case "gemini":
+      return DEFAULT_GEMINI_TEXT_MODEL;
+    case "claude":
+      return DEFAULT_CLAUDE_TEXT_MODEL;
+  }
+};
+
+const resolveEmbeddingModel = (
+  provider: LlmProviderName,
+  overrideValue: string | number | undefined,
+  legacyOpenAiValue: string | number | undefined,
+): string => {
+  if (typeof overrideValue === "string" && overrideValue.trim().length > 0) {
+    return overrideValue.trim();
+  }
+
+  if ((provider === "openai" || provider === "openai-compatible") && typeof legacyOpenAiValue === "string" && legacyOpenAiValue.trim().length > 0) {
+    return legacyOpenAiValue.trim();
+  }
+
+  if (provider === "openai" || provider === "openai-compatible") {
+    return DEFAULT_EMBEDDING_MODEL;
+  }
+
+  return provider === "gemini" ? "gemini-embedding-001" : DEFAULT_CLAUDE_TEXT_MODEL;
+};
+
 export const resolveLlmConfig = (env: ProviderEnv): ResolvedLlmConfig => {
   const sharedProvider = asProvider(env.LLM_PROVIDER, "LLM_PROVIDER") ?? DEFAULT_PROVIDER;
 
   const chatProvider = asProvider(env.LLM_CHAT_PROVIDER, "LLM_CHAT_PROVIDER") ?? sharedProvider;
-  const chatModel = String(env.LLM_CHAT_MODEL ?? env.OPENAI_CHAT_MODEL ?? DEFAULT_CHAT_MODEL);
+  const chatModel = resolveTextModel(chatProvider, env.LLM_CHAT_MODEL, env.OPENAI_CHAT_MODEL);
   const chat = resolveCapability("chat", chatProvider, chatModel, env);
 
   const rewriteProvider = asProvider(env.LLM_REWRITE_PROVIDER, "LLM_REWRITE_PROVIDER") ?? sharedProvider;
-  const rewriteModel = String(env.LLM_REWRITE_MODEL ?? env.OPENAI_CHAT_MODEL ?? DEFAULT_CHAT_MODEL);
+  const rewriteModel = resolveTextModel(rewriteProvider, env.LLM_REWRITE_MODEL, env.OPENAI_CHAT_MODEL);
   const rewrite = resolveCapability("rewrite", rewriteProvider, rewriteModel, env);
 
   const rerankProvider = asProvider(env.LLM_RERANK_PROVIDER, "LLM_RERANK_PROVIDER") ?? sharedProvider;
-  const rerankModel = String(
-    env.LLM_RERANK_MODEL ?? env.OPENAI_RERANK_MODEL ?? env.OPENAI_CHAT_MODEL ?? DEFAULT_CHAT_MODEL,
-  );
+  const rerankModel = resolveTextModel(rerankProvider, env.LLM_RERANK_MODEL, env.OPENAI_RERANK_MODEL ?? env.OPENAI_CHAT_MODEL);
   const rerank = resolveCapability("rerank", rerankProvider, rerankModel, env);
 
   const embeddingProvider = asProvider(env.LLM_EMBEDDING_PROVIDER, "LLM_EMBEDDING_PROVIDER") ?? sharedProvider;
-  const embeddingModel = String(env.LLM_EMBEDDING_MODEL ?? env.OPENAI_VECTOR_MODEL ?? DEFAULT_EMBEDDING_MODEL);
+  const embeddingModel = resolveEmbeddingModel(embeddingProvider, env.LLM_EMBEDDING_MODEL, env.OPENAI_VECTOR_MODEL);
   const embeddings = resolveCapability("embeddings", embeddingProvider, embeddingModel, env);
 
   return {

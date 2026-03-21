@@ -86,10 +86,51 @@ describe("llm provider config", () => {
       apiKey: "openai-key",
     });
   });
+
+  it("uses provider-specific text defaults for non-openai shared providers", () => {
+    const geminiConfig = resolveLlmConfig({
+      LLM_PROVIDER: "gemini",
+      GEMINI_API_KEY: "gemini-key",
+      OPENAI_CHAT_MODEL: "gpt-5.2",
+      OPENAI_VECTOR_MODEL: "text-embedding-3-small",
+    });
+
+    expect(geminiConfig.chat).toMatchObject({
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+    });
+    expect(geminiConfig.rewrite).toMatchObject({
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+    });
+    expect(geminiConfig.rerank).toMatchObject({
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+    });
+
+    const claudeConfig = resolveLlmConfig({
+      LLM_PROVIDER: "claude",
+      ANTHROPIC_API_KEY: "anthropic-key",
+      OPENAI_CHAT_MODEL: "gpt-5.2",
+    });
+
+    expect(claudeConfig.chat).toMatchObject({
+      provider: "claude",
+      model: "claude-sonnet-4-5",
+    });
+    expect(claudeConfig.rewrite).toMatchObject({
+      provider: "claude",
+      model: "claude-sonnet-4-5",
+    });
+    expect(claudeConfig.rerank).toMatchObject({
+      provider: "claude",
+      model: "claude-sonnet-4-5",
+    });
+  });
 });
 
 describe("LlmProviderRegistry", () => {
-  it("rejects unsupported provider-capability combinations before use", () => {
+  it("rejects claude embeddings before use", () => {
     const config = resolveLlmConfig({
       OPENAI_API_KEY: "openai-key",
       OPENAI_CHAT_MODEL: "gpt-5.2",
@@ -102,6 +143,22 @@ describe("LlmProviderRegistry", () => {
     expect(() => new LlmProviderRegistry(config)).toThrowError(ProviderConfigurationError);
     expect(() => new LlmProviderRegistry(config)).toThrowError(
       "Provider claude does not support embeddings",
+    );
+  });
+
+  it("rejects gemini embeddings before use because the storage contract is fixed-width", () => {
+    const config = resolveLlmConfig({
+      OPENAI_API_KEY: "openai-key",
+      OPENAI_CHAT_MODEL: "gpt-5.2",
+      OPENAI_VECTOR_MODEL: "text-embedding-3-small",
+      LLM_EMBEDDING_PROVIDER: "gemini",
+      GEMINI_API_KEY: "gemini-key",
+      LLM_EMBEDDING_MODEL: "gemini-embedding-001",
+    });
+
+    expect(() => new LlmProviderRegistry(config)).toThrowError(ProviderConfigurationError);
+    expect(() => new LlmProviderRegistry(config)).toThrowError(
+      "Provider gemini does not support embeddings",
     );
   });
 

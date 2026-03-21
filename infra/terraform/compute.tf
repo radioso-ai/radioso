@@ -72,6 +72,13 @@ resource "google_cloud_run_v2_service" "backend" {
           value = env.value
         }
       }
+      dynamic "env" {
+        for_each = var.public_chat_base_url == null ? [] : [var.public_chat_base_url]
+        content {
+          name  = "PUBLIC_CHAT_BASE_URL"
+          value = env.value
+        }
+      }
 
       # Secrets from Secret Manager
       env {

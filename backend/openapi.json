@@ -54,11 +54,6 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "APIKey"
-      },
-      "anonymousSessionCookie": {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "anon_session_{token}"
       }
     },
     "schemas": {
@@ -2957,11 +2952,6 @@
         ],
         "summary": "Send a public chat message",
         "operationId": "createPublicChatResponse",
-        "security": [
-          {
-            "anonymousSessionCookie": []
-          }
-        ],
         "parameters": [
           {
             "schema": {
@@ -3029,7 +3019,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Anonymous session continuity is maintained by an HttpOnly cookie set by the server.\n\nThe cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential."
       },
       "get": {
         "tags": [
@@ -3037,11 +3028,6 @@
         ],
         "summary": "List conversations for the current anonymous session",
         "operationId": "listPublicChatHistory",
-        "security": [
-          {
-            "anonymousSessionCookie": []
-          }
-        ],
         "parameters": [
           {
             "schema": {
@@ -3074,7 +3060,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Anonymous session continuity is maintained by an HttpOnly cookie set by the server.\n\nThe cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential."
       }
     },
     "/api/v1/public/chat/{token}/history/{conversationId}": {
@@ -3084,11 +3071,6 @@
         ],
         "summary": "Get a public conversation for the current anonymous session",
         "operationId": "getPublicChatHistoryConversation",
-        "security": [
-          {
-            "anonymousSessionCookie": []
-          }
-        ],
         "parameters": [
           {
             "schema": {
@@ -3140,7 +3122,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Anonymous session continuity is maintained by an HttpOnly cookie set by the server.\n\nThe cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential."
       }
     },
     "/api/connectors/whatsapp/{workspaceId}/webhook": {

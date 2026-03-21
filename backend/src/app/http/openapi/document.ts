@@ -1748,8 +1748,12 @@ registry.registerPath({
   },
 });
 
-export const createOpenApiDocument = () =>
-  new OpenApiGeneratorV31(registry.definitions).generateDocument({
+export const createOpenApiDocument = (
+  options: {
+    sessionCookieName?: string;
+  } = {},
+) => {
+  const document = new OpenApiGeneratorV31(registry.definitions).generateDocument({
     openapi: "3.1.0",
     info: {
       title: "Hivec API",
@@ -1775,3 +1779,43 @@ export const createOpenApiDocument = () =>
       { name: "Connector Webhooks" },
     ],
   });
+
+  const sessionCookie = document.components?.securitySchemes?.sessionCookie;
+  if (sessionCookie && "name" in sessionCookie) {
+    sessionCookie.name = options.sessionCookieName ?? "hivec_session";
+  }
+
+  if (document.components?.securitySchemes) {
+    delete document.components.securitySchemes.anonymousSessionCookie;
+  }
+
+  const publicChatPaths = [
+    "/api/v1/public/chat/{token}",
+    "/api/v1/public/chat/{token}/history/{conversationId}",
+  ] as const;
+
+  const paths = document.paths ?? {};
+
+  for (const path of publicChatPaths) {
+    const operations = paths[path];
+    if (!operations) {
+      continue;
+    }
+
+    for (const method of Object.keys(operations) as Array<keyof typeof operations>) {
+      const operation = operations[method];
+      if (!operation || typeof operation !== "object") {
+        continue;
+      }
+
+      delete operation.security;
+      operation.description = [
+        operation.description,
+        "Anonymous session continuity is maintained by an HttpOnly cookie set by the server.",
+        "The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.",
+      ].filter(Boolean).join("\n\n");
+    }
+  }
+
+  return document;
+};

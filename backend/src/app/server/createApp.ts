@@ -27,7 +27,9 @@ export const createApp = (dependencies: AppDependencies) => {
   });
   app.use(cookieParser());
   if (dependencies.env.NODE_ENV !== "test") {
-    const openApiDocument = createOpenApiDocument();
+    const openApiDocument = createOpenApiDocument({
+      sessionCookieName: dependencies.env.SESSION_COOKIE_NAME,
+    });
     app.get("/openapi.json", (_req, res) => {
       res.status(200).json(openApiDocument);
     });

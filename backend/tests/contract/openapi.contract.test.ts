@@ -11,4 +11,22 @@ describe("openapi contract", () => {
 
     expect(parse(yamlSpec)).toEqual(createOpenApiDocument());
   });
+
+  it("uses the configured session cookie name when generating the document", () => {
+    const document = createOpenApiDocument({ sessionCookieName: "custom_session" });
+    const sessionCookie = document.components?.securitySchemes?.sessionCookie;
+
+    expect(sessionCookie).toBeDefined();
+    expect(sessionCookie && "name" in sessionCookie ? sessionCookie.name : undefined).toBe("custom_session");
+  });
+
+  it("does not advertise a fixed anonymous chat session cookie name", () => {
+    const document = createOpenApiDocument();
+    const paths = document.paths ?? {};
+
+    expect(document.components?.securitySchemes).not.toHaveProperty("anonymousSessionCookie");
+    expect(paths["/api/v1/public/chat/{token}"]?.post).not.toHaveProperty("security");
+    expect(paths["/api/v1/public/chat/{token}"]?.get).not.toHaveProperty("security");
+    expect(paths["/api/v1/public/chat/{token}/history/{conversationId}"]?.get).not.toHaveProperty("security");
+  });
 });

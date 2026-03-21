@@ -130,3 +130,9 @@ variable "connector_public_base_url" {
   type        = string
   default     = null
 }
+
+variable "public_chat_base_url" {
+  description = "Optional public base URL used when generating public chat links."
+  type        = string
+  default     = null
+}

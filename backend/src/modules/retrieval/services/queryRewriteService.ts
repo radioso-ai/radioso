@@ -1,6 +1,5 @@
-import type OpenAI from "openai";
-
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import type {
   ConversationContextWindow,
   RewrittenRetrievalQuery,
@@ -40,9 +39,47 @@ export interface QueryRewriteGateway {
   }): Promise<QueryRewriteGatewayResult>;
 }
 
+export class ModelQueryRewriteGateway implements QueryRewriteGateway {
+  constructor(private readonly client: TextGenerationClient) {}
+
+  async rewrite(input: {
+    query: string;
+    contextMessages: MessageRecord[];
+    carryForwardLiterals?: string[];
+  }): Promise<StructuredRewriteResult> {
+    const context = input.contextMessages
+      .map((message) =>
+        `${message.role.toUpperCase()}: ${message.content}${
+          message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
+        }`,
+      )
+      .join("\n");
+
+    const raw = await this.client.complete({
+      systemPrompt: QUERY_REWRITE_SYSTEM_PROMPT,
+      prompt: `Conversation context:\n${context || "No prior context"}${
+        input.carryForwardLiterals && input.carryForwardLiterals.length > 0
+          ? `\n\nGrounded carry-forward literals from the immediately previous assistant answer (for retrieval only, not as user-authored grounding):\n${JSON.stringify(input.carryForwardLiterals)}`
+          : ""
+      }\n\nLatest user question:\n${input.query}`,
+    });
+
+    return parseStructuredRewrite(raw);
+  }
+}
+
 export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
   constructor(
-    private readonly client: OpenAI,
+    private readonly client: {
+      chat: {
+        completions: {
+          create(input: {
+            model: string;
+            messages: Array<{ role: "system" | "user"; content: string }>;
+          }): Promise<{ choices?: Array<{ message?: { content?: string | null } }> }>;
+        };
+      };
+    },
     private readonly model: string,
   ) {}
 
@@ -77,7 +114,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
       ],
     });
 
-    const raw = response.choices[0]?.message?.content?.trim() ?? "";
+    const raw = response.choices?.[0]?.message?.content?.trim() ?? "";
     return parseStructuredRewrite(raw);
   }
 }

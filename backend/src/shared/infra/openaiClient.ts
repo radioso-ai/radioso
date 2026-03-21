@@ -1,13 +1,7 @@
 import OpenAI from "openai";
 
-export class OpenAIClients {
-  readonly client: OpenAI;
-  readonly chatModel: string;
-  readonly vectorModel: string;
-
-  constructor(apiKey: string, chatModel: string, vectorModel: string) {
-    this.client = new OpenAI({ apiKey });
-    this.chatModel = chatModel;
-    this.vectorModel = vectorModel;
-  }
-}
+export const createOpenAIClient = (input: { apiKey: string; baseURL?: string }): OpenAI =>
+  new OpenAI({
+    apiKey: input.apiKey,
+    baseURL: input.baseURL,
+  });

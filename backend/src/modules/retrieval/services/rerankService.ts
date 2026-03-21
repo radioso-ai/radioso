@@ -1,5 +1,4 @@
-import type OpenAI from "openai";
-
+import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import type { RetrievedCandidate, RerankedCandidate, RerankStatus } from "../domain/retrievalPipelineTypes.js";
 
 export interface RerankGateway {
@@ -9,12 +8,49 @@ export interface RerankGateway {
   }): Promise<Array<{ chunkId: string; relevanceScore: number }>>;
 }
 
+export class ModelRerankGateway implements RerankGateway {
+  private static readonly TEMPERATURE = 0.2;
+  private static readonly MAX_COMPLETION_TOKENS = 100;
+
+  constructor(private readonly client: TextGenerationClient) {}
+
+  async rerank(input: {
+    query: string;
+    contexts: RetrievedCandidate[];
+  }): Promise<Array<{ chunkId: string; relevanceScore: number }>> {
+    const candidates = input.contexts
+      .map((context, index) => `${index + 1}. ${context.chunkId} | ${context.retrievalText.slice(0, 500)}`)
+      .join("\n");
+
+    const content = await this.client.complete({
+      systemPrompt:
+        'Score each candidate chunk for answer relevance to the query. Return only valid JSON as an array of objects with keys "chunkId" and "relevanceScore" where relevanceScore is between 0 and 1.',
+      prompt: `Query:\n${input.query}\n\nCandidates:\n${candidates}`,
+      temperature: ModelRerankGateway.TEMPERATURE,
+      maxOutputTokens: ModelRerankGateway.MAX_COMPLETION_TOKENS,
+    });
+
+    return parseRerankScores(content);
+  }
+}
+
 export class OpenAISemanticRerankGateway implements RerankGateway {
   private static readonly TEMPERATURE = 0.2;
   private static readonly MAX_COMPLETION_TOKENS = 100;
 
   constructor(
-    private readonly client: OpenAI,
+    private readonly client: {
+      chat: {
+        completions: {
+          create(input: {
+            model: string;
+            temperature?: number;
+            max_completion_tokens?: number;
+            messages: Array<{ role: "system" | "user"; content: string }>;
+          }): Promise<{ choices?: Array<{ message?: { content?: string | null } }> }>;
+        };
+      };
+    },
     private readonly model: string,
   ) {}
 
@@ -43,7 +79,7 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
       ],
     });
 
-    const content = response.choices[0]?.message?.content?.trim() ?? "[]";
+    const content = response.choices?.[0]?.message?.content?.trim() ?? "[]";
     return parseRerankScores(content);
   }
 }

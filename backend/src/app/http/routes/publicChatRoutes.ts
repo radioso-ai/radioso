@@ -7,13 +7,13 @@ import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.j
 import { anonymousRateLimiter } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 
-const anonymousChatSchema = z.object({
+export const anonymousChatSchema = z.object({
   query: z.string().min(1),
   stream: z.boolean().default(false),
   conversationId: z.string().uuid().optional(),
 });
 
-const publicConversationParamsSchema = z.object({
+export const publicConversationParamsSchema = z.object({
   conversationId: z.string().uuid(),
 });
 

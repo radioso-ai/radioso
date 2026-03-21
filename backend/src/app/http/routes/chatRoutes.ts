@@ -7,7 +7,7 @@ import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 
-const chatSchema = z.object({
+export const chatSchema = z.object({
   query: z.string().min(1),
   stream: z.boolean(),
   conversationId: z.string().uuid().optional(),
@@ -17,7 +17,7 @@ const chatSchema = z.object({
   ),
 });
 
-const conversationParamsSchema = z.object({
+export const conversationParamsSchema = z.object({
   conversationId: z.string().uuid(),
 });
 

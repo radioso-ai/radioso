@@ -33,6 +33,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Load spec.md and extract user stories with their priorities (P1, P2, P3, etc.)
    - If data-model.md exists: Extract entities and map to user stories
    - If contracts/ exists: Map endpoints to user stories
+   - If backend HTTP APIs are in scope: include explicit tasks to update `backend/src/app/http/openapi/document.ts`, regenerate `backend/openapi.yaml` / `backend/openapi.json`, and verify contract tests
    - If research.md exists: Extract decisions for setup tasks
    - Generate tasks organized by user story (see Task Generation Rules below)
    - Generate dependency graph showing user story completion order
@@ -116,6 +117,7 @@ Every task MUST strictly follow this format:
 2. **From Contracts**:
    - Map each contract/endpoint → to the user story it serves
    - If tests requested: Each contract → contract test task [P] before implementation in that story's phase
+   - For backend HTTP APIs in this repo: add implementation tasks for the code-first OpenAPI registry and generated outputs instead of hand-edit tasks against `backend/openapi.yaml`
 
 3. **From Data Model**:
    - Map each entity to the user story(ies) that need it

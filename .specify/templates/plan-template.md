@@ -41,6 +41,7 @@
 - Module boundaries between transport, orchestration, domain logic, and persistence are explicit.
 - Existing responsibility-limited files are identified, and the plan explains how new behavior avoids turning them into god objects.
 - If the current structure is unclear or target files are already too large, the plan adds architecture/refactor stories that must land before feature work in those areas.
+- If backend HTTP contracts change, the plan identifies updates required in `backend/src/app/http/openapi/document.ts` and treats `backend/openapi.yaml` / `backend/openapi.json` as generated outputs, never hand-authored sources.
 
 ## Project Structure
 
@@ -52,7 +53,7 @@ specs/[###-feature]/
 ├── research.md          # Phase 0 output (/speckit.plan command)
 ├── data-model.md        # Phase 1 output (/speckit.plan command)
 ├── quickstart.md        # Phase 1 output (/speckit.plan command)
-├── contracts/           # Phase 1 output (/speckit.plan command)
+├── contracts/           # Optional Phase 1 design artifacts for endpoint review
 └── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
 ```
 
@@ -80,9 +81,13 @@ tests/
 # [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
 backend/
 ├── src/
+│   ├── app/http/openapi/   # Code-first OpenAPI registry and document builder
 │   ├── models/
 │   ├── services/
 │   └── api/
+├── openapi.yaml            # Generated from the code-first registry
+├── openapi.json            # Generated from the code-first registry
+├── scripts/generateOpenApi.ts
 └── tests/
 
 frontend/

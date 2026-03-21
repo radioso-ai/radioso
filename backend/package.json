@@ -7,18 +7,21 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
+    "build": "npm run generate:openapi && tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
     "dev": "tsx watch ./src/index.ts",
+    "generate:openapi": "tsx ./scripts/generateOpenApi.ts",
     "start": "node ./dist/src/index.js",
     "smoke:connectors:whatsapp": "node --import tsx ./scripts/whatsappConnectorSmoke.ts",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
-    "test:contract": "vitest run tests/contract",
+    "test:contract": "npm run generate:openapi && vitest run tests/contract",
     "test:persistence": "vitest run tests/integration/persistence.integration.test.ts"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^7.3.4",
     "@hivec/connector-api": "file:../packages/connector-api",
+    "@types/swagger-ui-express": "^4.1.8",
     "bcryptjs": "^2.4.3",
     "cookie": "^1.0.2",
     "cookie-parser": "^1.4.7",
@@ -27,7 +30,9 @@
     "pg": "^8.16.3",
     "pino": "^9.9.0",
     "pino-http": "^10.5.0",
+    "swagger-ui-express": "^5.0.1",
     "uuid": "^11.1.0",
+    "yaml": "^2.8.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {

@@ -5,15 +5,15 @@ import type { AppDependencies } from "../../server/types.js";
 import { requireSession } from "../middleware/requireSession.js";
 import { validateBody } from "../middleware/validate.js";
 
-const createWorkspaceSchema = z.object({
+export const createWorkspaceSchema = z.object({
   name: z.string().min(1).max(100),
 });
 
-const renameWorkspaceSchema = z.object({
+export const renameWorkspaceSchema = z.object({
   name: z.string().min(1).max(100),
 });
 
-const workspaceParamsSchema = z.object({
+export const workspaceParamsSchema = z.object({
   workspaceId: z.string().uuid(),
 });
 

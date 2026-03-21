@@ -11,7 +11,7 @@ import {
   attributeFamilyIds,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 
-const updateSettingsSchema = z.object({
+export const updateSettingsSchema = z.object({
   queryRewriteEnabled: z.boolean(),
   rerankEnabled: z.boolean(),
   vectorTopK: z.number().int(),
@@ -30,6 +30,11 @@ const updateSettingsSchema = z.object({
     )
     .optional(),
   customInstruction: z.string().max(2000).optional(),
+});
+
+export const updateGeneralSettingsSchema = z.object({
+  anonymousChatEnabled: z.boolean().optional(),
+  anonymousRateLimit: z.number().int().min(1).max(60).optional(),
 });
 
 export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
@@ -67,11 +72,6 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     if (!baseUrl || !enabled || !token) return null;
     return `${baseUrl}/${token}`;
   };
-
-  const updateGeneralSettingsSchema = z.object({
-    anonymousChatEnabled: z.boolean().optional(),
-    anonymousRateLimit: z.number().int().min(1).max(60).optional(),
-  });
 
   router.get("/general", requireApiToken(dependencies), async (_req, res, next) => {
     try {

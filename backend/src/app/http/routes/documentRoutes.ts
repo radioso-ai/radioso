@@ -5,7 +5,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
 
-const documentSchema = z.object({
+export const documentSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
   metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional().refine(
@@ -14,7 +14,7 @@ const documentSchema = z.object({
   ),
 });
 
-const documentParamsSchema = z.object({
+export const documentParamsSchema = z.object({
   documentId: z.string().uuid(),
 });
 

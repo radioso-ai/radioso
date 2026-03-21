@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { requireSession } from "../middleware/requireSession.js";
 
-const workspaceParamsSchema = z.object({
+export const workspaceParamsSchema = z.object({
   workspaceId: z.string().uuid(),
 });
 

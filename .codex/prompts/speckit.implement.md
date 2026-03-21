@@ -50,6 +50,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **REQUIRED**: Read plan.md for tech stack, architecture, and file structure
    - **IF EXISTS**: Read data-model.md for entities and relationships
    - **IF EXISTS**: Read contracts/ for API specifications and test requirements
+   - **IF backend HTTP APIs are in scope**: Read `backend/src/app/http/openapi/document.ts`, `backend/scripts/generateOpenApi.ts`, and the generated `backend/openapi.yaml`
    - **IF EXISTS**: Read research.md for technical decisions and constraints
    - **IF EXISTS**: Read quickstart.md for integration scenarios
 
@@ -115,6 +116,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
    - **Core development**: Implement models, services, CLI commands, endpoints
    - **Integration work**: Database connections, middleware, logging, external services
+   - **Backend API contract rule**: Update `backend/src/app/http/openapi/document.ts` as the source of truth for backend HTTP contract changes and regenerate `backend/openapi.yaml` / `backend/openapi.json`; do not hand-edit generated spec files
    - **Polish and validation**: Unit tests, performance optimization, documentation
 
 8. Progress tracking and error handling:
@@ -129,6 +131,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Verify all required tasks are completed
    - Check that implemented features match the original specification
    - Validate that tests pass and coverage meets requirements
+   - For backend API changes, run the OpenAPI generation flow and verify the generated spec stays in sync with implementation and contract tests
    - Confirm the implementation follows the technical plan
    - Report final status with summary of completed work
 

@@ -1,0 +1,1000 @@
+openapi: 3.1.0
+info:
+  title: Hivec Modular RAG API
+  version: 0.1.0
+  summary: Contract draft for the initial modular RAG backend
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: Auth
+  - name: Account
+  - name: Workspace
+  - name: Settings
+  - name: Documents
+  - name: Chat
+paths:
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new account
+      operationId: registerAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created and session established
+          headers:
+            Set-Cookie:
+              description: HttpOnly secure session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in an existing account
+      operationId: loginAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Session established
+          headers:
+            Set-Cookie:
+              description: HttpOnly secure session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/workspace:
+    get:
+      tags: [Workspace]
+      summary: List workspaces for the authenticated account
+      operationId: listWorkspaces
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Workspaces returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [Workspace]
+      summary: Create a new workspace
+      operationId: createWorkspace
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceCreateRequest'
+      responses:
+        '201':
+          description: Workspace created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/workspace/{workspaceId}:
+    patch:
+      tags: [Workspace]
+      summary: Rename a workspace
+      operationId: renameWorkspace
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceRenameRequest'
+      responses:
+        '200':
+          description: Workspace renamed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Workspace]
+      summary: Delete a workspace and all its data
+      operationId: deleteWorkspace
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Workspace deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/account/workspaces/{workspaceId}/token:
+    get:
+      tags: [Account]
+      summary: Return the API token for a specific workspace
+      operationId: getWorkspaceToken
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Token returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/settings/retrieval:
+    get:
+      tags: [Settings]
+      summary: Get retrieval settings for the authenticated account
+      operationId: getRetrievalSettings
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Retrieval settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Settings]
+      summary: Update retrieval settings for the authenticated account
+      operationId: updateRetrievalSettings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRetrievalSettingsRequest'
+      responses:
+        '200':
+          description: Updated retrieval settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalSettings'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/document/:
+    get:
+      tags: [Documents]
+      summary: List documents for the authenticated account
+      operationId: listDocuments
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Documents returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [Documents]
+      summary: Ingest a document for the authenticated account
+      operationId: createDocument
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentCreateRequest'
+      responses:
+        '201':
+          description: Document accepted and processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/document/{documentId}:
+    get:
+      tags: [Documents]
+      summary: Get a document for the authenticated account
+      operationId: getDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Document returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Documents]
+      summary: Update and reprocess a document for the authenticated account
+      operationId: updateDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentCreateRequest'
+      responses:
+        '200':
+          description: Document updated and processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Documents]
+      summary: Delete a document for the authenticated account
+      operationId: deleteDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Document deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/chat/:
+    post:
+      tags: [Chat]
+      summary: Ask a retrieval-grounded question
+      operationId: createChatResponse
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Non-streaming answer or streaming event stream
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE stream containing incremental answer events
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/chat/history:
+    get:
+      tags: [Chat]
+      summary: List saved chat conversations for the authenticated account
+      operationId: listChatHistory
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Chat history summaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatHistoryListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/chat/history/{conversationId}:
+    get:
+      tags: [Chat]
+      summary: Get a saved conversation and its debug metadata
+      operationId: getChatHistoryConversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Historical conversation detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatConversationDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: radioso_session
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: APIKey
+  responses:
+    BadRequest:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+    RegisterResponse:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    LoginResponse:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+    AccountTokenResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          pattern: '^sk_proj_[A-Za-z0-9]+$'
+    Workspace:
+      type: object
+      required: [id, accountId, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    WorkspaceListResponse:
+      type: object
+      required: [workspaces]
+      properties:
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+    WorkspaceCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+    WorkspaceRenameRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+    RetrievalSettings:
+      type: object
+      required:
+        - workspaceId
+        - queryRewriteEnabled
+        - rerankEnabled
+        - vectorTopK
+        - similarityThreshold
+        - rerankTopK
+        - warmthLevel
+        - citationDisplayEnabled
+        - chunkingStrategy
+        - attributeControls
+        - customInstruction
+        - createdAt
+        - updatedAt
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
+        queryRewriteEnabled:
+          type: boolean
+        rerankEnabled:
+          type: boolean
+        vectorTopK:
+          type: integer
+          minimum: 1
+          maximum: 300
+        similarityThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        rerankTopK:
+          type: integer
+          minimum: 1
+        warmthLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        citationDisplayEnabled:
+          type: boolean
+        chunkingStrategy:
+          type: string
+          enum:
+            - fixed_window
+            - structured_semantic
+        attributeControls:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttributeFamilyControl'
+        customInstruction:
+          type: string
+          maxLength: 2000
+          default: ""
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UpdateRetrievalSettingsRequest:
+      type: object
+      required:
+        - queryRewriteEnabled
+        - rerankEnabled
+        - vectorTopK
+        - similarityThreshold
+        - rerankTopK
+        - warmthLevel
+        - citationDisplayEnabled
+        - chunkingStrategy
+      properties:
+        queryRewriteEnabled:
+          type: boolean
+        rerankEnabled:
+          type: boolean
+        vectorTopK:
+          type: integer
+          minimum: 1
+          maximum: 300
+        similarityThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        rerankTopK:
+          type: integer
+          minimum: 1
+        warmthLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        citationDisplayEnabled:
+          type: boolean
+        chunkingStrategy:
+          type: string
+          enum:
+            - fixed_window
+            - structured_semantic
+        attributeControls:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttributeFamilyControl'
+        customInstruction:
+          type: string
+          maxLength: 2000
+    AttributeFamilyControl:
+      type: object
+      required: [family, enabled, mode]
+      properties:
+        family:
+          type: string
+          enum: [date_point, date_range, money_value, location]
+        enabled:
+          type: boolean
+        mode:
+          type: string
+          enum: [boost_only, hard_filter]
+    DocumentCreateRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        content:
+          type: string
+          minLength: 1
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Optional key-value metadata (max 16 KB serialized)
+    DocumentCreateResponse:
+      type: object
+      required: [documentId, status]
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [received, normalized, chunked, embedded, ready]
+    DocumentSummary:
+      type: object
+      required: [id, title, status, ragStatus, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+        ragStatus:
+          type: string
+          enum: [processed, pending]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+          default: {}
+    DocumentDetails:
+      allOf:
+        - $ref: '#/components/schemas/DocumentSummary'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: string
+    DocumentListResponse:
+      type: object
+      required: [documents]
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentSummary'
+    ChatRequest:
+      type: object
+      required: [query, stream]
+      properties:
+        query:
+          type: string
+          minLength: 1
+        stream:
+          type: boolean
+        conversationId:
+          type: string
+          format: uuid
+          description: Omit to start a new conversation
+        metadataFilter:
+          type: object
+          additionalProperties: true
+          description: Filter retrieval to chunks matching these metadata key-value pairs
+    ChatResponse:
+      type: object
+      required: [conversationId, answer, retrievalInfo]
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+        answerSegments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnswerSegment'
+        retrievalInfo:
+          $ref: '#/components/schemas/RetrievalInfo'
+    ChatHistoryListResponse:
+      type: object
+      required: [conversations]
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatConversationSummary'
+    ChatConversationSummary:
+      type: object
+      required:
+        - id
+        - createdAt
+        - updatedAt
+        - messageCount
+        - userMessageCount
+        - assistantMessageCount
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        messageCount:
+          type: integer
+          minimum: 0
+        userMessageCount:
+          type: integer
+          minimum: 0
+        assistantMessageCount:
+          type: integer
+          minimum: 0
+        preview:
+          type: string
+          nullable: true
+    ChatConversationDetail:
+      type: object
+      required:
+        - conversationId
+        - workspaceId
+        - createdAt
+        - updatedAt
+        - messageCount
+        - userMessageCount
+        - assistantMessageCount
+        - messages
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        messageCount:
+          type: integer
+          minimum: 0
+        userMessageCount:
+          type: integer
+          minimum: 0
+        assistantMessageCount:
+          type: integer
+          minimum: 0
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatConversationMessage'
+    ChatConversationMessage:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        debug:
+          $ref: '#/components/schemas/ChatConversationMessageDebug'
+    ChatConversationMessageDebug:
+      type: object
+      required: [eventStatus, recordedAt, stream, citationCount]
+      properties:
+        eventStatus:
+          type: string
+          enum: [success, failure]
+        recordedAt:
+          type: string
+          format: date-time
+        stream:
+          type: boolean
+        citationCount:
+          type: integer
+          minimum: 0
+        retrievalInfo:
+          $ref: '#/components/schemas/RetrievalInfo'
+        errorMessage:
+          type: string
+          nullable: true
+    Citation:
+      type: object
+      required: [documentId, chunkId]
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        chunkId:
+          type: string
+          format: uuid
+        title:
+          type: string
+    AnswerSegment:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+        citationIndices:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+    RetrievalInfo:
+      type: object
+      required: [candidateCounts, fallbackApplied, rerankStatus]
+      properties:
+        parsedQuery:
+          $ref: '#/components/schemas/ParsedQuery'
+        candidateCounts:
+          $ref: '#/components/schemas/CandidateCounts'
+        appliedConstraints:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppliedConstraint'
+        fallbackApplied:
+          type: boolean
+        rerankStatus:
+          type: string
+          enum: [skipped, applied, fallback]
+    ParsedQuery:
+      type: object
+      required: [semanticQuery, lexicalQuery, constraintSummary]
+      properties:
+        semanticQuery:
+          type: string
+        lexicalQuery:
+          type: string
+        constraintSummary:
+          type: array
+          items:
+            type: string
+    CandidateCounts:
+      type: object
+      required: [semantic, lexical, merged, final]
+      properties:
+        semantic:
+          type: integer
+          minimum: 0
+        lexical:
+          type: integer
+          minimum: 0
+        merged:
+          type: integer
+          minimum: 0
+        final:
+          type: integer
+          minimum: 0
+    AppliedConstraint:
+      type: object
+      required: [family, mode, outcome, summary]
+      properties:
+        family:
+          type: string
+          enum: [date_point, date_range, money_value, location]
+        mode:
+          type: string
+          enum: [boost_only, hard_filter]
+        outcome:
+          type: string
+          enum: [applied, relaxed, skipped]
+        summary:
+          type: string
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string

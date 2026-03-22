@@ -58,7 +58,7 @@ export const createTestEnv = (): Env => ({
   OPENAI_CHAT_MODEL: "gpt-5-mini",
   OPENAI_VECTOR_MODEL: "text-embedding-3-small",
   LLM_PROVIDER: "openai",
-  SESSION_COOKIE_NAME: "hivec_session",
+  SESSION_COOKIE_NAME: "radioso_session",
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
   SESSION_TTL_HOURS: 168,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),

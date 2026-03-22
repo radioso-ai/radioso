@@ -33,7 +33,7 @@
 
 **Decision**: Add a `WorkspaceProvider` context that holds the active workspace. The workspace switcher sets this context. The auth bootstrap flow fetches available workspaces and selects the last-used one (or default). The API token is stored per workspace in localStorage.
 
-**Rationale**: Clean separation — `AuthProvider` handles account identity, `WorkspaceProvider` handles workspace selection. The API token storage key changes from `hivec.apiToken` to `hivec.apiToken.{workspaceId}` so switching workspaces swaps the active token.
+**Rationale**: Clean separation — `AuthProvider` handles account identity, `WorkspaceProvider` handles workspace selection. The API token storage key changes from `radioso.apiToken` to `radioso.apiToken.{workspaceId}` so switching workspaces swaps the active token.
 
 **Alternatives considered**:
 - Single provider handling both auth and workspace: Violates single-responsibility and couples auth state to workspace state. Rejected.

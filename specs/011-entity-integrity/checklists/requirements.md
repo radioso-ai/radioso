@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-03-16  
-**Feature**: [/Users/dm/code/hivec-entity-integrity/specs/011-entity-integrity/spec.md](/Users/dm/code/hivec-entity-integrity/specs/011-entity-integrity/spec.md)
+**Feature**: [/Users/dm/code/radioso-entity-integrity/specs/011-entity-integrity/spec.md](/Users/dm/code/radioso-entity-integrity/specs/011-entity-integrity/spec.md)
 
 ## Content Quality
 

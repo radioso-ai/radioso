@@ -11,7 +11,7 @@
 
 **Purpose**: Confirm design artifacts and baseline files before code changes
 
-- [ ] T001 Review `/tmp/hivec-strict-grounding/specs/004-strict-grounding/spec.md`, `/tmp/hivec-strict-grounding/specs/004-strict-grounding/plan.md`, and `/tmp/hivec-strict-grounding/specs/004-strict-grounding/research.md`
+- [ ] T001 Review `/tmp/radioso-strict-grounding/specs/004-strict-grounding/spec.md`, `/tmp/radioso-strict-grounding/specs/004-strict-grounding/plan.md`, and `/tmp/radioso-strict-grounding/specs/004-strict-grounding/research.md`
 
 ---
 
@@ -19,7 +19,7 @@
 
 **Purpose**: Identify the narrow backend seams that will own the behavior change
 
-- [ ] T002 Map retrieval-threshold ownership across `/tmp/hivec-strict-grounding/backend/src/modules/retrieval/services/retrievalPipelineService.ts`, `/tmp/hivec-strict-grounding/backend/src/modules/chat/services/chatService.ts`, and `/tmp/hivec-strict-grounding/backend/src/modules/settings/domain/retrievalSettings.ts`
+- [ ] T002 Map retrieval-threshold ownership across `/tmp/radioso-strict-grounding/backend/src/modules/retrieval/services/retrievalPipelineService.ts`, `/tmp/radioso-strict-grounding/backend/src/modules/chat/services/chatService.ts`, and `/tmp/radioso-strict-grounding/backend/src/modules/settings/domain/retrievalSettings.ts`
 
 **Checkpoint**: The implementation seam is confirmed and user-story work can proceed.
 
@@ -33,13 +33,13 @@
 
 ### Tests for User Story 1 (REQUIRED for backend)
 
-- [ ] T003 [P] [US1] Add unit coverage for hard-threshold retrieval behavior in `/tmp/hivec-strict-grounding/backend/tests/unit/edge-cases.test.ts`
-- [ ] T004 [P] [US1] Add chat behavior coverage for out-of-corpus refusal in `/tmp/hivec-strict-grounding/backend/tests/contract/chat.contract.test.ts`
+- [ ] T003 [P] [US1] Add unit coverage for hard-threshold retrieval behavior in `/tmp/radioso-strict-grounding/backend/tests/unit/edge-cases.test.ts`
+- [ ] T004 [P] [US1] Add chat behavior coverage for out-of-corpus refusal in `/tmp/radioso-strict-grounding/backend/tests/contract/chat.contract.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] Remove similarity-threshold fallback from `/tmp/hivec-strict-grounding/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
-- [ ] T006 [US1] Preserve or update retrieval diagnostics for the no-fallback path in `/tmp/hivec-strict-grounding/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
+- [ ] T005 [US1] Remove similarity-threshold fallback from `/tmp/radioso-strict-grounding/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
+- [ ] T006 [US1] Preserve or update retrieval diagnostics for the no-fallback path in `/tmp/radioso-strict-grounding/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
 
 **Checkpoint**: Unsupported questions now refuse safely with the existing chat contract.
 
@@ -53,13 +53,13 @@
 
 ### Tests for User Story 2 (REQUIRED for backend)
 
-- [ ] T007 [P] [US2] Add default-settings coverage for the higher candidate count in `/tmp/hivec-strict-grounding/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
-- [ ] T008 [P] [US2] Add document-backed answerability coverage in `/tmp/hivec-strict-grounding/backend/tests/integration/chat.integration.test.ts`
+- [ ] T007 [P] [US2] Add default-settings coverage for the higher candidate count in `/tmp/radioso-strict-grounding/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
+- [ ] T008 [P] [US2] Add document-backed answerability coverage in `/tmp/radioso-strict-grounding/backend/tests/integration/chat.integration.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T009 [US2] Raise the default retrieval candidate count modestly in `/tmp/hivec-strict-grounding/backend/src/modules/settings/domain/retrievalSettings.ts`
-- [ ] T010 [US2] Keep final context selection behavior compatible with the stricter threshold policy in `/tmp/hivec-strict-grounding/backend/src/modules/retrieval/services/promptContextSelectorService.ts` or `/tmp/hivec-strict-grounding/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
+- [ ] T009 [US2] Raise the default retrieval candidate count modestly in `/tmp/radioso-strict-grounding/backend/src/modules/settings/domain/retrievalSettings.ts`
+- [ ] T010 [US2] Keep final context selection behavior compatible with the stricter threshold policy in `/tmp/radioso-strict-grounding/backend/src/modules/retrieval/services/promptContextSelectorService.ts` or `/tmp/radioso-strict-grounding/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
 
 **Checkpoint**: Document-backed questions remain answerable without lowering the threshold floor.
 
@@ -73,11 +73,11 @@
 
 ### Tests for User Story 3 (REQUIRED for backend)
 
-- [ ] T011 [P] [US3] Add settings-preservation coverage in `/tmp/hivec-strict-grounding/backend/tests/integration/document-settings.integration.test.ts` or `/tmp/hivec-strict-grounding/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
+- [ ] T011 [P] [US3] Add settings-preservation coverage in `/tmp/radioso-strict-grounding/backend/tests/integration/document-settings.integration.test.ts` or `/tmp/radioso-strict-grounding/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T012 [US3] Verify retrieval settings creation and preservation behavior in `/tmp/hivec-strict-grounding/backend/src/modules/settings/services/retrievalSettingsService.ts`
+- [ ] T012 [US3] Verify retrieval settings creation and preservation behavior in `/tmp/radioso-strict-grounding/backend/src/modules/settings/services/retrievalSettingsService.ts`
 
 **Checkpoint**: Existing stored settings remain unchanged while defaults apply only to new records.
 
@@ -87,8 +87,8 @@
 
 **Purpose**: Final validation and artifact updates across the feature
 
-- [ ] T013 [P] Run targeted backend test suites for `/tmp/hivec-strict-grounding/backend/tests/unit/edge-cases.test.ts`, `/tmp/hivec-strict-grounding/backend/tests/unit/retrieval-settings-and-chunking.test.ts`, `/tmp/hivec-strict-grounding/backend/tests/contract/chat.contract.test.ts`, and `/tmp/hivec-strict-grounding/backend/tests/integration/chat.integration.test.ts`
-- [ ] T014 [P] Review `/tmp/hivec-strict-grounding/specs/004-strict-grounding/quickstart.md` against the final implementation and update if needed
+- [ ] T013 [P] Run targeted backend test suites for `/tmp/radioso-strict-grounding/backend/tests/unit/edge-cases.test.ts`, `/tmp/radioso-strict-grounding/backend/tests/unit/retrieval-settings-and-chunking.test.ts`, `/tmp/radioso-strict-grounding/backend/tests/contract/chat.contract.test.ts`, and `/tmp/radioso-strict-grounding/backend/tests/integration/chat.integration.test.ts`
+- [ ] T014 [P] Review `/tmp/radioso-strict-grounding/specs/004-strict-grounding/quickstart.md` against the final implementation and update if needed
 
 ## Dependencies & Execution Order
 

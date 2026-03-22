@@ -1,6 +1,6 @@
 # Implementation Plan: Document List Polish
 
-**Branch**: `[008-document-list-polish]` | **Date**: 2026-03-14 | **Spec**: [/tmp/hivec-document-list-polish/specs/008-document-list-polish/spec.md](/tmp/hivec-document-list-polish/specs/008-document-list-polish/spec.md)
+**Branch**: `[008-document-list-polish]` | **Date**: 2026-03-14 | **Spec**: [/tmp/radioso-document-list-polish/specs/008-document-list-polish/spec.md](/tmp/radioso-document-list-polish/specs/008-document-list-polish/spec.md)
 **Input**: Feature specification from `/specs/008-document-list-polish/spec.md` (approved and binding per user instruction)
 
 ## Summary

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- hivec backend running with migration 006 applied
+- radioso backend running with migration 006 applied
 - Valid workspace API token
 
 ## 1. Upload a document with metadata

@@ -35,7 +35,7 @@ const registry = new OpenAPIRegistry();
 const sessionCookieScheme = registry.registerComponent("securitySchemes", "sessionCookie", {
   type: "apiKey",
   in: "cookie",
-  name: "hivec_session",
+  name: "radioso_session",
 });
 
 const bearerAuthScheme = registry.registerComponent("securitySchemes", "bearerAuth", {
@@ -1782,7 +1782,7 @@ export const createOpenApiDocument = (
 
   const sessionCookie = document.components?.securitySchemes?.sessionCookie;
   if (sessionCookie && "name" in sessionCookie) {
-    sessionCookie.name = options.sessionCookieName ?? "hivec_session";
+    sessionCookie.name = options.sessionCookieName ?? "radioso_session";
   }
 
   if (document.components?.securitySchemes) {

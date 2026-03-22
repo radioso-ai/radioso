@@ -1,6 +1,6 @@
 # Implementation Plan: Selectable Chunking Strategies
 
-**Branch**: `codex/007-chunking-strategy-selection` | **Date**: 2026-03-14 | **Spec**: [/tmp/hivec-chunking-strategy-selection/specs/007-chunking-strategy-selection/spec.md](/tmp/hivec-chunking-strategy-selection/specs/007-chunking-strategy-selection/spec.md)
+**Branch**: `codex/007-chunking-strategy-selection` | **Date**: 2026-03-14 | **Spec**: [/tmp/radioso-chunking-strategy-selection/specs/007-chunking-strategy-selection/spec.md](/tmp/radioso-chunking-strategy-selection/specs/007-chunking-strategy-selection/spec.md)
 **Input**: Feature specification from `/specs/007-chunking-strategy-selection/spec.md`
 
 ## Summary

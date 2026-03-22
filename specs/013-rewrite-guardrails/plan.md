@@ -1,6 +1,6 @@
 # Implementation Plan: Assistive Rewrite Guardrails
 
-**Branch**: `013-rewrite-guardrails` | **Date**: 2026-03-17 | **Spec**: [/Users/dm/code/hivec-rewrite-guardrails/specs/013-rewrite-guardrails/spec.md](/Users/dm/code/hivec-rewrite-guardrails/specs/013-rewrite-guardrails/spec.md)
+**Branch**: `013-rewrite-guardrails` | **Date**: 2026-03-17 | **Spec**: [/Users/dm/code/radioso-rewrite-guardrails/specs/013-rewrite-guardrails/spec.md](/Users/dm/code/radioso-rewrite-guardrails/specs/013-rewrite-guardrails/spec.md)
 **Input**: Feature specification from `/specs/013-rewrite-guardrails/spec.md`
 
 ## Summary

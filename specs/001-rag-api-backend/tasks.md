@@ -1,7 +1,7 @@
 # Tasks: Modular RAG Backend
 
-**Input**: Design documents from `/Users/dm/code/hivec/specs/001-rag-api-backend/`
-**Prerequisites**: [plan.md](/Users/dm/code/hivec/specs/001-rag-api-backend/plan.md), [spec.md](/Users/dm/code/hivec/specs/001-rag-api-backend/spec.md), [research.md](/Users/dm/code/hivec/specs/001-rag-api-backend/research.md), [data-model.md](/Users/dm/code/hivec/specs/001-rag-api-backend/data-model.md), [contracts/openapi.yaml](/Users/dm/code/hivec/specs/001-rag-api-backend/contracts/openapi.yaml)
+**Input**: Design documents from `/Users/dm/code/radioso/specs/001-rag-api-backend/`
+**Prerequisites**: [plan.md](/Users/dm/code/radioso/specs/001-rag-api-backend/plan.md), [spec.md](/Users/dm/code/radioso/specs/001-rag-api-backend/spec.md), [research.md](/Users/dm/code/radioso/specs/001-rag-api-backend/research.md), [data-model.md](/Users/dm/code/radioso/specs/001-rag-api-backend/data-model.md), [contracts/openapi.yaml](/Users/dm/code/radioso/specs/001-rag-api-backend/contracts/openapi.yaml)
 
 **Tests**: Backend tests are REQUIRED and MUST be written before implementation tasks in each user story phase.
 
@@ -17,14 +17,14 @@
 
 **Purpose**: Create the backend workspace, toolchain, and contract baseline
 
-- [x] T001 Create the backend service directory structure in `/Users/dm/code/hivec/backend/` with `src/`, `tests/`, and `db/` subdirectories per `/Users/dm/code/hivec/specs/001-rag-api-backend/plan.md`
-- [x] T002 Initialize the Node.js/TypeScript project manifest in `/Users/dm/code/hivec/backend/package.json` with Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, and Supertest dependencies
-- [x] T003 [P] Create TypeScript build configuration in `/Users/dm/code/hivec/backend/tsconfig.json`
-- [x] T004 [P] Create environment templates in `/Users/dm/code/hivec/backend/.env.example` documenting `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL`, `OPENAI_VECTOR_MODEL`, `SESSION_COOKIE_SECRET`, and `PORT`
-- [x] T005 Copy and align the contract draft from `/Users/dm/code/hivec/specs/001-rag-api-backend/contracts/openapi.yaml` to `/Users/dm/code/hivec/backend/openapi.yaml`
-- [x] T006 [P] Create the test runner and local scripts in `/Users/dm/code/hivec/backend/package.json` for unit, integration, contract, and full test execution
-- [x] T059 [P] Create container environment templates in `/Users/dm/code/hivec/infra/.env.example` for Docker-based local runtime configuration
-- [x] T060 [P] Create Docker runtime artifacts in `/Users/dm/code/hivec/infra/backend.Dockerfile` and `/Users/dm/code/hivec/infra/docker-compose.yml` to run the backend with PostgreSQL + `pgvector`
+- [x] T001 Create the backend service directory structure in `/Users/dm/code/radioso/backend/` with `src/`, `tests/`, and `db/` subdirectories per `/Users/dm/code/radioso/specs/001-rag-api-backend/plan.md`
+- [x] T002 Initialize the Node.js/TypeScript project manifest in `/Users/dm/code/radioso/backend/package.json` with Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, and Supertest dependencies
+- [x] T003 [P] Create TypeScript build configuration in `/Users/dm/code/radioso/backend/tsconfig.json`
+- [x] T004 [P] Create environment templates in `/Users/dm/code/radioso/backend/.env.example` documenting `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL`, `OPENAI_VECTOR_MODEL`, `SESSION_COOKIE_SECRET`, and `PORT`
+- [x] T005 Copy and align the contract draft from `/Users/dm/code/radioso/specs/001-rag-api-backend/contracts/openapi.yaml` to `/Users/dm/code/radioso/backend/openapi.yaml`
+- [x] T006 [P] Create the test runner and local scripts in `/Users/dm/code/radioso/backend/package.json` for unit, integration, contract, and full test execution
+- [x] T059 [P] Create container environment templates in `/Users/dm/code/radioso/infra/.env.example` for Docker-based local runtime configuration
+- [x] T060 [P] Create Docker runtime artifacts in `/Users/dm/code/radioso/infra/backend.Dockerfile` and `/Users/dm/code/radioso/infra/docker-compose.yml` to run the backend with PostgreSQL + `pgvector`
 
 ---
 
@@ -34,15 +34,15 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [x] T007 Create Postgres migration bootstrap files in `/Users/dm/code/hivec/backend/src/db/migrations/` for accounts, sessions, account tokens, retrieval settings, documents, chunks, conversations, messages, and audit events
-- [x] T008 [P] Implement database connection and transaction helpers in `/Users/dm/code/hivec/backend/src/shared/infra/database.ts`
-- [x] T009 [P] Implement centralized environment parsing in `/Users/dm/code/hivec/backend/src/app/config/env.ts`
-- [x] T010 [P] Implement logger and request correlation plumbing in `/Users/dm/code/hivec/backend/src/shared/observability/logger.ts`
-- [x] T011 Create the Express app bootstrap in `/Users/dm/code/hivec/backend/src/app/server/createApp.ts`
-- [x] T012 [P] Implement shared HTTP error mapping middleware in `/Users/dm/code/hivec/backend/src/app/http/middleware/errorHandler.ts`
-- [x] T013 [P] Implement shared request validation middleware in `/Users/dm/code/hivec/backend/src/app/http/middleware/validate.ts`
-- [x] T014 [P] Implement OpenAI gateway bootstrap for chat and embedding models in `/Users/dm/code/hivec/backend/src/shared/infra/openaiClient.ts`
-- [x] T015 Implement the HTTP route registration entrypoint in `/Users/dm/code/hivec/backend/src/app/http/routes/index.ts`
+- [x] T007 Create Postgres migration bootstrap files in `/Users/dm/code/radioso/backend/src/db/migrations/` for accounts, sessions, account tokens, retrieval settings, documents, chunks, conversations, messages, and audit events
+- [x] T008 [P] Implement database connection and transaction helpers in `/Users/dm/code/radioso/backend/src/shared/infra/database.ts`
+- [x] T009 [P] Implement centralized environment parsing in `/Users/dm/code/radioso/backend/src/app/config/env.ts`
+- [x] T010 [P] Implement logger and request correlation plumbing in `/Users/dm/code/radioso/backend/src/shared/observability/logger.ts`
+- [x] T011 Create the Express app bootstrap in `/Users/dm/code/radioso/backend/src/app/server/createApp.ts`
+- [x] T012 [P] Implement shared HTTP error mapping middleware in `/Users/dm/code/radioso/backend/src/app/http/middleware/errorHandler.ts`
+- [x] T013 [P] Implement shared request validation middleware in `/Users/dm/code/radioso/backend/src/app/http/middleware/validate.ts`
+- [x] T014 [P] Implement OpenAI gateway bootstrap for chat and embedding models in `/Users/dm/code/radioso/backend/src/shared/infra/openaiClient.ts`
+- [x] T015 Implement the HTTP route registration entrypoint in `/Users/dm/code/radioso/backend/src/app/http/routes/index.ts`
 
 **Checkpoint**: Foundation ready. User story work can now proceed.
 
@@ -56,20 +56,20 @@
 
 ### Tests for User Story 1 (REQUIRED for backend)
 
-- [x] T016 [P] [US1] Write the auth contract tests for `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, and `GET /api/v1/account/token` in `/Users/dm/code/hivec/backend/tests/contract/auth.contract.test.ts`
-- [x] T017 [P] [US1] Write the auth integration tests for registration, duplicate email rejection, invalid login, session cookie issuance, and token retrieval in `/Users/dm/code/hivec/backend/tests/integration/auth.integration.test.ts`
-- [x] T018 [P] [US1] Write unit tests for password hashing, session token generation, and account token hashing in `/Users/dm/code/hivec/backend/tests/unit/auth.domain.test.ts`
+- [x] T016 [P] [US1] Write the auth contract tests for `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, and `GET /api/v1/account/token` in `/Users/dm/code/radioso/backend/tests/contract/auth.contract.test.ts`
+- [x] T017 [P] [US1] Write the auth integration tests for registration, duplicate email rejection, invalid login, session cookie issuance, and token retrieval in `/Users/dm/code/radioso/backend/tests/integration/auth.integration.test.ts`
+- [x] T018 [P] [US1] Write unit tests for password hashing, session token generation, and account token hashing in `/Users/dm/code/radioso/backend/tests/unit/auth.domain.test.ts`
 
 ### Implementation for User Story 1
 
-- [x] T019 [P] [US1] Implement the account and session repositories in `/Users/dm/code/hivec/backend/src/db/repositories/accountRepository.ts` and `/Users/dm/code/hivec/backend/src/db/repositories/sessionRepository.ts`
-- [x] T020 [P] [US1] Implement the single account-token repository in `/Users/dm/code/hivec/backend/src/db/repositories/accountTokenRepository.ts`
-- [x] T021 [P] [US1] Implement auth domain helpers for password hashing, session cookies, and API token generation in `/Users/dm/code/hivec/backend/src/modules/auth/domain/authPrimitives.ts`
-- [x] T022 [US1] Implement registration, login, and token retrieval services in `/Users/dm/code/hivec/backend/src/modules/auth/services/authService.ts`
-- [x] T023 [P] [US1] Implement session-auth middleware in `/Users/dm/code/hivec/backend/src/app/http/middleware/requireSession.ts`
-- [x] T024 [US1] Implement auth route handlers in `/Users/dm/code/hivec/backend/src/app/http/routes/authRoutes.ts`
-- [x] T025 [US1] Implement account-token route handler in `/Users/dm/code/hivec/backend/src/app/http/routes/accountRoutes.ts`
-- [x] T026 [US1] Add audit event recording for registration, login, and token retrieval failures in `/Users/dm/code/hivec/backend/src/modules/audit/services/auditService.ts`
+- [x] T019 [P] [US1] Implement the account and session repositories in `/Users/dm/code/radioso/backend/src/db/repositories/accountRepository.ts` and `/Users/dm/code/radioso/backend/src/db/repositories/sessionRepository.ts`
+- [x] T020 [P] [US1] Implement the single account-token repository in `/Users/dm/code/radioso/backend/src/db/repositories/accountTokenRepository.ts`
+- [x] T021 [P] [US1] Implement auth domain helpers for password hashing, session cookies, and API token generation in `/Users/dm/code/radioso/backend/src/modules/auth/domain/authPrimitives.ts`
+- [x] T022 [US1] Implement registration, login, and token retrieval services in `/Users/dm/code/radioso/backend/src/modules/auth/services/authService.ts`
+- [x] T023 [P] [US1] Implement session-auth middleware in `/Users/dm/code/radioso/backend/src/app/http/middleware/requireSession.ts`
+- [x] T024 [US1] Implement auth route handlers in `/Users/dm/code/radioso/backend/src/app/http/routes/authRoutes.ts`
+- [x] T025 [US1] Implement account-token route handler in `/Users/dm/code/radioso/backend/src/app/http/routes/accountRoutes.ts`
+- [x] T026 [US1] Add audit event recording for registration, login, and token retrieval failures in `/Users/dm/code/radioso/backend/src/modules/audit/services/auditService.ts`
 
 **Checkpoint**: User Story 1 is independently functional and testable.
 
@@ -83,24 +83,24 @@
 
 ### Tests for User Story 2 (REQUIRED for backend)
 
-- [x] T027 [P] [US2] Write contract tests for `GET /api/v1/settings/retrieval` and `PUT /api/v1/settings/retrieval` in `/Users/dm/code/hivec/backend/tests/contract/settings.contract.test.ts`
-- [x] T028 [P] [US2] Write the contract test for `POST /api/v1/document/` in `/Users/dm/code/hivec/backend/tests/contract/document.contract.test.ts`
-- [x] T029 [P] [US2] Write integration tests for settings validation, token auth, document ingestion, and account scoping in `/Users/dm/code/hivec/backend/tests/integration/document-settings.integration.test.ts`
-- [x] T030 [P] [US2] Write unit tests for recursive chunk overlap and retrieval settings validation in `/Users/dm/code/hivec/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
+- [x] T027 [P] [US2] Write contract tests for `GET /api/v1/settings/retrieval` and `PUT /api/v1/settings/retrieval` in `/Users/dm/code/radioso/backend/tests/contract/settings.contract.test.ts`
+- [x] T028 [P] [US2] Write the contract test for `POST /api/v1/document/` in `/Users/dm/code/radioso/backend/tests/contract/document.contract.test.ts`
+- [x] T029 [P] [US2] Write integration tests for settings validation, token auth, document ingestion, and account scoping in `/Users/dm/code/radioso/backend/tests/integration/document-settings.integration.test.ts`
+- [x] T030 [P] [US2] Write unit tests for recursive chunk overlap and retrieval settings validation in `/Users/dm/code/radioso/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
 
 ### Implementation for User Story 2
 
-- [x] T031 [P] [US2] Implement bearer-token auth middleware in `/Users/dm/code/hivec/backend/src/app/http/middleware/requireApiToken.ts`
-- [x] T032 [P] [US2] Implement retrieval settings repository in `/Users/dm/code/hivec/backend/src/db/repositories/retrievalSettingsRepository.ts`
-- [x] T033 [P] [US2] Implement settings validation rules in `/Users/dm/code/hivec/backend/src/modules/settings/domain/retrievalSettings.ts`
-- [x] T034 [US2] Implement retrieval settings service in `/Users/dm/code/hivec/backend/src/modules/settings/services/retrievalSettingsService.ts`
-- [x] T035 [US2] Implement settings route handlers in `/Users/dm/code/hivec/backend/src/app/http/routes/settingsRoutes.ts`
-- [x] T036 [P] [US2] Implement document and chunk repositories in `/Users/dm/code/hivec/backend/src/db/repositories/documentRepository.ts` and `/Users/dm/code/hivec/backend/src/db/repositories/chunkRepository.ts`
-- [x] T037 [P] [US2] Implement markdown normalization and recursive chunking in `/Users/dm/code/hivec/backend/src/modules/retrieval/domain/chunkingService.ts`
-- [x] T038 [P] [US2] Implement embedding persistence orchestration in `/Users/dm/code/hivec/backend/src/modules/retrieval/services/embeddingService.ts`
-- [x] T039 [US2] Implement document ingestion service in `/Users/dm/code/hivec/backend/src/modules/documents/services/documentIngestionService.ts`
-- [x] T040 [US2] Implement document ingestion route handler in `/Users/dm/code/hivec/backend/src/app/http/routes/documentRoutes.ts`
-- [x] T041 [US2] Add audit events for settings updates and document ingestion failures in `/Users/dm/code/hivec/backend/src/modules/audit/services/auditService.ts`
+- [x] T031 [P] [US2] Implement bearer-token auth middleware in `/Users/dm/code/radioso/backend/src/app/http/middleware/requireApiToken.ts`
+- [x] T032 [P] [US2] Implement retrieval settings repository in `/Users/dm/code/radioso/backend/src/db/repositories/retrievalSettingsRepository.ts`
+- [x] T033 [P] [US2] Implement settings validation rules in `/Users/dm/code/radioso/backend/src/modules/settings/domain/retrievalSettings.ts`
+- [x] T034 [US2] Implement retrieval settings service in `/Users/dm/code/radioso/backend/src/modules/settings/services/retrievalSettingsService.ts`
+- [x] T035 [US2] Implement settings route handlers in `/Users/dm/code/radioso/backend/src/app/http/routes/settingsRoutes.ts`
+- [x] T036 [P] [US2] Implement document and chunk repositories in `/Users/dm/code/radioso/backend/src/db/repositories/documentRepository.ts` and `/Users/dm/code/radioso/backend/src/db/repositories/chunkRepository.ts`
+- [x] T037 [P] [US2] Implement markdown normalization and recursive chunking in `/Users/dm/code/radioso/backend/src/modules/retrieval/domain/chunkingService.ts`
+- [x] T038 [P] [US2] Implement embedding persistence orchestration in `/Users/dm/code/radioso/backend/src/modules/retrieval/services/embeddingService.ts`
+- [x] T039 [US2] Implement document ingestion service in `/Users/dm/code/radioso/backend/src/modules/documents/services/documentIngestionService.ts`
+- [x] T040 [US2] Implement document ingestion route handler in `/Users/dm/code/radioso/backend/src/app/http/routes/documentRoutes.ts`
+- [x] T041 [US2] Add audit events for settings updates and document ingestion failures in `/Users/dm/code/radioso/backend/src/modules/audit/services/auditService.ts`
 
 **Checkpoint**: User Story 2 is independently functional and testable with User Story 1 complete.
 
@@ -114,20 +114,20 @@
 
 ### Tests for User Story 3 (REQUIRED for backend)
 
-- [x] T042 [P] [US3] Write the contract tests for `POST /api/v1/chat/` covering streaming and non-streaming responses in `/Users/dm/code/hivec/backend/tests/contract/chat.contract.test.ts`
-- [x] T043 [P] [US3] Write integration tests for conversation creation, follow-up chat, no-result retrieval, and account isolation in `/Users/dm/code/hivec/backend/tests/integration/chat.integration.test.ts`
-- [x] T044 [P] [US3] Write unit tests for prompt building, query rewrite toggles, rerank toggles, and similarity-threshold filtering in `/Users/dm/code/hivec/backend/tests/unit/chat-retrieval.domain.test.ts`
+- [x] T042 [P] [US3] Write the contract tests for `POST /api/v1/chat/` covering streaming and non-streaming responses in `/Users/dm/code/radioso/backend/tests/contract/chat.contract.test.ts`
+- [x] T043 [P] [US3] Write integration tests for conversation creation, follow-up chat, no-result retrieval, and account isolation in `/Users/dm/code/radioso/backend/tests/integration/chat.integration.test.ts`
+- [x] T044 [P] [US3] Write unit tests for prompt building, query rewrite toggles, rerank toggles, and similarity-threshold filtering in `/Users/dm/code/radioso/backend/tests/unit/chat-retrieval.domain.test.ts`
 
 ### Implementation for User Story 3
 
-- [x] T045 [P] [US3] Implement conversation and message repositories in `/Users/dm/code/hivec/backend/src/db/repositories/conversationRepository.ts` and `/Users/dm/code/hivec/backend/src/db/repositories/messageRepository.ts`
-- [x] T046 [P] [US3] Implement pgvector similarity search in `/Users/dm/code/hivec/backend/src/modules/retrieval/infra/vectorSearch.ts`
-- [x] T047 [P] [US3] Implement prompt building, query rewrite, and rerank services in `/Users/dm/code/hivec/backend/src/modules/retrieval/services/promptBuilder.ts`, `/Users/dm/code/hivec/backend/src/modules/retrieval/services/queryRewriteService.ts`, and `/Users/dm/code/hivec/backend/src/modules/retrieval/services/rerankService.ts`
-- [x] T048 [US3] Implement retrieval orchestration pipeline in `/Users/dm/code/hivec/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
-- [x] T049 [P] [US3] Implement SSE and JSON chat presenters in `/Users/dm/code/hivec/backend/src/app/http/presenters/chatPresenter.ts`
-- [x] T050 [US3] Implement conversation-aware chat service in `/Users/dm/code/hivec/backend/src/modules/chat/services/chatService.ts`
-- [x] T051 [US3] Implement chat route handler in `/Users/dm/code/hivec/backend/src/app/http/routes/chatRoutes.ts`
-- [x] T052 [US3] Add audit and observability coverage for chat execution and upstream model failures in `/Users/dm/code/hivec/backend/src/modules/audit/services/auditService.ts` and `/Users/dm/code/hivec/backend/src/shared/observability/logger.ts`
+- [x] T045 [P] [US3] Implement conversation and message repositories in `/Users/dm/code/radioso/backend/src/db/repositories/conversationRepository.ts` and `/Users/dm/code/radioso/backend/src/db/repositories/messageRepository.ts`
+- [x] T046 [P] [US3] Implement pgvector similarity search in `/Users/dm/code/radioso/backend/src/modules/retrieval/infra/vectorSearch.ts`
+- [x] T047 [P] [US3] Implement prompt building, query rewrite, and rerank services in `/Users/dm/code/radioso/backend/src/modules/retrieval/services/promptBuilder.ts`, `/Users/dm/code/radioso/backend/src/modules/retrieval/services/queryRewriteService.ts`, and `/Users/dm/code/radioso/backend/src/modules/retrieval/services/rerankService.ts`
+- [x] T048 [US3] Implement retrieval orchestration pipeline in `/Users/dm/code/radioso/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
+- [x] T049 [P] [US3] Implement SSE and JSON chat presenters in `/Users/dm/code/radioso/backend/src/app/http/presenters/chatPresenter.ts`
+- [x] T050 [US3] Implement conversation-aware chat service in `/Users/dm/code/radioso/backend/src/modules/chat/services/chatService.ts`
+- [x] T051 [US3] Implement chat route handler in `/Users/dm/code/radioso/backend/src/app/http/routes/chatRoutes.ts`
+- [x] T052 [US3] Add audit and observability coverage for chat execution and upstream model failures in `/Users/dm/code/radioso/backend/src/modules/audit/services/auditService.ts` and `/Users/dm/code/radioso/backend/src/shared/observability/logger.ts`
 
 **Checkpoint**: All user stories are independently functional.
 
@@ -137,13 +137,13 @@
 
 **Purpose**: Final contract alignment, operational hardening, and full-flow verification
 
-- [x] T053 [P] Synchronize the final implementation contract in `/Users/dm/code/hivec/backend/openapi.yaml` with the implemented handlers and schemas
-- [x] T054 [P] Add repository and retrieval-flow integration coverage for migrations and pgvector queries in `/Users/dm/code/hivec/backend/tests/integration/persistence.integration.test.ts`
-- [x] T055 [P] Add additional unit coverage for edge cases in `/Users/dm/code/hivec/backend/tests/unit/edge-cases.test.ts`
-- [x] T056 Harden HTTP security and cookie settings in `/Users/dm/code/hivec/backend/src/app/server/createApp.ts` and `/Users/dm/code/hivec/backend/src/app/http/middleware/requireSession.ts`
-- [x] T057 Validate the local runbook and setup instructions in `/Users/dm/code/hivec/specs/001-rag-api-backend/quickstart.md`
-- [x] T058 Run the full backend validation flow and record results in `/Users/dm/code/hivec/specs/001-rag-api-backend/quickstart.md`
-- [x] T061 Validate Docker Compose startup and backend health checks using `/Users/dm/code/hivec/infra/docker-compose.yml` and `/Users/dm/code/hivec/backend/src/app/http/routes/index.ts`
+- [x] T053 [P] Synchronize the final implementation contract in `/Users/dm/code/radioso/backend/openapi.yaml` with the implemented handlers and schemas
+- [x] T054 [P] Add repository and retrieval-flow integration coverage for migrations and pgvector queries in `/Users/dm/code/radioso/backend/tests/integration/persistence.integration.test.ts`
+- [x] T055 [P] Add additional unit coverage for edge cases in `/Users/dm/code/radioso/backend/tests/unit/edge-cases.test.ts`
+- [x] T056 Harden HTTP security and cookie settings in `/Users/dm/code/radioso/backend/src/app/server/createApp.ts` and `/Users/dm/code/radioso/backend/src/app/http/middleware/requireSession.ts`
+- [x] T057 Validate the local runbook and setup instructions in `/Users/dm/code/radioso/specs/001-rag-api-backend/quickstart.md`
+- [x] T058 Run the full backend validation flow and record results in `/Users/dm/code/radioso/specs/001-rag-api-backend/quickstart.md`
+- [x] T061 Validate Docker Compose startup and backend health checks using `/Users/dm/code/radioso/infra/docker-compose.yml` and `/Users/dm/code/radioso/backend/src/app/http/routes/index.ts`
 
 ---
 
@@ -187,14 +187,14 @@
 
 ```bash
 # Tests first
-Task: "Write the contract tests for GET/PUT /api/v1/settings/retrieval in /Users/dm/code/hivec/backend/tests/contract/settings.contract.test.ts"
-Task: "Write the contract test for POST /api/v1/document/ in /Users/dm/code/hivec/backend/tests/contract/document.contract.test.ts"
-Task: "Write integration tests for settings validation, token auth, document ingestion, and account scoping in /Users/dm/code/hivec/backend/tests/integration/document-settings.integration.test.ts"
+Task: "Write the contract tests for GET/PUT /api/v1/settings/retrieval in /Users/dm/code/radioso/backend/tests/contract/settings.contract.test.ts"
+Task: "Write the contract test for POST /api/v1/document/ in /Users/dm/code/radioso/backend/tests/contract/document.contract.test.ts"
+Task: "Write integration tests for settings validation, token auth, document ingestion, and account scoping in /Users/dm/code/radioso/backend/tests/integration/document-settings.integration.test.ts"
 
 # Parallel implementation after tests fail
-Task: "Implement retrieval settings repository in /Users/dm/code/hivec/backend/src/db/repositories/retrievalSettingsRepository.ts"
-Task: "Implement document and chunk repositories in /Users/dm/code/hivec/backend/src/db/repositories/documentRepository.ts and /Users/dm/code/hivec/backend/src/db/repositories/chunkRepository.ts"
-Task: "Implement markdown normalization and recursive chunking in /Users/dm/code/hivec/backend/src/modules/retrieval/domain/chunkingService.ts"
+Task: "Implement retrieval settings repository in /Users/dm/code/radioso/backend/src/db/repositories/retrievalSettingsRepository.ts"
+Task: "Implement document and chunk repositories in /Users/dm/code/radioso/backend/src/db/repositories/documentRepository.ts and /Users/dm/code/radioso/backend/src/db/repositories/chunkRepository.ts"
+Task: "Implement markdown normalization and recursive chunking in /Users/dm/code/radioso/backend/src/modules/retrieval/domain/chunkingService.ts"
 ```
 
 ---

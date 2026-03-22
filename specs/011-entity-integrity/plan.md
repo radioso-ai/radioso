@@ -1,6 +1,6 @@
 # Implementation Plan: Generalized Entity Integrity in Retrieval Grounding
 
-**Branch**: `011-entity-integrity` | **Date**: 2026-03-16 | **Spec**: [/Users/dm/code/hivec-entity-integrity/specs/011-entity-integrity/spec.md](/Users/dm/code/hivec-entity-integrity/specs/011-entity-integrity/spec.md)
+**Branch**: `011-entity-integrity` | **Date**: 2026-03-16 | **Spec**: [/Users/dm/code/radioso-entity-integrity/specs/011-entity-integrity/spec.md](/Users/dm/code/radioso-entity-integrity/specs/011-entity-integrity/spec.md)
 **Input**: Approved feature specification from `/specs/011-entity-integrity/spec.md`
 
 ## Summary

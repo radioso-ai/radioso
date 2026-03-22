@@ -5,7 +5,7 @@
 Run targeted backend tests that prove the current heuristic behavior is insufficient and define the exact-placement contract:
 
 ```bash
-cd /Users/dm/code/hivec/backend
+cd /Users/dm/code/radioso/backend
 npm run test:unit -- tests/unit/answer-presentation.test.ts tests/unit/chat-service-streaming.test.ts
 npm run test:contract -- tests/contract/chat.contract.test.ts
 ```
@@ -17,7 +17,7 @@ Update prompt construction, add the citation-anchor parser, and route completed 
 ## 3. Run focused backend verification
 
 ```bash
-cd /Users/dm/code/hivec/backend
+cd /Users/dm/code/radioso/backend
 npm run test:unit -- tests/unit/answer-presentation.test.ts tests/unit/chat-service-streaming.test.ts
 npm run test:contract -- tests/contract/chat.contract.test.ts
 npm run test:integration -- tests/integration/chat.integration.test.ts
@@ -27,7 +27,7 @@ npm run build
 ## 4. Run frontend verification
 
 ```bash
-cd /Users/dm/code/hivec/frontend
+cd /Users/dm/code/radioso/frontend
 npm run build
 ```
 

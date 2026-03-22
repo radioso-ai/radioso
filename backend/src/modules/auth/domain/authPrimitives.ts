@@ -7,7 +7,7 @@ import type { Env } from "../../../app/config/env.js";
 
 const TOKEN_PREFIX = "sk_proj_";
 
-const deriveKey = (secret: string): Buffer => scryptSync(secret, "hivec-auth", 32);
+const deriveKey = (secret: string): Buffer => scryptSync(secret, "radioso-auth", 32);
 
 export const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 

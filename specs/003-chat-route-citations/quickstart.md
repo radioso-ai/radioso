@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Frontend dependencies installed in `/private/tmp/hivec-chat-frontend-routes/frontend`
+- Frontend dependencies installed in `/private/tmp/radioso-chat-frontend-routes/frontend`
 - Backend running with a valid API token flow and at least one processed document
 
 ## Validation Flow
@@ -34,8 +34,8 @@
 
 ## Validation Notes
 
-- `npm install` succeeded in `/private/tmp/hivec-chat-frontend-routes/frontend`.
-- `npm run lint` succeeded in `/private/tmp/hivec-chat-frontend-routes/frontend`.
-- `npm run build` succeeded in `/private/tmp/hivec-chat-frontend-routes/frontend`.
-- `npx tsc --noEmit` succeeded in `/private/tmp/hivec-chat-frontend-routes/frontend`.
+- `npm install` succeeded in `/private/tmp/radioso-chat-frontend-routes/frontend`.
+- `npm run lint` succeeded in `/private/tmp/radioso-chat-frontend-routes/frontend`.
+- `npm run build` succeeded in `/private/tmp/radioso-chat-frontend-routes/frontend`.
+- `npx tsc --noEmit` succeeded in `/private/tmp/radioso-chat-frontend-routes/frontend`.
 - `npm install` emitted non-blocking engine warnings because the current shell uses Node `21.7.3` while some packages prefer `18`, `20`, or `>=22`.

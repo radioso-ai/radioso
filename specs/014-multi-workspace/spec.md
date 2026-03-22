@@ -3,7 +3,7 @@
 **Feature Branch**: `014-multi-workspace`
 **Created**: 2026-03-17
 **Status**: Draft
-**Input**: User description: "Expand hivec to support multiple workspaces per account. Currently account = workspace. An account should be able to have multiple workspaces, each with its own data (documents, chunks, conversations, messages, retrieval settings) and its own API token. Token scoping is per-workspace. The frontend should have a workspace switcher below the logo and above the menu in the sidebar."
+**Input**: User description: "Expand radioso to support multiple workspaces per account. Currently account = workspace. An account should be able to have multiple workspaces, each with its own data (documents, chunks, conversations, messages, retrieval settings) and its own API token. Token scoping is per-workspace. The frontend should have a workspace switcher below the logo and above the menu in the sidebar."
 
 ## User Scenarios & Testing *(mandatory)*
 

@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-03-16  
-**Feature**: [/Users/dm/code/hivec-chat-history/specs/011-chat-history/spec.md](/Users/dm/code/hivec-chat-history/specs/011-chat-history/spec.md)
+**Feature**: [/Users/dm/code/radioso-chat-history/specs/011-chat-history/spec.md](/Users/dm/code/radioso-chat-history/specs/011-chat-history/spec.md)
 
 ## Content Quality
 

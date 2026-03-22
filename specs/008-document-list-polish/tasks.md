@@ -11,8 +11,8 @@
 
 **Purpose**: Align artifacts and scope before code changes
 
-- [x] T001 Confirm implementation scope against `/tmp/hivec-document-list-polish/specs/008-document-list-polish/spec.md` and `/tmp/hivec-document-list-polish/specs/008-document-list-polish/plan.md`
-- [x] T002 [P] Align contract deltas in `/tmp/hivec-document-list-polish/specs/008-document-list-polish/contracts/document-list-polish.openapi.yaml` with backend route changes in `/tmp/hivec-document-list-polish/backend/openapi.yaml`
+- [x] T001 Confirm implementation scope against `/tmp/radioso-document-list-polish/specs/008-document-list-polish/spec.md` and `/tmp/radioso-document-list-polish/specs/008-document-list-polish/plan.md`
+- [x] T002 [P] Align contract deltas in `/tmp/radioso-document-list-polish/specs/008-document-list-polish/contracts/document-list-polish.openapi.yaml` with backend route changes in `/tmp/radioso-document-list-polish/backend/openapi.yaml`
 
 ---
 
@@ -22,12 +22,12 @@
 
 **⚠️ CRITICAL**: No user story work begins until this phase is complete
 
-- [x] T003 Write failing delete contract tests in `/tmp/hivec-document-list-polish/backend/tests/contract/document.contract.test.ts`
-- [x] T004 Write failing deletion unit tests in `/tmp/hivec-document-list-polish/backend/tests/unit/document-deletion.test.ts`
-- [x] T005 Write failing persistence integration deletion tests in `/tmp/hivec-document-list-polish/backend/tests/integration/persistence.integration.test.ts`
-- [x] T006 [P] Add deletion repository port methods in `/tmp/hivec-document-list-polish/backend/src/modules/documents/services/documentIngestionService.ts` and `/tmp/hivec-document-list-polish/backend/src/db/repositories/documentRepository.ts`
-- [x] T007 [P] Create and wire `/tmp/hivec-document-list-polish/backend/src/modules/documents/services/documentDeletionService.ts` in `/tmp/hivec-document-list-polish/backend/src/app/server/{types.ts,dependencies.ts}` and `/tmp/hivec-document-list-polish/backend/tests/support/{fakes.ts,testApp.ts}`
-- [x] T008 Add `DELETE /api/v1/document/:documentId` transport wiring in `/tmp/hivec-document-list-polish/backend/src/app/http/routes/documentRoutes.ts`
+- [x] T003 Write failing delete contract tests in `/tmp/radioso-document-list-polish/backend/tests/contract/document.contract.test.ts`
+- [x] T004 Write failing deletion unit tests in `/tmp/radioso-document-list-polish/backend/tests/unit/document-deletion.test.ts`
+- [x] T005 Write failing persistence integration deletion tests in `/tmp/radioso-document-list-polish/backend/tests/integration/persistence.integration.test.ts`
+- [x] T006 [P] Add deletion repository port methods in `/tmp/radioso-document-list-polish/backend/src/modules/documents/services/documentIngestionService.ts` and `/tmp/radioso-document-list-polish/backend/src/db/repositories/documentRepository.ts`
+- [x] T007 [P] Create and wire `/tmp/radioso-document-list-polish/backend/src/modules/documents/services/documentDeletionService.ts` in `/tmp/radioso-document-list-polish/backend/src/app/server/{types.ts,dependencies.ts}` and `/tmp/radioso-document-list-polish/backend/tests/support/{fakes.ts,testApp.ts}`
+- [x] T008 Add `DELETE /api/v1/document/:documentId` transport wiring in `/tmp/radioso-document-list-polish/backend/src/app/http/routes/documentRoutes.ts`
 
 **Checkpoint**: Backend deletion capability exists behind a dedicated orchestration seam and passes tests
 
@@ -41,9 +41,9 @@
 
 ### Implementation for User Story 1
 
-- [x] T009 [US1] Extract one-status display mapping into `/tmp/hivec-document-list-polish/frontend/components/dashboard/document-status.tsx`
-- [x] T010 [US1] Rework document row layout for long-title wrapping and viewport safety in `/tmp/hivec-document-list-polish/frontend/components/dashboard/documents-view.tsx`
-- [x] T011 [US1] Remove duplicate status text treatment and render only the extracted status component in `/tmp/hivec-document-list-polish/frontend/components/dashboard/documents-view.tsx`
+- [x] T009 [US1] Extract one-status display mapping into `/tmp/radioso-document-list-polish/frontend/components/dashboard/document-status.tsx`
+- [x] T010 [US1] Rework document row layout for long-title wrapping and viewport safety in `/tmp/radioso-document-list-polish/frontend/components/dashboard/documents-view.tsx`
+- [x] T011 [US1] Remove duplicate status text treatment and render only the extracted status component in `/tmp/radioso-document-list-polish/frontend/components/dashboard/documents-view.tsx`
 
 **Checkpoint**: User Story 1 is independently functional and visually stable
 
@@ -57,16 +57,16 @@
 
 ### Tests for User Story 2 (REQUIRED for backend)
 
-- [x] T012 [P] [US2] Extend delete ownership/not-found contract assertions in `/tmp/hivec-document-list-polish/backend/tests/contract/document.contract.test.ts`
-- [x] T013 [P] [US2] Extend deletion unit coverage for audit + missing document behavior in `/tmp/hivec-document-list-polish/backend/tests/unit/document-deletion.test.ts`
-- [x] T014 [P] [US2] Extend integration coverage for cross-account deletion safety in `/tmp/hivec-document-list-polish/backend/tests/integration/persistence.integration.test.ts`
+- [x] T012 [P] [US2] Extend delete ownership/not-found contract assertions in `/tmp/radioso-document-list-polish/backend/tests/contract/document.contract.test.ts`
+- [x] T013 [P] [US2] Extend deletion unit coverage for audit + missing document behavior in `/tmp/radioso-document-list-polish/backend/tests/unit/document-deletion.test.ts`
+- [x] T014 [P] [US2] Extend integration coverage for cross-account deletion safety in `/tmp/radioso-document-list-polish/backend/tests/integration/persistence.integration.test.ts`
 
 ### Implementation for User Story 2
 
-- [x] T015 [US2] Add delete endpoint documentation in `/tmp/hivec-document-list-polish/backend/openapi.yaml`
-- [x] T016 [US2] Add `documentsApi.deleteDocument` adapter in `/tmp/hivec-document-list-polish/frontend/lib/api.ts`
-- [x] T017 [US2] Add row-level delete control + confirmation flow in `/tmp/hivec-document-list-polish/frontend/components/dashboard/documents-view.tsx`
-- [x] T018 [US2] Handle deletion pending/success/failure list-state updates, including last-item page recovery, in `/tmp/hivec-document-list-polish/frontend/components/dashboard/documents-view.tsx`
+- [x] T015 [US2] Add delete endpoint documentation in `/tmp/radioso-document-list-polish/backend/openapi.yaml`
+- [x] T016 [US2] Add `documentsApi.deleteDocument` adapter in `/tmp/radioso-document-list-polish/frontend/lib/api.ts`
+- [x] T017 [US2] Add row-level delete control + confirmation flow in `/tmp/radioso-document-list-polish/frontend/components/dashboard/documents-view.tsx`
+- [x] T018 [US2] Handle deletion pending/success/failure list-state updates, including last-item page recovery, in `/tmp/radioso-document-list-polish/frontend/components/dashboard/documents-view.tsx`
 
 **Checkpoint**: User Stories 1 and 2 are independently functional
 
@@ -80,9 +80,9 @@
 
 ### Implementation for User Story 3
 
-- [x] T019 [US3] Add citation activation result handling and unavailable-source UI state in `/tmp/hivec-document-list-polish/frontend/components/dashboard/chat-citations.tsx`
-- [x] T020 [US3] Add citation preflight open handler using document fetch checks in `/tmp/hivec-document-list-polish/frontend/components/dashboard/chat-view.tsx`
-- [x] T021 [US3] Extend shared callback typing for async citation opening in `/tmp/hivec-document-list-polish/frontend/components/dashboard/{chat-view.tsx,dashboard-shell.tsx}`
+- [x] T019 [US3] Add citation activation result handling and unavailable-source UI state in `/tmp/radioso-document-list-polish/frontend/components/dashboard/chat-citations.tsx`
+- [x] T020 [US3] Add citation preflight open handler using document fetch checks in `/tmp/radioso-document-list-polish/frontend/components/dashboard/chat-view.tsx`
+- [x] T021 [US3] Extend shared callback typing for async citation opening in `/tmp/radioso-document-list-polish/frontend/components/dashboard/{chat-view.tsx,dashboard-shell.tsx}`
 
 **Checkpoint**: All user stories are independently functional
 
@@ -92,10 +92,10 @@
 
 **Purpose**: Final documentation and validation
 
-- [x] T022 [P] Keep feature artifact contract in sync at `/tmp/hivec-document-list-polish/specs/008-document-list-polish/contracts/document-list-polish.openapi.yaml`
-- [x] T023 Run backend validation suite in `/tmp/hivec-document-list-polish/backend/` (`npm test -- document.contract.test.ts document-deletion.test.ts persistence.integration.test.ts`)
-- [x] T024 Run frontend validation in `/tmp/hivec-document-list-polish/frontend/` (`npm run lint`)
-- [ ] T025 Execute quickstart acceptance checks in `/tmp/hivec-document-list-polish/specs/008-document-list-polish/quickstart.md`
+- [x] T022 [P] Keep feature artifact contract in sync at `/tmp/radioso-document-list-polish/specs/008-document-list-polish/contracts/document-list-polish.openapi.yaml`
+- [x] T023 Run backend validation suite in `/tmp/radioso-document-list-polish/backend/` (`npm test -- document.contract.test.ts document-deletion.test.ts persistence.integration.test.ts`)
+- [x] T024 Run frontend validation in `/tmp/radioso-document-list-polish/frontend/` (`npm run lint`)
+- [ ] T025 Execute quickstart acceptance checks in `/tmp/radioso-document-list-polish/specs/008-document-list-polish/quickstart.md`
 
 ---
 
@@ -134,9 +134,9 @@
 ## Parallel Example: User Story 2
 
 ```bash
-Task: "Extend delete ownership/not-found contract assertions in /tmp/hivec-document-list-polish/backend/tests/contract/document.contract.test.ts"
-Task: "Extend deletion unit coverage for audit + missing document behavior in /tmp/hivec-document-list-polish/backend/tests/unit/document-deletion.test.ts"
-Task: "Extend integration coverage for cross-account deletion safety in /tmp/hivec-document-list-polish/backend/tests/integration/persistence.integration.test.ts"
+Task: "Extend delete ownership/not-found contract assertions in /tmp/radioso-document-list-polish/backend/tests/contract/document.contract.test.ts"
+Task: "Extend deletion unit coverage for audit + missing document behavior in /tmp/radioso-document-list-polish/backend/tests/unit/document-deletion.test.ts"
+Task: "Extend integration coverage for cross-account deletion safety in /tmp/radioso-document-list-polish/backend/tests/integration/persistence.integration.test.ts"
 ```
 
 ---

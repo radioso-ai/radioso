@@ -2,8 +2,8 @@
 
 ## 1. Prepare
 
-1. Work in [/Users/dm/code/hivec-hybrid-retrieval](/Users/dm/code/hivec-hybrid-retrieval) on branch `009-hybrid-retrieval`.
-2. Review the approved spec, plan, research, contract, and data-model artifacts in [/Users/dm/code/hivec-hybrid-retrieval/specs/009-hybrid-retrieval](/Users/dm/code/hivec-hybrid-retrieval/specs/009-hybrid-retrieval).
+1. Work in [/Users/dm/code/radioso-hybrid-retrieval](/Users/dm/code/radioso-hybrid-retrieval) on branch `009-hybrid-retrieval`.
+2. Review the approved spec, plan, research, contract, and data-model artifacts in [/Users/dm/code/radioso-hybrid-retrieval/specs/009-hybrid-retrieval](/Users/dm/code/radioso-hybrid-retrieval/specs/009-hybrid-retrieval).
 3. Confirm backend work will follow TDD before implementation begins.
 
 ## 2. Implement Backend First

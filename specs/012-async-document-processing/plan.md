@@ -1,6 +1,6 @@
 # Implementation Plan: Async Document Processing
 
-**Branch**: `012-async-document-processing` | **Date**: 2026-03-16 | **Spec**: [/Users/dm/code/hivec-async-document-processing/specs/012-async-document-processing/spec.md](/Users/dm/code/hivec-async-document-processing/specs/012-async-document-processing/spec.md)
+**Branch**: `012-async-document-processing` | **Date**: 2026-03-16 | **Spec**: [/Users/dm/code/radioso-async-document-processing/specs/012-async-document-processing/spec.md](/Users/dm/code/radioso-async-document-processing/specs/012-async-document-processing/spec.md)
 **Input**: Feature specification from `/specs/012-async-document-processing/spec.md`
 
 ## Summary
@@ -91,15 +91,15 @@ frontend/
 
 ## Phase 0: Research
 
-Research decisions are captured in [research.md](/Users/dm/code/hivec-async-document-processing/specs/012-async-document-processing/research.md).
+Research decisions are captured in [research.md](/Users/dm/code/radioso-async-document-processing/specs/012-async-document-processing/research.md).
 
 ## Phase 1: Design & Contracts
 
 Design artifacts are captured in:
 
-- [data-model.md](/Users/dm/code/hivec-async-document-processing/specs/012-async-document-processing/data-model.md)
-- [quickstart.md](/Users/dm/code/hivec-async-document-processing/specs/012-async-document-processing/quickstart.md)
-- [document-processing.openapi.yaml](/Users/dm/code/hivec-async-document-processing/specs/012-async-document-processing/contracts/document-processing.openapi.yaml)
+- [data-model.md](/Users/dm/code/radioso-async-document-processing/specs/012-async-document-processing/data-model.md)
+- [quickstart.md](/Users/dm/code/radioso-async-document-processing/specs/012-async-document-processing/quickstart.md)
+- [document-processing.openapi.yaml](/Users/dm/code/radioso-async-document-processing/specs/012-async-document-processing/contracts/document-processing.openapi.yaml)
 
 ## Complexity Tracking
 

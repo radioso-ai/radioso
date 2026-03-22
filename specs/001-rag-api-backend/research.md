@@ -4,8 +4,8 @@
 
 - **Decision**: Record the HTTP API contract as OpenAPI 3.1 YAML, with the
   planning draft at
-  `/Users/dm/code/hivec/specs/001-rag-api-backend/contracts/openapi.yaml` and
-  the implementation artifact at `/Users/dm/code/hivec/backend/openapi.yaml`.
+  `/Users/dm/code/radioso/specs/001-rag-api-backend/contracts/openapi.yaml` and
+  the implementation artifact at `/Users/dm/code/radioso/backend/openapi.yaml`.
 - **Rationale**: OpenAPI 3.1 is machine-readable, shareable with humans through
   rendered docs, compatible with JSON Schema, and suitable for contract tests,
   mock generation, and SDK generation.

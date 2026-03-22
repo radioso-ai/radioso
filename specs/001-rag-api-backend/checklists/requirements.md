@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-03-13
-**Feature**: [/Users/dm/code/hivec/specs/001-rag-api-backend/spec.md](/Users/dm/code/hivec/specs/001-rag-api-backend/spec.md)
+**Feature**: [/Users/dm/code/radioso/specs/001-rag-api-backend/spec.md](/Users/dm/code/radioso/specs/001-rag-api-backend/spec.md)
 
 ## Content Quality
 

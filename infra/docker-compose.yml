@@ -1,27 +1,27 @@
-name: hivec
+name: radioso
 
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: hivec-postgres
+    container_name: radioso-postgres
     environment:
-      POSTGRES_DB: hivec
+      POSTGRES_DB: radioso
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
     volumes:
-      - hivec_postgres_data:/var/lib/postgresql/data
+      - radioso_postgres_data:/var/lib/postgresql/data
       - ../backend/src/db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d hivec"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d radioso"]
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 5s
 
   backend:
-    container_name: hivec-backend
+    container_name: radioso-backend
     build:
       context: ..
       dockerfile: infra/backend.Dockerfile
@@ -33,7 +33,7 @@ services:
     environment:
       PORT: 8080
       NODE_ENV: production
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/hivec
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
       SESSION_TTL_HOURS: 168
     ports:
       - "8080:8080"
@@ -51,7 +51,7 @@ services:
       start_period: 10s
 
   frontend:
-    container_name: hivec-frontend
+    container_name: radioso-frontend
     build:
       context: ../frontend
       dockerfile: Dockerfile
@@ -66,4 +66,4 @@ services:
       - "3000:3000"
 
 volumes:
-  hivec_postgres_data:
+  radioso_postgres_data:

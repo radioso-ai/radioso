@@ -2,7 +2,7 @@
 
 ## 1. Prepare the backend workspace
 
-Create the backend service under `/Users/dm/code/hivec/backend` with:
+Create the backend service under `/Users/dm/code/radioso/backend` with:
 
 - TypeScript on Node.js 22
 - Express HTTP server
@@ -12,7 +12,7 @@ Create the backend service under `/Users/dm/code/hivec/backend` with:
 
 ## 2. Create environment variables
 
-Add these values to `/Users/dm/code/hivec/backend/.env`:
+Add these values to `/Users/dm/code/radioso/backend/.env`:
 
 ```env
 PORT=8080
@@ -24,8 +24,8 @@ OPENAI_VECTOR_MODEL=text-embedding-3-small
 SESSION_COOKIE_SECRET=...
 ```
 
-Mirror non-secret placeholders in `/Users/dm/code/hivec/backend/.env.example`.
-`/Users/dm/code/hivec/infra/docker-compose.yml` also reads this same file and overrides only container-specific values such as `DATABASE_URL` and `NODE_ENV`.
+Mirror non-secret placeholders in `/Users/dm/code/radioso/backend/.env.example`.
+`/Users/dm/code/radioso/infra/docker-compose.yml` also reads this same file and overrides only container-specific values such as `DATABASE_URL` and `NODE_ENV`.
 
 ## 3. Provision PostgreSQL
 
@@ -37,8 +37,8 @@ Ensure PostgreSQL has:
 
 ## 4. Contract-first workflow
 
-1. Start from `/Users/dm/code/hivec/specs/001-rag-api-backend/contracts/openapi.yaml`.
-2. Copy or promote the approved contract to `/Users/dm/code/hivec/backend/openapi.yaml`.
+1. Start from `/Users/dm/code/radioso/specs/001-rag-api-backend/contracts/openapi.yaml`.
+2. Copy or promote the approved contract to `/Users/dm/code/radioso/backend/openapi.yaml`.
 3. Write failing contract tests for:
    - `POST /api/v1/auth/register`
    - `POST /api/v1/auth/login`
@@ -68,7 +68,7 @@ Ensure PostgreSQL has:
 
 ## 7. Validation commands
 
-Run from `/Users/dm/code/hivec/backend`:
+Run from `/Users/dm/code/radioso/backend`:
 
 ```bash
 npm test

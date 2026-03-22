@@ -1,4 +1,4 @@
-resource "google_artifact_registry_repository" "hivec" {
+resource "google_artifact_registry_repository" "radioso" {
   location      = var.region
   repository_id = local.service_name
   format        = "DOCKER"

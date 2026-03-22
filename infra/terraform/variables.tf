@@ -12,7 +12,7 @@ variable "region" {
 # --- Container images ---
 
 variable "backend_image" {
-  description = "Full image URL for the backend Cloud Run service (e.g. us-central1-docker.pkg.dev/PROJECT/hivec/backend:latest)"
+  description = "Full image URL for the backend Cloud Run service (e.g. us-central1-docker.pkg.dev/PROJECT/radioso/backend:latest)"
   type        = string
   default     = null
 
@@ -23,7 +23,7 @@ variable "backend_image" {
 }
 
 variable "frontend_image" {
-  description = "Full image URL for the frontend Cloud Run service (e.g. us-central1-docker.pkg.dev/PROJECT/hivec/frontend:latest)"
+  description = "Full image URL for the frontend Cloud Run service (e.g. us-central1-docker.pkg.dev/PROJECT/radioso/frontend:latest)"
   type        = string
   default     = null
 

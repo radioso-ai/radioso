@@ -2,7 +2,7 @@
 
 ## Preconditions
 
-- Run from `/tmp/hivec-document-list-polish`.
+- Run from `/tmp/radioso-document-list-polish`.
 - Backend dependencies installed in `backend/`, frontend dependencies installed in `frontend/`.
 - Test database available for backend integration/contract tests.
 

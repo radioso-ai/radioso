@@ -1,6 +1,6 @@
 # Implementation Plan: Hybrid Retrieval
 
-**Branch**: `009-hybrid-retrieval` | **Date**: 2026-03-14 | **Spec**: [/Users/dm/code/hivec-hybrid-retrieval/specs/009-hybrid-retrieval/spec.md](/Users/dm/code/hivec-hybrid-retrieval/specs/009-hybrid-retrieval/spec.md)
+**Branch**: `009-hybrid-retrieval` | **Date**: 2026-03-14 | **Spec**: [/Users/dm/code/radioso-hybrid-retrieval/specs/009-hybrid-retrieval/spec.md](/Users/dm/code/radioso-hybrid-retrieval/specs/009-hybrid-retrieval/spec.md)
 **Input**: Feature specification from `/specs/009-hybrid-retrieval/spec.md`
 
 ## Summary

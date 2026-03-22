@@ -7,7 +7,7 @@ import type {
   ConnectorPlugin,
   ConnectorValidationIssue,
   ConfigFieldDefinition,
-} from "@hivec/connector-api";
+} from "@radioso/connector-api";
 import { WhatsAppClient } from "./whatsappClient.js";
 import { WhatsAppMessageHandler } from "./whatsappMessageHandler.js";
 import { PostgresWhatsAppPersistence } from "./whatsappPersistence.js";

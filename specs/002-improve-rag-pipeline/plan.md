@@ -1,6 +1,6 @@
 # Implementation Plan: Universal Retrieval Quality Upgrade
 
-**Branch**: `002-improve-rag-pipeline` | **Date**: 2026-03-13 | **Spec**: [/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/spec.md](/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/spec.md)
+**Branch**: `002-improve-rag-pipeline` | **Date**: 2026-03-13 | **Spec**: [/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/spec.md](/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/spec.md)
 **Input**: Feature specification from `/specs/002-improve-rag-pipeline/spec.md`
 
 ## Summary

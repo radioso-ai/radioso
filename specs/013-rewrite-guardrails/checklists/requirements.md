@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-03-16
-**Feature**: [spec.md](/Users/dm/code/hivec-rewrite-guardrails/specs/013-rewrite-guardrails/spec.md)
+**Feature**: [spec.md](/Users/dm/code/radioso-rewrite-guardrails/specs/013-rewrite-guardrails/spec.md)
 
 ## Content Quality
 

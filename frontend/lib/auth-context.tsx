@@ -17,7 +17,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
-const AUTH_STORAGE_KEY = 'hivec.authUser'
+const AUTH_STORAGE_KEY = 'radioso.authUser'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)

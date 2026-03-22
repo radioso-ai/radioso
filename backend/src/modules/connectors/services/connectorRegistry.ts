@@ -12,7 +12,7 @@ import type {
   ConnectorDetail,
   ConnectorValidationIssue,
   ConfigFieldDefinition,
-} from "@hivec/connector-api";
+} from "@radioso/connector-api";
 import { encryptField, decryptField, maskSecret } from "./configEncryption.js";
 
 interface ConnectorSaveSuccess {

@@ -2,7 +2,7 @@
 
 ## 1. Prepare the backend environment
 
-From `/private/tmp/hivec-improve-rag-pipeline/backend`:
+From `/private/tmp/radioso-improve-rag-pipeline/backend`:
 
 1. Ensure `.env` contains:
    - `DATABASE_URL`
@@ -15,8 +15,8 @@ From `/private/tmp/hivec-improve-rag-pipeline/backend`:
 
 The repeatable benchmark corpus for automated validation lives under:
 
-- `/private/tmp/hivec-improve-rag-pipeline/backend/tests/fixtures/retrieval-quality/`
-- `/private/tmp/hivec-improve-rag-pipeline/backend/tests/support/retrievalFixtures.ts`
+- `/private/tmp/radioso-improve-rag-pipeline/backend/tests/fixtures/retrieval-quality/`
+- `/private/tmp/radioso-improve-rag-pipeline/backend/tests/support/retrievalFixtures.ts`
 
 ## 2. Validate the unchanged public contract
 
@@ -30,7 +30,7 @@ must remain unchanged while internal retrieval behavior improves.
 Run:
 
 ```bash
-cd /private/tmp/hivec-improve-rag-pipeline/backend
+cd /private/tmp/radioso-improve-rag-pipeline/backend
 npm test
 ```
 
@@ -85,7 +85,7 @@ Confirm that the request-level execution record shows:
 ## 6. Validation commands
 
 ```bash
-cd /private/tmp/hivec-improve-rag-pipeline/backend
+cd /private/tmp/radioso-improve-rag-pipeline/backend
 npm test
 npm run build
 npm run test:persistence

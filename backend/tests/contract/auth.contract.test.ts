@@ -16,7 +16,7 @@ describe("auth contract", () => {
     expect(response.body.userId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
-    expect(response.headers["set-cookie"]?.[0]).toContain("hivec_session=");
+    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
 
   it("logs in an existing user and returns a session cookie", async () => {
@@ -34,7 +34,7 @@ describe("auth contract", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.userId).toBeDefined();
-    expect(response.headers["set-cookie"]?.[0]).toContain("hivec_session=");
+    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
 
   it("returns the active account token for a session-authenticated account", async () => {

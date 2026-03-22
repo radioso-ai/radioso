@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-03-14  
-**Feature**: [spec.md](/Users/dm/code/hivec-hybrid-retrieval/specs/009-hybrid-retrieval/spec.md)
+**Feature**: [spec.md](/Users/dm/code/radioso-hybrid-retrieval/specs/009-hybrid-retrieval/spec.md)
 
 ## Content Quality
 

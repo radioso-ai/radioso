@@ -3,7 +3,7 @@
 ## 1. Prepare
 
 1. Work on branch `codex/007-chunking-strategy-selection`.
-2. Review the approved spec, plan, research, contract, and data-model artifacts in `/tmp/hivec-chunking-strategy-selection/specs/007-chunking-strategy-selection/`.
+2. Review the approved spec, plan, research, contract, and data-model artifacts in `/tmp/radioso-chunking-strategy-selection/specs/007-chunking-strategy-selection/`.
 3. Confirm backend work will follow TDD before implementation begins.
 
 ## 2. Implement Backend First

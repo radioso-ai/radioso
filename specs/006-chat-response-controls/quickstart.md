@@ -3,7 +3,7 @@
 ## 1. Prepare
 
 1. Work on branch `006-chat-response-controls`.
-2. Review the approved spec, plan, research, and contract artifacts in `/Users/dm/code/hivec/specs/006-chat-response-controls/`.
+2. Review the approved spec, plan, research, and contract artifacts in `/Users/dm/code/radioso/specs/006-chat-response-controls/`.
 3. Confirm backend changes will follow TDD before implementation begins.
 
 ## 2. Implement Backend First

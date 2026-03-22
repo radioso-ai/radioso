@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-03-14  
-**Feature**: [spec.md](/tmp/hivec-chunking-strategy-selection/specs/007-chunking-strategy-selection/spec.md)
+**Feature**: [spec.md](/tmp/radioso-chunking-strategy-selection/specs/007-chunking-strategy-selection/spec.md)
 
 ## Content Quality
 

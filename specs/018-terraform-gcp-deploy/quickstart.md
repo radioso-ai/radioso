@@ -58,12 +58,12 @@ After this completes, note the `artifact_registry_url` output for the next step.
 gcloud auth configure-docker REGION-docker.pkg.dev
 
 # Build and push backend
-docker build --platform linux/amd64 -f infra/backend.Dockerfile -t REGION-docker.pkg.dev/PROJECT_ID/hivec/backend:latest .
-docker push REGION-docker.pkg.dev/PROJECT_ID/hivec/backend:latest
+docker build --platform linux/amd64 -f infra/backend.Dockerfile -t REGION-docker.pkg.dev/PROJECT_ID/radioso/backend:latest .
+docker push REGION-docker.pkg.dev/PROJECT_ID/radioso/backend:latest
 
 # Build and push frontend
-docker build --platform linux/amd64 -f frontend/Dockerfile -t REGION-docker.pkg.dev/PROJECT_ID/hivec/frontend:latest ./frontend
-docker push REGION-docker.pkg.dev/PROJECT_ID/hivec/frontend:latest
+docker build --platform linux/amd64 -f frontend/Dockerfile -t REGION-docker.pkg.dev/PROJECT_ID/radioso/frontend:latest ./frontend
+docker push REGION-docker.pkg.dev/PROJECT_ID/radioso/frontend:latest
 ```
 
 ## Step 5: Deploy the Cloud Run Revisions

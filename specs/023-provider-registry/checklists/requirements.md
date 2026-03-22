@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-03-21  
-**Feature**: [/Users/dm/conductor/workspaces/hivec/vendor-agnostic-llm/specs/023-provider-registry/spec.md](/Users/dm/conductor/workspaces/hivec/vendor-agnostic-llm/specs/023-provider-registry/spec.md)
+**Feature**: [/Users/dm/conductor/workspaces/radioso/vendor-agnostic-llm/specs/023-provider-registry/spec.md](/Users/dm/conductor/workspaces/radioso/vendor-agnostic-llm/specs/023-provider-registry/spec.md)
 
 ## Content Quality
 

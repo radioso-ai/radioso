@@ -1,6 +1,6 @@
 # Implementation Plan: Code-First OpenAPI Contracts
 
-**Branch**: `borohhov/openapi-contract-audit` | **Date**: 2026-03-21 | **Spec**: [spec.md](/Users/dm/conductor/workspaces/hivec/santo-domingo/specs/022-code-first-openapi/spec.md)
+**Branch**: `borohhov/openapi-contract-audit` | **Date**: 2026-03-21 | **Spec**: [spec.md](/Users/dm/conductor/workspaces/radioso/santo-domingo/specs/022-code-first-openapi/spec.md)
 **Input**: Feature specification from `/specs/022-code-first-openapi/spec.md`
 
 ## Summary

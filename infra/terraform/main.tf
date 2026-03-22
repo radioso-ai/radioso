@@ -9,5 +9,5 @@ provider "google-beta" {
 }
 
 locals {
-  service_name = "hivec"
+  service_name = "radioso"
 }

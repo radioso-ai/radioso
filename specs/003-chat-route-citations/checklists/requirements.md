@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-03-14  
-**Feature**: [/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/spec.md](/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/spec.md)
+**Feature**: [/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/spec.md](/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/spec.md)
 
 ## Content Quality
 

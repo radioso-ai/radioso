@@ -1,6 +1,6 @@
 # Implementation Plan: Precise Citation Placement
 
-**Branch**: `010-precise-citations` | **Date**: 2026-03-16 | **Spec**: [/Users/dm/code/hivec-precise-citations/specs/010-precise-citations/spec.md](/Users/dm/code/hivec-precise-citations/specs/010-precise-citations/spec.md)
+**Branch**: `010-precise-citations` | **Date**: 2026-03-16 | **Spec**: [/Users/dm/code/radioso-precise-citations/specs/010-precise-citations/spec.md](/Users/dm/code/radioso-precise-citations/specs/010-precise-citations/spec.md)
 **Input**: Feature specification from `/specs/010-precise-citations/spec.md`
 
 ## Summary

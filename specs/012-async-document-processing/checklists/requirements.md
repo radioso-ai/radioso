@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-03-16  
-**Feature**: [spec.md](/Users/dm/code/hivec-async-document-processing/specs/012-async-document-processing/spec.md)
+**Feature**: [spec.md](/Users/dm/code/radioso-async-document-processing/specs/012-async-document-processing/spec.md)
 
 ## Content Quality
 

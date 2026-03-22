@@ -1,6 +1,6 @@
 # Implementation Plan: Chat History Debug Drawer
 
-**Branch**: `011-chat-history` | **Date**: 2026-03-16 | **Spec**: [/Users/dm/code/hivec-chat-history/specs/011-chat-history/spec.md](/Users/dm/code/hivec-chat-history/specs/011-chat-history/spec.md)
+**Branch**: `011-chat-history` | **Date**: 2026-03-16 | **Spec**: [/Users/dm/code/radioso-chat-history/specs/011-chat-history/spec.md](/Users/dm/code/radioso-chat-history/specs/011-chat-history/spec.md)
 **Input**: Feature specification from `/specs/011-chat-history/spec.md`
 
 ## Summary
@@ -74,6 +74,6 @@ frontend/
 
 ## Validation Plan
 
-- Backend TypeScript build: `npm run build` in `/Users/dm/code/hivec-chat-history/backend`
-- Backend targeted tests: `npm test -- chat.contract.test.ts chat.integration.test.ts chat-service-streaming.test.ts` in `/Users/dm/code/hivec-chat-history/backend`
-- Frontend production build: `npm run build` in `/Users/dm/code/hivec-chat-history/frontend`
+- Backend TypeScript build: `npm run build` in `/Users/dm/code/radioso-chat-history/backend`
+- Backend targeted tests: `npm test -- chat.contract.test.ts chat.integration.test.ts chat-service-streaming.test.ts` in `/Users/dm/code/radioso-chat-history/backend`
+- Frontend production build: `npm run build` in `/Users/dm/code/radioso-chat-history/frontend`

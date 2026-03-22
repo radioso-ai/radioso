@@ -46,7 +46,7 @@
 
 ### Implementation for User Story 1
 
-- [ ] T010 [P] [US1] Create `infra/terraform/database.tf` — Cloud SQL PostgreSQL 16 instance (`db-f1-micro` default), database `hivec`, user with generated password, `cloudsql.enable_pgvector` flag, private IP only, no public IP
+- [ ] T010 [P] [US1] Create `infra/terraform/database.tf` — Cloud SQL PostgreSQL 16 instance (`db-f1-micro` default), database `radioso`, user with generated password, `cloudsql.enable_pgvector` flag, private IP only, no public IP
 - [ ] T011 [P] [US1] Create `infra/terraform/registry.tf` — Artifact Registry Docker repository in same region as Cloud Run
 - [ ] T012 [P] [US1] Create `infra/terraform/secrets.tf` — Secret Manager secrets for `database-password`, `openai-api-key`, `session-cookie-secret`, `connector-encryption-key`; secret versions from sensitive variables; IAM bindings granting Cloud Run SA `secretAccessor`
 - [ ] T013 [US1] Create `infra/terraform/compute.tf` — Backend Cloud Run service: image from variable, port 8080, `DATABASE_URL` env var constructed from Cloud SQL outputs, secret references for `OPENAI_API_KEY`/`SESSION_COOKIE_SECRET`/`CONNECTOR_ENCRYPTION_KEY`, VPC connector, min instances 0, max instances configurable, public invoker access

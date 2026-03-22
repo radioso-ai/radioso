@@ -1,6 +1,6 @@
 # Implementation Plan: Strict Grounding
 
-**Branch**: `004-strict-grounding` | **Date**: 2026-03-14 | **Spec**: [/tmp/hivec-strict-grounding/specs/004-strict-grounding/spec.md](/tmp/hivec-strict-grounding/specs/004-strict-grounding/spec.md)
+**Branch**: `004-strict-grounding` | **Date**: 2026-03-14 | **Spec**: [/tmp/radioso-strict-grounding/specs/004-strict-grounding/spec.md](/tmp/radioso-strict-grounding/specs/004-strict-grounding/spec.md)
 **Input**: Feature specification from `/specs/004-strict-grounding/spec.md`
 
 ## Summary

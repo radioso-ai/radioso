@@ -1,6 +1,6 @@
 # Implementation Plan: Chat Route Citations
 
-**Branch**: `003-chat-route-citations` | **Date**: 2026-03-14 | **Spec**: [/private/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/spec.md](/private/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/spec.md)
+**Branch**: `003-chat-route-citations` | **Date**: 2026-03-14 | **Spec**: [/private/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/spec.md](/private/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/spec.md)
 **Input**: Feature specification from `/specs/003-chat-route-citations/spec.md`
 
 ## Summary

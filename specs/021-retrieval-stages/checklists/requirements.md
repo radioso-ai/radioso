@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-03-21  
-**Feature**: [spec.md](/Users/dm/conductor/workspaces/hivec/hivec-retrieval-stages-spec/specs/021-retrieval-stages/spec.md)
+**Feature**: [spec.md](/Users/dm/conductor/workspaces/radioso/radioso-retrieval-stages-spec/specs/021-retrieval-stages/spec.md)
 
 ## Content Quality
 

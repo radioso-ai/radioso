@@ -1,8 +1,8 @@
 const API_BASE = `${process.env.NEXT_PUBLIC_API_BASE_PATH ?? "/backend/api/v1"}`;
 const STREAMING_API_PATH = '/api/chat/stream'
-const API_TOKEN_STORAGE_KEY = "hivec.apiToken";
-const WORKSPACE_TOKENS_STORAGE_KEY = "hivec.workspaceTokens";
-const ACTIVE_WORKSPACE_STORAGE_KEY = "hivec.activeWorkspaceId";
+const API_TOKEN_STORAGE_KEY = "radioso.apiToken";
+const WORKSPACE_TOKENS_STORAGE_KEY = "radioso.workspaceTokens";
+const ACTIVE_WORKSPACE_STORAGE_KEY = "radioso.activeWorkspaceId";
 
 const getStoredApiToken = (): string | null => {
   if (typeof window === "undefined") {

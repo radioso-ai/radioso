@@ -17,7 +17,7 @@ export const retrievalFixtureDocuments: Record<string, RetrievalFixtureDocument>
   sessionCookie: {
     title: "Session Cookie",
     content:
-      "Browser sessions use an HTTP-only cookie named hivec_session. The session cookie is used for registration, login, and token retrieval.",
+      "Browser sessions use an HTTP-only cookie named radioso_session. The session cookie is used for registration, login, and token retrieval.",
   },
   vectorSearch: {
     title: "Vector Search",

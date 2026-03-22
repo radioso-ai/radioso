@@ -1,6 +1,6 @@
 # Implementation Plan: Provider-Agnostic LLM Registry
 
-**Branch**: `borohhov/provider-factory` | **Date**: 2026-03-21 | **Spec**: [spec.md](/Users/dm/conductor/workspaces/hivec/vendor-agnostic-llm/specs/023-provider-registry/spec.md)
+**Branch**: `borohhov/provider-factory` | **Date**: 2026-03-21 | **Spec**: [spec.md](/Users/dm/conductor/workspaces/radioso/vendor-agnostic-llm/specs/023-provider-registry/spec.md)
 **Input**: Feature specification from `/specs/023-provider-registry/spec.md`
 
 ## Summary
@@ -110,13 +110,13 @@ backend/
 
 ## Phase 0: Research
 
-See [research.md](/Users/dm/conductor/workspaces/hivec/vendor-agnostic-llm/specs/023-provider-registry/research.md) for the decisions on capability modeling, provider support boundaries, and configuration strategy.
+See [research.md](/Users/dm/conductor/workspaces/radioso/vendor-agnostic-llm/specs/023-provider-registry/research.md) for the decisions on capability modeling, provider support boundaries, and configuration strategy.
 
 ## Phase 1: Design & Contracts
 
-- Provider capability objects and configuration relationships are defined in [data-model.md](/Users/dm/conductor/workspaces/hivec/vendor-agnostic-llm/specs/023-provider-registry/data-model.md).
-- Internal provider and capability contracts are defined in [provider-capabilities.md](/Users/dm/conductor/workspaces/hivec/vendor-agnostic-llm/specs/023-provider-registry/contracts/provider-capabilities.md).
-- Validation and manual smoke scenarios are documented in [quickstart.md](/Users/dm/conductor/workspaces/hivec/vendor-agnostic-llm/specs/023-provider-registry/quickstart.md).
+- Provider capability objects and configuration relationships are defined in [data-model.md](/Users/dm/conductor/workspaces/radioso/vendor-agnostic-llm/specs/023-provider-registry/data-model.md).
+- Internal provider and capability contracts are defined in [provider-capabilities.md](/Users/dm/conductor/workspaces/radioso/vendor-agnostic-llm/specs/023-provider-registry/contracts/provider-capabilities.md).
+- Validation and manual smoke scenarios are documented in [quickstart.md](/Users/dm/conductor/workspaces/radioso/vendor-agnostic-llm/specs/023-provider-registry/quickstart.md).
 
 ## Post-Design Constitution Check
 

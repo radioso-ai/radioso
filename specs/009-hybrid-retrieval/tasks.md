@@ -11,9 +11,9 @@
 
 **Purpose**: Prepare shared fixtures and confirm the feature scope against the existing retrieval/chat surfaces
 
-- [x] T001 Review `/Users/dm/code/hivec-hybrid-retrieval/specs/009-hybrid-retrieval/spec.md` and `/Users/dm/code/hivec-hybrid-retrieval/specs/009-hybrid-retrieval/plan.md` against `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval`, `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/chat`, and `/Users/dm/code/hivec-hybrid-retrieval/frontend/components/dashboard`
-- [x] T002 [P] Add representative exact-match, mixed-signal, constraint-heavy, normalization, and legacy-chunk fixtures under `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/fixtures/retrieval-quality/`
-- [x] T003 [P] Extend shared retrieval benchmark fixture builders in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/support/retrievalFixtures.ts`
+- [x] T001 Review `/Users/dm/code/radioso-hybrid-retrieval/specs/009-hybrid-retrieval/spec.md` and `/Users/dm/code/radioso-hybrid-retrieval/specs/009-hybrid-retrieval/plan.md` against `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval`, `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/chat`, and `/Users/dm/code/radioso-hybrid-retrieval/frontend/components/dashboard`
+- [x] T002 [P] Add representative exact-match, mixed-signal, constraint-heavy, normalization, and legacy-chunk fixtures under `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/fixtures/retrieval-quality/`
+- [x] T003 [P] Extend shared retrieval benchmark fixture builders in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/support/retrievalFixtures.ts`
 
 ---
 
@@ -23,15 +23,15 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [x] T004 Write failing shared settings, chunk-persistence, and legacy-chunk compatibility tests in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
-- [x] T005 [P] Add additive hybrid-retrieval schema fields and indexes in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/db/migrations/003_hybrid_retrieval.sql`
-- [x] T006 [P] Extend retrieval-settings domain defaults and validation for attribute-family controls in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/settings/domain/retrievalSettings.ts`
-- [x] T007 [P] Persist attribute-family controls in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/db/repositories/retrievalSettingsRepository.ts` and `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/support/fakes.ts`
-- [x] T008 [P] Extend chunk persistence records for `searchText` and structured attributes in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/documents/services/documentIngestionService.ts` and `/Users/dm/code/hivec-hybrid-retrieval/backend/src/db/repositories/chunkRepository.ts`
-- [x] T009 Extract hybrid retrieval types and seams in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts`, `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/candidatePreparationService.ts`, and `/Users/dm/code/hivec-hybrid-retrieval/backend/src/app/server/dependencies.ts`
-- [x] T010 Centralize hybrid retrieval defaults and thresholds in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/domain/hybridRetrievalConfig.ts`
-- [x] T011 Implement backward-compatible handling for legacy chunks and document the reindex/backfill path in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/retrievalPipelineService.ts`, `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/infra/lexicalSearch.ts`, and `/Users/dm/code/hivec-hybrid-retrieval/specs/009-hybrid-retrieval/quickstart.md`
-- [x] T012 Wire the shared hybrid retrieval dependencies in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/app/server/dependencies.ts`, `/Users/dm/code/hivec-hybrid-retrieval/backend/src/app/server/types.ts`, and `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/support/testApp.ts`
+- [x] T004 Write failing shared settings, chunk-persistence, and legacy-chunk compatibility tests in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
+- [x] T005 [P] Add additive hybrid-retrieval schema fields and indexes in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/db/migrations/003_hybrid_retrieval.sql`
+- [x] T006 [P] Extend retrieval-settings domain defaults and validation for attribute-family controls in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/settings/domain/retrievalSettings.ts`
+- [x] T007 [P] Persist attribute-family controls in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/db/repositories/retrievalSettingsRepository.ts` and `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/support/fakes.ts`
+- [x] T008 [P] Extend chunk persistence records for `searchText` and structured attributes in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/documents/services/documentIngestionService.ts` and `/Users/dm/code/radioso-hybrid-retrieval/backend/src/db/repositories/chunkRepository.ts`
+- [x] T009 Extract hybrid retrieval types and seams in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts`, `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/candidatePreparationService.ts`, and `/Users/dm/code/radioso-hybrid-retrieval/backend/src/app/server/dependencies.ts`
+- [x] T010 Centralize hybrid retrieval defaults and thresholds in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/domain/hybridRetrievalConfig.ts`
+- [x] T011 Implement backward-compatible handling for legacy chunks and document the reindex/backfill path in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/retrievalPipelineService.ts`, `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/infra/lexicalSearch.ts`, and `/Users/dm/code/radioso-hybrid-retrieval/specs/009-hybrid-retrieval/quickstart.md`
+- [x] T012 Wire the shared hybrid retrieval dependencies in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/app/server/dependencies.ts`, `/Users/dm/code/radioso-hybrid-retrieval/backend/src/app/server/types.ts`, and `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/support/testApp.ts`
 
 **Checkpoint**: Shared schema, defaults, rollout safety, and retrieval seams are ready for story implementation
 
@@ -45,19 +45,19 @@
 
 ### Tests for User Story 1
 
-- [x] T013 [P] [US1] Write failing unit coverage for search-text rendering and lexical candidate mapping in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/unit/hybrid-retrieval-search.test.ts`
-- [x] T014 [P] [US1] Write failing benchmark coverage for exact-match and mixed-signal retrieval in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts`
-- [x] T015 [P] [US1] Write failing integration coverage for hybrid candidate merging in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/chat.integration.test.ts`
+- [x] T013 [P] [US1] Write failing unit coverage for search-text rendering and lexical candidate mapping in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/unit/hybrid-retrieval-search.test.ts`
+- [x] T014 [P] [US1] Write failing benchmark coverage for exact-match and mixed-signal retrieval in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts`
+- [x] T015 [P] [US1] Write failing integration coverage for hybrid candidate merging in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/chat.integration.test.ts`
 
 ### Implementation for User Story 1
 
-- [x] T016 [US1] Implement normalized search-text rendering in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/searchTextRenderer.ts`
-- [x] T017 [US1] Use normalized search text for embeddings during ingest in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/documents/services/documentIngestionService.ts` and `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/embeddingService.ts`
-- [x] T018 [US1] Implement PostgreSQL lexical search in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/infra/lexicalSearch.ts`
-- [x] T019 [US1] Persist and read chunk `search_text` in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/db/repositories/chunkRepository.ts` and `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/infra/vectorSearch.ts`
-- [x] T020 [US1] Implement the explicit hybrid merge policy in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/candidatePreparationService.ts`
-- [x] T021 [US1] Apply the merge policy with score fusion, source provenance retention, and merged candidate cap behavior in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
-- [x] T022 [US1] Enrich rerank inputs with normalized retrieval text after lexical retrieval and merge behavior are validated in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/rerankService.ts`
+- [x] T016 [US1] Implement normalized search-text rendering in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/searchTextRenderer.ts`
+- [x] T017 [US1] Use normalized search text for embeddings during ingest in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/documents/services/documentIngestionService.ts` and `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/embeddingService.ts`
+- [x] T018 [US1] Implement PostgreSQL lexical search in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/infra/lexicalSearch.ts`
+- [x] T019 [US1] Persist and read chunk `search_text` in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/db/repositories/chunkRepository.ts` and `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/infra/vectorSearch.ts`
+- [x] T020 [US1] Implement the explicit hybrid merge policy in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/candidatePreparationService.ts`
+- [x] T021 [US1] Apply the merge policy with score fusion, source provenance retention, and merged candidate cap behavior in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
+- [x] T022 [US1] Enrich rerank inputs with normalized retrieval text after lexical retrieval and merge behavior are validated in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/rerankService.ts`
 
 **Checkpoint**: User Story 1 is functional and independently testable
 
@@ -71,20 +71,20 @@
 
 ### Tests for User Story 2
 
-- [x] T023 [P] [US2] Write failing unit coverage for deterministic attribute extraction and normalization in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/unit/hybrid-attributes.test.ts`
-- [x] T024 [P] [US2] Write failing unit coverage for query-constraint parsing and confidence thresholds in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/unit/hybrid-query-constraints.test.ts`
-- [x] T025 [P] [US2] Write failing benchmark coverage for constraint-heavy retrieval and fallback in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts`
+- [x] T023 [P] [US2] Write failing unit coverage for deterministic attribute extraction and normalization in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/unit/hybrid-attributes.test.ts`
+- [x] T024 [P] [US2] Write failing unit coverage for query-constraint parsing and confidence thresholds in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/unit/hybrid-query-constraints.test.ts`
+- [x] T025 [P] [US2] Write failing benchmark coverage for constraint-heavy retrieval and fallback in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts`
 
 ### Implementation for User Story 2
 
-- [x] T026 [US2] Implement raw supported-value extraction in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/structuredAttributeExtractor.ts`
-- [x] T027 [US2] Implement family-specific canonicalization in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/attributeNormalizer.ts`
-- [x] T028 [US2] Implement normalized structured-attribute models in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/domain/structuredAttributes.ts`
-- [x] T029 [US2] Persist normalized structured attributes and concise attribute text during ingest in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/documents/services/documentIngestionService.ts` and `/Users/dm/code/hivec-hybrid-retrieval/backend/src/db/repositories/chunkRepository.ts`
-- [x] T030 [US2] Implement supported query-constraint interpretation in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/queryConstraintParser.ts`
-- [x] T031 [US2] Implement attribute-to-constraint comparison, scoring, and fallback behavior in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/attributeMatchScoringService.ts`
-- [x] T032 [US2] Apply parsed constraints and attribute scoring in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
-- [x] T033 [US2] Include supported attributes in final prompt contexts in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/promptBuilder.ts`
+- [x] T026 [US2] Implement raw supported-value extraction in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/structuredAttributeExtractor.ts`
+- [x] T027 [US2] Implement family-specific canonicalization in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/attributeNormalizer.ts`
+- [x] T028 [US2] Implement normalized structured-attribute models in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/domain/structuredAttributes.ts`
+- [x] T029 [US2] Persist normalized structured attributes and concise attribute text during ingest in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/documents/services/documentIngestionService.ts` and `/Users/dm/code/radioso-hybrid-retrieval/backend/src/db/repositories/chunkRepository.ts`
+- [x] T030 [US2] Implement supported query-constraint interpretation in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/queryConstraintParser.ts`
+- [x] T031 [US2] Implement attribute-to-constraint comparison, scoring, and fallback behavior in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/attributeMatchScoringService.ts`
+- [x] T032 [US2] Apply parsed constraints and attribute scoring in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/retrievalPipelineService.ts`
+- [x] T033 [US2] Include supported attributes in final prompt contexts in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/promptBuilder.ts`
 
 **Checkpoint**: User Stories 1 and 2 are independently functional
 
@@ -98,16 +98,16 @@
 
 ### Tests for User Story 3
 
-- [x] T034 [P] [US3] Write failing contract coverage for attribute-family controls in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/contract/settings.contract.test.ts`
-- [x] T035 [P] [US3] Write failing settings round-trip integration coverage for per-account attribute controls in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/document-settings.integration.test.ts`
+- [x] T034 [P] [US3] Write failing contract coverage for attribute-family controls in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/contract/settings.contract.test.ts`
+- [x] T035 [P] [US3] Write failing settings round-trip integration coverage for per-account attribute controls in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/document-settings.integration.test.ts`
 
 ### Implementation for User Story 3
 
-- [x] T036 [US3] Accept and return attribute-family controls in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/app/http/routes/settingsRoutes.ts` and `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/settings/services/retrievalSettingsService.ts`
-- [x] T037 [US3] Extend frontend retrieval-settings types and payloads for attribute controls in `/Users/dm/code/hivec-hybrid-retrieval/frontend/lib/api.ts`
-- [x] T038 [US3] Add supported attribute-family controls to `/Users/dm/code/hivec-hybrid-retrieval/frontend/components/dashboard/settings-view.tsx`
-- [x] T039 [US3] Add safe explanatory copy for system-defined attribute families in `/Users/dm/code/hivec-hybrid-retrieval/frontend/components/dashboard/settings-view.tsx`
-- [x] T040 [US3] Sync the retrieval-settings contract in `/Users/dm/code/hivec-hybrid-retrieval/backend/openapi.yaml` and `/Users/dm/code/hivec-hybrid-retrieval/specs/009-hybrid-retrieval/contracts/hybrid-retrieval.openapi.yaml`
+- [x] T036 [US3] Accept and return attribute-family controls in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/app/http/routes/settingsRoutes.ts` and `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/settings/services/retrievalSettingsService.ts`
+- [x] T037 [US3] Extend frontend retrieval-settings types and payloads for attribute controls in `/Users/dm/code/radioso-hybrid-retrieval/frontend/lib/api.ts`
+- [x] T038 [US3] Add supported attribute-family controls to `/Users/dm/code/radioso-hybrid-retrieval/frontend/components/dashboard/settings-view.tsx`
+- [x] T039 [US3] Add safe explanatory copy for system-defined attribute families in `/Users/dm/code/radioso-hybrid-retrieval/frontend/components/dashboard/settings-view.tsx`
+- [x] T040 [US3] Sync the retrieval-settings contract in `/Users/dm/code/radioso-hybrid-retrieval/backend/openapi.yaml` and `/Users/dm/code/radioso-hybrid-retrieval/specs/009-hybrid-retrieval/contracts/hybrid-retrieval.openapi.yaml`
 
 **Checkpoint**: User Stories 1, 2, and 3 are independently functional
 
@@ -121,17 +121,17 @@
 
 ### Tests for User Story 4
 
-- [x] T041 [P] [US4] Write failing unit coverage for retrieval diagnostics shaping in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/unit/hybrid-retrieval-info.test.ts`
-- [x] T042 [P] [US4] Write failing chat contract coverage for additive `retrievalInfo` in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/contract/chat.contract.test.ts`
-- [x] T043 [P] [US4] Write failing JSON and streaming retrieval-info coverage in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/unit/chat-service-streaming.test.ts` and `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/chat.integration.test.ts`
+- [x] T041 [P] [US4] Write failing unit coverage for retrieval diagnostics shaping in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/unit/hybrid-retrieval-info.test.ts`
+- [x] T042 [P] [US4] Write failing chat contract coverage for additive `retrievalInfo` in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/contract/chat.contract.test.ts`
+- [x] T043 [P] [US4] Write failing JSON and streaming retrieval-info coverage in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/unit/chat-service-streaming.test.ts` and `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/chat.integration.test.ts`
 
 ### Implementation for User Story 4
 
-- [x] T044 [US4] Expand retrieval diagnostics models in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts` and `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/retrievalExecutionTelemetryService.ts`
-- [x] T045 [US4] Implement bounded retrieval-information shaping in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/retrieval/services/retrievalInfoPresenter.ts`
-- [x] T046 [US4] Attach retrieval information to chat results in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/chat/services/chatService.ts`
-- [x] T047 [US4] Expose additive `retrievalInfo` payloads in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/app/http/presenters/chatPresenter.ts`
-- [x] T048 [US4] Keep audit metadata aligned with hybrid diagnostics in `/Users/dm/code/hivec-hybrid-retrieval/backend/src/modules/audit/services/auditService.ts`
+- [x] T044 [US4] Expand retrieval diagnostics models in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts` and `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/retrievalExecutionTelemetryService.ts`
+- [x] T045 [US4] Implement bounded retrieval-information shaping in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/retrieval/services/retrievalInfoPresenter.ts`
+- [x] T046 [US4] Attach retrieval information to chat results in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/chat/services/chatService.ts`
+- [x] T047 [US4] Expose additive `retrievalInfo` payloads in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/app/http/presenters/chatPresenter.ts`
+- [x] T048 [US4] Keep audit metadata aligned with hybrid diagnostics in `/Users/dm/code/radioso-hybrid-retrieval/backend/src/modules/audit/services/auditService.ts`
 
 **Checkpoint**: User Stories 1 through 4 are independently functional
 
@@ -145,10 +145,10 @@
 
 ### Implementation for User Story 5
 
-- [x] T049 [US5] Extend chat response and stream parsing for `retrievalInfo` in `/Users/dm/code/hivec-hybrid-retrieval/frontend/lib/api.ts` and `/Users/dm/code/hivec-hybrid-retrieval/frontend/lib/chat-context.tsx`
-- [x] T050 [P] [US5] Create the retrieval-information panel component in `/Users/dm/code/hivec-hybrid-retrieval/frontend/components/dashboard/chat-retrieval-info.tsx`
-- [x] T051 [US5] Render bounded retrieval information in `/Users/dm/code/hivec-hybrid-retrieval/frontend/components/dashboard/chat-view.tsx`
-- [x] T052 [US5] Add readable copy and empty states for retrieval information in `/Users/dm/code/hivec-hybrid-retrieval/frontend/components/dashboard/chat-retrieval-info.tsx`
+- [x] T049 [US5] Extend chat response and stream parsing for `retrievalInfo` in `/Users/dm/code/radioso-hybrid-retrieval/frontend/lib/api.ts` and `/Users/dm/code/radioso-hybrid-retrieval/frontend/lib/chat-context.tsx`
+- [x] T050 [P] [US5] Create the retrieval-information panel component in `/Users/dm/code/radioso-hybrid-retrieval/frontend/components/dashboard/chat-retrieval-info.tsx`
+- [x] T051 [US5] Render bounded retrieval information in `/Users/dm/code/radioso-hybrid-retrieval/frontend/components/dashboard/chat-view.tsx`
+- [x] T052 [US5] Add readable copy and empty states for retrieval information in `/Users/dm/code/radioso-hybrid-retrieval/frontend/components/dashboard/chat-retrieval-info.tsx`
 
 **Checkpoint**: All user stories are independently functional
 
@@ -158,11 +158,11 @@
 
 **Purpose**: Final consistency, performance, rollout, and regression verification across stories
 
-- [x] T053 [P] Refresh feature docs in `/Users/dm/code/hivec-hybrid-retrieval/specs/009-hybrid-retrieval/quickstart.md` and `/Users/dm/code/hivec-hybrid-retrieval/specs/009-hybrid-retrieval/contracts/hybrid-retrieval.openapi.yaml` if implementation details drift
-- [x] T054 Run affected backend unit, contract, integration, and benchmark suites in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/`
-- [x] T055 Verify hybrid-path latency and benchmark deltas against the vector-only baseline in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts`
-- [x] T056 Verify rerank failure-path, lexical-search-disabled, and legacy-chunk regression behavior in `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/chat.integration.test.ts` and `/Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts`
-- [x] T057 Run targeted frontend verification for settings controls and retrieval-information rendering in `/Users/dm/code/hivec-hybrid-retrieval/frontend/components/dashboard/`
+- [x] T053 [P] Refresh feature docs in `/Users/dm/code/radioso-hybrid-retrieval/specs/009-hybrid-retrieval/quickstart.md` and `/Users/dm/code/radioso-hybrid-retrieval/specs/009-hybrid-retrieval/contracts/hybrid-retrieval.openapi.yaml` if implementation details drift
+- [x] T054 Run affected backend unit, contract, integration, and benchmark suites in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/`
+- [x] T055 Verify hybrid-path latency and benchmark deltas against the vector-only baseline in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts`
+- [x] T056 Verify rerank failure-path, lexical-search-disabled, and legacy-chunk regression behavior in `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/chat.integration.test.ts` and `/Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts`
+- [x] T057 Run targeted frontend verification for settings controls and retrieval-information rendering in `/Users/dm/code/radioso-hybrid-retrieval/frontend/components/dashboard/`
 
 ---
 
@@ -212,25 +212,25 @@
 ## Parallel Example: User Story 1
 
 ```bash
-Task: "Write failing unit coverage for search-text rendering and lexical candidate mapping in /Users/dm/code/hivec-hybrid-retrieval/backend/tests/unit/hybrid-retrieval-search.test.ts"
-Task: "Write failing benchmark coverage for exact-match and mixed-signal retrieval in /Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts"
-Task: "Write failing integration coverage for hybrid candidate merging in /Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/chat.integration.test.ts"
+Task: "Write failing unit coverage for search-text rendering and lexical candidate mapping in /Users/dm/code/radioso-hybrid-retrieval/backend/tests/unit/hybrid-retrieval-search.test.ts"
+Task: "Write failing benchmark coverage for exact-match and mixed-signal retrieval in /Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts"
+Task: "Write failing integration coverage for hybrid candidate merging in /Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/chat.integration.test.ts"
 ```
 
 ## Parallel Example: User Story 2
 
 ```bash
-Task: "Write failing unit coverage for deterministic attribute extraction and normalization in /Users/dm/code/hivec-hybrid-retrieval/backend/tests/unit/hybrid-attributes.test.ts"
-Task: "Write failing unit coverage for query-constraint parsing and confidence thresholds in /Users/dm/code/hivec-hybrid-retrieval/backend/tests/unit/hybrid-query-constraints.test.ts"
-Task: "Write failing benchmark coverage for constraint-heavy retrieval and fallback in /Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts"
+Task: "Write failing unit coverage for deterministic attribute extraction and normalization in /Users/dm/code/radioso-hybrid-retrieval/backend/tests/unit/hybrid-attributes.test.ts"
+Task: "Write failing unit coverage for query-constraint parsing and confidence thresholds in /Users/dm/code/radioso-hybrid-retrieval/backend/tests/unit/hybrid-query-constraints.test.ts"
+Task: "Write failing benchmark coverage for constraint-heavy retrieval and fallback in /Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/retrieval-benchmark.integration.test.ts"
 ```
 
 ## Parallel Example: User Story 4
 
 ```bash
-Task: "Write failing unit coverage for retrieval diagnostics shaping in /Users/dm/code/hivec-hybrid-retrieval/backend/tests/unit/hybrid-retrieval-info.test.ts"
-Task: "Write failing chat contract coverage for additive retrievalInfo in /Users/dm/code/hivec-hybrid-retrieval/backend/tests/contract/chat.contract.test.ts"
-Task: "Write failing JSON and streaming retrieval-info coverage in /Users/dm/code/hivec-hybrid-retrieval/backend/tests/unit/chat-service-streaming.test.ts and /Users/dm/code/hivec-hybrid-retrieval/backend/tests/integration/chat.integration.test.ts"
+Task: "Write failing unit coverage for retrieval diagnostics shaping in /Users/dm/code/radioso-hybrid-retrieval/backend/tests/unit/hybrid-retrieval-info.test.ts"
+Task: "Write failing chat contract coverage for additive retrievalInfo in /Users/dm/code/radioso-hybrid-retrieval/backend/tests/contract/chat.contract.test.ts"
+Task: "Write failing JSON and streaming retrieval-info coverage in /Users/dm/code/radioso-hybrid-retrieval/backend/tests/unit/chat-service-streaming.test.ts and /Users/dm/code/radioso-hybrid-retrieval/backend/tests/integration/chat.integration.test.ts"
 ```
 
 ---

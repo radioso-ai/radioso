@@ -15,5 +15,5 @@ output "cloud_sql_connection_name" {
 
 output "artifact_registry_url" {
   description = "Artifact Registry repository URL for pushing Docker images"
-  value       = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.hivec.repository_id}"
+  value       = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.radioso.repository_id}"
 }

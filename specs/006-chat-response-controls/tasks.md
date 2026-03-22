@@ -11,8 +11,8 @@
 
 **Purpose**: Prepare the feature artifacts and implementation seams
 
-- [ ] T001 Review `/Users/dm/code/hivec/specs/006-chat-response-controls/plan.md` and align target modules in `/Users/dm/code/hivec/backend/src/modules` and `/Users/dm/code/hivec/frontend/components/dashboard`
-- [ ] T002 [P] Add contract notes for response controls and optional citation metadata in `/Users/dm/code/hivec/backend/openapi.yaml`
+- [ ] T001 Review `/Users/dm/code/radioso/specs/006-chat-response-controls/plan.md` and align target modules in `/Users/dm/code/radioso/backend/src/modules` and `/Users/dm/code/radioso/frontend/components/dashboard`
+- [ ] T002 [P] Add contract notes for response controls and optional citation metadata in `/Users/dm/code/radioso/backend/openapi.yaml`
 
 ---
 
@@ -22,12 +22,12 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 Write failing shared settings/domain validation tests in `/Users/dm/code/hivec/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
-- [ ] T004 Write failing shared chat contract coverage for optional citation metadata in `/Users/dm/code/hivec/backend/tests/contract/chat.contract.test.ts`
-- [ ] T005 [P] Add persistence support for response preferences in `/Users/dm/code/hivec/backend/src/db/migrations/` and `/Users/dm/code/hivec/backend/src/db/repositories/retrievalSettingsRepository.ts`
-- [ ] T006 [P] Extend the settings domain and service types for response preferences in `/Users/dm/code/hivec/backend/src/modules/settings/domain/retrievalSettings.ts` and `/Users/dm/code/hivec/backend/src/modules/settings/services/retrievalSettingsService.ts`
-- [ ] T007 [P] Extend settings transport schemas and frontend API types in `/Users/dm/code/hivec/backend/src/app/http/routes/settingsRoutes.ts` and `/Users/dm/code/hivec/frontend/lib/api.ts`
-- [ ] T008 Create shared chat response metadata types and presenter support in `/Users/dm/code/hivec/backend/src/modules/chat/services/chatService.ts` and `/Users/dm/code/hivec/backend/src/app/http/presenters/chatPresenter.ts`
+- [ ] T003 Write failing shared settings/domain validation tests in `/Users/dm/code/radioso/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
+- [ ] T004 Write failing shared chat contract coverage for optional citation metadata in `/Users/dm/code/radioso/backend/tests/contract/chat.contract.test.ts`
+- [ ] T005 [P] Add persistence support for response preferences in `/Users/dm/code/radioso/backend/src/db/migrations/` and `/Users/dm/code/radioso/backend/src/db/repositories/retrievalSettingsRepository.ts`
+- [ ] T006 [P] Extend the settings domain and service types for response preferences in `/Users/dm/code/radioso/backend/src/modules/settings/domain/retrievalSettings.ts` and `/Users/dm/code/radioso/backend/src/modules/settings/services/retrievalSettingsService.ts`
+- [ ] T007 [P] Extend settings transport schemas and frontend API types in `/Users/dm/code/radioso/backend/src/app/http/routes/settingsRoutes.ts` and `/Users/dm/code/radioso/frontend/lib/api.ts`
+- [ ] T008 Create shared chat response metadata types and presenter support in `/Users/dm/code/radioso/backend/src/modules/chat/services/chatService.ts` and `/Users/dm/code/radioso/backend/src/app/http/presenters/chatPresenter.ts`
 
 **Checkpoint**: Settings and chat metadata foundations are ready for story implementation
 
@@ -41,18 +41,18 @@
 
 ### Tests for User Story 1
 
-- [ ] T009 [P] [US1] Write failing settings contract coverage for `warmthLevel` in `/Users/dm/code/hivec/backend/tests/contract/settings.contract.test.ts`
-- [ ] T010 [P] [US1] Write failing prompt-builder unit coverage for warmth instructions in `/Users/dm/code/hivec/backend/tests/unit/chat-retrieval.domain.test.ts`
-- [ ] T011 [P] [US1] Write failing integration coverage for persisted warmth behavior in `/Users/dm/code/hivec/backend/tests/integration/chat.integration.test.ts`
+- [ ] T009 [P] [US1] Write failing settings contract coverage for `warmthLevel` in `/Users/dm/code/radioso/backend/tests/contract/settings.contract.test.ts`
+- [ ] T010 [P] [US1] Write failing prompt-builder unit coverage for warmth instructions in `/Users/dm/code/radioso/backend/tests/unit/chat-retrieval.domain.test.ts`
+- [ ] T011 [P] [US1] Write failing integration coverage for persisted warmth behavior in `/Users/dm/code/radioso/backend/tests/integration/chat.integration.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] Implement response warmth defaults and validation in `/Users/dm/code/hivec/backend/src/modules/settings/domain/retrievalSettings.ts`
-- [ ] T013 [US1] Persist and return `warmthLevel` in `/Users/dm/code/hivec/backend/src/db/repositories/retrievalSettingsRepository.ts` and `/Users/dm/code/hivec/backend/src/app/http/routes/settingsRoutes.ts`
-- [ ] T014 [US1] Add backend response-style instruction building in `/Users/dm/code/hivec/backend/src/modules/retrieval/services/promptBuilder.ts` or a focused extracted module under `/Users/dm/code/hivec/backend/src/modules/retrieval/services/`
-- [ ] T015 [US1] Wire warmth-aware prompt generation through `/Users/dm/code/hivec/backend/src/modules/retrieval/services/retrievalPipelineService.ts` and `/Users/dm/code/hivec/backend/src/modules/chat/services/chatService.ts`
-- [ ] T016 [US1] Add the warmth slider to `/Users/dm/code/hivec/frontend/components/dashboard/settings-view.tsx`
-- [ ] T017 [US1] Extend frontend settings state and API handling for `warmthLevel` in `/Users/dm/code/hivec/frontend/lib/api.ts`
+- [ ] T012 [US1] Implement response warmth defaults and validation in `/Users/dm/code/radioso/backend/src/modules/settings/domain/retrievalSettings.ts`
+- [ ] T013 [US1] Persist and return `warmthLevel` in `/Users/dm/code/radioso/backend/src/db/repositories/retrievalSettingsRepository.ts` and `/Users/dm/code/radioso/backend/src/app/http/routes/settingsRoutes.ts`
+- [ ] T014 [US1] Add backend response-style instruction building in `/Users/dm/code/radioso/backend/src/modules/retrieval/services/promptBuilder.ts` or a focused extracted module under `/Users/dm/code/radioso/backend/src/modules/retrieval/services/`
+- [ ] T015 [US1] Wire warmth-aware prompt generation through `/Users/dm/code/radioso/backend/src/modules/retrieval/services/retrievalPipelineService.ts` and `/Users/dm/code/radioso/backend/src/modules/chat/services/chatService.ts`
+- [ ] T016 [US1] Add the warmth slider to `/Users/dm/code/radioso/frontend/components/dashboard/settings-view.tsx`
+- [ ] T017 [US1] Extend frontend settings state and API handling for `warmthLevel` in `/Users/dm/code/radioso/frontend/lib/api.ts`
 
 **Checkpoint**: User Story 1 is functional and independently testable
 
@@ -66,14 +66,14 @@
 
 ### Tests for User Story 2
 
-- [ ] T018 [P] [US2] Write failing unit coverage for closing-question policy in `/Users/dm/code/hivec/backend/tests/unit/chat-retrieval.domain.test.ts`
-- [ ] T019 [P] [US2] Write failing integration coverage for no-trailing-engagement-question behavior in `/Users/dm/code/hivec/backend/tests/integration/chat.integration.test.ts`
+- [ ] T018 [P] [US2] Write failing unit coverage for closing-question policy in `/Users/dm/code/radioso/backend/tests/unit/chat-retrieval.domain.test.ts`
+- [ ] T019 [P] [US2] Write failing integration coverage for no-trailing-engagement-question behavior in `/Users/dm/code/radioso/backend/tests/integration/chat.integration.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Add closing-question policy instructions to backend prompt construction in `/Users/dm/code/hivec/backend/src/modules/retrieval/services/promptBuilder.ts` or its extracted response-instruction module
-- [ ] T021 [US2] Ensure chat orchestration applies the clarification-only question policy in `/Users/dm/code/hivec/backend/src/modules/chat/services/chatService.ts`
-- [ ] T022 [US2] Update settings copy to explain clarification-only questions in `/Users/dm/code/hivec/frontend/components/dashboard/settings-view.tsx`
+- [ ] T020 [US2] Add closing-question policy instructions to backend prompt construction in `/Users/dm/code/radioso/backend/src/modules/retrieval/services/promptBuilder.ts` or its extracted response-instruction module
+- [ ] T021 [US2] Ensure chat orchestration applies the clarification-only question policy in `/Users/dm/code/radioso/backend/src/modules/chat/services/chatService.ts`
+- [ ] T022 [US2] Update settings copy to explain clarification-only questions in `/Users/dm/code/radioso/frontend/components/dashboard/settings-view.tsx`
 
 **Checkpoint**: User Stories 1 and 2 work independently
 
@@ -87,19 +87,19 @@
 
 ### Tests for User Story 3
 
-- [ ] T023 [P] [US3] Write failing settings contract coverage for `citationDisplayEnabled` in `/Users/dm/code/hivec/backend/tests/contract/settings.contract.test.ts`
-- [ ] T024 [P] [US3] Write failing chat contract coverage for optional `answerSegments` and optional `citations` in `/Users/dm/code/hivec/backend/tests/contract/chat.contract.test.ts`
-- [ ] T025 [P] [US3] Write failing unit coverage for citation assignment and deduplication in `/Users/dm/code/hivec/backend/tests/unit/chat-retrieval.domain.test.ts`
-- [ ] T026 [P] [US3] Write failing integration coverage for optional citation rendering behavior in `/Users/dm/code/hivec/backend/tests/integration/chat.integration.test.ts`
+- [ ] T023 [P] [US3] Write failing settings contract coverage for `citationDisplayEnabled` in `/Users/dm/code/radioso/backend/tests/contract/settings.contract.test.ts`
+- [ ] T024 [P] [US3] Write failing chat contract coverage for optional `answerSegments` and optional `citations` in `/Users/dm/code/radioso/backend/tests/contract/chat.contract.test.ts`
+- [ ] T025 [P] [US3] Write failing unit coverage for citation assignment and deduplication in `/Users/dm/code/radioso/backend/tests/unit/chat-retrieval.domain.test.ts`
+- [ ] T026 [P] [US3] Write failing integration coverage for optional citation rendering behavior in `/Users/dm/code/radioso/backend/tests/integration/chat.integration.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T027 [US3] Implement `citationDisplayEnabled` defaults, validation, and persistence in `/Users/dm/code/hivec/backend/src/modules/settings/domain/retrievalSettings.ts` and `/Users/dm/code/hivec/backend/src/db/repositories/retrievalSettingsRepository.ts`
-- [ ] T028 [US3] Add backend citation-assignment and deduplication support in a focused module under `/Users/dm/code/hivec/backend/src/modules/retrieval/services/`
-- [ ] T029 [US3] Return optional `citations` and `answerSegments` from `/Users/dm/code/hivec/backend/src/modules/chat/services/chatService.ts` and `/Users/dm/code/hivec/backend/src/app/http/presenters/chatPresenter.ts`
-- [ ] T030 [US3] Extend frontend chat types and completion handling for `answerSegments` in `/Users/dm/code/hivec/frontend/lib/api.ts` and `/Users/dm/code/hivec/frontend/lib/chat-context.tsx`
-- [ ] T031 [US3] Replace positional citation heuristics with backend-owned rendering in `/Users/dm/code/hivec/frontend/components/dashboard/chat-citations.tsx`
-- [ ] T032 [US3] Add a citation display control and supporting copy in `/Users/dm/code/hivec/frontend/components/dashboard/settings-view.tsx`
+- [ ] T027 [US3] Implement `citationDisplayEnabled` defaults, validation, and persistence in `/Users/dm/code/radioso/backend/src/modules/settings/domain/retrievalSettings.ts` and `/Users/dm/code/radioso/backend/src/db/repositories/retrievalSettingsRepository.ts`
+- [ ] T028 [US3] Add backend citation-assignment and deduplication support in a focused module under `/Users/dm/code/radioso/backend/src/modules/retrieval/services/`
+- [ ] T029 [US3] Return optional `citations` and `answerSegments` from `/Users/dm/code/radioso/backend/src/modules/chat/services/chatService.ts` and `/Users/dm/code/radioso/backend/src/app/http/presenters/chatPresenter.ts`
+- [ ] T030 [US3] Extend frontend chat types and completion handling for `answerSegments` in `/Users/dm/code/radioso/frontend/lib/api.ts` and `/Users/dm/code/radioso/frontend/lib/chat-context.tsx`
+- [ ] T031 [US3] Replace positional citation heuristics with backend-owned rendering in `/Users/dm/code/radioso/frontend/components/dashboard/chat-citations.tsx`
+- [ ] T032 [US3] Add a citation display control and supporting copy in `/Users/dm/code/radioso/frontend/components/dashboard/settings-view.tsx`
 
 **Checkpoint**: All user stories are independently functional
 
@@ -109,9 +109,9 @@
 
 **Purpose**: Final consistency, docs, and verification across stories
 
-- [ ] T033 [P] Update shared API docs in `/Users/dm/code/hivec/backend/openapi.yaml` and `/Users/dm/code/hivec/frontend/lib/api.ts`
-- [ ] T034 Run backend test suites for affected coverage in `/Users/dm/code/hivec/backend/tests/`
-- [ ] T035 Run frontend lint and verify settings/chat rendering flows in `/Users/dm/code/hivec/frontend/`
+- [ ] T033 [P] Update shared API docs in `/Users/dm/code/radioso/backend/openapi.yaml` and `/Users/dm/code/radioso/frontend/lib/api.ts`
+- [ ] T034 Run backend test suites for affected coverage in `/Users/dm/code/radioso/backend/tests/`
+- [ ] T035 Run frontend lint and verify settings/chat rendering flows in `/Users/dm/code/radioso/frontend/`
 
 ---
 
@@ -151,10 +151,10 @@
 ## Parallel Example: User Story 3
 
 ```bash
-Task: "Write failing settings contract coverage for citationDisplayEnabled in /Users/dm/code/hivec/backend/tests/contract/settings.contract.test.ts"
-Task: "Write failing chat contract coverage for optional answerSegments and optional citations in /Users/dm/code/hivec/backend/tests/contract/chat.contract.test.ts"
-Task: "Write failing unit coverage for citation assignment and deduplication in /Users/dm/code/hivec/backend/tests/unit/chat-retrieval.domain.test.ts"
-Task: "Write failing integration coverage for optional citation rendering behavior in /Users/dm/code/hivec/backend/tests/integration/chat.integration.test.ts"
+Task: "Write failing settings contract coverage for citationDisplayEnabled in /Users/dm/code/radioso/backend/tests/contract/settings.contract.test.ts"
+Task: "Write failing chat contract coverage for optional answerSegments and optional citations in /Users/dm/code/radioso/backend/tests/contract/chat.contract.test.ts"
+Task: "Write failing unit coverage for citation assignment and deduplication in /Users/dm/code/radioso/backend/tests/unit/chat-retrieval.domain.test.ts"
+Task: "Write failing integration coverage for optional citation rendering behavior in /Users/dm/code/radioso/backend/tests/integration/chat.integration.test.ts"
 ```
 
 ---

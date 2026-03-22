@@ -1,6 +1,6 @@
 # Implementation Plan: Retrieval Pipeline Stages
 
-**Branch**: `021-retrieval-stages` | **Date**: 2026-03-21 | **Spec**: [spec.md](/Users/dm/conductor/workspaces/hivec/hivec-retrieval-stages-spec/specs/021-retrieval-stages/spec.md)
+**Branch**: `021-retrieval-stages` | **Date**: 2026-03-21 | **Spec**: [spec.md](/Users/dm/conductor/workspaces/radioso/radioso-retrieval-stages-spec/specs/021-retrieval-stages/spec.md)
 **Input**: Feature specification from `/specs/021-retrieval-stages/spec.md`
 
 ## Summary
@@ -103,13 +103,13 @@ backend/
 
 ## Phase 0: Research
 
-See [research.md](/Users/dm/conductor/workspaces/hivec/hivec-retrieval-stages-spec/specs/021-retrieval-stages/research.md) for the concrete decisions that resolve the main architecture unknowns.
+See [research.md](/Users/dm/conductor/workspaces/radioso/radioso-retrieval-stages-spec/specs/021-retrieval-stages/research.md) for the concrete decisions that resolve the main architecture unknowns.
 
 ## Phase 1: Design & Contracts
 
-- Stage boundaries and data passed between them are defined in [data-model.md](/Users/dm/conductor/workspaces/hivec/hivec-retrieval-stages-spec/specs/021-retrieval-stages/data-model.md).
-- Internal module contracts for the orchestrator and stage interfaces are defined in [internal-stage-contracts.md](/Users/dm/conductor/workspaces/hivec/hivec-retrieval-stages-spec/specs/021-retrieval-stages/contracts/internal-stage-contracts.md).
-- Regression-oriented execution guidance is defined in [quickstart.md](/Users/dm/conductor/workspaces/hivec/hivec-retrieval-stages-spec/specs/021-retrieval-stages/quickstart.md).
+- Stage boundaries and data passed between them are defined in [data-model.md](/Users/dm/conductor/workspaces/radioso/radioso-retrieval-stages-spec/specs/021-retrieval-stages/data-model.md).
+- Internal module contracts for the orchestrator and stage interfaces are defined in [internal-stage-contracts.md](/Users/dm/conductor/workspaces/radioso/radioso-retrieval-stages-spec/specs/021-retrieval-stages/contracts/internal-stage-contracts.md).
+- Regression-oriented execution guidance is defined in [quickstart.md](/Users/dm/conductor/workspaces/radioso/radioso-retrieval-stages-spec/specs/021-retrieval-stages/quickstart.md).
 
 ## Post-Design Constitution Check
 

@@ -1,7 +1,7 @@
 # Tasks: Universal Retrieval Quality Upgrade
 
-**Input**: Design documents from `/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/`
-**Prerequisites**: [plan.md](/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/plan.md), [spec.md](/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/spec.md), [research.md](/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/research.md), [data-model.md](/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/data-model.md), [contracts/openapi.yaml](/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/contracts/openapi.yaml), [quickstart.md](/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/quickstart.md)
+**Input**: Design documents from `/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/`
+**Prerequisites**: [plan.md](/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/plan.md), [spec.md](/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/spec.md), [research.md](/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/research.md), [data-model.md](/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/data-model.md), [contracts/openapi.yaml](/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/contracts/openapi.yaml), [quickstart.md](/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/quickstart.md)
 
 **Tests**: Backend tests are REQUIRED and MUST be written before implementation tasks in each user story phase.
 
@@ -17,9 +17,9 @@
 
 **Purpose**: Prepare the repository artifacts and evaluation scaffolding for the retrieval-quality upgrade
 
-- [x] T001 Align the feature documentation set in `/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/` and verify `plan.md`, `research.md`, `data-model.md`, `contracts/openapi.yaml`, and `quickstart.md` are current
-- [x] T002 [P] Create retrieval evaluation fixtures for direct-answer, follow-up, noisy-corpus, and fallback scenarios in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/fixtures/retrieval-quality/`
-- [x] T003 [P] Add quickstart-aligned validation notes for retrieval benchmark execution in `/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/quickstart.md`
+- [x] T001 Align the feature documentation set in `/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/` and verify `plan.md`, `research.md`, `data-model.md`, `contracts/openapi.yaml`, and `quickstart.md` are current
+- [x] T002 [P] Create retrieval evaluation fixtures for direct-answer, follow-up, noisy-corpus, and fallback scenarios in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/fixtures/retrieval-quality/`
+- [x] T003 [P] Add quickstart-aligned validation notes for retrieval benchmark execution in `/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/quickstart.md`
 
 ---
 
@@ -29,11 +29,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [x] T004 [P] Create shared retrieval pipeline types for context windows, rewritten queries, normalized candidates, reranked candidates, final prompt contexts, and execution diagnostics in `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts`
-- [x] T005 [P] Add shared retrieval-quality fixture builders and helper assertions in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/support/retrievalFixtures.ts`
-- [x] T006 Refactor `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/retrievalPipelineService.ts` into an orchestration-only coordinator that delegates rewrite, candidate preparation, rerank, and prompt-context selection decisions to focused services
-- [x] T007 [P] Extend `/private/tmp/hivec-improve-rag-pipeline/backend/tests/support/fakes.ts` and `/private/tmp/hivec-improve-rag-pipeline/backend/tests/support/testApp.ts` with fake gateways and fixture wiring for model-backed rewrite, semantic rerank, candidate normalization, and retrieval execution diagnostics
-- [x] T008 [P] Add retrieval execution metadata plumbing contracts to `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/audit/services/auditService.ts` and `/private/tmp/hivec-improve-rag-pipeline/backend/src/shared/observability/logger.ts`
+- [x] T004 [P] Create shared retrieval pipeline types for context windows, rewritten queries, normalized candidates, reranked candidates, final prompt contexts, and execution diagnostics in `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts`
+- [x] T005 [P] Add shared retrieval-quality fixture builders and helper assertions in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/support/retrievalFixtures.ts`
+- [x] T006 Refactor `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/retrievalPipelineService.ts` into an orchestration-only coordinator that delegates rewrite, candidate preparation, rerank, and prompt-context selection decisions to focused services
+- [x] T007 [P] Extend `/private/tmp/radioso-improve-rag-pipeline/backend/tests/support/fakes.ts` and `/private/tmp/radioso-improve-rag-pipeline/backend/tests/support/testApp.ts` with fake gateways and fixture wiring for model-backed rewrite, semantic rerank, candidate normalization, and retrieval execution diagnostics
+- [x] T008 [P] Add retrieval execution metadata plumbing contracts to `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/audit/services/auditService.ts` and `/private/tmp/radioso-improve-rag-pipeline/backend/src/shared/observability/logger.ts`
 
 **Checkpoint**: Foundation ready. User story work can now proceed.
 
@@ -47,18 +47,18 @@
 
 ### Tests for User Story 1 (REQUIRED for backend)
 
-- [x] T009 [P] [US1] Add unit tests for bounded conversation-context selection and rewrite gating in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts`
-- [x] T010 [P] [US1] Add unit tests for rewrite fallback and original-query preservation in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts`
-- [x] T011 [P] [US1] Add integration tests for direct and follow-up grounded chat across multiple retrieval profiles in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/integration/chat.integration.test.ts`
-- [x] T012 [P] [US1] Add persistence-oriented integration coverage for retrieval-text storage and title-aware chunk retrieval in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/integration/persistence.integration.test.ts`
+- [x] T009 [P] [US1] Add unit tests for bounded conversation-context selection and rewrite gating in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts`
+- [x] T010 [P] [US1] Add unit tests for rewrite fallback and original-query preservation in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts`
+- [x] T011 [P] [US1] Add integration tests for direct and follow-up grounded chat across multiple retrieval profiles in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/integration/chat.integration.test.ts`
+- [x] T012 [P] [US1] Add persistence-oriented integration coverage for retrieval-text storage and title-aware chunk retrieval in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/integration/persistence.integration.test.ts`
 
 ### Implementation for User Story 1
 
-- [x] T013 [P] [US1] Implement bounded conversation-context selection in `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/conversationContextService.ts`
-- [x] T014 [P] [US1] Implement model-backed retrieval-query rewriting with safe fallback in `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/queryRewriteService.ts`
-- [x] T015 [P] [US1] Add OpenAI-backed rewrite gateway support in `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/chat/services/chatService.ts` and `/private/tmp/hivec-improve-rag-pipeline/backend/src/app/server/dependencies.ts`
-- [x] T016 [P] [US1] Enrich ingestion-time retrieval text with stable document context in `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/documents/services/documentIngestionService.ts` and `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/embeddingService.ts`
-- [x] T017 [US1] Update `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/retrievalPipelineService.ts` to retrieve candidates from both original and rewritten query paths while keeping the original user query for answer generation
+- [x] T013 [P] [US1] Implement bounded conversation-context selection in `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/conversationContextService.ts`
+- [x] T014 [P] [US1] Implement model-backed retrieval-query rewriting with safe fallback in `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/queryRewriteService.ts`
+- [x] T015 [P] [US1] Add OpenAI-backed rewrite gateway support in `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/chat/services/chatService.ts` and `/private/tmp/radioso-improve-rag-pipeline/backend/src/app/server/dependencies.ts`
+- [x] T016 [P] [US1] Enrich ingestion-time retrieval text with stable document context in `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/documents/services/documentIngestionService.ts` and `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/embeddingService.ts`
+- [x] T017 [US1] Update `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/retrievalPipelineService.ts` to retrieve candidates from both original and rewritten query paths while keeping the original user query for answer generation
 
 **Checkpoint**: User Story 1 is independently functional and testable.
 
@@ -72,18 +72,18 @@
 
 ### Tests for User Story 2 (REQUIRED for backend)
 
-- [x] T018 [P] [US2] Add unit tests for candidate deduplication, threshold semantics, and source-merging behavior in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts`
-- [x] T019 [P] [US2] Add unit tests for semantic rerank ordering and prompt-context budget trimming in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts`
-- [x] T020 [P] [US2] Add integration tests for noisy-corpus narrowing and final citation quality in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/integration/chat.integration.test.ts`
-- [x] T021 [P] [US2] Add contract-regression coverage confirming `/api/v1/chat/` and `/api/v1/settings/retrieval` shapes remain unchanged in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/contract/chat.contract.test.ts` and `/private/tmp/hivec-improve-rag-pipeline/backend/tests/contract/settings.contract.test.ts`
+- [x] T018 [P] [US2] Add unit tests for candidate deduplication, threshold semantics, and source-merging behavior in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts`
+- [x] T019 [P] [US2] Add unit tests for semantic rerank ordering and prompt-context budget trimming in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts`
+- [x] T020 [P] [US2] Add integration tests for noisy-corpus narrowing and final citation quality in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/integration/chat.integration.test.ts`
+- [x] T021 [P] [US2] Add contract-regression coverage confirming `/api/v1/chat/` and `/api/v1/settings/retrieval` shapes remain unchanged in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/contract/chat.contract.test.ts` and `/private/tmp/radioso-improve-rag-pipeline/backend/tests/contract/settings.contract.test.ts`
 
 ### Implementation for User Story 2
 
-- [x] T022 [P] [US2] Implement normalized candidate assembly and deduplication in `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/candidatePreparationService.ts`
-- [x] T023 [P] [US2] Implement semantic reranking in `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/rerankService.ts`
-- [x] T024 [P] [US2] Implement prompt-context budget selection in `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/promptContextSelectorService.ts`
-- [x] T025 [P] [US2] Update vector-search result handling and candidate annotations in `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/infra/vectorSearch.ts`
-- [x] T026 [US2] Update `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/promptBuilder.ts` and `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/retrievalPipelineService.ts` to consume normalized candidates, reranked contexts, and prompt-budgeted final context sets
+- [x] T022 [P] [US2] Implement normalized candidate assembly and deduplication in `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/candidatePreparationService.ts`
+- [x] T023 [P] [US2] Implement semantic reranking in `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/rerankService.ts`
+- [x] T024 [P] [US2] Implement prompt-context budget selection in `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/promptContextSelectorService.ts`
+- [x] T025 [P] [US2] Update vector-search result handling and candidate annotations in `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/infra/vectorSearch.ts`
+- [x] T026 [US2] Update `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/promptBuilder.ts` and `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/retrievalPipelineService.ts` to consume normalized candidates, reranked contexts, and prompt-budgeted final context sets
 
 **Checkpoint**: User Stories 1 and 2 are independently functional and testable.
 
@@ -97,16 +97,16 @@
 
 ### Tests for User Story 3 (REQUIRED for backend)
 
-- [x] T027 [P] [US3] Add unit tests for rewrite failure fallback, rerank failure fallback, and no-usable-context completion in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/unit/edge-cases.test.ts`
-- [x] T028 [P] [US3] Add integration tests for retrieval-stage fallback and diagnostics emission in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/integration/chat.integration.test.ts`
-- [x] T029 [P] [US3] Add persistence or integration coverage for retrieval execution metadata recording in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/integration/persistence.integration.test.ts`
+- [x] T027 [P] [US3] Add unit tests for rewrite failure fallback, rerank failure fallback, and no-usable-context completion in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/unit/edge-cases.test.ts`
+- [x] T028 [P] [US3] Add integration tests for retrieval-stage fallback and diagnostics emission in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/integration/chat.integration.test.ts`
+- [x] T029 [P] [US3] Add persistence or integration coverage for retrieval execution metadata recording in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/integration/persistence.integration.test.ts`
 
 ### Implementation for User Story 3
 
-- [x] T030 [P] [US3] Implement retrieval execution telemetry mapping in `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/retrievalExecutionTelemetryService.ts`
-- [x] T031 [P] [US3] Extend `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/retrievalPipelineService.ts` with explicit rewrite, retrieval, rerank, and final-context fallback states
-- [x] T032 [P] [US3] Extend `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/chat/services/chatService.ts` to publish retrieval execution diagnostics without changing the public chat response shape
-- [x] T033 [US3] Extend `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/audit/services/auditService.ts` and `/private/tmp/hivec-improve-rag-pipeline/backend/src/shared/observability/logger.ts` with retrieval-stage candidate counts, fallback markers, and final-context counts
+- [x] T030 [P] [US3] Implement retrieval execution telemetry mapping in `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/retrievalExecutionTelemetryService.ts`
+- [x] T031 [P] [US3] Extend `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/retrievalPipelineService.ts` with explicit rewrite, retrieval, rerank, and final-context fallback states
+- [x] T032 [P] [US3] Extend `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/chat/services/chatService.ts` to publish retrieval execution diagnostics without changing the public chat response shape
+- [x] T033 [US3] Extend `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/audit/services/auditService.ts` and `/private/tmp/radioso-improve-rag-pipeline/backend/src/shared/observability/logger.ts` with retrieval-stage candidate counts, fallback markers, and final-context counts
 
 **Checkpoint**: All user stories are independently functional.
 
@@ -116,11 +116,11 @@
 
 **Purpose**: Finalize evaluation workflow, documentation, and end-to-end validation for the upgraded retrieval pipeline
 
-- [x] T034 [P] Build a repeatable retrieval benchmark harness in `/private/tmp/hivec-improve-rag-pipeline/backend/tests/integration/retrieval-benchmark.integration.test.ts`
-- [x] T035 [P] Document benchmark corpus expectations and validation steps in `/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/quickstart.md`
-- [x] T036 [P] Synchronize the focused contract artifact in `/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/contracts/openapi.yaml` with the unchanged public API expectations
-- [x] T037 Update `/private/tmp/hivec-improve-rag-pipeline/backend/.env.example`, `/private/tmp/hivec-improve-rag-pipeline/infra/.env.example`, and `/private/tmp/hivec-improve-rag-pipeline/infra/docker-compose.yml` if any new retrieval-assist configuration or documentation is required
-- [x] T038 Run backend validation and live retrieval-quality verification, then record results in `/private/tmp/hivec-improve-rag-pipeline/specs/002-improve-rag-pipeline/quickstart.md`
+- [x] T034 [P] Build a repeatable retrieval benchmark harness in `/private/tmp/radioso-improve-rag-pipeline/backend/tests/integration/retrieval-benchmark.integration.test.ts`
+- [x] T035 [P] Document benchmark corpus expectations and validation steps in `/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/quickstart.md`
+- [x] T036 [P] Synchronize the focused contract artifact in `/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/contracts/openapi.yaml` with the unchanged public API expectations
+- [x] T037 Update `/private/tmp/radioso-improve-rag-pipeline/backend/.env.example`, `/private/tmp/radioso-improve-rag-pipeline/infra/.env.example`, and `/private/tmp/radioso-improve-rag-pipeline/infra/docker-compose.yml` if any new retrieval-assist configuration or documentation is required
+- [x] T038 Run backend validation and live retrieval-quality verification, then record results in `/private/tmp/radioso-improve-rag-pipeline/specs/002-improve-rag-pipeline/quickstart.md`
 
 ---
 
@@ -145,9 +145,9 @@
 
 - Write backend tests first and verify they fail before implementation
 - Extract focused retrieval services before extending orchestration
-- Keep `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/chat/services/chatService.ts` orchestration-only
-- Keep `/private/tmp/hivec-improve-rag-pipeline/backend/src/app/http/routes/chatRoutes.ts` transport-only
-- Keep `/private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/infra/vectorSearch.ts` vector-query-only
+- Keep `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/chat/services/chatService.ts` orchestration-only
+- Keep `/private/tmp/radioso-improve-rag-pipeline/backend/src/app/http/routes/chatRoutes.ts` transport-only
+- Keep `/private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/infra/vectorSearch.ts` vector-query-only
 
 ### Parallel Opportunities
 
@@ -164,14 +164,14 @@
 
 ```bash
 # Tests first
-Task: "Add unit tests for candidate deduplication, threshold semantics, and source-merging behavior in /private/tmp/hivec-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts"
-Task: "Add unit tests for semantic rerank ordering and prompt-context budget trimming in /private/tmp/hivec-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts"
-Task: "Add integration tests for noisy-corpus narrowing and final citation quality in /private/tmp/hivec-improve-rag-pipeline/backend/tests/integration/chat.integration.test.ts"
+Task: "Add unit tests for candidate deduplication, threshold semantics, and source-merging behavior in /private/tmp/radioso-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts"
+Task: "Add unit tests for semantic rerank ordering and prompt-context budget trimming in /private/tmp/radioso-improve-rag-pipeline/backend/tests/unit/chat-retrieval.domain.test.ts"
+Task: "Add integration tests for noisy-corpus narrowing and final citation quality in /private/tmp/radioso-improve-rag-pipeline/backend/tests/integration/chat.integration.test.ts"
 
 # Parallel implementation after tests fail
-Task: "Implement normalized candidate assembly and deduplication in /private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/candidatePreparationService.ts"
-Task: "Implement semantic reranking in /private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/rerankService.ts"
-Task: "Implement prompt-context budget selection in /private/tmp/hivec-improve-rag-pipeline/backend/src/modules/retrieval/services/promptContextSelectorService.ts"
+Task: "Implement normalized candidate assembly and deduplication in /private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/candidatePreparationService.ts"
+Task: "Implement semantic reranking in /private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/rerankService.ts"
+Task: "Implement prompt-context budget selection in /private/tmp/radioso-improve-rag-pipeline/backend/src/modules/retrieval/services/promptContextSelectorService.ts"
 ```
 
 ---

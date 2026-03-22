@@ -22,7 +22,7 @@ components:
     sessionCookie:
       type: apiKey
       in: cookie
-      name: hivec_session
+      name: radioso_session
     bearerAuth:
       type: http
       scheme: bearer
@@ -2043,4 +2043,3 @@ paths:
         "404":
           description: Connector config not found
 webhooks: {}
-

@@ -1,18 +1,18 @@
 # Tasks: Chat Streaming Hotfix
 
-**Input**: Design documents from `/tmp/hivec-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/`
-**Prerequisites**: [plan.md](/tmp/hivec-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/plan.md), [spec.md](/tmp/hivec-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/spec.md)
+**Input**: Design documents from `/tmp/radioso-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/`
+**Prerequisites**: [plan.md](/tmp/radioso-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/plan.md), [spec.md](/tmp/radioso-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/spec.md)
 
 **Tests**: Backend TDD is required. Write failing unit/contract coverage before implementation.
 
 ## Phase 1: Setup
 
-- [X] T001 Align `/tmp/hivec-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/plan.md` and this task list with the approved hotfix scope
+- [X] T001 Align `/tmp/radioso-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/plan.md` and this task list with the approved hotfix scope
 
 ## Phase 2: Foundational
 
-- [X] T002 Add failing incremental-stream contract coverage in `/tmp/hivec-chat-streaming-hotfix/backend/tests/contract/chat.contract.test.ts`
-- [X] T003 [P] Add failing chat streaming lifecycle unit coverage in `/tmp/hivec-chat-streaming-hotfix/backend/tests/unit/chat-service-streaming.test.ts`
+- [X] T002 Add failing incremental-stream contract coverage in `/tmp/radioso-chat-streaming-hotfix/backend/tests/contract/chat.contract.test.ts`
+- [X] T003 [P] Add failing chat streaming lifecycle unit coverage in `/tmp/radioso-chat-streaming-hotfix/backend/tests/unit/chat-service-streaming.test.ts`
 
 ## Phase 3: User Story 1 - Receive Real Incremental Chat Chunks (Priority: P1)
 
@@ -20,14 +20,14 @@
 
 **Independent Test**: Use delayed fake streaming chunks to verify chunk delivery precedes the final done event and that the completed assistant message is persisted
 
-- [X] T004 [US1] Refactor chat streaming orchestration in `/tmp/hivec-chat-streaming-hotfix/backend/src/modules/chat/services/chatService.ts`
-- [X] T005 [P] [US1] Refactor SSE presenter and route integration in `/tmp/hivec-chat-streaming-hotfix/backend/src/app/http/presenters/chatPresenter.ts` and `/tmp/hivec-chat-streaming-hotfix/backend/src/app/http/routes/chatRoutes.ts`
-- [X] T006 [P] [US1] Extend test support fakes in `/tmp/hivec-chat-streaming-hotfix/backend/tests/support/testApp.ts`
+- [X] T004 [US1] Refactor chat streaming orchestration in `/tmp/radioso-chat-streaming-hotfix/backend/src/modules/chat/services/chatService.ts`
+- [X] T005 [P] [US1] Refactor SSE presenter and route integration in `/tmp/radioso-chat-streaming-hotfix/backend/src/app/http/presenters/chatPresenter.ts` and `/tmp/radioso-chat-streaming-hotfix/backend/src/app/http/routes/chatRoutes.ts`
+- [X] T006 [P] [US1] Extend test support fakes in `/tmp/radioso-chat-streaming-hotfix/backend/tests/support/testApp.ts`
 
 ## Phase 4: Polish
 
-- [X] T007 Run backend contract and unit validation in `/tmp/hivec-chat-streaming-hotfix/backend`
-- [X] T008 Update `/tmp/hivec-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/tasks.md` with final completion state
+- [X] T007 Run backend contract and unit validation in `/tmp/radioso-chat-streaming-hotfix/backend`
+- [X] T008 Update `/tmp/radioso-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/tasks.md` with final completion state
 
 ## Validation Notes
 

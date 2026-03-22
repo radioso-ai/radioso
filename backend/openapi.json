@@ -48,7 +48,7 @@
       "sessionCookie": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "hivec_session"
+        "name": "radioso_session"
       },
       "bearerAuth": {
         "type": "http",

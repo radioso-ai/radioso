@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-03-14  
-**Feature**: [/tmp/hivec-document-list-polish/specs/008-document-list-polish/spec.md](/tmp/hivec-document-list-polish/specs/008-document-list-polish/spec.md)
+**Feature**: [/tmp/radioso-document-list-polish/specs/008-document-list-polish/spec.md](/tmp/radioso-document-list-polish/specs/008-document-list-polish/spec.md)
 
 ## Content Quality
 

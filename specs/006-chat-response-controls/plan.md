@@ -1,6 +1,6 @@
 # Implementation Plan: Chat Response Controls
 
-**Branch**: `[006-chat-response-controls]` | **Date**: 2026-03-14 | **Spec**: [/Users/dm/code/hivec/specs/006-chat-response-controls/spec.md](/Users/dm/code/hivec/specs/006-chat-response-controls/spec.md)
+**Branch**: `[006-chat-response-controls]` | **Date**: 2026-03-14 | **Spec**: [/Users/dm/code/radioso/specs/006-chat-response-controls/spec.md](/Users/dm/code/radioso/specs/006-chat-response-controls/spec.md)
 **Input**: Feature specification from `/specs/006-chat-response-controls/spec.md`
 
 ## Summary

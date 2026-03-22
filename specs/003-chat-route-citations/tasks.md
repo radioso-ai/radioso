@@ -1,7 +1,7 @@
 # Tasks: Chat Route Citations
 
-**Input**: Design documents from `/private/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/`
-**Prerequisites**: [plan.md](/private/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/plan.md), [spec.md](/private/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/spec.md), [research.md](/private/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/research.md), [data-model.md](/private/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/data-model.md), [contracts/openapi.yaml](/private/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/contracts/openapi.yaml), [quickstart.md](/private/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/quickstart.md)
+**Input**: Design documents from `/private/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/`
+**Prerequisites**: [plan.md](/private/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/plan.md), [spec.md](/private/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/spec.md), [research.md](/private/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/research.md), [data-model.md](/private/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/data-model.md), [contracts/openapi.yaml](/private/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/contracts/openapi.yaml), [quickstart.md](/private/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/quickstart.md)
 
 **Tests**: Frontend validation relies on lint and build checks. Existing backend contract coverage remains the regression safety net for streaming and document APIs.
 
@@ -17,9 +17,9 @@
 
 **Purpose**: Align feature documentation and define the reusable route/session seams before UI changes land
 
-- [x] T001 Align `/private/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/plan.md`, `research.md`, `data-model.md`, `contracts/openapi.yaml`, and `quickstart.md` with the approved spec
-- [x] T002 [P] Create account route helpers in `/private/tmp/hivec-chat-frontend-routes/frontend/lib/dashboard-routes.ts`
-- [x] T003 [P] Create chat session state ownership in `/private/tmp/hivec-chat-frontend-routes/frontend/lib/chat-context.tsx`
+- [x] T001 Align `/private/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/plan.md`, `research.md`, `data-model.md`, `contracts/openapi.yaml`, and `quickstart.md` with the approved spec
+- [x] T002 [P] Create account route helpers in `/private/tmp/radioso-chat-frontend-routes/frontend/lib/dashboard-routes.ts`
+- [x] T003 [P] Create chat session state ownership in `/private/tmp/radioso-chat-frontend-routes/frontend/lib/chat-context.tsx`
 
 ---
 
@@ -29,10 +29,10 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [x] T004 Create the account-scoped dashboard route entry point in `/private/tmp/hivec-chat-frontend-routes/frontend/app/account/[accountId]/[[...segments]]/page.tsx`
-- [x] T005 [P] Extract route-aware dashboard shell composition into `/private/tmp/hivec-chat-frontend-routes/frontend/components/dashboard/dashboard-shell.tsx`
-- [x] T006 [P] Refactor `/private/tmp/hivec-chat-frontend-routes/frontend/components/dashboard/app-sidebar.tsx` to use account-scoped route links instead of local callbacks
-- [x] T007 Refactor `/private/tmp/hivec-chat-frontend-routes/frontend/app/page.tsx` and `/private/tmp/hivec-chat-frontend-routes/frontend/app/layout.tsx` to bootstrap auth, redirect authenticated users to account-scoped routes, and provide shared chat session state
+- [x] T004 Create the account-scoped dashboard route entry point in `/private/tmp/radioso-chat-frontend-routes/frontend/app/account/[accountId]/[[...segments]]/page.tsx`
+- [x] T005 [P] Extract route-aware dashboard shell composition into `/private/tmp/radioso-chat-frontend-routes/frontend/components/dashboard/dashboard-shell.tsx`
+- [x] T006 [P] Refactor `/private/tmp/radioso-chat-frontend-routes/frontend/components/dashboard/app-sidebar.tsx` to use account-scoped route links instead of local callbacks
+- [x] T007 Refactor `/private/tmp/radioso-chat-frontend-routes/frontend/app/page.tsx` and `/private/tmp/radioso-chat-frontend-routes/frontend/app/layout.tsx` to bootstrap auth, redirect authenticated users to account-scoped routes, and provide shared chat session state
 
 **Checkpoint**: Route and session foundations are ready.
 
@@ -46,10 +46,10 @@
 
 ### Implementation for User Story 1
 
-- [x] T008 [P] [US1] Create inline citation rendering helpers in `/private/tmp/hivec-chat-frontend-routes/frontend/components/dashboard/chat-citations.tsx`
-- [x] T009 [P] [US1] Refactor `/private/tmp/hivec-chat-frontend-routes/frontend/components/dashboard/chat-view.tsx` to consume shared chat state and render inline citations instead of the footer source list
-- [x] T010 [P] [US1] Refactor `/private/tmp/hivec-chat-frontend-routes/frontend/components/dashboard/documents-view.tsx` to open and close a selected document from route state
-- [x] T011 [US1] Wire citation clicks and document list selection through `/private/tmp/hivec-chat-frontend-routes/frontend/components/dashboard/dashboard-shell.tsx` and `/private/tmp/hivec-chat-frontend-routes/frontend/lib/dashboard-routes.ts`
+- [x] T008 [P] [US1] Create inline citation rendering helpers in `/private/tmp/radioso-chat-frontend-routes/frontend/components/dashboard/chat-citations.tsx`
+- [x] T009 [P] [US1] Refactor `/private/tmp/radioso-chat-frontend-routes/frontend/components/dashboard/chat-view.tsx` to consume shared chat state and render inline citations instead of the footer source list
+- [x] T010 [P] [US1] Refactor `/private/tmp/radioso-chat-frontend-routes/frontend/components/dashboard/documents-view.tsx` to open and close a selected document from route state
+- [x] T011 [US1] Wire citation clicks and document list selection through `/private/tmp/radioso-chat-frontend-routes/frontend/components/dashboard/dashboard-shell.tsx` and `/private/tmp/radioso-chat-frontend-routes/frontend/lib/dashboard-routes.ts`
 
 **Checkpoint**: User Story 1 is independently functional.
 
@@ -63,9 +63,9 @@
 
 ### Implementation for User Story 2
 
-- [x] T012 [P] [US2] Add streamed chat request support and SSE parsing in `/private/tmp/hivec-chat-frontend-routes/frontend/lib/api.ts`
-- [x] T013 [P] [US2] Extend `/private/tmp/hivec-chat-frontend-routes/frontend/lib/chat-context.tsx` with in-flight assistant message creation, chunk appends, completion, and fallback handling
-- [x] T014 [US2] Refactor `/private/tmp/hivec-chat-frontend-routes/frontend/components/dashboard/chat-view.tsx` to submit streamed requests, display partial assistant output, and surface failure states cleanly
+- [x] T012 [P] [US2] Add streamed chat request support and SSE parsing in `/private/tmp/radioso-chat-frontend-routes/frontend/lib/api.ts`
+- [x] T013 [P] [US2] Extend `/private/tmp/radioso-chat-frontend-routes/frontend/lib/chat-context.tsx` with in-flight assistant message creation, chunk appends, completion, and fallback handling
+- [x] T014 [US2] Refactor `/private/tmp/radioso-chat-frontend-routes/frontend/components/dashboard/chat-view.tsx` to submit streamed requests, display partial assistant output, and surface failure states cleanly
 
 **Checkpoint**: User Stories 1 and 2 are independently functional.
 
@@ -79,9 +79,9 @@
 
 ### Implementation for User Story 3
 
-- [x] T015 [P] [US3] Normalize account and document route parsing plus auth mismatch recovery in `/private/tmp/hivec-chat-frontend-routes/frontend/app/account/[accountId]/[[...segments]]/page.tsx`
-- [x] T016 [P] [US3] Remove obsolete local view-state orchestration from `/private/tmp/hivec-chat-frontend-routes/frontend/components/dashboard/dashboard.tsx` or replace it with route-driven composition
-- [x] T017 [US3] Complete refresh-safe document and section navigation behavior in `/private/tmp/hivec-chat-frontend-routes/frontend/components/dashboard/documents-view.tsx`, `/private/tmp/hivec-chat-frontend-routes/frontend/components/dashboard/settings-view.tsx`, and `/private/tmp/hivec-chat-frontend-routes/frontend/components/dashboard/token-view.tsx` where needed
+- [x] T015 [P] [US3] Normalize account and document route parsing plus auth mismatch recovery in `/private/tmp/radioso-chat-frontend-routes/frontend/app/account/[accountId]/[[...segments]]/page.tsx`
+- [x] T016 [P] [US3] Remove obsolete local view-state orchestration from `/private/tmp/radioso-chat-frontend-routes/frontend/components/dashboard/dashboard.tsx` or replace it with route-driven composition
+- [x] T017 [US3] Complete refresh-safe document and section navigation behavior in `/private/tmp/radioso-chat-frontend-routes/frontend/components/dashboard/documents-view.tsx`, `/private/tmp/radioso-chat-frontend-routes/frontend/components/dashboard/settings-view.tsx`, and `/private/tmp/radioso-chat-frontend-routes/frontend/components/dashboard/token-view.tsx` where needed
 
 **Checkpoint**: All user stories are independently functional.
 
@@ -91,9 +91,9 @@
 
 **Purpose**: Final validation, documentation sync, and task completion
 
-- [x] T018 [P] Run frontend lint in `/private/tmp/hivec-chat-frontend-routes/frontend`
-- [x] T019 [P] Run frontend build in `/private/tmp/hivec-chat-frontend-routes/frontend`
-- [x] T020 Update `/private/tmp/hivec-chat-frontend-routes/specs/003-chat-route-citations/quickstart.md` and this task list with final validation notes and completion state
+- [x] T018 [P] Run frontend lint in `/private/tmp/radioso-chat-frontend-routes/frontend`
+- [x] T019 [P] Run frontend build in `/private/tmp/radioso-chat-frontend-routes/frontend`
+- [x] T020 Update `/private/tmp/radioso-chat-frontend-routes/specs/003-chat-route-citations/quickstart.md` and this task list with final validation notes and completion state
 
 ---
 

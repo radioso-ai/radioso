@@ -8,7 +8,7 @@ services:
     volumes:
       - ../backend:/app/backend
       - ../packages/connector-api:/app/packages/connector-api
-      - hivec_backend_node_modules:/app/backend/node_modules
+      - radioso_backend_node_modules:/app/backend/node_modules
 
   frontend:
     build:
@@ -21,9 +21,9 @@ services:
       WATCHPACK_POLLING: "true"
     volumes:
       - ../frontend:/app
-      - hivec_frontend_node_modules:/app/node_modules
+      - radioso_frontend_node_modules:/app/node_modules
     command: ["npx", "next", "dev", "-H", "0.0.0.0", "-p", "3000"]
 
 volumes:
-  hivec_backend_node_modules:
-  hivec_frontend_node_modules:
+  radioso_backend_node_modules:
+  radioso_frontend_node_modules:

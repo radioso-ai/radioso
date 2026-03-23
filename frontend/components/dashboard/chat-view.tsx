@@ -4,13 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Spinner } from '@/components/ui/spinner'
-import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { Send } from 'lucide-react'
-import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
+import { type CitationOpenResult } from './chat-citations'
 import { documentsApi } from '@/lib/api'
 import { useChatSession } from '@/lib/chat-context'
 import { useWorkspace } from '@/lib/workspace-context'
+import { ChatMessageThread } from './chat-message-thread'
 
 interface ChatViewProps {
   accountId: string
@@ -88,32 +87,8 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
             </p>
           </div>
         ) : (
-          <div className="mx-auto max-w-3xl space-y-6">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                {message.role === 'user' ? (
-                  <div className="max-w-[80%] rounded-lg bg-primary px-4 py-3 text-primary-foreground">
-                    <p className="text-sm whitespace-pre-wrap">{linkifyText(message.content)}</p>
-                  </div>
-                ) : (
-                  <div className="max-w-[80%] rounded-lg border border-border bg-card px-4 py-3 text-foreground">
-                    {message.status === 'streaming' && !message.content ? (
-                      <TypingIndicator />
-                    ) : (
-                      <AssistantMessageContent
-                        content={message.content}
-                        citations={message.citations}
-                        answerSegments={message.answerSegments}
-                        onOpenDocument={handleOpenCitation}
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+          <div>
+            <ChatMessageThread messages={messages} onOpenDocument={handleOpenCitation} />
             <div ref={messagesEndRef} />
           </div>
         )}

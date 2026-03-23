@@ -3,8 +3,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import {
   Bot,
-  Check,
-  Copy,
   ExternalLink,
   Key,
   MessageSquare,
@@ -18,6 +16,7 @@ import {
 
 import { ConnectorsTab } from '@/components/dashboard/connectors/connectors-tab'
 import { Button } from '@/components/ui/button'
+import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
   Dialog,
   DialogContent,
@@ -149,13 +148,11 @@ function GeneralTab() {
   // API token
   const [token, setToken] = useState<string | null>(null)
   const [isTokenLoading, setIsTokenLoading] = useState(true)
-  const [copied, setCopied] = useState(false)
 
   // Anonymous chat
   const [anonSettings, setAnonSettings] = useState<GeneralSettings | null>(null)
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
-  const [anonUrlCopied, setAnonUrlCopied] = useState(false)
 
   useEffect(() => {
     setWorkspaceName(activeWorkspace?.name ?? '')
@@ -192,13 +189,6 @@ function GeneralTab() {
     void loadAnonSettings()
   }, [activeWorkspaceId])
 
-  const handleCopy = async () => {
-    if (!token) return
-    await navigator.clipboard.writeText(token)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
   const handleAnonToggle = async (enabled: boolean) => {
     setIsAnonSaving(true)
     try {
@@ -232,13 +222,6 @@ function GeneralTab() {
     } finally {
       setIsAnonSaving(false)
     }
-  }
-
-  const handleAnonUrlCopy = async () => {
-    if (!anonSettings?.anonymousChatUrl) return
-    await navigator.clipboard.writeText(anonSettings.anonymousChatUrl)
-    setAnonUrlCopied(true)
-    setTimeout(() => setAnonUrlCopied(false), 2000)
   }
 
   const handleRename = async () => {
@@ -332,27 +315,7 @@ function GeneralTab() {
 
                   <div className="space-y-2">
                     <Label htmlFor="token" className="sr-only">API Token</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="token"
-                        value={token || ''}
-                        readOnly
-                        className="font-mono text-sm"
-                      />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={handleCopy}
-                        disabled={!token}
-                      >
-                        {copied ? (
-                          <Check className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
-                        )}
-                        <span className="sr-only">Copy token</span>
-                      </Button>
-                    </div>
+                    <CopyValueField value={token || ''} ariaLabel="Copy token" disabled={!token} />
                   </div>
 
                   <div className="rounded bg-muted/50 p-3 space-y-2">
@@ -406,24 +369,11 @@ function GeneralTab() {
                     <div className="space-y-2">
                       <Label htmlFor="anonChatUrl" className="text-foreground">Public Chat URL</Label>
                       <div className="flex flex-wrap items-start gap-2">
-                        <p
-                          id="anonChatUrl"
-                          className="min-w-[320px] flex-1 break-all rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground"
-                        >
-                          {anonSettings.anonymousChatUrl}
-                        </p>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={handleAnonUrlCopy}
-                        >
-                          {anonUrlCopied ? (
-                            <Check className="w-4 h-4 text-green-500" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                          <span className="sr-only">Copy URL</span>
-                        </Button>
+                        <CopyValueField
+                          value={anonSettings.anonymousChatUrl}
+                          ariaLabel="Copy URL"
+                          className="min-w-[320px] flex-1"
+                        />
                         <Button asChild className="bg-blue-600 text-white hover:bg-blue-500">
                           <a
                             href={anonSettings.anonymousChatUrl}

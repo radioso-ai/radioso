@@ -1,29 +1,9 @@
-import type { RerankStatus, RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
+import type { RerankStatus, RetrievalExecutionDiagnostics, RetrievalTraceSummary } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint } from "../domain/structuredAttributes.js";
 
-export interface RetrievalInfo {
-  parsedQuery?: {
-    semanticQuery: string;
-    lexicalQuery: string;
-    constraintSummary: string[];
-  };
-  candidateCounts: {
-    semantic: number;
-    lexical: number;
-    merged: number;
-    final: number;
-  };
-  appliedConstraints?: AppliedConstraint[];
-  fallbackApplied: boolean;
+export interface RetrievalInfo extends RetrievalTraceSummary {
   rerankStatus: RerankStatus;
-  rewrite?: {
-    status: RetrievalExecutionDiagnostics["rewriteStatus"];
-    eligible: boolean;
-    ran: boolean;
-    materialDisagreement: boolean;
-    continuityDecision?: RetrievalExecutionDiagnostics["continuityDecision"];
-    rejectionReason?: string;
-  };
+  appliedConstraints?: AppliedConstraint[];
 }
 
 export class RetrievalInfoPresenter {

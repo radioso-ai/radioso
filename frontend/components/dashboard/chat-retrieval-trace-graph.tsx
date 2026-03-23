@@ -1,0 +1,171 @@
+'use client'
+
+import type { RetrievalTrace, RetrievalTraceStage } from '@/lib/api'
+
+const STATUS_STYLES: Record<RetrievalTraceStage['status'], string> = {
+  applied: 'border-emerald-500/30 bg-emerald-500/10',
+  skipped: 'border-slate-500/30 bg-slate-500/10',
+  fallback: 'border-amber-500/30 bg-amber-500/10',
+  rejected: 'border-rose-500/30 bg-rose-500/10',
+  unavailable: 'border-zinc-500/30 bg-zinc-500/10',
+  failed: 'border-red-500/30 bg-red-500/10',
+}
+
+const getStage = (trace: RetrievalTrace, stageId: string) =>
+  trace.stages.find((stage) => stage.stageId === stageId)
+
+const getSequentialStages = (trace: RetrievalTrace) =>
+  ['context', 'interpretation', 'preparation', 'selection', 'prompt', 'diagnostics', 'answer']
+    .map((stageId) => getStage(trace, stageId))
+    .filter((stage): stage is RetrievalTraceStage => Boolean(stage))
+
+const getBranchStages = (trace: RetrievalTrace) =>
+  ['semantic_original', 'semantic_rewritten', 'lexical']
+    .map((stageId) => getStage(trace, stageId))
+    .filter((stage): stage is RetrievalTraceStage => Boolean(stage))
+
+const chunkCount = (stage: RetrievalTraceStage) => {
+  if (typeof stage.metrics?.candidateCount === 'number') {
+    return stage.metrics.candidateCount
+  }
+  if (typeof stage.metrics?.finalContextCount === 'number') {
+    return stage.metrics.finalContextCount
+  }
+  if (typeof stage.metrics?.mergedCount === 'number') {
+    return stage.metrics.mergedCount
+  }
+  if (typeof stage.metrics?.promptContextCount === 'number') {
+    return stage.metrics.promptContextCount
+  }
+  return null
+}
+
+const summaryLine = (stage: RetrievalTraceStage) => {
+  if (stage.stageId === 'context') {
+    const count = stage.metrics?.selectedHistoryCount
+    return typeof count === 'number' ? `${count} history messages` : 'Conversation context'
+  }
+
+  if (stage.stageId === 'interpretation') {
+    const constraintCount = stage.metrics?.parsedConstraintCount
+    return typeof constraintCount === 'number' ? `${constraintCount} parsed constraints` : 'Query analysis'
+  }
+
+  if (stage.stageId === 'prompt') {
+    const citationCount = stage.metrics?.citationCount
+    return typeof citationCount === 'number' ? `${citationCount} citations` : 'Prompt built'
+  }
+
+  if (stage.stageId === 'diagnostics') {
+    return stage.outputs?.fallbackApplied ? 'Fallback applied' : 'Fallback not applied'
+  }
+
+  if (stage.stageId === 'answer') {
+    return String((stage.outputs as { outcome?: string } | undefined)?.outcome ?? 'Answer outcome').replaceAll('_', ' ')
+  }
+
+  const count = chunkCount(stage)
+  if (typeof count === 'number') {
+    return `${count} chunk${count === 1 ? '' : 's'}`
+  }
+
+  return stage.reason ?? stage.kind
+}
+
+function StageNode({
+  stage,
+  isSelected,
+  onSelect,
+}: {
+  stage: RetrievalTraceStage
+  isSelected: boolean
+  onSelect: (stageId: string) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(stage.stageId)}
+      className={`w-full rounded-xl border p-3 text-left transition hover:border-primary/60 ${
+        isSelected ? 'border-primary bg-primary/10' : STATUS_STYLES[stage.status]
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">{stage.label}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{summaryLine(stage)}</p>
+        </div>
+        <span className="rounded-full border border-current/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+          {stage.status}
+        </span>
+      </div>
+      <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>{stage.kind}</span>
+        {typeof stage.durationMs === 'number' ? <span>{stage.durationMs}ms</span> : null}
+      </div>
+    </button>
+  )
+}
+
+function ConnectorLine() {
+  return (
+    <div className="relative -mt-2 -mb-2 flex h-10 justify-center">
+      <div className="h-full w-px bg-primary/50" />
+      <div className="absolute bottom-0 left-1/2 h-3 w-3 -translate-x-1/2 translate-y-1/2 rounded-full border border-blue-300 bg-blue-400 shadow-[0_0_14px_rgba(96,165,250,0.9)]" />
+    </div>
+  )
+}
+
+export function ChatRetrievalTraceGraph({
+  retrievalTrace,
+  selectedStageId,
+  onSelectStage,
+}: {
+  retrievalTrace: RetrievalTrace
+  selectedStageId: string
+  onSelectStage: (stageId: string) => void
+}) {
+  const sequentialStages = getSequentialStages(retrievalTrace)
+  const branchStages = getBranchStages(retrievalTrace)
+  const preparationIndex = sequentialStages.findIndex((stage) => stage.stageId === 'preparation')
+  const beforePreparation = preparationIndex >= 0 ? sequentialStages.slice(0, preparationIndex) : sequentialStages
+  const afterPreparation = preparationIndex >= 0 ? sequentialStages.slice(preparationIndex) : []
+
+  return (
+    <div className="space-y-2">
+      {beforePreparation.map((stage, index) => (
+        <div key={stage.stageId} className="space-y-2">
+          <StageNode stage={stage} isSelected={stage.stageId === selectedStageId} onSelect={onSelectStage} />
+          {index < beforePreparation.length - 1 || branchStages.length > 0 ? <ConnectorLine /> : null}
+        </div>
+      ))}
+
+      {branchStages.length > 0 ? (
+        <div className="space-y-2">
+          <div className="rounded-2xl border border-border/70 bg-background/40 p-3">
+            <p className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Retrieval branches
+            </p>
+            <div className="space-y-3">
+              {branchStages.map((stage) => (
+                <StageNode
+                  key={stage.stageId}
+                  stage={stage}
+                  isSelected={stage.stageId === selectedStageId}
+                  onSelect={onSelectStage}
+                />
+              ))}
+            </div>
+          </div>
+          <ConnectorLine />
+        </div>
+      ) : null}
+
+      {afterPreparation.map((stage, index) => (
+        <div key={stage.stageId} className="space-y-2">
+          <StageNode stage={stage} isSelected={stage.stageId === selectedStageId} onSelect={onSelectStage} />
+          {index < afterPreparation.length - 1 ? <ConnectorLine /> : null}
+        </div>
+      ))}
+    </div>
+  )
+}

@@ -4,9 +4,11 @@ import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
+import { RetrievalTracePresenter } from "../../retrieval/services/retrievalTracePresenter.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
 import { AnswerPresentationService, type AnswerSegment, type ChatCitation } from "./answerPresentationService.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
+import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -31,6 +33,7 @@ export type ChatStreamEvent =
       citations?: ChatCitation[];
       answerSegments?: AnswerSegment[];
       retrievalInfo: RetrievalInfo;
+      retrievalTrace: RetrievalTrace;
     };
 
 interface PreparedSession {
@@ -44,6 +47,7 @@ interface ChatAnswerAuditMetadata {
   carryForwardLiterals?: string[];
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  retrievalTrace?: RetrievalTrace;
 }
 
 interface PresentedAnswer {
@@ -79,6 +83,7 @@ export class OpenAIChatGateway extends ModelChatGateway {}
 export class ChatService {
   private readonly answerPresentationService = new AnswerPresentationService();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
+  private readonly retrievalTracePresenter = new RetrievalTracePresenter();
   private static readonly MAX_CARRY_FORWARD_LITERALS = 6;
   private static readonly MAX_CARRY_FORWARD_LITERAL_LENGTH = 120;
 
@@ -105,13 +110,26 @@ export class ChatService {
     citations?: ChatCitation[];
     answerSegments?: AnswerSegment[];
     retrievalInfo: RetrievalInfo;
+    retrievalTrace: RetrievalTrace;
   }> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
 
     try {
       session = await this.prepareSession(input);
+      const answerStartedAt = Date.now();
       const presentation = await this.generateAnswerPresentation(session, input.query);
+      const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics);
+      const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
+        trace: session.retrieval.trace,
+        summary: retrievalInfo,
+        outcome: {
+          answer: presentation.answer,
+          stream: input.stream,
+          hadContexts: session.retrieval.contexts.length > 0,
+          durationMs: Date.now() - answerStartedAt,
+        },
+      });
 
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
@@ -129,6 +147,7 @@ export class ChatService {
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
         diagnostics: session.retrieval.diagnostics,
+        retrievalTrace,
         stream: input.stream,
       });
 
@@ -137,7 +156,8 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
-        retrievalInfo: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),
+        retrievalInfo,
+        retrievalTrace,
       };
     } catch (error) {
       await this.recordFailure(input, session, assistantMessageId, error);
@@ -168,6 +188,7 @@ export class ChatService {
 
       let rawAnswer = "";
       const sanitizer = new CitationAnchorSanitizer();
+      const answerStartedAt = Date.now();
 
       if (session.retrieval.contexts.length === 0) {
         rawAnswer = "I could not find relevant information in your documents.";
@@ -197,6 +218,17 @@ export class ChatService {
       }
 
       const presentation = this.presentAnswer(session, rawAnswer);
+      const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics);
+      const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
+        trace: session.retrieval.trace,
+        summary: retrievalInfo,
+        outcome: {
+          answer: presentation.answer,
+          stream: input.stream,
+          hadContexts: session.retrieval.contexts.length > 0,
+          durationMs: Date.now() - answerStartedAt,
+        },
+      });
 
       const assistantMessage = await this.messageRepository.create({
         conversationId: session.conversation.id,
@@ -214,6 +246,7 @@ export class ChatService {
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
         diagnostics: session.retrieval.diagnostics,
+        retrievalTrace,
         stream: input.stream,
       });
 
@@ -223,7 +256,8 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
-        retrievalInfo: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),
+        retrievalInfo,
+        retrievalTrace,
       };
     } catch (error) {
       await this.recordFailure(input, session, assistantMessageId, error);
@@ -312,6 +346,7 @@ export class ChatService {
     citations: ChatCitation[];
     answerSegments?: AnswerSegment[];
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
+    retrievalTrace: RetrievalTrace;
     stream: boolean;
   }): Promise<void> {
     await this.conversationRepository.touch(input.conversationId);
@@ -333,6 +368,7 @@ export class ChatService {
           citations: input.citations,
         }),
         retrieval: input.diagnostics,
+        retrievalTrace: input.retrievalTrace,
       },
     });
   }
@@ -375,6 +411,18 @@ export class ChatService {
         stream: input.stream,
         citationCount: 0,
         retrieval: session?.retrieval.diagnostics,
+        retrievalTrace: session?.retrieval.trace
+          ? this.retrievalTracePresenter.appendAnswerOutcome({
+              trace: session.retrieval.trace,
+              summary: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),
+              outcome: {
+                answer: "Sorry, something went wrong. Please try again.",
+                stream: input.stream,
+                hadContexts: session.retrieval.contexts.length > 0,
+                durationMs: 0,
+              },
+            })
+          : undefined,
         errorMessage: error instanceof Error ? error.message : "Unknown error",
       },
     });

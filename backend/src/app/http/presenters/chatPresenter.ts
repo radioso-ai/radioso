@@ -3,6 +3,7 @@ import type { Response } from "express";
 import type { AnswerSegment, ChatCitation } from "../../../modules/chat/services/answerPresentationService.js";
 import type { ChatStreamEvent } from "../../../modules/chat/services/chatService.js";
 import type { RetrievalInfo } from "../../../modules/retrieval/services/retrievalInfoPresenter.js";
+import type { RetrievalTrace } from "../../../modules/retrieval/domain/retrievalPipelineTypes.js";
 
 export const sendChatJson = (
   res: Response,
@@ -12,6 +13,7 @@ export const sendChatJson = (
     citations?: ChatCitation[];
     answerSegments?: AnswerSegment[];
     retrievalInfo: RetrievalInfo;
+    retrievalTrace: RetrievalTrace;
   },
 ): void => {
   res.status(200).json(payload);
@@ -60,6 +62,7 @@ export const sendChatSse = (
         citations: event.citations,
         answerSegments: event.answerSegments,
         retrievalInfo: event.retrievalInfo,
+        retrievalTrace: event.retrievalTrace,
       });
     }
 

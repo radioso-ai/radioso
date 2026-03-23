@@ -74,6 +74,62 @@ export interface FinalPromptContext extends RerankedCandidate {
 }
 
 export type RerankStatus = "skipped" | "applied" | "fallback";
+export type RetrievalTraceStageStatus = "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
+
+export interface RetrievalTraceSummary {
+  parsedQuery?: {
+    semanticQuery: string;
+    lexicalQuery: string;
+    constraintSummary: string[];
+  };
+  candidateCounts: {
+    semantic: number;
+    lexical: number;
+    merged: number;
+    final: number;
+  };
+  appliedConstraints?: AppliedConstraint[];
+  fallbackApplied: boolean;
+  rerankStatus: RerankStatus;
+  rewrite?: {
+    status: RewriteStatus;
+    eligible: boolean;
+    ran: boolean;
+    materialDisagreement: boolean;
+    continuityDecision?: ContinuityDecision;
+    rejectionReason?: string;
+  };
+}
+
+export interface RetrievalTraceStage {
+  stageId: string;
+  kind: string;
+  label: string;
+  status: RetrievalTraceStageStatus;
+  startedAt?: string;
+  durationMs?: number;
+  settings?: Record<string, unknown>;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
+  metrics?: Record<string, number>;
+  reason?: string;
+}
+
+export interface RetrievalTraceLink {
+  fromStageId: string;
+  toStageId: string;
+  kind: "sequence" | "branch" | "converge";
+}
+
+export interface RetrievalTrace {
+  traceId: string;
+  startedAt: string;
+  completedAt?: string;
+  totalDurationMs?: number;
+  stages: RetrievalTraceStage[];
+  links: RetrievalTraceLink[];
+  summary?: RetrievalTraceSummary;
+}
 
 export interface RetrievalExecutionDiagnostics {
   rewriteStatus: RewriteStatus;

@@ -101,6 +101,9 @@ describe("chat contract", () => {
             retrievalInfo: expect.objectContaining({
               candidateCounts: expect.any(Object),
             }),
+            retrievalTrace: expect.objectContaining({
+              stages: expect.any(Array),
+            }),
           }),
         }),
       ],
@@ -137,7 +140,7 @@ describe("chat contract", () => {
       .send({ query: "What does this page do?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo"]);
+    expect(Object.keys(response.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo", "retrievalTrace"]);
     expect(response.body.conversationId).toBeDefined();
     expect(response.body.answer).toContain("This page parses content");
     expect(Array.isArray(response.body.citations)).toBe(true);
@@ -153,6 +156,9 @@ describe("chat contract", () => {
       }),
       rerankStatus: expect.any(String),
       fallbackApplied: expect.any(Boolean),
+    });
+    expect(response.body.retrievalTrace).toMatchObject({
+      stages: expect.any(Array),
     });
   });
 
@@ -195,6 +201,7 @@ describe("chat contract", () => {
     expect(response.body).toContain("event: done");
     expect(response.body).toContain("\"answer\":");
     expect(response.body).toContain("\"retrievalInfo\":");
+    expect(response.body).toContain("\"retrievalTrace\":");
   });
 
   it("emits chunk data before the stream finishes", async () => {
@@ -306,7 +313,7 @@ describe("chat contract", () => {
       });
 
     expect(second.status).toBe(200);
-    expect(Object.keys(second.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo"]);
+    expect(Object.keys(second.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo", "retrievalTrace"]);
     expect(second.body.conversationId).toBe(first.body.conversationId);
   });
 
@@ -340,7 +347,7 @@ describe("chat contract", () => {
       .send({ query: "Can you cook Flan?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "conversationId", "retrievalInfo"]);
+    expect(Object.keys(response.body).sort()).toEqual(["answer", "conversationId", "retrievalInfo", "retrievalTrace"]);
     expect(response.body.answer).toContain("could not find relevant information");
     expect(response.body).not.toHaveProperty("citations");
     expect(response.body).not.toHaveProperty("answerSegments");
@@ -348,6 +355,9 @@ describe("chat contract", () => {
       candidateCounts: expect.any(Object),
       fallbackApplied: expect.any(Boolean),
       rerankStatus: expect.any(String),
+    });
+    expect(response.body.retrievalTrace).toMatchObject({
+      stages: expect.any(Array),
     });
   });
 
@@ -405,5 +415,6 @@ describe("chat contract", () => {
     expect(spec).toContain("ChatHistoryListResponse:");
     expect(spec).toContain("ChatConversationDetail:");
     expect(spec).toContain("ChatConversationMessageDebug:");
+    expect(spec).toContain("RetrievalTrace:");
   });
 });

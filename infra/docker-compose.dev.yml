@@ -8,6 +8,8 @@ services:
     volumes:
       - ../backend:/app/backend
       - ../packages/connector-api:/app/packages/connector-api
+      - ../packages/document-parser:/app/packages/document-parser
+      - ${HOME}/.config/gcloud/keys:${HOME}/.config/gcloud/keys:ro
       - radioso_backend_node_modules:/app/backend/node_modules
 
   frontend:

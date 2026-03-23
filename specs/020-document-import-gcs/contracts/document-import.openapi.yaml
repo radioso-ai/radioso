@@ -1,0 +1,172 @@
+openapi: 3.1.0
+info:
+  title: Document Import API
+  version: 0.1.0
+paths:
+  /api/v1/document/import:
+    post:
+      summary: Upload a supported document file for asynchronous processing
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                title:
+                  type: string
+                  description: Optional title override; otherwise derived from the filename
+      responses:
+        "202":
+          description: Import accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentCreateResponse"
+        "400":
+          description: Unsupported, empty, malformed, or over-limit file
+        "401":
+          description: Missing or invalid bearer token
+  /api/v1/document/:
+    post:
+      summary: Preserve the existing manual text-backed document create flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentCreateRequest"
+      responses:
+        "202":
+          description: Manual document accepted and queued
+  /api/v1/document/{documentId}:
+    get:
+      summary: Return document details with source metadata
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Document details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentDetails"
+    put:
+      summary: Update and reprocess an inline-text document
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentCreateRequest"
+      responses:
+        "202":
+          description: Inline-text document updated and queued
+        "409":
+          description: Imported documents must be edited by replacing or re-importing the source file
+  /api/v1/document/{documentId}/reprocess:
+    post:
+      summary: Reprocess a document using the current source of truth
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "202":
+          description: Reprocess accepted
+
+components:
+  schemas:
+    DocumentCreateRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    DocumentCreateResponse:
+      type: object
+      required: [documentId, status]
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, processing, ready, failed]
+    DocumentSummary:
+      type: object
+      required:
+        - id
+        - title
+        - status
+        - ragStatus
+        - metadata
+        - sourceKind
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+        ragStatus:
+          type: string
+          enum: [processed, pending]
+        metadata:
+          type: object
+          additionalProperties: true
+        sourceKind:
+          type: string
+          enum: [inline_text, uploaded_file]
+        sourceFilename:
+          type:
+            - string
+            - "null"
+        sourceMimeType:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    DocumentDetails:
+      allOf:
+        - $ref: "#/components/schemas/DocumentSummary"
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: string

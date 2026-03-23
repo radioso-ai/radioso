@@ -4,7 +4,7 @@ import { DocumentProcessingService } from "../../src/modules/documents/services/
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
-import { defaultRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
+import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import {
   createAuditService,
   InMemoryChunkRepository,
@@ -63,7 +63,7 @@ describe("document subject search text", () => {
       {
         async getForWorkspace(workspaceId: string) {
           return {
-            ...defaultRetrievalSettings(workspaceId),
+            ...defaultIngestionSettings(workspaceId),
             chunkingStrategy: "structured_semantic",
           };
         },

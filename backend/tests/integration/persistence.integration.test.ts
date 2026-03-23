@@ -10,6 +10,7 @@ import { AccountRepository } from "../../src/db/repositories/accountRepository.j
 import { ChunkRepository } from "../../src/db/repositories/chunkRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
+import { IngestionSettingsRepository } from "../../src/db/repositories/ingestionSettingsRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
@@ -19,8 +20,7 @@ import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chu
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
-import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
-import { RetrievalSettingsRepository } from "../../src/db/repositories/retrievalSettingsRepository.js";
+import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
@@ -190,7 +190,7 @@ describeIfDatabase("persistence integration", () => {
     };
 
     const auditService = new AuditService(createLogger("silent"), noopAuditRepository);
-    const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
+    const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database), auditService);
     const embeddingService = new EmbeddingService(embeddingGateway);
     const processingWorker = new DocumentProcessingWorker(
       documentRepository,
@@ -200,7 +200,7 @@ describeIfDatabase("persistence integration", () => {
         chunkRepository,
         embeddingService,
         auditService,
-        retrievalSettingsService,
+        ingestionSettingsService,
         new ChunkingStrategyRegistry([new FixedWindowChunkingStrategy()]),
       ),
       auditService,

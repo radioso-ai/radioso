@@ -10,6 +10,7 @@ import { ConversationRepository } from "../../db/repositories/conversationReposi
 import { DocumentRepository } from "../../db/repositories/documentRepository.js";
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
+import { IngestionSettingsRepository } from "../../db/repositories/ingestionSettingsRepository.js";
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
@@ -19,6 +20,7 @@ import { DocumentDeletionService } from "../../modules/documents/services/docume
 import { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
 import { DocumentProcessingService } from "../../modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
+import { WorkspaceIngestionReprocessService } from "../../modules/documents/services/workspaceIngestionReprocessService.js";
 import { PgLexicalSearch } from "../../modules/retrieval/infra/lexicalSearch.js";
 import { PgVectorSearch } from "../../modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../modules/retrieval/services/candidatePreparationService.js";
@@ -34,6 +36,7 @@ import { RerankService } from "../../modules/retrieval/services/rerankService.js
 import { RetrievalPipelineService } from "../../modules/retrieval/services/retrievalPipelineService.js";
 import { RetrievalExecutionTelemetryService } from "../../modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import { EmbeddingService } from "../../modules/retrieval/services/embeddingService.js";
+import { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
@@ -50,6 +53,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const auditService = new AuditService(logger, auditEventRepository);
   const llmRegistry = new LlmProviderRegistry(resolveLlmConfig(env));
   logger.info({ llmProviders: llmRegistry.describe() }, "Resolved LLM providers");
+  const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database), auditService);
   const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
   const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway());
   const documentRepository = new DocumentRepository(database);
@@ -64,7 +68,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     chunkRepository,
     embeddingService,
     auditService,
-    retrievalSettingsService,
+    ingestionSettingsService,
     chunkingStrategyRegistry,
   );
   const documentIngestionService = new DocumentIngestionService(
@@ -79,6 +83,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     logger,
   );
   const documentDeletionService = new DocumentDeletionService(documentRepository, auditService);
+  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
     embeddingService,
@@ -129,8 +134,10 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     authService,
     auditService,
     workspaceService,
+    ingestionSettingsService,
     retrievalSettingsService,
     documentIngestionService,
+    workspaceIngestionReprocessService,
     documentProcessingWorker,
     documentDeletionService,
     chatService,

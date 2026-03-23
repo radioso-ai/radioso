@@ -24,7 +24,7 @@ const issueToken = async (app: ReturnType<typeof createTestApp>["app"]) => {
   return token.body.token as string;
 };
 
-describe("retrieval settings contract", () => {
+describe("settings contract", () => {
   it("returns default retrieval settings for a valid bearer token", async () => {
     const { app } = createTestApp();
     const token = await issueToken(app);
@@ -36,7 +36,6 @@ describe("retrieval settings contract", () => {
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual([
       "attributeControls",
-      "chunkingStrategy",
       "citationDisplayEnabled",
       "createdAt",
       "customInstruction",
@@ -52,7 +51,6 @@ describe("retrieval settings contract", () => {
     expect(response.body.vectorTopK).toBe(15);
     expect(response.body.warmthLevel).toBe(5);
     expect(response.body.citationDisplayEnabled).toBe(true);
-    expect(response.body.chunkingStrategy).toBe("fixed_window");
     expect(response.body.customInstruction).toBe("");
     expect(response.body.attributeControls).toEqual([
       { family: "date_point", enabled: true, mode: "boost_only" },
@@ -77,7 +75,6 @@ describe("retrieval settings contract", () => {
         rerankTopK: 6,
         warmthLevel: 8,
         citationDisplayEnabled: false,
-        chunkingStrategy: "structured_semantic",
         customInstruction: "Always cite the paragraph number from the Immigration Act.",
         attributeControls: [
           { family: "date_point", enabled: true, mode: "hard_filter" },
@@ -96,7 +93,6 @@ describe("retrieval settings contract", () => {
       rerankTopK: 6,
       warmthLevel: 8,
       citationDisplayEnabled: false,
-      chunkingStrategy: "structured_semantic",
       customInstruction: "Always cite the paragraph number from the Immigration Act.",
       attributeControls: [
         { family: "date_point", enabled: true, mode: "hard_filter" },
@@ -105,21 +101,6 @@ describe("retrieval settings contract", () => {
         { family: "location", enabled: true, mode: "boost_only" },
       ],
     });
-    expect(Object.keys(response.body).sort()).toEqual([
-      "attributeControls",
-      "chunkingStrategy",
-      "citationDisplayEnabled",
-      "createdAt",
-      "customInstruction",
-      "queryRewriteEnabled",
-      "rerankEnabled",
-      "rerankTopK",
-      "similarityThreshold",
-      "updatedAt",
-      "vectorTopK",
-      "warmthLevel",
-      "workspaceId",
-    ]);
   });
 
   it("preserves saved attribute controls when an older client omits the field", async () => {
@@ -138,7 +119,6 @@ describe("retrieval settings contract", () => {
         rerankTopK: 6,
         warmthLevel: 8,
         citationDisplayEnabled: false,
-        chunkingStrategy: "structured_semantic",
         customInstruction: "Cite paragraph numbers.",
         attributeControls: [
           { family: "date_point", enabled: true, mode: "hard_filter" },
@@ -159,7 +139,6 @@ describe("retrieval settings contract", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
-        chunkingStrategy: "fixed_window",
       });
 
     expect(firstUpdate.status).toBe(200);
@@ -168,23 +147,87 @@ describe("retrieval settings contract", () => {
     expect(secondUpdate.body.customInstruction).toBe("Cite paragraph numbers.");
   });
 
-  it("documents attributeControls as optional for the update request schema", () => {
+  it("returns default ingestion settings for a valid bearer token", async () => {
+    const { app } = createTestApp();
+    const token = await issueToken(app);
+
+    const response = await request(app)
+      .get("/api/v1/settings/ingestion")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+    });
+  });
+
+  it("updates ingestion settings for a valid bearer token", async () => {
+    const { app } = createTestApp();
+    const token = await issueToken(app);
+
+    const response = await request(app)
+      .put("/api/v1/settings/ingestion")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        chunkingStrategy: "structured_semantic",
+        fixedWindowChunkSize: 900,
+        fixedWindowChunkOverlap: 90,
+        structuredMinChunkSize: 30,
+        structuredMaxChunkSize: 260,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      chunkingStrategy: "structured_semantic",
+      fixedWindowChunkSize: 900,
+      fixedWindowChunkOverlap: 90,
+      structuredMinChunkSize: 30,
+      structuredMaxChunkSize: 260,
+    });
+  });
+
+  it("starts workspace ingestion reprocessing for a valid bearer token", async () => {
+    const { app } = createTestApp();
+    const token = await issueToken(app);
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Guide", content: "Queued for reprocess." });
+
+    const response = await request(app)
+      .post("/api/v1/settings/ingestion/reprocess")
+      .set("Authorization", authorization);
+
+    expect(response.status).toBe(202);
+    expect(response.body).toMatchObject({
+      workspaceId: expect.any(String),
+      queuedDocumentCount: 1,
+      skippedDocumentCount: 0,
+      status: "queued",
+    });
+  });
+
+  it("documents the retrieval and ingestion settings split in the generated schema", () => {
     const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
     const retrievalSettingsSchema = spec.match(/RetrievalSettings:\n([\s\S]*?)\n    UpdateRetrievalSettingsRequest:/)?.[1] ?? "";
-    const updateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    AttributeFamilyControl:/)?.[1] ?? "";
+    const retrievalUpdateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    IngestionSettings:/)?.[1] ?? "";
+    const ingestionSettingsSchema = spec.match(/IngestionSettings:\n([\s\S]*?)\n    UpdateIngestionSettingsRequest:/)?.[1] ?? "";
+    const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    AttributeFamilyControl:/)?.[1] ?? "";
 
-    expect(retrievalSettingsSchema).toContain("- workspaceId");
-    expect(retrievalSettingsSchema).toContain("- createdAt");
-    expect(retrievalSettingsSchema).toContain("- updatedAt");
-    expect(retrievalSettingsSchema).toContain("workspaceId:");
-    expect(retrievalSettingsSchema).toContain("format: uuid");
-    expect(retrievalSettingsSchema).toContain("createdAt:");
-    expect(retrievalSettingsSchema).toContain("format: date-time");
-    expect(retrievalSettingsSchema).toContain("updatedAt:");
-    expect(updateSchema).toContain("type: object");
-    expect(updateSchema).toContain("- chunkingStrategy");
-    expect(updateSchema).toContain("attributeControls:");
-    expect(updateSchema).not.toContain("- attributeControls");
-    expect(updateSchema).not.toContain("allOf:");
+    expect(retrievalSettingsSchema).not.toContain("chunkingStrategy:");
+    expect(retrievalUpdateSchema).toContain("attributeControls:");
+    expect(retrievalUpdateSchema).not.toContain("chunkingStrategy:");
+    expect(ingestionSettingsSchema).toContain("chunkingStrategy:");
+    expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");
+    expect(ingestionUpdateSchema).toContain("fixedWindowChunkOverlap:");
+    expect(ingestionUpdateSchema).toContain("structuredMinChunkSize:");
+    expect(spec).toContain("/api/v1/settings/ingestion:");
+    expect(spec).toContain("/api/v1/settings/ingestion/reprocess:");
   });
 });

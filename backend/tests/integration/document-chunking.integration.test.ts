@@ -11,17 +11,14 @@ describe("document chunking integration", () => {
     const authorization = `Bearer ${token}`;
 
     await request(app)
-      .put("/api/v1/settings/retrieval")
+      .put("/api/v1/settings/ingestion")
       .set("Authorization", authorization)
       .send({
-        queryRewriteEnabled: false,
-        rerankEnabled: false,
-        vectorTopK: 15,
-        similarityThreshold: 0.2,
-        rerankTopK: 5,
-        warmthLevel: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "structured_semantic",
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
       });
 
     const document = await request(app)
@@ -90,17 +87,14 @@ Only future ingests change.`,
     const originalChunks = [...(repositories.chunkRepository.items.get(created.body.documentId) ?? [])];
 
     const settings = await request(app)
-      .put("/api/v1/settings/retrieval")
+      .put("/api/v1/settings/ingestion")
       .set("Authorization", authorization)
       .send({
-        queryRewriteEnabled: false,
-        rerankEnabled: false,
-        vectorTopK: 15,
-        similarityThreshold: 0.2,
-        rerankTopK: 5,
-        warmthLevel: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "structured_semantic",
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
       });
 
     expect(settings.status).toBe(200);

@@ -154,7 +154,6 @@ describe("edge cases", () => {
             rerankTopK: 20,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            chunkingStrategy: "fixed_window",
             attributeControls: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -225,7 +224,6 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            chunkingStrategy: "fixed_window",
             attributeControls: defaultAttributeControls().map((control) =>
               control.family === "location" || control.family === "money_value"
                 ? { ...control, enabled: false }
@@ -303,7 +301,6 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            chunkingStrategy: "fixed_window",
             attributeControls: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -363,7 +360,6 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            chunkingStrategy: "fixed_window",
             attributeControls: defaultAttributeControls().map((control) =>
               control.family === "location" || control.family === "money_value"
                 ? { ...control, mode: "hard_filter" as const }
@@ -425,7 +421,6 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            chunkingStrategy: "fixed_window",
             attributeControls: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -539,7 +534,6 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            chunkingStrategy: "fixed_window",
             attributeControls: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -638,7 +632,6 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            chunkingStrategy: "fixed_window",
             attributeControls: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -743,7 +736,6 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            chunkingStrategy: "fixed_window",
             attributeControls: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -866,7 +858,6 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            chunkingStrategy: "fixed_window",
             attributeControls: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),

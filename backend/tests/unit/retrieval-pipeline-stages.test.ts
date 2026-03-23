@@ -26,7 +26,6 @@ describe("retrieval pipeline stages", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
-        chunkingStrategy: "fixed_window",
         customInstruction: "",
         attributeControls: defaultAttributeControls().map((control) =>
           control.family === "location" || control.family === "money_value"
@@ -61,7 +60,6 @@ describe("retrieval pipeline stages", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            chunkingStrategy: "fixed_window",
             customInstruction: "",
             attributeControls: defaultAttributeControls(),
             createdAt: new Date(),

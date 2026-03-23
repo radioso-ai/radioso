@@ -12,6 +12,12 @@ export interface ChunkOutput {
 export interface ChunkingRequest {
   title: string;
   content: string;
+  config: {
+    fixedWindowChunkSize: number;
+    fixedWindowChunkOverlap: number;
+    structuredMinChunkSize: number;
+    structuredMaxChunkSize: number;
+  };
 }
 
 export interface ChunkingStrategy {

@@ -29,7 +29,12 @@ import type {
 } from "../../src/db/repositories/auditEventRepository.js";
 import type { AuditEventInput } from "../../src/modules/audit/services/auditService.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
+import type {
+  IngestionSettingsInput,
+  IngestionSettingsRecord,
+} from "../../src/modules/settings/domain/ingestionSettings.js";
 import type { RetrievalSettingsInput, RetrievalSettingsRecord } from "../../src/modules/settings/domain/retrievalSettings.js";
+import type { IngestionSettingsRepositoryPort } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import type { RetrievalSettingsRepositoryPort } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { notFound } from "../../src/shared/domain/errors.js";
@@ -263,9 +268,32 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       rerankTopK: input.rerankTopK,
       warmthLevel: input.warmthLevel,
       citationDisplayEnabled: input.citationDisplayEnabled,
-      chunkingStrategy: input.chunkingStrategy,
       attributeControls: input.attributeControls,
       customInstruction: input.customInstruction,
+      createdAt: existing?.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(workspaceId, record);
+    return record;
+  }
+}
+
+export class InMemoryIngestionSettingsRepository implements IngestionSettingsRepositoryPort {
+  private readonly items = new Map<string, IngestionSettingsRecord>();
+
+  async findByWorkspaceId(workspaceId: string): Promise<IngestionSettingsRecord | null> {
+    return this.items.get(workspaceId) ?? null;
+  }
+
+  async upsert(workspaceId: string, input: IngestionSettingsInput): Promise<IngestionSettingsRecord> {
+    const existing = this.items.get(workspaceId);
+    const record: IngestionSettingsRecord = {
+      workspaceId,
+      chunkingStrategy: input.chunkingStrategy,
+      fixedWindowChunkSize: input.fixedWindowChunkSize,
+      fixedWindowChunkOverlap: input.fixedWindowChunkOverlap,
+      structuredMinChunkSize: input.structuredMinChunkSize,
+      structuredMaxChunkSize: input.structuredMaxChunkSize,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };
@@ -940,6 +968,41 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     });
     this.items.set(record.id, record);
     return record;
+  }
+
+  async requeueAllEligibleAndQueue(workspaceId: string): Promise<{ queuedDocumentCount: number; skippedDocumentCount: number }> {
+    const documents = [...this.items.values()].filter((item) => item.workspaceId === workspaceId);
+    let queuedDocumentCount = 0;
+    let skippedDocumentCount = 0;
+
+    for (const document of documents) {
+      if (document.status === "queued" || document.status === "processing") {
+        skippedDocumentCount += 1;
+        continue;
+      }
+
+      const record: DocumentRecord = {
+        ...document,
+        status: "queued",
+        metadata: document.metadata ?? {},
+        revision: document.revision + 1,
+        failureReason: null,
+        updatedAt: new Date(),
+      };
+
+      await this.jobRepository?.enqueue({
+        documentId: record.id,
+        workspaceId: record.workspaceId,
+        documentRevision: record.revision,
+      });
+      this.items.set(record.id, record);
+      queuedDocumentCount += 1;
+    }
+
+    return {
+      queuedDocumentCount,
+      skippedDocumentCount,
+    };
   }
 
   async deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean> {

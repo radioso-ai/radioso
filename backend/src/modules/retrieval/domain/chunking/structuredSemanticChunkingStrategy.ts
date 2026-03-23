@@ -32,6 +32,8 @@ export class StructuredSemanticChunkingStrategy implements ChunkingStrategy {
       content: normalized,
       blocks,
       adjacentSimilarities,
+      minChunkTokens: request.config.structuredMinChunkSize,
+      maxChunkTokens: request.config.structuredMaxChunkSize,
     });
   }
 

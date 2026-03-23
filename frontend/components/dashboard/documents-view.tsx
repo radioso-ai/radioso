@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { FileText, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { ActionButton } from '@/components/ui/action-button'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -482,10 +483,10 @@ export function DocumentsView({
           <h1 className="text-lg font-medium text-foreground">Documents</h1>
           <p className="text-sm text-muted-foreground">Manage your knowledge base</p>
         </div>
-        <Button size="sm" onClick={openCreateDialog}>
+        <ActionButton size="sm" onClick={openCreateDialog}>
           <Plus className="mr-2 h-4 w-4" />
           Add Document
-        </Button>
+        </ActionButton>
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>

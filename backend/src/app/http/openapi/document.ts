@@ -311,6 +311,45 @@ const RetrievalInfoSchema = registry.register(
   }),
 );
 
+const RetrievalTraceStageSchema = registry.register(
+  "RetrievalTraceStage",
+  z.object({
+    stageId: z.string(),
+    kind: z.string(),
+    label: z.string(),
+    status: z.enum(["applied", "skipped", "fallback", "rejected", "unavailable", "failed"]),
+    startedAt: z.string().datetime().optional(),
+    durationMs: z.number().int().min(0).optional(),
+    settings: z.record(z.unknown()).optional(),
+    inputs: z.record(z.unknown()).optional(),
+    outputs: z.record(z.unknown()).optional(),
+    metrics: z.record(z.number()).optional(),
+    reason: z.string().optional(),
+  }),
+);
+
+const RetrievalTraceLinkSchema = registry.register(
+  "RetrievalTraceLink",
+  z.object({
+    fromStageId: z.string(),
+    toStageId: z.string(),
+    kind: z.enum(["sequence", "branch", "converge"]),
+  }),
+);
+
+const RetrievalTraceSchema = registry.register(
+  "RetrievalTrace",
+  z.object({
+    traceId: z.string(),
+    startedAt: z.string().datetime(),
+    completedAt: z.string().datetime().optional(),
+    totalDurationMs: z.number().int().min(0).optional(),
+    stages: z.array(RetrievalTraceStageSchema),
+    links: z.array(RetrievalTraceLinkSchema),
+    summary: RetrievalInfoSchema.optional(),
+  }),
+);
+
 const ChatResponseSchema = registry.register(
   "ChatResponse",
   z.object({
@@ -319,6 +358,7 @@ const ChatResponseSchema = registry.register(
     citations: z.array(CitationSchema).optional(),
     answerSegments: z.array(AnswerSegmentSchema).optional(),
     retrievalInfo: RetrievalInfoSchema,
+    retrievalTrace: RetrievalTraceSchema,
   }),
 );
 
@@ -355,6 +395,7 @@ const ChatConversationMessageDebugSchema = registry.register(
     stream: z.boolean(),
     citationCount: z.number().int().min(0),
     retrievalInfo: RetrievalInfoSchema.optional(),
+    retrievalTrace: RetrievalTraceSchema.optional(),
     errorMessage: z.string().nullable().optional(),
   }),
 );

@@ -5,7 +5,7 @@ import type {
   ConversationRepositoryPort,
 } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
-import type { RetrievalExecutionDiagnostics } from "../../retrieval/domain/retrievalPipelineTypes.js";
+import type { RetrievalExecutionDiagnostics, RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 
@@ -27,6 +27,7 @@ export interface ChatConversationTurnDebug {
   stream: boolean;
   citationCount: number;
   retrievalInfo?: RetrievalInfo;
+  retrievalTrace?: RetrievalTrace;
   errorMessage?: string | null;
 }
 
@@ -59,6 +60,7 @@ interface ChatAuditMetadata {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   retrieval?: unknown;
+  retrievalTrace?: RetrievalTrace;
   errorMessage?: string;
 }
 
@@ -175,6 +177,7 @@ export class ChatHistoryService {
         retrievalInfo: metadata.retrieval
           ? this.retrievalInfoPresenter.present(metadata.retrieval as RetrievalExecutionDiagnostics)
           : undefined,
+        retrievalTrace: metadata.retrievalTrace,
         errorMessage: metadata.errorMessage ?? null,
       });
     }

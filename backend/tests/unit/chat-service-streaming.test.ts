@@ -98,6 +98,15 @@ describe("chat service streaming", () => {
         fallbackApplied: false,
         rerankStatus: "skipped",
       }),
+      retrievalTrace: expect.objectContaining({
+        stages: expect.arrayContaining([
+          expect.objectContaining({
+            stageId: "answer",
+            kind: "answer_outcome",
+            status: "applied",
+          }),
+        ]),
+      }),
     });
 
     const [conversationId] = conversationRepository.items.keys();
@@ -289,6 +298,15 @@ describe("chat service streaming", () => {
           merged: 1,
           final: 1,
         },
+      }),
+      retrievalTrace: expect.objectContaining({
+        stages: expect.arrayContaining([
+          expect.objectContaining({
+            stageId: "answer",
+            kind: "answer_outcome",
+            status: "applied",
+          }),
+        ]),
       }),
     });
 

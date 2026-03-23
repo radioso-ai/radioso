@@ -9,6 +9,32 @@ describe("document deletion", () => {
     const auditService = createAuditService();
     const service = new DocumentDeletionService(
       {
+        async findByIdAndWorkspaceId(documentId: string, workspaceId: string) {
+          if (documentId !== "doc-1" || workspaceId !== "workspace-1") {
+            return null;
+          }
+
+          return {
+            id: "doc-1",
+            workspaceId: "workspace-1",
+            title: "Inline",
+            sourceContent: "Inline body",
+            markdownContent: "Inline body",
+            metadata: {},
+            sourceKind: "inline_text" as const,
+            sourceFilename: null,
+            sourceMimeType: "text/plain",
+            sourceStorageBucket: null,
+            sourceStorageObject: null,
+            sourceStorageGeneration: null,
+            sourceSizeBytes: null,
+            status: "ready",
+            revision: 1,
+            failureReason: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
         async deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean> {
           if (documentId === "doc-1" && workspaceId === "workspace-1") {
             deleted.push(documentId);
@@ -16,6 +42,17 @@ describe("document deletion", () => {
           }
 
           return false;
+        },
+      },
+      {
+        async upload() {
+          throw new Error("unused");
+        },
+        async read() {
+          throw new Error("unused");
+        },
+        async delete() {
+          throw new Error("unused");
         },
       },
       auditService,
@@ -37,12 +74,152 @@ describe("document deletion", () => {
     );
   });
 
+  it("removes the document record before attempting uploaded source cleanup", async () => {
+    const callOrder: string[] = [];
+    const deletedObjects: string[] = [];
+    const auditService = createAuditService();
+    const service = new DocumentDeletionService(
+      {
+        async findByIdAndWorkspaceId(documentId: string, workspaceId: string) {
+          if (documentId !== "doc-1" || workspaceId !== "workspace-1") {
+            return null;
+          }
+
+          return {
+            id: "doc-1",
+            workspaceId: "workspace-1",
+            title: "Imported",
+            sourceContent: "",
+            markdownContent: "",
+            metadata: {},
+            sourceKind: "uploaded_file" as const,
+            sourceFilename: "import.txt",
+            sourceMimeType: "text/plain",
+            sourceStorageBucket: "bucket",
+            sourceStorageObject: "objects/doc-1",
+            sourceStorageGeneration: "1",
+            sourceSizeBytes: 12,
+            status: "ready",
+            revision: 1,
+            failureReason: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+        async deleteByIdAndWorkspaceId() {
+          callOrder.push("db");
+          return true;
+        },
+      },
+      {
+        async upload() {
+          throw new Error("unused");
+        },
+        async read() {
+          throw new Error("unused");
+        },
+        async delete(input) {
+          callOrder.push("storage");
+          deletedObjects.push(input.objectPath);
+        },
+      },
+      auditService,
+    );
+
+    await service.delete({
+      workspaceId: "workspace-1",
+      documentId: "doc-1",
+    });
+
+    expect(callOrder).toEqual(["db", "storage"]);
+    expect(deletedObjects).toEqual(["objects/doc-1"]);
+  });
+
+  it("deletes the document even when uploaded source cleanup fails", async () => {
+    const auditService = createAuditService();
+    let deleted = false;
+    const service = new DocumentDeletionService(
+      {
+        async findByIdAndWorkspaceId() {
+          return {
+            id: "doc-1",
+            workspaceId: "workspace-1",
+            title: "Imported",
+            sourceContent: "",
+            markdownContent: "",
+            metadata: {},
+            sourceKind: "uploaded_file" as const,
+            sourceFilename: "import.txt",
+            sourceMimeType: "text/plain",
+            sourceStorageBucket: "bucket",
+            sourceStorageObject: "objects/doc-1",
+            sourceStorageGeneration: "1",
+            sourceSizeBytes: 12,
+            status: "ready",
+            revision: 1,
+            failureReason: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+        async deleteByIdAndWorkspaceId() {
+          deleted = true;
+          return true;
+        },
+      },
+      {
+        async upload() {
+          throw new Error("unused");
+        },
+        async read() {
+          throw new Error("unused");
+        },
+        async delete() {
+          throw new Error("gcs unavailable");
+        },
+      },
+      auditService,
+    );
+
+    await service.delete({
+      workspaceId: "workspace-1",
+      documentId: "doc-1",
+    });
+
+    expect(deleted).toBe(true);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.delete",
+        eventStatus: "failure",
+        metadata: {
+          documentId: "doc-1",
+          reason: "gcs unavailable",
+        },
+      }),
+    );
+  });
+
   it("throws a not_found error when the document does not belong to the workspace", async () => {
     const auditService = createAuditService();
     const service = new DocumentDeletionService(
       {
+        async findByIdAndWorkspaceId(): Promise<null> {
+          return null;
+        },
         async deleteByIdAndWorkspaceId(): Promise<boolean> {
           return false;
+        },
+      },
+      {
+        async upload() {
+          throw new Error("unused");
+        },
+        async read() {
+          throw new Error("unused");
+        },
+        async delete() {
+          throw new Error("unused");
         },
       },
       auditService,

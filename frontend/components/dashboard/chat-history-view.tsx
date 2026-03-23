@@ -1,11 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
   type ChatConversationDetail,
   type ChatConversationSummary,
+  type ChatConversationTurn,
   chatApi,
+  documentsApi,
 } from '@/lib/api'
 import {
   Drawer,
@@ -13,10 +15,15 @@ import {
   DrawerContent,
   DrawerDescription,
   DrawerHeader,
-  DrawerTitle,
 } from '@/components/ui/drawer'
+import { ActionButton } from '@/components/ui/action-button'
 import { Spinner } from '@/components/ui/spinner'
+import { CopyValueField } from '@/components/ui/copy-value-field'
 import { MessageSquareText, X } from 'lucide-react'
+import { ChatRetrievalInfo } from './chat-retrieval-info'
+import { ChatRetrievalTraceGraph } from './chat-retrieval-trace-graph'
+import { ChatMessageThread } from './chat-message-thread'
+import type { CitationOpenResult } from './chat-citations'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -53,6 +60,10 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
   const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [selectedThreadMessageId, setSelectedThreadMessageId] = useState<string | null>(null)
+  const [selectedAssistantMessageId, setSelectedAssistantMessageId] = useState<string | null>(null)
+  const [selectedStageId, setSelectedStageId] = useState<string | undefined>(undefined)
+  const [showGraph, setShowGraph] = useState(false)
 
   const loadConversations = useCallback(async () => {
     setIsListLoading(true)
@@ -111,10 +122,126 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
     }
   }, [selectedConversationId])
 
-  const selectedSummary = useMemo(
-    () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
-    [conversations, selectedConversationId],
+  const assistantMessages = useMemo(
+    () => conversationDetail?.messages.filter((message) => message.role === 'assistant') ?? [],
+    [conversationDetail],
   )
+
+  const selectedThreadMessage = useMemo(
+    () => conversationDetail?.messages.find((message) => message.id === selectedThreadMessageId) ?? null,
+    [conversationDetail, selectedThreadMessageId],
+  )
+
+  const selectedAssistantMessage = useMemo(
+    () =>
+      assistantMessages.find((message) => message.id === selectedAssistantMessageId) ??
+      assistantMessages[assistantMessages.length - 1] ??
+      null,
+    [assistantMessages, selectedAssistantMessageId],
+  )
+
+  const selectedDiagnosticsAssistantMessage = useMemo(() => {
+    if (!conversationDetail || !selectedThreadMessage) {
+      return selectedAssistantMessage
+    }
+
+    if (selectedThreadMessage.role === 'assistant') {
+      return selectedThreadMessage
+    }
+
+    const messageIndex = conversationDetail.messages.findIndex((message) => message.id === selectedThreadMessage.id)
+    if (messageIndex < 0) {
+      return null
+    }
+
+    return (
+      conversationDetail.messages
+        .slice(messageIndex + 1)
+        .find((message) => message.role === 'assistant') ?? null
+    )
+  }, [conversationDetail, selectedThreadMessage, selectedAssistantMessage])
+
+  const selectedDiagnosticsDebug =
+    selectedDiagnosticsAssistantMessage?.role === 'assistant' ? selectedDiagnosticsAssistantMessage.debug : undefined
+  const selectedDiagnosticsTrace = selectedDiagnosticsDebug?.retrievalTrace
+  const selectedDiagnosticsTraceId = selectedDiagnosticsTrace?.traceId
+  const selectedDiagnosticsInitialStageId = selectedDiagnosticsTrace?.stages[0]?.stageId
+
+  useEffect(() => {
+    if (!conversationDetail) {
+      setSelectedThreadMessageId(null)
+      setSelectedAssistantMessageId(null)
+      setSelectedStageId(undefined)
+      setShowGraph(false)
+      return
+    }
+
+    const traceBearingMessage =
+      [...conversationDetail.messages]
+        .reverse()
+        .find((message) => message.role === 'assistant' && message.debug) ?? null
+
+    setSelectedThreadMessageId(traceBearingMessage?.id ?? null)
+    setSelectedAssistantMessageId(traceBearingMessage?.id ?? null)
+    setSelectedStageId(traceBearingMessage?.debug?.retrievalTrace?.stages[0]?.stageId)
+    setShowGraph(false)
+  }, [conversationDetail])
+
+  useEffect(() => {
+    setSelectedStageId(selectedDiagnosticsInitialStageId)
+  }, [selectedDiagnosticsTraceId, selectedDiagnosticsInitialStageId])
+
+  const handleSelectThreadMessage = useCallback(
+    (messageId: string) => {
+      if (!conversationDetail) {
+        return
+      }
+
+      const messageIndex = conversationDetail.messages.findIndex((message) => message.id === messageId)
+      if (messageIndex < 0) {
+        return
+      }
+
+      const clickedMessage = conversationDetail.messages[messageIndex]
+      setSelectedThreadMessageId(clickedMessage.id)
+
+      const targetAssistant =
+        clickedMessage.role === 'assistant'
+          ? clickedMessage
+          : conversationDetail.messages
+              .slice(messageIndex + 1)
+              .find((message) => message.role === 'assistant')
+
+      if (!targetAssistant || targetAssistant.role !== 'assistant') {
+        return
+      }
+
+      setSelectedAssistantMessageId(targetAssistant.id)
+      setSelectedStageId(targetAssistant.debug?.retrievalTrace?.stages[0]?.stageId)
+    },
+    [conversationDetail],
+  )
+
+  const handleOpenCitation = useCallback(async (documentId: string): Promise<CitationOpenResult> => {
+    try {
+      await documentsApi.getDocument(documentId)
+      return 'opened'
+    } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'error' in error &&
+        error.error &&
+        typeof error.error === 'object' &&
+        'code' in error.error &&
+        error.error.code === 'not_found'
+      ) {
+        return 'unavailable'
+      }
+
+      return 'error'
+    }
+  }, [])
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -189,15 +316,34 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
         onOpenChange={(open) => {
           if (!open) {
             setSelectedConversationId(null)
+            setShowGraph(false)
           }
         }}
         direction="right"
+        handleOnly
       >
-        <DrawerContent className="h-full w-full max-w-3xl">
+        <DrawerContent
+          className={`h-full transition-[width,max-width] duration-300 ease-in-out data-[vaul-drawer-direction=right]:w-[96vw] sm:data-[vaul-drawer-direction=right]:max-w-[96vw] ${
+            showGraph
+              ? 'lg:data-[vaul-drawer-direction=right]:w-[94vw] lg:data-[vaul-drawer-direction=right]:max-w-[94vw]'
+              : 'lg:data-[vaul-drawer-direction=right]:w-[88vw] lg:data-[vaul-drawer-direction=right]:max-w-[88vw]'
+          }`}
+        >
           <DrawerHeader className="border-b border-border">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <DrawerTitle>{selectedSummary?.preview || 'Conversation details'}</DrawerTitle>
+                {selectedConversationId ? (
+                  <CopyValueField
+                    label="Conversation ID:"
+                    value={selectedConversationId}
+                    copyValue={selectedConversationId}
+                    ariaLabel="Copy conversation ID"
+                    compact
+                    wrap
+                    fitContent
+                    inlineLabel
+                  />
+                ) : null}
                 <DrawerDescription className="sr-only">Conversation details panel</DrawerDescription>
               </div>
               <DrawerClose className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground">
@@ -206,7 +352,7 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
             </div>
           </DrawerHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 overflow-hidden p-4">
             {isDetailLoading ? (
               <div className="flex h-full items-center justify-center">
                 <Spinner className="h-6 w-6" />
@@ -216,51 +362,47 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
                 {detailError}
               </div>
             ) : conversationDetail ? (
-              <div className="space-y-6">
-                <div className="space-y-1 text-sm text-muted-foreground">
-                  <p>
-                    Conversation{' '}
-                    <span className="select-all font-mono text-foreground">{conversationDetail.conversationId}</span>
-                  </p>
-                  <p>
-                    Workspace{' '}
-                    <span className="select-all font-mono text-foreground">{conversationDetail.workspaceId}</span>
-                  </p>
+              <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(640px,1.1fr)]">
+                <div className="min-h-0 overflow-y-auto pr-1">
+                  <ChatMessageThread
+                    messages={conversationDetail.messages}
+                    onOpenDocument={handleOpenCitation}
+                    onMessageSelect={handleSelectThreadMessage}
+                    selectedMessageId={selectedThreadMessageId ?? undefined}
+                  />
                 </div>
 
-                <div className="space-y-4">
-                  {conversationDetail.messages.map((message, index) => {
-                    const previousMessage = index > 0 ? conversationDetail.messages[index - 1] : null
-                    const responseTimeMs =
-                      message.role === 'assistant' && previousMessage
-                        ? new Date(message.createdAt).getTime() - new Date(previousMessage.createdAt).getTime()
-                        : null
-
-                    return (
-                      <div
-                        key={message.id}
-                        className={`rounded-xl border p-4 ${
-                          message.role === 'user'
-                            ? 'border-primary/25 bg-primary/5'
-                            : 'border-border bg-card'
-                        }`}
-                      >
-                        <div className="mb-2 flex items-center justify-between gap-4">
-                          <div>
-                            <p className="text-sm font-medium capitalize text-foreground">{message.role}</p>
-                            <p className="text-xs text-muted-foreground">{formatTimestamp(message.createdAt)}</p>
+                <div className="min-h-0 overflow-y-auto rounded-xl border border-border/70 bg-background/50 p-4">
+                  <DiagnosticsPanel
+                    selectedMessage={selectedThreadMessage}
+                    diagnosticsMessage={selectedDiagnosticsAssistantMessage}
+                    showGraph={showGraph}
+                    onShowGraph={() => {
+                      if (selectedDiagnosticsAssistantMessage?.debug?.retrievalTrace) {
+                        setShowGraph(true)
+                      }
+                    }}
+                    onHideGraph={() => {
+                      setShowGraph(false)
+                      setSelectedStageId(selectedDiagnosticsInitialStageId)
+                    }}
+                    selectedStageId={selectedStageId}
+                    graphPane={
+                      showGraph ? (
+                        selectedDiagnosticsTrace ? (
+                          <ChatRetrievalTraceGraph
+                            retrievalTrace={selectedDiagnosticsTrace}
+                            selectedStageId={selectedStageId ?? selectedDiagnosticsTrace.stages[0]?.stageId ?? ''}
+                            onSelectStage={setSelectedStageId}
+                          />
+                        ) : (
+                          <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+                            Detailed retrieval trace unavailable for this assistant turn.
                           </div>
-                          <p className="select-all font-mono text-xs text-muted-foreground">{message.id}</p>
-                        </div>
-
-                        <p className="whitespace-pre-wrap text-sm text-foreground">{message.content}</p>
-
-                        {message.role === 'assistant' ? (
-                          <AssistantDebugSection debug={message.debug} responseTimeMs={responseTimeMs} />
-                        ) : null}
-                      </div>
-                    )
-                  })}
+                        )
+                      ) : null
+                    }
+                  />
                 </div>
               </div>
             ) : (
@@ -275,115 +417,122 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
   )
 }
 
-function MetadataCard({
-  label,
-  value,
-  mono = false,
+function DiagnosticsPanel({
+  selectedMessage,
+  diagnosticsMessage,
+  showGraph,
+  onShowGraph,
+  onHideGraph,
+  selectedStageId,
+  graphPane,
 }: {
-  label: string
-  value: string
-  mono?: boolean
+  selectedMessage: ChatConversationTurn | null
+  diagnosticsMessage: ChatConversationTurn | null
+  showGraph: boolean
+  onShowGraph: () => void
+  onHideGraph: () => void
+  selectedStageId?: string
+  graphPane: ReactNode
 }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-3">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-sm text-foreground ${mono ? 'font-mono break-all' : ''}`}>{value}</p>
-    </div>
-  )
-}
-
-const formatResponseTime = (ms: number): string => {
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(2)}s`
-}
-
-function AssistantDebugSection({
-  debug,
-  responseTimeMs,
-}: {
-  debug: ChatConversationDetail['messages'][number]['debug']
-  responseTimeMs: number | null
-}) {
-  if (!debug) {
+  if (!selectedMessage) {
     return (
-      <div className="mt-4 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-        Debug metadata unavailable for this assistant turn.
+      <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+        Select a message to inspect diagnostics.
       </div>
     )
   }
 
-  const retrievalInfo = debug.retrievalInfo
+  const diagnosticsDebug =
+    diagnosticsMessage?.role === 'assistant' ? diagnosticsMessage.debug : undefined
+  const hasDiagnostics = Boolean(diagnosticsDebug)
 
   return (
-    <details className="mt-4 rounded-lg border border-border/70 bg-background/70 p-3 text-xs text-muted-foreground">
-      <summary className="cursor-pointer list-none font-medium text-foreground">
-        Debug metadata
-      </summary>
-
-      <div className="mt-3 space-y-3">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <MetadataCard label="Status" value={debug.eventStatus} />
-          <MetadataCard label="Recorded" value={formatTimestamp(debug.recordedAt)} />
-          <MetadataCard label="Streamed" value={debug.stream ? 'Yes' : 'No'} />
-          <MetadataCard label="Citations" value={String(debug.citationCount)} />
-          {responseTimeMs !== null && responseTimeMs > 0 ? (
-            <MetadataCard label="Response time" value={formatResponseTime(responseTimeMs)} />
-          ) : null}
+    <div className="space-y-4">
+      <div className="flex items-start gap-4">
+        <div className="flex min-w-0 flex-1 items-start gap-4">
+          <p className="pt-2 text-sm font-medium text-foreground whitespace-nowrap">Message ID:</p>
+          <div className="min-w-0 flex-1">
+            <CopyValueField
+              value={selectedMessage.id}
+              copyValue={selectedMessage.id}
+              ariaLabel={`Copy ${selectedMessage.role} message ID`}
+              compact
+              wrap
+            />
+          </div>
         </div>
 
-        {debug.errorMessage ? (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-destructive">
-            {debug.errorMessage}
+        {diagnosticsDebug?.retrievalTrace ? (
+          <div className="shrink-0">
+            <ActionButton
+              type="button"
+              size="sm"
+              theme="yellow"
+              className="h-9 px-4 text-sm"
+              onClick={showGraph ? onHideGraph : onShowGraph}
+            >
+              {showGraph ? 'Hide graph' : 'Show graph'}
+            </ActionButton>
           </div>
-        ) : null}
-
-        {retrievalInfo?.parsedQuery ? (
-          <div className="space-y-1">
-            <p className="font-medium text-foreground">Parsed query</p>
-            <p>Semantic: {retrievalInfo.parsedQuery.semanticQuery || 'None'}</p>
-            <p>Lexical: {retrievalInfo.parsedQuery.lexicalQuery || 'None'}</p>
-            <p>
-              Constraints:{' '}
-              {retrievalInfo.parsedQuery.constraintSummary.length > 0
-                ? retrievalInfo.parsedQuery.constraintSummary.join(', ')
-                : 'None'}
-            </p>
-          </div>
-        ) : null}
-
-        {retrievalInfo ? (
-          <>
-            <div className="space-y-1">
-              <p className="font-medium text-foreground">Candidate counts</p>
-              <p>
-                Semantic {retrievalInfo.candidateCounts.semantic} · Lexical {retrievalInfo.candidateCounts.lexical}
-                {' · '}Merged {retrievalInfo.candidateCounts.merged} · Final {retrievalInfo.candidateCounts.final}
-              </p>
-            </div>
-
-            <div className="space-y-1">
-              <p className="font-medium text-foreground">Retrieval status</p>
-              <p>Rerank: {retrievalInfo.rerankStatus}</p>
-              <p>Fallback applied: {retrievalInfo.fallbackApplied ? 'Yes' : 'No'}</p>
-            </div>
-
-            <div className="space-y-1">
-              <p className="font-medium text-foreground">Applied constraints</p>
-              {retrievalInfo.appliedConstraints?.length ? (
-                <div className="space-y-1">
-                  {retrievalInfo.appliedConstraints.map((constraint, index) => (
-                    <p key={`${constraint.family}-${constraint.summary}-${index}`}>
-                      {constraint.family}: {constraint.summary} ({constraint.mode}, {constraint.outcome})
-                    </p>
-                  ))}
-                </div>
-              ) : (
-                <p>No supported constraints were applied.</p>
-              )}
-            </div>
-          </>
         ) : null}
       </div>
-    </details>
+
+      {!hasDiagnostics ? (
+        <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+          No diagnostics are available for this message yet.
+        </div>
+      ) : null}
+
+      {diagnosticsDebug?.errorMessage ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          {diagnosticsDebug.errorMessage}
+        </div>
+      ) : null}
+
+      {hasDiagnostics ? (
+        <div
+          className="grid gap-4 overflow-hidden"
+          style={{
+            gridTemplateColumns: showGraph ? 'minmax(380px,1fr) minmax(0,1.1fr)' : '0px minmax(0,1fr)',
+            transition: 'grid-template-columns 300ms ease',
+          }}
+        >
+        <div
+          className="overflow-hidden rounded-xl border border-border/70 bg-background/60 p-4"
+          style={{
+            opacity: showGraph ? 1 : 0,
+            transform: showGraph ? 'translateX(0)' : 'translateX(12px)',
+            transition: 'opacity 300ms ease, transform 300ms ease',
+            pointerEvents: showGraph ? 'auto' : 'none',
+          }}
+        >
+            <div className="mb-3">
+              <p className="text-sm font-medium text-foreground">Trace graph</p>
+              <p className="text-xs text-muted-foreground">
+                Top-down retrieval flow for the selected assistant turn.
+              </p>
+            </div>
+            {graphPane}
+          </div>
+
+        <div>
+        {showGraph ? (
+          <ChatRetrievalInfo
+            retrievalInfo={diagnosticsDebug?.retrievalInfo}
+            retrievalTrace={diagnosticsDebug?.retrievalTrace}
+            selectedStageId={selectedStageId}
+            graphMode
+          />
+        ) : (
+          <ChatRetrievalInfo
+            retrievalInfo={diagnosticsDebug?.retrievalInfo}
+            retrievalTrace={diagnosticsDebug?.retrievalTrace}
+            selectedStageId={undefined}
+          />
+        )}
+        </div>
+        </div>
+      ) : null}
+    </div>
   )
 }

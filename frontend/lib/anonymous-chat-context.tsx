@@ -18,15 +18,18 @@ import {
   type ChatStreamCompletion,
   type ErrorResponse,
   type RetrievalInfo,
+  type RetrievalTrace,
 } from '@/lib/api'
 
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  createdAt: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   retrievalInfo?: RetrievalInfo
+  retrievalTrace?: RetrievalTrace
   status: 'complete' | 'streaming' | 'error'
 }
 
@@ -93,9 +96,11 @@ const toChatMessages = (detail: ChatConversationDetail): ChatMessage[] =>
       id: message.id,
       role: message.role,
       content: message.content,
+      createdAt: message.createdAt,
       citations: message.citations,
       answerSegments: message.answerSegments,
       retrievalInfo: message.debug?.retrievalInfo,
+      retrievalTrace: message.debug?.retrievalTrace,
       status: 'complete' as const,
     }))
 
@@ -183,6 +188,7 @@ export function AnonymousChatProvider({
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
                 retrievalInfo: completion.retrievalInfo,
+                retrievalTrace: completion.retrievalTrace,
                 status: 'complete' as const,
               }
             : message,
@@ -214,6 +220,7 @@ export function AnonymousChatProvider({
                 citations: assistantMessage.citations,
                 answerSegments: assistantMessage.answerSegments,
                 retrievalInfo: assistantMessage.retrievalInfo,
+                retrievalTrace: assistantMessage.retrievalTrace,
                 status: 'complete' as const,
               }
             : message,
@@ -237,10 +244,12 @@ export function AnonymousChatProvider({
         id: crypto.randomUUID(),
         role: 'user',
         content: query,
+        createdAt: new Date().toISOString(),
         status: 'complete',
       }
 
       const assistantMessageId = crypto.randomUUID()
+      const assistantCreatedAt = new Date().toISOString()
 
       setIsLoading(true)
       setMessages((prev) => [
@@ -250,6 +259,7 @@ export function AnonymousChatProvider({
           id: assistantMessageId,
           role: 'assistant',
           content: '',
+          createdAt: assistantCreatedAt,
           status: 'streaming',
         },
       ])

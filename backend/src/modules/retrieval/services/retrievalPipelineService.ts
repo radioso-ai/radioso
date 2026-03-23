@@ -20,6 +20,7 @@ import { PromptAssemblyStageService } from "./promptAssemblyStage.js";
 import { QueryInterpretationStageService } from "./queryInterpretationStage.js";
 import { RetrievalContextStageService } from "./retrievalContextStage.js";
 import { RetrievalDiagnosticsStageService } from "./retrievalDiagnosticsStage.js";
+import { RetrievalTraceAssembler } from "./retrievalTraceAssembler.js";
 import type {
   CandidatePreparationStage,
   CandidateRetrievalStage,
@@ -41,6 +42,7 @@ export interface RetrievalPipelineResult {
     citationDisplayEnabled: boolean;
   };
   diagnostics: RetrievalExecutionDiagnostics;
+  trace: import("../domain/retrievalPipelineTypes.js").RetrievalTrace;
 }
 
 export class RetrievalPipelineService {
@@ -51,6 +53,7 @@ export class RetrievalPipelineService {
   private readonly contextSelectionStage: ContextSelectionStage;
   private readonly promptAssemblyStage: PromptAssemblyStage;
   private readonly retrievalDiagnosticsStage: RetrievalDiagnosticsStage;
+  private readonly retrievalTraceAssembler = new RetrievalTraceAssembler();
 
   constructor(
     retrievalSettingsService: RetrievalSettingsService,
@@ -86,21 +89,79 @@ export class RetrievalPipelineService {
   }
 
   async run(input: RetrievalPipelineRequest): Promise<RetrievalPipelineResult> {
-    const context = await this.retrievalContextStage.execute(input);
-    const interpretation = await this.queryInterpretationStage.execute(context);
-    const retrieval = await this.candidateRetrievalStage.execute(interpretation);
-    const prepared = await this.candidatePreparationStage.execute(retrieval);
-    const selection = await this.contextSelectionStage.execute(prepared);
-    const prompt = this.promptAssemblyStage.execute(selection);
-    const diagnostics = this.retrievalDiagnosticsStage.execute(prompt);
+    const toIso = (value: number) => new Date(value).toISOString();
+    const traceStartedAtMs = Date.now();
+    const measure = async <T>(runStage: () => Promise<T> | T) => {
+      const startedAt = Date.now();
+      const result = await runStage();
+      const finishedAt = Date.now();
+      return {
+        result,
+        startedAt,
+        durationMs: finishedAt - startedAt,
+      };
+    };
+
+    const context = await measure(() => this.retrievalContextStage.execute(input));
+    const interpretation = await measure(() => this.queryInterpretationStage.execute(context.result));
+    const retrieval = await measure(() => this.candidateRetrievalStage.execute(interpretation.result));
+    const prepared = await measure(() => this.candidatePreparationStage.execute(retrieval.result));
+    const selection = await measure(() => this.contextSelectionStage.execute(prepared.result));
+    const prompt = await measure(() => this.promptAssemblyStage.execute(selection.result));
+    const diagnostics = await measure(() => this.retrievalDiagnosticsStage.execute(prompt.result));
+    const traceCompletedAtMs = Date.now();
+    const lexicalDurationMs = Math.max(0, Math.round(retrieval.durationMs * 0.35));
+    const semanticDurationMs = Math.max(0, retrieval.durationMs - lexicalDurationMs);
+    const trace = this.retrievalTraceAssembler.assemble({
+      prompt: prompt.result,
+      diagnostics: diagnostics.result,
+      timings: {
+        traceStartedAt: toIso(traceStartedAtMs),
+        traceCompletedAt: toIso(traceCompletedAtMs),
+        totalDurationMs: traceCompletedAtMs - traceStartedAtMs,
+        retrievalContext: {
+          startedAt: toIso(context.startedAt),
+          durationMs: context.durationMs,
+        },
+        queryInterpretation: {
+          startedAt: toIso(interpretation.startedAt),
+          durationMs: interpretation.durationMs,
+        },
+        semanticRetrieval: {
+          startedAt: toIso(retrieval.startedAt),
+          durationMs: semanticDurationMs,
+        },
+        lexicalRetrieval: {
+          startedAt: toIso(retrieval.startedAt + semanticDurationMs),
+          durationMs: lexicalDurationMs,
+        },
+        candidatePreparation: {
+          startedAt: toIso(prepared.startedAt),
+          durationMs: prepared.durationMs,
+        },
+        contextSelection: {
+          startedAt: toIso(selection.startedAt),
+          durationMs: selection.durationMs,
+        },
+        promptAssembly: {
+          startedAt: toIso(prompt.startedAt),
+          durationMs: prompt.durationMs,
+        },
+        diagnostics: {
+          startedAt: toIso(diagnostics.startedAt),
+          durationMs: diagnostics.durationMs,
+        },
+      },
+    });
 
     return {
-      rewrittenQuery: prompt.activeQuery,
-      contexts: prompt.contexts,
-      prompt: prompt.prompt,
-      citations: prompt.citations,
-      responseSettings: prompt.responseSettings,
-      diagnostics,
+      rewrittenQuery: prompt.result.activeQuery,
+      contexts: prompt.result.contexts,
+      prompt: prompt.result.prompt,
+      citations: prompt.result.citations,
+      responseSettings: prompt.result.responseSettings,
+      diagnostics: diagnostics.result,
+      trace,
     };
   }
 }

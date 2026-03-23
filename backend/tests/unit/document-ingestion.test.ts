@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
+import { DocumentSourceContentService } from "../../src/modules/documents/services/documentSourceContentService.js";
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
@@ -10,6 +12,7 @@ import { defaultIngestionSettings } from "../../src/modules/settings/domain/inge
 import {
   createAuditService,
   InMemoryChunkRepository,
+  InMemoryDocumentStorage,
   InMemoryDocumentProcessingJobRepository,
   InMemoryDocumentRepository,
 } from "../support/fakes.js";
@@ -215,6 +218,55 @@ describe("document ingestion", () => {
     expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
   });
 
+  it("rejects inline updates for imported documents", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const auditService = createAuditService();
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+
+    const imported = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Imported",
+      sourceContent: "Parsed content",
+      markdownContent: "Parsed content",
+      status: "ready",
+      sourceKind: "uploaded_file",
+      sourceFilename: "import.txt",
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: "bucket",
+      sourceStorageObject: "objects/doc-1",
+      sourceStorageGeneration: "1",
+      sourceSizeBytes: 14,
+    });
+
+    await expect(
+      ingestionService.update({
+        workspaceId: "workspace-1",
+        documentId: imported.id,
+        title: "Edited",
+        content: "Edited content",
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: "Imported documents cannot be updated through the inline document API",
+    });
+
+    const persisted = await documentRepository.findByIdAndWorkspaceId(imported.id, "workspace-1");
+    expect(persisted?.sourceKind).toBe("uploaded_file");
+    expect(persisted?.sourceStorageObject).toBe("objects/doc-1");
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.update",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          documentId: imported.id,
+          reason: "Imported documents cannot be updated through the inline document API",
+        }),
+      }),
+    );
+  });
+
   it("propagates document metadata to chunks during processing", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
@@ -368,6 +420,74 @@ describe("document ingestion", () => {
     const [document] = await documentRepository.listByWorkspaceId("workspace-1");
     expect(document.status).toBe("failed");
     expect([...jobRepository.items.values()].at(-1)?.status).toBe("failed");
+  });
+
+  it("reprocesses imported documents from the stored original file", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const storage = new InMemoryDocumentStorage();
+    const auditService = createAuditService();
+    const importService = new DocumentImportService(documentRepository, auditService, storage);
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+    const sourceContentService = new DocumentSourceContentService(storage, async ({ buffer }) => ({
+      fileType: "txt",
+      text: buffer.toString("utf8"),
+      markdown: buffer.toString("utf8"),
+      sourceHints: {},
+    }));
+    const processingWorker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      new DocumentProcessingService(
+        documentRepository,
+        chunkRepository,
+        new EmbeddingService({
+          async embedTexts(texts: string[]): Promise<number[][]> {
+            return texts.map(() => [1, 2, 3]);
+          },
+        }),
+        auditService,
+        {
+          async getForWorkspace(workspaceId: string) {
+            return defaultIngestionSettings(workspaceId);
+          },
+        },
+        new ChunkingStrategyRegistry([fixedWindowStrategy]),
+        sourceContentService,
+      ),
+      auditService,
+      createLogger("silent"),
+    );
+
+    const imported = await importService.importDocument({
+      workspaceId: "workspace-1",
+      filename: "notes.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("First imported content"),
+    });
+
+    expect(await processingWorker.runOnce()).toBe(true);
+    expect(chunkRepository.items.get(imported.documentId)?.[0]?.content).toContain("First imported content");
+
+    const document = await documentRepository.findByIdAndWorkspaceId(imported.documentId, "workspace-1");
+    expect(document?.sourceStorageObject).toBeTruthy();
+    storage.objects.set(document!.sourceStorageObject!, {
+      buffer: Buffer.from("Second imported content"),
+      generation: document?.sourceStorageGeneration ?? "2",
+      sizeBytes: 23,
+    });
+
+    await ingestionService.reprocess({
+      workspaceId: "workspace-1",
+      documentId: imported.documentId,
+    });
+    expect(await processingWorker.runOnce()).toBe(true);
+
+    const current = await documentRepository.findByIdAndWorkspaceId(imported.documentId, "workspace-1");
+    expect(current?.sourceContent).toBe("Second imported content");
+    expect(chunkRepository.items.get(imported.documentId)?.[0]?.content).toContain("Second imported content");
   });
 
   it("does not downgrade a ready document during worker startup recovery", async () => {

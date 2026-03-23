@@ -10,8 +10,10 @@ import { ChatService, type ChatGateway } from "../../src/modules/chat/services/c
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
+import { DocumentSourceContentService } from "../../src/modules/documents/services/documentSourceContentService.js";
 import { WorkspaceIngestionReprocessService } from "../../src/modules/documents/services/workspaceIngestionReprocessService.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
@@ -44,6 +46,7 @@ import {
   InMemoryChunkRepository,
   InMemoryConversationRepository,
   InMemoryDocumentRepository,
+  InMemoryDocumentStorage,
   InMemoryDocumentProcessingJobRepository,
   InMemoryIngestionSettingsRepository,
   InMemoryMessageRepository,
@@ -65,6 +68,8 @@ export const createTestEnv = (): Env => ({
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
   SESSION_TTL_HOURS: 168,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
+  DOCUMENT_STORAGE_BUCKET: "test-document-imports",
+  DOCUMENT_UPLOAD_MAX_BYTES: 10 * 1024 * 1024,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
 });
 
@@ -97,6 +102,7 @@ export const createTestDependencies = (overrides: {
   const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
   documentRepository.setJobRepository(documentProcessingJobRepository);
   const chunkRepository = new InMemoryChunkRepository(documentRepository);
+  const documentStorage = new InMemoryDocumentStorage();
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
   const embeddingGateway: EmbeddingGateway = {
@@ -248,6 +254,7 @@ export const createTestDependencies = (overrides: {
   const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
   const ingestionSettingsService = new IngestionSettingsService(ingestionSettingsRepository, auditService);
   const retrievalSettingsService = new RetrievalSettingsService(retrievalSettingsRepository, auditService);
+  const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingService = new DocumentProcessingService(
     documentRepository,
     chunkRepository,
@@ -255,6 +262,7 @@ export const createTestDependencies = (overrides: {
     auditService,
     ingestionSettingsService,
     chunkingStrategyRegistry,
+    documentSourceContentService,
   );
   const documentProcessingWorker = new DocumentProcessingWorker(
     documentRepository,
@@ -267,7 +275,17 @@ export const createTestDependencies = (overrides: {
     documentRepository,
     auditService,
   );
+  const documentImportService = new DocumentImportService(
+    documentRepository,
+    auditService,
+    documentStorage,
+  );
   const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
+  const documentDeletionService = new DocumentDeletionService(
+    documentRepository,
+    documentStorage,
+    auditService,
+  );
   const drainDocumentProcessingQueue = async () => {
     for (let iteration = 0; iteration < 20; iteration += 1) {
       const processed = await documentProcessingWorker.runOnce();
@@ -349,45 +367,43 @@ export const createTestDependencies = (overrides: {
   const connectorDb = new InMemoryConnectorDatabase();
 
   const dependencies: AppDependencies = {
+    env,
+    logger: createLogger("silent"),
+    auditService,
+    authService: new AuthService({
       env,
-      logger: createLogger("silent"),
       auditService,
-      authService: new AuthService({
-        env,
-        auditService,
-        accountRepository,
-        sessionRepository,
-        workspaceTokenRepository,
-        workspaceService,
-      }),
+      accountRepository,
+      sessionRepository,
+      workspaceTokenRepository,
       workspaceService,
-      ingestionSettingsService,
-      retrievalSettingsService,
-      documentIngestionService,
-      workspaceIngestionReprocessService,
-      documentProcessingWorker,
-      documentDeletionService: new DocumentDeletionService(
-        documentRepository,
-        auditService,
-      ),
-      chatService: new ChatService(
-        conversationRepository,
-        messageRepository,
-        retrievalPipeline,
-        chatGateway,
-        auditService,
-      ),
-      chatHistoryService: new ChatHistoryService(
-        conversationRepository,
-        messageRepository,
-        auditEventRepository,
-      ),
-      workspaceRepository,
+    }),
+    workspaceService,
+    ingestionSettingsService,
+    retrievalSettingsService,
+    documentIngestionService,
+    documentImportService,
+    workspaceIngestionReprocessService,
+    documentProcessingWorker,
+    documentDeletionService,
+    chatService: new ChatService(
       conversationRepository,
       messageRepository,
-      connectorRegistry,
-      connectorDb: connectorDb as any,
-    };
+      retrievalPipeline,
+      chatGateway,
+      auditService,
+    ),
+    chatHistoryService: new ChatHistoryService(
+      conversationRepository,
+      messageRepository,
+      auditEventRepository,
+    ),
+    workspaceRepository,
+    conversationRepository,
+    messageRepository,
+    connectorRegistry,
+    connectorDb: connectorDb as any,
+  };
 
   void connectorRegistry.initializeAll({
     db: connectorDb as any,

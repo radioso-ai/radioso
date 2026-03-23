@@ -351,6 +351,50 @@ export class DocumentRepository implements DocumentRepositoryPort {
     });
   }
 
+  async requeueAllEligibleAndQueue(workspaceId: string): Promise<{ queuedDocumentCount: number; skippedDocumentCount: number }> {
+    return this.database.withTransaction(async (client) => {
+      const countsResult = await client.query<{ total_count: string; skipped_count: string }>(
+        `SELECT COUNT(*)::text AS total_count,
+                COUNT(*) FILTER (WHERE status IN ('queued', 'processing'))::text AS skipped_count
+         FROM documents
+         WHERE workspace_id = $1`,
+        [workspaceId],
+      );
+      const counts = countsResult.rows[0];
+
+      const queuedRows = (
+        await client.query<DocumentRow>(
+          `UPDATE documents
+           SET status = 'queued',
+               revision = revision + 1,
+               failed_at = NULL,
+               failure_reason = NULL,
+               updated_at = NOW()
+           WHERE workspace_id = $1
+             AND status NOT IN ('queued', 'processing')
+           RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
+          [workspaceId],
+        )
+      ).rows;
+
+      for (const documentRow of queuedRows) {
+        await client.query(
+          `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
+           VALUES ($1, $2, $3, $4, 'queued')`,
+          [randomUUID(), documentRow.id, workspaceId, documentRow.revision],
+        );
+      }
+
+      const totalCount = Number(counts?.total_count ?? "0");
+      const skippedByStatus = Number(counts?.skipped_count ?? "0");
+
+      return {
+        queuedDocumentCount: queuedRows.length,
+        skippedDocumentCount: Math.max(skippedByStatus, totalCount - queuedRows.length),
+      };
+    });
+  }
+
   async setStatus(input: {
     documentId: string;
     workspaceId: string;

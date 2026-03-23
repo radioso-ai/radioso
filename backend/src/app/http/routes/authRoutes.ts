@@ -4,12 +4,12 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { validateBody } from "../middleware/validate.js";
 
-const registerSchema = z.object({
+export const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
 });
 
-const loginSchema = z.object({
+export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });

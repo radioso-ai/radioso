@@ -1,8 +1,8 @@
 const API_BASE = `${process.env.NEXT_PUBLIC_API_BASE_PATH ?? "/backend/api/v1"}`;
 const STREAMING_API_PATH = '/api/chat/stream'
-const API_TOKEN_STORAGE_KEY = "hivec.apiToken";
-const WORKSPACE_TOKENS_STORAGE_KEY = "hivec.workspaceTokens";
-const ACTIVE_WORKSPACE_STORAGE_KEY = "hivec.activeWorkspaceId";
+const API_TOKEN_STORAGE_KEY = "radioso.apiToken";
+const WORKSPACE_TOKENS_STORAGE_KEY = "radioso.workspaceTokens";
+const ACTIVE_WORKSPACE_STORAGE_KEY = "radioso.activeWorkspaceId";
 
 const getStoredApiToken = (): string | null => {
   if (typeof window === "undefined") {
@@ -207,9 +207,26 @@ export interface RetrievalSettings {
   rerankTopK: number
   warmthLevel: number
   citationDisplayEnabled: boolean
-  chunkingStrategy: 'fixed_window' | 'structured_semantic'
   attributeControls: AttributeFamilyControl[]
   customInstruction: string
+}
+
+export interface IngestionSettings {
+  workspaceId: string
+  chunkingStrategy: 'fixed_window' | 'structured_semantic'
+  fixedWindowChunkSize: number
+  fixedWindowChunkOverlap: number
+  structuredMinChunkSize: number
+  structuredMaxChunkSize: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WorkspaceIngestionReprocessResponse {
+  workspaceId: string
+  queuedDocumentCount: number
+  skippedDocumentCount: number
+  status: 'queued' | 'noop'
 }
 
 export interface AttributeFamilyControl {
@@ -640,6 +657,31 @@ export const settingsApi = {
     return request<RetrievalSettings>("/settings/retrieval", {
       method: "PUT",
       body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async getIngestionSettings(): Promise<IngestionSettings> {
+    return request<IngestionSettings>("/settings/ingestion", {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async updateIngestionSettings(data: IngestionSettings): Promise<IngestionSettings> {
+    return request<IngestionSettings>("/settings/ingestion", {
+      method: "PUT",
+      body: JSON.stringify({
+        chunkingStrategy: data.chunkingStrategy,
+        fixedWindowChunkSize: data.fixedWindowChunkSize,
+        fixedWindowChunkOverlap: data.fixedWindowChunkOverlap,
+        structuredMinChunkSize: data.structuredMinChunkSize,
+        structuredMaxChunkSize: data.structuredMaxChunkSize,
+      }),
+    }, { withApiToken: true })
+  },
+
+  async reprocessWorkspaceIngestion(): Promise<WorkspaceIngestionReprocessResponse> {
+    return request<WorkspaceIngestionReprocessResponse>("/settings/ingestion/reprocess", {
+      method: "POST",
     }, { withApiToken: true })
   }
 }

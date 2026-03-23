@@ -1,4 +1,4 @@
-import type OpenAI from "openai";
+import type { EmbeddingClient } from "../../../shared/infra/llm/providerTypes.js";
 import { renderSearchText } from "./searchTextRenderer.js";
 
 export interface EmbeddingGateway {
@@ -11,21 +11,15 @@ export const buildRetrievalText = (input: { title: string; content: string }): s
     content: input.content,
   });
 
-export class OpenAIEmbeddingGateway implements EmbeddingGateway {
-  constructor(
-    private readonly client: OpenAI,
-    private readonly model: string,
-  ) {}
+export class ModelEmbeddingGateway implements EmbeddingGateway {
+  constructor(private readonly client: EmbeddingClient) {}
 
   async embedTexts(texts: string[]): Promise<number[][]> {
-    const response = await this.client.embeddings.create({
-      model: this.model,
-      input: texts,
-    });
-
-    return response.data.map((item) => item.embedding);
+    return this.client.embedTexts(texts);
   }
 }
+
+export class OpenAIEmbeddingGateway extends ModelEmbeddingGateway {}
 
 export class EmbeddingService {
   constructor(private readonly gateway: EmbeddingGateway) {}

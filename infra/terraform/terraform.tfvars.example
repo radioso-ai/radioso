@@ -9,8 +9,8 @@ project_id = "your-gcp-project-id"
 # Optional overrides (defaults shown)
 # region                  = "us-central1"
 # deploy_services         = false
-# backend_image           = "us-central1-docker.pkg.dev/your-project/hivec/backend:latest"
-# frontend_image          = "us-central1-docker.pkg.dev/your-project/hivec/frontend:latest"
+# backend_image           = "us-central1-docker.pkg.dev/your-project/radioso/backend:latest"
+# frontend_image          = "us-central1-docker.pkg.dev/your-project/radioso/frontend:latest"
 # db_tier                 = "db-f1-micro"
 # db_deletion_protection  = false
 # backend_min_instances   = 0
@@ -22,3 +22,4 @@ project_id = "your-gcp-project-id"
 # openai_vector_model     = "text-embedding-3-small"
 # session_ttl_hours       = 168
 # connector_public_base_url = "https://your-backend-url"
+# public_chat_base_url    = "https://your-frontend-url/chat"

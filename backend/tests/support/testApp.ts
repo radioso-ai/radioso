@@ -14,6 +14,7 @@ import { DocumentImportService } from "../../src/modules/documents/services/docu
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
 import { DocumentSourceContentService } from "../../src/modules/documents/services/documentSourceContentService.js";
+import { WorkspaceIngestionReprocessService } from "../../src/modules/documents/services/workspaceIngestionReprocessService.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { StructuredSemanticChunkingStrategy, type ChunkingSimilarityPort } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
@@ -28,6 +29,7 @@ import { RerankService, type RerankGateway } from "../../src/modules/retrieval/s
 import { RetrievalPipelineService } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
+import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
@@ -46,6 +48,7 @@ import {
   InMemoryDocumentRepository,
   InMemoryDocumentStorage,
   InMemoryDocumentProcessingJobRepository,
+  InMemoryIngestionSettingsRepository,
   InMemoryMessageRepository,
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
@@ -60,7 +63,8 @@ export const createTestEnv = (): Env => ({
   OPENAI_API_KEY: "test-key",
   OPENAI_CHAT_MODEL: "gpt-5-mini",
   OPENAI_VECTOR_MODEL: "text-embedding-3-small",
-  SESSION_COOKIE_NAME: "hivec_session",
+  LLM_PROVIDER: "openai",
+  SESSION_COOKIE_NAME: "radioso_session",
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
   SESSION_TTL_HOURS: 168,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
@@ -70,6 +74,7 @@ export const createTestEnv = (): Env => ({
 });
 
 interface TestRepositories {
+  ingestionSettingsRepository: InMemoryIngestionSettingsRepository;
   retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
   documentRepository: InMemoryDocumentRepository;
   chunkRepository: InMemoryChunkRepository;
@@ -91,6 +96,7 @@ export const createTestDependencies = (overrides: {
   const accountRepository = new InMemoryAccountRepository();
   const sessionRepository = new InMemorySessionRepository();
   const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
+  const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
   const documentRepository = new InMemoryDocumentRepository();
   const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
@@ -246,6 +252,7 @@ export const createTestDependencies = (overrides: {
     },
   };
   const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
+  const ingestionSettingsService = new IngestionSettingsService(ingestionSettingsRepository, auditService);
   const retrievalSettingsService = new RetrievalSettingsService(retrievalSettingsRepository, auditService);
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingService = new DocumentProcessingService(
@@ -253,7 +260,7 @@ export const createTestDependencies = (overrides: {
     chunkRepository,
     embeddingService,
     auditService,
-    retrievalSettingsService,
+    ingestionSettingsService,
     chunkingStrategyRegistry,
     documentSourceContentService,
   );
@@ -273,6 +280,7 @@ export const createTestDependencies = (overrides: {
     auditService,
     documentStorage,
   );
+  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
   const documentDeletionService = new DocumentDeletionService(
     documentRepository,
     documentStorage,
@@ -301,6 +309,12 @@ export const createTestDependencies = (overrides: {
   const originalReprocess = documentIngestionService.reprocess.bind(documentIngestionService);
   documentIngestionService.reprocess = async (input) => {
     const result = await originalReprocess(input);
+    await drainDocumentProcessingQueue();
+    return result;
+  };
+  const originalWorkspaceReprocess = workspaceIngestionReprocessService.reprocessWorkspace.bind(workspaceIngestionReprocessService);
+  workspaceIngestionReprocessService.reprocessWorkspace = async (workspaceId) => {
+    const result = await originalWorkspaceReprocess(workspaceId);
     await drainDocumentProcessingQueue();
     return result;
   };
@@ -353,41 +367,43 @@ export const createTestDependencies = (overrides: {
   const connectorDb = new InMemoryConnectorDatabase();
 
   const dependencies: AppDependencies = {
+    env,
+    logger: createLogger("silent"),
+    auditService,
+    authService: new AuthService({
       env,
-      logger: createLogger("silent"),
       auditService,
-      authService: new AuthService({
-        env,
-        auditService,
-        accountRepository,
-        sessionRepository,
-        workspaceTokenRepository,
-        workspaceService,
-      }),
+      accountRepository,
+      sessionRepository,
+      workspaceTokenRepository,
+      workspaceService,
+    }),
     workspaceService,
+    ingestionSettingsService,
     retrievalSettingsService,
     documentIngestionService,
     documentImportService,
+    workspaceIngestionReprocessService,
     documentProcessingWorker,
     documentDeletionService,
-      chatService: new ChatService(
-        conversationRepository,
-        messageRepository,
-        retrievalPipeline,
-        chatGateway,
-        auditService,
-      ),
-      chatHistoryService: new ChatHistoryService(
-        conversationRepository,
-        messageRepository,
-        auditEventRepository,
-      ),
-      workspaceRepository,
+    chatService: new ChatService(
       conversationRepository,
       messageRepository,
-      connectorRegistry,
-      connectorDb: connectorDb as any,
-    };
+      retrievalPipeline,
+      chatGateway,
+      auditService,
+    ),
+    chatHistoryService: new ChatHistoryService(
+      conversationRepository,
+      messageRepository,
+      auditEventRepository,
+    ),
+    workspaceRepository,
+    conversationRepository,
+    messageRepository,
+    connectorRegistry,
+    connectorDb: connectorDb as any,
+  };
 
   void connectorRegistry.initializeAll({
     db: connectorDb as any,
@@ -398,6 +414,7 @@ export const createTestDependencies = (overrides: {
   return {
     dependencies,
     repositories: {
+      ingestionSettingsRepository,
       retrievalSettingsRepository,
       documentRepository,
       chunkRepository,

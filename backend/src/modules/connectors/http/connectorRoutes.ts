@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../../app/server/types.js";
 import { requireApiToken } from "../../../app/http/middleware/requireApiToken.js";
-import type { ConnectorDetail, ConnectorSummary, ConnectorValidationIssue } from "@hivec/connector-api";
+import type { ConnectorDetail, ConnectorSummary, ConnectorValidationIssue } from "@radioso/connector-api";
 
 const configUpdateSchema = z.object({
   config: z.record(z.union([z.string(), z.number(), z.boolean()])),

@@ -9,7 +9,7 @@
 
 **Purpose**: Align feature artifacts with the approved plan before code changes
 
-- [x] T001 Create feature task breakdown in /Users/dm/code/hivec-rewrite-guardrails/specs/013-rewrite-guardrails/tasks.md
+- [x] T001 Create feature task breakdown in /Users/dm/code/radioso-rewrite-guardrails/specs/013-rewrite-guardrails/tasks.md
 
 ---
 
@@ -17,8 +17,8 @@
 
 **Purpose**: Establish shared retrieval-domain seams before story-specific behavior changes
 
-- [x] T002 Create structured rewrite and continuity decision types in /Users/dm/code/hivec-rewrite-guardrails/backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts
-- [x] T003 Create rewrite validation policy helpers in /Users/dm/code/hivec-rewrite-guardrails/backend/src/modules/retrieval/services/
+- [x] T002 Create structured rewrite and continuity decision types in /Users/dm/code/radioso-rewrite-guardrails/backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts
+- [x] T003 Create rewrite validation policy helpers in /Users/dm/code/radioso-rewrite-guardrails/backend/src/modules/retrieval/services/
 
 **Checkpoint**: Shared types and seams are ready for story implementation
 
@@ -32,14 +32,14 @@
 
 ### Tests for User Story 1
 
-- [x] T004 [P] [US1] Add query rewrite unit tests in /Users/dm/code/hivec-rewrite-guardrails/backend/tests/unit/chat-retrieval.domain.test.ts
-- [x] T005 [P] [US1] Add retrieval pipeline validation tests in /Users/dm/code/hivec-rewrite-guardrails/backend/tests/unit/edge-cases.test.ts
+- [x] T004 [P] [US1] Add query rewrite unit tests in /Users/dm/code/radioso-rewrite-guardrails/backend/tests/unit/chat-retrieval.domain.test.ts
+- [x] T005 [P] [US1] Add retrieval pipeline validation tests in /Users/dm/code/radioso-rewrite-guardrails/backend/tests/unit/edge-cases.test.ts
 
 ### Implementation for User Story 1
 
-- [x] T006 [US1] Refactor rewrite proposal generation and normalization in /Users/dm/code/hivec-rewrite-guardrails/backend/src/modules/retrieval/services/queryRewriteService.ts
-- [x] T007 [US1] Implement rewrite eligibility, hallucination guard, and disagreement validation in /Users/dm/code/hivec-rewrite-guardrails/backend/src/modules/retrieval/services/
-- [x] T008 [US1] Update retrieval orchestration to honor validation decisions in /Users/dm/code/hivec-rewrite-guardrails/backend/src/modules/retrieval/services/retrievalPipelineService.ts
+- [x] T006 [US1] Refactor rewrite proposal generation and normalization in /Users/dm/code/radioso-rewrite-guardrails/backend/src/modules/retrieval/services/queryRewriteService.ts
+- [x] T007 [US1] Implement rewrite eligibility, hallucination guard, and disagreement validation in /Users/dm/code/radioso-rewrite-guardrails/backend/src/modules/retrieval/services/
+- [x] T008 [US1] Update retrieval orchestration to honor validation decisions in /Users/dm/code/radioso-rewrite-guardrails/backend/src/modules/retrieval/services/retrievalPipelineService.ts
 
 ---
 
@@ -51,13 +51,13 @@
 
 ### Tests for User Story 2
 
-- [x] T009 [P] [US2] Add ambiguity and relation handling tests in /Users/dm/code/hivec-rewrite-guardrails/backend/tests/unit/chat-retrieval.domain.test.ts
-- [x] T010 [P] [US2] Add integration-style ambiguity regression tests in /Users/dm/code/hivec-rewrite-guardrails/backend/tests/integration/chat.integration.test.ts
+- [x] T009 [P] [US2] Add ambiguity and relation handling tests in /Users/dm/code/radioso-rewrite-guardrails/backend/tests/unit/chat-retrieval.domain.test.ts
+- [x] T010 [P] [US2] Add integration-style ambiguity regression tests in /Users/dm/code/radioso-rewrite-guardrails/backend/tests/integration/chat.integration.test.ts
 
 ### Implementation for User Story 2
 
-- [x] T011 [US2] Extend rewrite proposal handling for turn kind, related entities, and explicit-subject precedence in /Users/dm/code/hivec-rewrite-guardrails/backend/src/modules/retrieval/services/queryRewriteService.ts
-- [x] T012 [US2] Apply ambiguity-preserving continuity decisions in /Users/dm/code/hivec-rewrite-guardrails/backend/src/modules/retrieval/services/retrievalPipelineService.ts
+- [x] T011 [US2] Extend rewrite proposal handling for turn kind, related entities, and explicit-subject precedence in /Users/dm/code/radioso-rewrite-guardrails/backend/src/modules/retrieval/services/queryRewriteService.ts
+- [x] T012 [US2] Apply ambiguity-preserving continuity decisions in /Users/dm/code/radioso-rewrite-guardrails/backend/src/modules/retrieval/services/retrievalPipelineService.ts
 
 ---
 
@@ -69,22 +69,22 @@
 
 ### Tests for User Story 3
 
-- [x] T013 [P] [US3] Add retrieval diagnostics coverage in /Users/dm/code/hivec-rewrite-guardrails/backend/tests/integration/chat.integration.test.ts
-- [x] T014 [P] [US3] Add retrieval info presenter coverage in /Users/dm/code/hivec-rewrite-guardrails/backend/tests/unit/hybrid-retrieval-info.test.ts
+- [x] T013 [P] [US3] Add retrieval diagnostics coverage in /Users/dm/code/radioso-rewrite-guardrails/backend/tests/integration/chat.integration.test.ts
+- [x] T014 [P] [US3] Add retrieval info presenter coverage in /Users/dm/code/radioso-rewrite-guardrails/backend/tests/unit/hybrid-retrieval-info.test.ts
 
 ### Implementation for User Story 3
 
-- [x] T015 [US3] Extend telemetry diagnostics shape in /Users/dm/code/hivec-rewrite-guardrails/backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts
-- [x] T016 [US3] Emit continuity diagnostics in /Users/dm/code/hivec-rewrite-guardrails/backend/src/modules/retrieval/services/retrievalExecutionTelemetryService.ts
-- [x] T017 [US3] Present additive rewrite diagnostics in /Users/dm/code/hivec-rewrite-guardrails/backend/src/modules/retrieval/services/retrievalInfoPresenter.ts
+- [x] T015 [US3] Extend telemetry diagnostics shape in /Users/dm/code/radioso-rewrite-guardrails/backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts
+- [x] T016 [US3] Emit continuity diagnostics in /Users/dm/code/radioso-rewrite-guardrails/backend/src/modules/retrieval/services/retrievalExecutionTelemetryService.ts
+- [x] T017 [US3] Present additive rewrite diagnostics in /Users/dm/code/radioso-rewrite-guardrails/backend/src/modules/retrieval/services/retrievalInfoPresenter.ts
 
 ---
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [x] T018 Update test doubles for structured rewrite output in /Users/dm/code/hivec-rewrite-guardrails/backend/tests/support/testApp.ts
-- [x] T019 Run targeted Vitest coverage for retrieval rewrite, pipeline, and chat diagnostics from /Users/dm/code/hivec-rewrite-guardrails/backend/tests/
-- [x] T020 Mark completed tasks and summarize validation evidence in /Users/dm/code/hivec-rewrite-guardrails/specs/013-rewrite-guardrails/tasks.md
+- [x] T018 Update test doubles for structured rewrite output in /Users/dm/code/radioso-rewrite-guardrails/backend/tests/support/testApp.ts
+- [x] T019 Run targeted Vitest coverage for retrieval rewrite, pipeline, and chat diagnostics from /Users/dm/code/radioso-rewrite-guardrails/backend/tests/
+- [x] T020 Mark completed tasks and summarize validation evidence in /Users/dm/code/radioso-rewrite-guardrails/specs/013-rewrite-guardrails/tasks.md
 
 ---
 
@@ -92,11 +92,11 @@
 
 **Purpose**: Record the implementation changes that deviated from the earlier dual-retrieval plan
 
-- [x] T021 Simplify retrieval orchestration to one active semantic query path in /Users/dm/code/hivec/backend/src/modules/retrieval/services/retrievalPipelineService.ts
-- [x] T022 Add a dedicated fast rerank model configuration in /Users/dm/code/hivec/backend/src/app/config/env.ts and /Users/dm/code/hivec/backend/src/app/server/dependencies.ts
-- [x] T023 Tighten rewrite prompt rules against meta-language and checklist expansions in /Users/dm/code/hivec/backend/src/modules/retrieval/services/queryRewriteService.ts
-- [x] T024 Add bounded carry-forward rewrite context from the previous assistant answer in /Users/dm/code/hivec/backend/src/modules/retrieval/services/conversationContextService.ts
-- [x] T025 Update rewrite and retrieval regression tests to match the shipped behavior in /Users/dm/code/hivec/backend/tests/
+- [x] T021 Simplify retrieval orchestration to one active semantic query path in /Users/dm/code/radioso/backend/src/modules/retrieval/services/retrievalPipelineService.ts
+- [x] T022 Add a dedicated fast rerank model configuration in /Users/dm/code/radioso/backend/src/app/config/env.ts and /Users/dm/code/radioso/backend/src/app/server/dependencies.ts
+- [x] T023 Tighten rewrite prompt rules against meta-language and checklist expansions in /Users/dm/code/radioso/backend/src/modules/retrieval/services/queryRewriteService.ts
+- [x] T024 Add bounded carry-forward rewrite context from the previous assistant answer in /Users/dm/code/radioso/backend/src/modules/retrieval/services/conversationContextService.ts
+- [x] T025 Update rewrite and retrieval regression tests to match the shipped behavior in /Users/dm/code/radioso/backend/tests/
 
 ## Dependencies & Execution Order
 

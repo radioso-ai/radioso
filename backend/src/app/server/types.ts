@@ -4,6 +4,8 @@ import type { DocumentDeletionService } from "../../modules/documents/services/d
 import type { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
 import type { DocumentImportService } from "../../modules/documents/services/documentImportService.js";
 import type { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
+import type { WorkspaceIngestionReprocessService } from "../../modules/documents/services/workspaceIngestionReprocessService.js";
+import type { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import type { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { AuditService } from "../../modules/audit/services/auditService.js";
@@ -22,9 +24,11 @@ export interface AppDependencies {
   authService: AuthService;
   auditService: AuditService;
   workspaceService: WorkspaceService;
+  ingestionSettingsService: IngestionSettingsService;
   retrievalSettingsService: RetrievalSettingsService;
   documentIngestionService: DocumentIngestionService;
   documentImportService: DocumentImportService;
+  workspaceIngestionReprocessService: WorkspaceIngestionReprocessService;
   documentProcessingWorker: DocumentProcessingWorker;
   documentDeletionService: DocumentDeletionService;
   chatService: ChatService;

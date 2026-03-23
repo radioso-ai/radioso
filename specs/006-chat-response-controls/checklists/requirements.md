@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-03-14
-**Feature**: [/Users/dm/code/hivec/specs/006-chat-response-controls/spec.md](/Users/dm/code/hivec/specs/006-chat-response-controls/spec.md)
+**Feature**: [/Users/dm/code/radioso/specs/006-chat-response-controls/spec.md](/Users/dm/code/radioso/specs/006-chat-response-controls/spec.md)
 
 ## Content Quality
 

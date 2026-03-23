@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ConfigFieldDefinition, ConnectorContext, ConnectorPlugin } from "@hivec/connector-api";
+import type { ConfigFieldDefinition, ConnectorContext, ConnectorPlugin } from "@radioso/connector-api";
 import { ConnectorRegistry } from "../../../src/modules/connectors/services/connectorRegistry.js";
 
 /** Minimal fake plugin for testing the registry. */

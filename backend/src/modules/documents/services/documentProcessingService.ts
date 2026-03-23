@@ -11,7 +11,7 @@ import { normalizeStructuredAttributes } from "../../retrieval/services/attribut
 import { renderSearchText } from "../../retrieval/services/searchTextRenderer.js";
 import { extractRawStructuredAttributes } from "../../retrieval/services/structuredAttributeExtractor.js";
 import { deriveChunkSection, deriveDocumentSubject } from "../../retrieval/services/subjectIdentityService.js";
-import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSettings.js";
+import type { IngestionSettingsRecord } from "../../settings/domain/ingestionSettings.js";
 import type {
   ChunkRecord,
   ChunkRepositoryPort,
@@ -21,8 +21,8 @@ import { type EmbeddingService } from "../../retrieval/services/embeddingService
 import type { ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
 
-export interface RetrievalSettingsReaderPort {
-  getForWorkspace(workspaceId: string): Promise<RetrievalSettingsRecord>;
+export interface IngestionSettingsReaderPort {
+  getForWorkspace(workspaceId: string): Promise<IngestionSettingsRecord>;
 }
 
 export interface ChunkingStrategyRegistryPort {
@@ -68,7 +68,7 @@ export class DocumentProcessingService {
     private readonly chunkRepository: ChunkRepositoryPort,
     private readonly embeddingService: EmbeddingService,
     private readonly auditService: AuditService,
-    private readonly retrievalSettingsService: RetrievalSettingsReaderPort,
+    private readonly ingestionSettingsService: IngestionSettingsReaderPort,
     private readonly chunkingStrategyRegistry: ChunkingStrategyRegistryPort,
     private readonly documentSourceContentService: DocumentSourceContentServicePort = inlineDocumentSourceContentService,
   ) {}
@@ -109,11 +109,17 @@ export class DocumentProcessingService {
       title: documentWithContent.title,
       content: normalizeMarkdown(documentWithContent.sourceContent),
     });
-    const settings = await this.retrievalSettingsService.getForWorkspace(job.workspaceId);
+    const settings = await this.ingestionSettingsService.getForWorkspace(job.workspaceId);
     const chunkingStrategy = this.chunkingStrategyRegistry.get(settings.chunkingStrategy);
     const chunks = await chunkingStrategy.chunk({
       title: documentWithContent.title,
       content: documentWithContent.markdownContent,
+      config: {
+        fixedWindowChunkSize: settings.fixedWindowChunkSize,
+        fixedWindowChunkOverlap: settings.fixedWindowChunkOverlap,
+        structuredMinChunkSize: settings.structuredMinChunkSize,
+        structuredMaxChunkSize: settings.structuredMaxChunkSize,
+      },
     });
     const enrichedChunks = chunks.map((chunk) => {
       const structuredAttributes = normalizeStructuredAttributes(extractRawStructuredAttributes(chunk.content));

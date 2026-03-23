@@ -43,7 +43,7 @@ resource "google_cloud_run_v2_service" "backend" {
       }
       env {
         name  = "DATABASE_URL"
-        value = "postgres://${google_sql_user.hivec.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.hivec.name}"
+        value = "postgres://${google_sql_user.radioso.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.radioso.name}"
       }
       env {
         name  = "OPENAI_CHAT_MODEL"
@@ -59,7 +59,7 @@ resource "google_cloud_run_v2_service" "backend" {
       }
       env {
         name  = "SESSION_COOKIE_NAME"
-        value = "hivec_session"
+        value = "radioso_session"
       }
       env {
         name  = "SESSION_TTL_HOURS"
@@ -69,6 +69,13 @@ resource "google_cloud_run_v2_service" "backend" {
         for_each = var.connector_public_base_url == null ? [] : [var.connector_public_base_url]
         content {
           name  = "CONNECTOR_PUBLIC_BASE_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.public_chat_base_url == null ? [] : [var.public_chat_base_url]
+        content {
+          name  = "PUBLIC_CHAT_BASE_URL"
           value = env.value
         }
       }

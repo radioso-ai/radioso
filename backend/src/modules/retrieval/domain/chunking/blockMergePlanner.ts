@@ -10,8 +10,8 @@ export interface BlockMergePlanInput {
   similarityThreshold?: number;
 }
 
-const DEFAULT_MIN_CHUNK_TOKENS = 24;
-const DEFAULT_MAX_CHUNK_TOKENS = 220;
+export const DEFAULT_MIN_CHUNK_TOKENS = 24;
+export const DEFAULT_MAX_CHUNK_TOKENS = 220;
 const DEFAULT_SIMILARITY_THRESHOLD = 0.82;
 
 export const planStructuredChunks = ({

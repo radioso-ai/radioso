@@ -8,14 +8,19 @@ import {
 const TARGET_CHUNK_SIZE = 800;
 const CHUNK_OVERLAP = 120;
 
-export const chunkFixedWindowMarkdown = (content: string): ChunkOutput[] => {
+export const chunkFixedWindowMarkdown = (
+  content: string,
+  options: { chunkSize?: number; chunkOverlap?: number } = {},
+): ChunkOutput[] => {
+  const chunkSize = options.chunkSize ?? TARGET_CHUNK_SIZE;
+  const chunkOverlap = options.chunkOverlap ?? CHUNK_OVERLAP;
   const normalized = normalizeMarkdown(content);
 
   if (normalized.length === 0) {
     return [];
   }
 
-  if (normalized.length <= TARGET_CHUNK_SIZE) {
+  if (normalized.length <= chunkSize) {
     return [
       {
         chunkIndex: 0,
@@ -31,7 +36,7 @@ export const chunkFixedWindowMarkdown = (content: string): ChunkOutput[] => {
   let chunkIndex = 0;
 
   while (cursor < normalized.length) {
-    const next = Math.min(cursor + TARGET_CHUNK_SIZE, normalized.length);
+    const next = Math.min(cursor + chunkSize, normalized.length);
     const slice = normalized.slice(cursor, next).trim();
 
     if (slice.length > 0) {
@@ -48,7 +53,7 @@ export const chunkFixedWindowMarkdown = (content: string): ChunkOutput[] => {
       break;
     }
 
-    cursor = Math.max(0, next - CHUNK_OVERLAP);
+    cursor = Math.max(0, next - chunkOverlap);
   }
 
   return chunks;
@@ -58,6 +63,9 @@ export class FixedWindowChunkingStrategy implements ChunkingStrategy {
   readonly id = "fixed_window" as const;
 
   async chunk(request: ChunkingRequest): Promise<ChunkOutput[]> {
-    return chunkFixedWindowMarkdown(request.content);
+    return chunkFixedWindowMarkdown(request.content, {
+      chunkSize: request.config.fixedWindowChunkSize,
+      chunkOverlap: request.config.fixedWindowChunkOverlap,
+    });
   }
 }

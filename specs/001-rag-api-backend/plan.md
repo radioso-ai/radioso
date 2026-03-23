@@ -1,7 +1,7 @@
 # Implementation Plan: Modular RAG Backend
 
-**Branch**: `001-rag-api-backend` | **Date**: 2026-03-13 | **Spec**: [/Users/dm/code/hivec/specs/001-rag-api-backend/spec.md](/Users/dm/code/hivec/specs/001-rag-api-backend/spec.md)
-**Input**: Feature specification from `/Users/dm/code/hivec/specs/001-rag-api-backend/spec.md`
+**Branch**: `001-rag-api-backend` | **Date**: 2026-03-13 | **Spec**: [/Users/dm/code/radioso/specs/001-rag-api-backend/spec.md](/Users/dm/code/radioso/specs/001-rag-api-backend/spec.md)
+**Input**: Feature specification from `/Users/dm/code/radioso/specs/001-rag-api-backend/spec.md`
 
 ## Summary
 

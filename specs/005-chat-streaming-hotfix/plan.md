@@ -1,7 +1,7 @@
 # Implementation Plan: Chat Streaming Hotfix
 
-**Branch**: `codex/005-chat-streaming-hotfix` | **Date**: 2026-03-14 | **Spec**: [/tmp/hivec-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/spec.md](/tmp/hivec-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/spec.md)
-**Input**: Feature specification from `/tmp/hivec-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/spec.md`
+**Branch**: `codex/005-chat-streaming-hotfix` | **Date**: 2026-03-14 | **Spec**: [/tmp/radioso-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/spec.md](/tmp/radioso-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/spec.md)
+**Input**: Feature specification from `/tmp/radioso-chat-streaming-hotfix/specs/005-chat-streaming-hotfix/spec.md`
 
 ## Summary
 

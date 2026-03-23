@@ -115,7 +115,7 @@ No constitution violations to justify. This is a greenfield infrastructure addit
    - Serverless VPC connector (for Cloud Run → Cloud SQL)
 5. Create `infra/terraform/database.tf`:
    - Cloud SQL PostgreSQL 16 instance (configurable tier, e.g., `db-f1-micro` for dev, `db-custom-2-7680` for prod)
-   - Database named `hivec`
+   - Database named `radioso`
    - Database user with generated password
    - pgvector extension via `google_sql_database` flags or post-deploy
    - Private IP only (no public IP)

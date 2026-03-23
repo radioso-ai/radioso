@@ -8,7 +8,7 @@ import { DocumentSourceContentService } from "../../src/modules/documents/servic
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
-import { defaultRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
+import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import {
   createAuditService,
   InMemoryChunkRepository,
@@ -84,7 +84,7 @@ describe("document ingestion", () => {
         auditService,
         {
           async getForWorkspace(workspaceId: string) {
-            return defaultRetrievalSettings(workspaceId);
+            return defaultIngestionSettings(workspaceId);
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),
@@ -128,7 +128,7 @@ describe("document ingestion", () => {
         auditService,
         {
           async getForWorkspace(workspaceId: string) {
-            return defaultRetrievalSettings(workspaceId);
+            return defaultIngestionSettings(workspaceId);
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),
@@ -202,7 +202,7 @@ describe("document ingestion", () => {
       auditService,
       {
         async getForWorkspace(workspaceId: string) {
-          return defaultRetrievalSettings(workspaceId);
+          return defaultIngestionSettings(workspaceId);
         },
       },
       new ChunkingStrategyRegistry([fixedWindowStrategy]),
@@ -288,7 +288,7 @@ describe("document ingestion", () => {
         auditService,
         {
           async getForWorkspace(workspaceId: string) {
-            return defaultRetrievalSettings(workspaceId);
+            return defaultIngestionSettings(workspaceId);
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),
@@ -398,7 +398,7 @@ describe("document ingestion", () => {
         auditService,
         {
           async getForWorkspace(workspaceId: string) {
-            return defaultRetrievalSettings(workspaceId);
+            return defaultIngestionSettings(workspaceId);
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),
@@ -451,7 +451,7 @@ describe("document ingestion", () => {
         auditService,
         {
           async getForWorkspace(workspaceId: string) {
-            return defaultRetrievalSettings(workspaceId);
+            return defaultIngestionSettings(workspaceId);
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),
@@ -531,7 +531,7 @@ describe("document ingestion", () => {
         auditService,
         {
           async getForWorkspace(workspaceId: string) {
-            return defaultRetrievalSettings(workspaceId);
+            return defaultIngestionSettings(workspaceId);
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),

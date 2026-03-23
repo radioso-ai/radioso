@@ -28,13 +28,13 @@ resource "google_sql_database_instance" "postgres" {
   depends_on = [google_service_networking_connection.private_services]
 }
 
-resource "google_sql_database" "hivec" {
-  name     = "hivec"
+resource "google_sql_database" "radioso" {
+  name     = "radioso"
   instance = google_sql_database_instance.postgres.name
 }
 
-resource "google_sql_user" "hivec" {
-  name     = "hivec"
+resource "google_sql_user" "radioso" {
+  name     = "radioso"
   instance = google_sql_database_instance.postgres.name
   password = random_password.db_password.result
 }

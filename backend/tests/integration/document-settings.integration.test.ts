@@ -11,17 +11,14 @@ describe("document and settings integration", () => {
     const { token } = await issueTestToken(app, "invalid-settings@example.com");
 
     const response = await request(app)
-      .put("/api/v1/settings/retrieval")
+      .put("/api/v1/settings/ingestion")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        queryRewriteEnabled: false,
-        rerankEnabled: false,
-        vectorTopK: 0,
-        similarityThreshold: 0.2,
-        rerankTopK: 5,
-        warmthLevel: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
+        fixedWindowChunkSize: 200,
+        fixedWindowChunkOverlap: 200,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
       });
 
     expect(response.status).toBe(400);
@@ -45,17 +42,14 @@ describe("document and settings integration", () => {
     const authorization = `Bearer ${token}`;
 
     const settings = await request(app)
-      .put("/api/v1/settings/retrieval")
+      .put("/api/v1/settings/ingestion")
       .set("Authorization", authorization)
       .send({
-        queryRewriteEnabled: true,
-        rerankEnabled: false,
-        vectorTopK: 20,
-        similarityThreshold: 0.35,
-        rerankTopK: 5,
-        warmthLevel: 5,
-        citationDisplayEnabled: true,
         chunkingStrategy: "structured_semantic",
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
       });
     const document = await request(app)
       .post("/api/v1/document/")
@@ -91,7 +85,6 @@ describe("document and settings integration", () => {
         rerankTopK: 8,
         warmthLevel: 6,
         citationDisplayEnabled: true,
-        chunkingStrategy: "structured_semantic",
         attributeControls: defaultAttributeControls().map((control) =>
           control.family === "location"
             ? { ...control, enabled: false }
@@ -118,5 +111,43 @@ describe("document and settings integration", () => {
     });
     expect(secondSettings.status).toBe(200);
     expect(secondSettings.body.attributeControls).toEqual(defaultAttributeControls());
+  });
+
+  it("queues eligible workspace documents for reprocessing from ingestion settings", async () => {
+    const { app, repositories } = createTestApp();
+
+    const { token } = await issueTestToken(app, "workspace-reprocess@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const first = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Doc one",
+        content: "Alpha content ".repeat(80),
+      });
+
+    const second = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Doc two",
+        content: "Beta content ".repeat(80),
+      });
+
+    const firstDocument = repositories.documentRepository.items.get(first.body.documentId)!;
+    repositories.documentRepository.items.set(first.body.documentId, {
+      ...firstDocument,
+      status: "processing",
+    });
+
+    const response = await request(app)
+      .post("/api/v1/settings/ingestion/reprocess")
+      .set("Authorization", authorization);
+
+    expect(response.status).toBe(202);
+    expect(response.body.queuedDocumentCount).toBe(1);
+    expect(response.body.skippedDocumentCount).toBe(1);
+    expect(repositories.documentRepository.items.get(second.body.documentId)?.status).toBe("ready");
   });
 });

@@ -10,14 +10,18 @@ This repository is linked to a [v0](https://v0.app) project. You can continue de
 
 ## Getting Started
 
-First, run the development server:
+The default local start command for the full Radioso stack is:
+
+```bash
+./run-dev.sh
+```
+
+That command checks Docker and other local prerequisites, helps create `backend/.env` when needed, and starts the local frontend, backend, and database stack through Docker Compose.
+
+If you only need the standalone frontend development server, run:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.

@@ -60,7 +60,9 @@ export const waitForReadiness = async (options = {}) => {
 export const startComposeStack = async (options = {}) => {
   const spawn = options.spawn ?? spawnInherited;
   const wait = options.wait ?? waitForReadiness;
-  const code = await spawn("docker", [...getComposeArgs(), "up", "--build", "-d"], options.spawnOptions);
+  const result = await spawn("docker", [...getComposeArgs(), "up", "--build", "-d"], options.spawnOptions);
+  const code = typeof result === "number" ? result : result.code;
+  const signal = typeof result === "number" ? null : result.signal;
 
   if (code !== 0) {
     return {
@@ -68,10 +70,22 @@ export const startComposeStack = async (options = {}) => {
       readyServices: [],
       failedServices: ["compose"],
       applicationUrls: [],
-      nextSteps: ["Inspect the compose output above for the failing build or container."],
+      nextSteps: [
+        signal
+          ? `Docker compose exited after receiving ${signal}.`
+          : "Inspect the compose output above for the failing build or container.",
+      ],
       logHint: "docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up --build",
     };
   }
 
   return wait(options.waitOptions);
+};
+
+export const attachComposeStack = async (options = {}) => {
+  const spawn = options.spawn ?? spawnInherited;
+  const result = await spawn("docker", [...getComposeArgs(), "up", "--build"], options.spawnOptions);
+  return typeof result === "number"
+    ? { code: result, signal: null }
+    : result;
 };

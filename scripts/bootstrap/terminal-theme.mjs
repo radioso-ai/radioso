@@ -3,7 +3,8 @@ import { applyColor } from "./support/ansi-capabilities.mjs";
 const palette = {
   title: "1;33",
   accent: "36",
-  prompt: "1;37",
+  brand: "1;37",
+  prompt: "1;97;44",
   helper: "90",
   warning: "1;33",
   error: "1;31",
@@ -12,15 +13,15 @@ const palette = {
 
 export const renderHeader = (ansi) => {
   const plain = [
+    "          \\  |  /",
+    "           .-*-.",
+    "       --- [###] ---",
+    "           `-*-`",
+    "          /  |  \\",
+    "",
     "      .--.            .--.",
     "   .-(    ).      .-(    ).",
     "  (___.__)__)    (___.__)__)",
-    "",
-    "        \\  |  /",
-    "      '. \\ | / .'",
-    "    ---  ☼ SUN  ---",
-    "      .' / | \\ '.",
-    "        /  |  \\",
     "",
     "  Radioso local start",
   ];
@@ -29,20 +30,20 @@ export const renderHeader = (ansi) => {
     return plain.join("\n");
   }
 
+  const sun = [
+    `${applyColor("          \\\\  |  /", palette.title, ansi)}`,
+    `${applyColor("           .-*-.", palette.title, ansi)}`,
+    `${applyColor("       --- [###] ---", palette.title, ansi)}`,
+    `${applyColor("           `-*-`", palette.title, ansi)}`,
+    `${applyColor("          /  |  \\\\", palette.title, ansi)}`,
+  ];
   const clouds = [
     `${applyColor("      .--.            .--.", palette.accent, ansi)}`,
     `${applyColor("   .-(    ).      .-(    ).", palette.accent, ansi)}`,
     `${applyColor("  (___.__)__)    (___.__)__)", palette.accent, ansi)}`,
   ];
-  const sun = [
-    `${applyColor("        \\  |  /", palette.title, ansi)}`,
-    `${applyColor("      '. \\ | / .'", palette.title, ansi)}`,
-    `${applyColor("    ---  ☼ SUN  ---", palette.title, ansi)}`,
-    `${applyColor("      .' / | \\ '.", palette.title, ansi)}`,
-    `${applyColor("        /  |  \\", palette.title, ansi)}`,
-  ];
 
-  return [...clouds, "", ...sun, "", applyColor("  Radioso local start", palette.prompt, ansi)].join("\n");
+  return [...sun, "", ...clouds, "", applyColor("  Radioso local start", palette.brand, ansi)].join("\n");
 };
 
 export const formatMessage = (kind, text, ansi) => {

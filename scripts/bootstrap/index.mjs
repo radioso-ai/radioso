@@ -1,9 +1,8 @@
-#!/usr/bin/env node
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { startComposeStack } from "./compose-runner.mjs";
+import { attachComposeStack, startComposeStack } from "./compose-runner.mjs";
 import { buildEnvValues, renderEnvFile, writeEnvFileAtomic } from "./env-file.mjs";
 import { collectAnswers, planQuestions } from "./prompt-flow.mjs";
 import { detectEnvState, runPreflightChecks } from "./preflight.mjs";
@@ -23,6 +22,15 @@ const resolveGeneratedValues = (existingValues) => ({
   SESSION_COOKIE_SECRET: existingValues.SESSION_COOKIE_SECRET || crypto.randomBytes(24).toString("base64"),
   CONNECTOR_ENCRYPTION_KEY: existingValues.CONNECTOR_ENCRYPTION_KEY || crypto.randomBytes(32).toString("base64"),
 });
+
+const installStdoutGuard = () => {
+  process.stdout.on("error", (error) => {
+    if (error?.code === "EPIPE") {
+      process.exit(0);
+    }
+    throw error;
+  });
+};
 
 const printPreflightResults = (results, ansi) => {
   for (const result of results) {
@@ -56,6 +64,7 @@ const summarizeStartup = (report, ansi) => {
 export const main = async (argv = process.argv.slice(2)) => {
   const ansi = detectAnsiSupport();
   const contract = getEnvContract();
+  const attach = argv.includes("--attach");
   const reconfigure = argv.includes("--reconfigure");
 
   process.stdout.write(`${renderHeader(ansi)}\n\n`);
@@ -84,12 +93,29 @@ export const main = async (argv = process.argv.slice(2)) => {
     process.stdout.write(`${formatMessage("helper", "Using existing backend/.env\n", ansi)}`);
   }
 
-  process.stdout.write(`\n${formatMessage("helper", "Starting Docker services...\n", ansi)}`);
+  process.stdout.write(`\n${formatMessage("helper", attach ? "Starting Docker services in attached mode...\n" : "Starting Docker services...\n", ansi)}`);
+  if (attach) {
+    const result = await attachComposeStack();
+    if (result.signal === "SIGINT" || result.signal === "SIGTERM") {
+      return 0;
+    }
+
+    return result.code ?? 1;
+  }
+
   const report = await startComposeStack();
   return summarizeStartup(report, ansi);
 };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  const code = await main();
-  process.exit(code);
+  installStdoutGuard();
+  try {
+    const code = await main();
+    process.exit(code);
+  } catch (error) {
+    const ansi = detectAnsiSupport();
+    const message = error instanceof Error ? error.message : "Unexpected bootstrap failure";
+    process.stderr.write(formatMessage("error", `${message}\n`, ansi));
+    process.exit(1);
+  }
 }

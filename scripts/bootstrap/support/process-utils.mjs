@@ -38,7 +38,12 @@ export const spawnInherited = (command, args = [], options = {}) =>
     });
 
     child.on("error", reject);
-    child.on("close", (code) => resolve(code ?? 1));
+    child.on("close", (code, signal) =>
+      resolve({
+        code: code ?? 1,
+        signal: signal ?? null,
+      }),
+    );
   });
 
 export const isPortAvailable = (port, host = "127.0.0.1") =>

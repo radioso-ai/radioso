@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 
 import { renderHeader, formatMessage } from "../../scripts/bootstrap/terminal-theme.mjs";
 
-test("renderHeader includes sun label in fallback mode", () => {
+test("renderHeader renders the square sun above the clouds in fallback mode", () => {
   const header = renderHeader({ enabled: false, width: 80 });
-  assert.match(header, /SUN/);
+  assert.doesNotMatch(header, /SUN/);
+  assert.match(header, /\[###\]/);
+  assert.ok(header.indexOf("[###]") < header.indexOf(".--."));
   assert.match(header, /Radioso local start/);
 });
 

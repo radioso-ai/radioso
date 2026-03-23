@@ -42,6 +42,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL 16 with `pgvector`; additive workspace-scoped ingestion settings storage and existing document-processing tables (024-ingestion-settings)
 - Node.js 22 ESM script for the default bootstrap entry point, plus existing Bash wrapper compatibility; existing TypeScript backend/frontend remain unchanged + Node built-ins (`fs`, `path`, `child_process`, `readline`, `crypto`), Docker CLI with `docker compose`, existing Compose files under `infra/`, backend `.env.example` contract, Node test runner for bootstrap coverage (025-terminal-bootstrap)
 - Local filesystem for `backend/.env`; existing Docker-managed PostgreSQL volume via Compose (025-terminal-bootstrap)
+- TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives, React Flow for the trace graph UI (025-retrieval-trace-graph)
+- PostgreSQL 16 with `pgvector`; reuse existing audit-event metadata for persisted trace replay, no new storage system planned (025-retrieval-trace-graph)
 
 
 ## Project Structure
@@ -62,7 +64,7 @@ tests/
 
 ## Recent Changes
 - 025-terminal-bootstrap: Added Node.js 22 ESM script for the default bootstrap entry point, plus existing Bash wrapper compatibility; existing TypeScript backend/frontend remain unchanged + Node built-ins (`fs`, `path`, `child_process`, `readline`, `crypto`), Docker CLI with `docker compose`, existing Compose files under `infra/`, backend `.env.example` contract, Node test runner for bootstrap coverage
+- 025-retrieval-trace-graph: Added TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives, React Flow for the trace graph UI
 - 020-document-import-gcs: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend), ESM local package under `/packages` + Express, Zod, `pg`, Vitest, Supertest, `@google-cloud/storage`, route-scoped multipart parsing, and file-format parsers for PDF, DOCX, TXT, and XLSX
 - 024-ingestion-settings: Added TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Next.js App Router, Radix UI, Vitest, Supertes
 - 021-retrieval-stages: Added TypeScript 5.x on Node.js 22 + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertes
-- 020-anon-chat-access: Added TypeScript (Node.js backend, Next.js 16 / React 19 frontend) + Express, Next.js App Router, Shadcn/Radix UI, Tailwind CSS

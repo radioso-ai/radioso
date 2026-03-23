@@ -290,6 +290,14 @@ export interface RetrievalInfo {
   appliedConstraints?: AppliedConstraintInfo[]
   fallbackApplied: boolean
   rerankStatus: 'skipped' | 'applied' | 'fallback'
+  rewrite?: {
+    status: 'skipped' | 'applied' | 'fallback' | 'rejected'
+    eligible: boolean
+    ran: boolean
+    materialDisagreement: boolean
+    continuityDecision?: string
+    rejectionReason?: string
+  }
 }
 
 export interface ParsedQueryInfo {
@@ -312,12 +320,43 @@ export interface AppliedConstraintInfo {
   summary: string
 }
 
+export interface RetrievalTraceStage {
+  stageId: string
+  kind: string
+  label: string
+  status: 'applied' | 'skipped' | 'fallback' | 'rejected' | 'unavailable' | 'failed'
+  startedAt?: string
+  durationMs?: number
+  settings?: Record<string, unknown>
+  inputs?: Record<string, unknown>
+  outputs?: Record<string, unknown>
+  metrics?: Record<string, number>
+  reason?: string
+}
+
+export interface RetrievalTraceLink {
+  fromStageId: string
+  toStageId: string
+  kind: 'sequence' | 'branch' | 'converge'
+}
+
+export interface RetrievalTrace {
+  traceId: string
+  startedAt: string
+  completedAt?: string
+  totalDurationMs?: number
+  stages: RetrievalTraceStage[]
+  links: RetrievalTraceLink[]
+  summary?: RetrievalInfo
+}
+
 export interface ChatResponse {
   conversationId: string
   answer: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   retrievalInfo: RetrievalInfo
+  retrievalTrace: RetrievalTrace
 }
 
 export interface ChatStreamConversation {
@@ -334,6 +373,7 @@ export interface ChatStreamCompletion {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   retrievalInfo?: RetrievalInfo
+  retrievalTrace?: RetrievalTrace
 }
 
 export interface ChatConversationSummary {
@@ -354,6 +394,7 @@ export interface ChatConversationTurnDebug {
   stream: boolean
   citationCount: number
   retrievalInfo?: RetrievalInfo
+  retrievalTrace?: RetrievalTrace
   errorMessage?: string | null
 }
 
@@ -497,6 +538,7 @@ const streamChatEvents = async (
   let citations: Citation[] | undefined
   let answerSegments: AnswerSegment[] | undefined
   let retrievalInfo: RetrievalInfo | undefined
+  let retrievalTrace: RetrievalTrace | undefined
 
   const flushEvent = (rawEvent: string) => {
     if (!rawEvent.trim()) {
@@ -540,12 +582,14 @@ const streamChatEvents = async (
       citations = completionPayload.citations
       answerSegments = completionPayload.answerSegments
       retrievalInfo = completionPayload.retrievalInfo
+      retrievalTrace = completionPayload.retrievalTrace
       handlers.onDone?.({
         conversationId,
         answer,
         citations,
         answerSegments,
         retrievalInfo,
+        retrievalTrace,
       })
     }
   }
@@ -577,6 +621,7 @@ const streamChatEvents = async (
     citations,
     answerSegments,
     retrievalInfo: retrievalInfo!,
+    retrievalTrace: retrievalTrace!,
   }
 }
 
@@ -819,6 +864,7 @@ export const chatApi = {
         citations: payload.citations,
         answerSegments: payload.answerSegments,
         retrievalInfo: payload.retrievalInfo,
+        retrievalTrace: payload.retrievalTrace,
       })
       return payload
     }
@@ -908,6 +954,7 @@ export const publicChatApi = {
         citations: payload.citations,
         answerSegments: payload.answerSegments,
         retrievalInfo: payload.retrievalInfo,
+        retrievalTrace: payload.retrievalTrace,
       })
       return payload
     }

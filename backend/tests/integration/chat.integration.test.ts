@@ -224,6 +224,9 @@ describe("chat integration", () => {
         materialDisagreement: expect.any(Boolean),
       },
     });
+    expect(response.body.retrievalTrace).toMatchObject({
+      stages: expect.any(Array),
+    });
     expect(chatAudit?.metadata?.retrieval).toMatchObject({
       rewriteStatus: expect.any(String),
       rerankStatus: expect.any(String),
@@ -634,6 +637,7 @@ describe("chat integration", () => {
     expect(response.body).toHaveProperty("answer");
     expect(response.body).toHaveProperty("conversationId");
     expect(response.body).toHaveProperty("retrievalInfo");
+    expect(response.body).toHaveProperty("retrievalTrace");
   });
 
   it("handles legacy chunks without search text or structured attributes", async () => {

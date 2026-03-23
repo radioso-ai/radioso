@@ -621,6 +621,96 @@ components:
         - candidateCounts
         - fallbackApplied
         - rerankStatus
+    RetrievalTraceStage:
+      type: object
+      properties:
+        stageId:
+          type: string
+        kind:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum:
+            - applied
+            - skipped
+            - fallback
+            - rejected
+            - unavailable
+            - failed
+        startedAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+          minimum: 0
+        settings:
+          type: object
+          additionalProperties: {}
+        inputs:
+          type: object
+          additionalProperties: {}
+        outputs:
+          type: object
+          additionalProperties: {}
+        metrics:
+          type: object
+          additionalProperties:
+            type: number
+        reason:
+          type: string
+      required:
+        - stageId
+        - kind
+        - label
+        - status
+    RetrievalTraceLink:
+      type: object
+      properties:
+        fromStageId:
+          type: string
+        toStageId:
+          type: string
+        kind:
+          type: string
+          enum:
+            - sequence
+            - branch
+            - converge
+      required:
+        - fromStageId
+        - toStageId
+        - kind
+    RetrievalTrace:
+      type: object
+      properties:
+        traceId:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        totalDurationMs:
+          type: integer
+          minimum: 0
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievalTraceStage"
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievalTraceLink"
+        summary:
+          $ref: "#/components/schemas/RetrievalInfo"
+      required:
+        - traceId
+        - startedAt
+        - stages
+        - links
     ChatResponse:
       type: object
       properties:
@@ -639,10 +729,13 @@ components:
             $ref: "#/components/schemas/AnswerSegment"
         retrievalInfo:
           $ref: "#/components/schemas/RetrievalInfo"
+        retrievalTrace:
+          $ref: "#/components/schemas/RetrievalTrace"
       required:
         - conversationId
         - answer
         - retrievalInfo
+        - retrievalTrace
     ChatRequest:
       type: object
       properties:
@@ -744,6 +837,8 @@ components:
           minimum: 0
         retrievalInfo:
           $ref: "#/components/schemas/RetrievalInfo"
+        retrievalTrace:
+          $ref: "#/components/schemas/RetrievalTrace"
         errorMessage:
           type:
             - string

@@ -1,4 +1,4 @@
-import { parseDocument, type ParsedDocument } from "@hivec/document-parser";
+import { parseDocument, type ParsedDocument } from "@radioso/document-parser";
 
 import type { DocumentRecord } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../infra/gcsDocumentStorage.js";

@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@google-cloud/storage": "^7.17.2",
-    "@hivec/document-parser": "file:../packages/document-parser",
+    "@radioso/document-parser": "file:../packages/document-parser",
     "@radioso/connector-api": "file:../packages/connector-api",
     "@asteasolutions/zod-to-openapi": "^7.3.4",
     "@types/swagger-ui-express": "^4.1.8",

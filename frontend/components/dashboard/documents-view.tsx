@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FileText, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -38,7 +38,7 @@ import {
   documentsApi,
 } from '@/lib/api'
 
-type EditorMode = 'create' | 'edit'
+type EditorMode = 'create' | 'edit' | 'view'
 const PAGE_SIZE = 100
 
 interface DocumentsViewProps {
@@ -90,6 +90,7 @@ export function DocumentsView({
   selectedDocumentId = null,
   onSelectedDocumentChange,
 }: DocumentsViewProps) {
+  const justClosedDocumentIdRef = useRef<string | null>(null)
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
@@ -159,6 +160,7 @@ export function DocumentsView({
   }, [])
 
   const openCreateDialog = () => {
+    justClosedDocumentIdRef.current = null
     resetEditor()
     setIsDialogOpen(true)
   }
@@ -175,27 +177,23 @@ export function DocumentsView({
   }
 
   const openEditDialog = useCallback(async (documentId: string) => {
-    setIsDialogOpen(true)
-    setEditorMode('edit')
+    justClosedDocumentIdRef.current = null
     setEditingDocumentId(documentId)
     setIsDocumentLoading(true)
 
     try {
       const document = await documentsApi.getDocument(documentId)
-      if (document.sourceKind !== 'inline_text') {
-        setIsDialogOpen(false)
-        onSelectedDocumentChange?.(null)
-        resetEditor()
-        return
-      }
       const metadataStr = Object.keys(document.metadata ?? {}).length > 0
         ? JSON.stringify(document.metadata, null, 2)
         : ''
+
+      setEditorMode(document.sourceKind === 'inline_text' ? 'edit' : 'view')
       setFormValues({
         title: document.title,
         content: document.content,
         metadata: metadataStr,
       })
+      setIsDialogOpen(true)
     } catch (error) {
       console.error('Failed to load document:', error)
       setIsDialogOpen(false)
@@ -208,15 +206,20 @@ export function DocumentsView({
 
   useEffect(() => {
     if (!selectedDocumentId) {
-      if (editorMode === 'edit' && isDialogOpen && !isSaving) {
+      justClosedDocumentIdRef.current = null
+      if ((editorMode === 'edit' || editorMode === 'view') && isDialogOpen && !isSaving) {
         setIsDialogOpen(false)
         resetEditor()
       }
       return
     }
 
+    if (justClosedDocumentIdRef.current === selectedDocumentId && !isDialogOpen) {
+      return
+    }
+
     if (
-      editorMode === 'edit' &&
+      (editorMode === 'edit' || editorMode === 'view') &&
       editingDocumentId === selectedDocumentId &&
       isDialogOpen
     ) {
@@ -245,13 +248,19 @@ export function DocumentsView({
   }
 
   const handleDialogChange = (open: boolean) => {
-    setIsDialogOpen(open)
     if (!open && !isSaving) {
-      if (editorMode === 'edit') {
+      justClosedDocumentIdRef.current = editingDocumentId
+      setIsDialogOpen(false)
+      if (editorMode === 'edit' || editorMode === 'view') {
         onSelectedDocumentChange?.(null)
       }
-      resetEditor()
+      window.setTimeout(() => {
+        resetEditor()
+      }, 0)
+      return
     }
+
+    setIsDialogOpen(open)
   }
 
   const handleImportDialogChange = (open: boolean) => {
@@ -403,8 +412,13 @@ export function DocumentsView({
       )
     }
 
+    const isReadOnly = editorMode === 'view'
+
     return (
-      <form onSubmit={handleSubmit} className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
+      <form
+        onSubmit={isReadOnly ? (event) => event.preventDefault() : handleSubmit}
+        className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
           <div className="space-y-2 flex-shrink-0">
             <Label htmlFor="title">Title</Label>
@@ -413,7 +427,8 @@ export function DocumentsView({
               value={formValues.title}
               onChange={(e) => setFormValues((current) => ({ ...current, title: e.target.value }))}
               placeholder="Document title"
-              disabled={isSaving}
+              disabled={isSaving || isReadOnly}
+              readOnly={isReadOnly}
             />
           </div>
           <div className="space-y-2 flex-shrink-0">
@@ -424,7 +439,8 @@ export function DocumentsView({
               onChange={(e) => setFormValues((current) => ({ ...current, content: e.target.value }))}
               placeholder="Paste your document content here..."
               className="min-h-[320px] resize-none overflow-y-auto [field-sizing:fixed]"
-              disabled={isSaving}
+              disabled={isSaving || isReadOnly}
+              readOnly={isReadOnly}
             />
           </div>
           <div className="space-y-2 flex-shrink-0">
@@ -438,7 +454,8 @@ export function DocumentsView({
               }}
               placeholder='{"key": "value"}'
               className="min-h-[80px] resize-none font-mono text-sm"
-              disabled={isSaving}
+              disabled={isSaving || isReadOnly}
+              readOnly={isReadOnly}
             />
             {metadataError ? (
               <p className="text-sm text-destructive">{metadataError}</p>
@@ -452,15 +469,17 @@ export function DocumentsView({
             onClick={() => handleDialogChange(false)}
             disabled={isSaving}
           >
-            Cancel
+            {isReadOnly ? 'Close' : 'Cancel'}
           </Button>
-          <Button
-            type="submit"
-            disabled={isSaving || !formValues.title.trim() || !formValues.content.trim()}
-          >
-            {isSaving ? <Spinner className="mr-2" /> : null}
-            {editorMode === 'edit' ? 'Save Document' : 'Add Document'}
-          </Button>
+          {isReadOnly ? null : (
+            <Button
+              type="submit"
+              disabled={isSaving || !formValues.title.trim() || !formValues.content.trim()}
+            >
+              {isSaving ? <Spinner className="mr-2" /> : null}
+              {editorMode === 'edit' ? 'Save Document' : 'Add Document'}
+            </Button>
+          )}
         </div>
       </form>
     )
@@ -550,11 +569,19 @@ export function DocumentsView({
       <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
         <DialogContent className="flex h-[min(85vh,760px)] max-h-[85vh] flex-col overflow-hidden sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editorMode === 'edit' ? 'Edit Document' : 'Add Document'}</DialogTitle>
+            <DialogTitle>
+              {editorMode === 'edit'
+                ? 'Edit Document'
+                : editorMode === 'view'
+                  ? 'View Document'
+                  : 'Add Document'}
+            </DialogTitle>
             <DialogDescription>
               {editorMode === 'edit'
                 ? 'Update the document and re-run it through the RAG ingestion pipeline.'
-                : 'Add a new document to your knowledge base for retrieval.'}
+                : editorMode === 'view'
+                  ? 'Review the extracted contents of an imported document.'
+                  : 'Add a new document to your knowledge base for retrieval.'}
             </DialogDescription>
           </DialogHeader>
           {renderDialogBody()}
@@ -699,9 +726,6 @@ export function DocumentsView({
                     <button
                       type="button"
                       onClick={() => {
-                        if (isImported) {
-                          return
-                        }
                         if (onSelectedDocumentChange) {
                           onSelectedDocumentChange(doc.id)
                           return

@@ -1,5 +1,5 @@
 {
-  "name": "@hivec/document-parser",
+  "name": "@radioso/document-parser",
   "version": "0.1.0",
   "private": true,
   "type": "module",

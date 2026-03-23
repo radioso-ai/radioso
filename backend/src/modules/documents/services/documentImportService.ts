@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { detectDocumentType, DocumentParserError } from "@hivec/document-parser";
+import { detectDocumentType, DocumentParserError } from "@radioso/document-parser";
 
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";

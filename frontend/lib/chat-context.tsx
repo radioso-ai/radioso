@@ -15,15 +15,18 @@ import {
   type Citation,
   type ChatStreamCompletion,
   type RetrievalInfo,
+  type RetrievalTrace,
 } from '@/lib/api'
 
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  createdAt: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   retrievalInfo?: RetrievalInfo
+  retrievalTrace?: RetrievalTrace
   status: 'complete' | 'streaming' | 'error'
 }
 
@@ -108,6 +111,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
                 retrievalInfo: completion.retrievalInfo,
+                retrievalTrace: completion.retrievalTrace,
                 status: 'complete',
               }
             : message,
@@ -135,10 +139,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         id: crypto.randomUUID(),
         role: 'user',
         content: query,
+        createdAt: new Date().toISOString(),
         status: 'complete',
       }
 
       const assistantMessageId = crypto.randomUUID()
+      const assistantCreatedAt = new Date().toISOString()
 
       updateSession(accountId, (session) => ({
         ...session,
@@ -150,6 +156,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             id: assistantMessageId,
             role: 'assistant',
             content: '',
+            createdAt: assistantCreatedAt,
             status: 'streaming',
           },
         ],
@@ -198,6 +205,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             citations: completion.citations,
             answerSegments: completion.answerSegments,
             retrievalInfo: completion.retrievalInfo,
+            retrievalTrace: completion.retrievalTrace,
           })
         }
       } catch (error) {

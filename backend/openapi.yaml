@@ -188,11 +188,6 @@ components:
           maximum: 10
         citationDisplayEnabled:
           type: boolean
-        chunkingStrategy:
-          type: string
-          enum: &a1
-            - fixed_window
-            - structured_semantic
         attributeControls:
           type: array
           items:
@@ -200,7 +195,7 @@ components:
             properties:
               family:
                 type: string
-                enum: &a2
+                enum: &a1
                   - date_point
                   - date_range
                   - money_value
@@ -209,7 +204,7 @@ components:
                 type: boolean
               mode:
                 type: string
-                enum: &a3
+                enum: &a2
                   - boost_only
                   - hard_filter
             required:
@@ -234,7 +229,6 @@ components:
         - rerankTopK
         - warmthLevel
         - citationDisplayEnabled
-        - chunkingStrategy
         - attributeControls
         - customInstruction
         - createdAt
@@ -256,9 +250,6 @@ components:
           type: integer
         citationDisplayEnabled:
           type: boolean
-        chunkingStrategy:
-          type: string
-          enum: *a1
         attributeControls:
           type: array
           items:
@@ -266,12 +257,12 @@ components:
             properties:
               family:
                 type: string
-                enum: *a2
+                enum: *a1
               enabled:
                 type: boolean
               mode:
                 type: string
-                enum: *a3
+                enum: *a2
             required:
               - family
               - enabled
@@ -287,18 +278,79 @@ components:
         - rerankTopK
         - warmthLevel
         - citationDisplayEnabled
+    IngestionSettings:
+      type: object
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
+        chunkingStrategy:
+          type: string
+          enum: &a3
+            - fixed_window
+            - structured_semantic
+        fixedWindowChunkSize:
+          type: integer
+        fixedWindowChunkOverlap:
+          type: integer
+        structuredMinChunkSize:
+          type: integer
+        structuredMaxChunkSize:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - workspaceId
         - chunkingStrategy
+        - fixedWindowChunkSize
+        - fixedWindowChunkOverlap
+        - structuredMinChunkSize
+        - structuredMaxChunkSize
+        - createdAt
+        - updatedAt
+    UpdateIngestionSettingsRequest:
+      type: object
+      properties:
+        chunkingStrategy:
+          type: string
+          enum: *a3
+        fixedWindowChunkSize:
+          type: integer
+          minimum: 100
+          maximum: 4000
+        fixedWindowChunkOverlap:
+          type: integer
+          minimum: 0
+          maximum: 2000
+        structuredMinChunkSize:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        structuredMaxChunkSize:
+          type: integer
+          minimum: 1
+          maximum: 2000
+      required:
+        - chunkingStrategy
+        - fixedWindowChunkSize
+        - fixedWindowChunkOverlap
+        - structuredMinChunkSize
+        - structuredMaxChunkSize
     AttributeFamilyControl:
       type: object
       properties:
         family:
           type: string
-          enum: *a2
+          enum: *a1
         enabled:
           type: boolean
         mode:
           type: string
-          enum: *a3
+          enum: *a2
       required:
         - family
         - enabled
@@ -329,6 +381,28 @@ components:
         - anonymousChatEnabled
         - anonymousChatUrl
         - anonymousRateLimit
+    WorkspaceIngestionReprocessResponse:
+      type: object
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
+        queuedDocumentCount:
+          type: integer
+          minimum: 0
+        skippedDocumentCount:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum:
+            - queued
+            - noop
+      required:
+        - workspaceId
+        - queuedDocumentCount
+        - skippedDocumentCount
+        - status
     DocumentCreateRequest:
       type: object
       properties:
@@ -485,10 +559,10 @@ components:
       properties:
         family:
           type: string
-          enum: *a2
+          enum: *a1
         mode:
           type: string
-          enum: *a3
+          enum: *a2
         outcome:
           type: string
           enum:
@@ -1257,6 +1331,80 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/ingestion:
+    get:
+      tags:
+        - Settings
+      summary: Get ingestion settings for the authenticated workspace
+      operationId: getIngestionSettings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Ingestion settings returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionSettings"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags:
+        - Settings
+      summary: Update ingestion settings for the authenticated workspace
+      operationId: updateIngestionSettings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIngestionSettingsRequest"
+      responses:
+        "200":
+          description: Updated ingestion settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionSettings"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/ingestion/reprocess:
+    post:
+      tags:
+        - Settings
+      summary: Queue eligible workspace documents for reprocessing using current ingestion settings
+      operationId: reprocessWorkspaceIngestion
+      security:
+        - bearerAuth: []
+      responses:
+        "202":
+          description: Workspace documents accepted for reprocessing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceIngestionReprocessResponse"
         "401":
           description: Authentication required
           content:
@@ -2043,3 +2191,4 @@ paths:
         "404":
           description: Connector config not found
 webhooks: {}
+

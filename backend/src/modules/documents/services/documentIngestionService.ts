@@ -82,6 +82,7 @@ export interface DocumentRepositoryPort {
   }): Promise<DocumentRecord>;
   requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
   requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
+  requeueAllEligibleAndQueue(workspaceId: string): Promise<{ queuedDocumentCount: number; skippedDocumentCount: number }>;
   deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean>;
 }
 

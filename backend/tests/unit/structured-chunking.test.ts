@@ -3,6 +3,13 @@ import { describe, expect, it } from "vitest";
 import { parseStructuralBlocks } from "../../src/modules/retrieval/domain/chunking/structuredBlockParser.js";
 import { StructuredSemanticChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
 
+const defaultChunkingConfig = {
+  fixedWindowChunkSize: 800,
+  fixedWindowChunkOverlap: 120,
+  structuredMinChunkSize: 24,
+  structuredMaxChunkSize: 220,
+};
+
 describe("structured chunking", () => {
   it("parses deterministic structural blocks without english-specific heuristics", () => {
     const blocks = parseStructuralBlocks(`# Heading
@@ -81,6 +88,7 @@ ${"word ".repeat(600)}`.trim();
     const chunks = await strategy.chunk({
       title: "Oversized",
       content,
+      config: defaultChunkingConfig,
     });
 
     expect(chunks.length).toBeGreaterThan(1);
@@ -105,6 +113,7 @@ Alpha detail.
 ## Topic B
 
 Beta detail.`,
+      config: defaultChunkingConfig,
     });
 
     expect(chunks).toHaveLength(2);

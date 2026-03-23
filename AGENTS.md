@@ -36,6 +36,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL with `pgvector` (existing) (020-anon-chat-access)
 - TypeScript 5.x on Node.js 22 + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertes (021-retrieval-stages)
 - PostgreSQL 16 with `pgvector` (unchanged) (021-retrieval-stages)
+- TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Next.js App Router, Radix UI, Vitest, Supertes (024-ingestion-settings)
+- PostgreSQL 16 with `pgvector`; additive workspace-scoped ingestion settings storage and existing document-processing tables (024-ingestion-settings)
 
 
 ## Project Structure
@@ -55,6 +57,6 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 024-ingestion-settings: Added TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Next.js App Router, Radix UI, Vitest, Supertes
 - 021-retrieval-stages: Added TypeScript 5.x on Node.js 22 + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertes
 - 020-anon-chat-access: Added TypeScript (Node.js backend, Next.js 16 / React 19 frontend) + Express, Next.js App Router, Shadcn/Radix UI, Tailwind CSS
-- 018-terraform-gcp-deploy: Added HCL (Terraform >= 1.5) + `hashicorp/google` provider (~> 5.x), `hashicorp/google-beta` provider (~> 5.x)

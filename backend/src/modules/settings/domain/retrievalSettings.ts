@@ -1,5 +1,4 @@
 import { badRequest } from "../../../shared/domain/errors.js";
-import { chunkingStrategyIds, type ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 
 export const attributeFamilyIds = ["date_point", "date_range", "money_value", "location"] as const;
 export type AttributeFamilyId = (typeof attributeFamilyIds)[number];
@@ -22,7 +21,6 @@ export interface RetrievalSettingsRecord {
   rerankTopK: number;
   warmthLevel: number;
   citationDisplayEnabled: boolean;
-  chunkingStrategy: ChunkingStrategyId;
   attributeControls: AttributeFamilyControl[];
   customInstruction: string;
   createdAt: Date;
@@ -37,7 +35,6 @@ export interface RetrievalSettingsInput {
   rerankTopK: number;
   warmthLevel: number;
   citationDisplayEnabled: boolean;
-  chunkingStrategy: ChunkingStrategyId;
   attributeControls: AttributeFamilyControl[];
   customInstruction: string;
 }
@@ -58,7 +55,6 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   rerankTopK: 5,
   warmthLevel: 5,
   citationDisplayEnabled: true,
-  chunkingStrategy: "fixed_window",
   attributeControls: defaultAttributeControls(),
   customInstruction: "",
   createdAt: new Date(),
@@ -77,9 +73,6 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   }
   if (!Number.isInteger(input.warmthLevel) || input.warmthLevel < 1 || input.warmthLevel > 10) {
     throw badRequest("warmthLevel must be between 1 and 10");
-  }
-  if (!chunkingStrategyIds.includes(input.chunkingStrategy)) {
-    throw badRequest("chunkingStrategy must be a supported strategy");
   }
   if (!Array.isArray(input.attributeControls)) {
     throw badRequest("attributeControls must be an array");

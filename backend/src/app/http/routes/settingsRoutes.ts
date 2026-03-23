@@ -10,6 +10,16 @@ import {
   attributeControlModes,
   attributeFamilyIds,
 } from "../../../modules/settings/domain/retrievalSettings.js";
+import {
+  FIXED_WINDOW_CHUNK_OVERLAP_MAX,
+  FIXED_WINDOW_CHUNK_OVERLAP_MIN,
+  FIXED_WINDOW_CHUNK_SIZE_MAX,
+  FIXED_WINDOW_CHUNK_SIZE_MIN,
+  STRUCTURED_MAX_CHUNK_SIZE_MAX,
+  STRUCTURED_MAX_CHUNK_SIZE_MIN,
+  STRUCTURED_MIN_CHUNK_SIZE_MAX,
+  STRUCTURED_MIN_CHUNK_SIZE_MIN,
+} from "../../../modules/settings/domain/ingestionSettings.js";
 
 export const updateSettingsSchema = z.object({
   queryRewriteEnabled: z.boolean(),
@@ -19,7 +29,6 @@ export const updateSettingsSchema = z.object({
   rerankTopK: z.number().int(),
   warmthLevel: z.number().int(),
   citationDisplayEnabled: z.boolean(),
-  chunkingStrategy: z.enum(chunkingStrategyIds),
   attributeControls: z
     .array(
       z.object({
@@ -35,6 +44,14 @@ export const updateSettingsSchema = z.object({
 export const updateGeneralSettingsSchema = z.object({
   anonymousChatEnabled: z.boolean().optional(),
   anonymousRateLimit: z.number().int().min(1).max(60).optional(),
+});
+
+export const updateIngestionSettingsSchema = z.object({
+  chunkingStrategy: z.enum(chunkingStrategyIds),
+  fixedWindowChunkSize: z.number().int().min(FIXED_WINDOW_CHUNK_SIZE_MIN).max(FIXED_WINDOW_CHUNK_SIZE_MAX),
+  fixedWindowChunkOverlap: z.number().int().min(FIXED_WINDOW_CHUNK_OVERLAP_MIN).max(FIXED_WINDOW_CHUNK_OVERLAP_MAX),
+  structuredMinChunkSize: z.number().int().min(STRUCTURED_MIN_CHUNK_SIZE_MIN).max(STRUCTURED_MIN_CHUNK_SIZE_MAX),
+  structuredMaxChunkSize: z.number().int().min(STRUCTURED_MAX_CHUNK_SIZE_MIN).max(STRUCTURED_MAX_CHUNK_SIZE_MAX),
 });
 
 export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
@@ -60,6 +77,36 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         customInstruction: req.body.customInstruction ?? existing.customInstruction,
       });
       res.status(200).json(settings);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/ingestion", requireApiToken(dependencies), async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const settings = await dependencies.ingestionSettingsService.getForWorkspace(workspaceId);
+      res.status(200).json(settings);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.put("/ingestion", requireApiToken(dependencies), validateBody(updateIngestionSettingsSchema), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const settings = await dependencies.ingestionSettingsService.updateForWorkspace(workspaceId, req.body);
+      res.status(200).json(settings);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/ingestion/reprocess", requireApiToken(dependencies), async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const result = await dependencies.workspaceIngestionReprocessService.reprocessWorkspace(workspaceId);
+      res.status(202).json(result);
     } catch (error) {
       next(error);
     }

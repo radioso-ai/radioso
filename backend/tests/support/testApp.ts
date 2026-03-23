@@ -12,6 +12,7 @@ import { DocumentDeletionService } from "../../src/modules/documents/services/do
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
+import { WorkspaceIngestionReprocessService } from "../../src/modules/documents/services/workspaceIngestionReprocessService.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { StructuredSemanticChunkingStrategy, type ChunkingSimilarityPort } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
@@ -26,6 +27,7 @@ import { RerankService, type RerankGateway } from "../../src/modules/retrieval/s
 import { RetrievalPipelineService } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
+import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
@@ -43,6 +45,7 @@ import {
   InMemoryConversationRepository,
   InMemoryDocumentRepository,
   InMemoryDocumentProcessingJobRepository,
+  InMemoryIngestionSettingsRepository,
   InMemoryMessageRepository,
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
@@ -66,6 +69,7 @@ export const createTestEnv = (): Env => ({
 });
 
 interface TestRepositories {
+  ingestionSettingsRepository: InMemoryIngestionSettingsRepository;
   retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
   documentRepository: InMemoryDocumentRepository;
   chunkRepository: InMemoryChunkRepository;
@@ -87,6 +91,7 @@ export const createTestDependencies = (overrides: {
   const accountRepository = new InMemoryAccountRepository();
   const sessionRepository = new InMemorySessionRepository();
   const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
+  const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
   const documentRepository = new InMemoryDocumentRepository();
   const documentProcessingJobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
@@ -241,13 +246,14 @@ export const createTestDependencies = (overrides: {
     },
   };
   const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
+  const ingestionSettingsService = new IngestionSettingsService(ingestionSettingsRepository, auditService);
   const retrievalSettingsService = new RetrievalSettingsService(retrievalSettingsRepository, auditService);
   const documentProcessingService = new DocumentProcessingService(
     documentRepository,
     chunkRepository,
     embeddingService,
     auditService,
-    retrievalSettingsService,
+    ingestionSettingsService,
     chunkingStrategyRegistry,
   );
   const documentProcessingWorker = new DocumentProcessingWorker(
@@ -261,6 +267,7 @@ export const createTestDependencies = (overrides: {
     documentRepository,
     auditService,
   );
+  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
   const drainDocumentProcessingQueue = async () => {
     for (let iteration = 0; iteration < 20; iteration += 1) {
       const processed = await documentProcessingWorker.runOnce();
@@ -284,6 +291,12 @@ export const createTestDependencies = (overrides: {
   const originalReprocess = documentIngestionService.reprocess.bind(documentIngestionService);
   documentIngestionService.reprocess = async (input) => {
     const result = await originalReprocess(input);
+    await drainDocumentProcessingQueue();
+    return result;
+  };
+  const originalWorkspaceReprocess = workspaceIngestionReprocessService.reprocessWorkspace.bind(workspaceIngestionReprocessService);
+  workspaceIngestionReprocessService.reprocessWorkspace = async (workspaceId) => {
+    const result = await originalWorkspaceReprocess(workspaceId);
     await drainDocumentProcessingQueue();
     return result;
   };
@@ -348,8 +361,10 @@ export const createTestDependencies = (overrides: {
         workspaceService,
       }),
       workspaceService,
+      ingestionSettingsService,
       retrievalSettingsService,
       documentIngestionService,
+      workspaceIngestionReprocessService,
       documentProcessingWorker,
       documentDeletionService: new DocumentDeletionService(
         documentRepository,
@@ -383,6 +398,7 @@ export const createTestDependencies = (overrides: {
   return {
     dependencies,
     repositories: {
+      ingestionSettingsRepository,
       retrievalSettingsRepository,
       documentRepository,
       chunkRepository,

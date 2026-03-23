@@ -14,6 +14,7 @@ import {
 } from "../routes/workspaceRoutes.js";
 import {
   updateGeneralSettingsSchema,
+  updateIngestionSettingsSchema,
   updateSettingsSchema,
 } from "../routes/settingsRoutes.js";
 import { documentParamsSchema, documentSchema } from "../routes/documentRoutes.js";
@@ -131,7 +132,6 @@ const RetrievalSettingsSchema = registry.register(
     rerankTopK: z.number().int().min(1),
     warmthLevel: z.number().int().min(1).max(10),
     citationDisplayEnabled: z.boolean(),
-    chunkingStrategy: z.enum(chunkingStrategyIds),
     attributeControls: z.array(
       z.object({
         family: z.enum(attributeFamilyIds),
@@ -148,6 +148,25 @@ const RetrievalSettingsSchema = registry.register(
 const UpdateRetrievalSettingsRequestSchema = registry.register(
   "UpdateRetrievalSettingsRequest",
   updateSettingsSchema,
+);
+
+const IngestionSettingsSchema = registry.register(
+  "IngestionSettings",
+  z.object({
+    workspaceId: z.string().uuid(),
+    chunkingStrategy: z.enum(chunkingStrategyIds),
+    fixedWindowChunkSize: z.number().int(),
+    fixedWindowChunkOverlap: z.number().int(),
+    structuredMinChunkSize: z.number().int(),
+    structuredMaxChunkSize: z.number().int(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  }),
+);
+
+const UpdateIngestionSettingsRequestSchema = registry.register(
+  "UpdateIngestionSettingsRequest",
+  updateIngestionSettingsSchema,
 );
 
 const AttributeFamilyControlSchema = registry.register(
@@ -170,6 +189,16 @@ const GeneralSettingsResponseSchema = registry.register(
     anonymousChatEnabled: z.boolean(),
     anonymousChatUrl: z.string().nullable(),
     anonymousRateLimit: z.number().int().min(1).max(60),
+  }),
+);
+
+const WorkspaceIngestionReprocessResponseSchema = registry.register(
+  "WorkspaceIngestionReprocessResponse",
+  z.object({
+    workspaceId: z.string().uuid(),
+    queuedDocumentCount: z.number().int().min(0),
+    skippedDocumentCount: z.number().int().min(0),
+    status: z.enum(["queued", "noop"]),
   }),
 );
 
@@ -875,6 +904,105 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/settings/ingestion",
+  tags: ["Settings"],
+  summary: "Get ingestion settings for the authenticated workspace",
+  operationId: "getIngestionSettings",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Ingestion settings returned",
+      content: {
+        "application/json": {
+          schema: IngestionSettingsSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/v1/settings/ingestion",
+  tags: ["Settings"],
+  summary: "Update ingestion settings for the authenticated workspace",
+  operationId: "updateIngestionSettings",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: UpdateIngestionSettingsRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Updated ingestion settings",
+      content: {
+        "application/json": {
+          schema: IngestionSettingsSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/settings/ingestion/reprocess",
+  tags: ["Settings"],
+  summary: "Queue eligible workspace documents for reprocessing using current ingestion settings",
+  operationId: "reprocessWorkspaceIngestion",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    202: {
+      description: "Workspace documents accepted for reprocessing",
+      content: {
+        "application/json": {
+          schema: WorkspaceIngestionReprocessResponseSchema,
         },
       },
     },

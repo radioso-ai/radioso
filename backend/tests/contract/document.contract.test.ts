@@ -4,6 +4,71 @@ import { describe, expect, it } from "vitest";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 
 describe("document contract", () => {
+  it("accepts a supported file import for background processing for a bearer-authenticated account", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-import@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/document/import")
+      .set("Authorization", `Bearer ${token}`)
+      .field("title", "Imported text")
+      .attach("file", Buffer.from("Imported content"), {
+        filename: "import.txt",
+        contentType: "text/plain",
+      });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toMatchObject({
+      documentId: expect.any(String),
+      status: "queued",
+    });
+  });
+
+  it("rejects unsupported imports with a bad_request error", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-import-unsupported@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/document/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from("png"), {
+        filename: "avatar.png",
+        contentType: "image/png",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "bad_request",
+        message: "Unsupported document type",
+      },
+    });
+  });
+
+  it("rejects oversized imports before queuing processing", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-import-too-large@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/document/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.alloc(10 * 1024 * 1024 + 1, "a"), {
+        filename: "too-large.txt",
+        contentType: "text/plain",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "bad_request",
+        message: "Uploaded file exceeds maximum size",
+      },
+    });
+  });
+
   it("accepts a document for background processing for a bearer-authenticated account", async () => {
     const { app } = createTestApp();
 
@@ -87,6 +152,39 @@ describe("document contract", () => {
         ragStatus: "processed",
       }),
     ]);
+  });
+
+  it("rejects inline updates for imported documents", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-import-update@example.com");
+
+    const importResponse = await request(app)
+      .post("/api/v1/document/import")
+      .set("Authorization", `Bearer ${token}`)
+      .field("title", "Imported text")
+      .attach("file", Buffer.from("Imported content"), {
+        filename: "import.txt",
+        contentType: "text/plain",
+      });
+
+    expect(importResponse.status).toBe(202);
+
+    const updateResponse = await request(app)
+      .put(`/api/v1/document/${importResponse.body.documentId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Updated title",
+        content: "Updated content",
+      });
+
+    expect(updateResponse.status).toBe(409);
+    expect(updateResponse.body).toMatchObject({
+      error: {
+        code: "conflict",
+        message: "Imported documents cannot be updated through the inline document API",
+      },
+    });
   });
 
   it("deletes a document for a bearer-authenticated account", async () => {

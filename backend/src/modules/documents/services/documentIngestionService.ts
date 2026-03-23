@@ -1,9 +1,31 @@
 import type { AuditService } from "../../audit/services/auditService.js";
 import { normalizeMarkdown } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 import type { StructuredAttributes } from "../../retrieval/domain/structuredAttributes.js";
-import { notFound } from "../../../shared/domain/errors.js";
+import { conflict, notFound } from "../../../shared/domain/errors.js";
 
-export interface DocumentRecord {
+export type DocumentSourceKind = "inline_text" | "uploaded_file";
+
+export interface DocumentSourceRecord {
+  sourceKind: DocumentSourceKind;
+  sourceFilename?: string | null;
+  sourceMimeType?: string | null;
+  sourceStorageBucket?: string | null;
+  sourceStorageObject?: string | null;
+  sourceStorageGeneration?: string | null;
+  sourceSizeBytes?: number | null;
+}
+
+export interface DocumentSourceInput {
+  sourceKind?: DocumentSourceKind;
+  sourceFilename?: string | null;
+  sourceMimeType?: string | null;
+  sourceStorageBucket?: string | null;
+  sourceStorageObject?: string | null;
+  sourceStorageGeneration?: string | null;
+  sourceSizeBytes?: number | null;
+}
+
+export interface DocumentRecord extends DocumentSourceRecord {
   id: string;
   workspaceId: string;
   title: string;
@@ -15,6 +37,41 @@ export interface DocumentRecord {
   createdAt: Date;
   updatedAt: Date;
   metadata: Record<string, unknown>;
+}
+
+export interface DocumentCreateInput extends DocumentSourceInput {
+  workspaceId: string;
+  title: string;
+  sourceContent: string;
+  markdownContent: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface DocumentUpdateInput extends DocumentSourceInput {
+  documentId: string;
+  workspaceId: string;
+  title: string;
+  sourceContent: string;
+  markdownContent: string;
+  status: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface DocumentQueueUpdateInput extends DocumentSourceInput {
+  documentId: string;
+  workspaceId: string;
+  title: string;
+  sourceContent: string;
+  markdownContent: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface DocumentDerivedContentUpdateInput {
+  documentId: string;
+  workspaceId: string;
+  revision: number;
+  sourceContent: string;
+  markdownContent: string;
 }
 
 export interface ChunkRecord {
@@ -33,21 +90,8 @@ export interface ChunkRecord {
 }
 
 export interface DocumentRepositoryPort {
-  createAndQueue(input: {
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord>;
-  create(input: {
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    status: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord>;
+  createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord>;
+  create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord>;
   setStatus(input: {
     documentId: string;
     workspaceId: string;
@@ -63,23 +107,9 @@ export interface DocumentRepositoryPort {
   }): Promise<DocumentRecord | null>;
   findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null>;
   listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]>;
-  update(input: {
-    documentId: string;
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    status: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord>;
-  updateAndQueue(input: {
-    documentId: string;
-    workspaceId: string;
-    title: string;
-    sourceContent: string;
-    markdownContent: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<DocumentRecord>;
+  update(input: DocumentUpdateInput): Promise<DocumentRecord>;
+  updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord>;
+  updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
   requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
   requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
   requeueAllEligibleAndQueue(workspaceId: string): Promise<{ queuedDocumentCount: number; skippedDocumentCount: number }>;
@@ -104,6 +134,9 @@ export interface DocumentSummary {
   createdAt: Date;
   updatedAt: Date;
   metadata: Record<string, unknown>;
+  sourceKind: DocumentSourceKind;
+  sourceFilename?: string | null;
+  sourceMimeType?: string | null;
 }
 
 export interface DocumentDetails extends DocumentSummary {
@@ -124,6 +157,13 @@ export class DocumentIngestionService {
         sourceContent: input.content,
         markdownContent: normalizeMarkdown(input.content),
         metadata: input.metadata,
+        sourceKind: "inline_text",
+        sourceFilename: null,
+        sourceMimeType: "text/plain",
+        sourceStorageBucket: null,
+        sourceStorageObject: null,
+        sourceStorageGeneration: null,
+        sourceSizeBytes: null,
       });
 
       await this.auditService.record({
@@ -155,9 +195,12 @@ export class DocumentIngestionService {
   }
 
   async update(input: { workspaceId: string; documentId: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<{ documentId: string; status: string }> {
-    await this.getDocument(input.workspaceId, input.documentId);
-
     try {
+      const existing = await this.getDocument(input.workspaceId, input.documentId);
+      if (existing.sourceKind === "uploaded_file") {
+        throw conflict("Imported documents cannot be updated through the inline document API");
+      }
+
       const document = await this.documentRepository.updateAndQueue({
         documentId: input.documentId,
         workspaceId: input.workspaceId,
@@ -165,6 +208,13 @@ export class DocumentIngestionService {
         sourceContent: input.content,
         markdownContent: normalizeMarkdown(input.content),
         metadata: input.metadata,
+        sourceKind: "inline_text",
+        sourceFilename: null,
+        sourceMimeType: "text/plain",
+        sourceStorageBucket: null,
+        sourceStorageObject: null,
+        sourceStorageGeneration: null,
+        sourceSizeBytes: null,
       });
 
       await this.auditService.record({
@@ -254,6 +304,9 @@ export class DocumentIngestionService {
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
       metadata: document.metadata,
+      sourceKind: document.sourceKind,
+      sourceFilename: document.sourceFilename ?? null,
+      sourceMimeType: document.sourceMimeType ?? null,
     };
   }
 

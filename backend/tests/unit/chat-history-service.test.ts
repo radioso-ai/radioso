@@ -60,6 +60,28 @@ describe("chat history service", () => {
           ],
           links: [],
         },
+        answerOutcome: "grounded_degraded_unsupported_segments",
+        validation: {
+          ran: true,
+          answerModified: true,
+          unsupportedSegmentCount: 1,
+          supportedSegmentCount: 1,
+          nonSubstantiveSegmentCount: 1,
+          segmentResults: [
+            {
+              text: "It answers questions.",
+              disposition: "supported",
+              replacementApplied: false,
+              reason: "has_support_reference",
+            },
+            {
+              text: "I couldn't verify that part from the retrieved documents.",
+              disposition: "unsupported",
+              replacementApplied: true,
+              reason: "missing_support_reference",
+            },
+          ],
+        },
       },
     });
 
@@ -75,6 +97,28 @@ describe("chat history service", () => {
     expect(debug?.retrievalTrace).toMatchObject({
       traceId: "trace-1",
       stages: [expect.objectContaining({ stageId: "answer" })],
+    });
+    expect(debug?.answerOutcome).toBe("grounded_degraded_unsupported_segments");
+    expect(debug?.validation).toEqual({
+      ran: true,
+      answerModified: true,
+      unsupportedSegmentCount: 1,
+      supportedSegmentCount: 1,
+      nonSubstantiveSegmentCount: 1,
+      segmentResults: [
+        {
+          text: "It answers questions.",
+          disposition: "supported",
+          replacementApplied: false,
+          reason: "has_support_reference",
+        },
+        {
+          text: "I couldn't verify that part from the retrieved documents.",
+          disposition: "unsupported",
+          replacementApplied: true,
+          reason: "missing_support_reference",
+        },
+      ],
     });
   });
 });

@@ -21,32 +21,54 @@ export interface PresentedAnswer {
   answerSegments?: AnswerSegment[];
 }
 
+export interface NormalizedPresentedAnswer {
+  answer: string;
+  citationEvidence: CitationEvidence[];
+  answerSegments: AnswerSegment[];
+}
+
+const toChatCitation = (citation: CitationEvidence): ChatCitation => ({
+  documentId: citation.documentId,
+  chunkId: citation.chunkId,
+  title: citation.title,
+});
+
 export class AnswerPresentationService {
+  normalize(input: {
+    answer: string;
+    citations: CitationEvidence[];
+  }): NormalizedPresentedAnswer {
+    return this.normalizeAnchoredAnswer(input.answer.trim(), input.citations);
+  }
+
   present(input: {
     answer: string;
     citations: CitationEvidence[];
     citationDisplayEnabled: boolean;
   }): PresentedAnswer {
-    const normalized = this.normalizeAnchoredAnswer(input.answer.trim(), input.citations);
+    const normalized = this.normalize({
+      answer: input.answer,
+      citations: input.citations,
+    });
 
-    if (!input.citationDisplayEnabled || normalized.citations.length === 0) {
+    if (!input.citationDisplayEnabled || normalized.citationEvidence.length === 0) {
       return { answer: normalized.answer };
     }
 
     return {
       answer: normalized.answer,
-      citations: normalized.citations,
+      citations: normalized.citationEvidence.map((citation) => toChatCitation(citation)),
       answerSegments: normalized.answerSegments,
     };
   }
 
   private normalizeAnchoredAnswer(answer: string, citations: CitationEvidence[]): {
     answer: string;
-    citations: ChatCitation[];
+    citationEvidence: CitationEvidence[];
     answerSegments: AnswerSegment[];
   } {
     const anchorGroups = findCitationAnchorGroups(answer);
-    const visibleCitations: ChatCitation[] = [];
+    const visibleCitations: CitationEvidence[] = [];
     const citationIndexByDocument = new Map<string, number>();
     const answerSegments: AnswerSegment[] = [];
 
@@ -77,11 +99,7 @@ export class AnswerPresentationService {
         if (citationIndex === undefined) {
           citationIndex = visibleCitations.length;
           citationIndexByDocument.set(citation.documentId, citationIndex);
-          visibleCitations.push({
-            documentId: citation.documentId,
-            chunkId: citation.chunkId,
-            title: citation.title,
-          });
+          visibleCitations.push(citation);
         }
 
         return [citationIndex];
@@ -113,7 +131,7 @@ export class AnswerPresentationService {
 
     return {
       answer: answerText,
-      citations: visibleCitations,
+      citationEvidence: visibleCitations,
       answerSegments,
     };
   }

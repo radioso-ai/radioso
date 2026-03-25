@@ -98,6 +98,15 @@ describe("chat contract", () => {
             eventStatus: "success",
             stream: false,
             citationCount: expect.any(Number),
+            answerOutcome: expect.any(String),
+            validation: expect.objectContaining({
+              ran: expect.any(Boolean),
+              answerModified: expect.any(Boolean),
+              unsupportedSegmentCount: expect.any(Number),
+              supportedSegmentCount: expect.any(Number),
+              nonSubstantiveSegmentCount: expect.any(Number),
+              segmentResults: expect.any(Array),
+            }),
             retrievalInfo: expect.objectContaining({
               candidateCounts: expect.any(Object),
             }),
@@ -275,7 +284,8 @@ describe("chat contract", () => {
       expect(result.body).toContain("event: chunk");
       expect(result.body).toContain("event: done");
       expect(result.firstChunkMs).toBeGreaterThanOrEqual(0);
-      expect(result.doneMs).toBeGreaterThan(result.firstChunkMs);
+      expect(result.doneMs).toBeGreaterThanOrEqual(result.firstChunkMs);
+      expect(result.body.indexOf("event: chunk")).toBeLessThan(result.body.indexOf("event: done"));
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
@@ -415,6 +425,8 @@ describe("chat contract", () => {
     expect(spec).toContain("ChatHistoryListResponse:");
     expect(spec).toContain("ChatConversationDetail:");
     expect(spec).toContain("ChatConversationMessageDebug:");
+    expect(spec).toContain("answerOutcome:");
+    expect(spec).toContain("segmentResults:");
     expect(spec).toContain("RetrievalTrace:");
   });
 });

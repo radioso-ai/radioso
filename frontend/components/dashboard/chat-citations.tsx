@@ -42,6 +42,7 @@ import {
   HoverCardTrigger,
 } from '@/components/ui/hover-card'
 import { type AnswerSegment, type Citation } from '@/lib/api'
+import { AssistantMarkdownContent } from './chat-markdown'
 
 export type CitationOpenResult = 'opened' | 'unavailable' | 'error'
 
@@ -149,7 +150,7 @@ export function AssistantMessageContent({
 
     contentNodes.push(
       <Fragment key={`segment-${segmentIndex}`}>
-        {linkifyText(segment.text)}
+        <AssistantMarkdownContent content={segment.text} />
         {dedupedIndices.map((citationIndex) => {
           const citation = citations[citationIndex]
           if (!citation) {
@@ -171,7 +172,7 @@ export function AssistantMessageContent({
 
   return (
     <div className="space-y-2">
-      <div className="text-sm whitespace-pre-wrap break-words">
+      <div className="text-sm break-words leading-6">
         {contentNodes}
       </div>
       {citationNotice && citationNotice.scope === noticeScope ? (

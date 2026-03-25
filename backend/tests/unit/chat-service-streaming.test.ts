@@ -319,6 +319,110 @@ describe("chat service streaming", () => {
     });
   });
 
+  it("drops trailing incomplete citation anchor carry when the stream ends", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Intro",
+              content: "full answer",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "full answer[[";
+      },
+      async *streamAnswer() {
+        yield "full answer[[";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    const chunkTexts: string[] = [];
+    let doneEvent: Extract<ChatStreamEvent, { type: "done" }> | undefined;
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "What does this page do?",
+      stream: true,
+    })) {
+      if (event.type === "chunk") {
+        chunkTexts.push(event.text);
+      }
+
+      if (event.type === "done") {
+        doneEvent = event;
+      }
+    }
+
+    expect(chunkTexts).toEqual(["full answer"]);
+    expect(doneEvent).toEqual({
+      type: "done",
+      conversationId: expect.any(String),
+      answer: "full answer",
+      citations: undefined,
+      answerSegments: undefined,
+      retrievalInfo: expect.objectContaining({
+        candidateCounts: {
+          semantic: 1,
+          lexical: 1,
+          merged: 1,
+          final: 1,
+        },
+      }),
+      retrievalTrace: expect.objectContaining({
+        stages: expect.arrayContaining([
+          expect.objectContaining({
+            stageId: "answer",
+            kind: "answer_outcome",
+            status: "applied",
+          }),
+        ]),
+      }),
+    });
+
+    const [conversationId] = conversationRepository.items.keys();
+    const persisted = await messageRepository.listByConversationId(conversationId!);
+    expect(persisted.at(-1)).toMatchObject({
+      role: "assistant",
+      content: "full answer",
+    });
+  });
+
   it("does not persist a duplicate assistant turn when touch fails after the assistant answer is written", async () => {
     class FailingTouchConversationRepository extends InMemoryConversationRepository {
       override async touch(): Promise<void> {

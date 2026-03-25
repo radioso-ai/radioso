@@ -5,8 +5,6 @@ import { fileURLToPath } from "node:url";
 import {
   attachComposeStack,
   startComposeStack,
-  stopComposeStack,
-  waitForShutdownSignal,
 } from "./compose-runner.mjs";
 import { buildEnvValues, renderEnvFile, writeEnvFileAtomic } from "./env-file.mjs";
 import { collectAnswers, DEMO_MODE_API_KEY, planQuestions } from "./prompt-flow.mjs";
@@ -130,14 +128,7 @@ export const main = async (argv = process.argv.slice(2)) => {
     return result;
   }
 
-  await waitForShutdownSignal();
-  process.stdout.write(`${formatMessage("helper", "\nStopping Docker services...\n", ansi)}`);
-  const shutdownResult = await stopComposeStack();
-  if (shutdownResult.signal === "SIGINT" || shutdownResult.signal === "SIGTERM") {
-    return 0;
-  }
-
-  return shutdownResult.code ?? 1;
+  return 0;
 };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

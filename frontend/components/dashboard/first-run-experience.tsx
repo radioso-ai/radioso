@@ -61,8 +61,10 @@ export function FirstRunExperience({ accountId, onboarding }: FirstRunExperience
   }
 
   const handleAskQuestion = async (question: string) => {
-    onboarding.markCompleted()
-    await sendMessage(question)
+    const didSend = await sendMessage(question)
+    if (didSend) {
+      onboarding.markCompleted()
+    }
   }
 
   return (

@@ -32,8 +32,11 @@ export const waitForReadiness = async (options = {}) => {
         ok: true,
         readyServices: statuses.map((status) => status.name),
         failedServices: [],
-        applicationUrls: ["http://127.0.0.1:3000", "http://127.0.0.1:8080/health"],
-        nextSteps: ["Open Radioso in your browser.", "Use Ctrl+C to stop the wrapper; containers continue in detached mode."],
+        applicationUrls: ["http://127.0.0.1:3000", "http://127.0.0.1:8080"],
+        nextSteps: [
+          "Open Radioso in your browser.",
+          "Containers keep running in detached mode after this command exits.",
+        ],
       };
     }
 

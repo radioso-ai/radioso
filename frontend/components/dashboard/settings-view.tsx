@@ -293,7 +293,7 @@ function GeneralTab() {
 
           <div className="space-y-6">
             <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">
-              API Token
+              Developer API
             </h2>
 
             {isTokenLoading ? (
@@ -301,18 +301,22 @@ function GeneralTab() {
                 <Spinner className="w-5 h-5" />
               </div>
             ) : (
-              <>
-                <div className="p-4 bg-card border border-border rounded-lg space-y-4">
+              <details className="rounded-lg border border-border bg-card p-4">
+                <summary className="cursor-pointer list-none">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                       <Key className="w-5 h-5 text-primary" />
                     </div>
                     <div>
-                      <h3 className="font-medium text-foreground">API Key</h3>
-                      <p className="text-sm text-muted-foreground">Use this key to authenticate API requests</p>
+                      <h3 className="font-medium text-foreground">API token and curl usage</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Post-onboarding access for SDKs, scripts, and direct API requests.
+                      </p>
                     </div>
                   </div>
+                </summary>
 
+                <div className="mt-4 space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="token" className="sr-only">API Token</Label>
                     <CopyValueField value={token || ''} ariaLabel="Copy token" disabled={!token} />
@@ -320,14 +324,14 @@ function GeneralTab() {
 
                   <div className="rounded bg-muted/50 p-3 space-y-2">
                     <p className="text-sm text-muted-foreground">
-                      Include this token in the Authorization header of your API requests:
+                      Use this workspace-scoped token only after the workspace already works in the UI.
                     </p>
                     <code className="block p-2 bg-card border border-border rounded text-sm font-mono text-foreground overflow-x-auto">
                       Authorization: Bearer {token?.slice(0, 15)}...
                     </code>
                   </div>
                 </div>
-              </>
+              </details>
             )}
           </div>
 

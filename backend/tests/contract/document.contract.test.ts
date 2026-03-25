@@ -4,6 +4,151 @@ import { describe, expect, it } from "vitest";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 
 describe("document contract", () => {
+  it("searches documents and returns a stable search snapshot with shared diagnostics", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-search@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Pricing FAQ",
+        content: "Annual pricing includes support and onboarding details.",
+        metadata: { language: "en" },
+      });
+
+    const response = await request(app)
+      .post("/api/v1/document/search")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        query: "pricing support",
+        metadataFilter: { language: "en" },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      searchId: expect.any(String),
+      mode: "live",
+      query: "pricing support",
+      resultCount: 1,
+      results: [
+        expect.objectContaining({
+          title: "Pricing FAQ",
+          rank: 1,
+          actions: expect.arrayContaining([
+            expect.objectContaining({ type: "open_document", status: "available" }),
+          ]),
+        }),
+      ],
+      retrievalTrace: expect.objectContaining({
+        traceId: expect.any(String),
+      }),
+    });
+  });
+
+  it("lists and replays document search history snapshots", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-search-history@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Troubleshooting Guide",
+        content: "Reset the service when onboarding fails.",
+      });
+
+    const searchResponse = await request(app)
+      .post("/api/v1/document/search")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        query: "onboarding fails",
+      });
+
+    const listResponse = await request(app)
+      .get("/api/v1/document/search/history")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.searches).toEqual([
+      expect.objectContaining({
+        searchId: searchResponse.body.searchId,
+        query: "onboarding fails",
+        resultCount: 1,
+        traceAvailable: true,
+      }),
+    ]);
+
+    const replayResponse = await request(app)
+      .get(`/api/v1/document/search/history/${searchResponse.body.searchId}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(replayResponse.status).toBe(200);
+    expect(replayResponse.body).toMatchObject({
+      searchId: searchResponse.body.searchId,
+      mode: "snapshot",
+      query: "onboarding fails",
+      resultCount: 1,
+      results: [
+        expect.objectContaining({
+          title: "Troubleshooting Guide",
+        }),
+      ],
+      retrievalTrace: expect.objectContaining({
+        traceId: expect.any(String),
+      }),
+    });
+  });
+
+  it("replays search history after document deletion with unavailable open actions", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-search-history-deleted@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Temporary Guide",
+        content: "Delete me after search replay is stored.",
+      });
+
+    const searchResponse = await request(app)
+      .post("/api/v1/document/search")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        query: "delete me",
+      });
+
+    await request(app)
+      .delete(`/api/v1/document/${createResponse.body.documentId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(204);
+
+    const replayResponse = await request(app)
+      .get(`/api/v1/document/search/history/${searchResponse.body.searchId}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(replayResponse.status).toBe(200);
+    expect(replayResponse.body).toMatchObject({
+      searchId: searchResponse.body.searchId,
+      mode: "snapshot",
+      query: "delete me",
+      resultCount: 1,
+      results: [
+        expect.objectContaining({
+          documentId: createResponse.body.documentId,
+          title: "Temporary Guide",
+          actions: expect.arrayContaining([
+            expect.objectContaining({ type: "open_document", status: "unavailable" }),
+          ]),
+        }),
+      ],
+    });
+  });
+
   it("accepts a supported file import for background processing for a bearer-authenticated account", async () => {
     const { app } = createTestApp();
 

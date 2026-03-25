@@ -21,7 +21,12 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
     try {
       const result = await dependencies.authService.register(req.body);
       res.setHeader("Set-Cookie", result.sessionCookie);
-      res.status(201).json({ userId: result.userId });
+      res.status(201).json({
+        userId: result.userId,
+        workspaceId: result.workspaceId,
+        workspaceName: result.workspaceName,
+        token: result.token,
+      });
     } catch (error) {
       next(error);
     }
@@ -31,7 +36,12 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
     try {
       const result = await dependencies.authService.login(req.body);
       res.setHeader("Set-Cookie", result.sessionCookie);
-      res.status(200).json({ userId: result.userId });
+      res.status(200).json({
+        userId: result.userId,
+        workspaceId: result.workspaceId,
+        workspaceName: result.workspaceName,
+        token: result.token,
+      });
     } catch (error) {
       next(error);
     }

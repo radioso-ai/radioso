@@ -33,10 +33,14 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination'
 import { DocumentStatus } from '@/components/dashboard/document-status'
+import { DocumentSearchBar } from '@/components/dashboard/document-search-bar'
+import { DocumentSearchResults } from '@/components/dashboard/document-search-results'
 import {
   type DocumentSummary,
   documentsApi,
 } from '@/lib/api'
+import { type WorkspaceOnboardingState } from '@/lib/onboarding'
+import { useDocumentSearch } from '@/components/dashboard/use-document-search'
 
 type EditorMode = 'create' | 'edit' | 'view'
 const PAGE_SIZE = 100
@@ -44,6 +48,7 @@ const PAGE_SIZE = 100
 interface DocumentsViewProps {
   selectedDocumentId?: string | null
   onSelectedDocumentChange?: (documentId: string | null) => void
+  onboarding: WorkspaceOnboardingState
 }
 
 const EMPTY_FORM = {
@@ -89,8 +94,10 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 export function DocumentsView({
   selectedDocumentId = null,
   onSelectedDocumentChange,
+  onboarding,
 }: DocumentsViewProps) {
   const justClosedDocumentIdRef = useRef<string | null>(null)
+  const documentSearch = useDocumentSearch()
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
@@ -549,20 +556,31 @@ export function DocumentsView({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="shrink-0 flex items-center justify-between border-b border-border px-6 py-4">
-        <div>
-          <h1 className="text-lg font-medium text-foreground">Documents</h1>
-          <p className="text-sm text-muted-foreground">Manage your knowledge base</p>
+      <div className="shrink-0 border-b border-border px-6 py-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div>
+            <h1 className="text-lg font-medium text-foreground">Documents</h1>
+            <p className="text-sm text-muted-foreground">Manage your knowledge base</p>
+          </div>
+          <DocumentSearchBar
+            query={documentSearch.query}
+            onQueryChange={documentSearch.setQuery}
+            onSubmit={() => void documentSearch.runSearch()}
+            onClear={documentSearch.clearSearch}
+            isSearching={documentSearch.isSearching}
+          />
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={openImportDialog}>
+        <div className="flex items-center gap-2 xl:shrink-0">
+          <Button size="sm" variant="outline" className="h-11 px-4" onClick={openImportDialog}>
             <FileText className="mr-2 h-4 w-4" />
             Import File
           </Button>
-          <Button size="sm" onClick={openCreateDialog}>
+          <Button size="sm" className="h-11 px-4" onClick={openCreateDialog}>
             <Plus className="mr-2 h-4 w-4" />
             Add Document
           </Button>
+        </div>
         </div>
       </div>
 
@@ -685,7 +703,19 @@ export function DocumentsView({
       </AlertDialog>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        {isLoading ? (
+        {documentSearch.activeSearch || documentSearch.searchError ? (
+          <DocumentSearchResults
+            search={documentSearch.activeSearch}
+            error={documentSearch.searchError}
+            onOpenDocument={(documentId) => {
+              if (onSelectedDocumentChange) {
+                onSelectedDocumentChange(documentId)
+                return
+              }
+              void openEditDialog(documentId)
+            }}
+          />
+        ) : isLoading ? (
           <div className="flex h-full items-center justify-center">
             <Spinner className="h-6 w-6" />
           </div>
@@ -696,7 +726,9 @@ export function DocumentsView({
             </div>
             <h2 className="mb-1 text-lg font-medium text-foreground">No documents yet</h2>
             <p className="mb-4 max-w-sm text-sm text-muted-foreground">
-              Add documents to your knowledge base to start asking questions.
+              {onboarding.isImportingSampleDocs
+                ? 'Radioso is seeding this empty workspace with starter documents.'
+                : 'Empty workspaces are seeded automatically. You can still import your own files or add inline documents here.'}
             </p>
             <div className="flex items-center gap-2">
               <Button size="sm" variant="outline" onClick={openImportDialog}>

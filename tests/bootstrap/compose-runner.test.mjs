@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { attachComposeStack, startComposeStack, waitForReadiness } from "../../scripts/bootstrap/compose-runner.mjs";
+import {
+  attachComposeStack,
+  startComposeStack,
+  waitForReadiness,
+} from "../../scripts/bootstrap/compose-runner.mjs";
 
 test("startComposeStack returns failure when compose up exits non-zero", async () => {
   const report = await startComposeStack({

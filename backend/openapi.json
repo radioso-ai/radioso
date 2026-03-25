@@ -116,10 +116,24 @@
           "userId": {
             "type": "string",
             "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceName": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "pattern": "^sk_proj_[a-f0-9]+$"
           }
         },
         "required": [
-          "userId"
+          "userId",
+          "workspaceId",
+          "workspaceName",
+          "token"
         ]
       },
       "LoginResponse": {
@@ -128,10 +142,24 @@
           "userId": {
             "type": "string",
             "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceName": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "pattern": "^sk_proj_[a-f0-9]+$"
           }
         },
         "required": [
-          "userId"
+          "userId",
+          "workspaceId",
+          "workspaceName",
+          "token"
         ]
       },
       "AccountTokenResponse": {

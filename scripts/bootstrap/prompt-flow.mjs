@@ -6,6 +6,7 @@ import { formatMessage } from "./terminal-theme.mjs";
 import { getEnvContract, getProviderRequiredKeys } from "./support/env-contract.mjs";
 
 const asBool = (value) => String(value ?? "").trim().toLowerCase().startsWith("y");
+export const DEMO_MODE_API_KEY = "demo-mode-placeholder-key";
 
 export const planQuestions = (existingValues = {}, contract = getEnvContract(), options = {}) => {
   const reconfigure = Boolean(options.reconfigure);
@@ -23,7 +24,23 @@ export const planQuestions = (existingValues = {}, contract = getEnvContract(), 
   }
 
   const providerValue = reconfigure ? provider : existingValues.LLM_PROVIDER || provider;
-  for (const key of getProviderRequiredKeys(providerValue)) {
+  const providerRequiredKeys = getProviderRequiredKeys(providerValue);
+
+  if (providerValue === "openai" && (reconfigure || !existingValues.OPENAI_API_KEY)) {
+    questions.push({
+      key: "__QUICK_EVAL_MODE__",
+      prompt: "No provider key detected. Enter one now or start in limited demo mode",
+      defaultValue: existingValues.OPENAI_API_KEY === DEMO_MODE_API_KEY ? "demo" : "setup",
+      kind: "choice",
+      choices: ["setup", "demo"],
+    });
+  }
+
+  for (const key of providerRequiredKeys) {
+    if (key === "OPENAI_API_KEY" && providerValue === "openai") {
+      continue;
+    }
+
     if (reconfigure || !existingValues[key]) {
       questions.push({
         key,
@@ -32,6 +49,16 @@ export const planQuestions = (existingValues = {}, contract = getEnvContract(), 
         secret: key.includes("KEY"),
       });
     }
+  }
+
+  if (providerValue === "openai" && (reconfigure || !existingValues.OPENAI_API_KEY)) {
+    questions.push({
+      key: "OPENAI_API_KEY",
+      prompt: "Enter OPENAI_API_KEY",
+      defaultValue: existingValues.OPENAI_API_KEY === DEMO_MODE_API_KEY ? "" : existingValues.OPENAI_API_KEY || contract.defaults.OPENAI_API_KEY || "",
+      secret: true,
+      dependsOn: { key: "__QUICK_EVAL_MODE__", value: "setup" },
+    });
   }
 
   if (reconfigure || existingValues.DOCUMENT_STORAGE_BUCKET === undefined) {
@@ -105,6 +132,13 @@ export const collectAnswers = async (questions, ansi, io = {}) => {
   });
 
   for (const question of questions) {
+    if (question.dependsOn && answers[question.dependsOn.key] !== question.dependsOn.value) {
+      if (question.key === "OPENAI_API_KEY" && answers.__QUICK_EVAL_MODE__ === "demo") {
+        answers.OPENAI_API_KEY = DEMO_MODE_API_KEY;
+      }
+      continue;
+    }
+
     while (true) {
       const answer = (await ask(question)) || question.defaultValue || "";
       const validationError = validateAnswer(question, answer);
@@ -129,6 +163,11 @@ export const collectAnswers = async (questions, ansi, io = {}) => {
     delete answers.DOCUMENT_STORAGE_BUCKET;
   }
 
+  if (answers.__QUICK_EVAL_MODE__ === "demo") {
+    answers.OPENAI_API_KEY = DEMO_MODE_API_KEY;
+  }
+
   delete answers.__USE_DOCUMENT_STORAGE__;
+  delete answers.__QUICK_EVAL_MODE__;
   return answers;
 };

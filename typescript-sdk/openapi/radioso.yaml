@@ -503,11 +503,19 @@ components:
           minLength: 8
     RegisterResponse:
       type: object
-      required: [userId]
+      required: [userId, workspaceId, workspaceName, token]
       properties:
         userId:
           type: string
           format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        workspaceName:
+          type: string
+        token:
+          type: string
+          pattern: '^sk_proj_[a-f0-9]+$'
     LoginRequest:
       type: object
       required: [email, password]
@@ -519,11 +527,19 @@ components:
           type: string
     LoginResponse:
       type: object
-      required: [userId]
+      required: [userId, workspaceId, workspaceName, token]
       properties:
         userId:
           type: string
           format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        workspaceName:
+          type: string
+        token:
+          type: string
+          pattern: '^sk_proj_[a-f0-9]+$'
     AccountTokenResponse:
       type: object
       required: [token]

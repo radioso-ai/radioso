@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { planQuestions, collectAnswers } from "../../scripts/bootstrap/prompt-flow.mjs";
+import { planQuestions, collectAnswers, DEMO_MODE_API_KEY } from "../../scripts/bootstrap/prompt-flow.mjs";
 
 test("planQuestions asks for provider key on fresh setup", () => {
   const questions = planQuestions({});
   assert.equal(questions[0].key, "LLM_PROVIDER");
+  assert.ok(questions.some((question) => question.key === "__QUICK_EVAL_MODE__"));
   assert.ok(questions.some((question) => question.key === "OPENAI_API_KEY"));
 });
 
@@ -54,4 +55,30 @@ test("collectAnswers requests storage bucket only after enabling storage", async
   );
 
   assert.equal(answers.DOCUMENT_STORAGE_BUCKET, "bucket-name");
+});
+
+test("collectAnswers injects a placeholder key for demo mode", async () => {
+  const answers = await collectAnswers(
+    [
+      {
+        key: "__QUICK_EVAL_MODE__",
+        prompt: "Quick eval",
+        defaultValue: "setup",
+        choices: ["setup", "demo"],
+      },
+      {
+        key: "OPENAI_API_KEY",
+        prompt: "OpenAI key",
+        defaultValue: "",
+        secret: true,
+        dependsOn: { key: "__QUICK_EVAL_MODE__", value: "setup" },
+      },
+    ],
+    { enabled: false },
+    {
+      ask: async () => "demo",
+    },
+  );
+
+  assert.equal(answers.OPENAI_API_KEY, DEMO_MODE_API_KEY);
 });

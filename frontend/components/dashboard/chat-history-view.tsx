@@ -1,6 +1,7 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 import {
   type ChatConversationDetail,
@@ -35,7 +36,9 @@ import { ChatRetrievalInfo } from './chat-retrieval-info'
 import { ChatRetrievalTraceGraph } from './chat-retrieval-trace-graph'
 import { ChatMessageThread } from './chat-message-thread'
 import type { CitationOpenResult } from './chat-citations'
-import { History, MessageSquareText, Search, X } from 'lucide-react'
+import { buildAccountRoute } from '@/lib/dashboard-routes'
+import { type WorkspaceOnboardingState } from '@/lib/onboarding'
+import { FileText, History, MessageSquareText, Search, X } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
@@ -77,9 +80,12 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 
 export function ChatHistoryView({
   accountId,
+  onboarding,
 }: {
   accountId: string
+  onboarding: WorkspaceOnboardingState
 }) {
+  const router = useRouter()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([])
   const [searches, setSearches] = useState<DocumentSearchHistoryEntry[]>([])
@@ -340,8 +346,6 @@ export function ChatHistoryView({
       .sort((left, right) => new Date(right.sortAt).getTime() - new Date(left.sortAt).getTime())
   }, [conversations, filter, searches])
 
-  const searchTrace = searchDetail?.retrievalTrace
-
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 border-b border-border px-6 py-4">
@@ -387,11 +391,29 @@ export function ChatHistoryView({
               <h2 className="text-lg font-medium text-foreground">No history yet</h2>
               <p className="mt-1 max-w-md text-sm text-muted-foreground">
                 {filter === 'chat'
-                  ? 'Conversations will appear here after this account starts using chat.'
+                  ? onboarding.hasReadyDocuments
+                    ? 'Your workspace is ready. Ask the first question and it will appear here.'
+                    : 'Load content first, then ask one question. Conversation history will appear here after that.'
                   : filter === 'search'
                     ? 'Document searches will appear here after someone runs a search.'
-                    : 'Chats and document searches will appear here after this account starts using them.'}
+                    : onboarding.hasReadyDocuments
+                      ? 'Your workspace is ready. Ask the first question or run a document search to start building history.'
+                      : 'Load content first, then ask one question or run a document search. History will appear here after that.'}
               </p>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {filter !== 'search' && onboarding.hasReadyDocuments ? (
+                <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'chat'))}>
+                  <MessageSquareText className="mr-2 h-4 w-4" />
+                  Ask first question
+                </Button>
+              ) : null}
+              {(filter === 'chat' || filter === 'all') && !onboarding.hasReadyDocuments ? (
+                <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'documents'))}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Open documents
+                </Button>
+              ) : null}
             </div>
           </div>
         ) : (

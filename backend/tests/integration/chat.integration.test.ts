@@ -1,6 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_UNSUPPORTED_NOTICE } from "../../src/modules/chat/services/assistantTurnOutcomeClassifier.js";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
@@ -63,6 +64,71 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toContain("could not find relevant information");
+  });
+
+  it("replaces unsupported substantive content in mixed-support answers before delivery", async () => {
+    const mixedGateway: ChatGateway = {
+      async answer() {
+        return "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support.";
+      },
+      async *streamAnswer() {
+        yield "The page explains testing and parsing content for users[[1]]. ";
+        yield "It also offers 24/7 phone support.";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: mixedGateway });
+
+    const { token } = await issueTestToken(app, "mixed-support@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does the page explain?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toBe(
+      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
+    );
+    expect(response.body.answer).not.toContain("24/7 phone support");
+    expect(response.body.answerSegments).toEqual([
+      { text: "The page explains testing and parsing content for users", citationIndices: [0] },
+      { text: `. ${DEFAULT_UNSUPPORTED_NOTICE}` },
+    ]);
+  });
+
+  it("collapses fully unsupported grounded drafts to only the unsupported notice", async () => {
+    const unsupportedGateway: ChatGateway = {
+      async answer() {
+        return "It also offers 24/7 phone support and a discount code.";
+      },
+      async *streamAnswer() {
+        yield "It also offers 24/7 phone support and a discount code.";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: unsupportedGateway });
+
+    const { token } = await issueTestToken(app, "fully-unsupported@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does the page explain?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toBe(DEFAULT_UNSUPPORTED_NOTICE);
+    expect(response.body.answer).not.toContain("discount code");
   });
 
   it("keeps conversations account scoped", async () => {
@@ -240,6 +306,78 @@ describe("chat integration", () => {
       assistantMessageId: expect.any(String),
       conversationId: response.body.conversationId,
       stream: false,
+    });
+  });
+
+  it("records validator-triggered degradation in assistant-turn audit metadata", async () => {
+    const mixedGateway: ChatGateway = {
+      async answer() {
+        return "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support.";
+      },
+      async *streamAnswer() {
+        yield "The page explains testing and parsing content for users[[1]]. ";
+        yield "It also offers 24/7 phone support.";
+      },
+    };
+    const { app, dependencies } = createTestApp({ chatGateway: mixedGateway });
+
+    const { token } = await issueTestToken(app, "degraded-outcome@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does the page explain?", stream: false });
+
+    const auditEvents = (dependencies.auditService as unknown as { events: Array<{ eventType: string; metadata?: Record<string, unknown> }> }).events;
+    const chatAudit = [...auditEvents].reverse().find((event) => event.eventType === "chat.answer");
+
+    expect(response.status).toBe(200);
+    expect(chatAudit?.metadata).toMatchObject({
+      answerOutcome: "grounded_degraded_unsupported_segments",
+      validation: {
+        ran: true,
+        answerModified: true,
+        unsupportedSegmentCount: 1,
+        supportedSegmentCount: 1,
+        nonSubstantiveSegmentCount: expect.any(Number),
+      },
+    });
+    const validation = chatAudit?.metadata?.validation as
+      | { segmentResults?: Array<Record<string, unknown>> }
+      | undefined;
+    expect(validation?.segmentResults?.every((segment) => !("content" in segment))).toBe(true);
+  });
+
+  it("keeps no-context refusals distinct from validator-triggered degradation in audit metadata", async () => {
+    const { app, dependencies } = createTestApp();
+
+    const { token } = await issueTestToken(app, "no-context-outcome@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What is the capital of France?", stream: false });
+
+    const auditEvents = (dependencies.auditService as unknown as { events: Array<{ eventType: string; metadata?: Record<string, unknown> }> }).events;
+    const chatAudit = [...auditEvents].reverse().find((event) => event.eventType === "chat.answer");
+
+    expect(response.status).toBe(200);
+    expect(chatAudit?.metadata).toMatchObject({
+      answerOutcome: "no_context_refusal",
+      validation: {
+        ran: false,
+        answerModified: false,
+        unsupportedSegmentCount: 0,
+        supportedSegmentCount: 0,
+        nonSubstantiveSegmentCount: 0,
+      },
     });
   });
 

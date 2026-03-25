@@ -7,6 +7,14 @@ import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/serv
 import { RetrievalTracePresenter } from "../../retrieval/services/retrievalTracePresenter.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
 import { AnswerPresentationService, type AnswerSegment, type ChatCitation } from "./answerPresentationService.js";
+import { AnswerSupportValidator } from "./answerSupportValidator.js";
+import {
+  ASSISTANT_TURN_OUTCOME,
+  type AnswerSegmentValidationResult,
+  type AnswerValidationSummary,
+  type AssistantTurnOutcome,
+} from "./answerSupportValidationTypes.js";
+import { AssistantTurnOutcomeClassifier } from "./assistantTurnOutcomeClassifier.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 
@@ -44,6 +52,10 @@ interface PreparedSession {
 }
 
 interface ChatAnswerAuditMetadata {
+  answerOutcome?: AssistantTurnOutcome;
+  validation?: AnswerValidationSummary & {
+    segmentResults?: Array<Pick<AnswerSegmentValidationResult, "text" | "disposition" | "replacementApplied" | "reason" | "citationIndices">>;
+  };
   carryForwardLiterals?: string[];
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
@@ -54,6 +66,9 @@ interface PresentedAnswer {
   answer: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  answerOutcome: AssistantTurnOutcome;
+  validation: AnswerValidationSummary;
+  segmentResults: AnswerSegmentValidationResult[];
 }
 
 export class ModelChatGateway implements ChatGateway {
@@ -82,6 +97,8 @@ export class OpenAIChatGateway extends ModelChatGateway {}
 
 export class ChatService {
   private readonly answerPresentationService = new AnswerPresentationService();
+  private readonly answerSupportValidator = new AnswerSupportValidator();
+  private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
   private static readonly MAX_CARRY_FORWARD_LITERALS = 6;
@@ -128,6 +145,8 @@ export class ChatService {
           stream: input.stream,
           hadContexts: session.retrieval.contexts.length > 0,
           durationMs: Date.now() - answerStartedAt,
+          answerOutcome: presentation.answerOutcome,
+          validation: presentation.validation,
         },
       });
 
@@ -144,6 +163,9 @@ export class ChatService {
         conversationId: session.conversation.id,
         userMessageId: session.userMessage.id,
         assistantMessageId,
+        answerOutcome: presentation.answerOutcome,
+        validation: presentation.validation,
+        segmentResults: presentation.segmentResults,
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
         diagnostics: session.retrieval.diagnostics,
@@ -187,7 +209,6 @@ export class ChatService {
       };
 
       let rawAnswer = "";
-      const sanitizer = new CitationAnchorSanitizer();
       const answerStartedAt = Date.now();
 
       if (session.retrieval.contexts.length === 0) {
@@ -206,7 +227,15 @@ export class ChatService {
             continue;
           }
           rawAnswer = `${rawAnswer}${text}`;
-          const safe = sanitizer.push(text);
+        }
+      }
+
+      const presentation = this.presentAnswer(session, rawAnswer);
+      if (session.retrieval.contexts.length > 0) {
+        const sanitizer = new CitationAnchorSanitizer();
+        const validatedChunks = presentation.answerSegments?.map((segment) => segment.text) ?? [presentation.answer];
+        for (const chunk of validatedChunks) {
+          const safe = sanitizer.push(chunk);
           if (!safe) {
             continue;
           }
@@ -217,7 +246,6 @@ export class ChatService {
         }
       }
 
-      const presentation = this.presentAnswer(session, rawAnswer);
       const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics);
       const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
         trace: session.retrieval.trace,
@@ -227,6 +255,8 @@ export class ChatService {
           stream: input.stream,
           hadContexts: session.retrieval.contexts.length > 0,
           durationMs: Date.now() - answerStartedAt,
+          answerOutcome: presentation.answerOutcome,
+          validation: presentation.validation,
         },
       });
 
@@ -243,6 +273,9 @@ export class ChatService {
         conversationId: session.conversation.id,
         userMessageId: session.userMessage.id,
         assistantMessageId,
+        answerOutcome: presentation.answerOutcome,
+        validation: presentation.validation,
+        segmentResults: presentation.segmentResults,
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
         diagnostics: session.retrieval.diagnostics,
@@ -312,29 +345,65 @@ export class ChatService {
     session: PreparedSession,
     query: string,
   ): Promise<PresentedAnswer> {
-    const answer =
-      session.retrieval.contexts.length === 0
-        ? "I could not find relevant information in your documents."
-        : await this.chatGateway.answer({
-            query,
-            history: session.history,
-            prompt: session.retrieval.prompt,
-          });
+    const answer = session.retrieval.contexts.length === 0
+      ? "I could not find relevant information in your documents."
+      : await this.chatGateway.answer({
+          query,
+          history: session.history,
+          prompt: session.retrieval.prompt,
+        });
 
     return this.presentAnswer(session, answer);
   }
 
   private presentAnswer(session: PreparedSession, answer: string): PresentedAnswer {
-    return this.answerPresentationService.present({
+    const citationEvidence = session.retrieval.contexts.map((context) => ({
+      documentId: context.documentId,
+      chunkId: context.chunkId,
+      title: context.title,
+      content: context.content,
+    }));
+    const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
+
+    if (session.retrieval.contexts.length === 0) {
+      const presented = this.answerPresentationService.present({
+        answer,
+        citations: citationEvidence,
+        citationDisplayEnabled,
+      });
+      return {
+        ...presented,
+        answerOutcome: ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL,
+        validation: {
+          ran: false,
+          answerModified: false,
+          unsupportedSegmentCount: 0,
+          supportedSegmentCount: 0,
+          nonSubstantiveSegmentCount: 0,
+        },
+        segmentResults: [],
+      };
+    }
+
+    const normalized = this.answerPresentationService.normalize({
       answer,
-      citations: session.retrieval.contexts.map((context) => ({
-        documentId: context.documentId,
-        chunkId: context.chunkId,
-        title: context.title,
-        content: context.content,
-      })),
-      citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
+      citations: citationEvidence,
     });
+
+    const validated = this.answerSupportValidator.validate({
+      answer: normalized.answer,
+      answerSegments: normalized.answerSegments,
+      citationEvidence: normalized.citationEvidence,
+      citationDisplayEnabled,
+    });
+
+    return {
+      ...validated,
+      answerOutcome: this.assistantTurnOutcomeClassifier.classify({
+        hadRetrievedContext: true,
+        validation: validated.validation,
+      }),
+    };
   }
 
   private async finalizeAssistantTurn(input: {
@@ -343,6 +412,9 @@ export class ChatService {
     conversationId: string;
     userMessageId: string;
     assistantMessageId: string;
+    answerOutcome: AssistantTurnOutcome;
+    validation: AnswerValidationSummary;
+    segmentResults: AnswerSegmentValidationResult[];
     citations: ChatCitation[];
     answerSegments?: AnswerSegment[];
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
@@ -360,6 +432,17 @@ export class ChatService {
         userMessageId: input.userMessageId,
         assistantMessageId: input.assistantMessageId,
         stream: input.stream,
+        answerOutcome: input.answerOutcome,
+        validation: {
+          ...input.validation,
+          segmentResults: input.segmentResults.map((segment) => ({
+            text: segment.text,
+            disposition: segment.disposition,
+            replacementApplied: segment.replacementApplied,
+            reason: segment.reason,
+            citationIndices: segment.citationIndices,
+          })),
+        },
         citationCount: input.citations.length,
         citations: input.citations,
         answerSegments: input.answerSegments,

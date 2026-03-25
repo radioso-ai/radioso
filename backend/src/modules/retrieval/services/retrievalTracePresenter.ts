@@ -10,6 +10,12 @@ export interface AnswerOutcomeInput {
   stream: boolean;
   hadContexts: boolean;
   durationMs: number;
+  answerOutcome?: string;
+  validation?: {
+    ran: boolean;
+    answerModified: boolean;
+    unsupportedSegmentCount: number;
+  };
 }
 
 const ALLOWED_STATUSES = new Set<RetrievalTraceStageStatus>([
@@ -73,9 +79,12 @@ export class RetrievalTracePresenter {
       status: input.outcome.hadContexts ? "applied" : "fallback",
       durationMs: input.outcome.durationMs,
       outputs: {
-        outcome: input.outcome.hadContexts ? "grounded_answer" : "no_context",
+        outcome: input.outcome.answerOutcome ?? (input.outcome.hadContexts ? "grounded_answer" : "no_context"),
         stream: input.outcome.stream,
         answerPreview: summarizeValue(input.outcome.answer),
+        validationRan: input.outcome.validation?.ran,
+        answerModified: input.outcome.validation?.answerModified,
+        unsupportedSegmentCount: input.outcome.validation?.unsupportedSegmentCount,
       },
       metrics: {
         answerLength: input.outcome.answer.length,

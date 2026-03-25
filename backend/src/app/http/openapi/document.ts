@@ -86,6 +86,9 @@ const RegisterResponseSchema = registry.register(
   "RegisterResponse",
   z.object({
     userId: z.string().uuid(),
+    workspaceId: z.string().uuid(),
+    workspaceName: z.string(),
+    token: z.string().regex(/^sk_proj_[a-f0-9]+$/i),
   }),
 );
 
@@ -93,6 +96,9 @@ const LoginResponseSchema = registry.register(
   "LoginResponse",
   z.object({
     userId: z.string().uuid(),
+    workspaceId: z.string().uuid(),
+    workspaceName: z.string(),
+    token: z.string().regex(/^sk_proj_[a-f0-9]+$/i),
   }),
 );
 

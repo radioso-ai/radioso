@@ -1,0 +1,13 @@
+.git
+.context
+.DS_Store
+
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/.turbo
+**/npm-debug.log*
+
+specs
+tests

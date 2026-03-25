@@ -48,6 +48,20 @@ describe("auth integration", () => {
     expect(response.body.error.code).toBe("unauthorized");
   });
 
+  it("returns the default workspace and token from registration", async () => {
+    const { app } = createTestApp();
+
+    const response = await request(app).post("/api/v1/auth/register").send({
+      email: "bootstrap@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.workspaceName).toBe("Default");
+    expect(response.body.workspaceId).toBeDefined();
+    expect(response.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
+  });
+
   it("returns the same single token on repeated retrieval", async () => {
     const { app } = createTestApp();
     const cookie = (

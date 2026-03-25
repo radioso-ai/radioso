@@ -1,22 +1,27 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
+import { FileText, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Send } from 'lucide-react'
 import { type CitationOpenResult } from './chat-citations'
 import { documentsApi } from '@/lib/api'
 import { useChatSession } from '@/lib/chat-context'
+import { buildAccountRoute } from '@/lib/dashboard-routes'
+import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useWorkspace } from '@/lib/workspace-context'
 import { ChatMessageThread } from './chat-message-thread'
 
 interface ChatViewProps {
   accountId: string
   onOpenDocument: (documentId: string) => void
+  onboarding: WorkspaceOnboardingState
 }
 
-export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
+export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProps) {
+  const router = useRouter()
   const [input, setInput] = useState('')
   const { activeWorkspaceId } = useWorkspace()
   const { messages, isLoading, sendMessage } = useChatSession(activeWorkspaceId ?? accountId)
@@ -68,6 +73,39 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
     }
   }
 
+  const emptyState = onboarding.hasPendingDocuments
+    ? {
+        title: 'Documents are still processing',
+        description:
+          'Radioso is preparing chunks and retrieval data. Give it a moment, then ask the first question.',
+        primaryAction: (
+          <Button size="sm" variant="outline" onClick={() => router.push(buildAccountRoute(accountId, 'documents'))}>
+            <FileText className="mr-2 h-4 w-4" />
+            Open documents
+          </Button>
+        ),
+      }
+    : onboarding.hasReadyDocuments
+      ? {
+          title: 'Your workspace is ready',
+          description:
+            'Ask a question about the content you loaded to see grounded answers and citations.',
+          primaryAction: null,
+        }
+      : {
+          title: 'Start with content first',
+          description:
+            'Radioso is seeding this empty workspace with starter documents. You can also open Documents to upload your own.',
+          primaryAction: (
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'documents'))}>
+                <FileText className="mr-2 h-4 w-4" />
+                Upload docs
+              </Button>
+            </div>
+          ),
+        }
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 border-b border-border px-6 py-4">
@@ -81,10 +119,13 @@ export function ChatView({ accountId, onOpenDocument }: ChatViewProps) {
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
               <Send className="w-5 h-5 text-primary" />
             </div>
-            <h2 className="text-lg font-medium text-foreground mb-1">Start a conversation</h2>
+            <h2 className="text-lg font-medium text-foreground mb-1">{emptyState.title}</h2>
             <p className="text-sm text-muted-foreground max-w-sm">
-              Ask questions about your uploaded documents and get AI-powered answers with citations.
+              {emptyState.description}
             </p>
+            {emptyState.primaryAction ? (
+              <div className="mt-4">{emptyState.primaryAction}</div>
+            ) : null}
           </div>
         ) : (
           <div>

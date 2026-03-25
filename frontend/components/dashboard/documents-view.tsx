@@ -39,6 +39,7 @@ import {
   type DocumentSummary,
   documentsApi,
 } from '@/lib/api'
+import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useDocumentSearch } from '@/components/dashboard/use-document-search'
 
 type EditorMode = 'create' | 'edit' | 'view'
@@ -47,6 +48,7 @@ const PAGE_SIZE = 100
 interface DocumentsViewProps {
   selectedDocumentId?: string | null
   onSelectedDocumentChange?: (documentId: string | null) => void
+  onboarding: WorkspaceOnboardingState
 }
 
 const EMPTY_FORM = {
@@ -92,6 +94,7 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 export function DocumentsView({
   selectedDocumentId = null,
   onSelectedDocumentChange,
+  onboarding,
 }: DocumentsViewProps) {
   const justClosedDocumentIdRef = useRef<string | null>(null)
   const documentSearch = useDocumentSearch()
@@ -723,7 +726,9 @@ export function DocumentsView({
             </div>
             <h2 className="mb-1 text-lg font-medium text-foreground">No documents yet</h2>
             <p className="mb-4 max-w-sm text-sm text-muted-foreground">
-              Add documents to your knowledge base to start asking questions.
+              {onboarding.isImportingSampleDocs
+                ? 'Radioso is seeding this empty workspace with starter documents.'
+                : 'Empty workspaces are seeded automatically. You can still import your own files or add inline documents here.'}
             </p>
             <div className="flex items-center gap-2">
               <Button size="sm" variant="outline" onClick={openImportDialog}>

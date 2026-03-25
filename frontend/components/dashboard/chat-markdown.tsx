@@ -65,6 +65,37 @@ const markdownComponents: Components = {
       {children}
     </em>
   ),
+  h1: ({ children, className }) => (
+    <p className={cn('m-0 text-base font-semibold whitespace-pre-wrap', className)}>
+      {children}
+    </p>
+  ),
+  h2: ({ children, className }) => (
+    <p className={cn('m-0 text-base font-semibold whitespace-pre-wrap', className)}>
+      {children}
+    </p>
+  ),
+  h3: ({ children, className }) => (
+    <p className={cn('m-0 text-sm font-semibold whitespace-pre-wrap', className)}>
+      {children}
+    </p>
+  ),
+  h4: ({ children, className }) => (
+    <p className={cn('m-0 text-sm font-semibold whitespace-pre-wrap', className)}>
+      {children}
+    </p>
+  ),
+  h5: ({ children, className }) => (
+    <p className={cn('m-0 text-sm font-medium whitespace-pre-wrap', className)}>
+      {children}
+    </p>
+  ),
+  h6: ({ children, className }) => (
+    <p className={cn('m-0 text-sm font-medium whitespace-pre-wrap', className)}>
+      {children}
+    </p>
+  ),
+  img: () => null,
   li: ({ children, className }) => (
     <li className={cn('ml-1', className)}>
       {children}

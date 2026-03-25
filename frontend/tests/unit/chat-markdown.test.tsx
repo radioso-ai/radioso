@@ -37,4 +37,14 @@ const value = 1
     expect(html).toContain('First line<br/>')
     expect(html).toContain('Second line')
   })
+
+  it('suppresses images and flattens headings to chat-friendly text blocks', () => {
+    const html = renderToStaticMarkup(
+      <AssistantMarkdownContent content={'# Big title\n\n![tracking](https://evil.com/pixel.png)'} />,
+    )
+
+    expect(html).not.toContain('<img')
+    expect(html).not.toContain('<h1')
+    expect(html).toContain('Big title')
+  })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_UNSUPPORTED_NOTICE } from "../../src/modules/chat/services/assistantTurnOutcomeClassifier.js";
 import { ChatService, type ChatGateway, type ChatStreamEvent } from "../../src/modules/chat/services/chatService.js";
 import { createAuditService, InMemoryConversationRepository, InMemoryMessageRepository } from "../support/fakes.js";
 
@@ -284,13 +285,13 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts.join("")).toBe("full answer ");
+    expect(chunkTexts.join("")).toBe(DEFAULT_UNSUPPORTED_NOTICE);
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
-      answer: "full answer  marker",
-      citations: undefined,
-      answerSegments: undefined,
+      answer: DEFAULT_UNSUPPORTED_NOTICE,
+      citations: [],
+      answerSegments: [{ text: DEFAULT_UNSUPPORTED_NOTICE }],
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -314,7 +315,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId(conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: "full answer  marker",
+      content: DEFAULT_UNSUPPORTED_NOTICE,
     });
   });
 
@@ -518,5 +519,168 @@ describe("chat service streaming", () => {
     })).rejects.toThrow("retrieval failed");
 
     expect(conversationRepository.items.size).toBe(0);
+  });
+
+  it("replaces unsupported substantive content before returning a non-streaming grounded answer", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The page explains testing and parsing content for users.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            warmthLevel: 5,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does this page do?",
+      stream: false,
+    });
+
+    expect(response.answer).toBe(
+      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
+    );
+    expect(response.answer).not.toContain("24/7 phone support");
+    expect(response.answerSegments).toEqual([
+      { text: "The page explains testing and parsing content for users", citationIndices: [0] },
+      { text: `. ${DEFAULT_UNSUPPORTED_NOTICE}` },
+    ]);
+
+    const [conversationId] = conversationRepository.items.keys();
+    const persisted = await messageRepository.listByConversationId(conversationId!);
+    expect(persisted.at(-1)?.content).toBe(response.answer);
+  });
+
+  it("buffers grounded streaming answers until validation and emits only validated chunks", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The page explains testing and parsing content for users.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            warmthLevel: 5,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "unused";
+      },
+      async *streamAnswer() {
+        yield "The page explains testing and parsing content for users[[1]]. ";
+        yield "It also offers 24/7 phone support.";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does this page do?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    const streamedText = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
+      .map((event) => event.text)
+      .join("");
+
+    expect(streamedText).toBe(
+      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
+    );
+    expect(streamedText).not.toContain("24/7 phone support");
+    expect(events.at(-1)).toEqual(
+      expect.objectContaining({
+        type: "done",
+        answer: `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
+      }),
+    );
   });
 });

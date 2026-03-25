@@ -8,6 +8,7 @@ import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositor
 import type { RetrievalExecutionDiagnostics, RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
+import type { AssistantTurnOutcome, ValidationDisposition } from "./answerSupportValidationTypes.js";
 
 export interface ChatConversationSummary {
   id: string;
@@ -26,6 +27,21 @@ export interface ChatConversationTurnDebug {
   recordedAt: string;
   stream: boolean;
   citationCount: number;
+  answerOutcome?: AssistantTurnOutcome;
+  validation?: {
+    ran: boolean;
+    answerModified: boolean;
+    unsupportedSegmentCount: number;
+    supportedSegmentCount: number;
+    nonSubstantiveSegmentCount: number;
+    segmentResults: Array<{
+      text: string;
+      disposition: ValidationDisposition;
+      replacementApplied: boolean;
+      reason: string;
+      citationIndices?: number[];
+    }>;
+  };
   retrievalInfo?: RetrievalInfo;
   retrievalTrace?: RetrievalTrace;
   errorMessage?: string | null;
@@ -54,11 +70,26 @@ export interface ChatConversationDetail {
 }
 
 interface ChatAuditMetadata {
+  answerOutcome?: AssistantTurnOutcome;
   assistantMessageId?: string;
   stream?: boolean;
   citationCount?: number;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  validation?: {
+    ran?: boolean;
+    answerModified?: boolean;
+    unsupportedSegmentCount?: number;
+    supportedSegmentCount?: number;
+    nonSubstantiveSegmentCount?: number;
+    segmentResults?: Array<{
+      text?: string;
+      disposition?: ValidationDisposition;
+      replacementApplied?: boolean;
+      reason?: string;
+      citationIndices?: number[];
+    }>;
+  };
   retrieval?: unknown;
   retrievalTrace?: RetrievalTrace;
   errorMessage?: string;
@@ -174,6 +205,28 @@ export class ChatHistoryService {
         recordedAt: toIsoString(event.createdAt),
         stream: Boolean(metadata.stream),
         citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : 0,
+        answerOutcome: metadata.answerOutcome,
+        validation: metadata.validation
+          ? {
+              ran: Boolean(metadata.validation.ran),
+              answerModified: Boolean(metadata.validation.answerModified),
+              unsupportedSegmentCount:
+                typeof metadata.validation.unsupportedSegmentCount === "number" ? metadata.validation.unsupportedSegmentCount : 0,
+              supportedSegmentCount:
+                typeof metadata.validation.supportedSegmentCount === "number" ? metadata.validation.supportedSegmentCount : 0,
+              nonSubstantiveSegmentCount:
+                typeof metadata.validation.nonSubstantiveSegmentCount === "number" ? metadata.validation.nonSubstantiveSegmentCount : 0,
+              segmentResults: (metadata.validation.segmentResults ?? []).map((segment) => ({
+                text: typeof segment.text === "string" ? segment.text : "",
+                disposition: (segment.disposition ?? "non_substantive") as ValidationDisposition,
+                replacementApplied: Boolean(segment.replacementApplied),
+                reason: typeof segment.reason === "string" ? segment.reason : "unknown",
+                citationIndices: Array.isArray(segment.citationIndices)
+                  ? segment.citationIndices.filter((value): value is number => typeof value === "number")
+                  : undefined,
+              })),
+            }
+          : undefined,
         retrievalInfo: metadata.retrieval
           ? this.retrievalInfoPresenter.present(metadata.retrieval as RetrievalExecutionDiagnostics)
           : undefined,

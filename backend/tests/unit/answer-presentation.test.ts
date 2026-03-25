@@ -3,6 +3,59 @@ import { describe, expect, it } from "vitest";
 import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
 
 describe("answer presentation service", () => {
+  it("retains normalized segments and citation evidence for validation even when citation display is disabled", () => {
+    const service = new AnswerPresentationService();
+
+    const normalized = service.normalize({
+      answer: "Arudra is a leader[[1]].",
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Arudra",
+          content: "Arudra is a leader.",
+        },
+      ],
+    });
+
+    expect(normalized).toEqual({
+      answer: "Arudra is a leader.",
+      citationEvidence: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Arudra",
+          content: "Arudra is a leader.",
+        },
+      ],
+      answerSegments: [
+        {
+          text: "Arudra is a leader",
+          citationIndices: [0],
+        },
+        {
+          text: ".",
+        },
+      ],
+    });
+    expect(
+      service.present({
+        answer: "Arudra is a leader[[1]].",
+        citationDisplayEnabled: false,
+        citations: [
+          {
+            documentId: "doc-1",
+            chunkId: "chunk-1",
+            title: "Arudra",
+            content: "Arudra is a leader.",
+          },
+        ],
+      }),
+    ).toEqual({
+      answer: "Arudra is a leader.",
+    });
+  });
+
   it("strips raw citation anchors when citation display is disabled", () => {
     const service = new AnswerPresentationService();
 

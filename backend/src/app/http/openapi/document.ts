@@ -17,7 +17,12 @@ import {
   updateIngestionSettingsSchema,
   updateSettingsSchema,
 } from "../routes/settingsRoutes.js";
-import { documentParamsSchema, documentSchema } from "../routes/documentRoutes.js";
+import {
+  documentParamsSchema,
+  documentSchema,
+  documentSearchHistoryParamsSchema,
+  documentSearchSchema,
+} from "../routes/documentRoutes.js";
 import { chatSchema, conversationParamsSchema } from "../routes/chatRoutes.js";
 import {
   anonymousChatSchema,
@@ -241,6 +246,52 @@ const DocumentListResponseSchema = registry.register(
   }),
 );
 
+const DocumentSearchActionSchema = registry.register(
+  "DocumentSearchAction",
+  z.object({
+    type: z.enum(["open_document", "inspect_match_evidence", "open_history_entry", "rerun_search"]),
+    status: z.enum(["available", "unavailable"]),
+  }),
+);
+
+const DocumentSearchResultSchema = registry.register(
+  "DocumentSearchResult",
+  z.object({
+    documentId: z.string().uuid(),
+    title: z.string(),
+    status: DocumentStatusSchema,
+    ragStatus: RagStatusSchema,
+    metadata: z.record(z.unknown()),
+    score: z.number(),
+    rank: z.number().int().min(1),
+    matchEvidence: z.array(z.string()),
+    sourceKind: z.enum(["inline_text", "uploaded_file"]),
+    sourceFilename: z.string().nullable().optional(),
+    sourceMimeType: z.string().nullable().optional(),
+    actions: z.array(DocumentSearchActionSchema),
+  }),
+);
+
+const DocumentSearchHistoryEntrySchema = registry.register(
+  "DocumentSearchHistoryEntry",
+  z.object({
+    searchId: z.string().uuid(),
+    query: z.string(),
+    createdAt: z.string().datetime(),
+    resultCount: z.number().int().min(0),
+    traceAvailable: z.boolean(),
+    previewTopTitles: z.array(z.string()),
+  }),
+);
+
+const DocumentSearchHistoryListResponseSchema = registry.register(
+  "DocumentSearchHistoryListResponse",
+  z.object({
+    searches: z.array(DocumentSearchHistoryEntrySchema),
+  }),
+);
+const DocumentSearchRequestSchema = registry.register("DocumentSearchRequest", documentSearchSchema);
+
 const CitationSchema = registry.register(
   "Citation",
   z.object({
@@ -347,6 +398,18 @@ const RetrievalTraceSchema = registry.register(
     stages: z.array(RetrievalTraceStageSchema),
     links: z.array(RetrievalTraceLinkSchema),
     summary: RetrievalInfoSchema.optional(),
+  }),
+);
+
+const DocumentSearchResponseSchema = registry.register(
+  "DocumentSearchResponse",
+  z.object({
+    searchId: z.string().uuid(),
+    mode: z.enum(["live", "snapshot"]),
+    query: z.string(),
+    resultCount: z.number().int().min(0),
+    results: z.array(DocumentSearchResultSchema),
+    retrievalTrace: RetrievalTraceSchema.optional(),
   }),
 );
 
@@ -1140,6 +1203,116 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: FlatErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/document/search",
+  tags: ["Documents"],
+  summary: "Search documents for the authenticated workspace",
+  operationId: "searchDocuments",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: DocumentSearchRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Search results returned",
+      content: {
+        "application/json": {
+          schema: DocumentSearchResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/document/search/history",
+  tags: ["Documents"],
+  summary: "List document search history for the authenticated workspace",
+  operationId: "listDocumentSearchHistory",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Document search history returned",
+      content: {
+        "application/json": {
+          schema: DocumentSearchHistoryListResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/document/search/history/{searchId}",
+  tags: ["Documents"],
+  summary: "Replay one historical document search",
+  operationId: "getDocumentSearchHistory",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: documentSearchHistoryParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Document search replay returned",
+      content: {
+        "application/json": {
+          schema: DocumentSearchResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Document search not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
         },
       },
     },

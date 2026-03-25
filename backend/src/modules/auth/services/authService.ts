@@ -81,7 +81,13 @@ interface AuthServiceDependencies {
 export class AuthService {
   constructor(private readonly dependencies: AuthServiceDependencies) {}
 
-  async register(input: { email: string; password: string }): Promise<{ userId: string; sessionCookie: string }> {
+  async register(input: { email: string; password: string }): Promise<{
+    userId: string;
+    workspaceId: string;
+    workspaceName: string;
+    token: string;
+    sessionCookie: string;
+  }> {
     const email = normalizeEmail(input.email);
     const existing = await this.dependencies.accountRepository.findByEmail(email);
 
@@ -96,7 +102,8 @@ export class AuthService {
 
     const passwordHash = await hashPassword(input.password);
     const account = await this.dependencies.accountRepository.create({ email, passwordHash });
-    await this.dependencies.workspaceService.createDefault(account.id);
+    const workspace = await this.dependencies.workspaceService.createDefault(account.id);
+    const { token } = await this.issueWorkspaceToken(workspace.id, account.id);
     const sessionCookie = await this.createSessionCookie(account.id);
 
     await this.dependencies.auditService.record({
@@ -106,10 +113,22 @@ export class AuthService {
       metadata: { email },
     });
 
-    return { userId: account.id, sessionCookie };
+    return {
+      userId: account.id,
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      token,
+      sessionCookie,
+    };
   }
 
-  async login(input: { email: string; password: string }): Promise<{ userId: string; sessionCookie: string }> {
+  async login(input: { email: string; password: string }): Promise<{
+    userId: string;
+    workspaceId: string;
+    workspaceName: string;
+    token: string;
+    sessionCookie: string;
+  }> {
     const email = normalizeEmail(input.email);
     const account = await this.dependencies.accountRepository.findByEmail(email);
 
@@ -122,6 +141,8 @@ export class AuthService {
       throw unauthorized("Invalid email or password");
     }
 
+    const workspace = await this.dependencies.workspaceService.createDefault(account.id);
+    const { token } = await this.getTokenForWorkspace(workspace.id, account.id);
     const sessionCookie = await this.createSessionCookie(account.id);
     await this.dependencies.auditService.record({
       accountId: account.id,
@@ -130,7 +151,13 @@ export class AuthService {
       metadata: { email },
     });
 
-    return { userId: account.id, sessionCookie };
+    return {
+      userId: account.id,
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      token,
+      sessionCookie,
+    };
   }
 
   async authenticateSession(sessionToken: string): Promise<{ accountId: string }> {

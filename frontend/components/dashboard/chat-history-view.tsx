@@ -1,6 +1,7 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 import {
   type ChatConversationDetail,
@@ -17,13 +18,16 @@ import {
   DrawerHeader,
 } from '@/components/ui/drawer'
 import { ActionButton } from '@/components/ui/action-button'
+import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { CopyValueField } from '@/components/ui/copy-value-field'
-import { MessageSquareText, X } from 'lucide-react'
+import { FileText, MessageSquareText, X } from 'lucide-react'
 import { ChatRetrievalInfo } from './chat-retrieval-info'
 import { ChatRetrievalTraceGraph } from './chat-retrieval-trace-graph'
 import { ChatMessageThread } from './chat-message-thread'
 import type { CitationOpenResult } from './chat-citations'
+import { buildAccountRoute } from '@/lib/dashboard-routes'
+import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -52,7 +56,14 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   return fallback
 }
 
-export function ChatHistoryView({ accountId }: { accountId: string }) {
+export function ChatHistoryView({
+  accountId,
+  onboarding,
+}: {
+  accountId: string
+  onboarding: WorkspaceOnboardingState
+}) {
+  const router = useRouter()
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([])
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   const [conversationDetail, setConversationDetail] = useState<ChatConversationDetail | null>(null)
@@ -268,8 +279,25 @@ export function ChatHistoryView({ accountId }: { accountId: string }) {
             </div>
             <h2 className="text-lg font-medium text-foreground">No chat history yet</h2>
             <p className="mt-1 max-w-md text-sm text-muted-foreground">
-              Conversations will appear here after this account starts using chat.
+              {onboarding.hasReadyDocuments
+                ? 'Your workspace is ready. Ask the first question and it will appear here.'
+                : 'Load content first, then ask one question. Conversation history will appear here after that.'}
             </p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {onboarding.hasReadyDocuments ? (
+                <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'chat'))}>
+                  <MessageSquareText className="mr-2 h-4 w-4" />
+                  Ask first question
+                </Button>
+              ) : (
+                <>
+                  <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'documents'))}>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Open documents
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         ) : (
           <div className="mx-auto max-w-4xl space-y-3">

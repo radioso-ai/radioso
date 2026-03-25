@@ -2,9 +2,14 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { attachComposeStack, startComposeStack } from "./compose-runner.mjs";
+import {
+  attachComposeStack,
+  startComposeStack,
+  stopComposeStack,
+  waitForShutdownSignal,
+} from "./compose-runner.mjs";
 import { buildEnvValues, renderEnvFile, writeEnvFileAtomic } from "./env-file.mjs";
-import { collectAnswers, planQuestions } from "./prompt-flow.mjs";
+import { collectAnswers, DEMO_MODE_API_KEY, planQuestions } from "./prompt-flow.mjs";
 import { detectEnvState, runPreflightChecks } from "./preflight.mjs";
 import { getEnvContract } from "./support/env-contract.mjs";
 import { detectAnsiSupport } from "./support/ansi-capabilities.mjs";
@@ -42,13 +47,27 @@ const printPreflightResults = (results, ansi) => {
   }
 };
 
-const summarizeStartup = (report, ansi) => {
+const renderPostStartGuide = (report, ansi) => {
+  const [frontendUrl = "http://127.0.0.1:3000", backendUrl = "http://127.0.0.1:8080"] = report.applicationUrls;
+
+  process.stdout.write(`${formatMessage("helper", `\nFrontend: ${frontendUrl}\n`, ansi)}`);
+  process.stdout.write(`${formatMessage("helper", `Backend:  ${backendUrl}\n`, ansi)}`);
+};
+
+const summarizeStartup = (report, ansi, options = {}) => {
   if (report.ok) {
     process.stdout.write(`${formatMessage("success", "\nRadioso is ready.\n", ansi)}`);
-    for (const url of report.applicationUrls) {
-      process.stdout.write(`${formatMessage("helper", `- ${url}\n`, ansi)}`);
+    renderPostStartGuide(report, ansi);
+    if (options.demoModeEnabled) {
+      process.stdout.write(
+        `${formatMessage(
+          "warning",
+          "- Limited demo mode: the UI can be explored, but chat answers require a real provider key. Re-run with --reconfigure when ready.\n",
+          ansi,
+        )}`,
+      );
     }
-    return 0;
+    return null;
   }
 
   process.stdout.write(`${formatMessage("error", "\nStartup did not complete.\n", ansi)}`);
@@ -104,7 +123,21 @@ export const main = async (argv = process.argv.slice(2)) => {
   }
 
   const report = await startComposeStack();
-  return summarizeStartup(report, ansi);
+  const result = summarizeStartup(report, ansi, {
+    demoModeEnabled: values.OPENAI_API_KEY === DEMO_MODE_API_KEY,
+  });
+  if (typeof result === "number") {
+    return result;
+  }
+
+  await waitForShutdownSignal();
+  process.stdout.write(`${formatMessage("helper", "\nStopping Docker services...\n", ansi)}`);
+  const shutdownResult = await stopComposeStack();
+  if (shutdownResult.signal === "SIGINT" || shutdownResult.signal === "SIGTERM") {
+    return 0;
+  }
+
+  return shutdownResult.code ?? 1;
 };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

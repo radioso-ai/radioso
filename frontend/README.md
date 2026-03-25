@@ -18,6 +18,8 @@ The default local start command for the full Radioso stack is:
 
 That command checks Docker and other local prerequisites, helps create `backend/.env` when needed, and starts the local frontend, backend, and database stack through Docker Compose.
 
+After the stack is ready, open the app, sign in, let Radioso seed the starter docs for an empty workspace, wait for processing, and ask one of the suggested first questions.
+
 If you only need the standalone frontend development server, run:
 
 ```bash

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { classifyEnvState } from "../../scripts/bootstrap/env-file.mjs";
-import { runPreflightChecks } from "../../scripts/bootstrap/preflight.mjs";
+import { getComposeArgs, runPreflightChecks } from "../../scripts/bootstrap/preflight.mjs";
 
 test("classifyEnvState marks missing required provider key as partial", () => {
   const state = classifyEnvState({
@@ -24,11 +24,12 @@ test("runPreflightChecks fails when docker is missing", async () => {
 });
 
 test("runPreflightChecks reports port conflicts when project is not already running", async () => {
+  const composePsKey = ["docker", ...getComposeArgs(), "ps", "--services", "--status", "running"].join(" ");
   const responses = {
     "docker --version": { ok: true, stdout: "Docker version", stderr: "" },
     "docker compose version": { ok: true, stdout: "Docker Compose version", stderr: "" },
     "docker info": { ok: true, stdout: "info", stderr: "" },
-    "docker compose -f /Users/dm/conductor/workspaces/radioso/lima/infra/docker-compose.yml -f /Users/dm/conductor/workspaces/radioso/lima/infra/docker-compose.dev.yml ps --services --status running": { ok: true, stdout: "", stderr: "" },
+    [composePsKey]: { ok: true, stdout: "", stderr: "" },
   };
 
   const results = await runPreflightChecks({

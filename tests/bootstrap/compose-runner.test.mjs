@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { attachComposeStack, startComposeStack, waitForReadiness } from "../../scripts/bootstrap/compose-runner.mjs";
+import {
+  attachComposeStack,
+  startComposeStack,
+  stopComposeStack,
+  waitForReadiness,
+} from "../../scripts/bootstrap/compose-runner.mjs";
 
 test("startComposeStack returns failure when compose up exits non-zero", async () => {
   const report = await startComposeStack({
@@ -39,4 +44,17 @@ test("attachComposeStack runs compose without detached mode", async () => {
   assert.ok(receivedArgs.includes("up"));
   assert.ok(receivedArgs.includes("--build"));
   assert.ok(!receivedArgs.includes("-d"));
+});
+
+test("stopComposeStack runs compose down", async () => {
+  let receivedArgs = null;
+  const result = await stopComposeStack({
+    spawn: async (_command, args) => {
+      receivedArgs = args;
+      return { code: 0, signal: null };
+    },
+  });
+
+  assert.equal(result.code, 0);
+  assert.ok(receivedArgs.includes("down"));
 });

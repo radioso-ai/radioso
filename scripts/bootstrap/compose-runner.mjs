@@ -32,8 +32,11 @@ export const waitForReadiness = async (options = {}) => {
         ok: true,
         readyServices: statuses.map((status) => status.name),
         failedServices: [],
-        applicationUrls: ["http://127.0.0.1:3000", "http://127.0.0.1:8080/health"],
-        nextSteps: ["Open Radioso in your browser.", "Use Ctrl+C to stop the wrapper; containers continue in detached mode."],
+        applicationUrls: ["http://127.0.0.1:3000", "http://127.0.0.1:8080"],
+        nextSteps: [
+          "Open Radioso in your browser.",
+          "Containers keep running in detached mode after this command exits.",
+        ],
       };
     }
 
@@ -89,3 +92,32 @@ export const attachComposeStack = async (options = {}) => {
     ? { code: result, signal: null }
     : result;
 };
+
+export const stopComposeStack = async (options = {}) => {
+  const spawn = options.spawn ?? spawnInherited;
+  const result = await spawn("docker", [...getComposeArgs(), "down"], options.spawnOptions);
+  return typeof result === "number"
+    ? { code: result, signal: null }
+    : result;
+};
+
+export const waitForShutdownSignal = (options = {}) =>
+  new Promise((resolve) => {
+    const signals = options.signals ?? ["SIGINT", "SIGTERM"];
+    const handlers = new Map();
+    const keepAlive = setInterval(() => {}, options.keepAliveIntervalMs ?? 1_000);
+
+    const finish = (signal) => {
+      clearInterval(keepAlive);
+      for (const [name, handler] of handlers.entries()) {
+        process.off(name, handler);
+      }
+      resolve(signal);
+    };
+
+    for (const signal of signals) {
+      const handler = () => finish(signal);
+      handlers.set(signal, handler);
+      process.on(signal, handler);
+    }
+  });

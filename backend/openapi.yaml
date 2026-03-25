@@ -819,6 +819,60 @@ components:
             $ref: "#/components/schemas/ChatConversationSummary"
       required:
         - conversations
+    ValidationDisposition:
+      type: string
+      enum:
+        - supported
+        - unsupported
+        - non_substantive
+    ValidationSegmentResult:
+      type: object
+      properties:
+        text:
+          type: string
+        disposition:
+          $ref: "#/components/schemas/ValidationDisposition"
+        replacementApplied:
+          type: boolean
+        reason:
+          type: string
+        citationIndices:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+      required:
+        - text
+        - disposition
+        - replacementApplied
+        - reason
+    ValidationDebug:
+      type: object
+      properties:
+        ran:
+          type: boolean
+        answerModified:
+          type: boolean
+        unsupportedSegmentCount:
+          type: integer
+          minimum: 0
+        supportedSegmentCount:
+          type: integer
+          minimum: 0
+        nonSubstantiveSegmentCount:
+          type: integer
+          minimum: 0
+        segmentResults:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationSegmentResult"
+      required:
+        - ran
+        - answerModified
+        - unsupportedSegmentCount
+        - supportedSegmentCount
+        - nonSubstantiveSegmentCount
+        - segmentResults
     ChatConversationMessageDebug:
       type: object
       properties:
@@ -835,6 +889,14 @@ components:
         citationCount:
           type: integer
           minimum: 0
+        answerOutcome:
+          type: string
+          enum:
+            - grounded_success
+            - grounded_degraded_unsupported_segments
+            - no_context_refusal
+        validation:
+          $ref: "#/components/schemas/ValidationDebug"
         retrievalInfo:
           $ref: "#/components/schemas/RetrievalInfo"
         retrievalTrace:

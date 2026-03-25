@@ -387,6 +387,34 @@ const ChatHistoryListResponseSchema = registry.register(
   }),
 );
 
+const ValidationDispositionSchema = registry.register(
+  "ValidationDisposition",
+  z.enum(["supported", "unsupported", "non_substantive"]),
+);
+
+const ValidationSegmentResultSchema = registry.register(
+  "ValidationSegmentResult",
+  z.object({
+    text: z.string(),
+    disposition: ValidationDispositionSchema,
+    replacementApplied: z.boolean(),
+    reason: z.string(),
+    citationIndices: z.array(z.number().int().min(0)).optional(),
+  }),
+);
+
+const ValidationDebugSchema = registry.register(
+  "ValidationDebug",
+  z.object({
+    ran: z.boolean(),
+    answerModified: z.boolean(),
+    unsupportedSegmentCount: z.number().int().min(0),
+    supportedSegmentCount: z.number().int().min(0),
+    nonSubstantiveSegmentCount: z.number().int().min(0),
+    segmentResults: z.array(ValidationSegmentResultSchema),
+  }),
+);
+
 const ChatConversationMessageDebugSchema = registry.register(
   "ChatConversationMessageDebug",
   z.object({
@@ -394,6 +422,8 @@ const ChatConversationMessageDebugSchema = registry.register(
     recordedAt: z.string().datetime(),
     stream: z.boolean(),
     citationCount: z.number().int().min(0),
+    answerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal"]).optional(),
+    validation: ValidationDebugSchema.optional(),
     retrievalInfo: RetrievalInfoSchema.optional(),
     retrievalTrace: RetrievalTraceSchema.optional(),
     errorMessage: z.string().nullable().optional(),

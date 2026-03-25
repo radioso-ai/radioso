@@ -20,7 +20,7 @@ export interface ChatThreadMessage {
   createdAt: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
-  status?: 'streaming' | 'done' | 'error'
+  status?: 'streaming' | 'done' | 'complete' | 'error'
 }
 
 export function ChatMessageThread({

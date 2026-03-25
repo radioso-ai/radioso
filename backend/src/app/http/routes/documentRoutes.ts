@@ -20,6 +20,15 @@ export const documentParamsSchema = z.object({
   documentId: z.string().uuid(),
 });
 
+export const documentSearchSchema = z.object({
+  query: z.string().trim().min(1),
+  metadataFilter: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+});
+
+export const documentSearchHistoryParamsSchema = z.object({
+  searchId: z.string().uuid(),
+});
+
 export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
   const upload = multer({
@@ -51,6 +60,41 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
       const { workspaceId } = res.locals as { workspaceId: string };
       const documents = await dependencies.documentIngestionService.listForWorkspace(workspaceId);
       res.status(200).json({ documents });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/search", requireApiToken(dependencies), validateBody(documentSearchSchema), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const result = await dependencies.documentSearchService.search({
+        workspaceId,
+        query: req.body.query,
+        metadataFilter: req.body.metadataFilter,
+      });
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/search/history", requireApiToken(dependencies), async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const searches = await dependencies.documentSearchHistoryService.listHistory(workspaceId);
+      res.status(200).json({ searches });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/search/history/:searchId", requireApiToken(dependencies), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { searchId } = documentSearchHistoryParamsSchema.parse(req.params);
+      const search = await dependencies.documentSearchHistoryService.getHistory(workspaceId, searchId);
+      res.status(200).json(search);
     } catch (error) {
       next(error);
     }

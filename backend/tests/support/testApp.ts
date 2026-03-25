@@ -11,6 +11,8 @@ import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryS
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
+import { DocumentSearchHistoryService } from "../../src/modules/documents/services/documentSearchHistoryService.js";
+import { DocumentSearchService } from "../../src/modules/documents/services/documentSearchService.js";
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
 import { DocumentSourceContentService } from "../../src/modules/documents/services/documentSourceContentService.js";
@@ -332,6 +334,15 @@ export const createTestDependencies = (overrides: {
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
   );
+  const documentSearchService = new DocumentSearchService(
+    documentRepository,
+    retrievalPipeline,
+    auditService,
+  );
+  const documentSearchHistoryService = new DocumentSearchHistoryService(
+    auditEventRepository,
+    documentRepository,
+  );
   const defaultChatGateway: ChatGateway = {
     async answer(input): Promise<string> {
       const warmthMatch = input.prompt.match(/Warmth:(\d+)/);
@@ -383,6 +394,8 @@ export const createTestDependencies = (overrides: {
     retrievalSettingsService,
     documentIngestionService,
     documentImportService,
+    documentSearchService,
+    documentSearchHistoryService,
     workspaceIngestionReprocessService,
     documentProcessingWorker,
     documentDeletionService,

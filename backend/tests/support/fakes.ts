@@ -1355,6 +1355,24 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
       );
     });
   }
+
+  async listDocumentSearchEventsByWorkspaceId(workspaceId: string): Promise<AuditEventRecord[]> {
+    return this.items
+      .filter((event) => event.workspaceId === workspaceId && event.eventType === "document.search")
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  }
+
+  async findDocumentSearchEventBySearchId(workspaceId: string, searchId: string): Promise<AuditEventRecord | null> {
+    return (
+      this.items.find((event) => {
+        return (
+          event.workspaceId === workspaceId &&
+          event.eventType === "document.search" &&
+          event.metadata.searchId === searchId
+        );
+      }) ?? null
+    );
+  }
 }
 
 export class InMemoryAuditService extends AuditService {

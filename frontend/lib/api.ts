@@ -55,6 +55,14 @@ export const activateWorkspaceToken = (workspaceId: string): boolean => {
   return true;
 };
 
+export const seedWorkspaceSession = (workspaceId: string, token: string) => {
+  setWorkspaceToken(workspaceId, token);
+  setStoredApiToken(token);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
+  }
+};
+
 export const getStoredActiveWorkspaceId = (): string | null => {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
@@ -184,6 +192,9 @@ export interface RegisterRequest {
 
 export interface RegisterResponse {
   userId: string
+  workspaceId: string
+  workspaceName: string
+  token: string
 }
 
 export interface LoginRequest {
@@ -193,6 +204,9 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   userId: string
+  workspaceId: string
+  workspaceName: string
+  token: string
 }
 
 export interface AccountTokenResponse {

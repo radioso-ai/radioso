@@ -38,7 +38,7 @@ interface ChatSession {
 
 interface ChatContextValue {
   getSession: (workspaceId: string) => ChatSession
-  sendMessage: (workspaceId: string, content: string) => Promise<void>
+  sendMessage: (workspaceId: string, content: string) => Promise<boolean>
 }
 
 const EMPTY_SESSION: ChatSession = {
@@ -126,13 +126,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const query = content.trim()
 
       if (!query) {
-        return
+        return false
       }
 
       const currentSession = ensureSession(sessions, accountId)
 
       if (currentSession.isLoading) {
-        return
+        return false
       }
 
       const userMessage: ChatMessage = {
@@ -208,6 +208,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             retrievalTrace: completion.retrievalTrace,
           })
         }
+
+        return true
       } catch (error) {
         const errorMessage = getErrorMessage(error)
 
@@ -232,6 +234,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             messages: nextMessages,
           }
         })
+
+        return false
       }
     },
     [applyCompletion, sessions, updateSession],

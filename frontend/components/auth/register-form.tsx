@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import { authApi } from '@/lib/api'
+import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 
 interface RegisterFormProps {
@@ -54,6 +54,7 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
 
     try {
       const response = await authApi.register({ email, password })
+      seedWorkspaceSession(response.workspaceId, response.token)
       await login(email, response.userId)
     } catch (error) {
       setError(getErrorMessage(error))

@@ -21,6 +21,8 @@ export interface AuditEventRepositoryPort {
     metadata?: Record<string, unknown>;
   }): Promise<AuditEventRecord>;
   listChatAnswerEventsByConversationId(workspaceId: string, conversationId: string): Promise<AuditEventRecord[]>;
+  listDocumentSearchEventsByWorkspaceId(workspaceId: string): Promise<AuditEventRecord[]>;
+  findDocumentSearchEventBySearchId(workspaceId: string, searchId: string): Promise<AuditEventRecord | null>;
 }
 
 interface AuditEventRow {
@@ -75,5 +77,33 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     );
 
     return rows.map(mapAuditEvent);
+  }
+
+  async listDocumentSearchEventsByWorkspaceId(workspaceId: string): Promise<AuditEventRecord[]> {
+    const rows = await this.database.query<AuditEventRow>(
+      `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
+       FROM audit_events
+       WHERE workspace_id = $1
+         AND event_type = 'document.search'
+       ORDER BY created_at DESC`,
+      [workspaceId],
+    );
+
+    return rows.map(mapAuditEvent);
+  }
+
+  async findDocumentSearchEventBySearchId(workspaceId: string, searchId: string): Promise<AuditEventRecord | null> {
+    const [row] = await this.database.query<AuditEventRow>(
+      `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
+       FROM audit_events
+       WHERE workspace_id = $1
+         AND event_type = 'document.search'
+         AND metadata_json ->> 'searchId' = $2
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [workspaceId, searchId],
+    );
+
+    return row ? mapAuditEvent(row) : null;
   }
 }

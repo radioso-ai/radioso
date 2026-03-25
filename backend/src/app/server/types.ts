@@ -3,6 +3,8 @@ import type { ChatHistoryService } from "../../modules/chat/services/chatHistory
 import type { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import type { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
 import type { DocumentImportService } from "../../modules/documents/services/documentImportService.js";
+import type { DocumentSearchHistoryService } from "../../modules/documents/services/documentSearchHistoryService.js";
+import type { DocumentSearchService } from "../../modules/documents/services/documentSearchService.js";
 import type { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
 import type { WorkspaceIngestionReprocessService } from "../../modules/documents/services/workspaceIngestionReprocessService.js";
 import type { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
@@ -28,6 +30,8 @@ export interface AppDependencies {
   retrievalSettingsService: RetrievalSettingsService;
   documentIngestionService: DocumentIngestionService;
   documentImportService: DocumentImportService;
+  documentSearchService: DocumentSearchService;
+  documentSearchHistoryService: DocumentSearchHistoryService;
   workspaceIngestionReprocessService: WorkspaceIngestionReprocessService;
   documentProcessingWorker: DocumentProcessingWorker;
   documentDeletionService: DocumentDeletionService;

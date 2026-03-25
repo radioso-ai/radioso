@@ -41,6 +41,12 @@ const noopAuditRepository = {
   async listChatAnswerEventsByConversationId() {
     return [];
   },
+  async listDocumentSearchEventsByWorkspaceId() {
+    return [];
+  },
+  async findDocumentSearchEventBySearchId() {
+    return null;
+  },
 };
 const describeIfDatabase = integrationDatabaseUrl ? describe : describe.skip;
 

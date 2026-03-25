@@ -19,6 +19,8 @@ import { WorkspaceService } from "../../modules/workspace/services/workspaceServ
 import { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
 import { DocumentImportService } from "../../modules/documents/services/documentImportService.js";
+import { DocumentSearchHistoryService } from "../../modules/documents/services/documentSearchHistoryService.js";
+import { DocumentSearchService } from "../../modules/documents/services/documentSearchService.js";
 import { DocumentProcessingService } from "../../modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
 import { DocumentSourceContentService } from "../../modules/documents/services/documentSourceContentService.js";
@@ -122,6 +124,15 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
   );
+  const documentSearchService = new DocumentSearchService(
+    documentRepository,
+    retrievalPipeline,
+    auditService,
+  );
+  const documentSearchHistoryService = new DocumentSearchHistoryService(
+    auditEventRepository,
+    documentRepository,
+  );
   const conversationRepository = new ConversationRepository(database);
   const messageRepository = new MessageRepository(database);
   const chatService = new ChatService(
@@ -162,6 +173,8 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     retrievalSettingsService,
     documentIngestionService,
     documentImportService,
+    documentSearchService,
+    documentSearchHistoryService,
     workspaceIngestionReprocessService,
     documentProcessingWorker,
     documentDeletionService,

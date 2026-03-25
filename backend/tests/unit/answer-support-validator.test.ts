@@ -116,6 +116,72 @@ describe("answer support validator", () => {
     expect(result.validation.answerModified).toBe(false);
     expect(result.validation.supportedSegmentCount).toBe(1);
   });
+
+  it("treats common conversational wrappers as non-substantive", () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = validator.validate({
+      answer: "Sure. Of course! Glad to help.",
+      answerSegments: [
+        { text: "Sure" },
+        { text: ". " },
+        { text: "Of course" },
+        { text: "! " },
+        { text: "Glad to help" },
+        { text: "." },
+      ],
+      citationEvidence: [],
+      citationDisplayEnabled: true,
+    });
+
+    expect(result.answer).toBe("Sure. Of course! Glad to help.");
+    expect(result.answerSegments).toEqual([
+      { text: "Sure" },
+      { text: ". " },
+      { text: "Of course" },
+      { text: "! " },
+      { text: "Glad to help" },
+      { text: "." },
+    ]);
+    expect(result.validation).toEqual({
+      ran: true,
+      answerModified: false,
+      unsupportedSegmentCount: 0,
+      supportedSegmentCount: 0,
+      nonSubstantiveSegmentCount: 6,
+    });
+  });
+
+  it("deduplicates consecutive unsupported notices within mixed answers", () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = validator.validate({
+      answer: "The page explains testing and parsing content for users. It offers 24/7 phone support. It also offers a discount code.",
+      answerSegments: [
+        {
+          text: "The page explains testing and parsing content for users",
+          citationIndices: [0],
+        },
+        { text: ". " },
+        { text: "It offers 24/7 phone support" },
+        { text: ". " },
+        { text: "It also offers a discount code" },
+        { text: "." },
+      ],
+      citationEvidence: citations,
+      citationDisplayEnabled: true,
+    });
+
+    expect(result.answer).toBe(
+      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
+    );
+    expect(result.answerSegments).toEqual([
+      { text: "The page explains testing and parsing content for users", citationIndices: [0] },
+      { text: ". " },
+      { text: DEFAULT_UNSUPPORTED_NOTICE },
+    ]);
+    expect(result.validation.unsupportedSegmentCount).toBe(2);
+  });
 });
 
 describe("assistant turn outcome classifier", () => {

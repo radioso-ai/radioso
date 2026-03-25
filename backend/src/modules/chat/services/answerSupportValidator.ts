@@ -9,8 +9,15 @@ const NON_SUBSTANTIVE_PHRASES = new Set([
   "hello",
   "hi",
   "hey",
+  "sure",
+  "of course",
+  "certainly",
+  "absolutely",
   "thanks",
   "thank you",
+  "glad to help",
+  "happy to help",
+  "no problem",
   "you are welcome",
   "youre welcome",
   "okay",
@@ -33,6 +40,7 @@ const isNonSubstantiveText = (value: string): boolean => {
 };
 
 const preservePrefix = (value: string): string => value.match(/^[\s,.;:!?()/-]*/)?.[0] ?? "";
+const stripPrefix = (value: string): string => value.replace(/^[\s,.;:!?()/-]*/, "");
 
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
@@ -114,14 +122,13 @@ export class AnswerSupportValidator {
     }>,
   ): AnswerSegment[] {
     const visibleSegments: AnswerSegment[] = [];
+    let latestMeaningfulSegmentText: string | null = null;
 
     for (const segment of segmentResults) {
-      const previous = visibleSegments[visibleSegments.length - 1];
       if (
-        previous &&
         segment.disposition === VALIDATION_DISPOSITION.NON_SUBSTANTIVE &&
         /^[.!?]+\s*$/.test(segment.text) &&
-        previous.text === DEFAULT_UNSUPPORTED_NOTICE
+        latestMeaningfulSegmentText === DEFAULT_UNSUPPORTED_NOTICE
       ) {
         const trailingWhitespace = segment.text.match(/\s+$/)?.[0];
         if (trailingWhitespace) {
@@ -135,10 +142,39 @@ export class AnswerSupportValidator {
           text: segment.text,
           citationIndices: segment.citationIndices,
         });
+        latestMeaningfulSegmentText = segment.text;
+        continue;
+      }
+
+      if (
+        segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED &&
+        latestMeaningfulSegmentText === DEFAULT_UNSUPPORTED_NOTICE &&
+        stripPrefix(segment.text) === DEFAULT_UNSUPPORTED_NOTICE
+      ) {
+        const separatorWhitespace = segment.text.match(/^\s+/)?.[0];
+        if (separatorWhitespace) {
+          visibleSegments.push({ text: separatorWhitespace });
+        }
         continue;
       }
 
       visibleSegments.push({ text: segment.text });
+
+      if (segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED) {
+        latestMeaningfulSegmentText = DEFAULT_UNSUPPORTED_NOTICE;
+        continue;
+      }
+
+      if (
+        segment.disposition === VALIDATION_DISPOSITION.NON_SUBSTANTIVE &&
+        !/^[\s,.;:!?()/-]*$/.test(segment.text)
+      ) {
+        latestMeaningfulSegmentText = segment.text.trim();
+      }
+    }
+
+    while (visibleSegments.length > 0 && /^\s+$/.test(visibleSegments[visibleSegments.length - 1].text)) {
+      visibleSegments.pop();
     }
 
     return visibleSegments;

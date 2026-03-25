@@ -348,6 +348,10 @@ describe("chat integration", () => {
         nonSubstantiveSegmentCount: expect.any(Number),
       },
     });
+    const validation = chatAudit?.metadata?.validation as
+      | { segmentResults?: Array<Record<string, unknown>> }
+      | undefined;
+    expect(validation?.segmentResults?.every((segment) => !("content" in segment))).toBe(true);
   });
 
   it("keeps no-context refusals distinct from validator-triggered degradation in audit metadata", async () => {

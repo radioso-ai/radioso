@@ -7,6 +7,9 @@ import {
   type ChatConversationDetail,
   type ChatConversationSummary,
   type ChatConversationTurn,
+  type DocumentDetails,
+  type DocumentSearchHistoryEntry,
+  type DocumentSearchResponse,
   chatApi,
   documentsApi,
 } from '@/lib/api'
@@ -18,21 +21,40 @@ import {
   DrawerHeader,
 } from '@/components/ui/drawer'
 import { ActionButton } from '@/components/ui/action-button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { CopyValueField } from '@/components/ui/copy-value-field'
-import { FileText, MessageSquareText, X } from 'lucide-react'
 import { ChatRetrievalInfo } from './chat-retrieval-info'
 import { ChatRetrievalTraceGraph } from './chat-retrieval-trace-graph'
 import { ChatMessageThread } from './chat-message-thread'
 import type { CitationOpenResult } from './chat-citations'
 import { buildAccountRoute } from '@/lib/dashboard-routes'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
+import { FileText, History, MessageSquareText, Search, X } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'medium',
 })
+
+type HistoryFilter = 'all' | 'chat' | 'search'
+type SelectedHistoryItem =
+  | { kind: 'chat'; id: string }
+  | { kind: 'search'; id: string }
+  | null
+
+type HistoryListItem =
+  | { kind: 'chat'; id: string; sortAt: string; conversation: ChatConversationSummary }
+  | { kind: 'search'; id: string; sortAt: string; search: DocumentSearchHistoryEntry }
 
 const formatTimestamp = (value: string) => formatter.format(new Date(value))
 
@@ -64,9 +86,12 @@ export function ChatHistoryView({
   onboarding: WorkspaceOnboardingState
 }) {
   const router = useRouter()
+  const [filter, setFilter] = useState<HistoryFilter>('all')
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([])
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
+  const [searches, setSearches] = useState<DocumentSearchHistoryEntry[]>([])
+  const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(null)
   const [conversationDetail, setConversationDetail] = useState<ChatConversationDetail | null>(null)
+  const [searchDetail, setSearchDetail] = useState<DocumentSearchResponse | null>(null)
   const [isListLoading, setIsListLoading] = useState(true)
   const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
@@ -75,50 +100,105 @@ export function ChatHistoryView({
   const [selectedAssistantMessageId, setSelectedAssistantMessageId] = useState<string | null>(null)
   const [selectedStageId, setSelectedStageId] = useState<string | undefined>(undefined)
   const [showGraph, setShowGraph] = useState(false)
+  const [isDocumentDialogOpen, setIsDocumentDialogOpen] = useState(false)
+  const [isDocumentLoading, setIsDocumentLoading] = useState(false)
+  const [documentDetail, setDocumentDetail] = useState<DocumentDetails | null>(null)
+  const [documentError, setDocumentError] = useState<string | null>(null)
 
-  const loadConversations = useCallback(async () => {
+  const loadHistory = useCallback(async () => {
     setIsListLoading(true)
     setListError(null)
 
-    try {
-      const nextConversations = await chatApi.listHistory()
-      setConversations(nextConversations)
-    } catch (error) {
-      setListError(getErrorMessage(error, 'Failed to load chat history.'))
-    } finally {
-      setIsListLoading(false)
+    const [chatResult, searchResult] = await Promise.allSettled([
+      chatApi.listHistory(),
+      documentsApi.listSearchHistory(),
+    ])
+
+    if (chatResult.status === 'fulfilled') {
+      setConversations(chatResult.value)
+    } else {
+      setConversations([])
     }
+
+    if (searchResult.status === 'fulfilled') {
+      setSearches(searchResult.value)
+    } else {
+      setSearches([])
+    }
+
+    const errors: string[] = []
+    if (chatResult.status === 'rejected') {
+      errors.push(getErrorMessage(chatResult.reason, 'Failed to load chat history.'))
+    }
+    if (searchResult.status === 'rejected') {
+      errors.push(getErrorMessage(searchResult.reason, 'Failed to load search history.'))
+    }
+
+    setListError(errors.length > 0 ? errors.join(' ') : null)
+    setIsListLoading(false)
   }, [])
 
   useEffect(() => {
-    void loadConversations()
-  }, [loadConversations, accountId])
+    void loadHistory()
+  }, [loadHistory, accountId])
 
   useEffect(() => {
-    if (!selectedConversationId) {
+    if (!selectedItem) {
       setConversationDetail(null)
+      setSearchDetail(null)
       setDetailError(null)
+      setSelectedThreadMessageId(null)
+      setSelectedAssistantMessageId(null)
+      setSelectedStageId(undefined)
+      setShowGraph(false)
       return
     }
 
     let isActive = true
 
-    const loadConversation = async () => {
+    const loadDetail = async () => {
       setIsDetailLoading(true)
       setDetailError(null)
+      setConversationDetail(null)
+      setSearchDetail(null)
 
       try {
-        const detail = await chatApi.getHistoryConversation(selectedConversationId)
+        if (selectedItem.kind === 'chat') {
+          const detail = await chatApi.getHistoryConversation(selectedItem.id)
+          if (!isActive) {
+            return
+          }
+          setConversationDetail(detail)
+          const traceBearingMessage =
+            [...detail.messages]
+              .reverse()
+              .find((message) => message.role === 'assistant' && message.debug) ?? null
+          setSelectedThreadMessageId(traceBearingMessage?.id ?? null)
+          setSelectedAssistantMessageId(traceBearingMessage?.id ?? null)
+          setSelectedStageId(traceBearingMessage?.debug?.retrievalTrace?.stages[0]?.stageId)
+          setShowGraph(false)
+          return
+        }
+
+        const detail = await documentsApi.getSearchHistory(selectedItem.id)
         if (!isActive) {
           return
         }
-        setConversationDetail(detail)
+        setSearchDetail(detail)
+        setSelectedStageId(detail.retrievalTrace?.stages[0]?.stageId)
+        setShowGraph(false)
       } catch (error) {
         if (!isActive) {
           return
         }
-        setConversationDetail(null)
-        setDetailError(getErrorMessage(error, 'Failed to load conversation details.'))
+        setDetailError(
+          getErrorMessage(
+            error,
+            selectedItem.kind === 'chat'
+              ? 'Failed to load conversation details.'
+              : 'Failed to load search details.',
+          ),
+        )
       } finally {
         if (isActive) {
           setIsDetailLoading(false)
@@ -126,12 +206,12 @@ export function ChatHistoryView({
       }
     }
 
-    void loadConversation()
+    void loadDetail()
 
     return () => {
       isActive = false
     }
-  }, [selectedConversationId])
+  }, [selectedItem])
 
   const assistantMessages = useMemo(
     () => conversationDetail?.messages.filter((message) => message.role === 'assistant') ?? [],
@@ -175,32 +255,13 @@ export function ChatHistoryView({
   const selectedDiagnosticsDebug =
     selectedDiagnosticsAssistantMessage?.role === 'assistant' ? selectedDiagnosticsAssistantMessage.debug : undefined
   const selectedDiagnosticsTrace = selectedDiagnosticsDebug?.retrievalTrace
-  const selectedDiagnosticsTraceId = selectedDiagnosticsTrace?.traceId
-  const selectedDiagnosticsInitialStageId = selectedDiagnosticsTrace?.stages[0]?.stageId
+  const activeTrace = selectedItem?.kind === 'chat' ? selectedDiagnosticsTrace : searchDetail?.retrievalTrace
+  const activeTraceId = activeTrace?.traceId
+  const activeInitialStageId = activeTrace?.stages[0]?.stageId
 
   useEffect(() => {
-    if (!conversationDetail) {
-      setSelectedThreadMessageId(null)
-      setSelectedAssistantMessageId(null)
-      setSelectedStageId(undefined)
-      setShowGraph(false)
-      return
-    }
-
-    const traceBearingMessage =
-      [...conversationDetail.messages]
-        .reverse()
-        .find((message) => message.role === 'assistant' && message.debug) ?? null
-
-    setSelectedThreadMessageId(traceBearingMessage?.id ?? null)
-    setSelectedAssistantMessageId(traceBearingMessage?.id ?? null)
-    setSelectedStageId(traceBearingMessage?.debug?.retrievalTrace?.stages[0]?.stageId)
-    setShowGraph(false)
-  }, [conversationDetail])
-
-  useEffect(() => {
-    setSelectedStageId(selectedDiagnosticsInitialStageId)
-  }, [selectedDiagnosticsTraceId, selectedDiagnosticsInitialStageId])
+    setSelectedStageId(activeInitialStageId)
+  }, [activeTraceId, activeInitialStageId])
 
   const handleSelectThreadMessage = useCallback(
     (messageId: string) => {
@@ -234,10 +295,18 @@ export function ChatHistoryView({
   )
 
   const handleOpenCitation = useCallback(async (documentId: string): Promise<CitationOpenResult> => {
+    setIsDocumentLoading(true)
+    setDocumentError(null)
+
     try {
-      await documentsApi.getDocument(documentId)
+      const detail = await documentsApi.getDocument(documentId)
+      setDocumentDetail(detail)
+      setIsDocumentDialogOpen(true)
       return 'opened'
     } catch (error) {
+      setDocumentDetail(null)
+      setDocumentError(getErrorMessage(error, 'Failed to load document.'))
+      setIsDocumentDialogOpen(true)
       if (
         error &&
         typeof error === 'object' &&
@@ -251,16 +320,56 @@ export function ChatHistoryView({
       }
 
       return 'error'
+    } finally {
+      setIsDocumentLoading(false)
     }
   }, [])
+
+  const historyItems = useMemo<HistoryListItem[]>(() => {
+    const items: HistoryListItem[] = [
+      ...conversations.map((conversation) => ({
+        kind: 'chat' as const,
+        id: conversation.id,
+        sortAt: conversation.updatedAt,
+        conversation,
+      })),
+      ...searches.map((search) => ({
+        kind: 'search' as const,
+        id: search.searchId,
+        sortAt: search.createdAt,
+        search,
+      })),
+    ]
+
+    return items
+      .filter((item) => filter === 'all' || item.kind === filter)
+      .sort((left, right) => new Date(right.sortAt).getTime() - new Date(left.sortAt).getTime())
+  }, [conversations, filter, searches])
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 border-b border-border px-6 py-4">
-        <h1 className="text-lg font-medium text-foreground">Chat History</h1>
+        <h1 className="text-lg font-medium text-foreground">History</h1>
         <p className="text-sm text-muted-foreground">
-          Review saved conversations and inspect their debug metadata.
+          Review past chats and searches. Retrieval diagnostics live here.
         </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {([
+            { value: 'all', label: 'All' },
+            { value: 'chat', label: 'Chats' },
+            { value: 'search', label: 'Searches' },
+          ] as const).map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={filter === option.value ? 'default' : 'outline'}
+              onClick={() => setFilter(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
@@ -268,82 +377,134 @@ export function ChatHistoryView({
           <div className="flex h-full items-center justify-center">
             <Spinner className="h-6 w-6" />
           </div>
-        ) : listError ? (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-            {listError}
-          </div>
-        ) : conversations.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center text-center">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-              <MessageSquareText className="h-5 w-5 text-primary" />
+        ) : historyItems.length === 0 ? (
+          <div className="space-y-6">
+            {listError ? (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                {listError}
+              </div>
+            ) : null}
+            <div className="flex h-full flex-col items-center justify-center text-center">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                <History className="h-5 w-5 text-primary" />
+              </div>
+              <h2 className="text-lg font-medium text-foreground">No history yet</h2>
+              <p className="mt-1 max-w-md text-sm text-muted-foreground">
+                {filter === 'chat'
+                  ? onboarding.hasReadyDocuments
+                    ? 'Your workspace is ready. Ask the first question and it will appear here.'
+                    : 'Load content first, then ask one question. Conversation history will appear here after that.'
+                  : filter === 'search'
+                    ? 'Document searches will appear here after someone runs a search.'
+                    : onboarding.hasReadyDocuments
+                      ? 'Your workspace is ready. Ask the first question or run a document search to start building history.'
+                      : 'Load content first, then ask one question or run a document search. History will appear here after that.'}
+              </p>
             </div>
-            <h2 className="text-lg font-medium text-foreground">No chat history yet</h2>
-            <p className="mt-1 max-w-md text-sm text-muted-foreground">
-              {onboarding.hasReadyDocuments
-                ? 'Your workspace is ready. Ask the first question and it will appear here.'
-                : 'Load content first, then ask one question. Conversation history will appear here after that.'}
-            </p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              {onboarding.hasReadyDocuments ? (
+              {filter !== 'search' && onboarding.hasReadyDocuments ? (
                 <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'chat'))}>
                   <MessageSquareText className="mr-2 h-4 w-4" />
                   Ask first question
                 </Button>
-              ) : (
-                <>
-                  <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'documents'))}>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Open documents
-                  </Button>
-                </>
-              )}
+              ) : null}
+              {(filter === 'chat' || filter === 'all') && !onboarding.hasReadyDocuments ? (
+                <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'documents'))}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Open documents
+                </Button>
+              ) : null}
             </div>
           </div>
         ) : (
           <div className="mx-auto max-w-4xl space-y-3">
-            {conversations.map((conversation) => (
-              <button
-                key={conversation.id}
-                type="button"
-                onClick={() => setSelectedConversationId(conversation.id)}
-                className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/40"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="space-y-1">
-                    <p className="font-medium text-foreground">{conversation.preview || 'Untitled conversation'}</p>
-                    <p className="text-xs text-muted-foreground">{conversation.id}</p>
+            {listError ? (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                {listError}
+              </div>
+            ) : null}
+            {historyItems.map((item) => (
+              item.kind === 'chat' ? (
+                <button
+                  key={`chat-${item.id}`}
+                  type="button"
+                  onClick={() => setSelectedItem({ kind: 'chat', id: item.id })}
+                  className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/40"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                          Chat
+                        </span>
+                        <p className="font-medium text-foreground">
+                          {item.conversation.preview || 'Untitled conversation'}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{item.id}</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Updated {formatTimestamp(item.conversation.updatedAt)}
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Updated {formatTimestamp(conversation.updatedAt)}
-                  </p>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  {conversation.sourceChannel === 'anonymous' && (
-                    <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-amber-700 dark:text-amber-400">
-                      Anonymous
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    {item.conversation.sourceChannel === 'anonymous' && (
+                      <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-amber-700 dark:text-amber-400">
+                        Anonymous
+                      </span>
+                    )}
+                    <span className="rounded-full bg-muted px-2.5 py-1">
+                      {item.conversation.messageCount} messages
                     </span>
-                  )}
-                  <span className="rounded-full bg-muted px-2.5 py-1">
-                    {conversation.messageCount} messages
-                  </span>
-                  <span className="rounded-full bg-muted px-2.5 py-1">
-                    {conversation.userMessageCount} user
-                  </span>
-                  <span className="rounded-full bg-muted px-2.5 py-1">
-                    {conversation.assistantMessageCount} assistant
-                  </span>
-                </div>
-              </button>
+                    <span className="rounded-full bg-muted px-2.5 py-1">
+                      {item.conversation.userMessageCount} user
+                    </span>
+                    <span className="rounded-full bg-muted px-2.5 py-1">
+                      {item.conversation.assistantMessageCount} assistant
+                    </span>
+                  </div>
+                </button>
+              ) : (
+                <button
+                  key={`search-${item.id}`}
+                  type="button"
+                  onClick={() => setSelectedItem({ kind: 'search', id: item.id })}
+                  className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/40"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                          Search
+                        </span>
+                        <p className="font-medium text-foreground">{item.search.query}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{item.id}</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Searched {formatTimestamp(item.search.createdAt)}
+                    </p>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span className="rounded-full bg-muted px-2.5 py-1">
+                      {item.search.resultCount} document{item.search.resultCount === 1 ? '' : 's'} retrieved
+                    </span>
+                    {item.search.traceAvailable ? (
+                      <span className="rounded-full bg-muted px-2.5 py-1">Diagnostics available</span>
+                    ) : null}
+                  </div>
+                </button>
+              )
             ))}
           </div>
         )}
       </div>
 
       <Drawer
-        open={selectedConversationId !== null}
+        open={selectedItem !== null}
         onOpenChange={(open) => {
           if (!open) {
-            setSelectedConversationId(null)
+            setSelectedItem(null)
             setShowGraph(false)
           }
         }}
@@ -360,19 +521,19 @@ export function ChatHistoryView({
           <DrawerHeader className="border-b border-border">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
-                {selectedConversationId ? (
+                {selectedItem ? (
                   <CopyValueField
-                    label="Conversation ID:"
-                    value={selectedConversationId}
-                    copyValue={selectedConversationId}
-                    ariaLabel="Copy conversation ID"
+                    label={selectedItem.kind === 'chat' ? 'Conversation ID:' : 'Search ID:'}
+                    value={selectedItem.id}
+                    copyValue={selectedItem.id}
+                    ariaLabel={selectedItem.kind === 'chat' ? 'Copy conversation ID' : 'Copy search ID'}
                     compact
                     wrap
                     fitContent
                     inlineLabel
                   />
                 ) : null}
-                <DrawerDescription className="sr-only">Conversation details panel</DrawerDescription>
+                <DrawerDescription className="sr-only">History details panel</DrawerDescription>
               </div>
               <DrawerClose className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
@@ -389,7 +550,7 @@ export function ChatHistoryView({
               <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
                 {detailError}
               </div>
-            ) : conversationDetail ? (
+            ) : selectedItem?.kind === 'chat' && conversationDetail ? (
               <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(640px,1.1fr)]">
                 <div className="min-h-0 overflow-y-auto pr-1">
                   <ChatMessageThread
@@ -401,7 +562,7 @@ export function ChatHistoryView({
                 </div>
 
                 <div className="min-h-0 overflow-y-auto rounded-xl border border-border/70 bg-background/50 p-4">
-                  <DiagnosticsPanel
+                  <ChatDiagnosticsPanel
                     selectedMessage={selectedThreadMessage}
                     diagnosticsMessage={selectedDiagnosticsAssistantMessage}
                     showGraph={showGraph}
@@ -412,7 +573,7 @@ export function ChatHistoryView({
                     }}
                     onHideGraph={() => {
                       setShowGraph(false)
-                      setSelectedStageId(selectedDiagnosticsInitialStageId)
+                      setSelectedStageId(activeInitialStageId)
                     }}
                     selectedStageId={selectedStageId}
                     graphPane={
@@ -433,19 +594,166 @@ export function ChatHistoryView({
                   />
                 </div>
               </div>
+            ) : selectedItem?.kind === 'search' && searchDetail ? (
+              <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
+                <div className="min-h-0 overflow-y-auto pr-1">
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-lg font-medium text-foreground">{searchDetail.query}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {searchDetail.resultCount} document{searchDetail.resultCount === 1 ? '' : 's'} retrieved
+                      </p>
+                    </div>
+
+                    {searchDetail.results.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+                        No matching documents were stored for this search.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {searchDetail.results.map((result) => (
+                          <button
+                            key={`${searchDetail.searchId}-${result.documentId}`}
+                            type="button"
+                            onClick={() => void handleOpenCitation(result.documentId)}
+                            disabled={!result.actions.some((action) => action.type === 'open_document' && action.status === 'available')}
+                            className="w-full rounded-lg border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Search className="h-4 w-4 text-muted-foreground" />
+                                <p className="text-sm font-medium text-foreground">{result.title}</p>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Rank {result.rank} • Score {result.score.toFixed(3)}
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {Object.entries(result.metadata ?? {}).map(([key, value]) => (
+                                  <span
+                                    key={key}
+                                    className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                                  >
+                                    {key}: {String(value)}
+                                  </span>
+                                ))}
+                              </div>
+                              {result.matchEvidence.map((evidence) => (
+                                <p key={evidence} className="text-sm text-muted-foreground">
+                                  {evidence}
+                                </p>
+                              ))}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="min-h-0 overflow-y-auto rounded-xl border border-border/70 bg-background/50 p-4">
+                  <SearchDiagnosticsPanel
+                    search={searchDetail}
+                    showGraph={showGraph}
+                    onShowGraph={() => {
+                      if (searchDetail.retrievalTrace) {
+                        setShowGraph(true)
+                      }
+                    }}
+                    onHideGraph={() => {
+                      setShowGraph(false)
+                      setSelectedStageId(activeInitialStageId)
+                    }}
+                    selectedStageId={selectedStageId}
+                    graphPane={
+                      showGraph ? (
+                        <ChatRetrievalTraceGraph
+                          retrievalTrace={searchDetail.retrievalTrace!}
+                          selectedStageId={selectedStageId ?? searchDetail.retrievalTrace?.stages[0]?.stageId ?? ''}
+                          onSelectStage={setSelectedStageId}
+                        />
+                      ) : null
+                    }
+                  />
+                </div>
+              </div>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                Select a conversation to inspect it.
+                Select a history entry to inspect it.
               </div>
             )}
           </div>
         </DrawerContent>
       </Drawer>
+
+      <Dialog
+        open={isDocumentDialogOpen}
+        onOpenChange={(open) => {
+          setIsDocumentDialogOpen(open)
+          if (!open) {
+            setDocumentDetail(null)
+            setDocumentError(null)
+          }
+        }}
+      >
+        <DialogContent className="flex h-[min(85vh,760px)] max-h-[85vh] flex-col overflow-hidden sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>View Document</DialogTitle>
+            <DialogDescription>
+              Review the document without leaving the current history view.
+            </DialogDescription>
+          </DialogHeader>
+          {isDocumentLoading ? (
+            <div className="flex flex-1 items-center justify-center">
+              <Spinner className="h-6 w-6" />
+            </div>
+          ) : documentError ? (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+              {documentError}
+            </div>
+          ) : documentDetail ? (
+            <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+                <div className="space-y-2">
+                  <Label htmlFor="historyDocumentTitle">Title</Label>
+                  <div
+                    id="historyDocumentTitle"
+                    className="rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-foreground"
+                  >
+                    {documentDetail.title}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="historyDocumentContent">Content</Label>
+                  <Textarea
+                    id="historyDocumentContent"
+                    value={documentDetail.content}
+                    readOnly
+                    className="min-h-[320px] resize-none overflow-y-auto [field-sizing:fixed]"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="historyDocumentMetadata">Metadata</Label>
+                  <Textarea
+                    id="historyDocumentMetadata"
+                    value={
+                      Object.keys(documentDetail.metadata ?? {}).length > 0
+                        ? JSON.stringify(documentDetail.metadata, null, 2)
+                        : '{}'
+                    }
+                    readOnly
+                    className="min-h-[120px] resize-none font-mono text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-function DiagnosticsPanel({
+function ChatDiagnosticsPanel({
   selectedMessage,
   diagnosticsMessage,
   showGraph,
@@ -489,7 +797,6 @@ function DiagnosticsPanel({
             />
           </div>
         </div>
-
         {diagnosticsDebug?.retrievalTrace ? (
           <div className="shrink-0">
             <ActionButton
@@ -499,7 +806,7 @@ function DiagnosticsPanel({
               className="h-9 px-4 text-sm"
               onClick={showGraph ? onHideGraph : onShowGraph}
             >
-              {showGraph ? 'Hide graph' : 'Show graph'}
+            {showGraph ? 'Hide graph' : 'Show graph'}
             </ActionButton>
           </div>
         ) : null}
@@ -513,7 +820,7 @@ function DiagnosticsPanel({
 
       {diagnosticsDebug?.errorMessage ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          {diagnosticsDebug.errorMessage}
+          {diagnosticsDebug?.errorMessage}
         </div>
       ) : null}
 
@@ -525,15 +832,15 @@ function DiagnosticsPanel({
             transition: 'grid-template-columns 300ms ease',
           }}
         >
-        <div
-          className="overflow-hidden rounded-xl border border-border/70 bg-background/60 p-4"
-          style={{
-            opacity: showGraph ? 1 : 0,
-            transform: showGraph ? 'translateX(0)' : 'translateX(12px)',
-            transition: 'opacity 300ms ease, transform 300ms ease',
-            pointerEvents: showGraph ? 'auto' : 'none',
-          }}
-        >
+          <div
+            className="overflow-hidden rounded-xl border border-border/70 bg-background/60 p-4"
+            style={{
+              opacity: showGraph ? 1 : 0,
+              transform: showGraph ? 'translateX(0)' : 'translateX(12px)',
+              transition: 'opacity 300ms ease, transform 300ms ease',
+              pointerEvents: showGraph ? 'auto' : 'none',
+            }}
+          >
             <div className="mb-3">
               <p className="text-sm font-medium text-foreground">Trace graph</p>
               <p className="text-xs text-muted-foreground">
@@ -543,24 +850,113 @@ function DiagnosticsPanel({
             {graphPane}
           </div>
 
-        <div>
-        {showGraph ? (
-          <ChatRetrievalInfo
-            retrievalInfo={diagnosticsDebug?.retrievalInfo}
-            retrievalTrace={diagnosticsDebug?.retrievalTrace}
-            selectedStageId={selectedStageId}
-            graphMode
-          />
-        ) : (
-          <ChatRetrievalInfo
-            retrievalInfo={diagnosticsDebug?.retrievalInfo}
-            retrievalTrace={diagnosticsDebug?.retrievalTrace}
-            selectedStageId={undefined}
-          />
-        )}
-        </div>
+          <div>
+            {showGraph ? (
+              <ChatRetrievalInfo
+                retrievalInfo={diagnosticsDebug?.retrievalInfo}
+                retrievalTrace={diagnosticsDebug?.retrievalTrace}
+                selectedStageId={selectedStageId}
+                graphMode
+              />
+            ) : (
+              <ChatRetrievalInfo
+                retrievalInfo={diagnosticsDebug?.retrievalInfo}
+                retrievalTrace={diagnosticsDebug?.retrievalTrace}
+                selectedStageId={undefined}
+              />
+            )}
+          </div>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function SearchDiagnosticsPanel({
+  search,
+  showGraph,
+  onShowGraph,
+  onHideGraph,
+  selectedStageId,
+  graphPane,
+}: {
+  search: DocumentSearchResponse
+  showGraph: boolean
+  onShowGraph: () => void
+  onHideGraph: () => void
+  selectedStageId?: string
+  graphPane: ReactNode
+}) {
+  if (!search.retrievalTrace) {
+    return (
+      <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+        Diagnostics are unavailable for this search.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-foreground">Diagnostics</p>
+          <p className="text-xs text-muted-foreground">
+            Shared retrieval diagnostics for this search run.
+          </p>
+        </div>
+        <ActionButton
+          type="button"
+          size="sm"
+          theme="yellow"
+          className="h-9 px-4 text-sm"
+          onClick={showGraph ? onHideGraph : onShowGraph}
+        >
+          {showGraph ? 'Hide graph' : 'Show graph'}
+        </ActionButton>
+      </div>
+
+      <div
+        className="grid gap-4 overflow-hidden"
+        style={{
+          gridTemplateColumns: showGraph ? 'minmax(380px,1fr) minmax(0,1.1fr)' : '0px minmax(0,1fr)',
+          transition: 'grid-template-columns 300ms ease',
+        }}
+      >
+        <div
+          className="overflow-hidden rounded-xl border border-border/70 bg-background/60 p-4"
+          style={{
+            opacity: showGraph ? 1 : 0,
+            transform: showGraph ? 'translateX(0)' : 'translateX(12px)',
+            transition: 'opacity 300ms ease, transform 300ms ease',
+            pointerEvents: showGraph ? 'auto' : 'none',
+          }}
+        >
+          <div className="mb-3">
+            <p className="text-sm font-medium text-foreground">Trace graph</p>
+            <p className="text-xs text-muted-foreground">
+              Top-down retrieval flow for this search run.
+            </p>
+          </div>
+          {graphPane}
+        </div>
+
+        <div>
+          {showGraph ? (
+            <ChatRetrievalInfo
+              retrievalInfo={search.retrievalTrace.summary}
+              retrievalTrace={search.retrievalTrace}
+              selectedStageId={selectedStageId}
+              graphMode
+            />
+          ) : (
+            <ChatRetrievalInfo
+              retrievalInfo={search.retrievalTrace.summary}
+              retrievalTrace={search.retrievalTrace}
+              selectedStageId={undefined}
+            />
+          )}
+        </div>
+      </div>
     </div>
   )
 }

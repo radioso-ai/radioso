@@ -281,6 +281,48 @@ export interface DocumentListResponse {
   documents: DocumentSummary[]
 }
 
+export interface DocumentSearchAction {
+  type: 'open_document' | 'inspect_match_evidence' | 'open_history_entry' | 'rerun_search'
+  status: 'available' | 'unavailable'
+}
+
+export interface DocumentSearchResult {
+  documentId: string
+  title: string
+  status: string
+  ragStatus: 'processed' | 'pending'
+  metadata: Record<string, unknown>
+  score: number
+  rank: number
+  matchEvidence: string[]
+  sourceKind: 'inline_text' | 'uploaded_file'
+  sourceFilename?: string | null
+  sourceMimeType?: string | null
+  actions: DocumentSearchAction[]
+}
+
+export interface DocumentSearchResponse {
+  searchId: string
+  mode: 'live' | 'snapshot'
+  query: string
+  resultCount: number
+  results: DocumentSearchResult[]
+  retrievalTrace?: RetrievalTrace
+}
+
+export interface DocumentSearchHistoryEntry {
+  searchId: string
+  query: string
+  createdAt: string
+  resultCount: number
+  traceAvailable: boolean
+  previewTopTitles: string[]
+}
+
+export interface DocumentSearchHistoryListResponse {
+  searches: DocumentSearchHistoryEntry[]
+}
+
 export interface ChatRequest {
   query: string
   stream: boolean
@@ -833,6 +875,29 @@ export const documentsApi = {
     return request<DocumentCreateResponse>("/document/import", {
       method: "POST",
       body: formData,
+    }, { withApiToken: true })
+  },
+
+  async searchDocuments(data: {
+    query: string
+    metadataFilter?: Record<string, string | number | boolean | null>
+  }): Promise<DocumentSearchResponse> {
+    return request<DocumentSearchResponse>('/document/search', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async listSearchHistory(): Promise<DocumentSearchHistoryEntry[]> {
+    const response = await request<DocumentSearchHistoryListResponse>('/document/search/history', {
+      method: 'GET',
+    }, { withApiToken: true })
+    return response.searches
+  },
+
+  async getSearchHistory(searchId: string): Promise<DocumentSearchResponse> {
+    return request<DocumentSearchResponse>(`/document/search/history/${searchId}`, {
+      method: 'GET',
     }, { withApiToken: true })
   }
 }

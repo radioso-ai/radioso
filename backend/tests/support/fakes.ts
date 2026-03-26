@@ -278,7 +278,7 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       rerankTopK: input.rerankTopK,
       warmthLevel: input.warmthLevel,
       citationDisplayEnabled: input.citationDisplayEnabled,
-      attributeControls: input.attributeControls,
+      signalPolicies: input.signalPolicies,
       customInstruction: input.customInstruction,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),

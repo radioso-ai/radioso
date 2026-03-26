@@ -30,8 +30,8 @@ import {
 } from "../routes/publicChatRoutes.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
-  attributeControlModes,
-  attributeFamilyIds,
+  retrievalSignalKeys,
+  signalPolicyModes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 
 extendZodWithOpenApi(z);
@@ -143,11 +143,11 @@ const RetrievalSettingsSchema = registry.register(
     rerankTopK: z.number().int().min(1),
     warmthLevel: z.number().int().min(1).max(10),
     citationDisplayEnabled: z.boolean(),
-    attributeControls: z.array(
+    signalPolicies: z.array(
       z.object({
-        family: z.enum(attributeFamilyIds),
+        signalKey: z.enum(retrievalSignalKeys),
         enabled: z.boolean(),
-        mode: z.enum(attributeControlModes),
+        mode: z.enum(signalPolicyModes),
       }),
     ),
     customInstruction: z.string().max(2000),
@@ -180,12 +180,12 @@ const UpdateIngestionSettingsRequestSchema = registry.register(
   updateIngestionSettingsSchema,
 );
 
-const AttributeFamilyControlSchema = registry.register(
-  "AttributeFamilyControl",
+const RetrievalSignalPolicySchema = registry.register(
+  "RetrievalSignalPolicy",
   z.object({
-    family: z.enum(attributeFamilyIds),
+    signalKey: z.enum(retrievalSignalKeys),
     enabled: z.boolean(),
-    mode: z.enum(attributeControlModes),
+    mode: z.enum(signalPolicyModes),
   }),
 );
 
@@ -337,8 +337,8 @@ const CandidateCountsSchema = registry.register(
 const AppliedConstraintSchema = registry.register(
   "AppliedConstraint",
   z.object({
-    family: z.enum(attributeFamilyIds),
-    mode: z.enum(attributeControlModes),
+    signalKey: z.enum(retrievalSignalKeys),
+    mode: z.enum(signalPolicyModes),
     outcome: z.enum(["applied", "relaxed", "skipped"]),
     summary: z.string(),
   }),

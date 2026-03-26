@@ -221,7 +221,7 @@ export interface RetrievalSettings {
   rerankTopK: number
   warmthLevel: number
   citationDisplayEnabled: boolean
-  attributeControls: AttributeFamilyControl[]
+  signalPolicies: RetrievalSignalPolicy[]
   customInstruction: string
 }
 
@@ -243,8 +243,8 @@ export interface WorkspaceIngestionReprocessResponse {
   status: 'queued' | 'noop'
 }
 
-export interface AttributeFamilyControl {
-  family: 'date_point' | 'date_range' | 'money_value' | 'location'
+export interface RetrievalSignalPolicy {
+  signalKey: 'document_date' | 'document_period' | 'document_amount' | 'document_location'
   enabled: boolean
   mode: 'boost_only' | 'hard_filter'
 }
@@ -370,7 +370,7 @@ export interface CandidateCounts {
 }
 
 export interface AppliedConstraintInfo {
-  family: 'date_point' | 'date_range' | 'money_value' | 'location'
+  signalKey: 'document_date' | 'document_period' | 'document_amount' | 'document_location'
   mode: 'boost_only' | 'hard_filter'
   outcome: 'applied' | 'relaxed' | 'skipped'
   summary: string

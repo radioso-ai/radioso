@@ -61,35 +61,35 @@ const chunkingStrategyOptions: Array<{
   },
 ]
 
-const attributeFamilyOptions: Array<{
-  family: RetrievalSettings['attributeControls'][number]['family']
+const signalPolicyOptions: Array<{
+  signalKey: RetrievalSettings['signalPolicies'][number]['signalKey']
   label: string
   description: string
 }> = [
   {
-    family: 'date_point',
-    label: 'Single Dates',
-    description: 'Use exact dates such as deadlines, departures, or scheduled days.',
+    signalKey: 'document_date',
+    label: 'Document date',
+    description: 'Use exact dates such as deadlines, dated provisions, or effective days.',
   },
   {
-    family: 'date_range',
-    label: 'Date Ranges',
-    description: 'Use spans such as retreat windows, event ranges, or booking periods.',
+    signalKey: 'document_period',
+    label: 'Document period',
+    description: 'Use spans such as validity windows, event ranges, or booking periods.',
   },
   {
-    family: 'money_value',
-    label: 'Prices',
-    description: 'Use monetary values such as prices, fees, or budget thresholds.',
+    signalKey: 'document_amount',
+    label: 'Document amount',
+    description: 'Use numeric amounts such as prices, fees, or budget thresholds.',
   },
   {
-    family: 'location',
-    label: 'Locations',
-    description: 'Use place names such as cities, countries, or venue references.',
+    signalKey: 'document_location',
+    label: 'Document location',
+    description: 'Use place references such as cities, countries, or venue locations.',
   },
 ]
 
-const attributeModeLabels: Record<
-  RetrievalSettings['attributeControls'][number]['mode'],
+const signalPolicyModeLabels: Record<
+  RetrievalSettings['signalPolicies'][number]['mode'],
   { label: string; description: string }
 > = {
   boost_only: {
@@ -809,16 +809,16 @@ function RetrievalSettingsPanel() {
     setHasChanges(true)
   }
 
-  const updateAttributeControl = (
-    family: RetrievalSettings['attributeControls'][number]['family'],
-    updates: Partial<RetrievalSettings['attributeControls'][number]>
+  const updateSignalPolicy = (
+    signalKey: RetrievalSettings['signalPolicies'][number]['signalKey'],
+    updates: Partial<RetrievalSettings['signalPolicies'][number]>
   ) => {
     if (!settings) return
 
     setSettings({
       ...settings,
-      attributeControls: settings.attributeControls.map((control) =>
-        control.family === family ? { ...control, ...updates } : control
+      signalPolicies: settings.signalPolicies.map((policy) =>
+        policy.signalKey === signalKey ? { ...policy, ...updates } : policy
       ),
     })
     setHasChanges(true)
@@ -973,27 +973,27 @@ function RetrievalSettingsPanel() {
 
               <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
                 <div className="space-y-1">
-                  <Label className="text-foreground">Structured Attributes</Label>
+                  <Label className="text-foreground">Signal Policies</Label>
                   <p className="text-sm text-muted-foreground">
-                    These are system-defined retrieval helpers, not custom fields. Enable the families
-                    you want the retriever to consider, and choose whether each one should only boost
-                    matches or may act as a high-confidence hard filter.
+                    These are system-defined retrieval signals, not custom metadata rules. Enable the
+                    policies you want the retriever to consider, and choose whether each one should
+                    only boost matches or may act as a high-confidence hard filter.
                   </p>
                 </div>
 
                 <div className="space-y-3">
-                  {attributeFamilyOptions.map((option) => {
-                    const control = settings.attributeControls.find(
-                      (candidate) => candidate.family === option.family
+                  {signalPolicyOptions.map((option) => {
+                    const policy = settings.signalPolicies.find(
+                      (candidate) => candidate.signalKey === option.signalKey
                     )
 
-                    if (!control) {
+                    if (!policy) {
                       return null
                     }
 
                     return (
                       <div
-                        key={option.family}
+                        key={option.signalKey}
                         className="space-y-3 rounded-md border border-border bg-card p-4"
                       >
                         <div className="flex items-start justify-between gap-4">
@@ -1002,9 +1002,9 @@ function RetrievalSettingsPanel() {
                             <p className="text-sm text-muted-foreground">{option.description}</p>
                           </div>
                           <Switch
-                            checked={control.enabled}
+                            checked={policy.enabled}
                             onCheckedChange={(checked) =>
-                              updateAttributeControl(option.family, { enabled: checked })
+                              updateSignalPolicy(option.signalKey, { enabled: checked })
                             }
                           />
                         </div>
@@ -1012,19 +1012,19 @@ function RetrievalSettingsPanel() {
                         <div className="space-y-2">
                           <Label className="text-foreground">Retrieval behavior</Label>
                           <Select
-                            value={control.mode}
+                            value={policy.mode}
                             onValueChange={(value) =>
-                              updateAttributeControl(option.family, {
-                                mode: value as RetrievalSettings['attributeControls'][number]['mode'],
+                              updateSignalPolicy(option.signalKey, {
+                                mode: value as RetrievalSettings['signalPolicies'][number]['mode'],
                               })
                             }
-                            disabled={!control.enabled}
+                            disabled={!policy.enabled}
                           >
                             <SelectTrigger className="w-full">
                               <SelectValue placeholder="Select retrieval behavior" />
                             </SelectTrigger>
                             <SelectContent>
-                              {Object.entries(attributeModeLabels).map(([value, meta]) => (
+                              {Object.entries(signalPolicyModeLabels).map(([value, meta]) => (
                                 <SelectItem key={value} value={value}>
                                   {meta.label}
                                 </SelectItem>
@@ -1032,7 +1032,7 @@ function RetrievalSettingsPanel() {
                             </SelectContent>
                           </Select>
                           <p className="text-sm text-muted-foreground">
-                            {attributeModeLabels[control.mode].description}
+                            {signalPolicyModeLabels[policy.mode].description}
                           </p>
                         </div>
                       </div>

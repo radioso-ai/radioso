@@ -19,7 +19,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
     const scoredCandidates = this.attributeMatchScoringService.apply({
       candidates: mergedCandidates,
       parsedQuery: input.activeParsedQuery,
-      attributeControls: input.settings.attributeControls,
+      signalPolicies: input.settings.signalPolicies,
     });
 
     return {

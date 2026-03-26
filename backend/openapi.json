@@ -314,18 +314,18 @@
           "citationDisplayEnabled": {
             "type": "boolean"
           },
-          "attributeControls": {
+          "signalPolicies": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "family": {
+                "signalKey": {
                   "type": "string",
                   "enum": [
-                    "date_point",
-                    "date_range",
-                    "money_value",
-                    "location"
+                    "document_date",
+                    "document_period",
+                    "document_amount",
+                    "document_location"
                   ]
                 },
                 "enabled": {
@@ -340,7 +340,7 @@
                 }
               },
               "required": [
-                "family",
+                "signalKey",
                 "enabled",
                 "mode"
               ]
@@ -368,7 +368,7 @@
           "rerankTopK",
           "warmthLevel",
           "citationDisplayEnabled",
-          "attributeControls",
+          "signalPolicies",
           "customInstruction",
           "createdAt",
           "updatedAt"
@@ -398,18 +398,18 @@
           "citationDisplayEnabled": {
             "type": "boolean"
           },
-          "attributeControls": {
+          "signalPolicies": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "family": {
+                "signalKey": {
                   "type": "string",
                   "enum": [
-                    "date_point",
-                    "date_range",
-                    "money_value",
-                    "location"
+                    "document_date",
+                    "document_period",
+                    "document_amount",
+                    "document_location"
                   ]
                 },
                 "enabled": {
@@ -424,7 +424,7 @@
                 }
               },
               "required": [
-                "family",
+                "signalKey",
                 "enabled",
                 "mode"
               ]
@@ -530,16 +530,16 @@
           "structuredMaxChunkSize"
         ]
       },
-      "AttributeFamilyControl": {
+      "RetrievalSignalPolicy": {
         "type": "object",
         "properties": {
-          "family": {
+          "signalKey": {
             "type": "string",
             "enum": [
-              "date_point",
-              "date_range",
-              "money_value",
-              "location"
+              "document_date",
+              "document_period",
+              "document_amount",
+              "document_location"
             ]
           },
           "enabled": {
@@ -554,7 +554,7 @@
           }
         },
         "required": [
-          "family",
+          "signalKey",
           "enabled",
           "mode"
         ]
@@ -1049,13 +1049,13 @@
       "AppliedConstraint": {
         "type": "object",
         "properties": {
-          "family": {
+          "signalKey": {
             "type": "string",
             "enum": [
-              "date_point",
-              "date_range",
-              "money_value",
-              "location"
+              "document_date",
+              "document_period",
+              "document_amount",
+              "document_location"
             ]
           },
           "mode": {
@@ -1078,7 +1078,7 @@
           }
         },
         "required": [
-          "family",
+          "signalKey",
           "mode",
           "outcome",
           "summary"

@@ -1,6 +1,6 @@
 import {
   defaultRetrievalSettings,
-  defaultAttributeControls,
+  normalizeSignalPolicies,
   type RetrievalSettingsInput,
   type RetrievalSettingsRecord,
   validateRetrievalSettings,
@@ -24,7 +24,7 @@ export class RetrievalSettingsService {
     if (existing) {
       const normalized = validateRetrievalSettings({
         ...existing,
-        attributeControls: existing.attributeControls ?? defaultAttributeControls(),
+        signalPolicies: normalizeSignalPolicies(existing.signalPolicies),
       });
       return {
         ...existing,

@@ -27,8 +27,8 @@ describe("retrieval pipeline stages", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         customInstruction: "",
-        attributeControls: defaultAttributeControls().map((control) =>
-          control.family === "location" || control.family === "money_value"
+        signalPolicies: defaultAttributeControls().map((control) =>
+          control.signalKey === "document_location" || control.signalKey === "document_amount"
             ? { ...control, mode: "hard_filter" as const }
             : control,
         ),
@@ -61,7 +61,7 @@ describe("retrieval pipeline stages", () => {
             warmthLevel: 5,
             citationDisplayEnabled: true,
             customInstruction: "",
-            attributeControls: defaultAttributeControls(),
+            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };

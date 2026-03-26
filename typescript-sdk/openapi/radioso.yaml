@@ -1,454 +1,22 @@
 openapi: 3.1.0
 info:
-  title: Hivec Modular RAG API
+  title: Hivec API
   version: 0.1.0
-  summary: Contract draft for the initial modular RAG backend
+  description: Code-generated OpenAPI contract for the Hivec backend
 servers:
   - url: http://localhost:8080
     description: Local development
 tags:
+  - name: System
   - name: Auth
   - name: Account
   - name: Workspace
   - name: Settings
   - name: Documents
   - name: Chat
-paths:
-  /api/v1/auth/register:
-    post:
-      tags: [Auth]
-      summary: Register a new account
-      operationId: registerAccount
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterRequest'
-      responses:
-        '201':
-          description: Account created and session established
-          headers:
-            Set-Cookie:
-              description: HttpOnly secure session cookie
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RegisterResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/auth/login:
-    post:
-      tags: [Auth]
-      summary: Log in an existing account
-      operationId: loginAccount
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
-      responses:
-        '200':
-          description: Session established
-          headers:
-            Set-Cookie:
-              description: HttpOnly secure session cookie
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/workspace:
-    get:
-      tags: [Workspace]
-      summary: List workspaces for the authenticated account
-      operationId: listWorkspaces
-      security:
-        - sessionCookie: []
-      responses:
-        '200':
-          description: Workspaces returned
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkspaceListResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    post:
-      tags: [Workspace]
-      summary: Create a new workspace
-      operationId: createWorkspace
-      security:
-        - sessionCookie: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkspaceCreateRequest'
-      responses:
-        '201':
-          description: Workspace created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Workspace'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/workspace/{workspaceId}:
-    patch:
-      tags: [Workspace]
-      summary: Rename a workspace
-      operationId: renameWorkspace
-      security:
-        - sessionCookie: []
-      parameters:
-        - in: path
-          name: workspaceId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkspaceRenameRequest'
-      responses:
-        '200':
-          description: Workspace renamed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Workspace'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    delete:
-      tags: [Workspace]
-      summary: Delete a workspace and all its data
-      operationId: deleteWorkspace
-      security:
-        - sessionCookie: []
-      parameters:
-        - in: path
-          name: workspaceId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '204':
-          description: Workspace deleted
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/account/workspaces/{workspaceId}/token:
-    get:
-      tags: [Account]
-      summary: Return the API token for a specific workspace
-      operationId: getWorkspaceToken
-      security:
-        - sessionCookie: []
-      parameters:
-        - in: path
-          name: workspaceId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Token returned
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AccountTokenResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/settings/retrieval:
-    get:
-      tags: [Settings]
-      summary: Get retrieval settings for the authenticated account
-      operationId: getRetrievalSettings
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Retrieval settings
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RetrievalSettings'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    put:
-      tags: [Settings]
-      summary: Update retrieval settings for the authenticated account
-      operationId: updateRetrievalSettings
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateRetrievalSettingsRequest'
-      responses:
-        '200':
-          description: Updated retrieval settings
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RetrievalSettings'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/document/:
-    get:
-      tags: [Documents]
-      summary: List documents for the authenticated account
-      operationId: listDocuments
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Documents returned
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentListResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    post:
-      tags: [Documents]
-      summary: Ingest a document for the authenticated account
-      operationId: createDocument
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DocumentCreateRequest'
-      responses:
-        '201':
-          description: Document accepted and processed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentCreateResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/document/{documentId}:
-    get:
-      tags: [Documents]
-      summary: Get a document for the authenticated account
-      operationId: getDocument
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: documentId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Document returned
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentDetails'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    put:
-      tags: [Documents]
-      summary: Update and reprocess a document for the authenticated account
-      operationId: updateDocument
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: documentId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DocumentCreateRequest'
-      responses:
-        '200':
-          description: Document updated and processed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentCreateResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    delete:
-      tags: [Documents]
-      summary: Delete a document for the authenticated account
-      operationId: deleteDocument
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: documentId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '204':
-          description: Document deleted
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/chat/:
-    post:
-      tags: [Chat]
-      summary: Ask a retrieval-grounded question
-      operationId: createChatResponse
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ChatRequest'
-      responses:
-        '200':
-          description: Non-streaming answer or streaming event stream
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChatResponse'
-            text/event-stream:
-              schema:
-                type: string
-                description: SSE stream containing incremental answer events
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/chat/history:
-    get:
-      tags: [Chat]
-      summary: List saved chat conversations for the authenticated account
-      operationId: listChatHistory
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Chat history summaries
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChatHistoryListResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/chat/history/{conversationId}:
-    get:
-      tags: [Chat]
-      summary: Get a saved conversation and its debug metadata
-      operationId: getChatHistoryConversation
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: conversationId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Historical conversation detail
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChatConversationDetail'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
+  - name: Public Chat
+  - name: Connectors
+  - name: Connector Webhooks
 components:
   securitySchemes:
     sessionCookie:
@@ -459,51 +27,44 @@ components:
       type: http
       scheme: bearer
       bearerFormat: APIKey
-  responses:
-    BadRequest:
-      description: Request validation failed
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    Unauthorized:
-      description: Authentication required or invalid credentials
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    Conflict:
-      description: Resource already exists
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    NotFound:
-      description: Requested resource was not found
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    InternalError:
-      description: Unexpected server error
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
   schemas:
-    RegisterRequest:
+    ErrorResponse:
       type: object
-      required: [email, password]
       properties:
-        email:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details: {}
+          required:
+            - code
+            - message
+      required:
+        - error
+    FlatErrorResponse:
+      type: object
+      properties:
+        code:
           type: string
-          format: email
-        password:
+        message:
           type: string
-          minLength: 8
+      required:
+        - code
+        - message
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+      required:
+        - status
     RegisterResponse:
       type: object
-      required: [userId, workspaceId, workspaceName, token]
       properties:
         userId:
           type: string
@@ -515,19 +76,14 @@ components:
           type: string
         token:
           type: string
-          pattern: '^sk_proj_[a-f0-9]+$'
-    LoginRequest:
-      type: object
-      required: [email, password]
-      properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
+          pattern: ^sk_proj_[a-f0-9]+$
+      required:
+        - userId
+        - workspaceId
+        - workspaceName
+        - token
     LoginResponse:
       type: object
-      required: [userId, workspaceId, workspaceName, token]
       properties:
         userId:
           type: string
@@ -539,17 +95,22 @@ components:
           type: string
         token:
           type: string
-          pattern: '^sk_proj_[a-f0-9]+$'
+          pattern: ^sk_proj_[a-f0-9]+$
+      required:
+        - userId
+        - workspaceId
+        - workspaceName
+        - token
     AccountTokenResponse:
       type: object
-      required: [token]
       properties:
         token:
           type: string
-          pattern: '^sk_proj_[A-Za-z0-9]+$'
+          pattern: ^sk_proj_[a-f0-9]+$
+      required:
+        - token
     Workspace:
       type: object
-      required: [id, accountId, name, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -565,46 +126,65 @@ components:
         updatedAt:
           type: string
           format: date-time
+      required:
+        - id
+        - accountId
+        - name
+        - createdAt
+        - updatedAt
     WorkspaceListResponse:
       type: object
-      required: [workspaces]
       properties:
         workspaces:
           type: array
           items:
-            $ref: '#/components/schemas/Workspace'
+            $ref: "#/components/schemas/Workspace"
+      required:
+        - workspaces
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+      required:
+        - email
+        - password
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+      required:
+        - email
+        - password
     WorkspaceCreateRequest:
       type: object
-      required: [name]
       properties:
         name:
           type: string
           minLength: 1
           maxLength: 100
+      required:
+        - name
     WorkspaceRenameRequest:
       type: object
-      required: [name]
       properties:
         name:
           type: string
           minLength: 1
           maxLength: 100
+      required:
+        - name
     RetrievalSettings:
       type: object
-      required:
-        - workspaceId
-        - queryRewriteEnabled
-        - rerankEnabled
-        - vectorTopK
-        - similarityThreshold
-        - rerankTopK
-        - warmthLevel
-        - citationDisplayEnabled
-        - chunkingStrategy
-        - attributeControls
-        - customInstruction
-        - createdAt
-        - updatedAt
       properties:
         workspaceId:
           type: string
@@ -630,27 +210,88 @@ components:
           maximum: 10
         citationDisplayEnabled:
           type: boolean
-        chunkingStrategy:
-          type: string
-          enum:
-            - fixed_window
-            - structured_semantic
-        attributeControls:
+        signalPolicies:
           type: array
           items:
-            $ref: '#/components/schemas/AttributeFamilyControl'
+            type: object
+            properties:
+              signalKey:
+                type: string
+                enum: &a1
+                  - document_date
+                  - document_period
+                  - document_amount
+                  - document_location
+              enabled:
+                type: boolean
+              mode:
+                type: string
+                enum: &a2
+                  - boost_only
+                  - hard_filter
+            required:
+              - signalKey
+              - enabled
+              - mode
         customInstruction:
           type: string
           maxLength: 2000
-          default: ""
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
+      required:
+        - workspaceId
+        - queryRewriteEnabled
+        - rerankEnabled
+        - vectorTopK
+        - similarityThreshold
+        - rerankTopK
+        - warmthLevel
+        - citationDisplayEnabled
+        - signalPolicies
+        - customInstruction
+        - createdAt
+        - updatedAt
     UpdateRetrievalSettingsRequest:
       type: object
+      properties:
+        queryRewriteEnabled:
+          type: boolean
+        rerankEnabled:
+          type: boolean
+        vectorTopK:
+          type: integer
+        similarityThreshold:
+          type: number
+        rerankTopK:
+          type: integer
+        warmthLevel:
+          type: integer
+        citationDisplayEnabled:
+          type: boolean
+        signalPolicies:
+          type: array
+          items:
+            type: object
+            properties:
+              signalKey:
+                type: string
+                enum: *a1
+              enabled:
+                type: boolean
+              mode:
+                type: string
+                enum: *a2
+            required:
+              - signalKey
+              - enabled
+              - mode
+        customInstruction:
+          type: string
+          maxLength: 2000
       required:
         - queryRewriteEnabled
         - rerankEnabled
@@ -659,56 +300,133 @@ components:
         - rerankTopK
         - warmthLevel
         - citationDisplayEnabled
-        - chunkingStrategy
+    IngestionSettings:
+      type: object
       properties:
-        queryRewriteEnabled:
-          type: boolean
-        rerankEnabled:
-          type: boolean
-        vectorTopK:
-          type: integer
-          minimum: 1
-          maximum: 300
-        similarityThreshold:
-          type: number
-          minimum: 0
-          maximum: 1
-        rerankTopK:
-          type: integer
-          minimum: 1
-        warmthLevel:
-          type: integer
-          minimum: 1
-          maximum: 10
-        citationDisplayEnabled:
-          type: boolean
+        workspaceId:
+          type: string
+          format: uuid
         chunkingStrategy:
           type: string
-          enum:
+          enum: &a3
             - fixed_window
             - structured_semantic
-        attributeControls:
-          type: array
-          items:
-            $ref: '#/components/schemas/AttributeFamilyControl'
-        customInstruction:
+        fixedWindowChunkSize:
+          type: integer
+        fixedWindowChunkOverlap:
+          type: integer
+        structuredMinChunkSize:
+          type: integer
+        structuredMaxChunkSize:
+          type: integer
+        createdAt:
           type: string
-          maxLength: 2000
-    AttributeFamilyControl:
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - workspaceId
+        - chunkingStrategy
+        - fixedWindowChunkSize
+        - fixedWindowChunkOverlap
+        - structuredMinChunkSize
+        - structuredMaxChunkSize
+        - createdAt
+        - updatedAt
+    UpdateIngestionSettingsRequest:
       type: object
-      required: [family, enabled, mode]
       properties:
-        family:
+        chunkingStrategy:
           type: string
-          enum: [date_point, date_range, money_value, location]
+          enum: *a3
+        fixedWindowChunkSize:
+          type: integer
+          minimum: 100
+          maximum: 4000
+        fixedWindowChunkOverlap:
+          type: integer
+          minimum: 0
+          maximum: 2000
+        structuredMinChunkSize:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        structuredMaxChunkSize:
+          type: integer
+          minimum: 1
+          maximum: 2000
+      required:
+        - chunkingStrategy
+        - fixedWindowChunkSize
+        - fixedWindowChunkOverlap
+        - structuredMinChunkSize
+        - structuredMaxChunkSize
+    RetrievalSignalPolicy:
+      type: object
+      properties:
+        signalKey:
+          type: string
+          enum: *a1
         enabled:
           type: boolean
         mode:
           type: string
-          enum: [boost_only, hard_filter]
+          enum: *a2
+      required:
+        - signalKey
+        - enabled
+        - mode
+    UpdateGeneralSettingsRequest:
+      type: object
+      properties:
+        anonymousChatEnabled:
+          type: boolean
+        anonymousRateLimit:
+          type: integer
+          minimum: 1
+          maximum: 60
+    GeneralSettingsResponse:
+      type: object
+      properties:
+        anonymousChatEnabled:
+          type: boolean
+        anonymousChatUrl:
+          type:
+            - string
+            - "null"
+        anonymousRateLimit:
+          type: integer
+          minimum: 1
+          maximum: 60
+      required:
+        - anonymousChatEnabled
+        - anonymousChatUrl
+        - anonymousRateLimit
+    WorkspaceIngestionReprocessResponse:
+      type: object
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
+        queuedDocumentCount:
+          type: integer
+          minimum: 0
+        skippedDocumentCount:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum:
+            - queued
+            - noop
+      required:
+        - workspaceId
+        - queuedDocumentCount
+        - skippedDocumentCount
+        - status
     DocumentCreateRequest:
       type: object
-      required: [title, content]
       properties:
         title:
           type: string
@@ -718,21 +436,33 @@ components:
           minLength: 1
         metadata:
           type: object
-          additionalProperties: true
-          description: Optional key-value metadata (max 16 KB serialized)
-    DocumentCreateResponse:
+          additionalProperties:
+            anyOf:
+              - type: string
+              - type: number
+              - type: boolean
+              - type: "null"
+              - type: "null"
+      required:
+        - title
+        - content
+    DocumentStatus:
+      type: string
+    DocumentOperationResponse:
       type: object
-      required: [documentId, status]
       properties:
         documentId:
           type: string
           format: uuid
         status:
-          type: string
-          enum: [received, normalized, chunked, embedded, ready]
+          $ref: "#/components/schemas/DocumentStatus"
+      required:
+        - documentId
+        - status
+    RagStatus:
+      type: string
     DocumentSummary:
       type: object
-      required: [id, title, status, ragStatus, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -740,10 +470,9 @@ components:
         title:
           type: string
         status:
-          type: string
+          $ref: "#/components/schemas/DocumentStatus"
         ragStatus:
-          type: string
-          enum: [processed, pending]
+          $ref: "#/components/schemas/RagStatus"
         createdAt:
           type: string
           format: date-time
@@ -752,44 +481,411 @@ components:
           format: date-time
         metadata:
           type: object
-          additionalProperties: true
+          additionalProperties:
+            anyOf:
+              - type: string
+              - type: number
+              - type: boolean
+              - type: "null"
+              - type: "null"
           default: {}
+      required:
+        - id
+        - title
+        - status
+        - ragStatus
+        - createdAt
+        - updatedAt
     DocumentDetails:
       allOf:
-        - $ref: '#/components/schemas/DocumentSummary'
+        - $ref: "#/components/schemas/DocumentSummary"
         - type: object
-          required: [content]
           properties:
             content:
               type: string
+          required:
+            - content
     DocumentListResponse:
       type: object
-      required: [documents]
       properties:
         documents:
           type: array
           items:
-            $ref: '#/components/schemas/DocumentSummary'
-    ChatRequest:
+            $ref: "#/components/schemas/DocumentSummary"
+      required:
+        - documents
+    DocumentSearchAction:
       type: object
-      required: [query, stream]
+      properties:
+        type:
+          type: string
+          enum:
+            - open_document
+            - inspect_match_evidence
+            - open_history_entry
+            - rerun_search
+        status:
+          type: string
+          enum:
+            - available
+            - unavailable
+      required:
+        - type
+        - status
+    DocumentSearchResult:
+      type: object
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          $ref: "#/components/schemas/DocumentStatus"
+        ragStatus:
+          $ref: "#/components/schemas/RagStatus"
+        metadata:
+          type: object
+          additionalProperties: {}
+        score:
+          type: number
+        rank:
+          type: integer
+          minimum: 1
+        matchEvidence:
+          type: array
+          items:
+            type: string
+        sourceKind:
+          type: string
+          enum:
+            - inline_text
+            - uploaded_file
+        sourceFilename:
+          type:
+            - string
+            - "null"
+        sourceMimeType:
+          type:
+            - string
+            - "null"
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentSearchAction"
+      required:
+        - documentId
+        - title
+        - status
+        - ragStatus
+        - metadata
+        - score
+        - rank
+        - matchEvidence
+        - sourceKind
+        - actions
+    DocumentSearchHistoryEntry:
+      type: object
+      properties:
+        searchId:
+          type: string
+          format: uuid
+        query:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        resultCount:
+          type: integer
+          minimum: 0
+        traceAvailable:
+          type: boolean
+        previewTopTitles:
+          type: array
+          items:
+            type: string
+      required:
+        - searchId
+        - query
+        - createdAt
+        - resultCount
+        - traceAvailable
+        - previewTopTitles
+    DocumentSearchHistoryListResponse:
+      type: object
+      properties:
+        searches:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentSearchHistoryEntry"
+      required:
+        - searches
+    DocumentSearchRequest:
+      type: object
       properties:
         query:
           type: string
           minLength: 1
-        stream:
-          type: boolean
-        conversationId:
-          type: string
-          format: uuid
-          description: Omit to start a new conversation
         metadataFilter:
           type: object
-          additionalProperties: true
-          description: Filter retrieval to chunks matching these metadata key-value pairs
+          additionalProperties:
+            anyOf:
+              - type: string
+              - type: number
+              - type: boolean
+              - type: "null"
+              - type: "null"
+      required:
+        - query
+    Citation:
+      type: object
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        chunkId:
+          type: string
+          format: uuid
+        title:
+          type: string
+      required:
+        - documentId
+        - chunkId
+        - title
+    AnswerSegment:
+      type: object
+      properties:
+        text:
+          type: string
+        citationIndices:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+      required:
+        - text
+    ParsedQuery:
+      type: object
+      properties:
+        semanticQuery:
+          type: string
+        lexicalQuery:
+          type: string
+        constraintSummary:
+          type: array
+          items:
+            type: string
+      required:
+        - semanticQuery
+        - lexicalQuery
+        - constraintSummary
+    CandidateCounts:
+      type: object
+      properties:
+        semantic:
+          type: integer
+          minimum: 0
+        lexical:
+          type: integer
+          minimum: 0
+        merged:
+          type: integer
+          minimum: 0
+        final:
+          type: integer
+          minimum: 0
+      required:
+        - semantic
+        - lexical
+        - merged
+        - final
+    AppliedConstraint:
+      type: object
+      properties:
+        signalKey:
+          type: string
+          enum: *a1
+        mode:
+          type: string
+          enum: *a2
+        outcome:
+          type: string
+          enum:
+            - applied
+            - relaxed
+            - skipped
+        summary:
+          type: string
+      required:
+        - signalKey
+        - mode
+        - outcome
+        - summary
+    RewriteInfo:
+      type: object
+      properties:
+        status:
+          type: string
+        eligible:
+          type: boolean
+        ran:
+          type: boolean
+        materialDisagreement:
+          type: boolean
+        continuityDecision:
+          type: string
+        rejectionReason:
+          type: string
+      required:
+        - status
+        - eligible
+        - ran
+        - materialDisagreement
+    RetrievalInfo:
+      type: object
+      properties:
+        parsedQuery:
+          $ref: "#/components/schemas/ParsedQuery"
+        candidateCounts:
+          $ref: "#/components/schemas/CandidateCounts"
+        appliedConstraints:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppliedConstraint"
+        fallbackApplied:
+          type: boolean
+        rerankStatus:
+          type: string
+          enum:
+            - skipped
+            - applied
+            - fallback
+        rewrite:
+          $ref: "#/components/schemas/RewriteInfo"
+      required:
+        - candidateCounts
+        - fallbackApplied
+        - rerankStatus
+    RetrievalTraceStage:
+      type: object
+      properties:
+        stageId:
+          type: string
+        kind:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum:
+            - applied
+            - skipped
+            - fallback
+            - rejected
+            - unavailable
+            - failed
+        startedAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+          minimum: 0
+        settings:
+          type: object
+          additionalProperties: {}
+        inputs:
+          type: object
+          additionalProperties: {}
+        outputs:
+          type: object
+          additionalProperties: {}
+        metrics:
+          type: object
+          additionalProperties:
+            type: number
+        reason:
+          type: string
+      required:
+        - stageId
+        - kind
+        - label
+        - status
+    RetrievalTraceLink:
+      type: object
+      properties:
+        fromStageId:
+          type: string
+        toStageId:
+          type: string
+        kind:
+          type: string
+          enum:
+            - sequence
+            - branch
+            - converge
+      required:
+        - fromStageId
+        - toStageId
+        - kind
+    RetrievalTrace:
+      type: object
+      properties:
+        traceId:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        totalDurationMs:
+          type: integer
+          minimum: 0
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievalTraceStage"
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievalTraceLink"
+        summary:
+          $ref: "#/components/schemas/RetrievalInfo"
+      required:
+        - traceId
+        - startedAt
+        - stages
+        - links
+    DocumentSearchResponse:
+      type: object
+      properties:
+        searchId:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          enum:
+            - live
+            - snapshot
+        query:
+          type: string
+        resultCount:
+          type: integer
+          minimum: 0
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentSearchResult"
+        retrievalTrace:
+          $ref: "#/components/schemas/RetrievalTrace"
+      required:
+        - searchId
+        - mode
+        - query
+        - resultCount
+        - results
     ChatResponse:
       type: object
-      required: [conversationId, answer, retrievalInfo]
       properties:
         conversationId:
           type: string
@@ -799,34 +895,65 @@ components:
         citations:
           type: array
           items:
-            $ref: '#/components/schemas/Citation'
+            $ref: "#/components/schemas/Citation"
         answerSegments:
           type: array
           items:
-            $ref: '#/components/schemas/AnswerSegment'
+            $ref: "#/components/schemas/AnswerSegment"
         retrievalInfo:
-          $ref: '#/components/schemas/RetrievalInfo'
-    ChatHistoryListResponse:
+          $ref: "#/components/schemas/RetrievalInfo"
+        retrievalTrace:
+          $ref: "#/components/schemas/RetrievalTrace"
+      required:
+        - conversationId
+        - answer
+        - retrievalInfo
+        - retrievalTrace
+    ChatRequest:
       type: object
-      required: [conversations]
       properties:
-        conversations:
-          type: array
-          items:
-            $ref: '#/components/schemas/ChatConversationSummary'
+        query:
+          type: string
+          minLength: 1
+        stream:
+          type: boolean
+        conversationId:
+          type: string
+          format: uuid
+        metadataFilter:
+          type: object
+          additionalProperties: {}
+      required:
+        - query
+        - stream
+    PublicChatRequest:
+      type: object
+      properties:
+        query:
+          type: string
+          minLength: 1
+        stream:
+          type: boolean
+          default: false
+        conversationId:
+          type: string
+          format: uuid
+      required:
+        - query
     ChatConversationSummary:
       type: object
-      required:
-        - id
-        - createdAt
-        - updatedAt
-        - messageCount
-        - userMessageCount
-        - assistantMessageCount
       properties:
         id:
           type: string
           format: uuid
+        sourceChannel:
+          type:
+            - string
+            - "null"
+        anonymousSessionId:
+          type:
+            - string
+            - "null"
         createdAt:
           type: string
           format: date-time
@@ -843,19 +970,153 @@ components:
           type: integer
           minimum: 0
         preview:
-          type: string
-          nullable: true
-    ChatConversationDetail:
-      type: object
+          type:
+            - string
+            - "null"
       required:
-        - conversationId
-        - workspaceId
+        - id
+        - sourceChannel
+        - anonymousSessionId
         - createdAt
         - updatedAt
         - messageCount
         - userMessageCount
         - assistantMessageCount
-        - messages
+        - preview
+    ChatHistoryListResponse:
+      type: object
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatConversationSummary"
+      required:
+        - conversations
+    ValidationDisposition:
+      type: string
+      enum:
+        - supported
+        - unsupported
+        - non_substantive
+    ValidationSegmentResult:
+      type: object
+      properties:
+        text:
+          type: string
+        disposition:
+          $ref: "#/components/schemas/ValidationDisposition"
+        replacementApplied:
+          type: boolean
+        reason:
+          type: string
+        citationIndices:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+      required:
+        - text
+        - disposition
+        - replacementApplied
+        - reason
+    ValidationDebug:
+      type: object
+      properties:
+        ran:
+          type: boolean
+        answerModified:
+          type: boolean
+        unsupportedSegmentCount:
+          type: integer
+          minimum: 0
+        supportedSegmentCount:
+          type: integer
+          minimum: 0
+        nonSubstantiveSegmentCount:
+          type: integer
+          minimum: 0
+        segmentResults:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationSegmentResult"
+      required:
+        - ran
+        - answerModified
+        - unsupportedSegmentCount
+        - supportedSegmentCount
+        - nonSubstantiveSegmentCount
+        - segmentResults
+    ChatConversationMessageDebug:
+      type: object
+      properties:
+        eventStatus:
+          type: string
+          enum:
+            - success
+            - failure
+        recordedAt:
+          type: string
+          format: date-time
+        stream:
+          type: boolean
+        citationCount:
+          type: integer
+          minimum: 0
+        answerOutcome:
+          type: string
+          enum:
+            - grounded_success
+            - grounded_degraded_unsupported_segments
+            - no_context_refusal
+        validation:
+          $ref: "#/components/schemas/ValidationDebug"
+        retrievalInfo:
+          $ref: "#/components/schemas/RetrievalInfo"
+        retrievalTrace:
+          $ref: "#/components/schemas/RetrievalTrace"
+        errorMessage:
+          type:
+            - string
+            - "null"
+      required:
+        - eventStatus
+        - recordedAt
+        - stream
+        - citationCount
+    ChatConversationMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+            - system
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Citation"
+        answerSegments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnswerSegment"
+        debug:
+          $ref: "#/components/schemas/ChatConversationMessageDebug"
+      required:
+        - id
+        - role
+        - content
+        - createdAt
+    ChatConversationDetail:
+      type: object
       properties:
         conversationId:
           type: string
@@ -863,6 +1124,10 @@ components:
         workspaceId:
           type: string
           format: uuid
+        sourceChannel:
+          type:
+            - string
+            - "null"
         createdAt:
           type: string
           format: date-time
@@ -881,136 +1146,1467 @@ components:
         messages:
           type: array
           items:
-            $ref: '#/components/schemas/ChatConversationMessage'
-    ChatConversationMessage:
+            $ref: "#/components/schemas/ChatConversationMessage"
+      required:
+        - conversationId
+        - workspaceId
+        - sourceChannel
+        - createdAt
+        - updatedAt
+        - messageCount
+        - userMessageCount
+        - assistantMessageCount
+        - messages
+    PublicConversationSummary:
       type: object
-      required: [id, role, content, createdAt]
       properties:
         id:
           type: string
           format: uuid
-        role:
-          type: string
-          enum: [user, assistant, system]
-        content:
-          type: string
+        sourceChannel:
+          type:
+            - string
+            - "null"
+        preview:
+          type:
+            - string
+            - "null"
+        messageCount:
+          type: integer
+          minimum: 0
         createdAt:
           type: string
           format: date-time
-        debug:
-          $ref: '#/components/schemas/ChatConversationMessageDebug'
-    ChatConversationMessageDebug:
-      type: object
-      required: [eventStatus, recordedAt, stream, citationCount]
-      properties:
-        eventStatus:
-          type: string
-          enum: [success, failure]
-        recordedAt:
+        updatedAt:
           type: string
           format: date-time
-        stream:
+      required:
+        - id
+        - sourceChannel
+        - preview
+        - messageCount
+        - createdAt
+        - updatedAt
+    PublicConversationListResponse:
+      type: object
+      properties:
+        workspaceName:
+          type: string
+        conversations:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicConversationSummary"
+      required:
+        - workspaceName
+        - conversations
+    RateLimitExceededResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - rate_limit_exceeded
+        message:
+          type: string
+        retryAfterSeconds:
+          type: integer
+          minimum: 1
+      required:
+        - code
+        - message
+        - retryAfterSeconds
+    ConnectorField:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        type:
+          type: string
+        required:
           type: boolean
-        citationCount:
-          type: integer
-          minimum: 0
-        retrievalInfo:
-          $ref: '#/components/schemas/RetrievalInfo'
-        errorMessage:
+        defaultValue:
           type: string
-          nullable: true
-    Citation:
+        helpText:
+          type: string
+      required:
+        - key
+        - label
+        - type
+        - required
+    ConnectorSummary:
       type: object
-      required: [documentId, chunkId]
       properties:
-        documentId:
+        id:
           type: string
-          format: uuid
-        chunkId:
+        name:
           type: string
-          format: uuid
-        title:
+        description:
           type: string
-    AnswerSegment:
-      type: object
-      required: [text]
-      properties:
-        text:
-          type: string
-        citationIndices:
-          type: array
-          items:
-            type: integer
-            minimum: 0
-    RetrievalInfo:
-      type: object
-      required: [candidateCounts, fallbackApplied, rerankStatus]
-      properties:
-        parsedQuery:
-          $ref: '#/components/schemas/ParsedQuery'
-        candidateCounts:
-          $ref: '#/components/schemas/CandidateCounts'
-        appliedConstraints:
-          type: array
-          items:
-            $ref: '#/components/schemas/AppliedConstraint'
-        fallbackApplied:
+        enabled:
           type: boolean
-        rerankStatus:
-          type: string
-          enum: [skipped, applied, fallback]
-    ParsedQuery:
+        errorStatus:
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - name
+        - description
+        - enabled
+        - errorStatus
+    ConnectorListResponse:
       type: object
-      required: [semanticQuery, lexicalQuery, constraintSummary]
       properties:
-        semanticQuery:
-          type: string
-        lexicalQuery:
-          type: string
-        constraintSummary:
+        connectors:
           type: array
           items:
-            type: string
-    CandidateCounts:
+            $ref: "#/components/schemas/ConnectorSummary"
+      required:
+        - connectors
+    ConnectorDetail:
+      allOf:
+        - $ref: "#/components/schemas/ConnectorSummary"
+        - type: object
+          properties:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/ConnectorField"
+            config:
+              type: object
+              additionalProperties:
+                anyOf:
+                  - type: string
+                  - type: number
+                  - type: boolean
+            webhookUrl:
+              type: string
+              format: uri
+          required:
+            - schema
+            - config
+            - webhookUrl
+    ConnectorConfigUpdateRequest:
       type: object
-      required: [semantic, lexical, merged, final]
       properties:
-        semantic:
-          type: integer
-          minimum: 0
-        lexical:
-          type: integer
-          minimum: 0
-        merged:
-          type: integer
-          minimum: 0
-        final:
-          type: integer
-          minimum: 0
-    AppliedConstraint:
+        config:
+          type: object
+          additionalProperties:
+            anyOf:
+              - type: string
+              - type: number
+              - type: boolean
+      required:
+        - config
+    ConnectorValidationIssue:
       type: object
-      required: [family, mode, outcome, summary]
       properties:
-        family:
+        key:
           type: string
-          enum: [date_point, date_range, money_value, location]
-        mode:
+        message:
           type: string
-          enum: [boost_only, hard_filter]
-        outcome:
-          type: string
-          enum: [applied, relaxed, skipped]
-        summary:
-          type: string
-    ErrorResponse:
+      required:
+        - key
+        - message
+    ConnectorValidationErrorResponse:
       type: object
-      required: [error]
       properties:
         error:
-          type: object
-          required: [code, message]
-          properties:
-            code:
-              type: string
-            message:
-              type: string
+          type: string
+          enum:
+            - Validation failed
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorValidationIssue"
+      required:
+        - error
+        - fields
+    ConnectorConflictResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          enum:
+            - Channel identity conflict
+        detail:
+          type: string
+      required:
+        - error
+        - detail
+    PlainTextChallenge:
+      type: string
+    EmptySuccess:
+      type: object
+      properties: {}
+    WhatsAppWebhookPayload:
+      type: object
+      additionalProperties: {}
+    ChatSseStream:
+      type: string
+    ConnectorNotFoundResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          enum:
+            - Connector not found
+      required:
+        - error
+    PublicChatSseStream:
+      type: string
+  parameters: {}
+paths:
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /api/v1/auth/register:
+    post:
+      tags:
+        - Auth
+      summary: Register a new account
+      operationId: registerAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Account created and session established
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Resource already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Log in an existing account
+      operationId: loginAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Session established
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspace:
+    get:
+      tags:
+        - Workspace
+      summary: List workspaces for the authenticated account
+      operationId: listWorkspaces
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Workspaces returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Workspace
+      summary: Create a workspace
+      operationId: createWorkspace
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceCreateRequest"
+      responses:
+        "201":
+          description: Workspace created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workspace"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspace/{workspaceId}:
+    patch:
+      tags:
+        - Workspace
+      summary: Rename a workspace
+      operationId: renameWorkspace
+      security:
+        - sessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceRenameRequest"
+      responses:
+        "200":
+          description: Workspace renamed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workspace"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Workspace
+      summary: Delete a workspace
+      operationId: deleteWorkspace
+      security:
+        - sessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+      responses:
+        "204":
+          description: Workspace deleted
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/token:
+    get:
+      tags:
+        - Account
+      summary: Return the API token for a specific workspace
+      operationId: getWorkspaceToken
+      security:
+        - sessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+      responses:
+        "200":
+          description: Token returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountTokenResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/retrieval:
+    get:
+      tags:
+        - Settings
+      summary: Get retrieval settings for the authenticated workspace
+      operationId: getRetrievalSettings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Retrieval settings returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetrievalSettings"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags:
+        - Settings
+      summary: Update retrieval settings for the authenticated workspace
+      operationId: updateRetrievalSettings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRetrievalSettingsRequest"
+      responses:
+        "200":
+          description: Updated retrieval settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetrievalSettings"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/ingestion:
+    get:
+      tags:
+        - Settings
+      summary: Get ingestion settings for the authenticated workspace
+      operationId: getIngestionSettings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Ingestion settings returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionSettings"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags:
+        - Settings
+      summary: Update ingestion settings for the authenticated workspace
+      operationId: updateIngestionSettings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIngestionSettingsRequest"
+      responses:
+        "200":
+          description: Updated ingestion settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionSettings"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/ingestion/reprocess:
+    post:
+      tags:
+        - Settings
+      summary: Queue eligible workspace documents for reprocessing using current ingestion settings
+      operationId: reprocessWorkspaceIngestion
+      security:
+        - bearerAuth: []
+      responses:
+        "202":
+          description: Workspace documents accepted for reprocessing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceIngestionReprocessResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/general:
+    get:
+      tags:
+        - Settings
+      summary: Get general workspace settings
+      operationId: getGeneralSettings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: General settings returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneralSettingsResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlatErrorResponse"
+    put:
+      tags:
+        - Settings
+      summary: Update general workspace settings
+      operationId: updateGeneralSettings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGeneralSettingsRequest"
+      responses:
+        "200":
+          description: Updated general settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneralSettingsResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlatErrorResponse"
+  /api/v1/document/search:
+    post:
+      tags:
+        - Documents
+      summary: Search documents for the authenticated workspace
+      operationId: searchDocuments
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentSearchRequest"
+      responses:
+        "200":
+          description: Search results returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSearchResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/search/history:
+    get:
+      tags:
+        - Documents
+      summary: List document search history for the authenticated workspace
+      operationId: listDocumentSearchHistory
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Document search history returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSearchHistoryListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/search/history/{searchId}:
+    get:
+      tags:
+        - Documents
+      summary: Replay one historical document search
+      operationId: getDocumentSearchHistory
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: searchId
+          in: path
+      responses:
+        "200":
+          description: Document search replay returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSearchResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Document search not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/:
+    get:
+      tags:
+        - Documents
+      summary: List documents for the authenticated workspace
+      operationId: listDocuments
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Documents returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Documents
+      summary: Queue a document for background processing
+      operationId: createDocument
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentCreateRequest"
+      responses:
+        "202":
+          description: Document accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentOperationResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/{documentId}:
+    get:
+      tags:
+        - Documents
+      summary: Get a document
+      operationId: getDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: documentId
+          in: path
+      responses:
+        "200":
+          description: Document returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentDetails"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags:
+        - Documents
+      summary: Update and requeue a document
+      operationId: updateDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: documentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                content:
+                  type: string
+                  minLength: 1
+                metadata:
+                  type: object
+                  additionalProperties:
+                    anyOf:
+                      - type: string
+                      - type: number
+                      - type: boolean
+                      - type: "null"
+                      - type: "null"
+              required:
+                - title
+                - content
+      responses:
+        "202":
+          description: Document accepted for reprocessing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentOperationResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Documents
+      summary: Delete a document
+      operationId: deleteDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: documentId
+          in: path
+      responses:
+        "204":
+          description: Document deleted
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/{documentId}/reprocess:
+    post:
+      tags:
+        - Documents
+      summary: Requeue an existing document for processing
+      operationId: reprocessDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: documentId
+          in: path
+      responses:
+        "202":
+          description: Document accepted for reprocessing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentOperationResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/chat/:
+    post:
+      tags:
+        - Chat
+      summary: Ask a retrieval-grounded question
+      operationId: createChatResponse
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: Chat response returned as JSON or SSE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/ChatSseStream"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/chat/history:
+    get:
+      tags:
+        - Chat
+      summary: List saved chat conversations
+      operationId: listChatHistory
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Chat history summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatHistoryListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/chat/history/{conversationId}:
+    get:
+      tags:
+        - Chat
+      summary: Get a saved conversation and its debug metadata
+      operationId: getChatHistoryConversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+      responses:
+        "200":
+          description: Historical conversation detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatConversationDetail"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/connectors:
+    get:
+      tags:
+        - Connectors
+      summary: List connectors for the authenticated workspace
+      operationId: listConnectors
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Connectors returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/connectors/{connectorId}:
+    get:
+      tags:
+        - Connectors
+      summary: Get connector detail
+      operationId: getConnectorDetail
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: connectorId
+          in: path
+      responses:
+        "200":
+          description: Connector detail returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorDetail"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Connector not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorNotFoundResponse"
+    put:
+      tags:
+        - Connectors
+      summary: Save connector config
+      operationId: updateConnectorConfig
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: connectorId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectorConfigUpdateRequest"
+      responses:
+        "200":
+          description: Connector config saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorDetail"
+        "400":
+          description: Connector config invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorValidationErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Connector not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    enum:
+                      - Connector not found
+                required:
+                  - error
+        "409":
+          description: Connector identity conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorConflictResponse"
+  /api/v1/connectors/{connectorId}/enable:
+    post:
+      tags:
+        - Connectors
+      summary: Enable a connector
+      operationId: enableConnector
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: connectorId
+          in: path
+      responses:
+        "200":
+          description: Connector enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorDetail"
+        "400":
+          description: Connector config invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorValidationErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Connector not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    enum:
+                      - Connector not found
+                required:
+                  - error
+        "409":
+          description: Connector identity conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorConflictResponse"
+  /api/v1/connectors/{connectorId}/disable:
+    post:
+      tags:
+        - Connectors
+      summary: Disable a connector
+      operationId: disableConnector
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: connectorId
+          in: path
+      responses:
+        "200":
+          description: Connector disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorDetail"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Connector not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    enum:
+                      - Connector not found
+                required:
+                  - error
+  /api/v1/public/chat/{token}:
+    post:
+      tags:
+        - Public Chat
+      summary: Send a public chat message
+      operationId: createPublicChatResponse
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicChatRequest"
+      responses:
+        "200":
+          description: Public chat response returned as JSON or SSE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/PublicChatSseStream"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Public chat link not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
+      description: |-
+        Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+
+        The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+    get:
+      tags:
+        - Public Chat
+      summary: List conversations for the current anonymous session
+      operationId: listPublicChatHistory
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+      responses:
+        "200":
+          description: Conversation summaries returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicConversationListResponse"
+        "404":
+          description: Public chat link not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+      description: |-
+        Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+
+        The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+  /api/v1/public/chat/{token}/history/{conversationId}:
+    get:
+      tags:
+        - Public Chat
+      summary: Get a public conversation for the current anonymous session
+      operationId: getPublicChatHistoryConversation
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+      responses:
+        "200":
+          description: Historical conversation detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatConversationDetail"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+      description: |-
+        Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+
+        The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+  /api/connectors/whatsapp/{workspaceId}/webhook:
+    get:
+      tags:
+        - Connector Webhooks
+      summary: Verify WhatsApp webhook ownership
+      operationId: verifyWhatsAppWebhook
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+          required: false
+          name: hub.mode
+          in: query
+        - schema:
+            type: string
+          required: false
+          name: hub.verify_token
+          in: query
+        - schema:
+            type: string
+          required: false
+          name: hub.challenge
+          in: query
+      responses:
+        "200":
+          description: Verification challenge echoed back
+          content:
+            text/plain:
+              schema:
+                $ref: "#/components/schemas/PlainTextChallenge"
+        "403":
+          description: Verification failed
+        "404":
+          description: Connector config not found
+    post:
+      tags:
+        - Connector Webhooks
+      summary: Receive a WhatsApp webhook event
+      operationId: receiveWhatsAppWebhook
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WhatsAppWebhookPayload"
+      responses:
+        "200":
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptySuccess"
+        "401":
+          description: Invalid webhook signature
+        "404":
+          description: Connector config not found
+webhooks: {}
+

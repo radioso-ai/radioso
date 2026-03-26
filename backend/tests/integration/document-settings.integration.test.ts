@@ -85,10 +85,10 @@ describe("document and settings integration", () => {
         rerankTopK: 8,
         warmthLevel: 6,
         citationDisplayEnabled: true,
-        attributeControls: defaultAttributeControls().map((control) =>
-          control.family === "location"
+        signalPolicies: defaultAttributeControls().map((control) =>
+          control.signalKey === "document_location"
             ? { ...control, enabled: false }
-            : control.family === "money_value"
+            : control.signalKey === "document_amount"
               ? { ...control, mode: "hard_filter" as const }
               : control,
         ),
@@ -99,18 +99,18 @@ describe("document and settings integration", () => {
       .set("Authorization", secondAuthorization);
 
     expect(firstUpdate.status).toBe(200);
-    expect(firstUpdate.body.attributeControls).toContainEqual({
-      family: "location",
+    expect(firstUpdate.body.signalPolicies).toContainEqual({
+      signalKey: "document_location",
       enabled: false,
       mode: "boost_only",
     });
-    expect(firstUpdate.body.attributeControls).toContainEqual({
-      family: "money_value",
+    expect(firstUpdate.body.signalPolicies).toContainEqual({
+      signalKey: "document_amount",
       enabled: true,
       mode: "hard_filter",
     });
     expect(secondSettings.status).toBe(200);
-    expect(secondSettings.body.attributeControls).toEqual(defaultAttributeControls());
+    expect(secondSettings.body.signalPolicies).toEqual(defaultAttributeControls());
   });
 
   it("queues eligible workspace documents for reprocessing from ingestion settings", async () => {

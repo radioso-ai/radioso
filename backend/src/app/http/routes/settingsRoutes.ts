@@ -7,8 +7,8 @@ import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
-  attributeControlModes,
-  attributeFamilyIds,
+  retrievalSignalKeys,
+  signalPolicyModes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 import {
   FIXED_WINDOW_CHUNK_OVERLAP_MAX,
@@ -29,12 +29,12 @@ export const updateSettingsSchema = z.object({
   rerankTopK: z.number().int(),
   warmthLevel: z.number().int(),
   citationDisplayEnabled: z.boolean(),
-  attributeControls: z
+  signalPolicies: z
     .array(
       z.object({
-        family: z.enum(attributeFamilyIds),
+        signalKey: z.enum(retrievalSignalKeys),
         enabled: z.boolean(),
-        mode: z.enum(attributeControlModes),
+        mode: z.enum(signalPolicyModes),
       }),
     )
     .optional(),
@@ -73,7 +73,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
       const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
       const settings = await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
         ...req.body,
-        attributeControls: req.body.attributeControls ?? existing.attributeControls,
+        signalPolicies: req.body.signalPolicies ?? existing.signalPolicies,
         customInstruction: req.body.customInstruction ?? existing.customInstruction,
       });
       res.status(200).json(settings);

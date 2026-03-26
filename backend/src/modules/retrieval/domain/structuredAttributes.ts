@@ -1,4 +1,4 @@
-import type { AttributeControlMode, AttributeFamilyId } from "../../settings/domain/retrievalSettings.js";
+import type { RetrievalSignalKey, SignalPolicyMode } from "../../settings/domain/retrievalSettings.js";
 
 export interface RawDatePoint {
   value: string;
@@ -67,7 +67,7 @@ export interface StructuredAttributes {
 export type QueryConstraintOperator = "gte" | "lte" | "match" | "eq";
 
 export interface ParsedQueryConstraint {
-  family: AttributeFamilyId;
+  signalKey: RetrievalSignalKey;
   operator: QueryConstraintOperator;
   confidence: number;
   summary: string;
@@ -85,8 +85,8 @@ export interface ParsedQueryInterpretation {
 }
 
 export interface AppliedConstraint {
-  family: AttributeFamilyId;
-  mode: AttributeControlMode;
+  signalKey: RetrievalSignalKey;
+  mode: SignalPolicyMode;
   outcome: "applied" | "relaxed" | "skipped";
   summary: string;
 }

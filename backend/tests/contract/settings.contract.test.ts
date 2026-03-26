@@ -35,13 +35,13 @@ describe("settings contract", () => {
 
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual([
-      "attributeControls",
       "citationDisplayEnabled",
       "createdAt",
       "customInstruction",
       "queryRewriteEnabled",
       "rerankEnabled",
       "rerankTopK",
+      "signalPolicies",
       "similarityThreshold",
       "updatedAt",
       "vectorTopK",
@@ -52,11 +52,11 @@ describe("settings contract", () => {
     expect(response.body.warmthLevel).toBe(5);
     expect(response.body.citationDisplayEnabled).toBe(true);
     expect(response.body.customInstruction).toBe("");
-    expect(response.body.attributeControls).toEqual([
-      { family: "date_point", enabled: true, mode: "boost_only" },
-      { family: "date_range", enabled: true, mode: "boost_only" },
-      { family: "money_value", enabled: true, mode: "boost_only" },
-      { family: "location", enabled: true, mode: "boost_only" },
+    expect(response.body.signalPolicies).toEqual([
+      { signalKey: "document_date", enabled: true, mode: "boost_only" },
+      { signalKey: "document_period", enabled: true, mode: "boost_only" },
+      { signalKey: "document_amount", enabled: true, mode: "boost_only" },
+      { signalKey: "document_location", enabled: true, mode: "boost_only" },
     ]);
   });
 
@@ -76,11 +76,11 @@ describe("settings contract", () => {
         warmthLevel: 8,
         citationDisplayEnabled: false,
         customInstruction: "Always cite the paragraph number from the Immigration Act.",
-        attributeControls: [
-          { family: "date_point", enabled: true, mode: "hard_filter" },
-          { family: "date_range", enabled: true, mode: "boost_only" },
-          { family: "money_value", enabled: false, mode: "boost_only" },
-          { family: "location", enabled: true, mode: "boost_only" },
+        signalPolicies: [
+          { signalKey: "document_date", enabled: true, mode: "hard_filter" },
+          { signalKey: "document_period", enabled: true, mode: "boost_only" },
+          { signalKey: "document_amount", enabled: false, mode: "boost_only" },
+          { signalKey: "document_location", enabled: true, mode: "boost_only" },
         ],
       });
 
@@ -94,16 +94,16 @@ describe("settings contract", () => {
       warmthLevel: 8,
       citationDisplayEnabled: false,
       customInstruction: "Always cite the paragraph number from the Immigration Act.",
-      attributeControls: [
-        { family: "date_point", enabled: true, mode: "hard_filter" },
-        { family: "date_range", enabled: true, mode: "boost_only" },
-        { family: "money_value", enabled: false, mode: "boost_only" },
-        { family: "location", enabled: true, mode: "boost_only" },
+      signalPolicies: [
+        { signalKey: "document_date", enabled: true, mode: "hard_filter" },
+        { signalKey: "document_period", enabled: true, mode: "boost_only" },
+        { signalKey: "document_amount", enabled: false, mode: "boost_only" },
+        { signalKey: "document_location", enabled: true, mode: "boost_only" },
       ],
     });
   });
 
-  it("preserves saved attribute controls when an older client omits the field", async () => {
+  it("preserves saved signal policies when an older client omits the field", async () => {
     const { app } = createTestApp();
     const token = await issueToken(app);
     const authorization = `Bearer ${token}`;
@@ -120,11 +120,11 @@ describe("settings contract", () => {
         warmthLevel: 8,
         citationDisplayEnabled: false,
         customInstruction: "Cite paragraph numbers.",
-        attributeControls: [
-          { family: "date_point", enabled: true, mode: "hard_filter" },
-          { family: "date_range", enabled: false, mode: "boost_only" },
-          { family: "money_value", enabled: false, mode: "boost_only" },
-          { family: "location", enabled: true, mode: "boost_only" },
+        signalPolicies: [
+          { signalKey: "document_date", enabled: true, mode: "hard_filter" },
+          { signalKey: "document_period", enabled: false, mode: "boost_only" },
+          { signalKey: "document_amount", enabled: false, mode: "boost_only" },
+          { signalKey: "document_location", enabled: true, mode: "boost_only" },
         ],
       });
 
@@ -143,7 +143,7 @@ describe("settings contract", () => {
 
     expect(firstUpdate.status).toBe(200);
     expect(secondUpdate.status).toBe(200);
-    expect(secondUpdate.body.attributeControls).toEqual(firstUpdate.body.attributeControls);
+    expect(secondUpdate.body.signalPolicies).toEqual(firstUpdate.body.signalPolicies);
     expect(secondUpdate.body.customInstruction).toBe("Cite paragraph numbers.");
   });
 
@@ -218,10 +218,10 @@ describe("settings contract", () => {
     const retrievalSettingsSchema = spec.match(/RetrievalSettings:\n([\s\S]*?)\n    UpdateRetrievalSettingsRequest:/)?.[1] ?? "";
     const retrievalUpdateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    IngestionSettings:/)?.[1] ?? "";
     const ingestionSettingsSchema = spec.match(/IngestionSettings:\n([\s\S]*?)\n    UpdateIngestionSettingsRequest:/)?.[1] ?? "";
-    const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    AttributeFamilyControl:/)?.[1] ?? "";
+    const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    RetrievalSignalPolicy:/)?.[1] ?? "";
 
     expect(retrievalSettingsSchema).not.toContain("chunkingStrategy:");
-    expect(retrievalUpdateSchema).toContain("attributeControls:");
+    expect(retrievalUpdateSchema).toContain("signalPolicies:");
     expect(retrievalUpdateSchema).not.toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");

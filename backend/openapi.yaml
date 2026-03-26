@@ -210,18 +210,18 @@ components:
           maximum: 10
         citationDisplayEnabled:
           type: boolean
-        attributeControls:
+        signalPolicies:
           type: array
           items:
             type: object
             properties:
-              family:
+              signalKey:
                 type: string
                 enum: &a1
-                  - date_point
-                  - date_range
-                  - money_value
-                  - location
+                  - document_date
+                  - document_period
+                  - document_amount
+                  - document_location
               enabled:
                 type: boolean
               mode:
@@ -230,7 +230,7 @@ components:
                   - boost_only
                   - hard_filter
             required:
-              - family
+              - signalKey
               - enabled
               - mode
         customInstruction:
@@ -251,7 +251,7 @@ components:
         - rerankTopK
         - warmthLevel
         - citationDisplayEnabled
-        - attributeControls
+        - signalPolicies
         - customInstruction
         - createdAt
         - updatedAt
@@ -272,12 +272,12 @@ components:
           type: integer
         citationDisplayEnabled:
           type: boolean
-        attributeControls:
+        signalPolicies:
           type: array
           items:
             type: object
             properties:
-              family:
+              signalKey:
                 type: string
                 enum: *a1
               enabled:
@@ -286,7 +286,7 @@ components:
                 type: string
                 enum: *a2
             required:
-              - family
+              - signalKey
               - enabled
               - mode
         customInstruction:
@@ -362,10 +362,10 @@ components:
         - fixedWindowChunkOverlap
         - structuredMinChunkSize
         - structuredMaxChunkSize
-    AttributeFamilyControl:
+    RetrievalSignalPolicy:
       type: object
       properties:
-        family:
+        signalKey:
           type: string
           enum: *a1
         enabled:
@@ -374,7 +374,7 @@ components:
           type: string
           enum: *a2
       required:
-        - family
+        - signalKey
         - enabled
         - mode
     UpdateGeneralSettingsRequest:
@@ -702,7 +702,7 @@ components:
     AppliedConstraint:
       type: object
       properties:
-        family:
+        signalKey:
           type: string
           enum: *a1
         mode:
@@ -717,7 +717,7 @@ components:
         summary:
           type: string
       required:
-        - family
+        - signalKey
         - mode
         - outcome
         - summary

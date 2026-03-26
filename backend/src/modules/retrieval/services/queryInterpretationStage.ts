@@ -1,7 +1,7 @@
 import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
 import { parseQueryConstraints } from "./queryConstraintParser.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
-import type { AttributeFamilyControl } from "../../settings/domain/retrievalSettings.js";
+import type { RetrievalSignalPolicy } from "../../settings/domain/retrievalSettings.js";
 import type { QueryInterpretationStage as QueryInterpretationStageContract, RetrievalContextStageResult } from "./retrievalPipelineStages.js";
 import { mergeParsedQueries, stripEnabledConstraintLiterals } from "./retrievalPipelineStages.js";
 
@@ -10,9 +10,9 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
 
   async execute(input: RetrievalContextStageResult) {
     const originalParsedQuery = parseQueryConstraints(input.request.query);
-    const originalPreparedQuery = this.applyAttributeControlsToQuery(
+    const originalPreparedQuery = this.applySignalPoliciesToQuery(
       originalParsedQuery,
-      input.settings.attributeControls,
+      input.settings.signalPolicies,
     );
     const rewrittenQuery = await this.queryRewriteService.rewrite({
       query: input.request.query,
@@ -22,11 +22,11 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
     const rewrittenParsedQuery = rewrittenQuery.retrievalEligible
       ? parseQueryConstraints(rewrittenQuery.effectiveQuery)
       : originalParsedQuery;
-    const parsedQuery = this.applyAttributeControlsToQuery(
+    const parsedQuery = this.applySignalPoliciesToQuery(
       rewrittenQuery.retrievalEligible
         ? mergeParsedQueries(originalParsedQuery, rewrittenParsedQuery)
         : rewrittenParsedQuery,
-      input.settings.attributeControls,
+      input.settings.signalPolicies,
     );
     const activeQuery = rewrittenQuery.retrievalEligible ? rewrittenQuery.effectiveQuery : input.request.query;
     const activeParsedQuery = rewrittenQuery.retrievalEligible ? parsedQuery : originalPreparedQuery;
@@ -52,20 +52,20 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
     };
   }
 
-  private applyAttributeControlsToQuery(
+  private applySignalPoliciesToQuery(
     parsedQuery: ParsedQueryInterpretation,
-    attributeControls: AttributeFamilyControl[],
+    signalPolicies: RetrievalSignalPolicy[],
   ): ParsedQueryInterpretation {
-    const hardFilterFamilies = new Set(
-      attributeControls
-        .filter((control) => control.enabled && control.mode === "hard_filter")
-        .map((control) => control.family),
+    const hardFilterSignals = new Set(
+      signalPolicies
+        .filter((policy) => policy.enabled && policy.mode === "hard_filter")
+        .map((policy) => policy.signalKey),
     );
 
     return {
       ...parsedQuery,
-      semanticQuery: stripEnabledConstraintLiterals(parsedQuery.semanticQuery, parsedQuery, hardFilterFamilies),
-      lexicalQuery: stripEnabledConstraintLiterals(parsedQuery.lexicalQuery, parsedQuery, hardFilterFamilies),
+      semanticQuery: stripEnabledConstraintLiterals(parsedQuery.semanticQuery, parsedQuery, hardFilterSignals),
+      lexicalQuery: stripEnabledConstraintLiterals(parsedQuery.lexicalQuery, parsedQuery, hardFilterSignals),
     };
   }
 }

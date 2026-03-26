@@ -1,9 +1,9 @@
 import type { Database } from "../../shared/infra/database.js";
 import type {
-  AttributeFamilyControl,
   RetrievalSettingsInput,
   RetrievalSettingsRecord,
 } from "../../modules/settings/domain/retrievalSettings.js";
+import { normalizeSignalPolicies } from "../../modules/settings/domain/retrievalSettings.js";
 import type { RetrievalSettingsRepositoryPort } from "../../modules/settings/services/retrievalSettingsService.js";
 
 interface RetrievalSettingsRow {
@@ -15,7 +15,7 @@ interface RetrievalSettingsRow {
   rerank_top_k: number;
   warmth_level: number;
   citation_display_enabled: boolean;
-  attribute_controls: AttributeFamilyControl[];
+  attribute_controls: unknown;
   custom_instruction: string;
   created_at: Date;
   updated_at: Date;
@@ -30,7 +30,7 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => ({
   rerankTopK: row.rerank_top_k,
   warmthLevel: row.warmth_level,
   citationDisplayEnabled: row.citation_display_enabled,
-  attributeControls: row.attribute_controls,
+  signalPolicies: normalizeSignalPolicies(row.attribute_controls),
   customInstruction: row.custom_instruction,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
@@ -86,7 +86,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
         input.rerankTopK,
         input.warmthLevel,
         input.citationDisplayEnabled,
-        JSON.stringify(input.attributeControls),
+        JSON.stringify(input.signalPolicies),
         input.customInstruction,
       ],
     );

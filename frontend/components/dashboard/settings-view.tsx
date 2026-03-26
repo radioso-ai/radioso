@@ -61,33 +61,6 @@ const chunkingStrategyOptions: Array<{
   },
 ]
 
-const signalPolicyOptions: Array<{
-  signalKey: RetrievalSettings['signalPolicies'][number]['signalKey']
-  label: string
-  description: string
-}> = [
-  {
-    signalKey: 'document_date',
-    label: 'Document date',
-    description: 'Use exact dates such as deadlines, dated provisions, or effective days.',
-  },
-  {
-    signalKey: 'document_period',
-    label: 'Document period',
-    description: 'Use spans such as validity windows, event ranges, or booking periods.',
-  },
-  {
-    signalKey: 'document_amount',
-    label: 'Document amount',
-    description: 'Use numeric amounts such as prices, fees, or budget thresholds.',
-  },
-  {
-    signalKey: 'document_location',
-    label: 'Document location',
-    description: 'Use place references such as cities, countries, or venue locations.',
-  },
-]
-
 const signalPolicyModeLabels: Record<
   RetrievalSettings['signalPolicies'][number]['mode'],
   { label: string; description: string }
@@ -982,9 +955,9 @@ function RetrievalSettingsPanel() {
                 </div>
 
                 <div className="space-y-3">
-                  {signalPolicyOptions.map((option) => {
+                  {settings.signalDefinitions.map((option) => {
                     const policy = settings.signalPolicies.find(
-                      (candidate) => candidate.signalKey === option.signalKey
+                      (candidate) => candidate.signalKey === option.key
                     )
 
                     if (!policy) {
@@ -993,7 +966,7 @@ function RetrievalSettingsPanel() {
 
                     return (
                       <div
-                        key={option.signalKey}
+                        key={option.key}
                         className="space-y-3 rounded-md border border-border bg-card p-4"
                       >
                         <div className="flex items-start justify-between gap-4">
@@ -1004,7 +977,7 @@ function RetrievalSettingsPanel() {
                           <Switch
                             checked={policy.enabled}
                             onCheckedChange={(checked) =>
-                              updateSignalPolicy(option.signalKey, { enabled: checked })
+                              updateSignalPolicy(option.key, { enabled: checked })
                             }
                           />
                         </div>
@@ -1014,7 +987,7 @@ function RetrievalSettingsPanel() {
                           <Select
                             value={policy.mode}
                             onValueChange={(value) =>
-                              updateSignalPolicy(option.signalKey, {
+                              updateSignalPolicy(option.key, {
                                 mode: value as RetrievalSettings['signalPolicies'][number]['mode'],
                               })
                             }

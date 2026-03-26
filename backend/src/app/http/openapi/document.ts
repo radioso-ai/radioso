@@ -30,6 +30,7 @@ import {
 } from "../routes/publicChatRoutes.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
+  retrievalSignalDefinitions,
   retrievalSignalKeys,
   signalPolicyModes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
@@ -143,6 +144,13 @@ const RetrievalSettingsSchema = registry.register(
     rerankTopK: z.number().int().min(1),
     warmthLevel: z.number().int().min(1).max(10),
     citationDisplayEnabled: z.boolean(),
+    signalDefinitions: z.array(
+      z.object({
+        key: z.enum(retrievalSignalKeys),
+        label: z.string(),
+        description: z.string(),
+      }),
+    ).default(retrievalSignalDefinitions),
     signalPolicies: z.array(
       z.object({
         signalKey: z.enum(retrievalSignalKeys),
@@ -186,6 +194,15 @@ const RetrievalSignalPolicySchema = registry.register(
     signalKey: z.enum(retrievalSignalKeys),
     enabled: z.boolean(),
     mode: z.enum(signalPolicyModes),
+  }),
+);
+
+const RetrievalSignalDefinitionSchema = registry.register(
+  "RetrievalSignalDefinition",
+  z.object({
+    key: z.enum(retrievalSignalKeys),
+    label: z.string(),
+    description: z.string(),
   }),
 );
 

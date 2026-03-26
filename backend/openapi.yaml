@@ -210,6 +210,39 @@ components:
           maximum: 10
         citationDisplayEnabled:
           type: boolean
+        signalDefinitions:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+                enum: &a1
+                  - document_date
+                  - document_period
+                  - document_amount
+                  - document_location
+              label:
+                type: string
+              description:
+                type: string
+            required:
+              - key
+              - label
+              - description
+          default:
+            - key: document_date
+              label: Document date
+              description: Use exact dates such as effective days, deadlines, or dated entries.
+            - key: document_period
+              label: Document period
+              description: Use spans such as validity windows, booking periods, or event ranges.
+            - key: document_amount
+              label: Document amount
+              description: Use numeric amounts such as prices, fees, or budget thresholds.
+            - key: document_location
+              label: Document location
+              description: Use place references such as cities, countries, or venues.
         signalPolicies:
           type: array
           items:
@@ -217,11 +250,7 @@ components:
             properties:
               signalKey:
                 type: string
-                enum: &a1
-                  - document_date
-                  - document_period
-                  - document_amount
-                  - document_location
+                enum: *a1
               enabled:
                 type: boolean
               mode:
@@ -377,6 +406,20 @@ components:
         - signalKey
         - enabled
         - mode
+    RetrievalSignalDefinition:
+      type: object
+      properties:
+        key:
+          type: string
+          enum: *a1
+        label:
+          type: string
+        description:
+          type: string
+      required:
+        - key
+        - label
+        - description
     UpdateGeneralSettingsRequest:
       type: object
       properties:

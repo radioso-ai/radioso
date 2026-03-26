@@ -41,6 +41,7 @@ describe("settings contract", () => {
       "queryRewriteEnabled",
       "rerankEnabled",
       "rerankTopK",
+      "signalDefinitions",
       "signalPolicies",
       "similarityThreshold",
       "updatedAt",
@@ -52,6 +53,28 @@ describe("settings contract", () => {
     expect(response.body.warmthLevel).toBe(5);
     expect(response.body.citationDisplayEnabled).toBe(true);
     expect(response.body.customInstruction).toBe("");
+    expect(response.body.signalDefinitions).toEqual([
+      {
+        key: "document_date",
+        label: "Document date",
+        description: "Use exact dates such as effective days, deadlines, or dated entries.",
+      },
+      {
+        key: "document_period",
+        label: "Document period",
+        description: "Use spans such as validity windows, booking periods, or event ranges.",
+      },
+      {
+        key: "document_amount",
+        label: "Document amount",
+        description: "Use numeric amounts such as prices, fees, or budget thresholds.",
+      },
+      {
+        key: "document_location",
+        label: "Document location",
+        description: "Use place references such as cities, countries, or venues.",
+      },
+    ]);
     expect(response.body.signalPolicies).toEqual([
       { signalKey: "document_date", enabled: true, mode: "boost_only" },
       { signalKey: "document_period", enabled: true, mode: "boost_only" },

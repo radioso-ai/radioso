@@ -7,6 +7,7 @@ import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
+  retrievalSignalDefinitions,
   retrievalSignalKeys,
   signalPolicyModes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
@@ -61,7 +62,10 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
-      res.status(200).json(settings);
+      res.status(200).json({
+        ...settings,
+        signalDefinitions: retrievalSignalDefinitions,
+      });
     } catch (error) {
       next(error);
     }
@@ -76,7 +80,10 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         signalPolicies: req.body.signalPolicies ?? existing.signalPolicies,
         customInstruction: req.body.customInstruction ?? existing.customInstruction,
       });
-      res.status(200).json(settings);
+      res.status(200).json({
+        ...settings,
+        signalDefinitions: retrievalSignalDefinitions,
+      });
     } catch (error) {
       next(error);
     }

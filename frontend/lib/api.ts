@@ -221,8 +221,15 @@ export interface RetrievalSettings {
   rerankTopK: number
   warmthLevel: number
   citationDisplayEnabled: boolean
+  signalDefinitions: RetrievalSignalDefinition[]
   signalPolicies: RetrievalSignalPolicy[]
   customInstruction: string
+}
+
+export interface RetrievalSignalDefinition {
+  key: 'document_date' | 'document_period' | 'document_amount' | 'document_location'
+  label: string
+  description: string
 }
 
 export interface IngestionSettings {
@@ -755,9 +762,10 @@ export const settingsApi = {
   },
 
   async updateRetrievalSettings(data: RetrievalSettings): Promise<RetrievalSettings> {
+    const { signalDefinitions: _signalDefinitions, ...payload } = data
     return request<RetrievalSettings>("/settings/retrieval", {
       method: "PUT",
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     }, { withApiToken: true })
   },
 

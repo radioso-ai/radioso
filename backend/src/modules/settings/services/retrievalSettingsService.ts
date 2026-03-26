@@ -1,6 +1,7 @@
 import {
   defaultRetrievalSettings,
-  defaultAttributeControls,
+  type MetadataFieldSuggestion,
+  normalizeMetadataRules,
   type RetrievalSettingsInput,
   type RetrievalSettingsRecord,
   validateRetrievalSettings,
@@ -12,11 +13,20 @@ export interface RetrievalSettingsRepositoryPort {
   upsert(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord>;
 }
 
+export interface RetrievalMetadataFieldSourcePort {
+  listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]>;
+}
+
 export class RetrievalSettingsService {
   constructor(
     private readonly repository: RetrievalSettingsRepositoryPort,
     private readonly auditService: AuditService,
+    private readonly metadataFieldSource?: RetrievalMetadataFieldSourcePort,
   ) {}
+
+  async listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]> {
+    return this.metadataFieldSource ? this.metadataFieldSource.listMetadataFieldSuggestions(workspaceId) : [];
+  }
 
   async getForWorkspace(workspaceId: string): Promise<RetrievalSettingsRecord> {
     const existing = await this.repository.findByWorkspaceId(workspaceId);
@@ -24,7 +34,7 @@ export class RetrievalSettingsService {
     if (existing) {
       const normalized = validateRetrievalSettings({
         ...existing,
-        attributeControls: existing.attributeControls ?? defaultAttributeControls(),
+        metadataRules: normalizeMetadataRules(existing.metadataRules),
       });
       return {
         ...existing,

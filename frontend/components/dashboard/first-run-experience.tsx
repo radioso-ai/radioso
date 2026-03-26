@@ -146,7 +146,7 @@ export function FirstRunExperience({ accountId, onboarding }: FirstRunExperience
                 <div>
                   <h2 className="font-medium text-foreground">Step 2. Starter knowledge base</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Empty workspaces are automatically seeded with a short starter knowledge base so the first question works immediately.
+                    This guided first-run workspace is seeded with a short starter knowledge base so the first question works immediately.
                   </p>
                 </div>
 
@@ -200,7 +200,7 @@ export function FirstRunExperience({ accountId, onboarding }: FirstRunExperience
                     </div>
                   ) : (
                     <div className="text-sm text-muted-foreground">
-                      No documents yet. Radioso will seed this empty workspace automatically.
+                      No documents yet. Start with the guided starter docs or upload your own.
                     </div>
                   )}
                 </div>

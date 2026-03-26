@@ -138,6 +138,7 @@ export const createTestDependencies = (overrides: {
               chunkIndex: chunk.chunkIndex,
               startOffset: chunk.startOffset,
               endOffset: chunk.endOffset,
+              metadata: chunk.metadata ?? document.metadata,
             });
           }
         }
@@ -169,6 +170,7 @@ export const createTestDependencies = (overrides: {
               chunkIndex: chunk.chunkIndex,
               startOffset: chunk.startOffset,
               endOffset: chunk.endOffset,
+              metadata: chunk.metadata ?? document.metadata,
             });
           }
         }
@@ -255,7 +257,11 @@ export const createTestDependencies = (overrides: {
   };
   const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
   const ingestionSettingsService = new IngestionSettingsService(ingestionSettingsRepository, auditService);
-  const retrievalSettingsService = new RetrievalSettingsService(retrievalSettingsRepository, auditService);
+  const retrievalSettingsService = new RetrievalSettingsService(
+    retrievalSettingsRepository,
+    auditService,
+    documentRepository,
+  );
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingService = new DocumentProcessingService(
     documentRepository,

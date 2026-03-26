@@ -21,6 +21,7 @@ import { QueryInterpretationStageService } from "./queryInterpretationStage.js";
 import { RetrievalContextStageService } from "./retrievalContextStage.js";
 import { RetrievalDiagnosticsStageService } from "./retrievalDiagnosticsStage.js";
 import { RetrievalTraceAssembler } from "./retrievalTraceAssembler.js";
+import { MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import type {
   CandidatePreparationStage,
   CandidateRetrievalStage,
@@ -82,6 +83,7 @@ export class RetrievalPipelineService {
     this.candidatePreparationStage = new CandidatePreparationStageService(
       candidatePreparationService,
       attributeMatchScoringService,
+      new MetadataRuleScoringService(),
     );
     this.contextSelectionStage = new ContextSelectionStageService(rerankService, promptContextSelectorService);
     this.promptAssemblyStage = new PromptAssemblyStageService(promptBuilder);

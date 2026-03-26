@@ -21,13 +21,16 @@ const issueToken = async (app: ReturnType<typeof createTestApp>["app"]) => {
     .get(`/api/v1/account/workspaces/${workspaceId}/token`)
     .set("Cookie", cookie);
 
-  return token.body.token as string;
+  return {
+    token: token.body.token as string,
+    workspaceId,
+  };
 };
 
 describe("settings contract", () => {
   it("returns default retrieval settings for a valid bearer token", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
 
     const response = await request(app)
       .get("/api/v1/settings/retrieval")
@@ -35,10 +38,11 @@ describe("settings contract", () => {
 
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual([
-      "attributeControls",
       "citationDisplayEnabled",
       "createdAt",
       "customInstruction",
+      "metadataFieldSuggestions",
+      "metadataRules",
       "queryRewriteEnabled",
       "rerankEnabled",
       "rerankTopK",
@@ -52,17 +56,24 @@ describe("settings contract", () => {
     expect(response.body.warmthLevel).toBe(5);
     expect(response.body.citationDisplayEnabled).toBe(true);
     expect(response.body.customInstruction).toBe("");
-    expect(response.body.attributeControls).toEqual([
-      { family: "date_point", enabled: true, mode: "boost_only" },
-      { family: "date_range", enabled: true, mode: "boost_only" },
-      { family: "money_value", enabled: true, mode: "boost_only" },
-      { family: "location", enabled: true, mode: "boost_only" },
-    ]);
+    expect(response.body.metadataFieldSuggestions).toEqual([]);
+    expect(response.body.metadataRules).toEqual([]);
   });
 
   it("updates retrieval settings for a valid bearer token", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Metadata policy doc",
+        content: "Metadata rich content",
+        metadata: {
+          language: "en",
+        },
+      });
 
     const response = await request(app)
       .put("/api/v1/settings/retrieval")
@@ -76,11 +87,16 @@ describe("settings contract", () => {
         warmthLevel: 8,
         citationDisplayEnabled: false,
         customInstruction: "Always cite the paragraph number from the Immigration Act.",
-        attributeControls: [
-          { family: "date_point", enabled: true, mode: "hard_filter" },
-          { family: "date_range", enabled: true, mode: "boost_only" },
-          { family: "money_value", enabled: false, mode: "boost_only" },
-          { family: "location", enabled: true, mode: "boost_only" },
+        metadataRules: [
+          {
+            id: "rule-language",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "filter",
+            enabled: true,
+          },
         ],
       });
 
@@ -94,19 +110,35 @@ describe("settings contract", () => {
       warmthLevel: 8,
       citationDisplayEnabled: false,
       customInstruction: "Always cite the paragraph number from the Immigration Act.",
-      attributeControls: [
-        { family: "date_point", enabled: true, mode: "hard_filter" },
-        { family: "date_range", enabled: true, mode: "boost_only" },
-        { family: "money_value", enabled: false, mode: "boost_only" },
-        { family: "location", enabled: true, mode: "boost_only" },
+      metadataRules: [
+        {
+          id: "rule-language",
+          field: "language",
+          valueType: "string",
+          operator: "equals",
+          value: "en",
+          effect: "filter",
+          enabled: true,
+        },
       ],
     });
   });
 
-  it("preserves saved attribute controls when an older client omits the field", async () => {
+  it("preserves saved signal policies when an older client omits the field", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
     const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Metadata policy doc",
+        content: "Metadata rich content",
+        metadata: {
+          language: "en",
+        },
+      });
 
     const firstUpdate = await request(app)
       .put("/api/v1/settings/retrieval")
@@ -120,11 +152,16 @@ describe("settings contract", () => {
         warmthLevel: 8,
         citationDisplayEnabled: false,
         customInstruction: "Cite paragraph numbers.",
-        attributeControls: [
-          { family: "date_point", enabled: true, mode: "hard_filter" },
-          { family: "date_range", enabled: false, mode: "boost_only" },
-          { family: "money_value", enabled: false, mode: "boost_only" },
-          { family: "location", enabled: true, mode: "boost_only" },
+        metadataRules: [
+          {
+            id: "rule-language",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "filter",
+            enabled: true,
+          },
         ],
       });
 
@@ -143,13 +180,13 @@ describe("settings contract", () => {
 
     expect(firstUpdate.status).toBe(200);
     expect(secondUpdate.status).toBe(200);
-    expect(secondUpdate.body.attributeControls).toEqual(firstUpdate.body.attributeControls);
+    expect(secondUpdate.body.metadataRules).toEqual(firstUpdate.body.metadataRules);
     expect(secondUpdate.body.customInstruction).toBe("Cite paragraph numbers.");
   });
 
   it("returns default ingestion settings for a valid bearer token", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
 
     const response = await request(app)
       .get("/api/v1/settings/ingestion")
@@ -167,7 +204,7 @@ describe("settings contract", () => {
 
   it("updates ingestion settings for a valid bearer token", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
 
     const response = await request(app)
       .put("/api/v1/settings/ingestion")
@@ -192,7 +229,7 @@ describe("settings contract", () => {
 
   it("starts workspace ingestion reprocessing for a valid bearer token", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -218,10 +255,10 @@ describe("settings contract", () => {
     const retrievalSettingsSchema = spec.match(/RetrievalSettings:\n([\s\S]*?)\n    UpdateRetrievalSettingsRequest:/)?.[1] ?? "";
     const retrievalUpdateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    IngestionSettings:/)?.[1] ?? "";
     const ingestionSettingsSchema = spec.match(/IngestionSettings:\n([\s\S]*?)\n    UpdateIngestionSettingsRequest:/)?.[1] ?? "";
-    const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    AttributeFamilyControl:/)?.[1] ?? "";
+    const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    RetrievalMetadataRule:/)?.[1] ?? "";
 
     expect(retrievalSettingsSchema).not.toContain("chunkingStrategy:");
-    expect(retrievalUpdateSchema).toContain("attributeControls:");
+    expect(retrievalUpdateSchema).toContain("metadataRules:");
     expect(retrievalUpdateSchema).not.toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");

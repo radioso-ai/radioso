@@ -9,6 +9,11 @@ import type {
   DocumentSummaryRecord,
   DocumentUpdateInput,
 } from "../../modules/documents/services/documentIngestionService.js";
+import {
+  inferMetadataValueType,
+  type MetadataFieldSuggestion,
+  type MetadataValueType,
+} from "../../modules/settings/domain/retrievalSettings.js";
 import type { Database } from "../../shared/infra/database.js";
 import { notFound } from "../../shared/domain/errors.js";
 
@@ -111,6 +116,28 @@ const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => ({
 
 export class DocumentRepository implements DocumentRepositoryPort {
   constructor(private readonly database: Database) {}
+
+  async listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]> {
+    const rows = await this.database.query<{ metadata: Record<string, unknown> | null }>(
+      `SELECT metadata
+       FROM documents
+       WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+
+    const fields = new Map<string, MetadataValueType>();
+
+    for (const row of rows) {
+      for (const entry of collectMetadataPaths(row.metadata ?? {})) {
+        const existing = fields.get(entry.path);
+        fields.set(entry.path, existing && existing !== entry.inferredType ? "string" : entry.inferredType);
+      }
+    }
+
+    return [...fields.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([field, inferredType]) => ({ field, inferredType }));
+  }
 
   async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
     return this.database.withTransaction(async (client) => {
@@ -511,3 +538,34 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return rows.length > 0;
   }
 }
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isScalarMetadataValue = (value: unknown): boolean =>
+  value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+
+const collectMetadataPaths = (
+  metadata: Record<string, unknown>,
+  prefix = "",
+): Array<{ path: string; inferredType: MetadataValueType }> => {
+  const paths: Array<{ path: string; inferredType: MetadataValueType }> = [];
+
+  for (const [key, value] of Object.entries(metadata)) {
+    const nextPath = prefix ? `${prefix}.${key}` : key;
+
+    if (isScalarMetadataValue(value)) {
+      paths.push({
+        path: nextPath,
+        inferredType: inferMetadataValueType(value),
+      });
+      continue;
+    }
+
+    if (isPlainObject(value)) {
+      paths.push(...collectMetadataPaths(value, nextPath));
+    }
+  }
+
+  return paths;
+};

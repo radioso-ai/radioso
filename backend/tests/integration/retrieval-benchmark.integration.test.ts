@@ -37,11 +37,11 @@ describe("retrieval benchmark integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
-        attributeControls: [
-          { family: "date_point", enabled: true, mode: "hard_filter" },
-          { family: "date_range", enabled: true, mode: "boost_only" },
-          { family: "money_value", enabled: true, mode: "hard_filter" },
-          { family: "location", enabled: true, mode: "hard_filter" },
+        signalPolicies: [
+          { signalKey: "document_date", enabled: true, mode: "hard_filter" },
+          { signalKey: "document_period", enabled: true, mode: "boost_only" },
+          { signalKey: "document_amount", enabled: true, mode: "hard_filter" },
+          { signalKey: "document_location", enabled: true, mode: "hard_filter" },
         ],
       });
 
@@ -141,11 +141,11 @@ describe("retrieval benchmark integration", () => {
           warmthLevel: 5,
           citationDisplayEnabled: true,
           chunkingStrategy: "fixed_window",
-          attributeControls: [
-            { family: "date_point", enabled: true, mode: "hard_filter" },
-            { family: "date_range", enabled: true, mode: "boost_only" },
-            { family: "money_value", enabled: true, mode: "hard_filter" },
-            { family: "location", enabled: true, mode: "hard_filter" },
+          signalPolicies: [
+            { signalKey: "document_date", enabled: true, mode: "hard_filter" },
+            { signalKey: "document_period", enabled: true, mode: "boost_only" },
+            { signalKey: "document_amount", enabled: true, mode: "hard_filter" },
+            { signalKey: "document_location", enabled: true, mode: "hard_filter" },
           ],
         });
 

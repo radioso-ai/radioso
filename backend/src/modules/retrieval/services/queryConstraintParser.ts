@@ -31,7 +31,7 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
     const normalized = normalizeLocationConstraint(location);
     if (normalized) {
       constraints.push({
-        family: "location",
+        signalKey: "document_location",
         operator: "match",
         confidence: 0.95,
         summary: `in ${normalized.displayName}`,
@@ -46,7 +46,7 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
     const normalized = normalizeMoneyConstraint(moneyLte[1], moneyLte[2] ?? null);
     if (normalized) {
       constraints.push({
-        family: "money_value",
+        signalKey: "document_amount",
         operator: "lte",
         confidence: 0.95,
         summary: `under ${normalized.amount}${normalized.currencyCode ? ` ${normalized.currencyCode}` : ""}`,
@@ -61,7 +61,7 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
     const normalized = normalizeMoneyConstraint(moneyGte[1], moneyGte[2] ?? null);
     if (normalized) {
       constraints.push({
-        family: "money_value",
+        signalKey: "document_amount",
         operator: "gte",
         confidence: 0.95,
         summary: `over ${normalized.amount}${normalized.currencyCode ? ` ${normalized.currencyCode}` : ""}`,
@@ -77,7 +77,7 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
     const normalized = normalizeDateConstraint(dateAfter);
     if (normalized) {
       constraints.push({
-        family: "date_range",
+        signalKey: "document_period",
         operator: "gte",
         confidence: 0.95,
         summary: `after ${normalized}`,
@@ -93,7 +93,7 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
     const normalized = normalizeDateConstraint(dateBefore);
     if (normalized) {
       constraints.push({
-        family: "date_range",
+        signalKey: "document_period",
         operator: "lte",
         confidence: 0.95,
         summary: `before ${normalized}`,
@@ -109,7 +109,7 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
     const normalized = normalizeDateConstraint(dateOn);
     if (normalized) {
       constraints.push({
-        family: "date_point",
+        signalKey: "document_date",
         operator: "eq",
         confidence: 0.95,
         summary: `on ${normalized}`,

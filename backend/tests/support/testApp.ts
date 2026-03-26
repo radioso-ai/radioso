@@ -276,11 +276,13 @@ export const createTestDependencies = (overrides: {
   const documentIngestionService = new DocumentIngestionService(
     documentRepository,
     auditService,
+    () => documentProcessingJobRepository.getQueueSnapshot(),
   );
   const documentImportService = new DocumentImportService(
     documentRepository,
     auditService,
     documentStorage,
+    () => documentProcessingJobRepository.getQueueSnapshot(),
   );
   const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
   const documentDeletionService = new DocumentDeletionService(

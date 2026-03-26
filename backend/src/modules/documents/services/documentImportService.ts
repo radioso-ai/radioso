@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { detectDocumentType, DocumentParserError } from "@radioso/document-parser";
 
 import type { AuditService } from "../../audit/services/auditService.js";
+import type { DocumentProcessingQueueSnapshot } from "../../../db/repositories/documentProcessingJobRepository.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../infra/gcsDocumentStorage.js";
 import { badRequest } from "../../../shared/domain/errors.js";
@@ -27,6 +28,7 @@ export class DocumentImportService {
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly auditService: AuditService,
     private readonly storage: DocumentStoragePort,
+    private readonly getQueueSnapshot?: () => Promise<DocumentProcessingQueueSnapshot>,
   ) {}
 
   async importDocument(input: DocumentImportInput): Promise<{ documentId: string; status: string }> {
@@ -87,6 +89,7 @@ export class DocumentImportService {
           documentId: document.id,
           revision: document.revision,
           sourceKind: document.sourceKind,
+          ...(await this.queueSnapshotMetadata()),
         },
       });
 
@@ -117,5 +120,20 @@ export class DocumentImportService {
       });
       throw error;
     }
+  }
+
+  private async queueSnapshotMetadata(): Promise<{
+    queuedJobCount?: number;
+    processingJobCount?: number;
+  }> {
+    if (!this.getQueueSnapshot) {
+      return {};
+    }
+
+    const snapshot = await this.getQueueSnapshot();
+    return {
+      queuedJobCount: snapshot.queuedJobCount,
+      processingJobCount: snapshot.processingJobCount,
+    };
   }
 }

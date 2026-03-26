@@ -1,4 +1,5 @@
 import type { AuditService } from "../../audit/services/auditService.js";
+import type { DocumentProcessingQueueSnapshot } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { normalizeMarkdown } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 import type { StructuredAttributes } from "../../retrieval/domain/structuredAttributes.js";
 import { conflict, notFound } from "../../../shared/domain/errors.js";
@@ -147,6 +148,7 @@ export class DocumentIngestionService {
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly auditService: AuditService,
+    private readonly getQueueSnapshot?: () => Promise<DocumentProcessingQueueSnapshot>,
   ) {}
 
   async ingest(input: { workspaceId: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<{ documentId: string; status: string }> {
@@ -174,6 +176,7 @@ export class DocumentIngestionService {
           documentId: document.id,
           revision: document.revision,
           status: document.status,
+          ...(await this.queueSnapshotMetadata()),
         },
       });
 
@@ -225,6 +228,7 @@ export class DocumentIngestionService {
           documentId: document.id,
           revision: document.revision,
           status: document.status,
+          ...(await this.queueSnapshotMetadata()),
         },
       });
 
@@ -260,6 +264,7 @@ export class DocumentIngestionService {
           documentId: document.id,
           revision: document.revision,
           status: document.status,
+          ...(await this.queueSnapshotMetadata()),
         },
       });
 
@@ -314,6 +319,21 @@ export class DocumentIngestionService {
     return {
       ...this.toSummary(document),
       content: document.sourceContent,
+    };
+  }
+
+  private async queueSnapshotMetadata(): Promise<{
+    queuedJobCount?: number;
+    processingJobCount?: number;
+  }> {
+    if (!this.getQueueSnapshot) {
+      return {};
+    }
+
+    const snapshot = await this.getQueueSnapshot();
+    return {
+      queuedJobCount: snapshot.queuedJobCount,
+      processingJobCount: snapshot.processingJobCount,
     };
   }
 }

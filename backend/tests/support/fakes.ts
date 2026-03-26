@@ -21,6 +21,7 @@ import type {
 } from "../../src/modules/documents/services/documentIngestionService.js";
 import type {
   DocumentProcessingJobRecord,
+  DocumentProcessingQueueSnapshot,
   DocumentProcessingJobRepositoryPort,
 } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import type {
@@ -1171,6 +1172,19 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     return [...this.items.values()]
       .filter((item) => item.status === "processing")
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  }
+
+  async getQueueSnapshot(now: Date = new Date()): Promise<DocumentProcessingQueueSnapshot> {
+    const queuedJobs = [...this.items.values()]
+      .filter((item) => item.status === "queued" && item.availableAt <= now)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+    const processingJobs = [...this.items.values()].filter((item) => item.status === "processing");
+
+    return {
+      queuedJobCount: queuedJobs.length,
+      processingJobCount: processingJobs.length,
+      oldestQueuedJobCreatedAt: queuedJobs[0]?.createdAt ?? null,
+    };
   }
 
   async markCompleted(jobId: string): Promise<void> {

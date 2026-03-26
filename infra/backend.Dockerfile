@@ -38,4 +38,4 @@ COPY --from=build /app/backend/openapi.yaml ./openapi.yaml
 
 EXPOSE 8080
 
-CMD ["node", "dist/src/index.js"]
+CMD ["npm", "run", "start:http"]

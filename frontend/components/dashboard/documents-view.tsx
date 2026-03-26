@@ -77,8 +77,11 @@ export function DocumentsView({
   const [retryErrorById, setRetryErrorById] = useState<Record<string, string>>({})
   const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
 
-  const loadDocuments = useCallback(async (page: number) => {
-    setIsLoading(true)
+  const loadDocuments = useCallback(async (page: number, options?: { background?: boolean }) => {
+    if (!options?.background) {
+      setIsLoading(true)
+    }
+
     try {
       const response = await documentsApi.listDocuments({
         limit: PAGE_SIZE,
@@ -89,7 +92,9 @@ export function DocumentsView({
     } catch (error) {
       console.error('Failed to load documents:', error)
     } finally {
-      setIsLoading(false)
+      if (!options?.background) {
+        setIsLoading(false)
+      }
     }
   }, [])
 
@@ -108,7 +113,7 @@ export function DocumentsView({
     }
 
     const timeoutId = window.setTimeout(() => {
-      void loadDocuments(currentPage)
+      void loadDocuments(currentPage, { background: true })
     }, 2000)
 
     return () => window.clearTimeout(timeoutId)

@@ -6,10 +6,8 @@ import {
   validateIngestionSettings,
 } from "../../src/modules/settings/domain/ingestionSettings.js";
 import {
-  buildMetadataSignalDefinition,
-  defaultAttributeControls,
   defaultRetrievalSettings,
-  normalizeSignalPolicies,
+  createDefaultMetadataRule,
   validateRetrievalSettings,
 } from "../../src/modules/settings/domain/retrievalSettings.js";
 
@@ -24,7 +22,7 @@ describe("settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 0,
         citationDisplayEnabled: true,
-        signalPolicies: defaultAttributeControls(),
+        metadataRules: [],
         customInstruction: "",
       }),
     ).toThrow("vectorTopK must be between 1 and 300");
@@ -40,7 +38,7 @@ describe("settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 11,
         citationDisplayEnabled: true,
-        signalPolicies: defaultAttributeControls(),
+        metadataRules: [],
         customInstruction: "",
       }),
     ).toThrow("warmthLevel must be between 1 and 10");
@@ -59,7 +57,10 @@ describe("settings and chunking", () => {
   });
 
   it("rejects retrieval settings with missing signal policies", () => {
-    const metadataSignal = buildMetadataSignalDefinition("parsedData.url");
+    const metadataRule = {
+      ...createDefaultMetadataRule(),
+      field: "",
+    };
 
     expect(() =>
       validateRetrievalSettings({
@@ -70,10 +71,10 @@ describe("settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
-        signalPolicies: [],
+        metadataRules: [metadataRule],
         customInstruction: "",
-      }, [metadataSignal]),
-    ).toThrow("signalPolicies must include every supported signal");
+      }),
+    ).toThrow("metadataRules field must be a non-empty string");
   });
 
   it("creates overlapping chunks for long content", () => {
@@ -91,12 +92,16 @@ describe("settings and chunking", () => {
     expect(defaults.similarityThreshold).toBe(0.2);
     expect(defaults.warmthLevel).toBe(5);
     expect(defaults.citationDisplayEnabled).toBe(true);
-    expect(defaults.signalPolicies).toEqual([]);
+    expect(defaults.metadataRules).toEqual([]);
     expect(defaults.customInstruction).toBe("");
   });
 
   it("rejects customInstruction exceeding 2000 characters", () => {
-    const metadataSignal = buildMetadataSignalDefinition("language");
+    const metadataRule = {
+      ...createDefaultMetadataRule(),
+      field: "language",
+      value: "en",
+    };
 
     expect(() =>
       validateRetrievalSettings({
@@ -107,14 +112,18 @@ describe("settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
-        signalPolicies: [{ signalKey: metadataSignal.key, enabled: false, mode: "boost_only" }],
+        metadataRules: [metadataRule],
         customInstruction: "a".repeat(2001),
-      }, [metadataSignal]),
+      }),
     ).toThrow("customInstruction must not exceed 2000 characters");
   });
 
   it("accepts valid customInstruction values", () => {
-    const metadataSignal = buildMetadataSignalDefinition("language");
+    const metadataRule = {
+      ...createDefaultMetadataRule(),
+      field: "language",
+      value: "en",
+    };
     const baseInput = {
       queryRewriteEnabled: false,
       rerankEnabled: false,
@@ -123,12 +132,12 @@ describe("settings and chunking", () => {
       rerankTopK: 5,
       warmthLevel: 5,
       citationDisplayEnabled: true,
-      signalPolicies: [{ signalKey: metadataSignal.key, enabled: false, mode: "boost_only" }],
+      metadataRules: [metadataRule],
     };
 
-    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "" }, [metadataSignal])).toBeDefined();
-    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "Cite paragraph numbers" }, [metadataSignal])).toBeDefined();
-    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "a".repeat(2000) }, [metadataSignal])).toBeDefined();
+    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "" })).toBeDefined();
+    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "Cite paragraph numbers" })).toBeDefined();
+    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "a".repeat(2000) })).toBeDefined();
   });
 
   it("uses the current chunking defaults for ingestion settings", () => {
@@ -177,13 +186,7 @@ describe("settings and chunking", () => {
   });
 
   it("adds discovered metadata signals as disabled policies by default", () => {
-    const metadataSignal = buildMetadataSignalDefinition("parsedData.url");
-    const normalized = normalizeSignalPolicies([], [metadataSignal]);
-
-    expect(normalized).toContainEqual({
-      signalKey: "metadata.parsedData.url",
-      enabled: false,
-      mode: "boost_only",
-    });
+    const defaults = defaultRetrievalSettings("workspace-1");
+    expect(defaults.metadataRules).toEqual([]);
   });
 });

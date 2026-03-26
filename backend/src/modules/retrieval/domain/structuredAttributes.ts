@@ -1,5 +1,3 @@
-import type { RetrievalSignalKey, SignalPolicyMode } from "../../settings/domain/retrievalSettings.js";
-
 export interface RawDatePoint {
   value: string;
   sourceText: string;
@@ -67,7 +65,7 @@ export interface StructuredAttributes {
 export type QueryConstraintOperator = "gte" | "lte" | "match" | "eq";
 
 export interface ParsedQueryConstraint {
-  signalKey: RetrievalSignalKey;
+  signalKey: string;
   operator: QueryConstraintOperator;
   confidence: number;
   summary: string;
@@ -86,8 +84,8 @@ export interface ParsedQueryInterpretation {
 }
 
 export interface AppliedConstraint {
-  signalKey: RetrievalSignalKey;
-  mode: SignalPolicyMode;
+  signalKey: string;
+  mode: "boost_only" | "hard_filter";
   outcome: "applied" | "relaxed" | "skipped";
   summary: string;
 }

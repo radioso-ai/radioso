@@ -117,48 +117,6 @@ describe("hybrid query constraints", () => {
     ]);
   });
 
-  it("parses explicit metadata field constraints and matches nested metadata values", () => {
-    const parsed = parseQueryConstraints('Find notices parsedData.url:"https://example.com/a"', [
-      ...defaultAttributeControls(),
-      { signalKey: "metadata.parsedData.url", enabled: true, mode: "hard_filter" },
-    ]);
-    const service = new AttributeMatchScoringService();
-
-    expect(parsed.constraints).toContainEqual(
-      expect.objectContaining({
-        signalKey: "metadata.parsedData.url",
-        operator: "match",
-        summary: "parsedData.url:https://example.com/a",
-      }),
-    );
-
-    const result = service.apply({
-      candidates: [
-        candidate({
-          metadata: {
-            parsedData: {
-              url: "https://example.com/a",
-            },
-          },
-        }),
-        candidate({
-          chunkId: "chunk-2",
-          documentId: "doc-2",
-          metadata: {
-            parsedData: {
-              url: "https://example.com/b",
-            },
-          },
-        }),
-      ],
-      parsedQuery: parsed,
-      signalPolicies: [...defaultAttributeControls(), { signalKey: "metadata.parsedData.url", enabled: true, mode: "hard_filter" }],
-    });
-
-    expect(result.candidates).toHaveLength(1);
-    expect(result.candidates[0]?.chunkId).toBe("chunk-1");
-  });
-
   it("uses hard filtering when high-confidence constraints and settings allow it", () => {
     const service = new AttributeMatchScoringService();
     const parsed = parseQueryConstraints("Find retreats in Estonia under 300 EUR after 2026-06-10");

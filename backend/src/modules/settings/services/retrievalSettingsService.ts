@@ -1,10 +1,7 @@
 import {
-  definitionsFromPolicies,
   defaultRetrievalSettings,
-  mergeSignalDefinitions,
-  normalizeSignalPolicies,
-  builtInRetrievalSignalDefinitions,
-  type RetrievalSignalDefinition,
+  type MetadataFieldSuggestion,
+  normalizeMetadataRules,
   type RetrievalSettingsInput,
   type RetrievalSettingsRecord,
   validateRetrievalSettings,
@@ -16,50 +13,42 @@ export interface RetrievalSettingsRepositoryPort {
   upsert(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord>;
 }
 
-export interface RetrievalSignalDefinitionSourcePort {
-  listMetadataSignalDefinitions(workspaceId: string): Promise<RetrievalSignalDefinition[]>;
+export interface RetrievalMetadataFieldSourcePort {
+  listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]>;
 }
 
 export class RetrievalSettingsService {
   constructor(
     private readonly repository: RetrievalSettingsRepositoryPort,
     private readonly auditService: AuditService,
-    private readonly signalDefinitionSource?: RetrievalSignalDefinitionSourcePort,
+    private readonly metadataFieldSource?: RetrievalMetadataFieldSourcePort,
   ) {}
 
-  async listSignalDefinitions(workspaceId: string): Promise<RetrievalSignalDefinition[]> {
-    const existing = await this.repository.findByWorkspaceId(workspaceId);
-    return this.resolveSignalDefinitions(workspaceId, existing?.signalPolicies ?? []);
+  async listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]> {
+    return this.metadataFieldSource ? this.metadataFieldSource.listMetadataFieldSuggestions(workspaceId) : [];
   }
 
   async getForWorkspace(workspaceId: string): Promise<RetrievalSettingsRecord> {
     const existing = await this.repository.findByWorkspaceId(workspaceId);
-    const signalDefinitions = await this.resolveSignalDefinitions(workspaceId, existing?.signalPolicies ?? []);
 
     if (existing) {
       const normalized = validateRetrievalSettings({
         ...existing,
-        signalPolicies: normalizeSignalPolicies(existing.signalPolicies, signalDefinitions),
-      }, signalDefinitions);
+        metadataRules: normalizeMetadataRules(existing.metadataRules),
+      });
       return {
         ...existing,
         ...normalized,
       };
     }
 
-    const defaults = defaultRetrievalSettings(workspaceId, signalDefinitions);
+    const defaults = defaultRetrievalSettings(workspaceId);
     return this.repository.upsert(workspaceId, defaults);
   }
 
   async updateForWorkspace(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
     try {
-      const existing = await this.repository.findByWorkspaceId(workspaceId);
-      const signalDefinitions = await this.resolveSignalDefinitions(
-        workspaceId,
-        existing?.signalPolicies ?? [],
-        input.signalPolicies,
-      );
-      const settings = await this.repository.upsert(workspaceId, validateRetrievalSettings(input, signalDefinitions));
+      const settings = await this.repository.upsert(workspaceId, validateRetrievalSettings(input));
       await this.auditService.record({
         workspaceId,
         eventType: "settings.update",
@@ -74,20 +63,5 @@ export class RetrievalSettingsService {
       });
       throw error;
     }
-  }
-
-  private async resolveSignalDefinitions(
-    workspaceId: string,
-    ...policyGroups: Array<{ signalKey: string }[]>
-  ): Promise<RetrievalSignalDefinition[]> {
-    const metadataDefinitions = this.signalDefinitionSource
-      ? await this.signalDefinitionSource.listMetadataSignalDefinitions(workspaceId)
-      : [];
-
-    return mergeSignalDefinitions(
-      builtInRetrievalSignalDefinitions,
-      metadataDefinitions,
-      ...policyGroups.map((policies) => definitionsFromPolicies(policies)),
-    );
   }
 }

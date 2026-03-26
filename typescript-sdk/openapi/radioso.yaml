@@ -210,46 +210,48 @@ components:
           maximum: 10
         citationDisplayEnabled:
           type: boolean
-        signalDefinitions:
+        metadataFieldSuggestions:
           type: array
           items:
-            type: object
-            properties:
-              key:
-                type: string
-              label:
-                type: string
-              description:
-                type: string
-              source:
-                type: string
-                enum:
-                  - system
-                  - metadata
-            required:
-              - key
-              - label
-              - description
-              - source
+            type: string
           default: []
-        signalPolicies:
+        metadataRules:
           type: array
           items:
             type: object
             properties:
-              signalKey:
+              id:
                 type: string
-              enabled:
-                type: boolean
-              mode:
+              field:
+                type: string
+              operator:
                 type: string
                 enum: &a1
-                  - boost_only
-                  - hard_filter
+                  - equals
+                  - not_equals
+                  - contains
+                  - not_contains
+                  - lt
+                  - lte
+                  - gt
+                  - gte
+              value:
+                type: string
+              effect:
+                type: string
+                enum: &a2
+                  - boost
+                  - filter
+              enabled:
+                type: boolean
             required:
-              - signalKey
+              - id
+              - field
+              - operator
+              - value
+              - effect
               - enabled
-              - mode
+          default: []
         customInstruction:
           type: string
           maxLength: 2000
@@ -268,7 +270,6 @@ components:
         - rerankTopK
         - warmthLevel
         - citationDisplayEnabled
-        - signalPolicies
         - customInstruction
         - createdAt
         - updatedAt
@@ -289,23 +290,34 @@ components:
           type: integer
         citationDisplayEnabled:
           type: boolean
-        signalPolicies:
+        metadataRules:
           type: array
           items:
             type: object
             properties:
-              signalKey:
+              id:
                 type: string
                 minLength: 1
-              enabled:
-                type: boolean
-              mode:
+              field:
+                type: string
+                minLength: 1
+              operator:
                 type: string
                 enum: *a1
+              value:
+                type: string
+              effect:
+                type: string
+                enum: *a2
+              enabled:
+                type: boolean
             required:
-              - signalKey
+              - id
+              - field
+              - operator
+              - value
+              - effect
               - enabled
-              - mode
         customInstruction:
           type: string
           maxLength: 2000
@@ -325,7 +337,7 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a2
+          enum: &a3
             - fixed_window
             - structured_semantic
         fixedWindowChunkSize:
@@ -356,7 +368,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a2
+          enum: *a3
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -379,39 +391,30 @@ components:
         - fixedWindowChunkOverlap
         - structuredMinChunkSize
         - structuredMaxChunkSize
-    RetrievalSignalPolicy:
+    RetrievalMetadataRule:
       type: object
       properties:
-        signalKey:
+        id:
           type: string
-        enabled:
-          type: boolean
-        mode:
+        field:
+          type: string
+        operator:
           type: string
           enum: *a1
+        value:
+          type: string
+        effect:
+          type: string
+          enum: *a2
+        enabled:
+          type: boolean
       required:
-        - signalKey
+        - id
+        - field
+        - operator
+        - value
+        - effect
         - enabled
-        - mode
-    RetrievalSignalDefinition:
-      type: object
-      properties:
-        key:
-          type: string
-        label:
-          type: string
-        description:
-          type: string
-        source:
-          type: string
-          enum:
-            - system
-            - metadata
-      required:
-        - key
-        - label
-        - description
-        - source
     UpdateGeneralSettingsRequest:
       type: object
       properties:
@@ -741,7 +744,9 @@ components:
           type: string
         mode:
           type: string
-          enum: *a1
+          enum:
+            - boost_only
+            - hard_filter
         outcome:
           type: string
           enum:

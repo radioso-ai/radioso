@@ -105,7 +105,17 @@ describe("document and settings integration", () => {
         warmthLevel: 6,
         citationDisplayEnabled: true,
         customInstruction: "",
-        signalPolicies: [{ signalKey: "metadata.language", enabled: true, mode: "hard_filter" }],
+        metadataRules: [
+          {
+            id: "language-filter",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "filter",
+            enabled: true,
+          },
+        ],
       });
 
     const secondSettings = await request(app)
@@ -113,15 +123,17 @@ describe("document and settings integration", () => {
       .set("Authorization", secondAuthorization);
 
     expect(firstUpdate.status).toBe(200);
-    expect(firstUpdate.body.signalPolicies).toContainEqual({
-      signalKey: "metadata.language",
+    expect(firstUpdate.body.metadataRules).toContainEqual({
+      id: "language-filter",
+      field: "language",
+      valueType: "string",
+      operator: "equals",
+      value: "en",
       enabled: true,
-      mode: "hard_filter",
+      effect: "filter",
     });
     expect(secondSettings.status).toBe(200);
-    expect(secondSettings.body.signalPolicies).toEqual([
-      { signalKey: "metadata.language", enabled: false, mode: "boost_only" },
-    ]);
+    expect(secondSettings.body.metadataRules).toEqual([]);
   });
 
   it("queues eligible workspace documents for reprocessing from ingestion settings", async () => {
@@ -188,24 +200,13 @@ describe("document and settings integration", () => {
       .set("Authorization", authorization);
 
     expect(settings.status).toBe(200);
-    expect(settings.body.signalDefinitions).toEqual(
+    expect(settings.body.metadataFieldSuggestions).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          key: "metadata.language",
-          source: "metadata",
-        }),
-        expect.objectContaining({
-          key: "metadata.parsedData.url",
-          source: "metadata",
-        }),
+        { field: "language", inferredType: "string" },
+        { field: "parsedData.url", inferredType: "string" },
       ]),
     );
-    expect(settings.body.signalPolicies).toEqual(
-      expect.arrayContaining([
-        { signalKey: "metadata.language", enabled: false, mode: "boost_only" },
-        { signalKey: "metadata.parsedData.url", enabled: false, mode: "boost_only" },
-      ]),
-    );
+    expect(settings.body.metadataRules).toEqual([]);
 
     const update = await request(app)
       .put("/api/v1/settings/retrieval")
@@ -219,18 +220,37 @@ describe("document and settings integration", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         customInstruction: "",
-        signalPolicies: settings.body.signalPolicies.map((policy: { signalKey: string; enabled: boolean; mode: string }) =>
-          policy.signalKey === "metadata.language"
-            ? { ...policy, enabled: true, mode: "hard_filter" }
-            : policy,
-        ),
+        metadataRules: [
+          {
+            id: "language-filter",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "filter",
+            enabled: true,
+          },
+          {
+            id: "source-boost",
+            field: "parsedData.url",
+            valueType: "string",
+            operator: "contains",
+            value: "example.com",
+            effect: "boost",
+            enabled: true,
+          },
+        ],
       });
 
     expect(update.status).toBe(200);
-    expect(update.body.signalPolicies).toContainEqual({
-      signalKey: "metadata.language",
+    expect(update.body.metadataRules).toContainEqual({
+      id: "language-filter",
+      field: "language",
+      valueType: "string",
+      operator: "equals",
+      value: "en",
       enabled: true,
-      mode: "hard_filter",
+      effect: "filter",
     });
   });
 });

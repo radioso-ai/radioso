@@ -38,8 +38,9 @@ import type {
   IngestionSettingsRecord,
 } from "../../src/modules/settings/domain/ingestionSettings.js";
 import {
-  buildMetadataSignalDefinition,
-  mergeSignalDefinitions,
+  inferMetadataValueType,
+  type MetadataFieldSuggestion,
+  type MetadataValueType,
   type RetrievalSettingsInput,
   type RetrievalSettingsRecord,
 } from "../../src/modules/settings/domain/retrievalSettings.js";
@@ -283,7 +284,7 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       rerankTopK: input.rerankTopK,
       warmthLevel: input.warmthLevel,
       citationDisplayEnabled: input.citationDisplayEnabled,
-      signalPolicies: input.signalPolicies,
+      metadataRules: input.metadataRules,
       customInstruction: input.customInstruction,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
@@ -825,21 +826,23 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async listMetadataSignalDefinitions(workspaceId: string) {
-    const definitions = new Map<string, ReturnType<typeof buildMetadataSignalDefinition>>();
+  async listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]> {
+    const fields = new Map<string, MetadataValueType>();
 
     for (const document of this.items.values()) {
       if (document.workspaceId !== workspaceId) {
         continue;
       }
 
-      for (const path of collectMetadataPaths(document.metadata ?? {})) {
-        const definition = buildMetadataSignalDefinition(path);
-        definitions.set(definition.key, definition);
+      for (const entry of collectMetadataPaths(document.metadata ?? {})) {
+        const existing = fields.get(entry.path);
+        fields.set(entry.path, existing && existing !== entry.inferredType ? "string" : entry.inferredType);
       }
     }
 
-    return mergeSignalDefinitions([...definitions.values()].sort((left, right) => left.key.localeCompare(right.key)));
+    return [...fields.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([field, inferredType]) => ({ field, inferredType }));
   }
 
   async listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]> {
@@ -1070,14 +1073,20 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 const isScalarMetadataValue = (value: unknown): boolean =>
   value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 
-const collectMetadataPaths = (metadata: Record<string, unknown>, prefix = ""): string[] => {
-  const paths: string[] = [];
+const collectMetadataPaths = (
+  metadata: Record<string, unknown>,
+  prefix = "",
+): Array<{ path: string; inferredType: MetadataValueType }> => {
+  const paths: Array<{ path: string; inferredType: MetadataValueType }> = [];
 
   for (const [key, value] of Object.entries(metadata)) {
     const nextPath = prefix ? `${prefix}.${key}` : key;
 
     if (isScalarMetadataValue(value)) {
-      paths.push(nextPath);
+      paths.push({
+        path: nextPath,
+        inferredType: inferMetadataValueType(value),
+      });
       continue;
     }
 

@@ -221,17 +221,29 @@ export interface RetrievalSettings {
   rerankTopK: number
   warmthLevel: number
   citationDisplayEnabled: boolean
-  signalDefinitions: RetrievalSignalDefinition[]
-  signalPolicies: RetrievalSignalPolicy[]
+  metadataFieldSuggestions: MetadataFieldSuggestion[]
+  metadataRules: RetrievalMetadataRule[]
   customInstruction: string
 }
 
-export interface RetrievalSignalDefinition {
-  key: string
-  label: string
-  description: string
-  source: 'system' | 'metadata'
+export type RetrievalMetadataValueType = 'string' | 'number' | 'date' | 'boolean'
+
+export interface MetadataFieldSuggestion {
+  field: string
+  inferredType: RetrievalMetadataValueType
 }
+
+export type RetrievalMetadataRuleOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'contains'
+  | 'not_contains'
+  | 'lt'
+  | 'lte'
+  | 'gt'
+  | 'gte'
+
+export type RetrievalMetadataRuleEffect = 'boost' | 'filter'
 
 export interface IngestionSettings {
   workspaceId: string
@@ -251,10 +263,14 @@ export interface WorkspaceIngestionReprocessResponse {
   status: 'queued' | 'noop'
 }
 
-export interface RetrievalSignalPolicy {
-  signalKey: string
+export interface RetrievalMetadataRule {
+  id: string
+  field: string
+  valueType: RetrievalMetadataValueType
+  operator: RetrievalMetadataRuleOperator
+  value: string
+  effect: RetrievalMetadataRuleEffect
   enabled: boolean
-  mode: 'boost_only' | 'hard_filter'
 }
 
 export interface DocumentCreateRequest {
@@ -763,7 +779,7 @@ export const settingsApi = {
   },
 
   async updateRetrievalSettings(data: RetrievalSettings): Promise<RetrievalSettings> {
-    const { signalDefinitions: _signalDefinitions, ...payload } = data
+    const { metadataFieldSuggestions: _metadataFieldSuggestions, ...payload } = data
     return request<RetrievalSettings>("/settings/retrieval", {
       method: "PUT",
       body: JSON.stringify(payload),

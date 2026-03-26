@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { RetrievalSettingsRecord, RetrievalSignalPolicy } from "../../settings/domain/retrievalSettings.js";
+import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSettings.js";
 import type { ConversationContextWindow, RewrittenRetrievalQuery } from "../domain/retrievalPipelineTypes.js";
 import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
@@ -91,7 +91,7 @@ export interface RetrievalDiagnosticsStage {
 export const stripEnabledConstraintLiterals = (
   query: string,
   parsedQuery: ParsedQueryInterpretation,
-  enabledSignalKeys: Set<RetrievalSignalPolicy["signalKey"]>,
+  enabledSignalKeys: Set<string>,
 ): string => {
   const stripped = parsedQuery.constraints
     .filter((constraint) => enabledSignalKeys.has(constraint.signalKey))

@@ -314,62 +314,89 @@
           "citationDisplayEnabled": {
             "type": "boolean"
           },
-          "signalDefinitions": {
+          "metadataFieldSuggestions": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "key": {
+                "field": {
                   "type": "string"
                 },
-                "label": {
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
-                },
-                "source": {
+                "inferredType": {
                   "type": "string",
                   "enum": [
-                    "system",
-                    "metadata"
+                    "string",
+                    "number",
+                    "date",
+                    "boolean"
                   ]
                 }
               },
               "required": [
-                "key",
-                "label",
-                "description",
-                "source"
+                "field",
+                "inferredType"
               ]
             },
             "default": []
           },
-          "signalPolicies": {
+          "metadataRules": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "signalKey": {
+                "id": {
                   "type": "string"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "valueType": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "number",
+                    "date",
+                    "boolean"
+                  ]
+                },
+                "operator": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "not_equals",
+                    "contains",
+                    "not_contains",
+                    "lt",
+                    "lte",
+                    "gt",
+                    "gte"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                },
+                "effect": {
+                  "type": "string",
+                  "enum": [
+                    "boost",
+                    "filter"
+                  ]
                 },
                 "enabled": {
                   "type": "boolean"
-                },
-                "mode": {
-                  "type": "string",
-                  "enum": [
-                    "boost_only",
-                    "hard_filter"
-                  ]
                 }
               },
               "required": [
-                "signalKey",
-                "enabled",
-                "mode"
+                "id",
+                "field",
+                "valueType",
+                "operator",
+                "value",
+                "effect",
+                "enabled"
               ]
-            }
+            },
+            "default": []
           },
           "customInstruction": {
             "type": "string",
@@ -393,7 +420,6 @@
           "rerankTopK",
           "warmthLevel",
           "citationDisplayEnabled",
-          "signalPolicies",
           "customInstruction",
           "createdAt",
           "updatedAt"
@@ -423,30 +449,63 @@
           "citationDisplayEnabled": {
             "type": "boolean"
           },
-          "signalPolicies": {
+          "metadataRules": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "signalKey": {
+                "id": {
                   "type": "string",
                   "minLength": 1
                 },
-                "enabled": {
-                  "type": "boolean"
+                "field": {
+                  "type": "string",
+                  "minLength": 1
                 },
-                "mode": {
+                "valueType": {
                   "type": "string",
                   "enum": [
-                    "boost_only",
-                    "hard_filter"
+                    "string",
+                    "number",
+                    "date",
+                    "boolean"
                   ]
+                },
+                "operator": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "not_equals",
+                    "contains",
+                    "not_contains",
+                    "lt",
+                    "lte",
+                    "gt",
+                    "gte"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                },
+                "effect": {
+                  "type": "string",
+                  "enum": [
+                    "boost",
+                    "filter"
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean"
                 }
               },
               "required": [
-                "signalKey",
-                "enabled",
-                "mode"
+                "id",
+                "field",
+                "valueType",
+                "operator",
+                "value",
+                "effect",
+                "enabled"
               ]
             }
           },
@@ -550,54 +609,59 @@
           "structuredMaxChunkSize"
         ]
       },
-      "RetrievalSignalPolicy": {
+      "RetrievalMetadataRule": {
         "type": "object",
         "properties": {
-          "signalKey": {
+          "id": {
             "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "valueType": {
+            "type": "string",
+            "enum": [
+              "string",
+              "number",
+              "date",
+              "boolean"
+            ]
+          },
+          "operator": {
+            "type": "string",
+            "enum": [
+              "equals",
+              "not_equals",
+              "contains",
+              "not_contains",
+              "lt",
+              "lte",
+              "gt",
+              "gte"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "string",
+            "enum": [
+              "boost",
+              "filter"
+            ]
           },
           "enabled": {
             "type": "boolean"
-          },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "boost_only",
-              "hard_filter"
-            ]
           }
         },
         "required": [
-          "signalKey",
-          "enabled",
-          "mode"
-        ]
-      },
-      "RetrievalSignalDefinition": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string",
-            "enum": [
-              "system",
-              "metadata"
-            ]
-          }
-        },
-        "required": [
-          "key",
-          "label",
-          "description",
-          "source"
+          "id",
+          "field",
+          "valueType",
+          "operator",
+          "value",
+          "effect",
+          "enabled"
         ]
       },
       "UpdateGeneralSettingsRequest": {

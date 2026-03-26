@@ -41,11 +41,11 @@ describe("settings contract", () => {
       "citationDisplayEnabled",
       "createdAt",
       "customInstruction",
+      "metadataFieldSuggestions",
+      "metadataRules",
       "queryRewriteEnabled",
       "rerankEnabled",
       "rerankTopK",
-      "signalDefinitions",
-      "signalPolicies",
       "similarityThreshold",
       "updatedAt",
       "vectorTopK",
@@ -56,8 +56,8 @@ describe("settings contract", () => {
     expect(response.body.warmthLevel).toBe(5);
     expect(response.body.citationDisplayEnabled).toBe(true);
     expect(response.body.customInstruction).toBe("");
-    expect(response.body.signalDefinitions).toEqual([]);
-    expect(response.body.signalPolicies).toEqual([]);
+    expect(response.body.metadataFieldSuggestions).toEqual([]);
+    expect(response.body.metadataRules).toEqual([]);
   });
 
   it("updates retrieval settings for a valid bearer token", async () => {
@@ -87,8 +87,16 @@ describe("settings contract", () => {
         warmthLevel: 8,
         citationDisplayEnabled: false,
         customInstruction: "Always cite the paragraph number from the Immigration Act.",
-        signalPolicies: [
-          { signalKey: "metadata.language", enabled: true, mode: "hard_filter" },
+        metadataRules: [
+          {
+            id: "rule-language",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "filter",
+            enabled: true,
+          },
         ],
       });
 
@@ -102,8 +110,16 @@ describe("settings contract", () => {
       warmthLevel: 8,
       citationDisplayEnabled: false,
       customInstruction: "Always cite the paragraph number from the Immigration Act.",
-      signalPolicies: [
-        { signalKey: "metadata.language", enabled: true, mode: "hard_filter" },
+      metadataRules: [
+        {
+          id: "rule-language",
+          field: "language",
+          valueType: "string",
+          operator: "equals",
+          value: "en",
+          effect: "filter",
+          enabled: true,
+        },
       ],
     });
   });
@@ -136,8 +152,16 @@ describe("settings contract", () => {
         warmthLevel: 8,
         citationDisplayEnabled: false,
         customInstruction: "Cite paragraph numbers.",
-        signalPolicies: [
-          { signalKey: "metadata.language", enabled: true, mode: "hard_filter" },
+        metadataRules: [
+          {
+            id: "rule-language",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "filter",
+            enabled: true,
+          },
         ],
       });
 
@@ -156,7 +180,7 @@ describe("settings contract", () => {
 
     expect(firstUpdate.status).toBe(200);
     expect(secondUpdate.status).toBe(200);
-    expect(secondUpdate.body.signalPolicies).toEqual(firstUpdate.body.signalPolicies);
+    expect(secondUpdate.body.metadataRules).toEqual(firstUpdate.body.metadataRules);
     expect(secondUpdate.body.customInstruction).toBe("Cite paragraph numbers.");
   });
 
@@ -231,10 +255,10 @@ describe("settings contract", () => {
     const retrievalSettingsSchema = spec.match(/RetrievalSettings:\n([\s\S]*?)\n    UpdateRetrievalSettingsRequest:/)?.[1] ?? "";
     const retrievalUpdateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    IngestionSettings:/)?.[1] ?? "";
     const ingestionSettingsSchema = spec.match(/IngestionSettings:\n([\s\S]*?)\n    UpdateIngestionSettingsRequest:/)?.[1] ?? "";
-    const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    RetrievalSignalPolicy:/)?.[1] ?? "";
+    const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    RetrievalMetadataRule:/)?.[1] ?? "";
 
     expect(retrievalSettingsSchema).not.toContain("chunkingStrategy:");
-    expect(retrievalUpdateSchema).toContain("signalPolicies:");
+    expect(retrievalUpdateSchema).toContain("metadataRules:");
     expect(retrievalUpdateSchema).not.toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");

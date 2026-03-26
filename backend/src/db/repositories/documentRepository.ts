@@ -9,9 +9,9 @@ import type {
   DocumentUpdateInput,
 } from "../../modules/documents/services/documentIngestionService.js";
 import {
-  buildMetadataSignalDefinition,
-  mergeSignalDefinitions,
-  type RetrievalSignalDefinition,
+  inferMetadataValueType,
+  type MetadataFieldSuggestion,
+  type MetadataValueType,
 } from "../../modules/settings/domain/retrievalSettings.js";
 import type { Database } from "../../shared/infra/database.js";
 import { notFound } from "../../shared/domain/errors.js";
@@ -82,7 +82,7 @@ const documentSelect = `
 export class DocumentRepository implements DocumentRepositoryPort {
   constructor(private readonly database: Database) {}
 
-  async listMetadataSignalDefinitions(workspaceId: string): Promise<RetrievalSignalDefinition[]> {
+  async listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]> {
     const rows = await this.database.query<{ metadata: Record<string, unknown> | null }>(
       `SELECT metadata
        FROM documents
@@ -90,16 +90,18 @@ export class DocumentRepository implements DocumentRepositoryPort {
       [workspaceId],
     );
 
-    const definitions = new Map<string, RetrievalSignalDefinition>();
+    const fields = new Map<string, MetadataValueType>();
 
     for (const row of rows) {
-      for (const path of collectMetadataPaths(row.metadata ?? {})) {
-        const definition = buildMetadataSignalDefinition(path);
-        definitions.set(definition.key, definition);
+      for (const entry of collectMetadataPaths(row.metadata ?? {})) {
+        const existing = fields.get(entry.path);
+        fields.set(entry.path, existing && existing !== entry.inferredType ? "string" : entry.inferredType);
       }
     }
 
-    return mergeSignalDefinitions([...definitions.values()].sort((left, right) => left.key.localeCompare(right.key)));
+    return [...fields.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([field, inferredType]) => ({ field, inferredType }));
   }
 
   async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
@@ -481,14 +483,20 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 const isScalarMetadataValue = (value: unknown): boolean =>
   value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 
-const collectMetadataPaths = (metadata: Record<string, unknown>, prefix = ""): string[] => {
-  const paths: string[] = [];
+const collectMetadataPaths = (
+  metadata: Record<string, unknown>,
+  prefix = "",
+): Array<{ path: string; inferredType: MetadataValueType }> => {
+  const paths: Array<{ path: string; inferredType: MetadataValueType }> = [];
 
   for (const [key, value] of Object.entries(metadata)) {
     const nextPath = prefix ? `${prefix}.${key}` : key;
 
     if (isScalarMetadataValue(value)) {
-      paths.push(nextPath);
+      paths.push({
+        path: nextPath,
+        inferredType: inferMetadataValueType(value),
+      });
       continue;
     }
 

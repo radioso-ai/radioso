@@ -1,7 +1,11 @@
 import { HYBRID_RETRIEVAL_DEFAULTS } from "../domain/hybridRetrievalConfig.js";
 import type { RetrievedCandidate } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryConstraint, ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
-import { metadataPathFromSignalKey, type RetrievalSignalPolicy } from "../../settings/domain/retrievalSettings.js";
+type RetrievalSignalPolicy = {
+  signalKey: string;
+  enabled: boolean;
+  mode: "boost_only" | "hard_filter";
+};
 
 type ConstraintMatcher = (candidate: RetrievedCandidate, constraint: ParsedQueryConstraint) => boolean;
 
@@ -14,8 +18,6 @@ const isMoneyValue = (
 ): value is { amount: number; currencyCode: string | null } => "amount" in value;
 
 const isDateValue = (value: ParsedQueryConstraint["value"]): value is { date: string } => "date" in value;
-
-const isRawValue = (value: ParsedQueryConstraint["value"]): value is { raw: string } => "raw" in value;
 
 const signalMatcherRegistry: Record<string, ConstraintMatcher> = {
   document_location: (candidate, constraint) => {
@@ -206,39 +208,6 @@ export class AttributeMatchScoringService {
 
   private matchesConstraint(candidate: RetrievedCandidate, constraint: ParsedQueryConstraint): boolean {
     const matcher = signalMatcherRegistry[constraint.signalKey];
-    if (matcher) {
-      return matcher(candidate, constraint);
-    }
-
-    return this.matchesMetadataConstraint(candidate, constraint);
-  }
-
-  private matchesMetadataConstraint(candidate: RetrievedCandidate, constraint: ParsedQueryConstraint): boolean {
-    const metadataPath = metadataPathFromSignalKey(constraint.signalKey);
-    if (!metadataPath || !isRawValue(constraint.value)) {
-      return false;
-    }
-
-    const metadataValue = getValueAtPath(candidate.metadata ?? {}, metadataPath);
-    if (!isScalarMetadataValue(metadataValue)) {
-      return false;
-    }
-
-    return normalizeMetadataValue(metadataValue) === normalizeMetadataValue(constraint.value.raw);
+    return matcher ? matcher(candidate, constraint) : false;
   }
 }
-
-const getValueAtPath = (metadata: Record<string, unknown>, path: string): unknown =>
-  path.split(".").reduce<unknown>((current, segment) => {
-    if (typeof current !== "object" || current === null || Array.isArray(current)) {
-      return undefined;
-    }
-
-    return (current as Record<string, unknown>)[segment];
-  }, metadata);
-
-const isScalarMetadataValue = (value: unknown): value is string | number | boolean | null =>
-  value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
-
-const normalizeMetadataValue = (value: string | number | boolean | null): string =>
-  String(value).trim().toLowerCase();

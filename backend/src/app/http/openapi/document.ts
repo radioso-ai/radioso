@@ -30,8 +30,9 @@ import {
 } from "../routes/publicChatRoutes.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
-  retrievalSignalDefinitions,
-  signalPolicyModes,
+  metadataRuleEffects,
+  metadataRuleOperators,
+  metadataValueTypes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 
 extendZodWithOpenApi(z);
@@ -143,21 +144,23 @@ const RetrievalSettingsSchema = registry.register(
     rerankTopK: z.number().int().min(1),
     warmthLevel: z.number().int().min(1).max(10),
     citationDisplayEnabled: z.boolean(),
-    signalDefinitions: z.array(
+    metadataFieldSuggestions: z.array(
       z.object({
-        key: z.string(),
-        label: z.string(),
-        description: z.string(),
-        source: z.enum(["system", "metadata"]),
+        field: z.string(),
+        inferredType: z.enum(metadataValueTypes),
       }),
-    ).default(retrievalSignalDefinitions),
-    signalPolicies: z.array(
+    ).default([]),
+    metadataRules: z.array(
       z.object({
-        signalKey: z.string(),
+        id: z.string(),
+        field: z.string(),
+        valueType: z.enum(metadataValueTypes),
+        operator: z.enum(metadataRuleOperators),
+        value: z.string(),
+        effect: z.enum(metadataRuleEffects),
         enabled: z.boolean(),
-        mode: z.enum(signalPolicyModes),
       }),
-    ),
+    ).default([]),
     customInstruction: z.string().max(2000),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -188,22 +191,16 @@ const UpdateIngestionSettingsRequestSchema = registry.register(
   updateIngestionSettingsSchema,
 );
 
-const RetrievalSignalPolicySchema = registry.register(
-  "RetrievalSignalPolicy",
+const RetrievalMetadataRuleSchema = registry.register(
+  "RetrievalMetadataRule",
   z.object({
-    signalKey: z.string(),
+    id: z.string(),
+    field: z.string(),
+    valueType: z.enum(metadataValueTypes),
+    operator: z.enum(metadataRuleOperators),
+    value: z.string(),
+    effect: z.enum(metadataRuleEffects),
     enabled: z.boolean(),
-    mode: z.enum(signalPolicyModes),
-  }),
-);
-
-const RetrievalSignalDefinitionSchema = registry.register(
-  "RetrievalSignalDefinition",
-  z.object({
-    key: z.string(),
-    label: z.string(),
-    description: z.string(),
-    source: z.enum(["system", "metadata"]),
   }),
 );
 
@@ -356,7 +353,7 @@ const AppliedConstraintSchema = registry.register(
   "AppliedConstraint",
   z.object({
     signalKey: z.string(),
-    mode: z.enum(signalPolicyModes),
+    mode: z.enum(["boost_only", "hard_filter"]),
     outcome: z.enum(["applied", "relaxed", "skipped"]),
     summary: z.string(),
   }),

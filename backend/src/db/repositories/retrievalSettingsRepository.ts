@@ -3,7 +3,7 @@ import type {
   RetrievalSettingsInput,
   RetrievalSettingsRecord,
 } from "../../modules/settings/domain/retrievalSettings.js";
-import { normalizeSignalPolicies } from "../../modules/settings/domain/retrievalSettings.js";
+import { normalizeMetadataRules } from "../../modules/settings/domain/retrievalSettings.js";
 import type { RetrievalSettingsRepositoryPort } from "../../modules/settings/services/retrievalSettingsService.js";
 
 interface RetrievalSettingsRow {
@@ -30,7 +30,7 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => ({
   rerankTopK: row.rerank_top_k,
   warmthLevel: row.warmth_level,
   citationDisplayEnabled: row.citation_display_enabled,
-  signalPolicies: normalizeSignalPolicies(row.attribute_controls),
+  metadataRules: normalizeMetadataRules(row.attribute_controls),
   customInstruction: row.custom_instruction,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
@@ -86,7 +86,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
         input.rerankTopK,
         input.warmthLevel,
         input.citationDisplayEnabled,
-        JSON.stringify(input.signalPolicies),
+        JSON.stringify({ metadataRules: input.metadataRules }),
         input.customInstruction,
       ],
     );

@@ -24,16 +24,19 @@ describe("document search history service", () => {
     });
 
     const list = await service.listHistory("workspace-1");
-    expect(list).toEqual([
-      {
-        searchId: "search-1",
-        query: "Legacy search",
-        createdAt: expect.any(String),
-        resultCount: 0,
-        traceAvailable: false,
-        previewTopTitles: [],
-      },
-    ]);
+    expect(list).toEqual({
+      searches: [
+        {
+          searchId: "search-1",
+          query: "Legacy search",
+          createdAt: expect.any(String),
+          resultCount: 0,
+          traceAvailable: false,
+          previewTopTitles: [],
+        },
+      ],
+      total: 1,
+    });
 
     const replay = await service.getHistory("workspace-1", "search-1");
     expect(replay).toEqual({

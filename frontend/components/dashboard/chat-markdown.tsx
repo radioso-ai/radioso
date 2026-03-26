@@ -1,7 +1,8 @@
 'use client'
 
-import { type ComponentPropsWithoutRef } from 'react'
+import { Fragment, type ComponentPropsWithoutRef } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 
 import { cn } from '@/lib/utils'
@@ -46,7 +47,7 @@ const MarkdownLink = ({
   )
 }
 
-const markdownComponents: Components = {
+const createMarkdownComponents = (inline: boolean): Components => ({
   a: MarkdownLink,
   blockquote: ({ children, className }) => (
     <blockquote
@@ -107,9 +108,13 @@ const markdownComponents: Components = {
     </ol>
   ),
   p: ({ children, className }) => (
-    <p className={cn('m-0 whitespace-pre-wrap', className)}>
-      {children}
-    </p>
+    inline ? (
+      <Fragment>{children}</Fragment>
+    ) : (
+      <p className={cn('m-0 whitespace-pre-wrap', className)}>
+        {children}
+      </p>
+    )
   ),
   pre: ({ children, className }) => (
     <pre
@@ -131,11 +136,20 @@ const markdownComponents: Components = {
       {children}
     </ul>
   ),
-}
+})
 
-export function AssistantMarkdownContent({ content }: { content: string }) {
+export function AssistantMarkdownContent({
+  content,
+  inline = false,
+}: {
+  content: string
+  inline?: boolean
+}) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkBreaks]} components={markdownComponents}>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      components={createMarkdownComponents(inline)}
+    >
       {content}
     </ReactMarkdown>
   )

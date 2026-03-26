@@ -25,8 +25,8 @@ export function DashboardShell({
   selectedDocumentId,
 }: DashboardShellProps) {
   const router = useRouter()
-  const { activeWorkspaceId } = useWorkspace()
-  const onboarding = useWorkspaceOnboarding(activeWorkspaceId)
+  const { activeWorkspaceId, workspaces } = useWorkspace()
+  const onboarding = useWorkspaceOnboarding(activeWorkspaceId, workspaces.length)
 
   const openDocument = (documentId: string | null) => {
     router.push(buildAccountRoute(accountId, 'documents', documentId ?? undefined))

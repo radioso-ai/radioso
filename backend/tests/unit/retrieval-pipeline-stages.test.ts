@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { defaultAttributeControls } from "../../src/modules/settings/domain/retrievalSettings.js";
 import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { QueryInterpretationStageService } from "../../src/modules/retrieval/services/queryInterpretationStage.js";
 import { CandidateRetrievalStageService } from "../../src/modules/retrieval/services/candidateRetrievalStage.js";
@@ -8,7 +7,7 @@ import { RetrievalContextStageService } from "../../src/modules/retrieval/servic
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 
 describe("retrieval pipeline stages", () => {
-  it("strips hard_filter literals during query interpretation", async () => {
+  it("keeps structured query literals during query interpretation", async () => {
     const stage = new QueryInterpretationStageService(new QueryRewriteService());
 
     const result = await stage.execute({
@@ -27,11 +26,7 @@ describe("retrieval pipeline stages", () => {
         warmthLevel: 5,
         citationDisplayEnabled: true,
         customInstruction: "",
-        attributeControls: defaultAttributeControls().map((control) =>
-          control.family === "location" || control.family === "money_value"
-            ? { ...control, mode: "hard_filter" as const }
-            : control,
-        ),
+        metadataRules: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       },
@@ -42,8 +37,8 @@ describe("retrieval pipeline stages", () => {
       },
     });
 
-    expect(result.activeParsedQuery.semanticQuery).toBe("retreats");
-    expect(result.activeParsedQuery.lexicalQuery).toBe("retreats");
+    expect(result.activeParsedQuery.semanticQuery).toBe("retreats in Estonia under 300 EUR");
+    expect(result.activeParsedQuery.lexicalQuery).toBe("retreats in Estonia under 300 EUR");
     expect(result.activeQuery).toBe("Find retreats in Estonia under 300 EUR");
   });
 
@@ -61,7 +56,7 @@ describe("retrieval pipeline stages", () => {
             warmthLevel: 5,
             citationDisplayEnabled: true,
             customInstruction: "",
-            attributeControls: defaultAttributeControls(),
+            metadataRules: [],
             createdAt: new Date(),
             updatedAt: new Date(),
           };

@@ -285,7 +285,7 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts.join("")).toBe(DEFAULT_UNSUPPORTED_NOTICE);
+    expect(chunkTexts.join("")).toBe("full answer ");
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
@@ -393,9 +393,9 @@ describe("chat service streaming", () => {
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
-      answer: "full answer",
-      citations: undefined,
-      answerSegments: undefined,
+      answer: DEFAULT_UNSUPPORTED_NOTICE,
+      citations: [],
+      answerSegments: [{ text: DEFAULT_UNSUPPORTED_NOTICE }],
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -419,7 +419,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId(conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: "full answer",
+      content: DEFAULT_UNSUPPORTED_NOTICE,
     });
   });
 
@@ -599,7 +599,7 @@ describe("chat service streaming", () => {
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 
-  it("buffers grounded streaming answers until validation and emits only validated chunks", async () => {
+  it("streams grounded answers incrementally before returning the validated final answer", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -640,12 +640,21 @@ describe("chat service streaming", () => {
         };
       },
     } as const;
+    let releaseSecondChunk: (() => void) | undefined;
+    let markSecondChunkBlocked: (() => void) | undefined;
+    const secondChunkBlocked = new Promise<void>((resolve) => {
+      markSecondChunkBlocked = resolve;
+    });
     const chatGateway: ChatGateway = {
       async answer() {
         return "unused";
       },
       async *streamAnswer() {
         yield "The page explains testing and parsing content for users[[1]]. ";
+        await new Promise<void>((resolve) => {
+          releaseSecondChunk = resolve;
+          markSecondChunkBlocked?.();
+        });
         yield "It also offers 24/7 phone support.";
       },
     };
@@ -657,13 +666,35 @@ describe("chat service streaming", () => {
       auditService,
     );
 
-    const events: ChatStreamEvent[] = [];
-    for await (const event of service.streamAnswer({
+    const iterator = service.streamAnswer({
       workspaceId: "workspace-1",
       accountId: "account-1",
       query: "What does this page do?",
       stream: true,
-    })) {
+    })[Symbol.asyncIterator]();
+
+    const conversationEvent = await iterator.next();
+    const firstChunkEvent = await iterator.next();
+
+    expect(conversationEvent.value).toEqual({
+      type: "conversation",
+      conversationId: expect.any(String),
+    });
+    expect(firstChunkEvent.value).toEqual({
+      type: "chunk",
+      text: "The page explains testing and parsing content for users. ",
+    });
+
+    const pendingNextEvent = iterator.next();
+    await secondChunkBlocked;
+    releaseSecondChunk?.();
+
+    const events: ChatStreamEvent[] = [conversationEvent.value!, firstChunkEvent.value!];
+    const secondChunkEvent = await pendingNextEvent;
+    if (!secondChunkEvent.done) {
+      events.push(secondChunkEvent.value);
+    }
+    for await (const event of { [Symbol.asyncIterator]: () => iterator }) {
       events.push(event);
     }
 
@@ -673,9 +704,12 @@ describe("chat service streaming", () => {
       .join("");
 
     expect(streamedText).toBe(
-      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
+      "The page explains testing and parsing content for users. It also offers 24/7 phone support.",
     );
-    expect(streamedText).not.toContain("24/7 phone support");
+    expect(events.findIndex((event) => event.type === "chunk")).toBeGreaterThanOrEqual(0);
+    expect(events.findIndex((event) => event.type === "chunk")).toBeLessThan(
+      events.findIndex((event) => event.type === "done"),
+    );
     expect(events.at(-1)).toEqual(
       expect.objectContaining({
         type: "done",

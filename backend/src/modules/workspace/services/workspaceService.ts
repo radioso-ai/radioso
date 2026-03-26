@@ -26,6 +26,22 @@ export class WorkspaceService {
     return this.workspaceRepository.create(accountId, "Default");
   }
 
+  async resolveLoginWorkspace(accountId: string, preferredWorkspaceId?: string | null): Promise<WorkspaceRecord> {
+    const existing = await this.workspaceRepository.listByAccountId(accountId);
+    if (existing.length === 0) {
+      return this.workspaceRepository.create(accountId, "Default");
+    }
+
+    if (preferredWorkspaceId) {
+      const preferred = existing.find((workspace) => workspace.id === preferredWorkspaceId);
+      if (preferred) {
+        return preferred;
+      }
+    }
+
+    return existing.find((workspace) => workspace.name === "Default") ?? existing.at(-1)!;
+  }
+
   async listForAccount(accountId: string): Promise<WorkspaceRecord[]> {
     return this.workspaceRepository.listByAccountId(accountId);
   }

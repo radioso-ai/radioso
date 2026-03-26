@@ -53,19 +53,19 @@ describe("hybrid query constraints", () => {
     expect(result.lexicalQuery).toBe("retreats in Estonia under 300 EUR after 2026-06-10");
     expect(result.constraints).toEqual([
       expect.objectContaining({
-        family: "location",
+        signalKey: "document_location",
         operator: "match",
         confidence: 0.95,
         sourceText: "in Estonia",
       }),
       expect.objectContaining({
-        family: "money_value",
+        signalKey: "document_amount",
         operator: "lte",
         confidence: 0.95,
         sourceText: "under 300 EUR",
       }),
       expect.objectContaining({
-        family: "date_range",
+        signalKey: "document_period",
         operator: "gte",
         confidence: 0.95,
         sourceText: "after 2026-06-10",
@@ -80,13 +80,13 @@ describe("hybrid query constraints", () => {
     expect(result.lexicalQuery).toBe("retreats in estonia on 2026-06-12");
     expect(result.constraints).toEqual([
       expect.objectContaining({
-        family: "location",
+        signalKey: "document_location",
         operator: "match",
         value: expect.objectContaining({ matchKey: "estonia" }),
         sourceText: "in estonia",
       }),
       expect.objectContaining({
-        family: "date_point",
+        signalKey: "document_date",
         operator: "eq",
         value: expect.objectContaining({ date: "2026-06-12" }),
         sourceText: "on 2026-06-12",
@@ -100,7 +100,7 @@ describe("hybrid query constraints", () => {
 
     expect(retreatResult.constraints).toEqual([
       expect.objectContaining({
-        family: "location",
+        signalKey: "document_location",
         operator: "match",
         summary: "in Estonia",
         sourceText: "in Estonia",
@@ -108,7 +108,7 @@ describe("hybrid query constraints", () => {
     ]);
     expect(docsResult.constraints).toEqual([
       expect.objectContaining({
-        family: "location",
+        signalKey: "document_location",
         operator: "match",
         summary: "in New York",
         sourceText: "in New York",
@@ -121,7 +121,7 @@ describe("hybrid query constraints", () => {
     const service = new AttributeMatchScoringService();
     const parsed = parseQueryConstraints("Find retreats in Estonia under 300 EUR after 2026-06-10");
     const controls = defaultAttributeControls().map((control) =>
-      control.family === "location" || control.family === "money_value" || control.family === "date_range"
+      control.signalKey === "document_location" || control.signalKey === "document_amount" || control.signalKey === "document_period"
         ? { ...control, mode: "hard_filter" as const }
         : control,
     );
@@ -156,7 +156,7 @@ describe("hybrid query constraints", () => {
         }),
       ],
       parsedQuery: parsed,
-      attributeControls: controls,
+      signalPolicies: controls,
     });
 
     expect(result.candidates).toHaveLength(1);
@@ -168,9 +168,9 @@ describe("hybrid query constraints", () => {
     const service = new AttributeMatchScoringService();
     const parsed = parseQueryConstraints("Find retreats after 2026-06-10");
     const controls = defaultAttributeControls().map((control) =>
-      control.family === "date_range"
+      control.signalKey === "document_period"
         ? { ...control, mode: "hard_filter" as const }
-        : control.family === "date_point"
+        : control.signalKey === "document_date"
           ? { ...control, enabled: false }
           : control,
     );
@@ -178,12 +178,12 @@ describe("hybrid query constraints", () => {
     const result = service.apply({
       candidates: [candidate()],
       parsedQuery: parsed,
-      attributeControls: controls,
+      signalPolicies: controls,
     });
 
     expect(result.candidates).toHaveLength(1);
     expect(result.appliedConstraints).toContainEqual({
-      family: "date_range",
+      signalKey: "document_period",
       mode: "hard_filter",
       outcome: "applied",
       summary: "after 2026-06-10",
@@ -194,7 +194,7 @@ describe("hybrid query constraints", () => {
     const service = new AttributeMatchScoringService();
     const parsed = parseQueryConstraints("Find retreats in Estonia under 300 EUR after 2026-06-10");
     const controls = defaultAttributeControls().map((control) =>
-      control.family === "location" || control.family === "money_value" || control.family === "date_range"
+      control.signalKey === "document_location" || control.signalKey === "document_amount" || control.signalKey === "document_period"
         ? { ...control, mode: "hard_filter" as const }
         : control,
     );
@@ -228,7 +228,7 @@ describe("hybrid query constraints", () => {
         }),
       ],
       parsedQuery: parsed,
-      attributeControls: controls,
+      signalPolicies: controls,
     });
 
     expect(result.candidates).toHaveLength(1);

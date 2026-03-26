@@ -6,8 +6,8 @@ import {
   validateIngestionSettings,
 } from "../../src/modules/settings/domain/ingestionSettings.js";
 import {
-  defaultAttributeControls,
   defaultRetrievalSettings,
+  createDefaultMetadataRule,
   validateRetrievalSettings,
 } from "../../src/modules/settings/domain/retrievalSettings.js";
 
@@ -22,7 +22,7 @@ describe("settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 0,
         citationDisplayEnabled: true,
-        attributeControls: defaultAttributeControls(),
+        metadataRules: [],
         customInstruction: "",
       }),
     ).toThrow("vectorTopK must be between 1 and 300");
@@ -38,7 +38,7 @@ describe("settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 11,
         citationDisplayEnabled: true,
-        attributeControls: defaultAttributeControls(),
+        metadataRules: [],
         customInstruction: "",
       }),
     ).toThrow("warmthLevel must be between 1 and 10");
@@ -56,7 +56,12 @@ describe("settings and chunking", () => {
     ).toThrow("chunkingStrategy must be a supported strategy");
   });
 
-  it("rejects retrieval settings with missing attribute-family controls", () => {
+  it("rejects retrieval settings with missing signal policies", () => {
+    const metadataRule = {
+      ...createDefaultMetadataRule(),
+      field: "",
+    };
+
     expect(() =>
       validateRetrievalSettings({
         queryRewriteEnabled: false,
@@ -66,10 +71,10 @@ describe("settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
-        attributeControls: defaultAttributeControls().slice(0, 2),
+        metadataRules: [metadataRule],
         customInstruction: "",
       }),
-    ).toThrow("attributeControls must include every supported family");
+    ).toThrow("metadataRules field must be a non-empty string");
   });
 
   it("creates overlapping chunks for long content", () => {
@@ -87,16 +92,17 @@ describe("settings and chunking", () => {
     expect(defaults.similarityThreshold).toBe(0.2);
     expect(defaults.warmthLevel).toBe(5);
     expect(defaults.citationDisplayEnabled).toBe(true);
-    expect(defaults.attributeControls).toEqual([
-      { family: "date_point", enabled: true, mode: "boost_only" },
-      { family: "date_range", enabled: true, mode: "boost_only" },
-      { family: "money_value", enabled: true, mode: "boost_only" },
-      { family: "location", enabled: true, mode: "boost_only" },
-    ]);
+    expect(defaults.metadataRules).toEqual([]);
     expect(defaults.customInstruction).toBe("");
   });
 
   it("rejects customInstruction exceeding 2000 characters", () => {
+    const metadataRule = {
+      ...createDefaultMetadataRule(),
+      field: "language",
+      value: "en",
+    };
+
     expect(() =>
       validateRetrievalSettings({
         queryRewriteEnabled: false,
@@ -106,13 +112,18 @@ describe("settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
-        attributeControls: defaultAttributeControls(),
+        metadataRules: [metadataRule],
         customInstruction: "a".repeat(2001),
       }),
     ).toThrow("customInstruction must not exceed 2000 characters");
   });
 
   it("accepts valid customInstruction values", () => {
+    const metadataRule = {
+      ...createDefaultMetadataRule(),
+      field: "language",
+      value: "en",
+    };
     const baseInput = {
       queryRewriteEnabled: false,
       rerankEnabled: false,
@@ -121,7 +132,7 @@ describe("settings and chunking", () => {
       rerankTopK: 5,
       warmthLevel: 5,
       citationDisplayEnabled: true,
-      attributeControls: defaultAttributeControls(),
+      metadataRules: [metadataRule],
     };
 
     expect(validateRetrievalSettings({ ...baseInput, customInstruction: "" })).toBeDefined();
@@ -172,5 +183,10 @@ describe("settings and chunking", () => {
 
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks[1].startOffset).toBe(chunks[0].endOffset - 20);
+  });
+
+  it("adds discovered metadata signals as disabled policies by default", () => {
+    const defaults = defaultRetrievalSettings("workspace-1");
+    expect(defaults.metadataRules).toEqual([]);
   });
 });

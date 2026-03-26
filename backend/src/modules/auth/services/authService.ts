@@ -122,7 +122,7 @@ export class AuthService {
     };
   }
 
-  async login(input: { email: string; password: string }): Promise<{
+  async login(input: { email: string; password: string; preferredWorkspaceId?: string | null }): Promise<{
     userId: string;
     workspaceId: string;
     workspaceName: string;
@@ -141,7 +141,10 @@ export class AuthService {
       throw unauthorized("Invalid email or password");
     }
 
-    const workspace = await this.dependencies.workspaceService.createDefault(account.id);
+    const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(
+      account.id,
+      input.preferredWorkspaceId,
+    );
     const { token } = await this.getTokenForWorkspace(workspace.id, account.id);
     const sessionCookie = await this.createSessionCookie(account.id);
     await this.dependencies.auditService.record({

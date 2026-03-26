@@ -1,10 +1,10 @@
 'use client'
 
 import { ConnectorsTab } from '@/components/dashboard/connectors/connectors-tab'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { GeneralTab } from '@/components/dashboard/settings/general-tab'
 import { IngestionSettingsPanel } from '@/components/dashboard/settings/ingestion-settings-panel'
 import { RetrievalSettingsPanel } from '@/components/dashboard/settings/retrieval-settings-panel'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export function SettingsView() {
   return (

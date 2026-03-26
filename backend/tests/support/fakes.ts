@@ -42,7 +42,13 @@ import type {
   IngestionSettingsInput,
   IngestionSettingsRecord,
 } from "../../src/modules/settings/domain/ingestionSettings.js";
-import type { RetrievalSettingsInput, RetrievalSettingsRecord } from "../../src/modules/settings/domain/retrievalSettings.js";
+import {
+  inferMetadataValueType,
+  type MetadataFieldSuggestion,
+  type MetadataValueType,
+  type RetrievalSettingsInput,
+  type RetrievalSettingsRecord,
+} from "../../src/modules/settings/domain/retrievalSettings.js";
 import type { IngestionSettingsRepositoryPort } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import type { RetrievalSettingsRepositoryPort } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
@@ -283,7 +289,7 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       rerankTopK: input.rerankTopK,
       warmthLevel: input.warmthLevel,
       citationDisplayEnabled: input.citationDisplayEnabled,
-      attributeControls: input.attributeControls,
+      metadataRules: input.metadataRules,
       customInstruction: input.customInstruction,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
@@ -825,6 +831,25 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
+  async listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]> {
+    const fields = new Map<string, MetadataValueType>();
+
+    for (const document of this.items.values()) {
+      if (document.workspaceId !== workspaceId) {
+        continue;
+      }
+
+      for (const entry of collectMetadataPaths(document.metadata ?? {})) {
+        const existing = fields.get(entry.path);
+        fields.set(entry.path, existing && existing !== entry.inferredType ? "string" : entry.inferredType);
+      }
+    }
+
+    return [...fields.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([field, inferredType]) => ({ field, inferredType }));
+  }
+
   async listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]> {
     return [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)
@@ -1060,6 +1085,37 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return true;
   }
 }
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isScalarMetadataValue = (value: unknown): boolean =>
+  value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+
+const collectMetadataPaths = (
+  metadata: Record<string, unknown>,
+  prefix = "",
+): Array<{ path: string; inferredType: MetadataValueType }> => {
+  const paths: Array<{ path: string; inferredType: MetadataValueType }> = [];
+
+  for (const [key, value] of Object.entries(metadata)) {
+    const nextPath = prefix ? `${prefix}.${key}` : key;
+
+    if (isScalarMetadataValue(value)) {
+      paths.push({
+        path: nextPath,
+        inferredType: inferMetadataValueType(value),
+      });
+      continue;
+    }
+
+    if (isPlainObject(value)) {
+      paths.push(...collectMetadataPaths(value, nextPath));
+    }
+  }
+
+  return paths;
+};
 
 export class InMemoryDocumentStorage implements DocumentStoragePort {
   readonly objects = new Map<string, { buffer: Buffer; generation: string; sizeBytes: number }>();

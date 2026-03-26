@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import { authApi, seedWorkspaceSession } from '@/lib/api'
+import { authApi, getStoredActiveWorkspaceId, seedWorkspaceSession } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 
 interface LoginFormProps {
@@ -41,7 +41,8 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
     setIsLoading(true)
 
     try {
-      const response = await authApi.login({ email, password })
+      const preferredWorkspaceId = getStoredActiveWorkspaceId() ?? undefined
+      const response = await authApi.login({ email, password, preferredWorkspaceId })
       seedWorkspaceSession(response.workspaceId, response.token)
       await login(email, response.userId)
     } catch (error) {

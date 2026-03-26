@@ -420,7 +420,7 @@ describeIfDatabase("persistence integration", () => {
             lexicalQuery: "retreats",
             constraints: [
               {
-                family: "location",
+                signalKey: "document_location",
                 operator: "match",
                 confidence: 0.95,
                 summary: "in Estonia",
@@ -434,7 +434,7 @@ describeIfDatabase("persistence integration", () => {
           },
           appliedConstraints: [
             {
-              family: "location",
+              signalKey: "document_location",
               mode: "hard_filter",
               outcome: "applied",
               summary: "in Estonia",

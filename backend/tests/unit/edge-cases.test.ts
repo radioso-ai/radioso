@@ -154,7 +154,7 @@ describe("edge cases", () => {
             rerankTopK: 20,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            attributeControls: defaultAttributeControls(),
+            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -224,8 +224,8 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            attributeControls: defaultAttributeControls().map((control) =>
-              control.family === "location" || control.family === "money_value"
+            signalPolicies: defaultAttributeControls().map((control) =>
+              control.signalKey === "document_location" || control.signalKey === "document_amount"
                 ? { ...control, enabled: false }
                 : control,
             ),
@@ -272,13 +272,13 @@ describe("edge cases", () => {
     expect(result.diagnostics.parsedQuery?.semanticQuery).toBe("retreats in Estonia under 300 EUR");
     expect(result.diagnostics.appliedConstraints).toEqual([
       {
-        family: "location",
+        signalKey: "document_location",
         mode: "boost_only",
         outcome: "skipped",
         summary: "in Estonia",
       },
       {
-        family: "money_value",
+        signalKey: "document_amount",
         mode: "boost_only",
         outcome: "skipped",
         summary: "under 300 EUR",
@@ -301,7 +301,7 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            attributeControls: defaultAttributeControls(),
+            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -360,8 +360,8 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            attributeControls: defaultAttributeControls().map((control) =>
-              control.family === "location" || control.family === "money_value"
+            signalPolicies: defaultAttributeControls().map((control) =>
+              control.signalKey === "document_location" || control.signalKey === "document_amount"
                 ? { ...control, mode: "hard_filter" as const }
                 : control,
             ),
@@ -421,7 +421,7 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            attributeControls: defaultAttributeControls(),
+            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -504,7 +504,7 @@ describe("edge cases", () => {
     expect(result.diagnostics.parsedQuery?.constraints).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          family: "money_value",
+          signalKey: "document_amount",
           operator: "lte",
           summary: "under 300 EUR",
         }),
@@ -513,7 +513,7 @@ describe("edge cases", () => {
     expect(result.diagnostics.appliedConstraints).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          family: "money_value",
+          signalKey: "document_amount",
           outcome: "applied",
         }),
       ]),
@@ -534,7 +534,7 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            attributeControls: defaultAttributeControls(),
+            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -632,7 +632,7 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            attributeControls: defaultAttributeControls(),
+            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -736,7 +736,7 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            attributeControls: defaultAttributeControls(),
+            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -858,7 +858,7 @@ describe("edge cases", () => {
             rerankTopK: 5,
             warmthLevel: 5,
             citationDisplayEnabled: true,
-            attributeControls: defaultAttributeControls(),
+            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };

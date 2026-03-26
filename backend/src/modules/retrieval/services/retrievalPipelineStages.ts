@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { RetrievalSettingsRecord, AttributeFamilyControl } from "../../settings/domain/retrievalSettings.js";
+import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSettings.js";
 import type { ConversationContextWindow, RewrittenRetrievalQuery } from "../domain/retrievalPipelineTypes.js";
 import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
@@ -91,10 +91,10 @@ export interface RetrievalDiagnosticsStage {
 export const stripEnabledConstraintLiterals = (
   query: string,
   parsedQuery: ParsedQueryInterpretation,
-  enabledFamilies: Set<AttributeFamilyControl["family"]>,
+  enabledSignalKeys: Set<string>,
 ): string => {
   const stripped = parsedQuery.constraints
-    .filter((constraint) => enabledFamilies.has(constraint.family))
+    .filter((constraint) => enabledSignalKeys.has(constraint.signalKey))
     .reduce((value, constraint) => {
       if (!constraint.sourceText) {
         return value;
@@ -116,7 +116,7 @@ export const mergeParsedQueries = (
   const seenConstraintKeys = new Set<string>();
   const constraints = [...originalParsedQuery.constraints, ...rewrittenParsedQuery.constraints].filter((constraint) => {
     const key = JSON.stringify({
-      family: constraint.family,
+      signalKey: constraint.signalKey,
       operator: constraint.operator,
       summary: constraint.summary,
       value: constraint.value,

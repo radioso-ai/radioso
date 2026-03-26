@@ -65,8 +65,12 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
   router.get("/", requireApiToken(dependencies), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const { limit, offset } = documentListQuerySchema.parse(req.query);
-      const page = await dependencies.documentIngestionService.listForWorkspace(workspaceId, { limit, offset });
+      const parsedQuery = documentListQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const page = await dependencies.documentIngestionService.listForWorkspace(workspaceId, parsedQuery.data);
       res.status(200).json(page);
     } catch (error) {
       next(error);

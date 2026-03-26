@@ -299,6 +299,22 @@ describe("document contract", () => {
     ]);
   });
 
+  it("rejects invalid document list paging query values with a client error", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-list-query-error@example.com");
+
+    const response = await request(app)
+      .get("/api/v1/document/?limit=foo")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: "bad_request",
+      message: "Invalid request query",
+    });
+  });
+
   it("rejects inline updates for imported documents", async () => {
     const { app } = createTestApp();
 

@@ -20,26 +20,37 @@ export interface DocumentSearchHistoryEntry {
   previewTopTitles: string[];
 }
 
+export interface DocumentSearchHistoryPage {
+  searches: DocumentSearchHistoryEntry[];
+  total: number;
+}
+
 export class DocumentSearchHistoryService {
   constructor(
     private readonly auditEventRepository: AuditEventRepositoryPort,
     private readonly documentRepository: DocumentRepositoryPort,
   ) {}
 
-  async listHistory(workspaceId: string): Promise<DocumentSearchHistoryEntry[]> {
-    const events = await this.auditEventRepository.listDocumentSearchEventsByWorkspaceId(workspaceId);
+  async listHistory(
+    workspaceId: string,
+    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+  ): Promise<DocumentSearchHistoryPage> {
+    const { events, total } = await this.auditEventRepository.listDocumentSearchEventPageByWorkspaceId(workspaceId, input);
 
-    return events.map((event) => {
-      const metadata = normalizeAuditMetadata(event.metadata, event.id);
-      return {
-        searchId: metadata.searchId,
-        query: metadata.query,
-        createdAt: event.createdAt.toISOString(),
-        resultCount: metadata.resultCount,
-        traceAvailable: Boolean(metadata.retrievalTrace),
-        previewTopTitles: metadata.results.slice(0, 3).map((result) => result.title),
-      };
-    });
+    return {
+      searches: events.map((event) => {
+        const metadata = normalizeAuditMetadata(event.metadata, event.id);
+        return {
+          searchId: metadata.searchId,
+          query: metadata.query,
+          createdAt: event.createdAt.toISOString(),
+          resultCount: metadata.resultCount,
+          traceAvailable: Boolean(metadata.retrievalTrace),
+          previewTopTitles: metadata.results.slice(0, 3).map((result) => result.title),
+        };
+      }),
+      total,
+    };
   }
 
   async getHistory(workspaceId: string, searchId: string): Promise<DocumentSearchResponse> {

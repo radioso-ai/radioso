@@ -99,6 +99,7 @@ export function DocumentsView({
   const justClosedDocumentIdRef = useRef<string | null>(null)
   const documentSearch = useDocumentSearch()
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
+  const [totalDocuments, setTotalDocuments] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -119,10 +120,15 @@ export function DocumentsView({
   const [retryingDocumentId, setRetryingDocumentId] = useState<string | null>(null)
   const [retryErrorById, setRetryErrorById] = useState<Record<string, string>>({})
 
-  const loadDocuments = useCallback(async () => {
+  const loadDocuments = useCallback(async (page: number) => {
+    setIsLoading(true)
     try {
-      const docs = await documentsApi.listDocuments()
-      setDocuments(docs)
+      const response = await documentsApi.listDocuments({
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+      })
+      setDocuments(response.documents)
+      setTotalDocuments(response.total)
     } catch (error) {
       console.error('Failed to load documents:', error)
     } finally {
@@ -131,8 +137,8 @@ export function DocumentsView({
   }, [])
 
   useEffect(() => {
-    void loadDocuments()
-  }, [loadDocuments])
+    void loadDocuments(currentPage)
+  }, [currentPage, loadDocuments])
 
   useEffect(() => {
     const hasActiveProcessing = documents.some((document) => {
@@ -145,18 +151,18 @@ export function DocumentsView({
     }
 
     const timeoutId = window.setTimeout(() => {
-      void loadDocuments()
+      void loadDocuments(currentPage)
     }, 2000)
 
     return () => window.clearTimeout(timeoutId)
-  }, [documents, loadDocuments])
+  }, [currentPage, documents, loadDocuments])
 
   useEffect(() => {
     setCurrentPage((page) => {
-      const totalPages = Math.max(1, Math.ceil(documents.length / PAGE_SIZE))
+      const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
       return Math.min(page, totalPages)
     })
-  }, [documents.length])
+  }, [totalDocuments])
 
   const resetEditor = useCallback(() => {
     setEditorMode('create')
@@ -244,16 +250,6 @@ export function DocumentsView({
     selectedDocumentId,
   ])
 
-  const upsertDocument = async (documentId: string) => {
-    const nextDocument = await documentsApi.getDocument(documentId)
-    setDocuments((currentDocuments) => {
-      const withoutCurrent = currentDocuments.filter((document) => document.id !== documentId)
-      return [nextDocument, ...withoutCurrent].sort(
-        (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-      )
-    })
-  }
-
   const handleDialogChange = (open: boolean) => {
     if (!open && !isSaving) {
       justClosedDocumentIdRef.current = editingDocumentId
@@ -300,7 +296,9 @@ export function DocumentsView({
         ? await documentsApi.updateDocument(editingDocumentId, payload)
         : await documentsApi.createDocument(payload)
 
-      await upsertDocument(response.documentId)
+      void response
+      setCurrentPage(1)
+      await loadDocuments(1)
       setIsDialogOpen(false)
       if (editorMode === 'edit') {
         onSelectedDocumentChange?.(null)
@@ -324,8 +322,9 @@ export function DocumentsView({
     setIsImporting(true)
 
     try {
-      const response = await documentsApi.importDocument(importFile, importTitle)
-      await upsertDocument(response.documentId)
+      await documentsApi.importDocument(importFile, importTitle)
+      setCurrentPage(1)
+      await loadDocuments(1)
       setIsImportDialogOpen(false)
       resetImportDialog()
     } catch (error) {
@@ -360,12 +359,11 @@ export function DocumentsView({
 
     try {
       await documentsApi.deleteDocument(deletingId)
-      setDocuments((currentDocuments) => {
-        const nextDocuments = currentDocuments.filter((document) => document.id !== deletingId)
-        const nextTotalPages = Math.max(1, Math.ceil(nextDocuments.length / PAGE_SIZE))
-        setCurrentPage((page) => Math.min(page, nextTotalPages))
-        return nextDocuments
-      })
+      const nextTotalDocuments = Math.max(0, totalDocuments - 1)
+      const nextTotalPages = Math.max(1, Math.ceil(nextTotalDocuments / PAGE_SIZE))
+      const nextPage = Math.min(currentPage, nextTotalPages)
+      setCurrentPage(nextPage)
+      await loadDocuments(nextPage)
       if (selectedDocumentId === deletingId) {
         onSelectedDocumentChange?.(null)
       }
@@ -389,8 +387,8 @@ export function DocumentsView({
     })
 
     try {
-      const response = await documentsApi.reprocessDocument(documentId)
-      await upsertDocument(response.documentId)
+      await documentsApi.reprocessDocument(documentId)
+      await loadDocuments(currentPage)
     } catch (error) {
       setRetryErrorById((current) => ({
         ...current,
@@ -492,11 +490,11 @@ export function DocumentsView({
     )
   }
 
-  const totalPages = Math.max(1, Math.ceil(documents.length / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
   const safeCurrentPage = Math.min(currentPage, totalPages)
-  const pageStart = (safeCurrentPage - 1) * PAGE_SIZE
-  const paginatedDocuments = documents.slice(pageStart, pageStart + PAGE_SIZE)
-  const pageEnd = Math.min(pageStart + paginatedDocuments.length, documents.length)
+  const pageStart = totalDocuments === 0 ? 0 : (safeCurrentPage - 1) * PAGE_SIZE
+  const paginatedDocuments = documents
+  const pageEnd = Math.min(pageStart + paginatedDocuments.length, totalDocuments)
   const activeDeleteError = deleteCandidate ? deleteErrorById[deleteCandidate.id] : null
 
   const goToPreviousPage = () => {
@@ -510,7 +508,7 @@ export function DocumentsView({
   const renderPagination = () => (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm text-muted-foreground">
-        Showing {pageStart + 1}-{pageEnd} of {documents.length} documents
+        Showing {pageStart + 1}-{pageEnd} of {totalDocuments} documents
       </p>
       <Pagination className="mx-0 w-auto justify-start sm:justify-end">
         <PaginationContent>
@@ -719,7 +717,7 @@ export function DocumentsView({
           <div className="flex h-full items-center justify-center">
             <Spinner className="h-6 w-6" />
           </div>
-        ) : documents.length === 0 ? (
+        ) : totalDocuments === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
               <FileText className="h-5 w-5 text-primary" />
@@ -743,7 +741,7 @@ export function DocumentsView({
           </div>
         ) : (
           <div className="w-full space-y-4">
-            {documents.length > PAGE_SIZE && renderPagination()}
+            {totalDocuments > PAGE_SIZE && renderPagination()}
             <div className="grid w-full gap-3">
               {paginatedDocuments.map((doc) => {
                 const deleteError = deleteErrorById[doc.id]
@@ -839,7 +837,7 @@ export function DocumentsView({
                 )
               })}
             </div>
-            {documents.length > PAGE_SIZE && renderPagination()}
+            {totalDocuments > PAGE_SIZE && renderPagination()}
           </div>
         )}
       </div>

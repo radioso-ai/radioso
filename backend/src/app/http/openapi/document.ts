@@ -249,6 +249,7 @@ const DocumentListResponseSchema = registry.register(
   "DocumentListResponse",
   z.object({
     documents: z.array(DocumentSummarySchema),
+    total: z.number().int().min(0),
   }),
 );
 
@@ -294,6 +295,7 @@ const DocumentSearchHistoryListResponseSchema = registry.register(
   "DocumentSearchHistoryListResponse",
   z.object({
     searches: z.array(DocumentSearchHistoryEntrySchema),
+    total: z.number().int().min(0),
   }),
 );
 const DocumentSearchRequestSchema = registry.register("DocumentSearchRequest", documentSearchSchema);
@@ -453,6 +455,7 @@ const ChatHistoryListResponseSchema = registry.register(
   "ChatHistoryListResponse",
   z.object({
     conversations: z.array(ChatConversationSummarySchema),
+    total: z.number().int().min(0),
   }),
 );
 
@@ -523,6 +526,10 @@ const ChatConversationDetailSchema = registry.register(
     messageCount: z.number().int().min(0),
     userMessageCount: z.number().int().min(0),
     assistantMessageCount: z.number().int().min(0),
+    messagesTotal: z.number().int().min(0),
+    messageWindowOffset: z.number().int().min(0),
+    messageWindowLimit: z.number().int().min(1),
+    hasOlderMessages: z.boolean(),
     messages: z.array(ChatConversationMessageSchema),
   }),
 );
@@ -544,6 +551,7 @@ const PublicConversationListResponseSchema = registry.register(
   z.object({
     workspaceName: z.string(),
     conversations: z.array(PublicConversationSummarySchema),
+    total: z.number().int().min(0),
   }),
 );
 
@@ -1297,6 +1305,12 @@ registry.registerPath({
   summary: "List document search history for the authenticated workspace",
   operationId: "listDocumentSearchHistory",
   security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    query: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      offset: z.number().int().min(0).optional(),
+    }),
+  },
   responses: {
     200: {
       description: "Document search history returned",
@@ -1362,6 +1376,12 @@ registry.registerPath({
   summary: "List documents for the authenticated workspace",
   operationId: "listDocuments",
   security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    query: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      offset: z.number().int().min(0).optional(),
+    }),
+  },
   responses: {
     200: {
       description: "Documents returned",
@@ -1653,6 +1673,12 @@ registry.registerPath({
   summary: "List saved chat conversations",
   operationId: "listChatHistory",
   security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    query: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      offset: z.number().int().min(0).optional(),
+    }),
+  },
   responses: {
     200: {
       description: "Chat history summaries",
@@ -1682,6 +1708,10 @@ registry.registerPath({
   security: [{ [bearerAuthScheme.name]: [] }],
   request: {
     params: conversationParamsSchema,
+    query: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      offset: z.number().int().min(0).optional(),
+    }),
   },
   responses: {
     200: {
@@ -2004,6 +2034,10 @@ registry.registerPath({
   security: [{ [anonymousSessionCookieScheme.name]: [] }],
   request: {
     params: tokenPathParamsSchema,
+    query: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      offset: z.number().int().min(0).optional(),
+    }),
   },
   responses: {
     200: {
@@ -2034,6 +2068,10 @@ registry.registerPath({
   security: [{ [anonymousSessionCookieScheme.name]: [] }],
   request: {
     params: tokenPathParamsSchema.extend(publicConversationParamsSchema.shape),
+    query: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      offset: z.number().int().min(0).optional(),
+    }),
   },
   responses: {
     200: {

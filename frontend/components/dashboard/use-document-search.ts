@@ -42,8 +42,8 @@ export function useDocumentSearch() {
     setHistoryError(null)
 
     try {
-      const searches = await documentsApi.listSearchHistory()
-      setHistory(searches)
+      const response = await documentsApi.listSearchHistory({ limit: 25, offset: 0 })
+      setHistory(response.searches)
     } catch (error) {
       setHistoryError(getErrorMessage(error, 'Failed to load document search history.'))
     } finally {

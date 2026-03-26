@@ -6,6 +6,7 @@ import type {
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
+  DocumentSummaryRecord,
   DocumentUpdateInput,
 } from "../../modules/documents/services/documentIngestionService.js";
 import type { Database } from "../../shared/infra/database.js";
@@ -73,6 +74,40 @@ const documentSelect = `
   source_storage_generation,
   source_size_bytes
 `;
+
+const documentSummarySelect = `
+  id,
+  workspace_id,
+  title,
+  status,
+  created_at,
+  updated_at,
+  metadata,
+  source_kind,
+  source_filename,
+  source_mime_type,
+  source_storage_bucket,
+  source_storage_object,
+  source_storage_generation,
+  source_size_bytes
+`;
+
+const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => ({
+  id: row.id,
+  workspaceId: row.workspace_id,
+  title: row.title,
+  status: row.status,
+  createdAt: new Date(row.created_at),
+  updatedAt: new Date(row.updated_at),
+  metadata: row.metadata ?? {},
+  sourceKind: row.source_kind,
+  sourceFilename: row.source_filename,
+  sourceMimeType: row.source_mime_type,
+  sourceStorageBucket: row.source_storage_bucket,
+  sourceStorageObject: row.source_storage_object,
+  sourceStorageGeneration: row.source_storage_generation,
+  sourceSizeBytes: row.source_size_bytes,
+});
 
 export class DocumentRepository implements DocumentRepositoryPort {
   constructor(private readonly database: Database) {}
@@ -235,6 +270,33 @@ export class DocumentRepository implements DocumentRepositoryPort {
     );
 
     return rows.map(mapDocument);
+  }
+
+  async listSummaryPageByWorkspaceId(
+    workspaceId: string,
+    input: { limit: number; offset: number },
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number }> {
+    const [countRow] = await this.database.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM documents
+       WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+
+    const rows = await this.database.query<DocumentRow>(
+      `SELECT ${documentSummarySelect}
+       FROM documents
+       WHERE workspace_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2
+       OFFSET $3`,
+      [workspaceId, input.limit, input.offset],
+    );
+
+    return {
+      documents: rows.map(mapDocumentSummary),
+      total: Number(countRow?.count ?? "0"),
+    };
   }
 
   async findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null> {

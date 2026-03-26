@@ -770,10 +770,15 @@
             "items": {
               "$ref": "#/components/schemas/DocumentSummary"
             }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
-          "documents"
+          "documents",
+          "total"
         ]
       },
       "DocumentSearchAction": {
@@ -918,10 +923,15 @@
             "items": {
               "$ref": "#/components/schemas/DocumentSearchHistoryEntry"
             }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
-          "searches"
+          "searches",
+          "total"
         ]
       },
       "DocumentSearchRequest": {
@@ -1459,10 +1469,15 @@
             "items": {
               "$ref": "#/components/schemas/ChatConversationSummary"
             }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
-          "conversations"
+          "conversations",
+          "total"
         ]
       },
       "ValidationDisposition": {
@@ -1674,6 +1689,21 @@
             "type": "integer",
             "minimum": 0
           },
+          "messagesTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "messageWindowOffset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "messageWindowLimit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "hasOlderMessages": {
+            "type": "boolean"
+          },
           "messages": {
             "type": "array",
             "items": {
@@ -1690,6 +1720,10 @@
           "messageCount",
           "userMessageCount",
           "assistantMessageCount",
+          "messagesTotal",
+          "messageWindowOffset",
+          "messageWindowLimit",
+          "hasOlderMessages",
           "messages"
         ]
       },
@@ -1745,11 +1779,16 @@
             "items": {
               "$ref": "#/components/schemas/PublicConversationSummary"
             }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
           "workspaceName",
-          "conversations"
+          "conversations",
+          "total"
         ]
       },
       "RateLimitExceededResponse": {
@@ -2823,6 +2862,27 @@
             "bearerAuth": []
           }
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Document search history returned",
@@ -2914,6 +2974,27 @@
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
           }
         ],
         "responses": {
@@ -3350,6 +3431,27 @@
             "bearerAuth": []
           }
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Chat history summaries",
@@ -3395,6 +3497,25 @@
             "required": true,
             "name": "conversationId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
           }
         ],
         "responses": {
@@ -3878,6 +3999,25 @@
             "required": true,
             "name": "token",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
           }
         ],
         "responses": {
@@ -3930,6 +4070,25 @@
             "required": true,
             "name": "conversationId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
           }
         ],
         "responses": {

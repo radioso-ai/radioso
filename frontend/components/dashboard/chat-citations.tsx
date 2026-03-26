@@ -150,7 +150,7 @@ export function AssistantMessageContent({
 
     contentNodes.push(
       <Fragment key={`segment-${segmentIndex}`}>
-        <AssistantMarkdownContent content={segment.text} />
+        <AssistantMarkdownContent content={segment.text} inline={dedupedIndices.length > 0} />
         {dedupedIndices.map((citationIndex) => {
           const citation = citations[citationIndex]
           if (!citation) {

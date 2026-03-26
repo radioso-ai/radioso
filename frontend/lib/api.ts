@@ -304,6 +304,7 @@ export interface DocumentDetails extends DocumentSummary {
 
 export interface DocumentListResponse {
   documents: DocumentSummary[]
+  total: number
 }
 
 export interface DocumentSearchAction {
@@ -346,6 +347,7 @@ export interface DocumentSearchHistoryEntry {
 
 export interface DocumentSearchHistoryListResponse {
   searches: DocumentSearchHistoryEntry[]
+  total: number
 }
 
 export interface ChatRequest {
@@ -498,12 +500,17 @@ export interface ChatConversationDetail {
   messageCount: number
   userMessageCount: number
   assistantMessageCount: number
+  messagesTotal: number
+  messageWindowOffset: number
+  messageWindowLimit: number
+  hasOlderMessages: boolean
   messages: ChatConversationTurn[]
 }
 
 export interface ChatHistoryListResponse {
   workspaceName?: string
   conversations: ChatConversationSummary[]
+  total: number
 }
 
 interface ChatStreamHandlers {
@@ -865,11 +872,19 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async listDocuments(): Promise<DocumentSummary[]> {
-    const response = await request<DocumentListResponse>("/document/", {
+  async listDocuments(input?: { limit?: number; offset?: number }): Promise<DocumentListResponse> {
+    const searchParams = new URLSearchParams()
+    if (input?.limit !== undefined) {
+      searchParams.set('limit', String(input.limit))
+    }
+    if (input?.offset !== undefined) {
+      searchParams.set('offset', String(input.offset))
+    }
+
+    const query = searchParams.toString()
+    return request<DocumentListResponse>(`/document/${query ? `?${query}` : ''}`, {
       method: "GET",
     }, { withApiToken: true })
-    return response.documents
   },
 
   async updateDocument(documentId: string, data: DocumentCreateRequest): Promise<DocumentCreateResponse> {
@@ -914,11 +929,19 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async listSearchHistory(): Promise<DocumentSearchHistoryEntry[]> {
-    const response = await request<DocumentSearchHistoryListResponse>('/document/search/history', {
+  async listSearchHistory(input?: { limit?: number; offset?: number }): Promise<DocumentSearchHistoryListResponse> {
+    const searchParams = new URLSearchParams()
+    if (input?.limit !== undefined) {
+      searchParams.set('limit', String(input.limit))
+    }
+    if (input?.offset !== undefined) {
+      searchParams.set('offset', String(input.offset))
+    }
+
+    const query = searchParams.toString()
+    return request<DocumentSearchHistoryListResponse>(`/document/search/history${query ? `?${query}` : ''}`, {
       method: 'GET',
     }, { withApiToken: true })
-    return response.searches
   },
 
   async getSearchHistory(searchId: string): Promise<DocumentSearchResponse> {
@@ -977,15 +1000,35 @@ export const chatApi = {
     return streamChatEvents(response, handlers)
   },
 
-  async listHistory(): Promise<ChatConversationSummary[]> {
-    const response = await request<ChatHistoryListResponse>('/chat/history', {
+  async listHistory(input?: { limit?: number; offset?: number }): Promise<ChatHistoryListResponse> {
+    const searchParams = new URLSearchParams()
+    if (input?.limit !== undefined) {
+      searchParams.set('limit', String(input.limit))
+    }
+    if (input?.offset !== undefined) {
+      searchParams.set('offset', String(input.offset))
+    }
+
+    const query = searchParams.toString()
+    return request<ChatHistoryListResponse>(`/chat/history${query ? `?${query}` : ''}`, {
       method: 'GET',
     }, { withApiToken: true })
-    return response.conversations
   },
 
-  async getHistoryConversation(conversationId: string): Promise<ChatConversationDetail> {
-    return request<ChatConversationDetail>(`/chat/history/${conversationId}`, {
+  async getHistoryConversation(
+    conversationId: string,
+    input?: { limit?: number; offset?: number },
+  ): Promise<ChatConversationDetail> {
+    const searchParams = new URLSearchParams()
+    if (input?.limit !== undefined) {
+      searchParams.set('limit', String(input.limit))
+    }
+    if (input?.offset !== undefined) {
+      searchParams.set('offset', String(input.offset))
+    }
+
+    const query = searchParams.toString()
+    return request<ChatConversationDetail>(`/chat/history/${conversationId}${query ? `?${query}` : ''}`, {
       method: 'GET',
     }, { withApiToken: true })
   },
@@ -1067,15 +1110,40 @@ export const publicChatApi = {
     return streamChatEvents(response, handlers)
   },
 
-  async listConversations(token: string): Promise<ChatHistoryListResponse> {
-    return request<ChatHistoryListResponse>(`/public/chat/${token}`, {
+  async listConversations(
+    token: string,
+    input?: { limit?: number; offset?: number },
+  ): Promise<ChatHistoryListResponse> {
+    const searchParams = new URLSearchParams()
+    if (input?.limit !== undefined) {
+      searchParams.set('limit', String(input.limit))
+    }
+    if (input?.offset !== undefined) {
+      searchParams.set('offset', String(input.offset))
+    }
+
+    const query = searchParams.toString()
+    return request<ChatHistoryListResponse>(`/public/chat/${token}${query ? `?${query}` : ''}`, {
       method: 'GET',
       credentials: 'include',
     })
   },
 
-  async getConversationDetail(token: string, conversationId: string): Promise<ChatConversationDetail> {
-    return request<ChatConversationDetail>(`/public/chat/${token}/history/${conversationId}`, {
+  async getConversationDetail(
+    token: string,
+    conversationId: string,
+    input?: { limit?: number; offset?: number },
+  ): Promise<ChatConversationDetail> {
+    const searchParams = new URLSearchParams()
+    if (input?.limit !== undefined) {
+      searchParams.set('limit', String(input.limit))
+    }
+    if (input?.offset !== undefined) {
+      searchParams.set('offset', String(input.offset))
+    }
+
+    const query = searchParams.toString()
+    return request<ChatConversationDetail>(`/public/chat/${token}/history/${conversationId}${query ? `?${query}` : ''}`, {
       method: 'GET',
       credentials: 'include',
     })

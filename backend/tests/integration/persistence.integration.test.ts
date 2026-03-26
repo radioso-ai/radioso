@@ -41,8 +41,14 @@ const noopAuditRepository = {
   async listChatAnswerEventsByConversationId() {
     return [];
   },
+  async listChatAnswerEventsByAssistantMessageIds() {
+    return [];
+  },
   async listDocumentSearchEventsByWorkspaceId() {
     return [];
+  },
+  async listDocumentSearchEventPageByWorkspaceId() {
+    return { events: [], total: 0 };
   },
   async findDocumentSearchEventBySearchId() {
     return null;

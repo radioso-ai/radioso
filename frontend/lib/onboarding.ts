@@ -177,20 +177,22 @@ export const useWorkspaceOnboarding = (
     setIsLoading(true)
 
     try {
-      const [nextDocuments, conversations] = await Promise.all([
-        documentsApi.listDocuments(),
-        chatApi.listHistory(),
+      const [documentPage, conversationPage] = await Promise.all([
+        documentsApi.listDocuments({ limit: 100, offset: 0 }),
+        chatApi.listHistory({ limit: 100, offset: 0 }),
       ])
+      const nextDocuments = documentPage.documents
+      const conversations = conversationPage.conversations
 
-      const nextCompleted = conversations.length > 0 || getWorkspaceFlag(ONBOARDING_COMPLETED_KEY, workspaceId)
+      const nextCompleted = conversationPage.total > 0 || getWorkspaceFlag(ONBOARDING_COMPLETED_KEY, workspaceId)
       const nextActive =
         !nextCompleted &&
         (getWorkspaceFlag(ONBOARDING_ACTIVE_KEY, workspaceId) ||
           shouldAutoActivateOnboarding({
             workspaceId,
             workspaceCount,
-            documentCount: nextDocuments.length,
-            conversationCount: conversations.length,
+            documentCount: documentPage.total,
+            conversationCount: conversationPage.total,
           }))
 
       if (nextActive) {
@@ -198,7 +200,7 @@ export const useWorkspaceOnboarding = (
       }
 
       setDocuments(nextDocuments)
-      setHasCompletedChat(conversations.length > 0)
+      setHasCompletedChat(conversationPage.total > 0)
       setIsOnboardingCompleted(nextCompleted)
       setIsOnboardingActive(nextActive)
     } finally {

@@ -57,9 +57,12 @@ function AnonymousChatContent() {
     workspaceName,
     isLoading,
     isHydrating,
+    isLoadingOlderMessages,
     isUnavailable,
+    hasOlderMessages,
     rateLimitError,
     retryAfterSeconds,
+    loadOlderMessages,
     sendMessage,
   } = useAnonymousChat()
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -127,6 +130,14 @@ function AnonymousChatContent() {
           </div>
         ) : (
           <div className="mx-auto max-w-3xl space-y-6">
+            {hasOlderMessages ? (
+              <div className="flex justify-center">
+                <Button type="button" size="sm" variant="outline" onClick={() => void loadOlderMessages()} disabled={isLoadingOlderMessages}>
+                  {isLoadingOlderMessages ? <Spinner className="mr-2 h-4 w-4" /> : null}
+                  Load older messages
+                </Button>
+              </div>
+            ) : null}
             {messages.map((message) => (
               <div
                 key={message.id}

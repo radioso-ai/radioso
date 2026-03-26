@@ -107,6 +107,10 @@ export interface DocumentRepositoryPort {
   }): Promise<DocumentRecord | null>;
   findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null>;
   listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]>;
+  listSummaryPageByWorkspaceId(
+    workspaceId: string,
+    input: { limit: number; offset: number },
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number }>;
   update(input: DocumentUpdateInput): Promise<DocumentRecord>;
   updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord>;
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
@@ -139,8 +143,23 @@ export interface DocumentSummary {
   sourceMimeType?: string | null;
 }
 
+export interface DocumentListPage {
+  documents: DocumentSummary[];
+  total: number;
+}
+
 export interface DocumentDetails extends DocumentSummary {
   content: string;
+}
+
+export interface DocumentSummaryRecord extends DocumentSourceRecord {
+  id: string;
+  workspaceId: string;
+  title: string;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+  metadata: Record<string, unknown>;
 }
 
 export class DocumentIngestionService {
@@ -290,12 +309,18 @@ export class DocumentIngestionService {
     return this.toDetails(document);
   }
 
-  async listForWorkspace(workspaceId: string): Promise<DocumentSummary[]> {
-    const documents = await this.documentRepository.listByWorkspaceId(workspaceId);
-    return documents.map((document) => this.toSummary(document));
+  async listForWorkspace(
+    workspaceId: string,
+    input: { limit: number; offset: number },
+  ): Promise<DocumentListPage> {
+    const { documents, total } = await this.documentRepository.listSummaryPageByWorkspaceId(workspaceId, input);
+    return {
+      documents: documents.map((document) => this.toSummary(document)),
+      total,
+    };
   }
 
-  private toSummary(document: DocumentRecord): DocumentSummary {
+  private toSummary(document: DocumentSummaryRecord): DocumentSummary {
     return {
       id: document.id,
       title: document.title,

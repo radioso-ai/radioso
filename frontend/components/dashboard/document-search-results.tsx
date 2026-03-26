@@ -1,5 +1,6 @@
 'use client'
 
+import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import type { DocumentSearchResponse } from '@/lib/api'
 
 export function DocumentSearchResults({
@@ -46,16 +47,7 @@ export function DocumentSearchResults({
                     Rank {result.rank} • Score {result.score.toFixed(3)}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  {Object.entries(result.metadata ?? {}).map(([key, value]) => (
-                    <span
-                      key={key}
-                      className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                    >
-                      {key}: {String(value)}
-                    </span>
-                  ))}
-                </div>
+                <MetadataBadges metadata={result.metadata} className="" />
                 {result.matchEvidence.map((evidence) => (
                   <p key={evidence} className="text-sm text-muted-foreground">
                     {evidence}

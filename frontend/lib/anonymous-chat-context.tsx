@@ -38,9 +38,12 @@ interface AnonymousChatContextValue {
   workspaceName: string | null
   isLoading: boolean
   isHydrating: boolean
+  isLoadingOlderMessages: boolean
   isUnavailable: boolean
+  hasOlderMessages: boolean
   rateLimitError: string | null
   retryAfterSeconds: number | null
+  loadOlderMessages: () => Promise<void>
   sendMessage: (content: string) => Promise<void>
 }
 
@@ -109,6 +112,8 @@ const getLatestAssistantMessage = (detail: ChatConversationDetail): ChatMessage 
   return assistantMessages.at(-1) ?? null
 }
 
+const MESSAGE_WINDOW_SIZE = 50
+
 export function AnonymousChatProvider({
   token,
   children,
@@ -121,7 +126,9 @@ export function AnonymousChatProvider({
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
   const [isHydrating, setIsHydrating] = useState(true)
+  const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false)
   const [isUnavailable, setIsUnavailable] = useState(false)
+  const [hasOlderMessages, setHasOlderMessages] = useState(false)
   const [rateLimitError, setRateLimitError] = useState<string | null>(null)
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null)
 
@@ -134,11 +141,12 @@ export function AnonymousChatProvider({
       setMessages([])
       setWorkspaceName(null)
       setConversationId(undefined)
+      setHasOlderMessages(false)
       setRateLimitError(null)
       setRetryAfterSeconds(null)
 
       try {
-        const response = await publicChatApi.listConversations(token)
+        const response = await publicChatApi.listConversations(token, { limit: 1, offset: 0 })
         if (cancelled) return
 
         setWorkspaceName(response.workspaceName ?? null)
@@ -148,11 +156,15 @@ export function AnonymousChatProvider({
           return
         }
 
-        const detail = await publicChatApi.getConversationDetail(token, response.conversations[0].id)
+        const detail = await publicChatApi.getConversationDetail(token, response.conversations[0].id, {
+          limit: MESSAGE_WINDOW_SIZE,
+          offset: 0,
+        })
         if (cancelled) return
 
         setConversationId(detail.conversationId)
         setMessages(toChatMessages(detail))
+        setHasOlderMessages(detail.hasOlderMessages)
       } catch (error) {
         if (cancelled) return
         const structuredError = getErrorResponse(error)
@@ -204,13 +216,17 @@ export function AnonymousChatProvider({
         return false
       }
 
-      const detail = await publicChatApi.getConversationDetail(token, nextConversationId)
+      const detail = await publicChatApi.getConversationDetail(token, nextConversationId, {
+        limit: MESSAGE_WINDOW_SIZE,
+        offset: 0,
+      })
       const assistantMessage = getLatestAssistantMessage(detail)
       if (!assistantMessage) {
         return false
       }
 
       setConversationId(detail.conversationId)
+      setHasOlderMessages(detail.hasOlderMessages)
       setMessages((prev) =>
         prev.map((message) =>
           message.id === assistantMessageId
@@ -342,18 +358,57 @@ export function AnonymousChatProvider({
     [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, recoverAssistantMessage, token],
   )
 
+  const loadOlderMessages = useCallback(async () => {
+    if (!conversationId || isLoadingOlderMessages || !hasOlderMessages) {
+      return
+    }
+
+    setIsLoadingOlderMessages(true)
+
+    try {
+      const detail = await publicChatApi.getConversationDetail(token, conversationId, {
+        limit: MESSAGE_WINDOW_SIZE,
+        offset: messages.length,
+      })
+      const olderMessages = toChatMessages(detail)
+      setMessages((current) => {
+        const seen = new Set(current.map((message) => message.id))
+        const nextOlder = olderMessages.filter((message) => !seen.has(message.id))
+        return [...nextOlder, ...current]
+      })
+      setHasOlderMessages(detail.hasOlderMessages)
+    } finally {
+      setIsLoadingOlderMessages(false)
+    }
+  }, [conversationId, hasOlderMessages, isLoadingOlderMessages, messages.length, token])
+
   const value = useMemo<AnonymousChatContextValue>(
     () => ({
       messages,
       workspaceName,
       isLoading,
       isHydrating,
+      isLoadingOlderMessages,
       isUnavailable,
+      hasOlderMessages,
       rateLimitError,
       retryAfterSeconds,
+      loadOlderMessages,
       sendMessage,
     }),
-    [messages, workspaceName, isLoading, isHydrating, isUnavailable, rateLimitError, retryAfterSeconds, sendMessage],
+    [
+      messages,
+      workspaceName,
+      isLoading,
+      isHydrating,
+      isLoadingOlderMessages,
+      isUnavailable,
+      hasOlderMessages,
+      rateLimitError,
+      retryAfterSeconds,
+      loadOlderMessages,
+      sendMessage,
+    ],
   )
 
   return (

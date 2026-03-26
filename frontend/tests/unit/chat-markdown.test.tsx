@@ -38,6 +38,15 @@ const value = 1
     expect(html).toContain('Second line')
   })
 
+  it('autolinks bare http urls in assistant text', () => {
+    const html = renderToStaticMarkup(
+      <AssistantMarkdownContent content={'Visit https://example.com for more details.'} />,
+    )
+
+    expect(html).toContain('href="https://example.com"')
+    expect(html).toContain('https://example.com')
+  })
+
   it('suppresses images and flattens headings to chat-friendly text blocks', () => {
     const html = renderToStaticMarkup(
       <AssistantMarkdownContent content={'# Big title\n\n![tracking](https://evil.com/pixel.png)'} />,

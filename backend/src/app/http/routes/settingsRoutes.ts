@@ -6,11 +6,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
-import {
-  retrievalSignalDefinitions,
-  retrievalSignalKeys,
-  signalPolicyModes,
-} from "../../../modules/settings/domain/retrievalSettings.js";
+import { signalPolicyModes } from "../../../modules/settings/domain/retrievalSettings.js";
 import {
   FIXED_WINDOW_CHUNK_OVERLAP_MAX,
   FIXED_WINDOW_CHUNK_OVERLAP_MIN,
@@ -33,7 +29,7 @@ export const updateSettingsSchema = z.object({
   signalPolicies: z
     .array(
       z.object({
-        signalKey: z.enum(retrievalSignalKeys),
+        signalKey: z.string().min(1),
         enabled: z.boolean(),
         mode: z.enum(signalPolicyModes),
       }),
@@ -61,10 +57,13 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
   router.get("/retrieval", requireApiToken(dependencies), async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const settings = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
+      const [settings, signalDefinitions] = await Promise.all([
+        dependencies.retrievalSettingsService.getForWorkspace(workspaceId),
+        dependencies.retrievalSettingsService.listSignalDefinitions(workspaceId),
+      ]);
       res.status(200).json({
         ...settings,
-        signalDefinitions: retrievalSignalDefinitions,
+        signalDefinitions,
       });
     } catch (error) {
       next(error);
@@ -80,9 +79,10 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         signalPolicies: req.body.signalPolicies ?? existing.signalPolicies,
         customInstruction: req.body.customInstruction ?? existing.customInstruction,
       });
+      const signalDefinitions = await dependencies.retrievalSettingsService.listSignalDefinitions(workspaceId);
       res.status(200).json({
         ...settings,
-        signalDefinitions: retrievalSignalDefinitions,
+        signalDefinitions,
       });
     } catch (error) {
       next(error);

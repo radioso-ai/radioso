@@ -1,12 +1,7 @@
 import { badRequest } from "../../../shared/domain/errors.js";
 
-export const retrievalSignalKeys = [
-  "document_date",
-  "document_period",
-  "document_amount",
-  "document_location",
-] as const;
-export type RetrievalSignalKey = (typeof retrievalSignalKeys)[number];
+export type RetrievalSignalKey = string;
+export const METADATA_SIGNAL_PREFIX = "metadata.";
 
 export const signalPolicyModes = ["boost_only", "hard_filter"] as const;
 export type SignalPolicyMode = (typeof signalPolicyModes)[number];
@@ -15,30 +10,12 @@ export interface RetrievalSignalDefinition {
   key: RetrievalSignalKey;
   label: string;
   description: string;
+  source: "system" | "metadata";
 }
 
-export const retrievalSignalDefinitions: RetrievalSignalDefinition[] = [
-  {
-    key: "document_date",
-    label: "Document date",
-    description: "Use exact dates such as effective days, deadlines, or dated entries.",
-  },
-  {
-    key: "document_period",
-    label: "Document period",
-    description: "Use spans such as validity windows, booking periods, or event ranges.",
-  },
-  {
-    key: "document_amount",
-    label: "Document amount",
-    description: "Use numeric amounts such as prices, fees, or budget thresholds.",
-  },
-  {
-    key: "document_location",
-    label: "Document location",
-    description: "Use place references such as cities, countries, or venues.",
-  },
-];
+export const builtInRetrievalSignalDefinitions: RetrievalSignalDefinition[] = [];
+
+export const retrievalSignalDefinitions = builtInRetrievalSignalDefinitions;
 
 export interface RetrievalSignalPolicy {
   signalKey: RetrievalSignalKey;
@@ -58,6 +35,72 @@ const legacyFamilyToSignalKey: Record<string, RetrievalSignalKey> = {
   money_value: "document_amount",
   location: "document_location",
 };
+
+export const isMetadataSignalKey = (signalKey: string): signalKey is `${typeof METADATA_SIGNAL_PREFIX}${string}` =>
+  signalKey.startsWith(METADATA_SIGNAL_PREFIX) && signalKey.length > METADATA_SIGNAL_PREFIX.length;
+
+export const metadataPathFromSignalKey = (signalKey: string): string | null =>
+  isMetadataSignalKey(signalKey) ? signalKey.slice(METADATA_SIGNAL_PREFIX.length) : null;
+
+const humanizeMetadataPath = (path: string): string =>
+  path
+    .split(".")
+    .map((segment) =>
+      segment
+        .replace(/[_-]+/g, " ")
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .trim(),
+    )
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" / ");
+
+export const buildMetadataSignalDefinition = (path: string): RetrievalSignalDefinition => {
+  const normalizedPath = path.trim();
+
+  return {
+    key: `${METADATA_SIGNAL_PREFIX}${normalizedPath}`,
+    label: humanizeMetadataPath(normalizedPath),
+    description: `Use explicit ${normalizedPath} metadata matches such as ${normalizedPath}:value in retrieval queries.`,
+    source: "metadata",
+  };
+};
+
+export const definitionForSignalKey = (signalKey: string): RetrievalSignalDefinition | null => {
+  const metadataPath = metadataPathFromSignalKey(signalKey);
+  return metadataPath ? buildMetadataSignalDefinition(metadataPath) : null;
+};
+
+export const mergeSignalDefinitions = (...groups: RetrievalSignalDefinition[][]): RetrievalSignalDefinition[] => {
+  const merged = new Map<string, RetrievalSignalDefinition>();
+
+  for (const group of groups) {
+    for (const definition of group) {
+      if (!merged.has(definition.key)) {
+        merged.set(definition.key, definition);
+      }
+    }
+  }
+
+  return [...merged.values()];
+};
+
+export const definitionsFromPolicies = (
+  policies: Array<Pick<RetrievalSignalPolicy, "signalKey">>,
+): RetrievalSignalDefinition[] =>
+  mergeSignalDefinitions(
+    policies
+      .map((policy) => definitionForSignalKey(policy.signalKey))
+      .filter((definition): definition is RetrievalSignalDefinition => definition !== null),
+  );
+
+const isSupportedSignalKey = (signalKey: string): boolean => isMetadataSignalKey(signalKey);
+
+const defaultPolicyForDefinition = (definition: RetrievalSignalDefinition): RetrievalSignalPolicy => ({
+  signalKey: definition.key,
+  enabled: false,
+  mode: "boost_only",
+});
 
 export interface RetrievalSettingsRecord {
   workspaceId: string;
@@ -86,16 +129,21 @@ export interface RetrievalSettingsInput {
   customInstruction: string;
 }
 
-export const defaultSignalPolicies = (): RetrievalSignalPolicy[] =>
-  retrievalSignalKeys.map((signalKey) => ({
-    signalKey,
-    enabled: true,
-    mode: "boost_only",
-  }));
+export const defaultSignalPolicies = (
+  signalDefinitions: RetrievalSignalDefinition[] = builtInRetrievalSignalDefinitions,
+): RetrievalSignalPolicy[] => signalDefinitions.map(defaultPolicyForDefinition);
 
-export const defaultAttributeControls = defaultSignalPolicies;
+export const defaultAttributeControls = (): RetrievalSignalPolicy[] => [
+  { signalKey: "document_date", enabled: true, mode: "boost_only" },
+  { signalKey: "document_period", enabled: true, mode: "boost_only" },
+  { signalKey: "document_amount", enabled: true, mode: "boost_only" },
+  { signalKey: "document_location", enabled: true, mode: "boost_only" },
+];
 
-export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettingsRecord => ({
+export const defaultRetrievalSettings = (
+  workspaceId: string,
+  signalDefinitions: RetrievalSignalDefinition[] = builtInRetrievalSignalDefinitions,
+): RetrievalSettingsRecord => ({
   workspaceId,
   queryRewriteEnabled: false,
   rerankEnabled: false,
@@ -104,15 +152,37 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   rerankTopK: 5,
   warmthLevel: 5,
   citationDisplayEnabled: true,
-  signalPolicies: defaultSignalPolicies(),
+  signalPolicies: defaultSignalPolicies(signalDefinitions),
   customInstruction: "",
   createdAt: new Date(),
   updatedAt: new Date(),
 });
 
-export const normalizeSignalPolicies = (value: unknown): RetrievalSignalPolicy[] => {
+export const normalizeSignalPolicies = (
+  value: unknown,
+  signalDefinitions: RetrievalSignalDefinition[] = builtInRetrievalSignalDefinitions,
+): RetrievalSignalPolicy[] => {
+  const supportedDefinitions = mergeSignalDefinitions(
+    signalDefinitions,
+    Array.isArray(value)
+      ? definitionsFromPolicies(
+          value
+            .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"))
+            .map((entry) => ({
+              signalKey:
+                typeof entry.signalKey === "string"
+                  ? entry.signalKey
+                  : typeof (entry as LegacyAttributeControl).family === "string"
+                    ? legacyFamilyToSignalKey[(entry as LegacyAttributeControl).family ?? ""] ?? ""
+                    : "",
+            }))
+            .filter((entry) => entry.signalKey.length > 0),
+        )
+      : [],
+  );
+
   if (!Array.isArray(value)) {
-    return defaultSignalPolicies();
+    return defaultSignalPolicies(supportedDefinitions);
   }
 
   const normalizedByKey = new Map<RetrievalSignalKey, RetrievalSignalPolicy>();
@@ -130,31 +200,28 @@ export const normalizeSignalPolicies = (value: unknown): RetrievalSignalPolicy[]
           ? legacyFamilyToSignalKey[candidate.family] ?? null
           : null;
 
-    if (!signalKeyValue || !retrievalSignalKeys.includes(signalKeyValue as RetrievalSignalKey)) {
+    if (!signalKeyValue || !isSupportedSignalKey(signalKeyValue)) {
       continue;
     }
 
-    const signalKey = signalKeyValue as RetrievalSignalKey;
-    normalizedByKey.set(signalKey, {
-      signalKey,
-      enabled: typeof candidate.enabled === "boolean" ? candidate.enabled : true,
+    normalizedByKey.set(signalKeyValue, {
+      signalKey: signalKeyValue,
+      enabled: typeof candidate.enabled === "boolean" ? candidate.enabled : defaultPolicyForDefinition(definitionForSignalKey(signalKeyValue)!).enabled,
       mode: signalPolicyModes.includes(candidate.mode as SignalPolicyMode)
         ? (candidate.mode as SignalPolicyMode)
         : "boost_only",
     });
   }
 
-  return retrievalSignalKeys.map(
-    (signalKey) =>
-      normalizedByKey.get(signalKey) ?? {
-        signalKey,
-        enabled: true,
-        mode: "boost_only",
-      },
+  return supportedDefinitions.map(
+    (definition) => normalizedByKey.get(definition.key) ?? defaultPolicyForDefinition(definition),
   );
 };
 
-export const validateRetrievalSettings = (input: RetrievalSettingsInput): RetrievalSettingsInput => {
+export const validateRetrievalSettings = (
+  input: RetrievalSettingsInput,
+  signalDefinitions: RetrievalSignalDefinition[] = builtInRetrievalSignalDefinitions,
+): RetrievalSettingsInput => {
   if (input.vectorTopK < 1 || input.vectorTopK > 300) {
     throw badRequest("vectorTopK must be between 1 and 300");
   }
@@ -171,9 +238,12 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
     throw badRequest("signalPolicies must be an array");
   }
 
+  const supportedDefinitions = mergeSignalDefinitions(signalDefinitions, definitionsFromPolicies(input.signalPolicies));
+  const supportedSignalKeys = new Set(supportedDefinitions.map((definition) => definition.key));
   const seenSignals = new Set<string>();
+
   for (const policy of input.signalPolicies) {
-    if (!retrievalSignalKeys.includes(policy.signalKey)) {
+    if (!isSupportedSignalKey(policy.signalKey) || !supportedSignalKeys.has(policy.signalKey)) {
       throw badRequest("signalPolicies signalKey must be supported");
     }
     if (seenSignals.has(policy.signalKey)) {
@@ -189,7 +259,7 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
     seenSignals.add(policy.signalKey);
   }
 
-  if (seenSignals.size !== retrievalSignalKeys.length) {
+  if (seenSignals.size !== supportedSignalKeys.size) {
     throw badRequest("signalPolicies must include every supported signal");
   }
 

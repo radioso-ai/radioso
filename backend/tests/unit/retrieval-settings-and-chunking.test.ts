@@ -6,8 +6,10 @@ import {
   validateIngestionSettings,
 } from "../../src/modules/settings/domain/ingestionSettings.js";
 import {
+  buildMetadataSignalDefinition,
   defaultAttributeControls,
   defaultRetrievalSettings,
+  normalizeSignalPolicies,
   validateRetrievalSettings,
 } from "../../src/modules/settings/domain/retrievalSettings.js";
 
@@ -57,6 +59,8 @@ describe("settings and chunking", () => {
   });
 
   it("rejects retrieval settings with missing signal policies", () => {
+    const metadataSignal = buildMetadataSignalDefinition("parsedData.url");
+
     expect(() =>
       validateRetrievalSettings({
         queryRewriteEnabled: false,
@@ -66,9 +70,9 @@ describe("settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
-        signalPolicies: defaultAttributeControls().slice(0, 2),
+        signalPolicies: [],
         customInstruction: "",
-      }),
+      }, [metadataSignal]),
     ).toThrow("signalPolicies must include every supported signal");
   });
 
@@ -87,16 +91,13 @@ describe("settings and chunking", () => {
     expect(defaults.similarityThreshold).toBe(0.2);
     expect(defaults.warmthLevel).toBe(5);
     expect(defaults.citationDisplayEnabled).toBe(true);
-    expect(defaults.signalPolicies).toEqual([
-      { signalKey: "document_date", enabled: true, mode: "boost_only" },
-      { signalKey: "document_period", enabled: true, mode: "boost_only" },
-      { signalKey: "document_amount", enabled: true, mode: "boost_only" },
-      { signalKey: "document_location", enabled: true, mode: "boost_only" },
-    ]);
+    expect(defaults.signalPolicies).toEqual([]);
     expect(defaults.customInstruction).toBe("");
   });
 
   it("rejects customInstruction exceeding 2000 characters", () => {
+    const metadataSignal = buildMetadataSignalDefinition("language");
+
     expect(() =>
       validateRetrievalSettings({
         queryRewriteEnabled: false,
@@ -106,13 +107,14 @@ describe("settings and chunking", () => {
         rerankTopK: 5,
         warmthLevel: 5,
         citationDisplayEnabled: true,
-        signalPolicies: defaultAttributeControls(),
+        signalPolicies: [{ signalKey: metadataSignal.key, enabled: false, mode: "boost_only" }],
         customInstruction: "a".repeat(2001),
-      }),
+      }, [metadataSignal]),
     ).toThrow("customInstruction must not exceed 2000 characters");
   });
 
   it("accepts valid customInstruction values", () => {
+    const metadataSignal = buildMetadataSignalDefinition("language");
     const baseInput = {
       queryRewriteEnabled: false,
       rerankEnabled: false,
@@ -121,12 +123,12 @@ describe("settings and chunking", () => {
       rerankTopK: 5,
       warmthLevel: 5,
       citationDisplayEnabled: true,
-      signalPolicies: defaultAttributeControls(),
+      signalPolicies: [{ signalKey: metadataSignal.key, enabled: false, mode: "boost_only" }],
     };
 
-    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "" })).toBeDefined();
-    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "Cite paragraph numbers" })).toBeDefined();
-    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "a".repeat(2000) })).toBeDefined();
+    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "" }, [metadataSignal])).toBeDefined();
+    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "Cite paragraph numbers" }, [metadataSignal])).toBeDefined();
+    expect(validateRetrievalSettings({ ...baseInput, customInstruction: "a".repeat(2000) }, [metadataSignal])).toBeDefined();
   });
 
   it("uses the current chunking defaults for ingestion settings", () => {
@@ -172,5 +174,16 @@ describe("settings and chunking", () => {
 
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks[1].startOffset).toBe(chunks[0].endOffset - 20);
+  });
+
+  it("adds discovered metadata signals as disabled policies by default", () => {
+    const metadataSignal = buildMetadataSignalDefinition("parsedData.url");
+    const normalized = normalizeSignalPolicies([], [metadataSignal]);
+
+    expect(normalized).toContainEqual({
+      signalKey: "metadata.parsedData.url",
+      enabled: false,
+      mode: "boost_only",
+    });
   });
 });

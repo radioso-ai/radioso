@@ -37,7 +37,12 @@ import type {
   IngestionSettingsInput,
   IngestionSettingsRecord,
 } from "../../src/modules/settings/domain/ingestionSettings.js";
-import type { RetrievalSettingsInput, RetrievalSettingsRecord } from "../../src/modules/settings/domain/retrievalSettings.js";
+import {
+  buildMetadataSignalDefinition,
+  mergeSignalDefinitions,
+  type RetrievalSettingsInput,
+  type RetrievalSettingsRecord,
+} from "../../src/modules/settings/domain/retrievalSettings.js";
 import type { IngestionSettingsRepositoryPort } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import type { RetrievalSettingsRepositoryPort } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
@@ -820,6 +825,23 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
+  async listMetadataSignalDefinitions(workspaceId: string) {
+    const definitions = new Map<string, ReturnType<typeof buildMetadataSignalDefinition>>();
+
+    for (const document of this.items.values()) {
+      if (document.workspaceId !== workspaceId) {
+        continue;
+      }
+
+      for (const path of collectMetadataPaths(document.metadata ?? {})) {
+        const definition = buildMetadataSignalDefinition(path);
+        definitions.set(definition.key, definition);
+      }
+    }
+
+    return mergeSignalDefinitions([...definitions.values()].sort((left, right) => left.key.localeCompare(right.key)));
+  }
+
   async listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]> {
     return [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)
@@ -1041,6 +1063,31 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return true;
   }
 }
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isScalarMetadataValue = (value: unknown): boolean =>
+  value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+
+const collectMetadataPaths = (metadata: Record<string, unknown>, prefix = ""): string[] => {
+  const paths: string[] = [];
+
+  for (const [key, value] of Object.entries(metadata)) {
+    const nextPath = prefix ? `${prefix}.${key}` : key;
+
+    if (isScalarMetadataValue(value)) {
+      paths.push(nextPath);
+      continue;
+    }
+
+    if (isPlainObject(value)) {
+      paths.push(...collectMetadataPaths(value, nextPath));
+    }
+  }
+
+  return paths;
+};
 
 export class InMemoryDocumentStorage implements DocumentStoragePort {
   readonly objects = new Map<string, { buffer: Buffer; generation: string; sizeBytes: number }>();

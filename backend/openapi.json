@@ -320,49 +320,30 @@
               "type": "object",
               "properties": {
                 "key": {
-                  "type": "string",
-                  "enum": [
-                    "document_date",
-                    "document_period",
-                    "document_amount",
-                    "document_location"
-                  ]
+                  "type": "string"
                 },
                 "label": {
                   "type": "string"
                 },
                 "description": {
                   "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "system",
+                    "metadata"
+                  ]
                 }
               },
               "required": [
                 "key",
                 "label",
-                "description"
+                "description",
+                "source"
               ]
             },
-            "default": [
-              {
-                "key": "document_date",
-                "label": "Document date",
-                "description": "Use exact dates such as effective days, deadlines, or dated entries."
-              },
-              {
-                "key": "document_period",
-                "label": "Document period",
-                "description": "Use spans such as validity windows, booking periods, or event ranges."
-              },
-              {
-                "key": "document_amount",
-                "label": "Document amount",
-                "description": "Use numeric amounts such as prices, fees, or budget thresholds."
-              },
-              {
-                "key": "document_location",
-                "label": "Document location",
-                "description": "Use place references such as cities, countries, or venues."
-              }
-            ]
+            "default": []
           },
           "signalPolicies": {
             "type": "array",
@@ -370,13 +351,7 @@
               "type": "object",
               "properties": {
                 "signalKey": {
-                  "type": "string",
-                  "enum": [
-                    "document_date",
-                    "document_period",
-                    "document_amount",
-                    "document_location"
-                  ]
+                  "type": "string"
                 },
                 "enabled": {
                   "type": "boolean"
@@ -455,12 +430,7 @@
               "properties": {
                 "signalKey": {
                   "type": "string",
-                  "enum": [
-                    "document_date",
-                    "document_period",
-                    "document_amount",
-                    "document_location"
-                  ]
+                  "minLength": 1
                 },
                 "enabled": {
                   "type": "boolean"
@@ -584,13 +554,7 @@
         "type": "object",
         "properties": {
           "signalKey": {
-            "type": "string",
-            "enum": [
-              "document_date",
-              "document_period",
-              "document_amount",
-              "document_location"
-            ]
+            "type": "string"
           },
           "enabled": {
             "type": "boolean"
@@ -613,25 +577,27 @@
         "type": "object",
         "properties": {
           "key": {
-            "type": "string",
-            "enum": [
-              "document_date",
-              "document_period",
-              "document_amount",
-              "document_location"
-            ]
+            "type": "string"
           },
           "label": {
             "type": "string"
           },
           "description": {
             "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "system",
+              "metadata"
+            ]
           }
         },
         "required": [
           "key",
           "label",
-          "description"
+          "description",
+          "source"
         ]
       },
       "UpdateGeneralSettingsRequest": {
@@ -1125,13 +1091,7 @@
         "type": "object",
         "properties": {
           "signalKey": {
-            "type": "string",
-            "enum": [
-              "document_date",
-              "document_period",
-              "document_amount",
-              "document_location"
-            ]
+            "type": "string"
           },
           "mode": {
             "type": "string",

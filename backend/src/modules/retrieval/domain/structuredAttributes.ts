@@ -75,7 +75,8 @@ export interface ParsedQueryConstraint {
   value:
     | { date: string }
     | { amount: number; currencyCode: string | null }
-    | { matchKey: string; displayName: string };
+    | { matchKey: string; displayName: string }
+    | { raw: string };
 }
 
 export interface ParsedQueryInterpretation {

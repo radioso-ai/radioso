@@ -1,4 +1,6 @@
 import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
+import type { RetrievalSignalPolicy } from "../../settings/domain/retrievalSettings.js";
+import { isMetadataSignalKey, metadataPathFromSignalKey } from "../../settings/domain/retrievalSettings.js";
 import {
   normalizeDateConstraint,
   normalizeLocationConstraint,
@@ -13,6 +15,7 @@ const MONEY_GTE_PATTERN = /\b(?:over|above|more than)\s+(\d+(?:\.\d{1,2})?)\s*(E
 const LOCATION_PATTERN =
   /\bin\s+([a-z][a-z]+(?:\s+[a-z][a-z]+)*?)(?=\s+(?:under|below|less than|over|above|more than|after|before|on|with|about|for|near|around|regarding)\b|[?.!,]|$)/i;
 const LEADING_RETRIEVAL_VERB_PATTERN = /^(?:find|show|list|search for|search)\s+/i;
+const METADATA_FIELD_PATTERN = /(^|\s)([a-zA-Z][\w.-]*):(?:"([^"]+)"|([^\s]+))/g;
 
 const normalizeSearchQuery = (query: string): string =>
   query
@@ -20,10 +23,34 @@ const normalizeSearchQuery = (query: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
-export const parseQueryConstraints = (query: string): ParsedQueryInterpretation => {
+const resolveMetadataSignalKeys = (signalPolicies: RetrievalSignalPolicy[]): Map<string, string> => {
+  const aliases = new Map<string, string>();
+
+  for (const policy of signalPolicies) {
+    if (!isMetadataSignalKey(policy.signalKey)) {
+      continue;
+    }
+
+    const metadataPath = metadataPathFromSignalKey(policy.signalKey);
+    if (!metadataPath) {
+      continue;
+    }
+
+    aliases.set(policy.signalKey.toLowerCase(), policy.signalKey);
+    aliases.set(metadataPath.toLowerCase(), policy.signalKey);
+  }
+
+  return aliases;
+};
+
+export const parseQueryConstraints = (
+  query: string,
+  signalPolicies: RetrievalSignalPolicy[] = [],
+): ParsedQueryInterpretation => {
   const constraints: ParsedQueryInterpretation["constraints"] = [];
   const semanticQuery = normalizeSearchQuery(query);
   const lexicalQuery = normalizeSearchQuery(query);
+  const metadataSignalAliases = resolveMetadataSignalKeys(signalPolicies);
 
   const locationMatch = query.match(LOCATION_PATTERN);
   const location = locationMatch?.[1];
@@ -117,6 +144,31 @@ export const parseQueryConstraints = (query: string): ParsedQueryInterpretation 
         value: { date: normalized },
       });
     }
+  }
+
+  for (const match of query.matchAll(METADATA_FIELD_PATTERN)) {
+    const fieldName = match[2]?.trim();
+    const rawValue = (match[3] ?? match[4] ?? "").trim();
+    const sourceText = `${fieldName}:${match[3] ? `"${match[3]}"` : match[4]}`;
+
+    if (!fieldName || !rawValue) {
+      continue;
+    }
+
+    const signalKey = metadataSignalAliases.get(fieldName.toLowerCase());
+    const metadataPath = signalKey ? metadataPathFromSignalKey(signalKey) : null;
+    if (!signalKey || !metadataPath) {
+      continue;
+    }
+
+    constraints.push({
+      signalKey,
+      operator: "match",
+      confidence: 0.98,
+      summary: `${metadataPath}:${rawValue}`,
+      sourceText,
+      value: { raw: rawValue },
+    });
   }
 
   return {

@@ -948,9 +948,9 @@ function RetrievalSettingsPanel() {
                 <div className="space-y-1">
                   <Label className="text-foreground">Signal Policies</Label>
                   <p className="text-sm text-muted-foreground">
-                    These are system-defined retrieval signals, not custom metadata rules. Enable the
-                    policies you want the retriever to consider, and choose whether each one should
-                    only boost matches or may act as a high-confidence hard filter.
+                    Enable metadata-backed fields for retrieval. Rules match explicit query terms like{" "}
+                    <code className="rounded bg-muted px-1 py-0.5 text-xs">language:en</code> or{" "}
+                    <code className="rounded bg-muted px-1 py-0.5 text-xs">parsedData.url:"example.com"</code>.
                   </p>
                 </div>
 
@@ -971,7 +971,13 @@ function RetrievalSettingsPanel() {
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="space-y-1">
-                            <p className="text-sm font-medium text-foreground">{option.label}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium text-foreground">{option.label}</p>
+                              <span className="rounded-full border border-border px-2 py-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                                Metadata field
+                              </span>
+                            </div>
+                            <p className="font-mono text-xs text-muted-foreground">{option.key.replace(/^metadata\./, '')}</p>
                             <p className="text-sm text-muted-foreground">{option.description}</p>
                           </div>
                           <Switch

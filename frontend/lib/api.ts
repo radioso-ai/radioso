@@ -227,9 +227,10 @@ export interface RetrievalSettings {
 }
 
 export interface RetrievalSignalDefinition {
-  key: 'document_date' | 'document_period' | 'document_amount' | 'document_location'
+  key: string
   label: string
   description: string
+  source: 'system' | 'metadata'
 }
 
 export interface IngestionSettings {
@@ -251,7 +252,7 @@ export interface WorkspaceIngestionReprocessResponse {
 }
 
 export interface RetrievalSignalPolicy {
-  signalKey: 'document_date' | 'document_period' | 'document_amount' | 'document_location'
+  signalKey: string
   enabled: boolean
   mode: 'boost_only' | 'hard_filter'
 }

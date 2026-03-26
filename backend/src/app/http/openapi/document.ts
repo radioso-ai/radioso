@@ -31,7 +31,6 @@ import {
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
   retrievalSignalDefinitions,
-  retrievalSignalKeys,
   signalPolicyModes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 
@@ -146,14 +145,15 @@ const RetrievalSettingsSchema = registry.register(
     citationDisplayEnabled: z.boolean(),
     signalDefinitions: z.array(
       z.object({
-        key: z.enum(retrievalSignalKeys),
+        key: z.string(),
         label: z.string(),
         description: z.string(),
+        source: z.enum(["system", "metadata"]),
       }),
     ).default(retrievalSignalDefinitions),
     signalPolicies: z.array(
       z.object({
-        signalKey: z.enum(retrievalSignalKeys),
+        signalKey: z.string(),
         enabled: z.boolean(),
         mode: z.enum(signalPolicyModes),
       }),
@@ -191,7 +191,7 @@ const UpdateIngestionSettingsRequestSchema = registry.register(
 const RetrievalSignalPolicySchema = registry.register(
   "RetrievalSignalPolicy",
   z.object({
-    signalKey: z.enum(retrievalSignalKeys),
+    signalKey: z.string(),
     enabled: z.boolean(),
     mode: z.enum(signalPolicyModes),
   }),
@@ -200,9 +200,10 @@ const RetrievalSignalPolicySchema = registry.register(
 const RetrievalSignalDefinitionSchema = registry.register(
   "RetrievalSignalDefinition",
   z.object({
-    key: z.enum(retrievalSignalKeys),
+    key: z.string(),
     label: z.string(),
     description: z.string(),
+    source: z.enum(["system", "metadata"]),
   }),
 );
 
@@ -354,7 +355,7 @@ const CandidateCountsSchema = registry.register(
 const AppliedConstraintSchema = registry.register(
   "AppliedConstraint",
   z.object({
-    signalKey: z.enum(retrievalSignalKeys),
+    signalKey: z.string(),
     mode: z.enum(signalPolicyModes),
     outcome: z.enum(["applied", "relaxed", "skipped"]),
     summary: z.string(),

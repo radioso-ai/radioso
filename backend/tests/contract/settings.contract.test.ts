@@ -21,13 +21,16 @@ const issueToken = async (app: ReturnType<typeof createTestApp>["app"]) => {
     .get(`/api/v1/account/workspaces/${workspaceId}/token`)
     .set("Cookie", cookie);
 
-  return token.body.token as string;
+  return {
+    token: token.body.token as string,
+    workspaceId,
+  };
 };
 
 describe("settings contract", () => {
   it("returns default retrieval settings for a valid bearer token", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
 
     const response = await request(app)
       .get("/api/v1/settings/retrieval")
@@ -53,39 +56,24 @@ describe("settings contract", () => {
     expect(response.body.warmthLevel).toBe(5);
     expect(response.body.citationDisplayEnabled).toBe(true);
     expect(response.body.customInstruction).toBe("");
-    expect(response.body.signalDefinitions).toEqual([
-      {
-        key: "document_date",
-        label: "Document date",
-        description: "Use exact dates such as effective days, deadlines, or dated entries.",
-      },
-      {
-        key: "document_period",
-        label: "Document period",
-        description: "Use spans such as validity windows, booking periods, or event ranges.",
-      },
-      {
-        key: "document_amount",
-        label: "Document amount",
-        description: "Use numeric amounts such as prices, fees, or budget thresholds.",
-      },
-      {
-        key: "document_location",
-        label: "Document location",
-        description: "Use place references such as cities, countries, or venues.",
-      },
-    ]);
-    expect(response.body.signalPolicies).toEqual([
-      { signalKey: "document_date", enabled: true, mode: "boost_only" },
-      { signalKey: "document_period", enabled: true, mode: "boost_only" },
-      { signalKey: "document_amount", enabled: true, mode: "boost_only" },
-      { signalKey: "document_location", enabled: true, mode: "boost_only" },
-    ]);
+    expect(response.body.signalDefinitions).toEqual([]);
+    expect(response.body.signalPolicies).toEqual([]);
   });
 
   it("updates retrieval settings for a valid bearer token", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Metadata policy doc",
+        content: "Metadata rich content",
+        metadata: {
+          language: "en",
+        },
+      });
 
     const response = await request(app)
       .put("/api/v1/settings/retrieval")
@@ -100,10 +88,7 @@ describe("settings contract", () => {
         citationDisplayEnabled: false,
         customInstruction: "Always cite the paragraph number from the Immigration Act.",
         signalPolicies: [
-          { signalKey: "document_date", enabled: true, mode: "hard_filter" },
-          { signalKey: "document_period", enabled: true, mode: "boost_only" },
-          { signalKey: "document_amount", enabled: false, mode: "boost_only" },
-          { signalKey: "document_location", enabled: true, mode: "boost_only" },
+          { signalKey: "metadata.language", enabled: true, mode: "hard_filter" },
         ],
       });
 
@@ -118,18 +103,26 @@ describe("settings contract", () => {
       citationDisplayEnabled: false,
       customInstruction: "Always cite the paragraph number from the Immigration Act.",
       signalPolicies: [
-        { signalKey: "document_date", enabled: true, mode: "hard_filter" },
-        { signalKey: "document_period", enabled: true, mode: "boost_only" },
-        { signalKey: "document_amount", enabled: false, mode: "boost_only" },
-        { signalKey: "document_location", enabled: true, mode: "boost_only" },
+        { signalKey: "metadata.language", enabled: true, mode: "hard_filter" },
       ],
     });
   });
 
   it("preserves saved signal policies when an older client omits the field", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
     const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Metadata policy doc",
+        content: "Metadata rich content",
+        metadata: {
+          language: "en",
+        },
+      });
 
     const firstUpdate = await request(app)
       .put("/api/v1/settings/retrieval")
@@ -144,10 +137,7 @@ describe("settings contract", () => {
         citationDisplayEnabled: false,
         customInstruction: "Cite paragraph numbers.",
         signalPolicies: [
-          { signalKey: "document_date", enabled: true, mode: "hard_filter" },
-          { signalKey: "document_period", enabled: false, mode: "boost_only" },
-          { signalKey: "document_amount", enabled: false, mode: "boost_only" },
-          { signalKey: "document_location", enabled: true, mode: "boost_only" },
+          { signalKey: "metadata.language", enabled: true, mode: "hard_filter" },
         ],
       });
 
@@ -172,7 +162,7 @@ describe("settings contract", () => {
 
   it("returns default ingestion settings for a valid bearer token", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
 
     const response = await request(app)
       .get("/api/v1/settings/ingestion")
@@ -190,7 +180,7 @@ describe("settings contract", () => {
 
   it("updates ingestion settings for a valid bearer token", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
 
     const response = await request(app)
       .put("/api/v1/settings/ingestion")
@@ -215,7 +205,7 @@ describe("settings contract", () => {
 
   it("starts workspace ingestion reprocessing for a valid bearer token", async () => {
     const { app } = createTestApp();
-    const token = await issueToken(app);
+    const { token } = await issueToken(app);
     const authorization = `Bearer ${token}`;
 
     await request(app)

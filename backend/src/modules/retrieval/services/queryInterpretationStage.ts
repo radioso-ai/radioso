@@ -9,7 +9,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
   constructor(private readonly queryRewriteService: QueryRewriteService) {}
 
   async execute(input: RetrievalContextStageResult) {
-    const originalParsedQuery = parseQueryConstraints(input.request.query);
+    const originalParsedQuery = parseQueryConstraints(input.request.query, input.settings.signalPolicies);
     const originalPreparedQuery = this.applySignalPoliciesToQuery(
       originalParsedQuery,
       input.settings.signalPolicies,
@@ -20,7 +20,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       enabled: input.settings.queryRewriteEnabled,
     });
     const rewrittenParsedQuery = rewrittenQuery.retrievalEligible
-      ? parseQueryConstraints(rewrittenQuery.effectiveQuery)
+      ? parseQueryConstraints(rewrittenQuery.effectiveQuery, input.settings.signalPolicies)
       : originalParsedQuery;
     const parsedQuery = this.applySignalPoliciesToQuery(
       rewrittenQuery.retrievalEligible

@@ -8,6 +8,11 @@ import type {
   DocumentRepositoryPort,
   DocumentUpdateInput,
 } from "../../modules/documents/services/documentIngestionService.js";
+import {
+  buildMetadataSignalDefinition,
+  mergeSignalDefinitions,
+  type RetrievalSignalDefinition,
+} from "../../modules/settings/domain/retrievalSettings.js";
 import type { Database } from "../../shared/infra/database.js";
 import { notFound } from "../../shared/domain/errors.js";
 
@@ -76,6 +81,26 @@ const documentSelect = `
 
 export class DocumentRepository implements DocumentRepositoryPort {
   constructor(private readonly database: Database) {}
+
+  async listMetadataSignalDefinitions(workspaceId: string): Promise<RetrievalSignalDefinition[]> {
+    const rows = await this.database.query<{ metadata: Record<string, unknown> | null }>(
+      `SELECT metadata
+       FROM documents
+       WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+
+    const definitions = new Map<string, RetrievalSignalDefinition>();
+
+    for (const row of rows) {
+      for (const path of collectMetadataPaths(row.metadata ?? {})) {
+        const definition = buildMetadataSignalDefinition(path);
+        definitions.set(definition.key, definition);
+      }
+    }
+
+    return mergeSignalDefinitions([...definitions.values()].sort((left, right) => left.key.localeCompare(right.key)));
+  }
 
   async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
     return this.database.withTransaction(async (client) => {
@@ -449,3 +474,28 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return rows.length > 0;
   }
 }
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isScalarMetadataValue = (value: unknown): boolean =>
+  value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+
+const collectMetadataPaths = (metadata: Record<string, unknown>, prefix = ""): string[] => {
+  const paths: string[] = [];
+
+  for (const [key, value] of Object.entries(metadata)) {
+    const nextPath = prefix ? `${prefix}.${key}` : key;
+
+    if (isScalarMetadataValue(value)) {
+      paths.push(nextPath);
+      continue;
+    }
+
+    if (isPlainObject(value)) {
+      paths.push(...collectMetadataPaths(value, nextPath));
+    }
+  }
+
+  return paths;
+};

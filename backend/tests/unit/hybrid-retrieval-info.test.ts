@@ -25,7 +25,7 @@ describe("hybrid retrieval info", () => {
         lexicalQuery: "retreats",
         constraints: [
           {
-            family: "location",
+            signalKey: "document_location",
             operator: "match",
             confidence: 0.95,
             summary: "in Estonia",
@@ -39,7 +39,7 @@ describe("hybrid retrieval info", () => {
       },
       appliedConstraints: [
         {
-          family: "location",
+          signalKey: "document_location",
           mode: "hard_filter",
           outcome: "applied",
           summary: "in Estonia",
@@ -61,7 +61,7 @@ describe("hybrid retrieval info", () => {
       },
       appliedConstraints: [
         {
-          family: "location",
+          signalKey: "document_location",
           mode: "hard_filter",
           outcome: "applied",
           summary: "in Estonia",

@@ -12,6 +12,7 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  preferredWorkspaceId: z.string().uuid().optional(),
 });
 
 export const createAuthRoutes = (dependencies: AppDependencies): Router => {

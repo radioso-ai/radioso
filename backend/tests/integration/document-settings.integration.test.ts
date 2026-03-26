@@ -2,7 +2,6 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { createTestApp, issueTestToken } from "../support/testApp.js";
-import { defaultAttributeControls } from "../../src/modules/settings/domain/retrievalSettings.js";
 
 describe("document and settings integration", () => {
   it("rejects invalid settings payloads", async () => {
@@ -65,14 +64,34 @@ describe("document and settings integration", () => {
     expect(document.body.status).toBe("queued");
   });
 
-  it("keeps attribute-family controls account scoped", async () => {
-    const { app } = createTestApp();
+  it("keeps metadata signal policies account scoped", async () => {
+    const { app, repositories } = createTestApp();
 
-    const { token: firstToken } = await issueTestToken(app, "controls-one@example.com");
-    const { token: secondToken } = await issueTestToken(app, "controls-two@example.com");
+    const { token: firstToken, workspaceId: firstWorkspaceId } = await issueTestToken(app, "controls-one@example.com");
+    const { token: secondToken, workspaceId: secondWorkspaceId } = await issueTestToken(app, "controls-two@example.com");
 
     const firstAuthorization = `Bearer ${firstToken}`;
     const secondAuthorization = `Bearer ${secondToken}`;
+
+    await repositories.documentRepository.create({
+      workspaceId: firstWorkspaceId,
+      title: "First metadata doc",
+      sourceContent: "Language doc",
+      markdownContent: "Language doc",
+      metadata: { language: "en" },
+      sourceKind: "inline_text",
+      status: "ready",
+    });
+
+    await repositories.documentRepository.create({
+      workspaceId: secondWorkspaceId,
+      title: "Second metadata doc",
+      sourceContent: "Language doc",
+      markdownContent: "Language doc",
+      metadata: { language: "et" },
+      sourceKind: "inline_text",
+      status: "ready",
+    });
 
     const firstUpdate = await request(app)
       .put("/api/v1/settings/retrieval")
@@ -85,13 +104,18 @@ describe("document and settings integration", () => {
         rerankTopK: 8,
         warmthLevel: 6,
         citationDisplayEnabled: true,
-        attributeControls: defaultAttributeControls().map((control) =>
-          control.family === "location"
-            ? { ...control, enabled: false }
-            : control.family === "money_value"
-              ? { ...control, mode: "hard_filter" as const }
-              : control,
-        ),
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "language-filter",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "filter",
+            enabled: true,
+          },
+        ],
       });
 
     const secondSettings = await request(app)
@@ -99,18 +123,17 @@ describe("document and settings integration", () => {
       .set("Authorization", secondAuthorization);
 
     expect(firstUpdate.status).toBe(200);
-    expect(firstUpdate.body.attributeControls).toContainEqual({
-      family: "location",
-      enabled: false,
-      mode: "boost_only",
-    });
-    expect(firstUpdate.body.attributeControls).toContainEqual({
-      family: "money_value",
+    expect(firstUpdate.body.metadataRules).toContainEqual({
+      id: "language-filter",
+      field: "language",
+      valueType: "string",
+      operator: "equals",
+      value: "en",
       enabled: true,
-      mode: "hard_filter",
+      effect: "filter",
     });
     expect(secondSettings.status).toBe(200);
-    expect(secondSettings.body.attributeControls).toEqual(defaultAttributeControls());
+    expect(secondSettings.body.metadataRules).toEqual([]);
   });
 
   it("queues eligible workspace documents for reprocessing from ingestion settings", async () => {
@@ -149,5 +172,85 @@ describe("document and settings integration", () => {
     expect(response.body.queuedDocumentCount).toBe(1);
     expect(response.body.skippedDocumentCount).toBe(1);
     expect(repositories.documentRepository.items.get(second.body.documentId)?.status).toBe("ready");
+  });
+
+  it("discovers metadata-backed signal definitions and persists metadata policies", async () => {
+    const { app, repositories } = createTestApp();
+
+    const { token, workspaceId } = await issueTestToken(app, "metadata-signals@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await repositories.documentRepository.create({
+      workspaceId,
+      title: "Metadata rich document",
+      sourceContent: "Metadata source content",
+      markdownContent: "Metadata source content",
+      metadata: {
+        language: "en",
+        parsedData: {
+          url: "https://example.com/a",
+        },
+      },
+      sourceKind: "inline_text",
+      status: "ready",
+    });
+
+    const settings = await request(app)
+      .get("/api/v1/settings/retrieval")
+      .set("Authorization", authorization);
+
+    expect(settings.status).toBe(200);
+    expect(settings.body.metadataFieldSuggestions).toEqual(
+      expect.arrayContaining([
+        { field: "language", inferredType: "string" },
+        { field: "parsedData.url", inferredType: "string" },
+      ]),
+    );
+    expect(settings.body.metadataRules).toEqual([]);
+
+    const update = await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "language-filter",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "filter",
+            enabled: true,
+          },
+          {
+            id: "source-boost",
+            field: "parsedData.url",
+            valueType: "string",
+            operator: "contains",
+            value: "example.com",
+            effect: "boost",
+            enabled: true,
+          },
+        ],
+      });
+
+    expect(update.status).toBe(200);
+    expect(update.body.metadataRules).toContainEqual({
+      id: "language-filter",
+      field: "language",
+      valueType: "string",
+      operator: "equals",
+      value: "en",
+      enabled: true,
+      effect: "filter",
+    });
   });
 });

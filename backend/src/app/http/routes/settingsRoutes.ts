@@ -7,8 +7,9 @@ import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
-  attributeControlModes,
-  attributeFamilyIds,
+  metadataRuleEffects,
+  metadataRuleOperators,
+  metadataValueTypes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 import {
   FIXED_WINDOW_CHUNK_OVERLAP_MAX,
@@ -29,12 +30,16 @@ export const updateSettingsSchema = z.object({
   rerankTopK: z.number().int(),
   warmthLevel: z.number().int(),
   citationDisplayEnabled: z.boolean(),
-  attributeControls: z
+  metadataRules: z
     .array(
       z.object({
-        family: z.enum(attributeFamilyIds),
+        id: z.string().min(1),
+        field: z.string().min(1),
+        valueType: z.enum(metadataValueTypes),
+        operator: z.enum(metadataRuleOperators),
+        value: z.string(),
+        effect: z.enum(metadataRuleEffects),
         enabled: z.boolean(),
-        mode: z.enum(attributeControlModes),
       }),
     )
     .optional(),
@@ -60,8 +65,14 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
   router.get("/retrieval", requireApiToken(dependencies), async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const settings = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
-      res.status(200).json(settings);
+      const [settings, metadataFieldSuggestions] = await Promise.all([
+        dependencies.retrievalSettingsService.getForWorkspace(workspaceId),
+        dependencies.retrievalSettingsService.listMetadataFieldSuggestions(workspaceId),
+      ]);
+      res.status(200).json({
+        ...settings,
+        metadataFieldSuggestions,
+      });
     } catch (error) {
       next(error);
     }
@@ -73,10 +84,14 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
       const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
       const settings = await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
         ...req.body,
-        attributeControls: req.body.attributeControls ?? existing.attributeControls,
+        metadataRules: req.body.metadataRules ?? existing.metadataRules,
         customInstruction: req.body.customInstruction ?? existing.customInstruction,
       });
-      res.status(200).json(settings);
+      const metadataFieldSuggestions = await dependencies.retrievalSettingsService.listMetadataFieldSuggestions(workspaceId);
+      res.status(200).json({
+        ...settings,
+        metadataFieldSuggestions,
+      });
     } catch (error) {
       next(error);
     }

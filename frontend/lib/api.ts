@@ -200,6 +200,7 @@ export interface RegisterResponse {
 export interface LoginRequest {
   email: string
   password: string
+  preferredWorkspaceId?: string
 }
 
 export interface LoginResponse {
@@ -221,9 +222,29 @@ export interface RetrievalSettings {
   rerankTopK: number
   warmthLevel: number
   citationDisplayEnabled: boolean
-  attributeControls: AttributeFamilyControl[]
+  metadataFieldSuggestions: MetadataFieldSuggestion[]
+  metadataRules: RetrievalMetadataRule[]
   customInstruction: string
 }
+
+export type RetrievalMetadataValueType = 'string' | 'number' | 'date' | 'boolean'
+
+export interface MetadataFieldSuggestion {
+  field: string
+  inferredType: RetrievalMetadataValueType
+}
+
+export type RetrievalMetadataRuleOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'contains'
+  | 'not_contains'
+  | 'lt'
+  | 'lte'
+  | 'gt'
+  | 'gte'
+
+export type RetrievalMetadataRuleEffect = 'boost' | 'filter'
 
 export interface IngestionSettings {
   workspaceId: string
@@ -243,10 +264,14 @@ export interface WorkspaceIngestionReprocessResponse {
   status: 'queued' | 'noop'
 }
 
-export interface AttributeFamilyControl {
-  family: 'date_point' | 'date_range' | 'money_value' | 'location'
+export interface RetrievalMetadataRule {
+  id: string
+  field: string
+  valueType: RetrievalMetadataValueType
+  operator: RetrievalMetadataRuleOperator
+  value: string
+  effect: RetrievalMetadataRuleEffect
   enabled: boolean
-  mode: 'boost_only' | 'hard_filter'
 }
 
 export interface DocumentCreateRequest {
@@ -372,7 +397,7 @@ export interface CandidateCounts {
 }
 
 export interface AppliedConstraintInfo {
-  family: 'date_point' | 'date_range' | 'money_value' | 'location'
+  signalKey: 'document_date' | 'document_period' | 'document_amount' | 'document_location'
   mode: 'boost_only' | 'hard_filter'
   outcome: 'applied' | 'relaxed' | 'skipped'
   summary: string
@@ -762,9 +787,10 @@ export const settingsApi = {
   },
 
   async updateRetrievalSettings(data: RetrievalSettings): Promise<RetrievalSettings> {
+    const { metadataFieldSuggestions: _metadataFieldSuggestions, ...payload } = data
     return request<RetrievalSettings>("/settings/retrieval", {
       method: "PUT",
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     }, { withApiToken: true })
   },
 

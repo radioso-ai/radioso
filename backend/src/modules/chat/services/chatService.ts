@@ -218,6 +218,7 @@ export class ChatService {
           text: rawAnswer,
         };
       } else {
+        const sanitizer = new CitationAnchorSanitizer();
         for await (const text of this.chatGateway.streamAnswer({
           query: input.query,
           history: session.history,
@@ -227,15 +228,7 @@ export class ChatService {
             continue;
           }
           rawAnswer = `${rawAnswer}${text}`;
-        }
-      }
-
-      const presentation = this.presentAnswer(session, rawAnswer);
-      if (session.retrieval.contexts.length > 0) {
-        const sanitizer = new CitationAnchorSanitizer();
-        const validatedChunks = presentation.answerSegments?.map((segment) => segment.text) ?? [presentation.answer];
-        for (const chunk of validatedChunks) {
-          const safe = sanitizer.push(chunk);
+          const safe = sanitizer.push(text);
           if (!safe) {
             continue;
           }
@@ -244,7 +237,17 @@ export class ChatService {
             text: safe,
           };
         }
+
+        const trailing = sanitizer.flush();
+        if (trailing) {
+          yield {
+            type: "chunk",
+            text: trailing,
+          };
+        }
       }
+
+      const presentation = this.presentAnswer(session, rawAnswer);
 
       const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics);
       const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({

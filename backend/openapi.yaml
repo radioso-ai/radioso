@@ -162,6 +162,9 @@ components:
         password:
           type: string
           minLength: 1
+        preferredWorkspaceId:
+          type: string
+          format: uuid
       required:
         - email
         - password
@@ -210,29 +213,65 @@ components:
           maximum: 10
         citationDisplayEnabled:
           type: boolean
-        attributeControls:
+        metadataFieldSuggestions:
           type: array
           items:
             type: object
             properties:
-              family:
+              field:
+                type: string
+              inferredType:
                 type: string
                 enum: &a1
-                  - date_point
-                  - date_range
-                  - money_value
-                  - location
-              enabled:
-                type: boolean
-              mode:
+                  - string
+                  - number
+                  - date
+                  - boolean
+            required:
+              - field
+              - inferredType
+          default: []
+        metadataRules:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              field:
+                type: string
+              valueType:
+                type: string
+                enum: *a1
+              operator:
                 type: string
                 enum: &a2
-                  - boost_only
-                  - hard_filter
+                  - equals
+                  - not_equals
+                  - contains
+                  - not_contains
+                  - lt
+                  - lte
+                  - gt
+                  - gte
+              value:
+                type: string
+              effect:
+                type: string
+                enum: &a3
+                  - boost
+                  - filter
+              enabled:
+                type: boolean
             required:
-              - family
+              - id
+              - field
+              - valueType
+              - operator
+              - value
+              - effect
               - enabled
-              - mode
+          default: []
         customInstruction:
           type: string
           maxLength: 2000
@@ -251,7 +290,6 @@ components:
         - rerankTopK
         - warmthLevel
         - citationDisplayEnabled
-        - attributeControls
         - customInstruction
         - createdAt
         - updatedAt
@@ -272,23 +310,38 @@ components:
           type: integer
         citationDisplayEnabled:
           type: boolean
-        attributeControls:
+        metadataRules:
           type: array
           items:
             type: object
             properties:
-              family:
+              id:
+                type: string
+                minLength: 1
+              field:
+                type: string
+                minLength: 1
+              valueType:
                 type: string
                 enum: *a1
-              enabled:
-                type: boolean
-              mode:
+              operator:
                 type: string
                 enum: *a2
+              value:
+                type: string
+              effect:
+                type: string
+                enum: *a3
+              enabled:
+                type: boolean
             required:
-              - family
+              - id
+              - field
+              - valueType
+              - operator
+              - value
+              - effect
               - enabled
-              - mode
         customInstruction:
           type: string
           maxLength: 2000
@@ -308,7 +361,7 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a3
+          enum: &a4
             - fixed_window
             - structured_semantic
         fixedWindowChunkSize:
@@ -339,7 +392,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a3
+          enum: *a4
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -362,21 +415,34 @@ components:
         - fixedWindowChunkOverlap
         - structuredMinChunkSize
         - structuredMaxChunkSize
-    AttributeFamilyControl:
+    RetrievalMetadataRule:
       type: object
       properties:
-        family:
+        id:
+          type: string
+        field:
+          type: string
+        valueType:
           type: string
           enum: *a1
-        enabled:
-          type: boolean
-        mode:
+        operator:
           type: string
           enum: *a2
+        value:
+          type: string
+        effect:
+          type: string
+          enum: *a3
+        enabled:
+          type: boolean
       required:
-        - family
+        - id
+        - field
+        - valueType
+        - operator
+        - value
+        - effect
         - enabled
-        - mode
     UpdateGeneralSettingsRequest:
       type: object
       properties:
@@ -710,12 +776,13 @@ components:
     AppliedConstraint:
       type: object
       properties:
-        family:
+        signalKey:
           type: string
-          enum: *a1
         mode:
           type: string
-          enum: *a2
+          enum:
+            - boost_only
+            - hard_filter
         outcome:
           type: string
           enum:
@@ -725,7 +792,7 @@ components:
         summary:
           type: string
       required:
-        - family
+        - signalKey
         - mode
         - outcome
         - summary

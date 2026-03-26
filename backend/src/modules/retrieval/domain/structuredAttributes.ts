@@ -1,5 +1,3 @@
-import type { AttributeControlMode, AttributeFamilyId } from "../../settings/domain/retrievalSettings.js";
-
 export interface RawDatePoint {
   value: string;
   sourceText: string;
@@ -67,7 +65,7 @@ export interface StructuredAttributes {
 export type QueryConstraintOperator = "gte" | "lte" | "match" | "eq";
 
 export interface ParsedQueryConstraint {
-  family: AttributeFamilyId;
+  signalKey: string;
   operator: QueryConstraintOperator;
   confidence: number;
   summary: string;
@@ -75,7 +73,8 @@ export interface ParsedQueryConstraint {
   value:
     | { date: string }
     | { amount: number; currencyCode: string | null }
-    | { matchKey: string; displayName: string };
+    | { matchKey: string; displayName: string }
+    | { raw: string };
 }
 
 export interface ParsedQueryInterpretation {
@@ -85,8 +84,8 @@ export interface ParsedQueryInterpretation {
 }
 
 export interface AppliedConstraint {
-  family: AttributeFamilyId;
-  mode: AttributeControlMode;
+  signalKey: string;
+  mode: "boost_only" | "hard_filter";
   outcome: "applied" | "relaxed" | "skipped";
   summary: string;
 }

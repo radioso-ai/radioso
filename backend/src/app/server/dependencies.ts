@@ -60,9 +60,13 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const llmRegistry = new LlmProviderRegistry(resolveLlmConfig(env));
   logger.info({ llmProviders: llmRegistry.describe() }, "Resolved LLM providers");
   const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database), auditService);
-  const retrievalSettingsService = new RetrievalSettingsService(new RetrievalSettingsRepository(database), auditService);
   const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway());
   const documentRepository = new DocumentRepository(database);
+  const retrievalSettingsService = new RetrievalSettingsService(
+    new RetrievalSettingsRepository(database),
+    auditService,
+    documentRepository,
+  );
   const documentStorage: DocumentStoragePort = env.DOCUMENT_STORAGE_BUCKET
     ? new GcsDocumentStorage(env.DOCUMENT_STORAGE_BUCKET)
     : {

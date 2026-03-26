@@ -1,13 +1,118 @@
 import { HYBRID_RETRIEVAL_DEFAULTS } from "../domain/hybridRetrievalConfig.js";
 import type { RetrievedCandidate } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryConstraint, ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
-import type { AttributeFamilyControl } from "../../settings/domain/retrievalSettings.js";
+type RetrievalSignalPolicy = {
+  signalKey: string;
+  enabled: boolean;
+  mode: "boost_only" | "hard_filter";
+};
+
+type ConstraintMatcher = (candidate: RetrievedCandidate, constraint: ParsedQueryConstraint) => boolean;
+
+const isLocationValue = (
+  value: ParsedQueryConstraint["value"],
+): value is { matchKey: string; displayName: string } => "matchKey" in value;
+
+const isMoneyValue = (
+  value: ParsedQueryConstraint["value"],
+): value is { amount: number; currencyCode: string | null } => "amount" in value;
+
+const isDateValue = (value: ParsedQueryConstraint["value"]): value is { date: string } => "date" in value;
+
+const signalMatcherRegistry: Record<string, ConstraintMatcher> = {
+  document_location: (candidate, constraint) => {
+    if (!isLocationValue(constraint.value)) {
+      return false;
+    }
+    const locationValue = constraint.value;
+
+    return Boolean(
+      candidate.structuredAttributes?.locations.some(
+        (location) =>
+          location.confidence >= HYBRID_RETRIEVAL_DEFAULTS.attributeValueHardFilterConfidenceThreshold &&
+          location.matchKey === locationValue.matchKey,
+      ),
+    );
+  },
+  document_amount: (candidate, constraint) => {
+    if (!isMoneyValue(constraint.value)) {
+      return false;
+    }
+    const moneyValue = constraint.value;
+
+    return Boolean(
+      candidate.structuredAttributes?.moneyValues.some((money) => {
+        if (money.confidence < HYBRID_RETRIEVAL_DEFAULTS.attributeValueHardFilterConfidenceThreshold) {
+          return false;
+        }
+        if (moneyValue.currencyCode && money.currencyCode && moneyValue.currencyCode !== money.currencyCode) {
+          return false;
+        }
+        if (constraint.operator === "lte") {
+          return money.amount <= moneyValue.amount;
+        }
+        if (constraint.operator === "gte") {
+          return money.amount >= moneyValue.amount;
+        }
+        return false;
+      }),
+    );
+  },
+  document_date: (candidate, constraint) => {
+    if (!isDateValue(constraint.value)) {
+      return false;
+    }
+    const dateValue = constraint.value;
+
+    return Boolean(
+      candidate.structuredAttributes?.datePoints.some((datePoint) => {
+        if (datePoint.confidence < HYBRID_RETRIEVAL_DEFAULTS.attributeValueHardFilterConfidenceThreshold) {
+          return false;
+        }
+        if (constraint.operator === "eq") {
+          return datePoint.value === dateValue.date;
+        }
+        if (constraint.operator === "gte") {
+          return datePoint.value >= dateValue.date;
+        }
+        if (constraint.operator === "lte") {
+          return datePoint.value <= dateValue.date;
+        }
+        return false;
+      }),
+    );
+  },
+  document_period: (candidate, constraint) => {
+    if (!isDateValue(constraint.value)) {
+      return false;
+    }
+    const dateValue = constraint.value;
+
+    return Boolean(
+      candidate.structuredAttributes?.dateRanges.some((dateRange) => {
+        if (dateRange.confidence < HYBRID_RETRIEVAL_DEFAULTS.attributeValueHardFilterConfidenceThreshold) {
+          return false;
+        }
+        if (constraint.operator === "eq") {
+          return dateRange.start <= dateValue.date && dateRange.end >= dateValue.date;
+        }
+        if (constraint.operator === "gte") {
+          return dateRange.end >= dateValue.date;
+        }
+        if (constraint.operator === "lte") {
+          return dateRange.start <= dateValue.date;
+        }
+        return false;
+      }),
+    );
+  },
+};
 
 export class AttributeMatchScoringService {
   apply(input: {
     candidates: RetrievedCandidate[];
     parsedQuery: ParsedQueryInterpretation;
-    attributeControls: AttributeFamilyControl[];
+    signalPolicies: RetrievalSignalPolicy[];
   }): {
     candidates: RetrievedCandidate[];
     appliedConstraints: AppliedConstraint[];
@@ -46,7 +151,7 @@ export class AttributeMatchScoringService {
   private applyInternal(input: {
     candidates: RetrievedCandidate[];
     parsedQuery: ParsedQueryInterpretation;
-    attributeControls: AttributeFamilyControl[];
+    signalPolicies: RetrievalSignalPolicy[];
     allowHardFilter: boolean;
   }) {
     const appliedConstraints: AppliedConstraint[] = [];
@@ -56,11 +161,11 @@ export class AttributeMatchScoringService {
     }));
 
     for (const constraint of input.parsedQuery.constraints) {
-      const control = input.attributeControls.find((item) => item.family === constraint.family);
-      if (!control || !control.enabled) {
+      const policy = input.signalPolicies.find((item) => item.signalKey === constraint.signalKey);
+      if (!policy || !policy.enabled) {
         appliedConstraints.push({
-          family: constraint.family,
-          mode: control?.mode ?? "boost_only",
+          signalKey: constraint.signalKey,
+          mode: policy?.mode ?? "boost_only",
           outcome: "skipped",
           summary: constraint.summary,
         });
@@ -69,7 +174,7 @@ export class AttributeMatchScoringService {
 
       const useHardFilter =
         input.allowHardFilter &&
-        control.mode === "hard_filter" &&
+        policy.mode === "hard_filter" &&
         constraint.confidence >= HYBRID_RETRIEVAL_DEFAULTS.hardFilterConfidenceThreshold;
 
       const nextCandidates = candidates
@@ -87,8 +192,8 @@ export class AttributeMatchScoringService {
 
       candidates = nextCandidates;
       appliedConstraints.push({
-        family: constraint.family,
-        mode: control.mode,
+        signalKey: constraint.signalKey,
+        mode: policy.mode,
         outcome: "applied",
         summary: constraint.summary,
       });
@@ -102,91 +207,7 @@ export class AttributeMatchScoringService {
   }
 
   private matchesConstraint(candidate: RetrievedCandidate, constraint: ParsedQueryConstraint): boolean {
-    const attributes = candidate.structuredAttributes;
-    if (!attributes) {
-      return false;
-    }
-
-    if (constraint.family === "location" && constraint.operator === "match" && this.isLocationValue(constraint.value)) {
-      const locationValue = constraint.value;
-      return attributes.locations.some(
-        (location) =>
-          location.confidence >= HYBRID_RETRIEVAL_DEFAULTS.attributeValueHardFilterConfidenceThreshold &&
-          location.matchKey === locationValue.matchKey,
-      );
-    }
-
-    if (constraint.family === "money_value" && this.isMoneyValue(constraint.value)) {
-      const moneyValue = constraint.value;
-      return attributes.moneyValues.some((money) => {
-        if (money.confidence < HYBRID_RETRIEVAL_DEFAULTS.attributeValueHardFilterConfidenceThreshold) {
-          return false;
-        }
-        if (moneyValue.currencyCode && money.currencyCode && moneyValue.currencyCode !== money.currencyCode) {
-          return false;
-        }
-        if (constraint.operator === "lte") {
-          return money.amount <= moneyValue.amount;
-        }
-        if (constraint.operator === "gte") {
-          return money.amount >= moneyValue.amount;
-        }
-        return false;
-      });
-    }
-
-    if (constraint.family === "date_point" && this.isDateValue(constraint.value)) {
-      const compareDate = constraint.value.date;
-
-      return attributes.datePoints.some((datePoint) => {
-        if (datePoint.confidence < HYBRID_RETRIEVAL_DEFAULTS.attributeValueHardFilterConfidenceThreshold) {
-          return false;
-        }
-        if (constraint.operator === "eq") {
-          return datePoint.value === compareDate;
-        }
-        if (constraint.operator === "gte") {
-          return datePoint.value >= compareDate;
-        }
-        if (constraint.operator === "lte") {
-          return datePoint.value <= compareDate;
-        }
-        return false;
-      });
-
-    }
-
-    if (constraint.family === "date_range" && this.isDateValue(constraint.value)) {
-      const compareDate = constraint.value.date;
-      return attributes.dateRanges.some((dateRange) => {
-        if (dateRange.confidence < HYBRID_RETRIEVAL_DEFAULTS.attributeValueHardFilterConfidenceThreshold) {
-          return false;
-        }
-        if (constraint.operator === "eq") {
-          return dateRange.start <= compareDate && dateRange.end >= compareDate;
-        }
-        if (constraint.operator === "gte") {
-          return dateRange.end >= compareDate;
-        }
-        if (constraint.operator === "lte") {
-          return dateRange.start <= compareDate;
-        }
-        return false;
-      });
-    }
-
-    return false;
-  }
-
-  private isLocationValue(value: ParsedQueryConstraint["value"]): value is { matchKey: string; displayName: string } {
-    return "matchKey" in value;
-  }
-
-  private isMoneyValue(value: ParsedQueryConstraint["value"]): value is { amount: number; currencyCode: string | null } {
-    return "amount" in value;
-  }
-
-  private isDateValue(value: ParsedQueryConstraint["value"]): value is { date: string } {
-    return "date" in value;
+    const matcher = signalMatcherRegistry[constraint.signalKey];
+    return matcher ? matcher(candidate, constraint) : false;
   }
 }

@@ -40,6 +40,14 @@ export class DocumentImportService {
           sizeBytes: number;
         }
       | undefined;
+    let document:
+      | {
+          id: string;
+          revision: number;
+          sourceKind: string;
+          status: string;
+        }
+      | undefined;
     try {
       if (!Buffer.isBuffer(input.buffer) || input.buffer.length === 0) {
         throw badRequest("Uploaded file is empty");
@@ -66,7 +74,7 @@ export class DocumentImportService {
         buffer: input.buffer,
       });
       const title = input.title?.trim() || deriveTitleFromFilename(input.filename) || "Imported document";
-      const document = await this.documentRepository.createAndQueue({
+      document = await this.documentRepository.createAndQueue({
         workspaceId: input.workspaceId,
         title,
         sourceContent: "",
@@ -81,24 +89,8 @@ export class DocumentImportService {
         sourceSizeBytes: storedObject.sizeBytes,
       });
 
-      await this.auditService.record({
-        workspaceId: input.workspaceId,
-        eventType: "document.import",
-        eventStatus: "success",
-        metadata: {
-          documentId: document.id,
-          revision: document.revision,
-          sourceKind: document.sourceKind,
-          ...(await this.queueSnapshotMetadata()),
-        },
-      });
-
-      return {
-        documentId: document.id,
-        status: document.status,
-      };
     } catch (error) {
-      if (storedObject) {
+      if (storedObject && !document) {
         try {
           await this.storage.delete({
             bucket: storedObject.bucket,
@@ -120,6 +112,23 @@ export class DocumentImportService {
       });
       throw error;
     }
+
+    await this.auditService.record({
+      workspaceId: input.workspaceId,
+      eventType: "document.import",
+      eventStatus: "success",
+      metadata: {
+        documentId: document.id,
+        revision: document.revision,
+        sourceKind: document.sourceKind,
+        ...(await this.queueSnapshotMetadata()),
+      },
+    });
+
+    return {
+      documentId: document.id,
+      status: document.status,
+    };
   }
 
   private async queueSnapshotMetadata(): Promise<{
@@ -130,10 +139,15 @@ export class DocumentImportService {
       return {};
     }
 
-    const snapshot = await this.getQueueSnapshot();
-    return {
-      queuedJobCount: snapshot.queuedJobCount,
-      processingJobCount: snapshot.processingJobCount,
-    };
+    try {
+      const snapshot = await this.getQueueSnapshot();
+      return {
+        queuedJobCount: snapshot.queuedJobCount,
+        processingJobCount: snapshot.processingJobCount,
+      };
+    } catch {
+      // Queue-depth metadata is best-effort observability and must not change import outcomes.
+      return {};
+    }
   }
 }

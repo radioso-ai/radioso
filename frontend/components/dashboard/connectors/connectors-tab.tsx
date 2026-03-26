@@ -12,44 +12,7 @@ import {
   type ConnectorSummary,
   type ConnectorValidationIssue,
 } from '@/lib/api'
-
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'error' in error &&
-    typeof error.error === 'string'
-  ) {
-    return error.error
-  }
-
-  if (
-    error &&
-    typeof error === 'object' &&
-    'error' in error &&
-    typeof error.error === 'object' &&
-    error.error &&
-    'message' in error.error &&
-    typeof error.error.message === 'string'
-  ) {
-    return error.error.message
-  }
-
-  if (
-    error &&
-    typeof error === 'object' &&
-    'detail' in error &&
-    typeof error.detail === 'string'
-  ) {
-    return error.detail
-  }
-
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-
-  return fallback
-}
+import { getApiErrorMessage } from '@/lib/api-error'
 
 const getValidationIssues = (error: unknown): ConnectorValidationIssue[] => {
   if (
@@ -108,7 +71,7 @@ export function ConnectorsTab() {
           await loadDetail(list[0].id)
         }
       } catch (error) {
-        setFormError(getErrorMessage(error, 'Failed to load connectors.'))
+        setFormError(getApiErrorMessage(error, 'Failed to load connectors.'))
       } finally {
         setIsLoading(false)
       }
@@ -124,7 +87,7 @@ export function ConnectorsTab() {
     try {
       await loadDetail(connectorId)
     } catch (error) {
-      setFormError(getErrorMessage(error, 'Failed to load connector details.'))
+      setFormError(getApiErrorMessage(error, 'Failed to load connector details.'))
     }
   }
 
@@ -147,7 +110,7 @@ export function ConnectorsTab() {
       await syncAfterMutation(detail)
     } catch (error) {
       setValidationIssues(getValidationIssues(error))
-      setFormError(getErrorMessage(error, `Failed to ${action} connector.`))
+      setFormError(getApiErrorMessage(error, `Failed to ${action} connector.`))
     } finally {
       setBusyAction(null)
     }

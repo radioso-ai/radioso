@@ -1,0 +1,327 @@
+'use client'
+
+import { FileText, History, MessageSquareText } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
+import type { ChatConversationSummary, DocumentSearchHistoryEntry } from '@/lib/api'
+import { buildAccountRoute } from '@/lib/dashboard-routes'
+import type { WorkspaceOnboardingState } from '@/lib/onboarding'
+
+const formatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'medium',
+})
+
+export type HistoryFilter = 'all' | 'chat' | 'search'
+export type SelectedHistoryItem =
+  | { kind: 'chat'; id: string }
+  | { kind: 'search'; id: string }
+  | null
+export type HistoryListItem =
+  | { kind: 'chat'; id: string; sortAt: string; conversation: ChatConversationSummary }
+  | { kind: 'search'; id: string; sortAt: string; search: DocumentSearchHistoryEntry }
+
+const formatTimestamp = (value: string) => formatter.format(new Date(value))
+
+function SectionPagination({
+  page,
+  totalPages,
+  onPrevious,
+  onNext,
+}: {
+  page: number
+  totalPages: number
+  onPrevious: () => void
+  onNext: () => void
+}) {
+  if (totalPages <= 1) {
+    return null
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-sm">
+      <span className="text-muted-foreground">Page {page} of {totalPages}</span>
+      <div className="flex items-center gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={onPrevious} disabled={page === 1}>
+          Previous
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={onNext} disabled={page === totalPages}>
+          Next
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function ConversationCard({
+  conversation,
+  onSelect,
+}: {
+  conversation: ChatConversationSummary
+  onSelect: (item: SelectedHistoryItem) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect({ kind: 'chat', id: conversation.id })}
+      className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/40"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+              Chat
+            </span>
+            <p className="font-medium text-foreground">{conversation.preview || 'Untitled conversation'}</p>
+          </div>
+          <p className="text-xs text-muted-foreground">{conversation.id}</p>
+        </div>
+        <p className="text-xs text-muted-foreground">Updated {formatTimestamp(conversation.updatedAt)}</p>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+        {conversation.sourceChannel === 'anonymous' ? (
+          <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-amber-700 dark:text-amber-400">
+            Anonymous
+          </span>
+        ) : null}
+        <span className="rounded-full bg-muted px-2.5 py-1">{conversation.messageCount} messages</span>
+        <span className="rounded-full bg-muted px-2.5 py-1">{conversation.userMessageCount} user</span>
+        <span className="rounded-full bg-muted px-2.5 py-1">{conversation.assistantMessageCount} assistant</span>
+      </div>
+    </button>
+  )
+}
+
+function SearchCard({
+  search,
+  onSelect,
+}: {
+  search: DocumentSearchHistoryEntry
+  onSelect: (item: SelectedHistoryItem) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect({ kind: 'search', id: search.searchId })}
+      className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/40"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+              Search
+            </span>
+            <p className="font-medium text-foreground">{search.query}</p>
+          </div>
+          <p className="text-xs text-muted-foreground">{search.searchId}</p>
+        </div>
+        <p className="text-xs text-muted-foreground">Searched {formatTimestamp(search.createdAt)}</p>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+        <span className="rounded-full bg-muted px-2.5 py-1">
+          {search.resultCount} document{search.resultCount === 1 ? '' : 's'} retrieved
+        </span>
+        {search.traceAvailable ? (
+          <span className="rounded-full bg-muted px-2.5 py-1">Diagnostics available</span>
+        ) : null}
+      </div>
+    </button>
+  )
+}
+
+export function HistoryList({
+  accountId,
+  onboarding,
+  filter,
+  isLoading,
+  hasAnyHistory,
+  listError,
+  conversations,
+  conversationPage,
+  conversationTotalPages,
+  searches,
+  searchPage,
+  searchTotalPages,
+  allHistoryItems,
+  allPage,
+  allTotalPages,
+  onFilterChange,
+  onSelectItem,
+  onConversationPageChange,
+  onSearchPageChange,
+  onAllPageChange,
+  onNavigate,
+}: {
+  accountId: string
+  onboarding: WorkspaceOnboardingState
+  filter: HistoryFilter
+  isLoading: boolean
+  hasAnyHistory: boolean
+  listError: string | null
+  conversations: ChatConversationSummary[]
+  conversationPage: number
+  conversationTotalPages: number
+  searches: DocumentSearchHistoryEntry[]
+  searchPage: number
+  searchTotalPages: number
+  allHistoryItems: HistoryListItem[]
+  allPage: number
+  allTotalPages: number
+  onFilterChange: (filter: HistoryFilter) => void
+  onSelectItem: (item: SelectedHistoryItem) => void
+  onConversationPageChange: (page: number) => void
+  onSearchPageChange: (page: number) => void
+  onAllPageChange: (page: number) => void
+  onNavigate: (href: string) => void
+}) {
+  return (
+    <>
+      <div className="shrink-0 border-b border-border px-6 py-4">
+        <h1 className="text-lg font-medium text-foreground">History</h1>
+        <p className="text-sm text-muted-foreground">
+          Review past chats and searches. Retrieval diagnostics live here.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {([
+            { value: 'all', label: 'All' },
+            { value: 'chat', label: 'Chats' },
+            { value: 'search', label: 'Searches' },
+          ] as const).map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={filter === option.value ? 'default' : 'outline'}
+              onClick={() => onFilterChange(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        {isLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <Spinner className="h-6 w-6" />
+          </div>
+        ) : !hasAnyHistory ? (
+          <div className="space-y-6">
+            {listError ? (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                {listError}
+              </div>
+            ) : null}
+            <div className="flex h-full flex-col items-center justify-center text-center">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                <History className="h-5 w-5 text-primary" />
+              </div>
+              <h2 className="text-lg font-medium text-foreground">No history yet</h2>
+              <p className="mt-1 max-w-md text-sm text-muted-foreground">
+                {filter === 'chat'
+                  ? onboarding.hasReadyDocuments
+                    ? 'Your workspace is ready. Ask the first question and it will appear here.'
+                    : 'Load content first, then ask one question. Conversation history will appear here after that.'
+                  : filter === 'search'
+                    ? 'Document searches will appear here after someone runs a search.'
+                    : onboarding.hasReadyDocuments
+                      ? 'Your workspace is ready. Ask the first question or run a document search to start building history.'
+                      : 'Load content first, then ask one question or run a document search. History will appear here after that.'}
+              </p>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {filter !== 'search' && onboarding.hasReadyDocuments ? (
+                <Button size="sm" onClick={() => onNavigate(buildAccountRoute(accountId, 'chat'))}>
+                  <MessageSquareText className="mr-2 h-4 w-4" />
+                  Ask first question
+                </Button>
+              ) : null}
+              {(filter === 'chat' || filter === 'all') && !onboarding.hasReadyDocuments ? (
+                <Button size="sm" onClick={() => onNavigate(buildAccountRoute(accountId, 'documents'))}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Open documents
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="mx-auto max-w-4xl space-y-3">
+            {listError ? (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                {listError}
+              </div>
+            ) : null}
+            {filter === 'all' ? (
+              <>
+                <SectionPagination
+                  page={allPage}
+                  totalPages={allTotalPages}
+                  onPrevious={() => onAllPageChange(Math.max(1, allPage - 1))}
+                  onNext={() => onAllPageChange(Math.min(allTotalPages, allPage + 1))}
+                />
+                {allHistoryItems.map((item) =>
+                  item.kind === 'chat' ? (
+                    <ConversationCard
+                      key={item.id}
+                      conversation={item.conversation}
+                      onSelect={onSelectItem}
+                    />
+                  ) : (
+                    <SearchCard key={item.id} search={item.search} onSelect={onSelectItem} />
+                  ),
+                )}
+                <SectionPagination
+                  page={allPage}
+                  totalPages={allTotalPages}
+                  onPrevious={() => onAllPageChange(Math.max(1, allPage - 1))}
+                  onNext={() => onAllPageChange(Math.min(allTotalPages, allPage + 1))}
+                />
+              </>
+            ) : null}
+            {filter === 'chat' ? (
+              <section className="space-y-3">
+                {conversations.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+                    No saved chats on this page.
+                  </div>
+                ) : (
+                  conversations.map((conversation) => (
+                    <ConversationCard
+                      key={conversation.id}
+                      conversation={conversation}
+                      onSelect={onSelectItem}
+                    />
+                  ))
+                )}
+                <SectionPagination
+                  page={conversationPage}
+                  totalPages={conversationTotalPages}
+                  onPrevious={() => onConversationPageChange(Math.max(1, conversationPage - 1))}
+                  onNext={() => onConversationPageChange(Math.min(conversationTotalPages, conversationPage + 1))}
+                />
+              </section>
+            ) : null}
+            {filter === 'search' ? (
+              <section className="space-y-3">
+                {searches.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+                    No saved searches on this page.
+                  </div>
+                ) : (
+                  searches.map((search) => <SearchCard key={search.searchId} search={search} onSelect={onSelectItem} />)
+                )}
+                <SectionPagination
+                  page={searchPage}
+                  totalPages={searchTotalPages}
+                  onPrevious={() => onSearchPageChange(Math.max(1, searchPage - 1))}
+                  onNext={() => onSearchPageChange(Math.min(searchTotalPages, searchPage + 1))}
+                />
+              </section>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </>
+  )
+}

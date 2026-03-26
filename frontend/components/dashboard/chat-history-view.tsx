@@ -21,63 +21,27 @@ import {
   DrawerHeader,
 } from '@/components/ui/drawer'
 import { ActionButton } from '@/components/ui/action-button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { CopyValueField } from '@/components/ui/copy-value-field'
+import { Spinner } from '@/components/ui/spinner'
 import { ChatRetrievalInfo } from './chat-retrieval-info'
 import { ChatRetrievalTraceGraph } from './chat-retrieval-trace-graph'
 import { ChatMessageThread } from './chat-message-thread'
 import type { CitationOpenResult } from './chat-citations'
-import { buildAccountRoute } from '@/lib/dashboard-routes'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
-import { FileText, History, MessageSquareText, Search, X } from 'lucide-react'
-import { Textarea } from '@/components/ui/textarea'
+import { Search, X } from 'lucide-react'
+import {
+  HistoryFilter,
+  HistoryList,
+  HistoryListItem,
+  SelectedHistoryItem,
+} from '@/components/dashboard/history/history-list'
+import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
+import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
+import { getApiErrorMessage } from '@/lib/api-error'
 
-const formatter = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'medium',
-})
 const HISTORY_PAGE_SIZE = 50
 const MESSAGE_WINDOW_SIZE = 50
-
-type HistoryFilter = 'all' | 'chat' | 'search'
-type SelectedHistoryItem =
-  | { kind: 'chat'; id: string }
-  | { kind: 'search'; id: string }
-  | null
-type HistoryListItem =
-  | { kind: 'chat'; id: string; sortAt: string; conversation: ChatConversationSummary }
-  | { kind: 'search'; id: string; sortAt: string; search: DocumentSearchHistoryEntry }
-
-const formatTimestamp = (value: string) => formatter.format(new Date(value))
-
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'error' in error &&
-    error.error &&
-    typeof error.error === 'object' &&
-    'message' in error.error &&
-    typeof error.error.message === 'string'
-  ) {
-    return error.error.message
-  }
-
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-
-  return fallback
-}
 
 export function ChatHistoryView({
   accountId,
@@ -148,10 +112,10 @@ export function ChatHistoryView({
 
     const errors: string[] = []
     if (chatResult.status === 'rejected') {
-      errors.push(getErrorMessage(chatResult.reason, 'Failed to load chat history.'))
+      errors.push(getApiErrorMessage(chatResult.reason, 'Failed to load chat history.'))
     }
     if (searchResult.status === 'rejected') {
-      errors.push(getErrorMessage(searchResult.reason, 'Failed to load search history.'))
+      errors.push(getApiErrorMessage(searchResult.reason, 'Failed to load search history.'))
     }
 
     setListError(errors.length > 0 ? errors.join(' ') : null)
@@ -215,7 +179,7 @@ export function ChatHistoryView({
           return
         }
         setDetailError(
-          getErrorMessage(
+          getApiErrorMessage(
             error,
             selectedItem.kind === 'chat'
               ? 'Failed to load conversation details.'
@@ -328,7 +292,7 @@ export function ChatHistoryView({
       return 'opened'
     } catch (error) {
       setDocumentDetail(null)
-      setDocumentError(getErrorMessage(error, 'Failed to load document.'))
+      setDocumentError(getApiErrorMessage(error, 'Failed to load document.'))
       setIsDocumentDialogOpen(true)
       if (
         error &&
@@ -376,7 +340,7 @@ export function ChatHistoryView({
         }
       })
     } catch (error) {
-      setDetailError(getErrorMessage(error, 'Failed to load older messages.'))
+      setDetailError(getApiErrorMessage(error, 'Failed to load older messages.'))
     } finally {
       setIsDetailLoading(false)
     }
@@ -404,239 +368,36 @@ export function ChatHistoryView({
     return merged.slice(start, start + HISTORY_PAGE_SIZE)
   }, [allPage, conversations, searches])
 
-  const renderSectionPagination = (
-    page: number,
-    totalPages: number,
-    onPrevious: () => void,
-    onNext: () => void,
-  ) => (
-    totalPages > 1 ? (
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-sm">
-        <span className="text-muted-foreground">Page {page} of {totalPages}</span>
-        <div className="flex items-center gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={onPrevious} disabled={page === 1}>
-            Previous
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={onNext} disabled={page === totalPages}>
-            Next
-          </Button>
-        </div>
-      </div>
-    ) : null
-  )
-
-  const renderConversationCard = (conversation: ChatConversationSummary) => (
-    <button
-      key={`chat-${conversation.id}`}
-      type="button"
-      onClick={() => setSelectedItem({ kind: 'chat', id: conversation.id })}
-      className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/40"
-    >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-              Chat
-            </span>
-            <p className="font-medium text-foreground">
-              {conversation.preview || 'Untitled conversation'}
-            </p>
-          </div>
-          <p className="text-xs text-muted-foreground">{conversation.id}</p>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Updated {formatTimestamp(conversation.updatedAt)}
-        </p>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-        {conversation.sourceChannel === 'anonymous' && (
-          <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-amber-700 dark:text-amber-400">
-            Anonymous
-          </span>
-        )}
-        <span className="rounded-full bg-muted px-2.5 py-1">
-          {conversation.messageCount} messages
-        </span>
-        <span className="rounded-full bg-muted px-2.5 py-1">
-          {conversation.userMessageCount} user
-        </span>
-        <span className="rounded-full bg-muted px-2.5 py-1">
-          {conversation.assistantMessageCount} assistant
-        </span>
-      </div>
-    </button>
-  )
-
-  const renderSearchCard = (search: DocumentSearchHistoryEntry) => (
-    <button
-      key={`search-${search.searchId}`}
-      type="button"
-      onClick={() => setSelectedItem({ kind: 'search', id: search.searchId })}
-      className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/40"
-    >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-              Search
-            </span>
-            <p className="font-medium text-foreground">{search.query}</p>
-          </div>
-          <p className="text-xs text-muted-foreground">{search.searchId}</p>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Searched {formatTimestamp(search.createdAt)}
-        </p>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-        <span className="rounded-full bg-muted px-2.5 py-1">
-          {search.resultCount} document{search.resultCount === 1 ? '' : 's'} retrieved
-        </span>
-        {search.traceAvailable ? (
-          <span className="rounded-full bg-muted px-2.5 py-1">Diagnostics available</span>
-        ) : null}
-      </div>
-    </button>
-  )
-
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-border px-6 py-4">
-        <h1 className="text-lg font-medium text-foreground">History</h1>
-        <p className="text-sm text-muted-foreground">
-          Review past chats and searches. Retrieval diagnostics live here.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {([
-            { value: 'all', label: 'All' },
-            { value: 'chat', label: 'Chats' },
-            { value: 'search', label: 'Searches' },
-          ] as const).map((option) => (
-            <Button
-              key={option.value}
-              type="button"
-              size="sm"
-              variant={filter === option.value ? 'default' : 'outline'}
-              onClick={() => {
-                setFilter(option.value)
-                if (option.value === 'all') {
-                  setAllPage(1)
-                }
-              }}
-            >
-              {option.label}
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        {isListLoading ? (
-          <div className="flex h-full items-center justify-center">
-            <Spinner className="h-6 w-6" />
-          </div>
-        ) : !hasAnyHistory ? (
-          <div className="space-y-6">
-            {listError ? (
-              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-                {listError}
-              </div>
-            ) : null}
-            <div className="flex h-full flex-col items-center justify-center text-center">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                <History className="h-5 w-5 text-primary" />
-              </div>
-              <h2 className="text-lg font-medium text-foreground">No history yet</h2>
-              <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                {filter === 'chat'
-                  ? onboarding.hasReadyDocuments
-                    ? 'Your workspace is ready. Ask the first question and it will appear here.'
-                    : 'Load content first, then ask one question. Conversation history will appear here after that.'
-                  : filter === 'search'
-                    ? 'Document searches will appear here after someone runs a search.'
-                    : onboarding.hasReadyDocuments
-                      ? 'Your workspace is ready. Ask the first question or run a document search to start building history.'
-                      : 'Load content first, then ask one question or run a document search. History will appear here after that.'}
-              </p>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              {filter !== 'search' && onboarding.hasReadyDocuments ? (
-                <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'chat'))}>
-                  <MessageSquareText className="mr-2 h-4 w-4" />
-                  Ask first question
-                </Button>
-              ) : null}
-              {(filter === 'chat' || filter === 'all') && !onboarding.hasReadyDocuments ? (
-                <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'documents'))}>
-                  <FileText className="mr-2 h-4 w-4" />
-                  Open documents
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        ) : (
-          <div className="mx-auto max-w-4xl space-y-3">
-            {listError ? (
-              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-                {listError}
-              </div>
-            ) : null}
-            {filter === 'all' ? (
-              <>
-                {renderSectionPagination(
-                  allPage,
-                  allTotalPages,
-                  () => setAllPage((page) => Math.max(1, page - 1)),
-                  () => setAllPage((page) => Math.min(allTotalPages, page + 1)),
-                )}
-                {allHistoryItems.map((item) =>
-                  item.kind === 'chat' ? renderConversationCard(item.conversation) : renderSearchCard(item.search),
-                )}
-                {renderSectionPagination(
-                  allPage,
-                  allTotalPages,
-                  () => setAllPage((page) => Math.max(1, page - 1)),
-                  () => setAllPage((page) => Math.min(allTotalPages, page + 1)),
-                )}
-              </>
-            ) : null}
-            {filter === 'chat' ? (
-              <section className="space-y-3">
-                {conversations.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-                    No saved chats on this page.
-                  </div>
-                ) : (
-                  conversations.map(renderConversationCard)
-                )}
-                {renderSectionPagination(
-                  conversationPage,
-                  conversationTotalPages,
-                  () => setConversationPage((page) => Math.max(1, page - 1)),
-                  () => setConversationPage((page) => Math.min(conversationTotalPages, page + 1)),
-                )}
-              </section>
-            ) : null}
-            {filter === 'search' ? (
-              <section className="space-y-3">
-                {searches.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-                    No saved searches on this page.
-                  </div>
-                ) : (
-                  searches.map(renderSearchCard)
-                )}
-                {renderSectionPagination(
-                  searchPage,
-                  searchTotalPages,
-                  () => setSearchPage((page) => Math.max(1, page - 1)),
-                  () => setSearchPage((page) => Math.min(searchTotalPages, page + 1)),
-                )}
-              </section>
-            ) : null}
-          </div>
-        )}
-      </div>
+      <HistoryList
+        accountId={accountId}
+        onboarding={onboarding}
+        filter={filter}
+        isLoading={isListLoading}
+        hasAnyHistory={hasAnyHistory}
+        listError={listError}
+        conversations={conversations}
+        conversationPage={conversationPage}
+        conversationTotalPages={conversationTotalPages}
+        searches={searches}
+        searchPage={searchPage}
+        searchTotalPages={searchTotalPages}
+        allHistoryItems={allHistoryItems}
+        allPage={allPage}
+        allTotalPages={allTotalPages}
+        onFilterChange={(nextFilter) => {
+          setFilter(nextFilter)
+          if (nextFilter === 'all') {
+            setAllPage(1)
+          }
+        }}
+        onSelectItem={setSelectedItem}
+        onConversationPageChange={setConversationPage}
+        onSearchPageChange={setSearchPage}
+        onAllPageChange={setAllPage}
+        onNavigate={(href) => router.push(href)}
+      />
 
       <Drawer
         open={selectedItem !== null}
@@ -772,16 +533,7 @@ export function ChatHistoryView({
                               <p className="text-xs text-muted-foreground">
                                 Rank {result.rank} • Score {result.score.toFixed(3)}
                               </p>
-                              <div className="flex flex-wrap gap-1">
-                                {Object.entries(result.metadata ?? {}).map(([key, value]) => (
-                                  <span
-                                    key={key}
-                                    className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                                  >
-                                    {key}: {String(value)}
-                                  </span>
-                                ))}
-                              </div>
+                              <MetadataBadges metadata={result.metadata} className="" />
                               {result.matchEvidence.map((evidence) => (
                                 <p key={evidence} className="text-sm text-muted-foreground">
                                   {evidence}
@@ -830,8 +582,11 @@ export function ChatHistoryView({
         </DrawerContent>
       </Drawer>
 
-      <Dialog
+      <HistoryDocumentDialog
         open={isDocumentDialogOpen}
+        isLoading={isDocumentLoading}
+        error={documentError}
+        document={documentDetail}
         onOpenChange={(open) => {
           setIsDocumentDialogOpen(open)
           if (!open) {
@@ -839,61 +594,7 @@ export function ChatHistoryView({
             setDocumentError(null)
           }
         }}
-      >
-        <DialogContent className="flex h-[min(85vh,760px)] max-h-[85vh] flex-col overflow-hidden sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>View Document</DialogTitle>
-            <DialogDescription>
-              Review the document without leaving the current history view.
-            </DialogDescription>
-          </DialogHeader>
-          {isDocumentLoading ? (
-            <div className="flex flex-1 items-center justify-center">
-              <Spinner className="h-6 w-6" />
-            </div>
-          ) : documentError ? (
-            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-              {documentError}
-            </div>
-          ) : documentDetail ? (
-            <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
-                <div className="space-y-2">
-                  <Label htmlFor="historyDocumentTitle">Title</Label>
-                  <div
-                    id="historyDocumentTitle"
-                    className="rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-foreground"
-                  >
-                    {documentDetail.title}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="historyDocumentContent">Content</Label>
-                  <Textarea
-                    id="historyDocumentContent"
-                    value={documentDetail.content}
-                    readOnly
-                    className="min-h-[320px] resize-none overflow-y-auto [field-sizing:fixed]"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="historyDocumentMetadata">Metadata</Label>
-                  <Textarea
-                    id="historyDocumentMetadata"
-                    value={
-                      Object.keys(documentDetail.metadata ?? {}).length > 0
-                        ? JSON.stringify(documentDetail.metadata, null, 2)
-                        : '{}'
-                    }
-                    readOnly
-                    className="min-h-[120px] resize-none font-mono text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      />
     </div>
   )
 }

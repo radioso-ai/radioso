@@ -8,6 +8,7 @@ COPY packages/connector-api/*.d.ts ../packages/connector-api/
 COPY packages/document-parser/package.json ../packages/document-parser/
 COPY packages/document-parser/*.d.ts ../packages/document-parser/
 COPY packages/document-parser/*.js ../packages/document-parser/
+COPY packages/document-parser/parsers ../packages/document-parser/parsers
 RUN npm ci
 
 FROM deps AS build
@@ -31,6 +32,7 @@ COPY packages/connector-api/*.d.ts ../packages/connector-api/
 COPY packages/document-parser/package.json ../packages/document-parser/
 COPY packages/document-parser/*.d.ts ../packages/document-parser/
 COPY packages/document-parser/*.js ../packages/document-parser/
+COPY packages/document-parser/parsers ../packages/document-parser/parsers
 RUN npm ci --omit=dev
 
 COPY --from=build /app/backend/dist ./dist

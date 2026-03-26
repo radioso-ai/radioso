@@ -21,7 +21,16 @@ export interface AuditEventRepositoryPort {
     metadata?: Record<string, unknown>;
   }): Promise<AuditEventRecord>;
   listChatAnswerEventsByConversationId(workspaceId: string, conversationId: string): Promise<AuditEventRecord[]>;
+  listChatAnswerEventsByAssistantMessageIds(
+    workspaceId: string,
+    conversationId: string,
+    assistantMessageIds: string[],
+  ): Promise<AuditEventRecord[]>;
   listDocumentSearchEventsByWorkspaceId(workspaceId: string): Promise<AuditEventRecord[]>;
+  listDocumentSearchEventPageByWorkspaceId(
+    workspaceId: string,
+    input: { limit: number; offset: number },
+  ): Promise<{ events: AuditEventRecord[]; total: number }>;
   findDocumentSearchEventBySearchId(workspaceId: string, searchId: string): Promise<AuditEventRecord | null>;
 }
 
@@ -79,6 +88,29 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     return rows.map(mapAuditEvent);
   }
 
+  async listChatAnswerEventsByAssistantMessageIds(
+    workspaceId: string,
+    conversationId: string,
+    assistantMessageIds: string[],
+  ): Promise<AuditEventRecord[]> {
+    if (assistantMessageIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.database.query<AuditEventRow>(
+      `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
+       FROM audit_events
+       WHERE workspace_id = $1
+         AND event_type = 'chat.answer'
+         AND metadata_json ->> 'conversationId' = $2
+         AND metadata_json ->> 'assistantMessageId' = ANY($3::text[])
+       ORDER BY created_at ASC`,
+      [workspaceId, conversationId, assistantMessageIds],
+    );
+
+    return rows.map(mapAuditEvent);
+  }
+
   async listDocumentSearchEventsByWorkspaceId(workspaceId: string): Promise<AuditEventRecord[]> {
     const rows = await this.database.query<AuditEventRow>(
       `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
@@ -90,6 +122,35 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     );
 
     return rows.map(mapAuditEvent);
+  }
+
+  async listDocumentSearchEventPageByWorkspaceId(
+    workspaceId: string,
+    input: { limit: number; offset: number },
+  ): Promise<{ events: AuditEventRecord[]; total: number }> {
+    const [countRow] = await this.database.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM audit_events
+       WHERE workspace_id = $1
+         AND event_type = 'document.search'`,
+      [workspaceId],
+    );
+
+    const rows = await this.database.query<AuditEventRow>(
+      `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
+       FROM audit_events
+       WHERE workspace_id = $1
+         AND event_type = 'document.search'
+       ORDER BY created_at DESC
+       LIMIT $2
+       OFFSET $3`,
+      [workspaceId, input.limit, input.offset],
+    );
+
+    return {
+      events: rows.map(mapAuditEvent),
+      total: Number(countRow?.count ?? "0"),
+    };
   }
 
   async findDocumentSearchEventBySearchId(workspaceId: string, searchId: string): Promise<AuditEventRecord | null> {

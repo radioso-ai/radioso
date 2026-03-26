@@ -17,6 +17,7 @@ import type {
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
+  DocumentSummaryRecord,
   DocumentUpdateInput,
 } from "../../src/modules/documents/services/documentIngestionService.js";
 import type {
@@ -32,7 +33,11 @@ import type {
   AuditEventRepositoryPort,
 } from "../../src/db/repositories/auditEventRepository.js";
 import type { AuditEventInput } from "../../src/modules/audit/services/auditService.js";
-import type { MessageRecord, MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
+import type {
+  ConversationMessageSummary,
+  MessageRecord,
+  MessageRepositoryPort,
+} from "../../src/db/repositories/messageRepository.js";
 import type {
   IngestionSettingsInput,
   IngestionSettingsRecord,
@@ -826,6 +831,20 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
+  async listSummaryPageByWorkspaceId(
+    workspaceId: string,
+    input: { limit: number; offset: number },
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number }> {
+    const documents = [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    return {
+      documents: documents.slice(input.offset, input.offset + input.limit),
+      total: documents.length,
+    };
+  }
+
   async findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null> {
     const item = this.items.get(documentId);
     return item && item.workspaceId === workspaceId ? item : null;
@@ -1276,10 +1295,39 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
   }
 
+  async listPageByWorkspaceId(
+    workspaceId: string,
+    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+  ): Promise<{ conversations: ConversationRecord[]; total: number }> {
+    const conversations = [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+
+    return {
+      conversations: conversations.slice(input.offset, input.offset + input.limit),
+      total: conversations.length,
+    };
+  }
+
   async listByAnonymousSession(workspaceId: string, anonymousSessionId: string): Promise<ConversationRecord[]> {
     return [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId && item.anonymousSessionId === anonymousSessionId)
       .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+  }
+
+  async listPageByAnonymousSession(
+    workspaceId: string,
+    anonymousSessionId: string,
+    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+  ): Promise<{ conversations: ConversationRecord[]; total: number }> {
+    const conversations = [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId && item.anonymousSessionId === anonymousSessionId)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+
+    return {
+      conversations: conversations.slice(input.offset, input.offset + input.limit),
+      total: conversations.length,
+    };
   }
 
   async findByIdAndAnonymousSession(conversationId: string, anonymousSessionId: string): Promise<ConversationRecord | null> {
@@ -1300,6 +1348,38 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
 
   async listByConversationId(conversationId: string): Promise<MessageRecord[]> {
     return [...(this.items.get(conversationId) ?? [])];
+  }
+
+  async listWindowByConversationId(
+    conversationId: string,
+    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+  ): Promise<{ messages: MessageRecord[]; total: number }> {
+    const messages = [...(this.items.get(conversationId) ?? [])];
+    const latestFirst = [...messages].reverse();
+    const window = latestFirst.slice(input.offset, input.offset + input.limit).reverse();
+
+    return {
+      messages: window,
+      total: messages.length,
+    };
+  }
+
+  async summarizeByConversationIds(conversationIds: string[]): Promise<Map<string, ConversationMessageSummary>> {
+    const summaries = new Map<string, ConversationMessageSummary>();
+
+    for (const conversationId of conversationIds) {
+      const messages = this.items.get(conversationId) ?? [];
+      const latestMessage = [...messages].reverse().find((message) => message.content.trim().length > 0);
+      const normalized = latestMessage?.content.replace(/\s+/g, " ").trim() ?? "";
+      summaries.set(conversationId, {
+        messageCount: messages.length,
+        userMessageCount: messages.filter((message) => message.role === "user").length,
+        assistantMessageCount: messages.filter((message) => message.role === "assistant").length,
+        preview: normalized.length === 0 ? null : normalized.length > 140 ? `${normalized.slice(0, 137)}...` : normalized,
+      });
+    }
+
+    return summaries;
   }
 
   async create(input: {
@@ -1356,10 +1436,40 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     });
   }
 
+  async listChatAnswerEventsByAssistantMessageIds(
+    workspaceId: string,
+    conversationId: string,
+    assistantMessageIds: string[],
+  ): Promise<AuditEventRecord[]> {
+    return this.items.filter((event) => {
+      return (
+        event.workspaceId === workspaceId &&
+        event.eventType === "chat.answer" &&
+        event.metadata.conversationId === conversationId &&
+        typeof event.metadata.assistantMessageId === "string" &&
+        assistantMessageIds.includes(event.metadata.assistantMessageId)
+      );
+    });
+  }
+
   async listDocumentSearchEventsByWorkspaceId(workspaceId: string): Promise<AuditEventRecord[]> {
     return this.items
       .filter((event) => event.workspaceId === workspaceId && event.eventType === "document.search")
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  }
+
+  async listDocumentSearchEventPageByWorkspaceId(
+    workspaceId: string,
+    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+  ): Promise<{ events: AuditEventRecord[]; total: number }> {
+    const events = this.items
+      .filter((event) => event.workspaceId === workspaceId && event.eventType === "document.search")
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+
+    return {
+      events: events.slice(input.offset, input.offset + input.limit),
+      total: events.length,
+    };
   }
 
   async findDocumentSearchEventBySearchId(workspaceId: string, searchId: string): Promise<AuditEventRecord | null> {

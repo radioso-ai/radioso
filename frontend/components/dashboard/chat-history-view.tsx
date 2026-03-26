@@ -45,16 +45,14 @@ const formatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'medium',
 })
+const HISTORY_PAGE_SIZE = 50
+const MESSAGE_WINDOW_SIZE = 50
 
 type HistoryFilter = 'all' | 'chat' | 'search'
 type SelectedHistoryItem =
   | { kind: 'chat'; id: string }
   | { kind: 'search'; id: string }
   | null
-
-type HistoryListItem =
-  | { kind: 'chat'; id: string; sortAt: string; conversation: ChatConversationSummary }
-  | { kind: 'search'; id: string; sortAt: string; search: DocumentSearchHistoryEntry }
 
 const formatTimestamp = (value: string) => formatter.format(new Date(value))
 
@@ -88,7 +86,11 @@ export function ChatHistoryView({
   const router = useRouter()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([])
+  const [conversationTotal, setConversationTotal] = useState(0)
+  const [conversationPage, setConversationPage] = useState(1)
   const [searches, setSearches] = useState<DocumentSearchHistoryEntry[]>([])
+  const [searchTotal, setSearchTotal] = useState(0)
+  const [searchPage, setSearchPage] = useState(1)
   const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(null)
   const [conversationDetail, setConversationDetail] = useState<ChatConversationDetail | null>(null)
   const [searchDetail, setSearchDetail] = useState<DocumentSearchResponse | null>(null)
@@ -110,20 +112,30 @@ export function ChatHistoryView({
     setListError(null)
 
     const [chatResult, searchResult] = await Promise.allSettled([
-      chatApi.listHistory(),
-      documentsApi.listSearchHistory(),
+      chatApi.listHistory({
+        limit: HISTORY_PAGE_SIZE,
+        offset: (conversationPage - 1) * HISTORY_PAGE_SIZE,
+      }),
+      documentsApi.listSearchHistory({
+        limit: HISTORY_PAGE_SIZE,
+        offset: (searchPage - 1) * HISTORY_PAGE_SIZE,
+      }),
     ])
 
     if (chatResult.status === 'fulfilled') {
-      setConversations(chatResult.value)
+      setConversations(chatResult.value.conversations)
+      setConversationTotal(chatResult.value.total)
     } else {
       setConversations([])
+      setConversationTotal(0)
     }
 
     if (searchResult.status === 'fulfilled') {
-      setSearches(searchResult.value)
+      setSearches(searchResult.value.searches)
+      setSearchTotal(searchResult.value.total)
     } else {
       setSearches([])
+      setSearchTotal(0)
     }
 
     const errors: string[] = []
@@ -136,7 +148,7 @@ export function ChatHistoryView({
 
     setListError(errors.length > 0 ? errors.join(' ') : null)
     setIsListLoading(false)
-  }, [])
+  }, [conversationPage, searchPage])
 
   useEffect(() => {
     void loadHistory()
@@ -160,11 +172,14 @@ export function ChatHistoryView({
       setIsDetailLoading(true)
       setDetailError(null)
       setConversationDetail(null)
-      setSearchDetail(null)
+        setSearchDetail(null)
 
       try {
         if (selectedItem.kind === 'chat') {
-          const detail = await chatApi.getHistoryConversation(selectedItem.id)
+          const detail = await chatApi.getHistoryConversation(selectedItem.id, {
+            limit: MESSAGE_WINDOW_SIZE,
+            offset: 0,
+          })
           if (!isActive) {
             return
           }
@@ -325,26 +340,134 @@ export function ChatHistoryView({
     }
   }, [])
 
-  const historyItems = useMemo<HistoryListItem[]>(() => {
-    const items: HistoryListItem[] = [
-      ...conversations.map((conversation) => ({
-        kind: 'chat' as const,
-        id: conversation.id,
-        sortAt: conversation.updatedAt,
-        conversation,
-      })),
-      ...searches.map((search) => ({
-        kind: 'search' as const,
-        id: search.searchId,
-        sortAt: search.createdAt,
-        search,
-      })),
-    ]
+  const conversationTotalPages = Math.max(1, Math.ceil(conversationTotal / HISTORY_PAGE_SIZE))
+  const searchTotalPages = Math.max(1, Math.ceil(searchTotal / HISTORY_PAGE_SIZE))
 
-    return items
-      .filter((item) => filter === 'all' || item.kind === filter)
-      .sort((left, right) => new Date(right.sortAt).getTime() - new Date(left.sortAt).getTime())
-  }, [conversations, filter, searches])
+  const loadOlderMessages = useCallback(async () => {
+    if (!selectedItem || selectedItem.kind !== 'chat' || !conversationDetail || !conversationDetail.hasOlderMessages) {
+      return
+    }
+
+    setIsDetailLoading(true)
+    setDetailError(null)
+
+    try {
+      const older = await chatApi.getHistoryConversation(selectedItem.id, {
+        limit: MESSAGE_WINDOW_SIZE,
+        offset: conversationDetail.messages.length,
+      })
+      setConversationDetail((current) => {
+        if (!current) {
+          return older
+        }
+        return {
+          ...older,
+          messages: [...older.messages, ...current.messages],
+        }
+      })
+    } catch (error) {
+      setDetailError(getErrorMessage(error, 'Failed to load older messages.'))
+    } finally {
+      setIsDetailLoading(false)
+    }
+  }, [conversationDetail, selectedItem])
+
+  const hasAnyHistory = conversationTotal > 0 || searchTotal > 0
+
+  const renderSectionPagination = (
+    page: number,
+    totalPages: number,
+    onPrevious: () => void,
+    onNext: () => void,
+  ) => (
+    totalPages > 1 ? (
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-sm">
+        <span className="text-muted-foreground">Page {page} of {totalPages}</span>
+        <div className="flex items-center gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={onPrevious} disabled={page === 1}>
+            Previous
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={onNext} disabled={page === totalPages}>
+            Next
+          </Button>
+        </div>
+      </div>
+    ) : null
+  )
+
+  const renderConversationCard = (conversation: ChatConversationSummary) => (
+    <button
+      key={`chat-${conversation.id}`}
+      type="button"
+      onClick={() => setSelectedItem({ kind: 'chat', id: conversation.id })}
+      className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/40"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+              Chat
+            </span>
+            <p className="font-medium text-foreground">
+              {conversation.preview || 'Untitled conversation'}
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">{conversation.id}</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Updated {formatTimestamp(conversation.updatedAt)}
+        </p>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+        {conversation.sourceChannel === 'anonymous' && (
+          <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-amber-700 dark:text-amber-400">
+            Anonymous
+          </span>
+        )}
+        <span className="rounded-full bg-muted px-2.5 py-1">
+          {conversation.messageCount} messages
+        </span>
+        <span className="rounded-full bg-muted px-2.5 py-1">
+          {conversation.userMessageCount} user
+        </span>
+        <span className="rounded-full bg-muted px-2.5 py-1">
+          {conversation.assistantMessageCount} assistant
+        </span>
+      </div>
+    </button>
+  )
+
+  const renderSearchCard = (search: DocumentSearchHistoryEntry) => (
+    <button
+      key={`search-${search.searchId}`}
+      type="button"
+      onClick={() => setSelectedItem({ kind: 'search', id: search.searchId })}
+      className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/40"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+              Search
+            </span>
+            <p className="font-medium text-foreground">{search.query}</p>
+          </div>
+          <p className="text-xs text-muted-foreground">{search.searchId}</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Searched {formatTimestamp(search.createdAt)}
+        </p>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+        <span className="rounded-full bg-muted px-2.5 py-1">
+          {search.resultCount} document{search.resultCount === 1 ? '' : 's'} retrieved
+        </span>
+        {search.traceAvailable ? (
+          <span className="rounded-full bg-muted px-2.5 py-1">Diagnostics available</span>
+        ) : null}
+      </div>
+    </button>
+  )
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -377,7 +500,7 @@ export function ChatHistoryView({
           <div className="flex h-full items-center justify-center">
             <Spinner className="h-6 w-6" />
           </div>
-        ) : historyItems.length === 0 ? (
+        ) : !hasAnyHistory ? (
           <div className="space-y-6">
             {listError ? (
               <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
@@ -423,79 +546,79 @@ export function ChatHistoryView({
                 {listError}
               </div>
             ) : null}
-            {historyItems.map((item) => (
-              item.kind === 'chat' ? (
-                <button
-                  key={`chat-${item.id}`}
-                  type="button"
-                  onClick={() => setSelectedItem({ kind: 'chat', id: item.id })}
-                  className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/40"
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                          Chat
-                        </span>
-                        <p className="font-medium text-foreground">
-                          {item.conversation.preview || 'Untitled conversation'}
-                        </p>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{item.id}</p>
+            {filter !== 'search' ? (
+              <section className="space-y-3">
+                {filter === 'all' ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-medium text-foreground">Recent Chats</h2>
+                      <p className="text-xs text-muted-foreground">{conversationTotal} total</p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Updated {formatTimestamp(item.conversation.updatedAt)}
-                    </p>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    {item.conversation.sourceChannel === 'anonymous' && (
-                      <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-amber-700 dark:text-amber-400">
-                        Anonymous
-                      </span>
+                    {renderSectionPagination(
+                      conversationPage,
+                      conversationTotalPages,
+                      () => setConversationPage((page) => Math.max(1, page - 1)),
+                      () => setConversationPage((page) => Math.min(conversationTotalPages, page + 1)),
                     )}
-                    <span className="rounded-full bg-muted px-2.5 py-1">
-                      {item.conversation.messageCount} messages
-                    </span>
-                    <span className="rounded-full bg-muted px-2.5 py-1">
-                      {item.conversation.userMessageCount} user
-                    </span>
-                    <span className="rounded-full bg-muted px-2.5 py-1">
-                      {item.conversation.assistantMessageCount} assistant
-                    </span>
                   </div>
-                </button>
-              ) : (
-                <button
-                  key={`search-${item.id}`}
-                  type="button"
-                  onClick={() => setSelectedItem({ kind: 'search', id: item.id })}
-                  className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent/40"
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                          Search
-                        </span>
-                        <p className="font-medium text-foreground">{item.search.query}</p>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{item.id}</p>
+                ) : null}
+                {conversations.length === 0 ? (
+                  filter === 'chat' ? (
+                    <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+                      No saved chats on this page.
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Searched {formatTimestamp(item.search.createdAt)}
-                    </p>
+                  ) : null
+                ) : (
+                  conversations.map(renderConversationCard)
+                )}
+                {filter === 'chat'
+                  ? renderSectionPagination(
+                      conversationPage,
+                      conversationTotalPages,
+                      () => setConversationPage((page) => Math.max(1, page - 1)),
+                      () => setConversationPage((page) => Math.min(conversationTotalPages, page + 1)),
+                    )
+                  : null}
+              </section>
+            ) : null}
+
+            {filter === 'all' && searches.length > 0 ? <div className="border-t border-border/60 pt-4" /> : null}
+
+            {filter !== 'chat' ? (
+              <section className="space-y-3">
+                {filter === 'all' ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-medium text-foreground">Recent Searches</h2>
+                      <p className="text-xs text-muted-foreground">{searchTotal} total</p>
+                    </div>
+                    {renderSectionPagination(
+                      searchPage,
+                      searchTotalPages,
+                      () => setSearchPage((page) => Math.max(1, page - 1)),
+                      () => setSearchPage((page) => Math.min(searchTotalPages, page + 1)),
+                    )}
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <span className="rounded-full bg-muted px-2.5 py-1">
-                      {item.search.resultCount} document{item.search.resultCount === 1 ? '' : 's'} retrieved
-                    </span>
-                    {item.search.traceAvailable ? (
-                      <span className="rounded-full bg-muted px-2.5 py-1">Diagnostics available</span>
-                    ) : null}
-                  </div>
-                </button>
-              )
-            ))}
+                ) : null}
+                {searches.length === 0 ? (
+                  filter === 'search' ? (
+                    <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+                      No saved searches on this page.
+                    </div>
+                  ) : null
+                ) : (
+                  searches.map(renderSearchCard)
+                )}
+                {filter === 'search'
+                  ? renderSectionPagination(
+                      searchPage,
+                      searchTotalPages,
+                      () => setSearchPage((page) => Math.max(1, page - 1)),
+                      () => setSearchPage((page) => Math.min(searchTotalPages, page + 1)),
+                    )
+                  : null}
+              </section>
+            ) : null}
           </div>
         )}
       </div>
@@ -553,6 +676,13 @@ export function ChatHistoryView({
             ) : selectedItem?.kind === 'chat' && conversationDetail ? (
               <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(640px,1.1fr)]">
                 <div className="min-h-0 overflow-y-auto pr-1">
+                  {conversationDetail.hasOlderMessages ? (
+                    <div className="mb-3 flex justify-center">
+                      <Button type="button" size="sm" variant="outline" onClick={() => void loadOlderMessages()}>
+                        Load older messages
+                      </Button>
+                    </div>
+                  ) : null}
                   <ChatMessageThread
                     messages={conversationDetail.messages}
                     onOpenDocument={handleOpenCitation}

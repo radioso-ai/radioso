@@ -6,6 +6,7 @@ import { badRequest } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { anonymousRateLimiter } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
+import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./chatRoutes.js";
 
 export const anonymousChatSchema = z.object({
   query: z.string().min(1),
@@ -63,37 +64,25 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
   );
 
   // GET /api/v1/public/chat/:token — list conversations for this anonymous session
-  router.get("/:token", sessionMiddleware, async (_req, res, next) => {
+  router.get("/:token", sessionMiddleware, async (req, res, next) => {
     try {
       const { workspaceId, workspaceName, anonymousSessionId } = res.locals as {
         workspaceId: string;
         workspaceName: string;
         anonymousSessionId: string;
       };
-
-      const conversations = await dependencies.conversationRepository.listByAnonymousSession(
+      const parsedQuery = collectionPageQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const page = await dependencies.chatHistoryService.listAnonymousConversations(
         workspaceId,
         anonymousSessionId,
+        parsedQuery.data,
       );
 
-      const summaries = await Promise.all(
-        conversations.map(async (conversation) => {
-          const messages = await dependencies.messageRepository.listByConversationId(conversation.id);
-          const preview = messages.length > 0
-            ? messages[messages.length - 1].content.slice(0, 140)
-            : null;
-          return {
-            id: conversation.id,
-            sourceChannel: conversation.sourceChannel,
-            preview,
-            messageCount: messages.length,
-            createdAt: conversation.createdAt.toISOString(),
-            updatedAt: conversation.updatedAt.toISOString(),
-          };
-        }),
-      );
-
-      res.status(200).json({ workspaceName, conversations: summaries });
+      res.status(200).json({ workspaceName, ...page });
     } catch (error) {
       next(error);
     }
@@ -108,6 +97,11 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
         next(badRequest("Invalid request params", parsedParams.error.flatten()));
         return;
       }
+      const parsedQuery = conversationWindowQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
       const { conversationId } = parsedParams.data;
 
       // Verify the conversation belongs to this anonymous session, not just the workspace
@@ -120,7 +114,11 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
         return;
       }
 
-      const detail = await dependencies.chatHistoryService.getConversation(conversation.workspaceId, conversationId);
+      const detail = await dependencies.chatHistoryService.getConversation(
+        conversation.workspaceId,
+        conversationId,
+        parsedQuery.data,
+      );
       res.status(200).json(detail);
     } catch (error) {
       next(error);

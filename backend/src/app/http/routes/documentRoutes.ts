@@ -7,6 +7,8 @@ import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 
+const MAX_DOCUMENT_LIST_LIMIT = 100;
+
 export const documentSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
@@ -27,6 +29,11 @@ export const documentSearchSchema = z.object({
 
 export const documentSearchHistoryParamsSchema = z.object({
   searchId: z.string().uuid(),
+});
+
+export const documentListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(MAX_DOCUMENT_LIST_LIMIT).default(MAX_DOCUMENT_LIST_LIMIT),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
@@ -55,11 +62,12 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
       });
     });
 
-  router.get("/", requireApiToken(dependencies), async (_req, res, next) => {
+  router.get("/", requireApiToken(dependencies), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const documents = await dependencies.documentIngestionService.listForWorkspace(workspaceId);
-      res.status(200).json({ documents });
+      const { limit, offset } = documentListQuerySchema.parse(req.query);
+      const page = await dependencies.documentIngestionService.listForWorkspace(workspaceId, { limit, offset });
+      res.status(200).json(page);
     } catch (error) {
       next(error);
     }
@@ -79,11 +87,16 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.get("/search/history", requireApiToken(dependencies), async (_req, res, next) => {
+  router.get("/search/history", requireApiToken(dependencies), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const searches = await dependencies.documentSearchHistoryService.listHistory(workspaceId);
-      res.status(200).json({ searches });
+      const parsedQuery = documentListQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const page = await dependencies.documentSearchHistoryService.listHistory(workspaceId, parsedQuery.data);
+      res.status(200).json(page);
     } catch (error) {
       next(error);
     }

@@ -640,12 +640,21 @@ describe("chat service streaming", () => {
         };
       },
     } as const;
+    let releaseSecondChunk: (() => void) | undefined;
+    let markSecondChunkBlocked: (() => void) | undefined;
+    const secondChunkBlocked = new Promise<void>((resolve) => {
+      markSecondChunkBlocked = resolve;
+    });
     const chatGateway: ChatGateway = {
       async answer() {
         return "unused";
       },
       async *streamAnswer() {
         yield "The page explains testing and parsing content for users[[1]]. ";
+        await new Promise<void>((resolve) => {
+          releaseSecondChunk = resolve;
+          markSecondChunkBlocked?.();
+        });
         yield "It also offers 24/7 phone support.";
       },
     };
@@ -657,13 +666,35 @@ describe("chat service streaming", () => {
       auditService,
     );
 
-    const events: ChatStreamEvent[] = [];
-    for await (const event of service.streamAnswer({
+    const iterator = service.streamAnswer({
       workspaceId: "workspace-1",
       accountId: "account-1",
       query: "What does this page do?",
       stream: true,
-    })) {
+    })[Symbol.asyncIterator]();
+
+    const conversationEvent = await iterator.next();
+    const firstChunkEvent = await iterator.next();
+
+    expect(conversationEvent.value).toEqual({
+      type: "conversation",
+      conversationId: expect.any(String),
+    });
+    expect(firstChunkEvent.value).toEqual({
+      type: "chunk",
+      text: "The page explains testing and parsing content for users. ",
+    });
+
+    const pendingNextEvent = iterator.next();
+    await secondChunkBlocked;
+    releaseSecondChunk?.();
+
+    const events: ChatStreamEvent[] = [conversationEvent.value!, firstChunkEvent.value!];
+    const secondChunkEvent = await pendingNextEvent;
+    if (!secondChunkEvent.done) {
+      events.push(secondChunkEvent.value);
+    }
+    for await (const event of { [Symbol.asyncIterator]: () => iterator }) {
       events.push(event);
     }
 

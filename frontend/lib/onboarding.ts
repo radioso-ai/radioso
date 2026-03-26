@@ -52,6 +52,7 @@ const setWorkspaceFlag = (key: string, workspaceId: string, enabled: boolean) =>
 }
 
 const getWorkspaceFlag = (key: string, workspaceId: string) => readBooleanMap(key)[workspaceId] === true
+const hasAnyWorkspaceFlag = (key: string) => Object.values(readBooleanMap(key)).some((value) => value)
 
 export const markOnboardingActive = (workspaceId: string) => {
   setWorkspaceFlag(ONBOARDING_ACTIVE_KEY, workspaceId, true)
@@ -131,8 +132,30 @@ const isPendingDocument = (document: DocumentSummary) => {
 
 const isSampleDocument = (document: DocumentSummary) => document.metadata.sampleDocument === true
 
+export const shouldAutoActivateOnboarding = (input: {
+  workspaceId: string
+  workspaceCount: number
+  documentCount: number
+  conversationCount: number
+}): boolean => {
+  if (input.documentCount > 0 || input.conversationCount > 0) {
+    return false
+  }
+
+  if (getWorkspaceFlag(ONBOARDING_COMPLETED_KEY, input.workspaceId)) {
+    return false
+  }
+
+  if (hasAnyWorkspaceFlag(ONBOARDING_COMPLETED_KEY)) {
+    return false
+  }
+
+  return input.workspaceCount === 1
+}
+
 export const useWorkspaceOnboarding = (
   workspaceId: string | null,
+  workspaceCount: number,
 ): WorkspaceOnboardingState => {
   const [isLoading, setIsLoading] = useState(true)
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
@@ -163,7 +186,12 @@ export const useWorkspaceOnboarding = (
       const nextActive =
         !nextCompleted &&
         (getWorkspaceFlag(ONBOARDING_ACTIVE_KEY, workspaceId) ||
-          (nextDocuments.length === 0 && conversations.length === 0))
+          shouldAutoActivateOnboarding({
+            workspaceId,
+            workspaceCount,
+            documentCount: nextDocuments.length,
+            conversationCount: conversations.length,
+          }))
 
       if (nextActive) {
         markOnboardingActive(workspaceId)
@@ -176,7 +204,7 @@ export const useWorkspaceOnboarding = (
     } finally {
       setIsLoading(false)
     }
-  }, [workspaceId])
+  }, [workspaceCount, workspaceId])
 
   useEffect(() => {
     void refresh()

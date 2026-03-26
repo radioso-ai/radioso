@@ -95,7 +95,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
       : {
           title: 'Start with content first',
           description:
-            'Radioso is seeding this empty workspace with starter documents. You can also open Documents to upload your own.',
+            'Add documents to this workspace before chatting. Starter docs are only used during the guided first-run flow.',
           primaryAction: (
             <div className="flex flex-wrap items-center justify-center gap-2">
               <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'documents'))}>

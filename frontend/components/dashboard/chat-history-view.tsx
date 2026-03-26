@@ -53,6 +53,9 @@ type SelectedHistoryItem =
   | { kind: 'chat'; id: string }
   | { kind: 'search'; id: string }
   | null
+type HistoryListItem =
+  | { kind: 'chat'; id: string; sortAt: string; conversation: ChatConversationSummary }
+  | { kind: 'search'; id: string; sortAt: string; search: DocumentSearchHistoryEntry }
 
 const formatTimestamp = (value: string) => formatter.format(new Date(value))
 
@@ -91,6 +94,7 @@ export function ChatHistoryView({
   const [searches, setSearches] = useState<DocumentSearchHistoryEntry[]>([])
   const [searchTotal, setSearchTotal] = useState(0)
   const [searchPage, setSearchPage] = useState(1)
+  const [allPage, setAllPage] = useState(1)
   const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(null)
   const [conversationDetail, setConversationDetail] = useState<ChatConversationDetail | null>(null)
   const [searchDetail, setSearchDetail] = useState<DocumentSearchResponse | null>(null)
@@ -111,14 +115,18 @@ export function ChatHistoryView({
     setIsListLoading(true)
     setListError(null)
 
+    const listLimit = filter === 'all' ? allPage * HISTORY_PAGE_SIZE : HISTORY_PAGE_SIZE
+    const chatOffset = filter === 'all' ? 0 : (conversationPage - 1) * HISTORY_PAGE_SIZE
+    const searchOffset = filter === 'all' ? 0 : (searchPage - 1) * HISTORY_PAGE_SIZE
+
     const [chatResult, searchResult] = await Promise.allSettled([
       chatApi.listHistory({
-        limit: HISTORY_PAGE_SIZE,
-        offset: (conversationPage - 1) * HISTORY_PAGE_SIZE,
+        limit: listLimit,
+        offset: chatOffset,
       }),
       documentsApi.listSearchHistory({
-        limit: HISTORY_PAGE_SIZE,
-        offset: (searchPage - 1) * HISTORY_PAGE_SIZE,
+        limit: listLimit,
+        offset: searchOffset,
       }),
     ])
 
@@ -148,7 +156,7 @@ export function ChatHistoryView({
 
     setListError(errors.length > 0 ? errors.join(' ') : null)
     setIsListLoading(false)
-  }, [conversationPage, searchPage])
+  }, [allPage, conversationPage, filter, searchPage])
 
   useEffect(() => {
     void loadHistory()
@@ -342,6 +350,8 @@ export function ChatHistoryView({
 
   const conversationTotalPages = Math.max(1, Math.ceil(conversationTotal / HISTORY_PAGE_SIZE))
   const searchTotalPages = Math.max(1, Math.ceil(searchTotal / HISTORY_PAGE_SIZE))
+  const allTotal = conversationTotal + searchTotal
+  const allTotalPages = Math.max(1, Math.ceil(allTotal / HISTORY_PAGE_SIZE))
 
   const loadOlderMessages = useCallback(async () => {
     if (!selectedItem || selectedItem.kind !== 'chat' || !conversationDetail || !conversationDetail.hasOlderMessages) {
@@ -373,6 +383,26 @@ export function ChatHistoryView({
   }, [conversationDetail, selectedItem])
 
   const hasAnyHistory = conversationTotal > 0 || searchTotal > 0
+
+  const allHistoryItems = useMemo<HistoryListItem[]>(() => {
+    const merged: HistoryListItem[] = [
+      ...conversations.map((conversation) => ({
+        kind: 'chat' as const,
+        id: conversation.id,
+        sortAt: conversation.updatedAt,
+        conversation,
+      })),
+      ...searches.map((search) => ({
+        kind: 'search' as const,
+        id: search.searchId,
+        sortAt: search.createdAt,
+        search,
+      })),
+    ].sort((left, right) => new Date(right.sortAt).getTime() - new Date(left.sortAt).getTime())
+
+    const start = (allPage - 1) * HISTORY_PAGE_SIZE
+    return merged.slice(start, start + HISTORY_PAGE_SIZE)
+  }, [allPage, conversations, searches])
 
   const renderSectionPagination = (
     page: number,
@@ -487,7 +517,12 @@ export function ChatHistoryView({
               type="button"
               size="sm"
               variant={filter === option.value ? 'default' : 'outline'}
-              onClick={() => setFilter(option.value)}
+              onClick={() => {
+                setFilter(option.value)
+                if (option.value === 'all') {
+                  setAllPage(1)
+                }
+              }}
             >
               {option.label}
             </Button>
@@ -546,77 +581,57 @@ export function ChatHistoryView({
                 {listError}
               </div>
             ) : null}
-            {filter !== 'search' ? (
+            {filter === 'all' ? (
+              <>
+                {renderSectionPagination(
+                  allPage,
+                  allTotalPages,
+                  () => setAllPage((page) => Math.max(1, page - 1)),
+                  () => setAllPage((page) => Math.min(allTotalPages, page + 1)),
+                )}
+                {allHistoryItems.map((item) =>
+                  item.kind === 'chat' ? renderConversationCard(item.conversation) : renderSearchCard(item.search),
+                )}
+                {renderSectionPagination(
+                  allPage,
+                  allTotalPages,
+                  () => setAllPage((page) => Math.max(1, page - 1)),
+                  () => setAllPage((page) => Math.min(allTotalPages, page + 1)),
+                )}
+              </>
+            ) : null}
+            {filter === 'chat' ? (
               <section className="space-y-3">
-                {filter === 'all' ? (
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-sm font-medium text-foreground">Recent Chats</h2>
-                      <p className="text-xs text-muted-foreground">{conversationTotal} total</p>
-                    </div>
-                    {renderSectionPagination(
-                      conversationPage,
-                      conversationTotalPages,
-                      () => setConversationPage((page) => Math.max(1, page - 1)),
-                      () => setConversationPage((page) => Math.min(conversationTotalPages, page + 1)),
-                    )}
-                  </div>
-                ) : null}
                 {conversations.length === 0 ? (
-                  filter === 'chat' ? (
-                    <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-                      No saved chats on this page.
-                    </div>
-                  ) : null
+                  <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+                    No saved chats on this page.
+                  </div>
                 ) : (
                   conversations.map(renderConversationCard)
                 )}
-                {filter === 'chat'
-                  ? renderSectionPagination(
-                      conversationPage,
-                      conversationTotalPages,
-                      () => setConversationPage((page) => Math.max(1, page - 1)),
-                      () => setConversationPage((page) => Math.min(conversationTotalPages, page + 1)),
-                    )
-                  : null}
+                {renderSectionPagination(
+                  conversationPage,
+                  conversationTotalPages,
+                  () => setConversationPage((page) => Math.max(1, page - 1)),
+                  () => setConversationPage((page) => Math.min(conversationTotalPages, page + 1)),
+                )}
               </section>
             ) : null}
-
-            {filter === 'all' && searches.length > 0 ? <div className="border-t border-border/60 pt-4" /> : null}
-
-            {filter !== 'chat' ? (
+            {filter === 'search' ? (
               <section className="space-y-3">
-                {filter === 'all' ? (
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-sm font-medium text-foreground">Recent Searches</h2>
-                      <p className="text-xs text-muted-foreground">{searchTotal} total</p>
-                    </div>
-                    {renderSectionPagination(
-                      searchPage,
-                      searchTotalPages,
-                      () => setSearchPage((page) => Math.max(1, page - 1)),
-                      () => setSearchPage((page) => Math.min(searchTotalPages, page + 1)),
-                    )}
-                  </div>
-                ) : null}
                 {searches.length === 0 ? (
-                  filter === 'search' ? (
-                    <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-                      No saved searches on this page.
-                    </div>
-                  ) : null
+                  <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+                    No saved searches on this page.
+                  </div>
                 ) : (
                   searches.map(renderSearchCard)
                 )}
-                {filter === 'search'
-                  ? renderSectionPagination(
-                      searchPage,
-                      searchTotalPages,
-                      () => setSearchPage((page) => Math.max(1, page - 1)),
-                      () => setSearchPage((page) => Math.min(searchTotalPages, page + 1)),
-                    )
-                  : null}
+                {renderSectionPagination(
+                  searchPage,
+                  searchTotalPages,
+                  () => setSearchPage((page) => Math.max(1, page - 1)),
+                  () => setSearchPage((page) => Math.min(searchTotalPages, page + 1)),
+                )}
               </section>
             ) : null}
           </div>

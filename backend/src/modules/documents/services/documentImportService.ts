@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { detectDocumentType, DocumentParserError } from "@radioso/document-parser";
 
 import type { AuditService } from "../../audit/services/auditService.js";
+import type { DocumentProcessingQueueSnapshot } from "../../../db/repositories/documentProcessingJobRepository.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../infra/gcsDocumentStorage.js";
 import { badRequest } from "../../../shared/domain/errors.js";
@@ -27,6 +28,7 @@ export class DocumentImportService {
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly auditService: AuditService,
     private readonly storage: DocumentStoragePort,
+    private readonly getQueueSnapshot?: () => Promise<DocumentProcessingQueueSnapshot>,
   ) {}
 
   async importDocument(input: DocumentImportInput): Promise<{ documentId: string; status: string }> {
@@ -36,6 +38,14 @@ export class DocumentImportService {
           objectPath: string;
           generation?: string | null;
           sizeBytes: number;
+        }
+      | undefined;
+    let document:
+      | {
+          id: string;
+          revision: number;
+          sourceKind: string;
+          status: string;
         }
       | undefined;
     try {
@@ -64,7 +74,7 @@ export class DocumentImportService {
         buffer: input.buffer,
       });
       const title = input.title?.trim() || deriveTitleFromFilename(input.filename) || "Imported document";
-      const document = await this.documentRepository.createAndQueue({
+      document = await this.documentRepository.createAndQueue({
         workspaceId: input.workspaceId,
         title,
         sourceContent: "",
@@ -79,23 +89,8 @@ export class DocumentImportService {
         sourceSizeBytes: storedObject.sizeBytes,
       });
 
-      await this.auditService.record({
-        workspaceId: input.workspaceId,
-        eventType: "document.import",
-        eventStatus: "success",
-        metadata: {
-          documentId: document.id,
-          revision: document.revision,
-          sourceKind: document.sourceKind,
-        },
-      });
-
-      return {
-        documentId: document.id,
-        status: document.status,
-      };
     } catch (error) {
-      if (storedObject) {
+      if (storedObject && !document) {
         try {
           await this.storage.delete({
             bucket: storedObject.bucket,
@@ -116,6 +111,43 @@ export class DocumentImportService {
         },
       });
       throw error;
+    }
+
+    await this.auditService.record({
+      workspaceId: input.workspaceId,
+      eventType: "document.import",
+      eventStatus: "success",
+      metadata: {
+        documentId: document.id,
+        revision: document.revision,
+        sourceKind: document.sourceKind,
+        ...(await this.queueSnapshotMetadata()),
+      },
+    });
+
+    return {
+      documentId: document.id,
+      status: document.status,
+    };
+  }
+
+  private async queueSnapshotMetadata(): Promise<{
+    queuedJobCount?: number;
+    processingJobCount?: number;
+  }> {
+    if (!this.getQueueSnapshot) {
+      return {};
+    }
+
+    try {
+      const snapshot = await this.getQueueSnapshot();
+      return {
+        queuedJobCount: snapshot.queuedJobCount,
+        processingJobCount: snapshot.processingJobCount,
+      };
+    } catch {
+      // Queue-depth metadata is best-effort observability and must not change import outcomes.
+      return {};
     }
   }
 }

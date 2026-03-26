@@ -388,6 +388,9 @@ export function RetrievalSettingsPanel() {
                       ? settings.metadataFieldSuggestions.map((field) => `${field.field} (${field.inferredType})`).join(', ')
                       : 'none discovered yet'}
                   </p>
+                  <p className="text-sm text-muted-foreground">
+                    Format hints: dates use <code>YYYY-MM-DD</code>, numbers use plain values like <code>100</code> or <code>12.5</code>, and booleans use <code>true</code> or <code>false</code>.
+                  </p>
                 </div>
 
                 {settings.metadataRules.length === 0 ? (

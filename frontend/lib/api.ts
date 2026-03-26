@@ -200,6 +200,7 @@ export interface RegisterResponse {
 export interface LoginRequest {
   email: string
   password: string
+  preferredWorkspaceId?: string
 }
 
 export interface LoginResponse {

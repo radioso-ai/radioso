@@ -154,4 +154,34 @@ describe("auth integration", () => {
     expect(workspaces).toHaveLength(1);
     expect(workspaces[0]?.name).toBe("Default");
   });
+
+  it("returns the preferred workspace on login when the account already has multiple workspaces", async () => {
+    const { app } = createTestApp();
+
+    const registration = await request(app).post("/api/v1/auth/register").send({
+      email: "multi-workspace@example.com",
+      password: "verysecurepassword",
+    });
+
+    const cookie = registration.headers["set-cookie"]?.[0];
+    const created = await request(app)
+      .post("/api/v1/workspace")
+      .set("Cookie", cookie)
+      .send({ name: "Research" });
+
+    const preferredToken = await request(app)
+      .get(`/api/v1/account/workspaces/${created.body.id}/token`)
+      .set("Cookie", cookie);
+
+    const response = await request(app).post("/api/v1/auth/login").send({
+      email: "multi-workspace@example.com",
+      password: "verysecurepassword",
+      preferredWorkspaceId: created.body.id,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.workspaceId).toBe(created.body.id);
+    expect(response.body.workspaceName).toBe("Research");
+    expect(response.body.token).toBe(preferredToken.body.token);
+  });
 });

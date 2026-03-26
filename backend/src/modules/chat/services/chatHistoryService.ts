@@ -4,7 +4,11 @@ import type {
   ConversationRecord,
   ConversationRepositoryPort,
 } from "../../../db/repositories/conversationRepository.js";
-import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
+import type {
+  ConversationMessageSummary,
+  MessageRecord,
+  MessageRepositoryPort,
+} from "../../../db/repositories/messageRepository.js";
 import type { RetrievalExecutionDiagnostics, RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
@@ -66,7 +70,30 @@ export interface ChatConversationDetail {
   messageCount: number;
   userMessageCount: number;
   assistantMessageCount: number;
+  messagesTotal: number;
+  messageWindowOffset: number;
+  messageWindowLimit: number;
+  hasOlderMessages: boolean;
   messages: ChatConversationTurn[];
+}
+
+export interface ChatConversationPage {
+  conversations: ChatConversationSummary[];
+  total: number;
+}
+
+export interface PublicConversationSummary {
+  id: string;
+  sourceChannel: string | null;
+  preview: string | null;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PublicConversationPage {
+  conversations: PublicConversationSummary[];
+  total: number;
 }
 
 interface ChatAuditMetadata {
@@ -102,16 +129,6 @@ interface AssistantTurnArtifacts {
 
 const toIsoString = (value: Date): string => value.toISOString();
 
-const buildPreview = (messages: MessageRecord[]): string | null => {
-  const latestMessage = [...messages].reverse().find((message) => message.content.trim().length > 0);
-  if (!latestMessage) {
-    return null;
-  }
-
-  const normalized = latestMessage.content.replace(/\s+/g, " ").trim();
-  return normalized.length > 140 ? `${normalized.slice(0, 137)}...` : normalized;
-};
-
 export class ChatHistoryService {
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
 
@@ -121,35 +138,74 @@ export class ChatHistoryService {
     private readonly auditEventRepository: AuditEventRepositoryPort,
   ) {}
 
-  async listConversations(workspaceId: string): Promise<ChatConversationSummary[]> {
-    const conversations = await this.conversationRepository.listByWorkspaceId(workspaceId);
+  async listConversations(
+    workspaceId: string,
+    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+  ): Promise<ChatConversationPage> {
+    const { conversations, total } = await this.conversationRepository.listPageByWorkspaceId(workspaceId, input);
+    const messageSummaries = await this.messageRepository.summarizeByConversationIds(conversations.map((conversation) => conversation.id));
 
-    const summaries = await Promise.all(
-      conversations.map(async (conversation) => {
-        const messages = await this.messageRepository.listByConversationId(conversation.id);
-        return this.buildSummary(conversation, messages);
-      }),
-    );
-
-    return summaries;
+    return {
+      conversations: conversations.map((conversation) => this.buildSummary(conversation, messageSummaries.get(conversation.id))),
+      total,
+    };
   }
 
-  async getConversation(workspaceId: string, conversationId: string): Promise<ChatConversationDetail> {
+  async listAnonymousConversations(
+    workspaceId: string,
+    anonymousSessionId: string,
+    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+  ): Promise<PublicConversationPage> {
+    const { conversations, total } = await this.conversationRepository.listPageByAnonymousSession(
+      workspaceId,
+      anonymousSessionId,
+      input,
+    );
+    const messageSummaries = await this.messageRepository.summarizeByConversationIds(conversations.map((conversation) => conversation.id));
+
+    return {
+      conversations: conversations.map((conversation) => {
+        const summary = messageSummaries.get(conversation.id);
+        return {
+          id: conversation.id,
+          sourceChannel: conversation.sourceChannel,
+          preview: summary?.preview ?? null,
+          messageCount: summary?.messageCount ?? 0,
+          createdAt: toIsoString(conversation.createdAt),
+          updatedAt: toIsoString(conversation.updatedAt),
+        };
+      }),
+      total,
+    };
+  }
+
+  async getConversation(
+    workspaceId: string,
+    conversationId: string,
+    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+  ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
     if (!conversation) {
       throw notFound("Conversation not found");
     }
 
-    const [messages, auditEvents] = await Promise.all([
-      this.messageRepository.listByConversationId(conversation.id),
-      this.auditEventRepository.listChatAnswerEventsByConversationId(workspaceId, conversation.id),
+    const [{ messages, total }, messageSummaries] = await Promise.all([
+      this.messageRepository.listWindowByConversationId(conversation.id, input),
+      this.messageRepository.summarizeByConversationIds([conversation.id]),
     ]);
+    const assistantMessageIds = messages
+      .filter((message) => message.role === "assistant")
+      .map((message) => message.id);
+    const auditEvents = await this.auditEventRepository.listChatAnswerEventsByAssistantMessageIds(
+      workspaceId,
+      conversation.id,
+      assistantMessageIds,
+    );
 
     const artifactsByAssistantMessageId = this.buildArtifactsIndex(auditEvents);
     const debugByAssistantMessageId = this.buildDebugIndex(auditEvents);
-    const userMessageCount = messages.filter((message) => message.role === "user").length;
-    const assistantMessageCount = messages.filter((message) => message.role === "assistant").length;
+    const messageSummary = messageSummaries.get(conversation.id);
 
     return {
       conversationId: conversation.id,
@@ -157,9 +213,13 @@ export class ChatHistoryService {
       sourceChannel: conversation.sourceChannel,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),
-      messageCount: messages.length,
-      userMessageCount,
-      assistantMessageCount,
+      messageCount: messageSummary?.messageCount ?? total,
+      userMessageCount: messageSummary?.userMessageCount ?? 0,
+      assistantMessageCount: messageSummary?.assistantMessageCount ?? 0,
+      messagesTotal: total,
+      messageWindowOffset: input.offset,
+      messageWindowLimit: input.limit,
+      hasOlderMessages: input.offset + messages.length < total,
       messages: messages.map((message) => ({
         id: message.id,
         role: message.role,
@@ -174,7 +234,7 @@ export class ChatHistoryService {
 
   private buildSummary(
     conversation: ConversationRecord,
-    messages: MessageRecord[],
+    messageSummary?: ConversationMessageSummary,
   ): ChatConversationSummary {
     return {
       id: conversation.id,
@@ -182,10 +242,10 @@ export class ChatHistoryService {
       anonymousSessionId: conversation.anonymousSessionId ?? null,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),
-      messageCount: messages.length,
-      userMessageCount: messages.filter((message) => message.role === "user").length,
-      assistantMessageCount: messages.filter((message) => message.role === "assistant").length,
-      preview: buildPreview(messages),
+      messageCount: messageSummary?.messageCount ?? 0,
+      userMessageCount: messageSummary?.userMessageCount ?? 0,
+      assistantMessageCount: messageSummary?.assistantMessageCount ?? 0,
+      preview: messageSummary?.preview ?? null,
     };
   }
 

@@ -512,8 +512,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DocumentSummary"
+        total:
+          type: integer
+          minimum: 0
       required:
         - documents
+        - total
     DocumentSearchAction:
       type: object
       properties:
@@ -618,8 +622,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DocumentSearchHistoryEntry"
+        total:
+          type: integer
+          minimum: 0
       required:
         - searches
+        - total
     DocumentSearchRequest:
       type: object
       properties:
@@ -990,8 +998,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatConversationSummary"
+        total:
+          type: integer
+          minimum: 0
       required:
         - conversations
+        - total
     ValidationDisposition:
       type: string
       enum:
@@ -1143,6 +1155,17 @@ components:
         assistantMessageCount:
           type: integer
           minimum: 0
+        messagesTotal:
+          type: integer
+          minimum: 0
+        messageWindowOffset:
+          type: integer
+          minimum: 0
+        messageWindowLimit:
+          type: integer
+          minimum: 1
+        hasOlderMessages:
+          type: boolean
         messages:
           type: array
           items:
@@ -1156,6 +1179,10 @@ components:
         - messageCount
         - userMessageCount
         - assistantMessageCount
+        - messagesTotal
+        - messageWindowOffset
+        - messageWindowLimit
+        - hasOlderMessages
         - messages
     PublicConversationSummary:
       type: object
@@ -1196,9 +1223,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PublicConversationSummary"
+        total:
+          type: integer
+          minimum: 0
       required:
         - workspaceName
         - conversations
+        - total
     RateLimitExceededResponse:
       type: object
       properties:
@@ -1847,6 +1878,20 @@ paths:
       operationId: listDocumentSearchHistory
       security:
         - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
       responses:
         "200":
           description: Document search history returned
@@ -1902,6 +1947,20 @@ paths:
       operationId: listDocuments
       security:
         - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
       responses:
         "200":
           description: Documents returned
@@ -2158,6 +2217,20 @@ paths:
       operationId: listChatHistory
       security:
         - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
       responses:
         "200":
           description: Chat history summaries
@@ -2186,6 +2259,19 @@ paths:
           required: true
           name: conversationId
           in: path
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
       responses:
         "200":
           description: Historical conversation detail
@@ -2481,6 +2567,19 @@ paths:
           required: true
           name: token
           in: path
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
       responses:
         "200":
           description: Conversation summaries returned
@@ -2517,6 +2616,19 @@ paths:
           required: true
           name: conversationId
           in: path
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
       responses:
         "200":
           description: Historical conversation detail

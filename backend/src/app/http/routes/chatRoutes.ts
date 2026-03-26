@@ -7,6 +7,10 @@ import { requireApiToken } from "../middleware/requireApiToken.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 
+const MAX_COLLECTION_PAGE_LIMIT = 100;
+const DEFAULT_COLLECTION_PAGE_LIMIT = 50;
+const DEFAULT_MESSAGE_WINDOW_LIMIT = 50;
+
 export const chatSchema = z.object({
   query: z.string().min(1),
   stream: z.boolean(),
@@ -21,14 +25,29 @@ export const conversationParamsSchema = z.object({
   conversationId: z.string().uuid(),
 });
 
+export const collectionPageQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(MAX_COLLECTION_PAGE_LIMIT).default(DEFAULT_COLLECTION_PAGE_LIMIT),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const conversationWindowQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(MAX_COLLECTION_PAGE_LIMIT).default(DEFAULT_MESSAGE_WINDOW_LIMIT),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
 export const createChatRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
 
-  router.get("/history", requireApiToken(dependencies), async (_req, res, next) => {
+  router.get("/history", requireApiToken(dependencies), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const conversations = await dependencies.chatHistoryService.listConversations(workspaceId);
-      res.status(200).json({ conversations });
+      const parsedQuery = collectionPageQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const page = await dependencies.chatHistoryService.listConversations(workspaceId, parsedQuery.data);
+      res.status(200).json(page);
     } catch (error) {
       next(error);
     }
@@ -42,10 +61,16 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
         next(badRequest("Invalid request params", parsedParams.error.flatten()));
         return;
       }
+      const parsedQuery = conversationWindowQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
       const { conversationId } = parsedParams.data;
       const conversation = await dependencies.chatHistoryService.getConversation(
         workspaceId,
         conversationId,
+        parsedQuery.data,
       );
       res.status(200).json(conversation);
     } catch (error) {

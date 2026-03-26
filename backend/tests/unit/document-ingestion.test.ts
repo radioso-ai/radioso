@@ -24,7 +24,8 @@ describe("document ingestion", () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
-    const service = new DocumentIngestionService(documentRepository, createAuditService());
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
 
     const response = await service.ingest({
       workspaceId: "workspace-1",
@@ -37,6 +38,58 @@ describe("document ingestion", () => {
     expect(document.status).toBe("queued");
     expect(document.revision).toBe(1);
     expect([...jobRepository.items.values()]).toHaveLength(1);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.ingest",
+        eventStatus: "success",
+        metadata: expect.objectContaining({
+          queuedJobCount: 1,
+          processingJobCount: 0,
+        }),
+      }),
+    );
+  });
+
+  it("does not fail ingest when queue snapshot metadata lookup fails after queueing", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      async () => {
+        throw new Error("snapshot unavailable");
+      },
+    );
+
+    const response = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Queued",
+      content: "Queued content",
+    });
+
+    expect(response.status).toBe("queued");
+    expect([...jobRepository.items.values()]).toHaveLength(1);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.ingest",
+        eventStatus: "success",
+        metadata: expect.objectContaining({
+          documentId: response.documentId,
+          status: "queued",
+        }),
+      }),
+    );
+    expect(auditService.events).not.toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.ingest",
+        eventStatus: "failure",
+      }),
+    );
   });
 
   it("does not persist a new document when durable queue creation fails", async () => {

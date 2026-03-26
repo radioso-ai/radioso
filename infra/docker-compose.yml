@@ -35,6 +35,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
       SESSION_TTL_HOURS: 168
+    command: ["npm", "run", "start:http"]
     ports:
       - "8080:8080"
     healthcheck:
@@ -49,6 +50,24 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+
+  backend-worker:
+    container_name: radioso-backend-worker
+    build:
+      context: ..
+      dockerfile: infra/backend.Dockerfile
+    env_file:
+      - ../backend/.env
+    depends_on:
+      backend:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
+      SESSION_TTL_HOURS: 168
+    command: ["npm", "run", "start:worker"]
 
   frontend:
     container_name: radioso-frontend

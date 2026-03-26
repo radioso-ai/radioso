@@ -1,4 +1,5 @@
 import type { AuditService } from "../../audit/services/auditService.js";
+import type { DocumentProcessingQueueSnapshot } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { normalizeMarkdown } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 import type { StructuredAttributes } from "../../retrieval/domain/structuredAttributes.js";
 import { conflict, notFound } from "../../../shared/domain/errors.js";
@@ -166,11 +167,20 @@ export class DocumentIngestionService {
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly auditService: AuditService,
+    private readonly getQueueSnapshot?: () => Promise<DocumentProcessingQueueSnapshot>,
   ) {}
 
   async ingest(input: { workspaceId: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<{ documentId: string; status: string }> {
+    let document:
+      | {
+          id: string;
+          revision: number;
+          status: string;
+        }
+      | undefined;
+
     try {
-      const document = await this.documentRepository.createAndQueue({
+      document = await this.documentRepository.createAndQueue({
         workspaceId: input.workspaceId,
         title: input.title,
         sourceContent: input.content,
@@ -185,21 +195,6 @@ export class DocumentIngestionService {
         sourceSizeBytes: null,
       });
 
-      await this.auditService.record({
-        workspaceId: input.workspaceId,
-        eventType: "document.ingest",
-        eventStatus: "success",
-        metadata: {
-          documentId: document.id,
-          revision: document.revision,
-          status: document.status,
-        },
-      });
-
-      return {
-        documentId: document.id,
-        status: document.status,
-      };
     } catch (error) {
       await this.auditService.record({
         workspaceId: input.workspaceId,
@@ -211,16 +206,41 @@ export class DocumentIngestionService {
       });
       throw error;
     }
+
+    await this.auditService.record({
+      workspaceId: input.workspaceId,
+      eventType: "document.ingest",
+      eventStatus: "success",
+      metadata: {
+        documentId: document.id,
+        revision: document.revision,
+        status: document.status,
+        ...(await this.queueSnapshotMetadata()),
+      },
+    });
+
+    return {
+      documentId: document.id,
+      status: document.status,
+    };
   }
 
   async update(input: { workspaceId: string; documentId: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<{ documentId: string; status: string }> {
+    let document:
+      | {
+          id: string;
+          revision: number;
+          status: string;
+        }
+      | undefined;
+
     try {
       const existing = await this.getDocument(input.workspaceId, input.documentId);
       if (existing.sourceKind === "uploaded_file") {
         throw conflict("Imported documents cannot be updated through the inline document API");
       }
 
-      const document = await this.documentRepository.updateAndQueue({
+      document = await this.documentRepository.updateAndQueue({
         documentId: input.documentId,
         workspaceId: input.workspaceId,
         title: input.title,
@@ -236,21 +256,6 @@ export class DocumentIngestionService {
         sourceSizeBytes: null,
       });
 
-      await this.auditService.record({
-        workspaceId: input.workspaceId,
-        eventType: "document.update",
-        eventStatus: "success",
-        metadata: {
-          documentId: document.id,
-          revision: document.revision,
-          status: document.status,
-        },
-      });
-
-      return {
-        documentId: document.id,
-        status: document.status,
-      };
     } catch (error) {
       await this.auditService.record({
         workspaceId: input.workspaceId,
@@ -263,29 +268,38 @@ export class DocumentIngestionService {
       });
       throw error;
     }
+
+    await this.auditService.record({
+      workspaceId: input.workspaceId,
+      eventType: "document.update",
+      eventStatus: "success",
+      metadata: {
+        documentId: document.id,
+        revision: document.revision,
+        status: document.status,
+        ...(await this.queueSnapshotMetadata()),
+      },
+    });
+
+    return {
+      documentId: document.id,
+      status: document.status,
+    };
   }
 
   async reprocess(input: { workspaceId: string; documentId: string }): Promise<{ documentId: string; status: string }> {
     await this.getDocument(input.workspaceId, input.documentId);
 
+    let document:
+      | {
+          id: string;
+          revision: number;
+          status: string;
+        }
+      | undefined;
+
     try {
-      const document = await this.documentRepository.requeueAndQueue(input.documentId, input.workspaceId);
-
-      await this.auditService.record({
-        workspaceId: input.workspaceId,
-        eventType: "document.reprocess",
-        eventStatus: "success",
-        metadata: {
-          documentId: document.id,
-          revision: document.revision,
-          status: document.status,
-        },
-      });
-
-      return {
-        documentId: document.id,
-        status: document.status,
-      };
+      document = await this.documentRepository.requeueAndQueue(input.documentId, input.workspaceId);
     } catch (error) {
       await this.auditService.record({
         workspaceId: input.workspaceId,
@@ -298,6 +312,23 @@ export class DocumentIngestionService {
       });
       throw error;
     }
+
+    await this.auditService.record({
+      workspaceId: input.workspaceId,
+      eventType: "document.reprocess",
+      eventStatus: "success",
+      metadata: {
+        documentId: document.id,
+        revision: document.revision,
+        status: document.status,
+        ...(await this.queueSnapshotMetadata()),
+      },
+    });
+
+    return {
+      documentId: document.id,
+      status: document.status,
+    };
   }
 
   async getDocument(workspaceId: string, documentId: string): Promise<DocumentDetails> {
@@ -340,5 +371,25 @@ export class DocumentIngestionService {
       ...this.toSummary(document),
       content: document.sourceContent,
     };
+  }
+
+  private async queueSnapshotMetadata(): Promise<{
+    queuedJobCount?: number;
+    processingJobCount?: number;
+  }> {
+    if (!this.getQueueSnapshot) {
+      return {};
+    }
+
+    try {
+      const snapshot = await this.getQueueSnapshot();
+      return {
+        queuedJobCount: snapshot.queuedJobCount,
+        processingJobCount: snapshot.processingJobCount,
+      };
+    } catch {
+      // Queue-depth metadata is best-effort observability and must not change request outcomes.
+      return {};
+    }
   }
 }

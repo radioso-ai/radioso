@@ -3,6 +3,7 @@ import type { AuditService } from "../../audit/services/auditService.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import type {
   DocumentProcessingJobRecord,
+  DocumentProcessingQueueSnapshot,
   DocumentProcessingJobRepositoryPort,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { DocumentProcessingService } from "./documentProcessingService.js";
@@ -14,6 +15,7 @@ const RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 export class DocumentProcessingWorker {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private lastActivityState: "idle" | "processing" | null = null;
 
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
@@ -57,6 +59,7 @@ export class DocumentProcessingWorker {
         failureReason: null,
       });
     }));
+    await this.logQueueState("Document processing worker started");
     this.scheduleNextTick(0);
   }
 
@@ -71,8 +74,15 @@ export class DocumentProcessingWorker {
   async runOnce(now: Date = new Date()): Promise<boolean> {
     const job = await this.jobRepository.claimNext(now);
     if (!job) {
+      if (this.lastActivityState !== "idle") {
+        await this.logQueueState("Document processing worker idle");
+        this.lastActivityState = "idle";
+      }
       return false;
     }
+
+    this.lastActivityState = "processing";
+    await this.logQueueState("Document processing worker processing");
 
     try {
       const outcome = await this.processingService.process(job);
@@ -156,5 +166,26 @@ export class DocumentProcessingWorker {
         reason: message,
       },
     });
+  }
+
+  private async logQueueState(message: string): Promise<void> {
+    const snapshot = await this.jobRepository.getQueueSnapshot();
+    this.logger.info(
+      {
+        role: "worker",
+        ...this.toLogFields(snapshot),
+      },
+      message,
+    );
+  }
+
+  private toLogFields(snapshot: DocumentProcessingQueueSnapshot) {
+    return {
+      queuedJobCount: snapshot.queuedJobCount,
+      processingJobCount: snapshot.processingJobCount,
+      oldestQueuedJobAgeMs: snapshot.oldestQueuedJobCreatedAt
+        ? Math.max(0, Date.now() - snapshot.oldestQueuedJobCreatedAt.getTime())
+        : null,
+    };
   }
 }

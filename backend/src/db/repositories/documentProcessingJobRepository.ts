@@ -19,10 +19,17 @@ export interface DocumentProcessingJobRecord {
   updatedAt: Date;
 }
 
+export interface DocumentProcessingQueueSnapshot {
+  queuedJobCount: number;
+  processingJobCount: number;
+  oldestQueuedJobCreatedAt: Date | null;
+}
+
 export interface DocumentProcessingJobRepositoryPort {
   enqueue(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord>;
   claimNext(now?: Date): Promise<DocumentProcessingJobRecord | null>;
   listProcessingJobs(): Promise<DocumentProcessingJobRecord[]>;
+  getQueueSnapshot(now?: Date): Promise<DocumentProcessingQueueSnapshot>;
   markCompleted(jobId: string): Promise<void>;
   markSkipped(jobId: string, reason: string): Promise<void>;
   markFailed(jobId: string, errorMessage: string): Promise<void>;
@@ -149,6 +156,27 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     );
 
     return rows.map(mapJob);
+  }
+
+  async getQueueSnapshot(now: Date = new Date()): Promise<DocumentProcessingQueueSnapshot> {
+    const [row] = await this.database.query<{
+      queued_job_count: number | string;
+      processing_job_count: number | string;
+      oldest_queued_job_created_at: Date | null;
+    }>(
+      `SELECT
+         COUNT(*) FILTER (WHERE status = 'queued' AND available_at <= $1) AS queued_job_count,
+         COUNT(*) FILTER (WHERE status = 'processing') AS processing_job_count,
+         MIN(created_at) FILTER (WHERE status = 'queued' AND available_at <= $1) AS oldest_queued_job_created_at
+       FROM document_processing_jobs`,
+      [now],
+    );
+
+    return {
+      queuedJobCount: Number(row?.queued_job_count ?? 0),
+      processingJobCount: Number(row?.processing_job_count ?? 0),
+      oldestQueuedJobCreatedAt: row?.oldest_queued_job_created_at ? new Date(row.oldest_queued_job_created_at) : null,
+    };
   }
 
   async markCompleted(jobId: string): Promise<void> {

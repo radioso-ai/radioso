@@ -121,4 +121,48 @@ describe("document import service", () => {
 
     expect(storage.objects.size).toBe(0);
   });
+
+  it("does not fail import or delete storage when queue snapshot metadata lookup fails", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const storage = new InMemoryDocumentStorage();
+    const auditService = createAuditService();
+    const service = new DocumentImportService(
+      documentRepository,
+      auditService,
+      storage,
+      async () => {
+        throw new Error("snapshot unavailable");
+      },
+    );
+
+    const response = await service.importDocument({
+      workspaceId: "workspace-1",
+      filename: "report.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("report"),
+    });
+
+    expect(response.status).toBe("queued");
+    expect(storage.objects.size).toBe(1);
+    const document = await documentRepository.findByIdAndWorkspaceId(response.documentId, "workspace-1");
+    expect(document?.sourceStorageObject).toBeTruthy();
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.import",
+        eventStatus: "success",
+        metadata: expect.objectContaining({
+          documentId: response.documentId,
+          sourceKind: "uploaded_file",
+        }),
+      }),
+    );
+    expect(auditService.events).not.toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.import",
+        eventStatus: "failure",
+      }),
+    );
+  });
 });

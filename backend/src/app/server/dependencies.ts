@@ -99,11 +99,13 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const documentIngestionService = new DocumentIngestionService(
     documentRepository,
     auditService,
+    () => documentProcessingJobRepository.getQueueSnapshot(),
   );
   const documentImportService = new DocumentImportService(
     documentRepository,
     auditService,
     documentStorage,
+    () => documentProcessingJobRepository.getQueueSnapshot(),
   );
   const documentProcessingWorker = new DocumentProcessingWorker(
     documentRepository,

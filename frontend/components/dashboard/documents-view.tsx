@@ -16,6 +16,7 @@ import { DocumentDeleteDialog } from '@/components/dashboard/documents/document-
 import { DocumentEditorDialog } from '@/components/dashboard/documents/document-editor-dialog'
 import { DocumentImportDialog } from '@/components/dashboard/documents/document-import-dialog'
 import { DocumentList } from '@/components/dashboard/documents/document-list'
+import { getApiErrorMessage } from '@/lib/api-error'
 
 type EditorMode = 'create' | 'edit' | 'view'
 const PAGE_SIZE = 100
@@ -74,6 +75,7 @@ export function DocumentsView({
   const [deleteErrorById, setDeleteErrorById] = useState<Record<string, string>>({})
   const [retryingDocumentId, setRetryingDocumentId] = useState<string | null>(null)
   const [retryErrorById, setRetryErrorById] = useState<Record<string, string>>({})
+  const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
 
   const loadDocuments = useCallback(async (page: number) => {
     setIsLoading(true)
@@ -283,7 +285,7 @@ export function DocumentsView({
       setIsImportDialogOpen(false)
       resetImportDialog()
     } catch (error) {
-      setImportError(getErrorMessage(error, 'Failed to import document. Please try again.'))
+      setImportError(getApiErrorMessage(error, 'Failed to import document. Please try again.'))
     } finally {
       setIsImporting(false)
     }
@@ -326,7 +328,7 @@ export function DocumentsView({
     } catch (error) {
       setDeleteErrorById((current) => ({
         ...current,
-        [deletingId]: getErrorMessage(error, 'Failed to delete document. Please try again.'),
+        [deletingId]: getApiErrorMessage(error, 'Failed to delete document. Please try again.'),
       }))
     } finally {
       setDeletingDocumentId(null)
@@ -347,7 +349,7 @@ export function DocumentsView({
     } catch (error) {
       setRetryErrorById((current) => ({
         ...current,
-        [documentId]: getErrorMessage(error, 'Failed to retry document processing. Please try again.'),
+        [documentId]: getApiErrorMessage(error, 'Failed to retry document processing. Please try again.'),
       }))
     } finally {
       setRetryingDocumentId(null)

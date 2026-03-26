@@ -234,6 +234,28 @@ describe("document contract", () => {
     });
   });
 
+  it("rejects oversized inline documents with a clear client error", async () => {
+    const { app } = createTestApp();
+
+    const { token } = await issueTestToken(app, "document-inline-too-large@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Large inline document",
+        content: "a".repeat(1024 * 1024 + 1),
+      });
+
+    expect(response.status).toBe(413);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "payload_too_large",
+        message: "Document content exceeds the inline size limit. Import the file instead.",
+      },
+    });
+  });
+
   it("returns, updates, and reprocesses a document for a bearer-authenticated account", async () => {
     const { app } = createTestApp();
 

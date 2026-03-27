@@ -27,6 +27,16 @@ export interface NormalizedPresentedAnswer {
   answerSegments: AnswerSegment[];
 }
 
+const hasParagraphBreak = (text: string): boolean => /\r?\n\r?\n/.test(text);
+
+const sameCitationIndices = (left?: number[], right?: number[]): boolean => {
+  if (!left || !right || left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+};
+
 const toChatCitation = (citation: CitationEvidence): ChatCitation => ({
   documentId: citation.documentId,
   chunkId: citation.chunkId,
@@ -78,6 +88,19 @@ export class AnswerPresentationService {
 
     const pushSegment = (text: string, citationIndices?: number[]) => {
       if (text.length === 0) {
+        return;
+      }
+
+      const previousSegment = answerSegments.at(-1);
+      if (
+        citationIndices &&
+        citationIndices.length > 0 &&
+        previousSegment?.citationIndices &&
+        sameCitationIndices(previousSegment.citationIndices, citationIndices) &&
+        !hasParagraphBreak(text)
+      ) {
+        previousSegment.text += text;
+        answerText += text;
         return;
       }
 

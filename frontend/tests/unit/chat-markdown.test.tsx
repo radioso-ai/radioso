@@ -31,11 +31,19 @@ const value = 1
     expect(html).toContain('const value = 1')
   })
 
-  it('preserves visible line breaks in assistant text', () => {
+  it('treats single newlines as normal markdown whitespace', () => {
     const html = renderToStaticMarkup(<AssistantMarkdownContent content={'First line\nSecond line'} />)
 
-    expect(html).toContain('First line<br/>')
+    expect(html).not.toContain('<br/>')
     expect(html).toContain('Second line')
+  })
+
+  it('renders markdown paragraphs when separated by a blank line', () => {
+    const html = renderToStaticMarkup(<AssistantMarkdownContent content={'First paragraph\n\nSecond paragraph'} />)
+
+    expect(html).toContain('<p')
+    expect(html).toContain('First paragraph')
+    expect(html).toContain('Second paragraph')
   })
 
   it('autolinks bare http urls in assistant text', () => {

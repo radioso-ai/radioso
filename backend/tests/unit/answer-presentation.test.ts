@@ -239,4 +239,68 @@ describe("answer presentation service", () => {
       },
     ]);
   });
+
+  it("collapses consecutive claims that cite the same document into one visible citation", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "Arudra leads morning meditations[[1]]. He also leads Purification ceremonies[[1]].",
+      citationDisplayEnabled: true,
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Program",
+          content: "Arudra leads morning meditations and Purification ceremonies.",
+        },
+      ],
+    });
+
+    expect(result.answer).toBe(
+      "Arudra leads morning meditations. He also leads Purification ceremonies.",
+    );
+    expect(result.citations).toEqual([
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Program" },
+    ]);
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Arudra leads morning meditations. He also leads Purification ceremonies",
+        citationIndices: [0],
+      },
+      {
+        text: ".",
+      },
+    ]);
+  });
+
+  it("keeps separate citation markers when the same source spans multiple paragraphs", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "First grounded paragraph[[1]].\n\nSecond grounded paragraph[[1]].",
+      citationDisplayEnabled: true,
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Guide",
+          content: "First grounded paragraph. Second grounded paragraph.",
+        },
+      ],
+    });
+
+    expect(result.answerSegments).toEqual([
+      {
+        text: "First grounded paragraph",
+        citationIndices: [0],
+      },
+      {
+        text: ".\n\nSecond grounded paragraph",
+        citationIndices: [0],
+      },
+      {
+        text: ".",
+      },
+    ]);
+  });
 });

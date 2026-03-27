@@ -15,8 +15,8 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* 
-  Custom Hivec Color Palette:
+/*
+  Custom radioso Color Palette:
   --cloudy-sky: #5096e7 (blue)
   --evergreen: #142317 (dark green)
   --bright-snow: #f9f9f7 (off-white)

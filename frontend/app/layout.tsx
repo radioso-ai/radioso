@@ -6,24 +6,11 @@ import { ChatProvider } from '@/lib/chat-context'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Hivec - Modular RAG Platform',
+  title: 'radioso - Modular RAG Platform',
   description: 'A modular retrieval-augmented generation platform for intelligent document Q&A',
   icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
+    icon: '/radioso-logo.png',
+    apple: '/radioso-logo.png',
   },
 }
 

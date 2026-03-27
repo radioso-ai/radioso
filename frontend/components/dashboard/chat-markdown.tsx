@@ -3,7 +3,6 @@
 import { Fragment, type ComponentPropsWithoutRef } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import remarkBreaks from 'remark-breaks'
 
 import { cn } from '@/lib/utils'
 
@@ -67,32 +66,32 @@ const createMarkdownComponents = (inline: boolean): Components => ({
     </em>
   ),
   h1: ({ children, className }) => (
-    <p className={cn('m-0 text-base font-semibold whitespace-pre-wrap', className)}>
+    <p className={cn('m-0 text-base font-semibold', className)}>
       {children}
     </p>
   ),
   h2: ({ children, className }) => (
-    <p className={cn('m-0 text-base font-semibold whitespace-pre-wrap', className)}>
+    <p className={cn('m-0 text-base font-semibold', className)}>
       {children}
     </p>
   ),
   h3: ({ children, className }) => (
-    <p className={cn('m-0 text-sm font-semibold whitespace-pre-wrap', className)}>
+    <p className={cn('m-0 text-sm font-semibold', className)}>
       {children}
     </p>
   ),
   h4: ({ children, className }) => (
-    <p className={cn('m-0 text-sm font-semibold whitespace-pre-wrap', className)}>
+    <p className={cn('m-0 text-sm font-semibold', className)}>
       {children}
     </p>
   ),
   h5: ({ children, className }) => (
-    <p className={cn('m-0 text-sm font-medium whitespace-pre-wrap', className)}>
+    <p className={cn('m-0 text-sm font-medium', className)}>
       {children}
     </p>
   ),
   h6: ({ children, className }) => (
-    <p className={cn('m-0 text-sm font-medium whitespace-pre-wrap', className)}>
+    <p className={cn('m-0 text-sm font-medium', className)}>
       {children}
     </p>
   ),
@@ -111,7 +110,7 @@ const createMarkdownComponents = (inline: boolean): Components => ({
     inline ? (
       <Fragment>{children}</Fragment>
     ) : (
-      <p className={cn('m-0 whitespace-pre-wrap', className)}>
+      <p className={cn('m-0', className)}>
         {children}
       </p>
     )
@@ -147,7 +146,7 @@ export function AssistantMarkdownContent({
 }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkBreaks]}
+      remarkPlugins={[remarkGfm]}
       components={createMarkdownComponents(inline)}
     >
       {content}

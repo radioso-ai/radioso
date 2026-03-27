@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 
 import {
@@ -61,11 +62,15 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-            <span className="text-primary-foreground font-semibold text-sm">H</span>
-          </div>
+          <Image
+            src="/radioso-logo.png"
+            alt="radioso logo"
+            width={32}
+            height={32}
+            className="h-8 w-8 rounded-lg object-cover flex-shrink-0"
+          />
           <span className="font-semibold text-foreground group-data-[collapsible=icon]:hidden">
-            Hivec
+            radioso
           </span>
         </div>
       </SidebarHeader>

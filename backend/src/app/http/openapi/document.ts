@@ -2187,9 +2187,9 @@ export const createOpenApiDocument = (
   const document = new OpenApiGeneratorV31(registry.definitions).generateDocument({
     openapi: "3.1.0",
     info: {
-      title: "Hivec API",
+      title: "radioso API",
       version: "0.1.0",
-      description: "Code-generated OpenAPI contract for the Hivec backend",
+      description: "Code-generated OpenAPI contract for the radioso backend",
     },
     servers: [
       {

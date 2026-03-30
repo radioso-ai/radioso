@@ -1,17 +1,17 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp, issueTestToken } from "../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("document contract", () => {
   it("searches documents and returns a stable search snapshot with shared diagnostics", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-search@example.com");
+    const session = await issueTestSession(app, "document-search@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Pricing FAQ",
         content: "Annual pricing includes support and onboarding details.",
@@ -20,7 +20,7 @@ describe("document contract", () => {
 
     const response = await request(app)
       .post("/api/v1/document/search")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         query: "pricing support",
         metadataFilter: { language: "en" },
@@ -50,11 +50,11 @@ describe("document contract", () => {
   it("lists and replays document search history snapshots", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-search-history@example.com");
+    const session = await issueTestSession(app, "document-search-history@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Troubleshooting Guide",
         content: "Reset the service when onboarding fails.",
@@ -62,14 +62,14 @@ describe("document contract", () => {
 
     const searchResponse = await request(app)
       .post("/api/v1/document/search")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         query: "onboarding fails",
       });
 
     const listResponse = await request(app)
       .get("/api/v1/document/search/history")
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(listResponse.status).toBe(200);
     expect(listResponse.body.searches).toEqual([
@@ -83,7 +83,7 @@ describe("document contract", () => {
 
     const replayResponse = await request(app)
       .get(`/api/v1/document/search/history/${searchResponse.body.searchId}`)
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(replayResponse.status).toBe(200);
     expect(replayResponse.body).toMatchObject({
@@ -105,11 +105,11 @@ describe("document contract", () => {
   it("replays search history after document deletion with unavailable open actions", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-search-history-deleted@example.com");
+    const session = await issueTestSession(app, "document-search-history-deleted@example.com");
 
     const createResponse = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Temporary Guide",
         content: "Delete me after search replay is stored.",
@@ -117,19 +117,19 @@ describe("document contract", () => {
 
     const searchResponse = await request(app)
       .post("/api/v1/document/search")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         query: "delete me",
       });
 
     await request(app)
       .delete(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .expect(204);
 
     const replayResponse = await request(app)
       .get(`/api/v1/document/search/history/${searchResponse.body.searchId}`)
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(replayResponse.status).toBe(200);
     expect(replayResponse.body).toMatchObject({
@@ -149,14 +149,14 @@ describe("document contract", () => {
     });
   });
 
-  it("accepts a supported file import for background processing for a bearer-authenticated account", async () => {
+  it("accepts a supported file import for background processing for a session-authenticated workspace", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-import@example.com");
+    const session = await issueTestSession(app, "document-import@example.com");
 
     const response = await request(app)
       .post("/api/v1/document/import")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .field("title", "Imported text")
       .attach("file", Buffer.from("Imported content"), {
         filename: "import.txt",
@@ -173,11 +173,11 @@ describe("document contract", () => {
   it("rejects unsupported imports with a bad_request error", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-import-unsupported@example.com");
+    const session = await issueTestSession(app, "document-import-unsupported@example.com");
 
     const response = await request(app)
       .post("/api/v1/document/import")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .attach("file", Buffer.from("png"), {
         filename: "avatar.png",
         contentType: "image/png",
@@ -195,11 +195,11 @@ describe("document contract", () => {
   it("rejects oversized imports before queuing processing", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-import-too-large@example.com");
+    const session = await issueTestSession(app, "document-import-too-large@example.com");
 
     const response = await request(app)
       .post("/api/v1/document/import")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .attach("file", Buffer.alloc(10 * 1024 * 1024 + 1, "a"), {
         filename: "too-large.txt",
         contentType: "text/plain",
@@ -214,14 +214,14 @@ describe("document contract", () => {
     });
   });
 
-  it("accepts a document for background processing for a bearer-authenticated account", async () => {
+  it("accepts a document for background processing for a session-authenticated workspace", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document@example.com");
+    const session = await issueTestSession(app, "document@example.com");
 
     const response = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Introduction to Test",
         content: "This is a content to be parsed",
@@ -237,11 +237,11 @@ describe("document contract", () => {
   it("rejects oversized inline documents with a clear client error", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-inline-too-large@example.com");
+    const session = await issueTestSession(app, "document-inline-too-large@example.com");
 
     const response = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Large inline document",
         content: "a".repeat(1024 * 1024 + 1),
@@ -256,14 +256,14 @@ describe("document contract", () => {
     });
   });
 
-  it("returns, updates, and reprocesses a document for a bearer-authenticated account", async () => {
+  it("returns, updates, and reprocesses a document for a session-authenticated workspace", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-edit@example.com");
+    const session = await issueTestSession(app, "document-edit@example.com");
 
     const createResponse = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Original title",
         content: "Original content",
@@ -271,7 +271,7 @@ describe("document contract", () => {
 
     const getResponse = await request(app)
       .get(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(getResponse.status).toBe(200);
     expect(getResponse.body).toMatchObject({
@@ -284,7 +284,7 @@ describe("document contract", () => {
 
     const updateResponse = await request(app)
       .put(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Updated title",
         content: "Updated content",
@@ -298,7 +298,7 @@ describe("document contract", () => {
 
     const reprocessResponse = await request(app)
       .post(`/api/v1/document/${createResponse.body.documentId}/reprocess`)
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(reprocessResponse.status).toBe(202);
     expect(reprocessResponse.body).toMatchObject({
@@ -308,7 +308,7 @@ describe("document contract", () => {
 
     const listResponse = await request(app)
       .get("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(listResponse.status).toBe(200);
     expect(listResponse.body.documents).toEqual([
@@ -324,11 +324,11 @@ describe("document contract", () => {
   it("rejects invalid document list paging query values with a client error", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-list-query-error@example.com");
+    const session = await issueTestSession(app, "document-list-query-error@example.com");
 
     const response = await request(app)
       .get("/api/v1/document/?limit=foo")
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(response.status).toBe(400);
     expect(response.body.error).toMatchObject({
@@ -340,11 +340,11 @@ describe("document contract", () => {
   it("rejects inline updates for imported documents", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-import-update@example.com");
+    const session = await issueTestSession(app, "document-import-update@example.com");
 
     const importResponse = await request(app)
       .post("/api/v1/document/import")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .field("title", "Imported text")
       .attach("file", Buffer.from("Imported content"), {
         filename: "import.txt",
@@ -355,7 +355,7 @@ describe("document contract", () => {
 
     const updateResponse = await request(app)
       .put(`/api/v1/document/${importResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Updated title",
         content: "Updated content",
@@ -370,14 +370,14 @@ describe("document contract", () => {
     });
   });
 
-  it("deletes a document for a bearer-authenticated account", async () => {
+  it("deletes a document for a session-authenticated workspace", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-delete@example.com");
+    const session = await issueTestSession(app, "document-delete@example.com");
 
     const createResponse = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Disposable title",
         content: "Disposable content",
@@ -385,14 +385,14 @@ describe("document contract", () => {
 
     const deleteResponse = await request(app)
       .delete(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(deleteResponse.status).toBe(204);
     expect(deleteResponse.body).toEqual({});
 
     const listResponse = await request(app)
       .get("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(listResponse.status).toBe(200);
     expect(listResponse.body.documents).toEqual([]);
@@ -401,11 +401,11 @@ describe("document contract", () => {
   it("persists and returns document metadata on POST and GET", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-metadata@example.com");
+    const session = await issueTestSession(app, "document-metadata@example.com");
 
     const createResponse = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Metadata document",
         content: "Content with metadata",
@@ -416,7 +416,7 @@ describe("document contract", () => {
 
     const getResponse = await request(app)
       .get(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(getResponse.status).toBe(200);
     expect(getResponse.body).toMatchObject({
@@ -428,11 +428,11 @@ describe("document contract", () => {
   it("returns empty metadata object when document is created without metadata", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-no-metadata@example.com");
+    const session = await issueTestSession(app, "document-no-metadata@example.com");
 
     const createResponse = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "No metadata document",
         content: "Content without metadata",
@@ -442,7 +442,7 @@ describe("document contract", () => {
 
     const getResponse = await request(app)
       .get(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(getResponse.status).toBe(200);
     expect(getResponse.body).toMatchObject({
@@ -454,11 +454,11 @@ describe("document contract", () => {
   it("preserves metadata on PUT without metadata and replaces on PUT with metadata", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "document-put-metadata@example.com");
+    const session = await issueTestSession(app, "document-put-metadata@example.com");
 
     const createResponse = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Original",
         content: "Original content",
@@ -468,12 +468,12 @@ describe("document contract", () => {
     // PUT without metadata — existing metadata should be preserved
     await request(app)
       .put(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ title: "Updated", content: "Updated content" });
 
     const afterNoMetadataUpdate = await request(app)
       .get(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(afterNoMetadataUpdate.body.metadata).toEqual({
       sourceUrl: "https://example.com",
@@ -483,12 +483,12 @@ describe("document contract", () => {
     // PUT with metadata — should replace
     await request(app)
       .put(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ title: "Updated again", content: "Updated content again", metadata: { language: "fr" } });
 
     const afterMetadataUpdate = await request(app)
       .get(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(afterMetadataUpdate.body.metadata).toEqual({ language: "fr" });
   });
@@ -496,12 +496,12 @@ describe("document contract", () => {
   it("returns not_found when deleting a document outside the authenticated account", async () => {
     const { app } = createTestApp();
 
-    const { token: ownerToken } = await issueTestToken(app, "document-delete-owner@example.com");
-    const { token: intruderToken } = await issueTestToken(app, "document-delete-intruder@example.com");
+    const ownerSession = await issueTestSession(app, "document-delete-owner@example.com");
+    const intruderSession = await issueTestSession(app, "document-delete-intruder@example.com");
 
     const createResponse = await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${ownerToken}`)
+      .set(adminSessionHeaders(ownerSession))
       .send({
         title: "Protected title",
         content: "Protected content",
@@ -509,7 +509,7 @@ describe("document contract", () => {
 
     const deleteResponse = await request(app)
       .delete(`/api/v1/document/${createResponse.body.documentId}`)
-      .set("Authorization", `Bearer ${intruderToken}`);
+      .set(adminSessionHeaders(intruderSession));
 
     expect(deleteResponse.status).toBe(404);
     expect(deleteResponse.body).toMatchObject({

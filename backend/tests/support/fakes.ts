@@ -9,6 +9,7 @@ import type {
   WorkspaceTokenRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
+import type { AbuseControlEntry, AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import type {
   ChunkRecord,
   ChunkRepositoryPort,
@@ -269,6 +270,48 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
 
   async deleteById(workspaceId: string): Promise<boolean> {
     return this.items.delete(workspaceId);
+  }
+}
+
+export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPort {
+  private readonly items = new Map<string, AbuseControlEntry>();
+
+  async find(scope: string, subjectKey: string): Promise<AbuseControlEntry | null> {
+    return this.items.get(`${scope}:${subjectKey}`) ?? null;
+  }
+
+  async save(input: {
+    scope: string;
+    subjectKey: string;
+    attemptCount: number;
+    windowStartedAt: Date;
+    blockedUntil: Date | null;
+  }): Promise<AbuseControlEntry> {
+    const key = `${input.scope}:${input.subjectKey}`;
+    const existing = this.items.get(key);
+    const record: AbuseControlEntry = {
+      scope: input.scope,
+      subjectKey: input.subjectKey,
+      attemptCount: input.attemptCount,
+      windowStartedAt: input.windowStartedAt,
+      blockedUntil: input.blockedUntil,
+      createdAt: existing?.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(key, record);
+    return record;
+  }
+
+  async deleteExpired(now: Date): Promise<void> {
+    for (const [key, entry] of this.items.entries()) {
+      if (entry.blockedUntil && entry.blockedUntil <= now) {
+        this.items.delete(key);
+        continue;
+      }
+      if (!entry.blockedUntil && now.getTime() - entry.windowStartedAt.getTime() > 24 * 60 * 60 * 1000) {
+        this.items.delete(key);
+      }
+    }
   }
 }
 

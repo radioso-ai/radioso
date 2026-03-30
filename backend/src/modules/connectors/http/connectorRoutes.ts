@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../../app/server/types.js";
-import { requireApiToken } from "../../../app/http/middleware/requireApiToken.js";
+import { requireWorkspaceSession } from "../../../app/http/middleware/requireWorkspaceSession.js";
 import type { ConnectorDetail, ConnectorSummary, ConnectorValidationIssue } from "@radioso/connector-api";
 
 const configUpdateSchema = z.object({
@@ -62,7 +62,7 @@ export const createConnectorRoutes = (dependencies: AppDependencies): Router => 
   const registry = dependencies.connectorRegistry;
   const db = dependencies.connectorDb;
 
-  router.use(requireApiToken(dependencies));
+  router.use(requireWorkspaceSession(dependencies));
 
   // GET /api/v1/connectors — List all available connectors with per-workspace status
   router.get("/", async (req, res, next) => {

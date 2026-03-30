@@ -13,6 +13,7 @@ export class RetrievalDiagnosticsStageService implements RetrievalDiagnosticsSta
       lexicalCandidateCount: input.lexicalContexts.length,
       normalizedCandidateCount: input.scoredCandidates.length,
       finalContextCount: input.contexts.length,
+      queryEmbeddingDurationMs: input.activeEmbeddingDurationMs,
       parsedQuery: input.activeParsedQuery,
       appliedConstraints: input.appliedConstraints,
       candidateFallbackApplied: input.candidateFallbackApplied,

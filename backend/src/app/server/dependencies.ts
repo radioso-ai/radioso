@@ -57,7 +57,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const database = new Database(env.DATABASE_URL);
   const auditEventRepository = new AuditEventRepository(database);
   const auditService = new AuditService(logger, auditEventRepository);
-  const llmRegistry = new LlmProviderRegistry(resolveLlmConfig(env));
+  const llmRegistry = new LlmProviderRegistry(resolveLlmConfig(env), logger);
   logger.info({ llmProviders: llmRegistry.describe() }, "Resolved LLM providers");
   const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database), auditService);
   const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway());
@@ -95,6 +95,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     ingestionSettingsService,
     chunkingStrategyRegistry,
     documentSourceContentService,
+    logger,
   );
   const documentIngestionService = new DocumentIngestionService(
     documentRepository,

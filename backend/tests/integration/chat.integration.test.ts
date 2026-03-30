@@ -299,6 +299,7 @@ describe("chat integration", () => {
       originalCandidateCount: expect.any(Number),
       normalizedCandidateCount: expect.any(Number),
       finalContextCount: expect.any(Number),
+      queryEmbeddingDurationMs: expect.any(Number),
       rewriteEligible: expect.any(Boolean),
       rewriteRan: expect.any(Boolean),
     });

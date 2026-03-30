@@ -31,6 +31,7 @@ export interface QueryInterpretationStageResult extends RetrievalContextStageRes
 
 export interface CandidateRetrievalStageResult extends QueryInterpretationStageResult {
   activeEmbedding: number[];
+  activeEmbeddingDurationMs: number;
   originalContexts: RetrievedChunk[];
   rewrittenContexts: RetrievedChunk[];
   lexicalContexts: RetrievedChunk[];

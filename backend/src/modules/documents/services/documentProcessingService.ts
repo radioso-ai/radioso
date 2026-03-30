@@ -12,6 +12,7 @@ import { renderSearchText } from "../../retrieval/services/searchTextRenderer.js
 import { extractRawStructuredAttributes } from "../../retrieval/services/structuredAttributeExtractor.js";
 import { deriveChunkSection, deriveDocumentSubject } from "../../retrieval/services/subjectIdentityService.js";
 import type { IngestionSettingsRecord } from "../../settings/domain/ingestionSettings.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 import type {
   ChunkRecord,
   ChunkRepositoryPort,
@@ -71,6 +72,7 @@ export class DocumentProcessingService {
     private readonly ingestionSettingsService: IngestionSettingsReaderPort,
     private readonly chunkingStrategyRegistry: ChunkingStrategyRegistryPort,
     private readonly documentSourceContentService: DocumentSourceContentServicePort = inlineDocumentSourceContentService,
+    private readonly logger?: AppLogger,
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -111,6 +113,7 @@ export class DocumentProcessingService {
     });
     const settings = await this.ingestionSettingsService.getForWorkspace(job.workspaceId);
     const chunkingStrategy = this.chunkingStrategyRegistry.get(settings.chunkingStrategy);
+    const chunkingStartedAt = Date.now();
     const chunks = await chunkingStrategy.chunk({
       title: documentWithContent.title,
       content: documentWithContent.markdownContent,
@@ -121,6 +124,7 @@ export class DocumentProcessingService {
         structuredMaxChunkSize: settings.structuredMaxChunkSize,
       },
     });
+    const chunkingDurationMs = Math.max(0, Date.now() - chunkingStartedAt);
     const enrichedChunks = chunks.map((chunk) => {
       const structuredAttributes = normalizeStructuredAttributes(extractRawStructuredAttributes(chunk.content));
       const attributeText = renderStructuredAttributeSummary(structuredAttributes);
@@ -138,8 +142,23 @@ export class DocumentProcessingService {
         searchText,
       };
     });
+    const embeddingStartedAt = Date.now();
     const embeddings = await this.embeddingService.embedChunks(
       enrichedChunks.map((chunk) => chunk.searchText),
+    );
+    const storageEmbeddingDurationMs = Math.max(0, Date.now() - embeddingStartedAt);
+    this.logger?.info(
+      {
+        role: "worker",
+        workspaceId: job.workspaceId,
+        documentId: documentWithContent.id,
+        revision: job.documentRevision,
+        chunkingStrategy: settings.chunkingStrategy,
+        chunkCount: enrichedChunks.length,
+        chunkingDurationMs,
+        storageEmbeddingDurationMs,
+      },
+      "Document processing embeddings completed",
     );
     const persistedChunks: ChunkRecord[] = enrichedChunks.map((chunk, index) => ({
       id: randomUUID(),

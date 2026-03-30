@@ -139,6 +139,7 @@ export interface RetrievalExecutionDiagnostics {
   lexicalCandidateCount?: number;
   normalizedCandidateCount: number;
   finalContextCount: number;
+  queryEmbeddingDurationMs?: number;
   parsedQuery?: ParsedQueryInterpretation;
   appliedConstraints?: AppliedConstraint[];
   candidateFallbackApplied: boolean;

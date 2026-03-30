@@ -9,6 +9,7 @@ export class RetrievalExecutionTelemetryService {
     lexicalCandidateCount?: number;
     normalizedCandidateCount: number;
     finalContextCount: number;
+    queryEmbeddingDurationMs?: number;
     parsedQuery?: import("../domain/structuredAttributes.js").ParsedQueryInterpretation;
     appliedConstraints?: import("../domain/structuredAttributes.js").AppliedConstraint[];
     candidateFallbackApplied: boolean;

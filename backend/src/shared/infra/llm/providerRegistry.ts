@@ -5,6 +5,7 @@ import { ModelRerankGateway } from "../../../modules/retrieval/services/rerankSe
 import { ClaudeTextGenerationClient } from "./claudeProvider.js";
 import { GeminiTextGenerationClient } from "./geminiProvider.js";
 import { OpenAIEmbeddingClient, OpenAITextGenerationClient } from "./openaiProvider.js";
+import type { AppLogger } from "../../observability/logger.js";
 import {
   type EmbeddingClient,
   type LlmCapabilityConfig,
@@ -21,7 +22,10 @@ const supportsEmbeddings = (config: LlmCapabilityConfig): boolean =>
   config.provider === "openai" || config.provider === "openai-compatible";
 
 export class LlmProviderRegistry {
-  constructor(private readonly config: ResolvedLlmConfig) {
+  constructor(
+    private readonly config: ResolvedLlmConfig,
+    private readonly logger?: AppLogger,
+  ) {
     if (!supportsEmbeddings(config.embeddings)) {
       throw new ProviderConfigurationError(`Provider ${config.embeddings.provider} does not support embeddings`);
     }
@@ -76,7 +80,7 @@ export class LlmProviderRegistry {
     switch (config.provider) {
       case "openai":
       case "openai-compatible":
-        return new OpenAIEmbeddingClient(config);
+        return new OpenAIEmbeddingClient(config, this.logger);
       case "gemini":
       case "claude":
         throw new ProviderConfigurationError(`Provider ${config.provider} does not support embeddings`);

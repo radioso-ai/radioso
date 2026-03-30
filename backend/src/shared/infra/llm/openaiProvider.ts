@@ -5,6 +5,7 @@ import {
   type LlmCapabilityConfig,
   type TextGenerationClient,
 } from "./providerTypes.js";
+import type { AppLogger } from "../../observability/logger.js";
 
 const buildMessages = (input: { systemPrompt?: string; prompt: string }) => {
   const messages: Array<{ role: "system" | "user"; content: string }> = [];
@@ -77,7 +78,10 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
   readonly metadata;
   private readonly client: OpenAI;
 
-  constructor(private readonly config: LlmCapabilityConfig) {
+  constructor(
+    private readonly config: LlmCapabilityConfig,
+    private readonly logger?: AppLogger,
+  ) {
     this.client = createClient(config);
     this.metadata = {
       capability: config.capability,
@@ -87,11 +91,45 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
   }
 
   async embedTexts(texts: string[]): Promise<number[][]> {
-    const response = await this.client.embeddings.create({
-      model: this.config.model,
-      input: texts,
-    });
+    const startedAt = Date.now();
+    try {
+      const response = await this.client.embeddings.create({
+        model: this.config.model,
+        input: texts,
+      });
+      const durationMs = Math.max(0, Date.now() - startedAt);
+      this.logger?.info(
+        {
+          llmCapability: this.metadata.capability,
+          llmProvider: this.metadata.provider,
+          llmModel: this.metadata.model,
+          embeddingInputCount: texts.length,
+          embeddingCharacterCount: texts.reduce((sum, text) => sum + text.length, 0),
+          embeddingDurationMs: durationMs,
+        },
+        "OpenAI embeddings request completed",
+      );
 
-    return response.data.map((item) => item.embedding);
+      return response.data.map((item) => item.embedding);
+    } catch (error) {
+      const durationMs = Math.max(0, Date.now() - startedAt);
+      const apiError = error as { status?: number; code?: string; type?: string };
+      this.logger?.error(
+        {
+          error,
+          llmCapability: this.metadata.capability,
+          llmProvider: this.metadata.provider,
+          llmModel: this.metadata.model,
+          embeddingInputCount: texts.length,
+          embeddingCharacterCount: texts.reduce((sum, text) => sum + text.length, 0),
+          embeddingDurationMs: durationMs,
+          statusCode: apiError?.status,
+          providerErrorCode: apiError?.code,
+          providerErrorType: apiError?.type,
+        },
+        "OpenAI embeddings request failed",
+      );
+      throw error;
+    }
   }
 }

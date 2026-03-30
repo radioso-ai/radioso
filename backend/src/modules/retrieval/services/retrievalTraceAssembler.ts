@@ -141,6 +141,7 @@ export class RetrievalTraceAssembler {
           },
           metrics: {
             candidateCount: prompt.originalContexts.length + prompt.rewrittenContexts.length,
+            queryEmbeddingDurationMs: diagnostics.queryEmbeddingDurationMs ?? 0,
           },
           reason: prompt.vectorFallbackApplied ? "Vector retrieval used fallback behavior." : undefined,
         },
@@ -210,6 +211,7 @@ export class RetrievalTraceAssembler {
           lexicalCandidateCount: diagnostics.lexicalCandidateCount ?? 0,
           mergedCandidateCount: diagnostics.normalizedCandidateCount,
           finalContextCount: diagnostics.finalContextCount,
+          queryEmbeddingDurationMs: diagnostics.queryEmbeddingDurationMs ?? 0,
         },
       }),
     ];

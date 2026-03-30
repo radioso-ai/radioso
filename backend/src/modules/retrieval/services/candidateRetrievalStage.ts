@@ -12,7 +12,9 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
   ) {}
 
   async execute(input: QueryInterpretationStageResult) {
+    const embeddingStartedAt = Date.now();
     const [activeEmbedding] = await this.embeddingService.embedChunks([input.activeSemanticQuery]);
+    const activeEmbeddingDurationMs = Math.max(0, Date.now() - embeddingStartedAt);
     const activeSearch = await this.searchWithFallback({
       workspaceId: input.request.workspaceId,
       queryEmbedding: activeEmbedding ?? [],
@@ -33,6 +35,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     return {
       ...input,
       activeEmbedding: activeEmbedding ?? [],
+      activeEmbeddingDurationMs,
       originalContexts,
       rewrittenContexts,
       lexicalContexts,

@@ -54,7 +54,7 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
 
     try {
       const response = await authApi.register({ email, password })
-      seedWorkspaceSession(response.workspaceId, response.token)
+      seedWorkspaceSession(response.workspaceId)
       await login(email, response.userId)
     } catch (error) {
       setError(getErrorMessage(error))

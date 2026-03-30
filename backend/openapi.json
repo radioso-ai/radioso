@@ -50,10 +50,10 @@
         "in": "cookie",
         "name": "radioso_session"
       },
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "APIKey"
+      "workspaceSelection": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Workspace-Id"
       }
     },
     "schemas": {
@@ -123,17 +123,12 @@
           },
           "workspaceName": {
             "type": "string"
-          },
-          "token": {
-            "type": "string",
-            "pattern": "^sk_proj_[a-f0-9]+$"
           }
         },
         "required": [
           "userId",
           "workspaceId",
-          "workspaceName",
-          "token"
+          "workspaceName"
         ]
       },
       "LoginResponse": {
@@ -149,29 +144,12 @@
           },
           "workspaceName": {
             "type": "string"
-          },
-          "token": {
-            "type": "string",
-            "pattern": "^sk_proj_[a-f0-9]+$"
           }
         },
         "required": [
           "userId",
           "workspaceId",
-          "workspaceName",
-          "token"
-        ]
-      },
-      "AccountTokenResponse": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string",
-            "pattern": "^sk_proj_[a-f0-9]+$"
-          }
-        },
-        "required": [
-          "token"
+          "workspaceName"
         ]
       },
       "Workspace": {
@@ -2514,63 +2492,6 @@
         }
       }
     },
-    "/api/v1/account/workspaces/{workspaceId}/token": {
-      "get": {
-        "tags": [
-          "Account"
-        ],
-        "summary": "Return the API token for a specific workspace",
-        "operationId": "getWorkspaceToken",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "workspaceId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Token returned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountTokenResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Workspace not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/settings/retrieval": {
       "get": {
         "tags": [
@@ -2580,7 +2501,7 @@
         "operationId": "getRetrievalSettings",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "responses": {
@@ -2614,7 +2535,7 @@
         "operationId": "updateRetrievalSettings",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "requestBody": {
@@ -2670,7 +2591,7 @@
         "operationId": "getIngestionSettings",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "responses": {
@@ -2704,7 +2625,7 @@
         "operationId": "updateIngestionSettings",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "requestBody": {
@@ -2760,7 +2681,7 @@
         "operationId": "reprocessWorkspaceIngestion",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "responses": {
@@ -2796,7 +2717,7 @@
         "operationId": "getGeneralSettings",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "responses": {
@@ -2840,7 +2761,7 @@
         "operationId": "updateGeneralSettings",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "requestBody": {
@@ -2906,7 +2827,7 @@
         "operationId": "searchDocuments",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "requestBody": {
@@ -2962,7 +2883,7 @@
         "operationId": "listDocumentSearchHistory",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3019,7 +2940,7 @@
         "operationId": "getDocumentSearchHistory",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3076,7 +2997,7 @@
         "operationId": "listDocuments",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3131,7 +3052,7 @@
         "operationId": "createDocument",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "requestBody": {
@@ -3187,7 +3108,7 @@
         "operationId": "getDocument",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3242,7 +3163,7 @@
         "operationId": "updateDocument",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3353,7 +3274,7 @@
         "operationId": "deleteDocument",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3403,7 +3324,7 @@
         "operationId": "reprocessDocument",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3460,7 +3381,7 @@
         "operationId": "createChatResponse",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "requestBody": {
@@ -3531,7 +3452,7 @@
         "operationId": "listChatHistory",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3588,7 +3509,7 @@
         "operationId": "getChatHistoryConversation",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3674,7 +3595,7 @@
         "operationId": "listConnectors",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "responses": {
@@ -3710,7 +3631,7 @@
         "operationId": "getConnectorDetail",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3765,7 +3686,7 @@
         "operationId": "updateConnectorConfig",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3863,7 +3784,7 @@
         "operationId": "enableConnector",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -3951,7 +3872,7 @@
         "operationId": "disableConnector",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
         "parameters": [

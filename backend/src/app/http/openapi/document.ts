@@ -6,7 +6,6 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 
 import { registerSchema, loginSchema } from "../routes/authRoutes.js";
-import { workspaceParamsSchema as accountWorkspaceParamsSchema } from "../routes/accountRoutes.js";
 import {
   createWorkspaceSchema,
   renameWorkspaceSchema,
@@ -45,10 +44,10 @@ const sessionCookieScheme = registry.registerComponent("securitySchemes", "sessi
   name: "radioso_session",
 });
 
-const bearerAuthScheme = registry.registerComponent("securitySchemes", "bearerAuth", {
-  type: "http",
-  scheme: "bearer",
-  bearerFormat: "APIKey",
+const workspaceSelectionScheme = registry.registerComponent("securitySchemes", "workspaceSelection", {
+  type: "apiKey",
+  in: "header",
+  name: "X-Workspace-Id",
 });
 
 const anonymousSessionCookieScheme = registry.registerComponent("securitySchemes", "anonymousSessionCookie", {
@@ -56,6 +55,9 @@ const anonymousSessionCookieScheme = registry.registerComponent("securitySchemes
   in: "cookie",
   name: "anon_session_{token}",
 });
+
+const workspaceAdminSecurity = [{ [sessionCookieScheme.name]: [], [workspaceSelectionScheme.name]: [] }];
+const bearerAuthScheme = sessionCookieScheme;
 
 const ErrorResponseSchema = registry.register(
   "ErrorResponse",
@@ -89,7 +91,6 @@ const RegisterResponseSchema = registry.register(
     userId: z.string().uuid(),
     workspaceId: z.string().uuid(),
     workspaceName: z.string(),
-    token: z.string().regex(/^sk_proj_[a-f0-9]+$/i),
   }),
 );
 
@@ -99,14 +100,6 @@ const LoginResponseSchema = registry.register(
     userId: z.string().uuid(),
     workspaceId: z.string().uuid(),
     workspaceName: z.string(),
-    token: z.string().regex(/^sk_proj_[a-f0-9]+$/i),
-  }),
-);
-
-const AccountTokenResponseSchema = registry.register(
-  "AccountTokenResponse",
-  z.object({
-    token: z.string().regex(/^sk_proj_[a-f0-9]+$/i),
   }),
 );
 
@@ -949,44 +942,6 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
-        },
-      },
-    },
-    401: {
-      description: "Authentication required",
-      content: {
-        "application/json": {
-          schema: ErrorResponseSchema,
-        },
-      },
-    },
-    404: {
-      description: "Workspace not found",
-      content: {
-        "application/json": {
-          schema: ErrorResponseSchema,
-        },
-      },
-    },
-  },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/v1/account/workspaces/{workspaceId}/token",
-  tags: ["Account"],
-  summary: "Return the API token for a specific workspace",
-  operationId: "getWorkspaceToken",
-  security: [{ [sessionCookieScheme.name]: [] }],
-  request: {
-    params: accountWorkspaceParamsSchema,
-  },
-  responses: {
-    200: {
-      description: "Token returned",
-      content: {
-        "application/json": {
-          schema: AccountTokenResponseSchema,
         },
       },
     },

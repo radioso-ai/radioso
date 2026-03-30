@@ -12,6 +12,7 @@ import type { RetrievalSettingsService } from "../../modules/settings/services/r
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { AuditService } from "../../modules/audit/services/auditService.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
+import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
@@ -19,11 +20,14 @@ import type { ConnectorRegistry } from "../../modules/connectors/services/connec
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 
 export interface AppDependencies {
   env: Env;
   logger: AppLogger;
   authService: AuthService;
+  workspaceSessionService: WorkspaceSessionService;
+  abuseControlService: AbuseControlService;
   auditService: AuditService;
   workspaceService: WorkspaceService;
   ingestionSettingsService: IngestionSettingsService;

@@ -1,7 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp, issueTestToken } from "../../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession } from "../../support/testApp.js";
 
 const validConfig = {
   phone_number_id: "15551234567",
@@ -15,12 +15,12 @@ const validConfig = {
 describe("connector management contract", () => {
   it("lists whatsapp and returns detail with masked secrets", async () => {
     const { app } = createTestApp();
-    const { token, workspaceId } = await issueTestToken(app, "connectors-list@example.com");
-    const authorization = `Bearer ${token}`;
+    const session = await issueTestSession(app, "connectors-list@example.com");
+    const { workspaceId } = session;
 
     const listResponse = await request(app)
       .get("/api/v1/connectors")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(listResponse.status).toBe(200);
     expect(listResponse.body.connectors).toEqual([
@@ -38,7 +38,7 @@ describe("connector management contract", () => {
       .set("Host", "localhost:3000")
       .set("X-Forwarded-Proto", "https")
       .set("X-Forwarded-Prefix", "/backend")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ config: validConfig });
 
     expect(saveResponse.status).toBe(200);
@@ -59,7 +59,7 @@ describe("connector management contract", () => {
       .set("Host", "localhost:3000")
       .set("X-Forwarded-Proto", "https")
       .set("X-Forwarded-Prefix", "/backend")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(detailResponse.status).toBe(200);
     expect(detailResponse.body).toMatchObject({
@@ -70,12 +70,11 @@ describe("connector management contract", () => {
 
   it("validates required fields on enable and preserves config across disable", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app, "connectors-enable@example.com");
-    const authorization = `Bearer ${token}`;
+    const session = await issueTestSession(app, "connectors-enable@example.com");
 
     const partialSave = await request(app)
       .put("/api/v1/connectors/whatsapp")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({
         config: {
           phone_number_id: validConfig.phone_number_id,
@@ -86,7 +85,7 @@ describe("connector management contract", () => {
 
     const enableWithoutRequiredFields = await request(app)
       .post("/api/v1/connectors/whatsapp/enable")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(enableWithoutRequiredFields.status).toBe(400);
     expect(enableWithoutRequiredFields.body).toEqual({
@@ -101,14 +100,14 @@ describe("connector management contract", () => {
 
     const fullSave = await request(app)
       .put("/api/v1/connectors/whatsapp")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ config: validConfig });
 
     expect(fullSave.status).toBe(200);
 
     const enableResponse = await request(app)
       .post("/api/v1/connectors/whatsapp/enable")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(enableResponse.status).toBe(200);
     expect(enableResponse.body.enabled).toBe(true);
@@ -116,7 +115,7 @@ describe("connector management contract", () => {
 
     const disableResponse = await request(app)
       .post("/api/v1/connectors/whatsapp/disable")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(disableResponse.status).toBe(200);
     expect(disableResponse.body.enabled).toBe(false);
@@ -125,23 +124,23 @@ describe("connector management contract", () => {
 
   it("rejects duplicate phone numbers across workspaces", async () => {
     const { app } = createTestApp();
-    const first = await issueTestToken(app, "connectors-duplicate-a@example.com");
-    const second = await issueTestToken(app, "connectors-duplicate-b@example.com");
+    const first = await issueTestSession(app, "connectors-duplicate-a@example.com");
+    const second = await issueTestSession(app, "connectors-duplicate-b@example.com");
 
     await request(app)
       .put("/api/v1/connectors/whatsapp")
-      .set("Authorization", `Bearer ${first.token}`)
+      .set(adminSessionHeaders(first))
       .send({ config: validConfig });
 
     const firstEnable = await request(app)
       .post("/api/v1/connectors/whatsapp/enable")
-      .set("Authorization", `Bearer ${first.token}`);
+      .set(adminSessionHeaders(first));
 
     expect(firstEnable.status).toBe(200);
 
     const secondSave = await request(app)
       .put("/api/v1/connectors/whatsapp")
-      .set("Authorization", `Bearer ${second.token}`)
+      .set(adminSessionHeaders(second))
       .send({
         config: {
           ...validConfig,
@@ -153,6 +152,77 @@ describe("connector management contract", () => {
     expect(secondSave.body).toEqual({
       error: "Channel identity conflict",
       detail: "Phone Number ID is already configured in another workspace.",
+    });
+  });
+
+  it("rejects saving secret fields when connector encryption is not configured", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        CONNECTOR_ENCRYPTION_KEY: undefined,
+      },
+    });
+    const session = await issueTestSession(app, "connectors-no-encryption@example.com");
+
+    const response = await request(app)
+      .put("/api/v1/connectors/whatsapp")
+      .set(adminSessionHeaders(session))
+      .send({ config: validConfig });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: "Validation failed",
+      fields: expect.arrayContaining([
+        { key: "access_token", message: "Connector secret encryption must be configured before saving secret fields" },
+        { key: "app_secret", message: "Connector secret encryption must be configured before saving secret fields" },
+        { key: "webhook_verify_token", message: "Connector secret encryption must be configured before saving secret fields" },
+      ]),
+    });
+  });
+
+  it("surfaces remediation state for legacy plaintext connector secrets", async () => {
+    const { app, dependencies } = createTestApp();
+    const session = await issueTestSession(app, "connectors-legacy-remediation@example.com");
+    const connectorDb = dependencies.connectorDb as any;
+
+    connectorDb.configs.set(`${session.workspaceId}:whatsapp`, {
+      id: "legacy-config",
+      workspaceId: session.workspaceId,
+      connectorId: "whatsapp",
+      enabled: false,
+      configData: {
+        phone_number_id: validConfig.phone_number_id,
+        access_token: validConfig.access_token,
+        app_secret: validConfig.app_secret,
+        webhook_verify_token: validConfig.webhook_verify_token,
+        business_account_id: validConfig.business_account_id,
+        conversation_timeout_hours: validConfig.conversation_timeout_hours,
+      },
+      errorStatus: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const detailResponse = await request(app)
+      .get("/api/v1/connectors/whatsapp")
+      .set(adminSessionHeaders(session));
+
+    expect(detailResponse.status).toBe(200);
+    expect(detailResponse.body.errorStatus).toBe("secret_rotation_required");
+    expect(detailResponse.body.config.access_token).toBe("[re-enter secret]");
+    expect(detailResponse.body.config.app_secret).toBe("[re-enter secret]");
+
+    const enableResponse = await request(app)
+      .post("/api/v1/connectors/whatsapp/enable")
+      .set(adminSessionHeaders(session));
+
+    expect(enableResponse.status).toBe(400);
+    expect(enableResponse.body).toEqual({
+      error: "Validation failed",
+      fields: expect.arrayContaining([
+        { key: "access_token", message: "Stored connector secrets require rotation before this connector can be used" },
+        { key: "app_secret", message: "Stored connector secrets require rotation before this connector can be used" },
+        { key: "webhook_verify_token", message: "Stored connector secrets require rotation before this connector can be used" },
+      ]),
     });
   });
 });

@@ -3,7 +3,7 @@ import { createHmac } from "node:crypto";
 
 import request from "supertest";
 
-import { createTestApp, issueTestToken } from "../tests/support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession } from "../tests/support/testApp.js";
 
 const APP_SECRET = "app-secret-smoke";
 
@@ -61,18 +61,18 @@ const main = async () => {
     whatsappDebounceMs: 10,
   });
   try {
-    const { token, workspaceId } = await issueTestToken(app, "connectors-smoke@example.com");
-    const authorization = `Bearer ${token}`;
+    const session = await issueTestSession(app, "connectors-smoke@example.com");
+    const { workspaceId } = session;
 
     const saveResponse = await request(app)
       .put("/api/v1/connectors/whatsapp")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ config: validConfig });
     assert.equal(saveResponse.status, 200, "saving WhatsApp config should succeed");
 
     const enableResponse = await request(app)
       .post("/api/v1/connectors/whatsapp/enable")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
     assert.equal(enableResponse.status, 200, "enabling WhatsApp should succeed");
 
     const firstPayload = createTextPayload("wamid-initial", "hello from whatsapp", "1710752400");
@@ -92,14 +92,14 @@ const main = async () => {
 
     const firstHistory = await request(app)
       .get(`/api/v1/chat/history/${conversationId}`)
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
     assert.equal(firstHistory.status, 200, "chat history should be readable");
     assert.equal(firstHistory.body.sourceChannel, "whatsapp", "conversation should be tagged with source channel");
     assert.equal(firstHistory.body.messages.length, 2, "first exchange should produce two messages");
 
     const disableResponse = await request(app)
       .post("/api/v1/connectors/whatsapp/disable")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
     assert.equal(disableResponse.status, 200, "disabling WhatsApp should succeed");
 
     const disabledPayload = createTextPayload("wamid-disabled", "should not process", "1710752500");
@@ -126,13 +126,13 @@ const main = async () => {
     };
     const updateResponse = await request(app)
       .put("/api/v1/connectors/whatsapp")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ config: updatedConfig });
     assert.equal(updateResponse.status, 200, "updating disabled config should succeed");
 
     const reenableResponse = await request(app)
       .post("/api/v1/connectors/whatsapp/enable")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
     assert.equal(reenableResponse.status, 200, "re-enabling WhatsApp should succeed");
 
     const secondPayload = createTextPayload("wamid-reenabled", "back again", "1710752600");
@@ -150,7 +150,7 @@ const main = async () => {
 
     const preservedHistory = await request(app)
       .get(`/api/v1/chat/history/${conversationId}`)
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
     assert.equal(preservedHistory.status, 200, "history should still be available after disable and re-enable");
     assert.equal(preservedHistory.body.sourceChannel, "whatsapp", "history should preserve source channel");
     assert.equal(preservedHistory.body.messages.length, 4, "history should include both exchanges");

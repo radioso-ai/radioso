@@ -3,7 +3,8 @@ import multer from "multer";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { requireApiToken } from "../middleware/requireApiToken.js";
+import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
+import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 
@@ -38,6 +39,19 @@ export const documentListQuerySchema = z.object({
 
 export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
+  const workspaceSession = requireWorkspaceSession(dependencies);
+  const uploadRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "document.import",
+    limit: dependencies.env.UPLOAD_RATE_LIMIT_MAX_ATTEMPTS,
+    windowMs: dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS,
+    resolveSubjectKey: (_req, res) => String(res.locals.workspaceId ?? "unknown"),
+    resolveAuditContext: (_req, res) => ({
+      accountId: res.locals.accountId as string | undefined,
+      workspaceId: res.locals.workspaceId as string | undefined,
+    }),
+  });
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
@@ -62,7 +76,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
       });
     });
 
-  router.get("/", requireApiToken(dependencies), async (req, res, next) => {
+  router.get("/", workspaceSession, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = documentListQuerySchema.safeParse(req.query);
@@ -77,7 +91,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.post("/search", requireApiToken(dependencies), validateBody(documentSearchSchema), async (req, res, next) => {
+  router.post("/search", workspaceSession, validateBody(documentSearchSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const result = await dependencies.documentSearchService.search({
@@ -91,7 +105,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.get("/search/history", requireApiToken(dependencies), async (req, res, next) => {
+  router.get("/search/history", workspaceSession, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = documentListQuerySchema.safeParse(req.query);
@@ -106,7 +120,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.get("/search/history/:searchId", requireApiToken(dependencies), async (req, res, next) => {
+  router.get("/search/history/:searchId", workspaceSession, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { searchId } = documentSearchHistoryParamsSchema.parse(req.params);
@@ -117,7 +131,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.post("/", requireApiToken(dependencies), validateBody(documentSchema), async (req, res, next) => {
+  router.post("/", workspaceSession, validateBody(documentSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const result = await dependencies.documentIngestionService.ingest({
@@ -132,7 +146,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.post("/import", requireApiToken(dependencies), async (req, res, next) => {
+  router.post("/import", workspaceSession, uploadRateLimit, async (req, res, next) => {
     try {
       await runUploadSingle(req, res);
 
@@ -155,7 +169,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.get("/:documentId", requireApiToken(dependencies), async (req, res, next) => {
+  router.get("/:documentId", workspaceSession, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
@@ -166,7 +180,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.put("/:documentId", requireApiToken(dependencies), validateBody(documentSchema), async (req, res, next) => {
+  router.put("/:documentId", workspaceSession, validateBody(documentSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
@@ -183,7 +197,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.post("/:documentId/reprocess", requireApiToken(dependencies), async (req, res, next) => {
+  router.post("/:documentId/reprocess", workspaceSession, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
@@ -197,7 +211,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.delete("/:documentId", requireApiToken(dependencies), async (req, res, next) => {
+  router.delete("/:documentId", workspaceSession, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);

@@ -23,10 +23,10 @@ components:
       type: apiKey
       in: cookie
       name: radioso_session
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: APIKey
+    workspaceSelection:
+      type: apiKey
+      in: header
+      name: X-Workspace-Id
   schemas:
     ErrorResponse:
       type: object
@@ -74,14 +74,10 @@ components:
           format: uuid
         workspaceName:
           type: string
-        token:
-          type: string
-          pattern: ^sk_proj_[a-f0-9]+$
       required:
         - userId
         - workspaceId
         - workspaceName
-        - token
     LoginResponse:
       type: object
       properties:
@@ -93,22 +89,10 @@ components:
           format: uuid
         workspaceName:
           type: string
-        token:
-          type: string
-          pattern: ^sk_proj_[a-f0-9]+$
       required:
         - userId
         - workspaceId
         - workspaceName
-        - token
-    AccountTokenResponse:
-      type: object
-      properties:
-        token:
-          type: string
-          pattern: ^sk_proj_[a-f0-9]+$
-      required:
-        - token
     Workspace:
       type: object
       properties:
@@ -1678,40 +1662,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/account/workspaces/{workspaceId}/token:
-    get:
-      tags:
-        - Account
-      summary: Return the API token for a specific workspace
-      operationId: getWorkspaceToken
-      security:
-        - sessionCookie: []
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: workspaceId
-          in: path
-      responses:
-        "200":
-          description: Token returned
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccountTokenResponse"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Workspace not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/settings/retrieval:
     get:
       tags:
@@ -1719,7 +1669,7 @@ paths:
       summary: Get retrieval settings for the authenticated workspace
       operationId: getRetrievalSettings
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       responses:
         "200":
           description: Retrieval settings returned
@@ -1739,7 +1689,7 @@ paths:
       summary: Update retrieval settings for the authenticated workspace
       operationId: updateRetrievalSettings
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       requestBody:
         required: true
         content:
@@ -1772,7 +1722,7 @@ paths:
       summary: Get ingestion settings for the authenticated workspace
       operationId: getIngestionSettings
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       responses:
         "200":
           description: Ingestion settings returned
@@ -1792,7 +1742,7 @@ paths:
       summary: Update ingestion settings for the authenticated workspace
       operationId: updateIngestionSettings
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       requestBody:
         required: true
         content:
@@ -1825,7 +1775,7 @@ paths:
       summary: Queue eligible workspace documents for reprocessing using current ingestion settings
       operationId: reprocessWorkspaceIngestion
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       responses:
         "202":
           description: Workspace documents accepted for reprocessing
@@ -1846,7 +1796,7 @@ paths:
       summary: Get general workspace settings
       operationId: getGeneralSettings
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       responses:
         "200":
           description: General settings returned
@@ -1872,7 +1822,7 @@ paths:
       summary: Update general workspace settings
       operationId: updateGeneralSettings
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       requestBody:
         required: true
         content:
@@ -1911,7 +1861,7 @@ paths:
       summary: Search documents for the authenticated workspace
       operationId: searchDocuments
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       requestBody:
         required: true
         content:
@@ -1944,7 +1894,7 @@ paths:
       summary: List document search history for the authenticated workspace
       operationId: listDocumentSearchHistory
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: integer
@@ -1979,7 +1929,7 @@ paths:
       summary: Replay one historical document search
       operationId: getDocumentSearchHistory
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: string
@@ -2013,7 +1963,7 @@ paths:
       summary: List documents for the authenticated workspace
       operationId: listDocuments
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: integer
@@ -2047,7 +1997,7 @@ paths:
       summary: Queue a document for background processing
       operationId: createDocument
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       requestBody:
         required: true
         content:
@@ -2080,7 +2030,7 @@ paths:
       summary: Get a document
       operationId: getDocument
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: string
@@ -2113,7 +2063,7 @@ paths:
       summary: Update and requeue a document
       operationId: updateDocument
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: string
@@ -2177,7 +2127,7 @@ paths:
       summary: Delete a document
       operationId: deleteDocument
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: string
@@ -2207,7 +2157,7 @@ paths:
       summary: Requeue an existing document for processing
       operationId: reprocessDocument
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: string
@@ -2241,7 +2191,7 @@ paths:
       summary: Ask a retrieval-grounded question
       operationId: createChatResponse
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       requestBody:
         required: true
         content:
@@ -2283,7 +2233,7 @@ paths:
       summary: List saved chat conversations
       operationId: listChatHistory
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: integer
@@ -2318,7 +2268,7 @@ paths:
       summary: Get a saved conversation and its debug metadata
       operationId: getChatHistoryConversation
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: string
@@ -2371,7 +2321,7 @@ paths:
       summary: List connectors for the authenticated workspace
       operationId: listConnectors
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       responses:
         "200":
           description: Connectors returned
@@ -2392,7 +2342,7 @@ paths:
       summary: Get connector detail
       operationId: getConnectorDetail
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: string
@@ -2425,7 +2375,7 @@ paths:
       summary: Save connector config
       operationId: updateConnectorConfig
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: string
@@ -2484,7 +2434,7 @@ paths:
       summary: Enable a connector
       operationId: enableConnector
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: string
@@ -2537,7 +2487,7 @@ paths:
       summary: Disable a connector
       operationId: disableConnector
       security:
-        - bearerAuth: []
+        - sessionCookie: []
       parameters:
         - schema:
             type: string
@@ -2788,3 +2738,4 @@ paths:
         "404":
           description: Connector config not found
 webhooks: {}
+

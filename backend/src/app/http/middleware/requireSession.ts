@@ -15,6 +15,7 @@ export const requireSession = (dependencies: AppDependencies): RequestHandler =>
 
       const session = await dependencies.authService.authenticateSession(sessionToken);
       res.locals.accountId = session.accountId;
+      res.locals.sessionId = session.sessionId;
       next();
     } catch (error) {
       next(error);

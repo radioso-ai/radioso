@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   encryptField,
   decryptField,
+  isEncryptedConnectorSecret,
   maskSecret,
 } from "../../../src/modules/connectors/services/configEncryption.js";
 
@@ -48,6 +49,12 @@ describe("config encryption", () => {
       const encrypted = encryptField("secret", TEST_KEY);
       const tampered = encrypted.slice(0, -4) + "XXXX";
       expect(() => decryptField(tampered, TEST_KEY)).toThrow();
+    });
+
+    it("detects valid encrypted connector secrets", () => {
+      const encrypted = encryptField("secret", TEST_KEY);
+      expect(isEncryptedConnectorSecret(encrypted, TEST_KEY)).toBe(true);
+      expect(isEncryptedConnectorSecret("plain-text-secret", TEST_KEY)).toBe(false);
     });
   });
 

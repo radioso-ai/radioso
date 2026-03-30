@@ -60,9 +60,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const targetId = list.find((w) => w.id === storedId)?.id ?? list[0]?.id ?? null
 
         if (targetId) {
-          if (!activateWorkspaceToken(targetId)) {
-            await workspaceApi.getWorkspaceToken(targetId)
-          }
+          activateWorkspaceToken(targetId)
           setActiveWorkspaceId(targetId)
         }
       } catch {
@@ -77,9 +75,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [user, isBootstrapping, logout])
 
   const switchWorkspace = useCallback(async (workspaceId: string) => {
-    if (!activateWorkspaceToken(workspaceId)) {
-      await workspaceApi.getWorkspaceToken(workspaceId)
-    }
+    activateWorkspaceToken(workspaceId)
     setActiveWorkspaceId(workspaceId)
   }, [])
 

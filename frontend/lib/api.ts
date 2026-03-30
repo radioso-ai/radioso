@@ -3,61 +3,16 @@ const STREAMING_API_PATH = '/api/chat/stream'
 const API_TOKEN_STORAGE_KEY = "radioso.apiToken";
 const WORKSPACE_TOKENS_STORAGE_KEY = "radioso.workspaceTokens";
 const ACTIVE_WORKSPACE_STORAGE_KEY = "radioso.activeWorkspaceId";
-
-const getStoredApiToken = (): string | null => {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return window.localStorage.getItem(API_TOKEN_STORAGE_KEY);
-};
-
-const setStoredApiToken = (token: string | null) => {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (token) {
-    window.localStorage.setItem(API_TOKEN_STORAGE_KEY, token);
-    return;
-  }
-
-  window.localStorage.removeItem(API_TOKEN_STORAGE_KEY);
-};
-
-const getWorkspaceTokenMap = (): Record<string, string> => {
-  if (typeof window === "undefined") return {};
-  try {
-    return JSON.parse(window.localStorage.getItem(WORKSPACE_TOKENS_STORAGE_KEY) ?? "{}");
-  } catch {
-    return {};
-  }
-};
-
-const setWorkspaceToken = (workspaceId: string, token: string) => {
-  if (typeof window === "undefined") return;
-  const map = getWorkspaceTokenMap();
-  map[workspaceId] = token;
-  window.localStorage.setItem(WORKSPACE_TOKENS_STORAGE_KEY, JSON.stringify(map));
-};
-
-const getWorkspaceToken = (workspaceId: string): string | null => {
-  return getWorkspaceTokenMap()[workspaceId] ?? null;
-};
+const WORKSPACE_HEADER = 'X-Workspace-Id'
 
 export const activateWorkspaceToken = (workspaceId: string): boolean => {
-  const token = getWorkspaceToken(workspaceId);
-  if (!token) return false;
-  setStoredApiToken(token);
   if (typeof window !== "undefined") {
     window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
   }
   return true;
 };
 
-export const seedWorkspaceSession = (workspaceId: string, token: string) => {
-  setWorkspaceToken(workspaceId, token);
-  setStoredApiToken(token);
+export const seedWorkspaceSession = (workspaceId: string, _token?: string) => {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
   }
@@ -77,9 +32,9 @@ export const clearWorkspaceStorage = () => {
 
 export const removeWorkspaceToken = (workspaceId: string) => {
   if (typeof window === "undefined") return;
-  const map = getWorkspaceTokenMap();
-  delete map[workspaceId];
-  window.localStorage.setItem(WORKSPACE_TOKENS_STORAGE_KEY, JSON.stringify(map));
+  if (getStoredActiveWorkspaceId() === workspaceId) {
+    window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+  }
 };
 
 const buildError = async (response: Response): Promise<ErrorResponse> => {
@@ -147,9 +102,9 @@ const request = async <T>(
   }
 
   if (options.withApiToken) {
-    const token = getStoredApiToken();
+    const workspaceId = getStoredActiveWorkspaceId();
 
-    if (!token) {
+    if (!workspaceId) {
       throw {
         error: {
           code: "UNAUTHORIZED",
@@ -158,14 +113,14 @@ const request = async <T>(
       } satisfies ErrorResponse;
     }
 
-    headers.set("Authorization", `Bearer ${token}`);
+    headers.set(WORKSPACE_HEADER, workspaceId);
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     cache: "no-store",
     headers,
-    credentials: options.withSession ? "include" : init.credentials,
+    credentials: options.withSession || options.withApiToken ? "include" : init.credentials,
   });
 
   if (!response.ok) {
@@ -194,7 +149,6 @@ export interface RegisterResponse {
   userId: string
   workspaceId: string
   workspaceName: string
-  token: string
 }
 
 export interface LoginRequest {
@@ -207,11 +161,6 @@ export interface LoginResponse {
   userId: string
   workspaceId: string
   workspaceName: string
-  token: string
-}
-
-export interface AccountTokenResponse {
-  token: string
 }
 
 export interface RetrievalSettings {
@@ -572,10 +521,10 @@ export interface ConnectorConflictErrorResponse {
   detail: string
 }
 
-const requireApiToken = () => {
-  const token = getStoredApiToken()
+const requireActiveWorkspaceId = () => {
+  const workspaceId = getStoredActiveWorkspaceId()
 
-  if (!token) {
+  if (!workspaceId) {
     throw {
       error: {
         code: "UNAUTHORIZED",
@@ -584,7 +533,7 @@ const requireApiToken = () => {
     } satisfies ErrorResponse
   }
 
-  return token
+  return workspaceId
 }
 
 const parseSseEvent = (rawEvent: string) => {
@@ -736,15 +685,6 @@ export const workspaceApi = {
       method: "POST",
       body: JSON.stringify({ name }),
     }, { withSession: true })
-  },
-
-  async getWorkspaceToken(workspaceId: string): Promise<string> {
-    const response = await request<AccountTokenResponse>(`/account/workspaces/${workspaceId}/token`, {
-      method: "GET",
-    }, { withSession: true })
-    setWorkspaceToken(workspaceId, response.token)
-    setStoredApiToken(response.token)
-    return response.token
   },
 
   async rename(workspaceId: string, name: string): Promise<Workspace> {
@@ -967,9 +907,10 @@ export const chatApi = {
     const response = await fetch(STREAMING_API_PATH, {
       method: "POST",
       cache: "no-store",
+      credentials: 'include',
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${requireApiToken()}`,
+        [WORKSPACE_HEADER]: requireActiveWorkspaceId(),
       },
       body: JSON.stringify(data),
     })

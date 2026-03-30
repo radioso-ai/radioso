@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
-import { requireApiToken } from "../middleware/requireApiToken.js";
+import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 
@@ -37,8 +37,9 @@ export const conversationWindowQuerySchema = z.object({
 
 export const createChatRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
+  const workspaceSession = requireWorkspaceSession(dependencies);
 
-  router.get("/history", requireApiToken(dependencies), async (req, res, next) => {
+  router.get("/history", workspaceSession, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = collectionPageQuerySchema.safeParse(req.query);
@@ -53,7 +54,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.get("/history/:conversationId", requireApiToken(dependencies), async (req, res, next) => {
+  router.get("/history/:conversationId", workspaceSession, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsedParams = conversationParamsSchema.safeParse(req.params);
@@ -78,7 +79,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.post("/", requireApiToken(dependencies), validateBody(chatSchema), async (req, res, next) => {
+  router.post("/", workspaceSession, validateBody(chatSchema), async (req, res, next) => {
     try {
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
       if (req.body.stream) {

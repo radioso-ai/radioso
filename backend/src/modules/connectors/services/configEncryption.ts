@@ -4,6 +4,7 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 const KEY_LENGTH = 32;
+const MIN_ENCRYPTED_PAYLOAD_BYTES = IV_LENGTH + AUTH_TAG_LENGTH;
 
 const decodeKey = (keyBase64: string): Buffer => {
   const key = Buffer.from(keyBase64, "base64");
@@ -35,6 +36,9 @@ export const encryptField = (plaintext: string, keyBase64: string): string => {
 export const decryptField = (ciphertext: string, keyBase64: string): string => {
   const key = decodeKey(keyBase64);
   const data = Buffer.from(ciphertext, "base64");
+  if (data.length < MIN_ENCRYPTED_PAYLOAD_BYTES) {
+    throw new Error("Ciphertext is not a valid encrypted connector secret");
+  }
 
   const iv = data.subarray(0, IV_LENGTH);
   const authTag = data.subarray(data.length - AUTH_TAG_LENGTH);
@@ -63,4 +67,13 @@ export const maskSecret = (value: string): string => {
   }
 
   return "*".repeat(value.length - 4) + value.slice(-4);
+};
+
+export const isEncryptedConnectorSecret = (value: string, keyBase64: string): boolean => {
+  try {
+    void decryptField(value, keyBase64);
+    return true;
+  } catch {
+    return false;
+  }
 };

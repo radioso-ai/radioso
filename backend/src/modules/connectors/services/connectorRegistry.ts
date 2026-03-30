@@ -13,7 +13,7 @@ import type {
   ConnectorValidationIssue,
   ConfigFieldDefinition,
 } from "@radioso/connector-api";
-import { encryptField, decryptField, maskSecret } from "./configEncryption.js";
+import { encryptField, decryptField, isEncryptedConnectorSecret, maskSecret } from "./configEncryption.js";
 
 interface ConnectorSaveSuccess {
   kind: "success";
@@ -33,6 +33,10 @@ export type ConnectorMutationResult =
   | ConnectorSaveSuccess
   | ConnectorValidationFailure
   | ConnectorConflictFailure;
+
+const SECRET_ENCRYPTION_REQUIRED_STATUS = "secret_encryption_required";
+const SECRET_ROTATION_REQUIRED_STATUS = "secret_rotation_required";
+const SECRET_REMEDIATION_PLACEHOLDER = "[re-enter secret]";
 
 export class ConnectorRegistry {
   private readonly plugins = new Map<string, ConnectorPlugin>();
@@ -154,8 +158,11 @@ export class ConnectorRegistry {
     const schema = plugin.configSchema();
 
     let maskedConfig: Record<string, string> | null = {};
+    let errorStatus = row?.error_status ?? null;
     if (row) {
+      const secretStatus = this.describeSecretState(row.config_data, schema);
       maskedConfig = this.maskSecrets(row.config_data, schema);
+      errorStatus = errorStatus ?? secretStatus;
     }
 
     return {
@@ -163,7 +170,7 @@ export class ConnectorRegistry {
       name: plugin.name,
       description: plugin.description,
       enabled: row?.enabled ?? false,
-      errorStatus: row?.error_status ?? null,
+      errorStatus,
       webhookPath: plugin.getWebhookPath(),
       configSchema: schema,
       config: maskedConfig,
@@ -193,6 +200,22 @@ export class ConnectorRegistry {
       [workspaceId, connectorId],
     );
     const existingStoredConfig = existingRow[0]?.config_data ?? {};
+    const existingSecretState = this.describeSecretState(existingStoredConfig, schema);
+    const inputIssues = this.validateSecretWriteState(normalizedInput, schema);
+    if (inputIssues.length > 0) {
+      return { kind: "validation_error", issues: inputIssues };
+    }
+
+    if (
+      existingSecretState === SECRET_ROTATION_REQUIRED_STATUS &&
+      !this.canRemediateSecretRotation(normalizedInput, schema)
+    ) {
+      return {
+        kind: "validation_error",
+        issues: this.secretRemediationIssues(schema, SECRET_ROTATION_REQUIRED_STATUS),
+      };
+    }
+
     const existingPlainConfig = this.decryptSecrets(existingStoredConfig, schema);
     const mergedPlainConfig = {
       ...existingPlainConfig,
@@ -265,6 +288,13 @@ export class ConnectorRegistry {
 
     const schema = plugin.configSchema();
     const storedConfig = rows[0].config_data;
+    const secretState = this.describeSecretState(storedConfig, schema);
+    if (secretState) {
+      return {
+        kind: "validation_error",
+        issues: this.secretRemediationIssues(schema, secretState),
+      };
+    }
     const config = this.decryptSecrets(storedConfig, schema);
     const issues = this.validateConfig(plugin, schema, config, true);
     if (issues.length > 0) {
@@ -328,6 +358,10 @@ export class ConnectorRegistry {
     if (!plugin) return null;
 
     const schema = plugin.configSchema();
+    const secretState = this.describeSecretState(rows[0].config_data, schema);
+    if (secretState) {
+      return null;
+    }
     const decrypted = this.decryptSecrets(rows[0].config_data, schema);
     return { enabled: rows[0].enabled, config: decrypted };
   }
@@ -383,9 +417,8 @@ export class ConnectorRegistry {
     const result: Record<string, string> = {};
     for (const [key, value] of Object.entries(config)) {
       if (secretKeys.has(key)) {
-        // Decrypt then mask so we show last 4 chars of the actual value
         const decrypted = this.tryDecryptValue(value);
-        result[key] = maskSecret(decrypted);
+        result[key] = decrypted === null ? SECRET_REMEDIATION_PLACEHOLDER : maskSecret(decrypted);
       } else {
         result[key] = value;
       }
@@ -393,13 +426,95 @@ export class ConnectorRegistry {
     return result;
   }
 
-  private tryDecryptValue(value: string): string {
-    if (!this.encryptionKey) return value;
+  private tryDecryptValue(value: string): string | null {
+    if (!this.encryptionKey) {
+      return null;
+    }
     try {
       return decryptField(value, this.encryptionKey);
     } catch {
-      return value;
+      return null;
     }
+  }
+
+  private describeSecretState(
+    config: Record<string, string>,
+    schema: ConfigFieldDefinition[],
+  ): string | null {
+    const secretKeys = schema.filter((field) => field.type === "secret").map((field) => field.key);
+    if (secretKeys.length === 0) {
+      return null;
+    }
+
+    const secretValues = secretKeys
+      .map((key) => config[key])
+      .filter((value): value is string => typeof value === "string" && value.length > 0);
+
+    if (secretValues.length === 0) {
+      return null;
+    }
+
+    if (!this.encryptionKey) {
+      return SECRET_ENCRYPTION_REQUIRED_STATUS;
+    }
+
+    return secretValues.every((value) => isEncryptedConnectorSecret(value, this.encryptionKey!))
+      ? null
+      : SECRET_ROTATION_REQUIRED_STATUS;
+  }
+
+  private validateSecretWriteState(
+    config: Record<string, string>,
+    schema: ConfigFieldDefinition[],
+  ): ConnectorValidationIssue[] {
+    const secretKeys = schema.filter((field) => field.type === "secret").map((field) => field.key);
+    const providedSecretKeys = secretKeys.filter((key) => {
+      const value = config[key];
+      return typeof value === "string" && value.length > 0;
+    });
+
+    if (providedSecretKeys.length === 0) {
+      return [];
+    }
+
+    if (!this.encryptionKey) {
+      return providedSecretKeys.map((key) => ({
+        key,
+        message: "Connector secret encryption must be configured before saving secret fields",
+      }));
+    }
+
+    return [];
+  }
+
+  private canRemediateSecretRotation(
+    config: Record<string, string>,
+    schema: ConfigFieldDefinition[],
+  ): boolean {
+    const secretKeys = schema.filter((field) => field.type === "secret").map((field) => field.key);
+    return (
+      secretKeys.length > 0 &&
+      secretKeys.every((key) => {
+        const value = config[key];
+        return typeof value === "string" && value.trim().length > 0;
+      })
+    );
+  }
+
+  private secretRemediationIssues(
+    schema: ConfigFieldDefinition[],
+    state: string,
+  ): ConnectorValidationIssue[] {
+    const secretKeys = schema.filter((field) => field.type === "secret");
+    const message =
+      state === SECRET_ENCRYPTION_REQUIRED_STATUS
+        ? "Connector secret encryption must be configured before this connector can use stored secret fields"
+        : "Stored connector secrets require rotation before this connector can be used";
+
+    return secretKeys.map((field) => ({
+      key: field.key,
+      message,
+    }));
   }
 
   private normalizeConfigData(config: Record<string, unknown>): Record<string, string> {

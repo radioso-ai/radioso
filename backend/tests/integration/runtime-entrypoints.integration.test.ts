@@ -66,4 +66,33 @@ describe("runtime entrypoints", () => {
     expect(workerStartSpy).toHaveBeenCalledOnce();
     expect(runtime.server).toBeUndefined();
   });
+
+  it("serves session-authenticated admin routes after login bootstrap", async () => {
+    const { dependencies } = createTestDependencies();
+
+    const runtime = await startApiRuntime({
+      env: createEnv(8093),
+      logger: dependencies.logger,
+      runMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+      createApp,
+    });
+    runtimes.push(runtime);
+
+    const register = await request(runtime.server!)
+      .post("/api/v1/auth/register")
+      .send({
+        email: "runtime-session@example.com",
+        password: "verysecurepassword",
+      });
+
+    const settings = await request(runtime.server!)
+      .get("/api/v1/settings/general")
+      .set("Cookie", register.headers["set-cookie"][0] as string)
+      .set("X-Workspace-Id", register.body.workspaceId as string);
+
+    expect(register.status).toBe(201);
+    expect(settings.status).toBe(200);
+    expect(settings.body.anonymousChatEnabled).toBe(false);
+  });
 });

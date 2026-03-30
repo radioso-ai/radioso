@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
+import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { requireSession } from "../middleware/requireSession.js";
 import { validateBody } from "../middleware/validate.js";
 
@@ -19,6 +20,17 @@ export const workspaceParamsSchema = z.object({
 
 export const createWorkspaceRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
+  const workspaceMutationRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "workspace.mutation",
+    limit: dependencies.env.WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS,
+    windowMs: dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS,
+    resolveSubjectKey: (_req, res) => String(res.locals.accountId ?? "unknown"),
+    resolveAuditContext: (_req, res) => ({
+      accountId: res.locals.accountId as string | undefined,
+    }),
+  });
 
   router.get("/", requireSession(dependencies), async (_req, res, next) => {
     try {
@@ -30,7 +42,7 @@ export const createWorkspaceRoutes = (dependencies: AppDependencies): Router => 
     }
   });
 
-  router.post("/", requireSession(dependencies), validateBody(createWorkspaceSchema), async (req, res, next) => {
+  router.post("/", requireSession(dependencies), workspaceMutationRateLimit, validateBody(createWorkspaceSchema), async (req, res, next) => {
     try {
       const { accountId } = res.locals as { accountId: string };
       const workspace = await dependencies.workspaceService.create(accountId, req.body.name);
@@ -40,7 +52,7 @@ export const createWorkspaceRoutes = (dependencies: AppDependencies): Router => 
     }
   });
 
-  router.patch("/:workspaceId", requireSession(dependencies), validateBody(renameWorkspaceSchema), async (req, res, next) => {
+  router.patch("/:workspaceId", requireSession(dependencies), workspaceMutationRateLimit, validateBody(renameWorkspaceSchema), async (req, res, next) => {
     try {
       const { accountId } = res.locals as { accountId: string };
       const { workspaceId } = workspaceParamsSchema.parse(req.params);
@@ -51,7 +63,7 @@ export const createWorkspaceRoutes = (dependencies: AppDependencies): Router => 
     }
   });
 
-  router.delete("/:workspaceId", requireSession(dependencies), async (req, res, next) => {
+  router.delete("/:workspaceId", requireSession(dependencies), workspaceMutationRateLimit, async (req, res, next) => {
     try {
       const { accountId } = res.locals as { accountId: string };
       const { workspaceId } = workspaceParamsSchema.parse(req.params);

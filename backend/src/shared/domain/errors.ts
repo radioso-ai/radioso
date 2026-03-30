@@ -23,3 +23,9 @@ export const conflict = (message: string): AppError =>
 
 export const notFound = (message: string): AppError =>
   new AppError(404, "not_found", message);
+
+export const tooManyRequests = (message: string, details?: unknown): AppError =>
+  new AppError(429, "rate_limit_exceeded", message, details);
+
+export const serviceUnavailable = (message: string, details?: unknown): AppError =>
+  new AppError(503, "service_unavailable", message, details);

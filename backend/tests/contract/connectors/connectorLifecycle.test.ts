@@ -3,7 +3,7 @@ import { createHmac } from "node:crypto";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
-import { createTestApp, issueTestToken } from "../../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession } from "../../support/testApp.js";
 
 const APP_SECRET = "app-secret-abcdef";
 
@@ -33,17 +33,17 @@ describe("connector lifecycle contract", () => {
       whatsappFetch: fetchMock,
       whatsappDebounceMs: 10,
     });
-    const { token, workspaceId } = await issueTestToken(app, "connectors-lifecycle@example.com");
-    const authorization = `Bearer ${token}`;
+    const session = await issueTestSession(app, "connectors-lifecycle@example.com");
+    const { workspaceId } = session;
 
     await request(app)
       .put("/api/v1/connectors/whatsapp")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ config: validConfig });
 
     await request(app)
       .post("/api/v1/connectors/whatsapp/enable")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     const initialPayload = JSON.stringify({
       object: "whatsapp_business_account",
@@ -86,7 +86,7 @@ describe("connector lifecycle contract", () => {
 
     const initialHistory = await request(app)
       .get(`/api/v1/chat/history/${conversationId}`)
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(initialHistory.status).toBe(200);
     expect(initialHistory.body.sourceChannel).toBe("whatsapp");
@@ -94,7 +94,7 @@ describe("connector lifecycle contract", () => {
 
     const disableResponse = await request(app)
       .post("/api/v1/connectors/whatsapp/disable")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(disableResponse.status).toBe(200);
     expect(disableResponse.body.enabled).toBe(false);
@@ -144,7 +144,7 @@ describe("connector lifecycle contract", () => {
 
     const saveUpdatedConfig = await request(app)
       .put("/api/v1/connectors/whatsapp")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ config: updatedConfig });
 
     expect(saveUpdatedConfig.status).toBe(200);
@@ -152,7 +152,7 @@ describe("connector lifecycle contract", () => {
 
     const reenableResponse = await request(app)
       .post("/api/v1/connectors/whatsapp/enable")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(reenableResponse.status).toBe(200);
     expect(reenableResponse.body.enabled).toBe(true);
@@ -196,7 +196,7 @@ describe("connector lifecycle contract", () => {
 
     const preservedHistory = await request(app)
       .get(`/api/v1/chat/history/${conversationId}`)
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(preservedHistory.status).toBe(200);
     expect(preservedHistory.body.sourceChannel).toBe("whatsapp");

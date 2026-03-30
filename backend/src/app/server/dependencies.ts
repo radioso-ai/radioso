@@ -16,6 +16,7 @@ import { SessionRepository } from "../../db/repositories/sessionRepository.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
 import { AuditService } from "../../modules/audit/services/auditService.js";
 import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
+import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
 import { DocumentImportService } from "../../modules/documents/services/documentImportService.js";
@@ -44,6 +45,8 @@ import { EmbeddingService } from "../../modules/retrieval/services/embeddingServ
 import { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
+import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
+import { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { Database } from "../../shared/infra/database.js";
 import { AppError } from "../../shared/domain/errors.js";
@@ -156,10 +159,19 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   );
   const workspaceRepository = new WorkspaceRepository(database);
   const workspaceService = new WorkspaceService(workspaceRepository, auditService);
+  const workspaceSessionService = new WorkspaceSessionService(workspaceService);
+  const abuseControlService = new AbuseControlService(new AbuseControlRepository(database));
   const connectorRegistry = new ConnectorRegistry();
   registerBuiltInConnectors(connectorRegistry);
   if (env.CONNECTOR_ENCRYPTION_KEY) {
     connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY);
+  } else {
+    logger.warn(
+      {
+        remediation: "Set CONNECTOR_ENCRYPTION_KEY before saving or rotating connector secrets.",
+      },
+      "Connector secret encryption is not configured; secret-field writes will be rejected until this is fixed",
+    );
   }
   const authService = new AuthService({
     env,
@@ -174,6 +186,8 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     env,
     logger,
     authService,
+    workspaceSessionService,
+    abuseControlService,
     auditService,
     workspaceService,
     ingestionSettingsService,

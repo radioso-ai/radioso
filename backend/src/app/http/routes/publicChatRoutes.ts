@@ -26,7 +26,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
   router.post(
     "/:token",
     sessionMiddleware,
-    anonymousRateLimiter,
+    anonymousRateLimiter(dependencies),
     validateBody(anonymousChatSchema),
     async (req, res, next) => {
       try {

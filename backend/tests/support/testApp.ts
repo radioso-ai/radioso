@@ -35,11 +35,14 @@ import { IngestionSettingsService } from "../../src/modules/settings/services/in
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
+import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
 import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
 import { WhatsAppPlugin } from "../../src/modules/connectors/plugins/whatsapp/whatsappPlugin.js";
+import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
+import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import {
   createAuditService,
   InMemoryAuditEventRepository,
@@ -56,6 +59,7 @@ import {
   InMemorySessionRepository,
   InMemoryWorkspaceRepository,
   InMemoryConnectorDatabase,
+  InMemoryAbuseControlRepository,
 } from "./fakes.js";
 
 export const createTestEnv = (): Env => ({
@@ -69,6 +73,10 @@ export const createTestEnv = (): Env => ({
   SESSION_COOKIE_NAME: "radioso_session",
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
   SESSION_TTL_HOURS: 168,
+  AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
+  AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
+  WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 30,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
   DOCUMENT_STORAGE_BUCKET: "test-document-imports",
   DOCUMENT_UPLOAD_MAX_BYTES: 10 * 1024 * 1024,
@@ -83,16 +91,23 @@ interface TestRepositories {
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
 }
 
+const appDependencyMap = new WeakMap<object, AppDependencies>();
+
 export const createTestDependencies = (overrides: {
   chatGateway?: ChatGateway;
   chunkingSimilarityPort?: ChunkingSimilarityPort;
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
   rerankGateway?: RerankGateway;
+  envOverrides?: Partial<Env>;
+  abuseControlRepository?: AbuseControlRepositoryPort;
   whatsappFetch?: typeof fetch;
   whatsappDebounceMs?: number;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
-  const env = createTestEnv();
+  const env = {
+    ...createTestEnv(),
+    ...overrides.envOverrides,
+  } satisfies Env;
   const auditEventRepository = new InMemoryAuditEventRepository();
   const auditService = createAuditService(auditEventRepository);
   const accountRepository = new InMemoryAccountRepository();
@@ -377,6 +392,10 @@ export const createTestDependencies = (overrides: {
 
   const workspaceRepository = new InMemoryWorkspaceRepository();
   const workspaceService = new WorkspaceService(workspaceRepository, auditService);
+  const workspaceSessionService = new WorkspaceSessionService(workspaceService);
+  const abuseControlService = new AbuseControlService(
+    overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),
+  );
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.register(new WhatsAppPlugin({
     fetch: overrides.whatsappFetch,
@@ -389,6 +408,8 @@ export const createTestDependencies = (overrides: {
     env,
     logger: createLogger("silent"),
     auditService,
+    workspaceSessionService,
+    abuseControlService,
     authService: new AuthService({
       env,
       auditService,
@@ -450,12 +471,16 @@ export const createTestApp = (overrides: {
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
   rerankGateway?: RerankGateway;
+  envOverrides?: Partial<Env>;
+  abuseControlRepository?: AbuseControlRepositoryPort;
   whatsappFetch?: typeof fetch;
   whatsappDebounceMs?: number;
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);
+  const app = createApp(dependencies);
+  appDependencyMap.set(app, dependencies);
   return {
-    app: createApp(dependencies),
+    app,
     dependencies,
     repositories,
   };
@@ -479,13 +504,36 @@ export const issueTestToken = async (
     .get("/api/v1/workspace")
     .set("Cookie", cookie);
   const workspaceId: string = workspaces.body.workspaces[0].id;
+  const dependencies = appDependencyMap.get(app);
+  if (!dependencies) {
+    throw new Error("Test app dependencies were not registered for token issuance");
+  }
 
-  const tokenResponse = await request(app)
-    .get(`/api/v1/account/workspaces/${workspaceId}/token`)
-    .set("Cookie", cookie);
+  const tokenResponse = await dependencies.authService.getTokenForWorkspace(workspaceId, register.body.userId as string);
 
-  return { token: tokenResponse.body.token, cookie, workspaceId };
+  return { token: tokenResponse.token, cookie, workspaceId };
 };
+
+export const issueTestSession = async (
+  app: ReturnType<typeof createTestApp>["app"],
+  email = `test-${randomUUID()}@example.com`,
+): Promise<{ cookie: string; workspaceId: string; userId: string }> => {
+  const register = await request(app).post("/api/v1/auth/register").send({
+    email,
+    password: "verysecurepassword",
+  });
+
+  return {
+    cookie: register.headers["set-cookie"][0] as string,
+    workspaceId: register.body.workspaceId as string,
+    userId: register.body.userId as string,
+  };
+};
+
+export const adminSessionHeaders = (session: { cookie: string; workspaceId: string }) => ({
+  Cookie: session.cookie,
+  "X-Workspace-Id": session.workspaceId,
+});
 
 const keywordScore = (content: string, query: string): number => {
   const lowerContent = content.toLowerCase();

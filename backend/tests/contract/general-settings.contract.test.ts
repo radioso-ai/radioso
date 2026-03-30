@@ -1,15 +1,15 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
-import { createTestApp, issueTestToken } from "../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("general settings contract", () => {
   it("GET /api/v1/settings/general returns default settings", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app);
+    const session = await issueTestSession(app);
 
     const response = await request(app)
       .get("/api/v1/settings/general")
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
@@ -21,11 +21,11 @@ describe("general settings contract", () => {
 
   it("PUT /api/v1/settings/general enables anonymous chat and generates URL", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app);
+    const session = await issueTestSession(app);
 
     const response = await request(app)
       .put("/api/v1/settings/general")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ anonymousChatEnabled: true });
 
     expect(response.status).toBe(200);
@@ -37,11 +37,11 @@ describe("general settings contract", () => {
 
   it("PUT /api/v1/settings/general updates rate limit", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app);
+    const session = await issueTestSession(app);
 
     const response = await request(app)
       .put("/api/v1/settings/general")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ anonymousChatEnabled: true, anonymousRateLimit: 20 });
 
     expect(response.status).toBe(200);
@@ -50,18 +50,18 @@ describe("general settings contract", () => {
 
   it("toggling off preserves token but returns null URL", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app);
+    const session = await issueTestSession(app);
 
     // Enable
     await request(app)
       .put("/api/v1/settings/general")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ anonymousChatEnabled: true });
 
     // Disable
     const response = await request(app)
       .put("/api/v1/settings/general")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ anonymousChatEnabled: false });
 
     expect(response.status).toBe(200);
@@ -71,7 +71,7 @@ describe("general settings contract", () => {
     // Re-enable — should reuse same token
     const reEnabled = await request(app)
       .put("/api/v1/settings/general")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ anonymousChatEnabled: true });
 
     expect(reEnabled.body.anonymousChatEnabled).toBe(true);
@@ -88,11 +88,11 @@ describe("general settings contract", () => {
 
   it("rejects invalid rate limit", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app);
+    const session = await issueTestSession(app);
 
     const response = await request(app)
       .put("/api/v1/settings/general")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ anonymousChatEnabled: true, anonymousRateLimit: 100 });
 
     expect(response.status).toBe(400);

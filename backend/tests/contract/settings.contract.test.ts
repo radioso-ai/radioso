@@ -3,38 +3,16 @@ import { readFileSync } from "node:fs";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp } from "../support/testApp.js";
-
-const issueToken = async (app: ReturnType<typeof createTestApp>["app"]) => {
-  const register = await request(app).post("/api/v1/auth/register").send({
-    email: "settings@example.com",
-    password: "verysecurepassword",
-  });
-  const cookie = register.headers["set-cookie"][0];
-
-  const workspaces = await request(app)
-    .get("/api/v1/workspace")
-    .set("Cookie", cookie);
-  const workspaceId = workspaces.body.workspaces[0].id;
-
-  const token = await request(app)
-    .get(`/api/v1/account/workspaces/${workspaceId}/token`)
-    .set("Cookie", cookie);
-
-  return {
-    token: token.body.token as string,
-    workspaceId,
-  };
-};
+import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("settings contract", () => {
-  it("returns default retrieval settings for a valid bearer token", async () => {
+  it("returns default retrieval settings for a valid session workspace context", async () => {
     const { app } = createTestApp();
-    const { token } = await issueToken(app);
+    const session = await issueTestSession(app, "settings-default@example.com");
 
     const response = await request(app)
       .get("/api/v1/settings/retrieval")
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual([
@@ -60,13 +38,13 @@ describe("settings contract", () => {
     expect(response.body.metadataRules).toEqual([]);
   });
 
-  it("updates retrieval settings for a valid bearer token", async () => {
+  it("updates retrieval settings for a valid session workspace context", async () => {
     const { app } = createTestApp();
-    const { token } = await issueToken(app);
+    const session = await issueTestSession(app, "settings-update@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Metadata policy doc",
         content: "Metadata rich content",
@@ -77,7 +55,7 @@ describe("settings contract", () => {
 
     const response = await request(app)
       .put("/api/v1/settings/retrieval")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         queryRewriteEnabled: true,
         rerankEnabled: true,
@@ -126,12 +104,11 @@ describe("settings contract", () => {
 
   it("preserves saved signal policies when an older client omits the field", async () => {
     const { app } = createTestApp();
-    const { token } = await issueToken(app);
-    const authorization = `Bearer ${token}`;
+    const session = await issueTestSession(app, "settings-preserve@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({
         title: "Metadata policy doc",
         content: "Metadata rich content",
@@ -142,7 +119,7 @@ describe("settings contract", () => {
 
     const firstUpdate = await request(app)
       .put("/api/v1/settings/retrieval")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({
         queryRewriteEnabled: true,
         rerankEnabled: true,
@@ -167,7 +144,7 @@ describe("settings contract", () => {
 
     const secondUpdate = await request(app)
       .put("/api/v1/settings/retrieval")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({
         queryRewriteEnabled: false,
         rerankEnabled: false,
@@ -184,13 +161,13 @@ describe("settings contract", () => {
     expect(secondUpdate.body.customInstruction).toBe("Cite paragraph numbers.");
   });
 
-  it("returns default ingestion settings for a valid bearer token", async () => {
+  it("returns default ingestion settings for a valid session workspace context", async () => {
     const { app } = createTestApp();
-    const { token } = await issueToken(app);
+    const session = await issueTestSession(app, "ingestion-default@example.com");
 
     const response = await request(app)
       .get("/api/v1/settings/ingestion")
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
@@ -202,13 +179,13 @@ describe("settings contract", () => {
     });
   });
 
-  it("updates ingestion settings for a valid bearer token", async () => {
+  it("updates ingestion settings for a valid session workspace context", async () => {
     const { app } = createTestApp();
-    const { token } = await issueToken(app);
+    const session = await issueTestSession(app, "ingestion-update@example.com");
 
     const response = await request(app)
       .put("/api/v1/settings/ingestion")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         chunkingStrategy: "structured_semantic",
         fixedWindowChunkSize: 900,
@@ -227,19 +204,18 @@ describe("settings contract", () => {
     });
   });
 
-  it("starts workspace ingestion reprocessing for a valid bearer token", async () => {
+  it("starts workspace ingestion reprocessing for a valid session workspace context", async () => {
     const { app } = createTestApp();
-    const { token } = await issueToken(app);
-    const authorization = `Bearer ${token}`;
+    const session = await issueTestSession(app, "ingestion-reprocess@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ title: "Guide", content: "Queued for reprocess." });
 
     const response = await request(app)
       .post("/api/v1/settings/ingestion/reprocess")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(response.status).toBe(202);
     expect(response.body).toMatchObject({

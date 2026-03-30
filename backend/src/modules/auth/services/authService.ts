@@ -85,7 +85,6 @@ export class AuthService {
     userId: string;
     workspaceId: string;
     workspaceName: string;
-    token: string;
     sessionCookie: string;
   }> {
     const email = normalizeEmail(input.email);
@@ -103,7 +102,6 @@ export class AuthService {
     const passwordHash = await hashPassword(input.password);
     const account = await this.dependencies.accountRepository.create({ email, passwordHash });
     const workspace = await this.dependencies.workspaceService.createDefault(account.id);
-    const { token } = await this.issueWorkspaceToken(workspace.id, account.id);
     const sessionCookie = await this.createSessionCookie(account.id);
 
     await this.dependencies.auditService.record({
@@ -117,7 +115,6 @@ export class AuthService {
       userId: account.id,
       workspaceId: workspace.id,
       workspaceName: workspace.name,
-      token,
       sessionCookie,
     };
   }
@@ -126,7 +123,6 @@ export class AuthService {
     userId: string;
     workspaceId: string;
     workspaceName: string;
-    token: string;
     sessionCookie: string;
   }> {
     const email = normalizeEmail(input.email);
@@ -145,7 +141,6 @@ export class AuthService {
       account.id,
       input.preferredWorkspaceId,
     );
-    const { token } = await this.getTokenForWorkspace(workspace.id, account.id);
     const sessionCookie = await this.createSessionCookie(account.id);
     await this.dependencies.auditService.record({
       accountId: account.id,
@@ -158,12 +153,11 @@ export class AuthService {
       userId: account.id,
       workspaceId: workspace.id,
       workspaceName: workspace.name,
-      token,
       sessionCookie,
     };
   }
 
-  async authenticateSession(sessionToken: string): Promise<{ accountId: string }> {
+  async authenticateSession(sessionToken: string): Promise<{ accountId: string; sessionId: string }> {
     const tokenHash = sha256(sessionToken);
     const session = await this.dependencies.sessionRepository.findActiveByTokenHash(tokenHash, new Date());
 
@@ -172,7 +166,7 @@ export class AuthService {
     }
 
     await this.dependencies.sessionRepository.touch(session.id, new Date());
-    return { accountId: session.accountId };
+    return { accountId: session.accountId, sessionId: session.id };
   }
 
   async getTokenForWorkspace(workspaceId: string, accountId: string): Promise<{ token: string }> {

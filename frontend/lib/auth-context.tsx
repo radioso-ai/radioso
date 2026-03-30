@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { clearWorkspaceStorage } from '@/lib/api'
 
-interface User {
+export interface User {
   userId: string
   email: string
 }
@@ -19,6 +19,27 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null)
 const AUTH_STORAGE_KEY = 'radioso.authUser'
 
+export const readStoredAuthUser = (
+  storage: Pick<Storage, 'getItem' | 'removeItem'> | null,
+): User | null => {
+  if (!storage) {
+    return null
+  }
+
+  const storedUser = storage.getItem(AUTH_STORAGE_KEY)
+  if (!storedUser) {
+    return null
+  }
+
+  try {
+    return JSON.parse(storedUser) as User
+  } catch {
+    storage.removeItem(AUTH_STORAGE_KEY)
+    clearWorkspaceStorage()
+    return null
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(true)
@@ -30,21 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      const storedUser = window.localStorage.getItem(AUTH_STORAGE_KEY)
-      if (!storedUser) {
-        setIsBootstrapping(false)
-        return
-      }
-
-      try {
-        const parsedUser = JSON.parse(storedUser) as User
-        setUser(parsedUser)
-      } catch {
-        window.localStorage.removeItem(AUTH_STORAGE_KEY)
-        clearWorkspaceStorage()
-      } finally {
-        setIsBootstrapping(false)
-      }
+      setUser(readStoredAuthUser(window.localStorage))
+      setIsBootstrapping(false)
     }
 
     void bootstrap()

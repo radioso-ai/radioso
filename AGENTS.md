@@ -50,6 +50,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - N/A; presentation-only feature with no new persistence (027-markdown-chat)
 - TypeScript 5.x on Node.js 22 + Express, `pg`, Zod, Pino, Vitest, Supertest, local connector packages (029-split-document-worker)
 - PostgreSQL 16 with `pgvector`, existing `document_processing_jobs`, existing connector config persistence (029-split-document-worker)
+- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend) + Express, pg, Zod, OpenAI SDK, Next.js App Router, Radix/shadcn UI, existing local parser package under `/packages` (031-security-remediation)
+- PostgreSQL 16 with `pgvector`; additive durable abuse-control persistence; existing sessions, workspace tokens, and connector config records (031-security-remediation)
 
 
 ## Project Structure
@@ -69,6 +71,6 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 031-security-remediation: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend) + Express, pg, Zod, OpenAI SDK, Next.js App Router, Radix/shadcn UI, existing local parser package under `/packages`
 - 029-split-document-worker: Added TypeScript 5.x on Node.js 22 + Express, `pg`, Zod, Pino, Vitest, Supertest, local connector packages
 - 027-markdown-chat: Added TypeScript 5.7 on Node.js 22, React 19, Next.js 16 + `react-markdown`, `remark-breaks`, existing Radix UI primitives, Lucide icons
-- 026-answer-support-validator: Added TypeScript 5.x on Node.js 22 + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertes

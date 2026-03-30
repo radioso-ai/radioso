@@ -6,45 +6,26 @@ import type { ChatGateway } from "../../src/modules/chat/services/chatService.js
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp } from "../support/testApp.js";
-
-const getBearerToken = async (app: ReturnType<typeof createTestApp>["app"]) => {
-  const register = await request(app).post("/api/v1/auth/register").send({
-    email: "chat@example.com",
-    password: "verysecurepassword",
-  });
-  const cookie = register.headers["set-cookie"][0];
-
-  const workspaces = await request(app)
-    .get("/api/v1/workspace")
-    .set("Cookie", cookie);
-  const workspaceId = workspaces.body.workspaces[0].id;
-
-  const token = await request(app)
-    .get(`/api/v1/account/workspaces/${workspaceId}/token`)
-    .set("Cookie", cookie);
-  return token.body.token as string;
-};
+import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("chat contract", () => {
   it("lists chat history summaries for the active account", async () => {
     const { app } = createTestApp();
-    const token = await getBearerToken(app);
-    const authorization = `Bearer ${token}`;
+    const session = await issueTestSession(app, "chat@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ title: "Intro", content: "This page parses content and answers questions." });
 
     const chat = await request(app)
       .post("/api/v1/chat/")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ query: "What does this page do?", stream: false });
 
     const response = await request(app)
       .get("/api/v1/chat/history")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(chat.status).toBe(200);
     expect(response.status).toBe(200);
@@ -61,22 +42,21 @@ describe("chat contract", () => {
 
   it("returns a conversation history detail with debug metadata", async () => {
     const { app } = createTestApp();
-    const token = await getBearerToken(app);
-    const authorization = `Bearer ${token}`;
+    const session = await issueTestSession(app, "chat@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ title: "Intro", content: "This page parses content and answers questions." });
 
     const chat = await request(app)
       .post("/api/v1/chat/")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ query: "What does this page do?", stream: false });
 
     const response = await request(app)
       .get(`/api/v1/chat/history/${chat.body.conversationId}`)
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
@@ -121,11 +101,11 @@ describe("chat contract", () => {
 
   it("rejects an invalid history conversation id with a client error", async () => {
     const { app } = createTestApp();
-    const token = await getBearerToken(app);
+    const session = await issueTestSession(app, "chat@example.com");
 
     const response = await request(app)
       .get("/api/v1/chat/history/not-a-uuid")
-      .set("Authorization", `Bearer ${token}`);
+      .set(adminSessionHeaders(session));
 
     expect(response.status).toBe(400);
     expect(response.body.error).toMatchObject({
@@ -136,16 +116,16 @@ describe("chat contract", () => {
 
   it("returns a non-streaming chat response with a conversation id", async () => {
     const { app } = createTestApp();
-    const token = await getBearerToken(app);
+    const session = await issueTestSession(app, "chat@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ title: "Intro", content: "This page parses content and answers questions." });
 
     const response = await request(app)
       .post("/api/v1/chat/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ query: "What does this page do?", stream: false });
 
     expect(response.status).toBe(200);
@@ -183,16 +163,16 @@ describe("chat contract", () => {
       },
     };
     const { app } = createTestApp({ chatGateway: delayedGateway });
-    const token = await getBearerToken(app);
+    const session = await issueTestSession(app, "chat@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ title: "Intro", content: "This page parses content and answers questions." });
 
     const response = await request(app)
       .post("/api/v1/chat/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .buffer(true)
       .parse((res, callback) => {
         let body = "";
@@ -225,11 +205,11 @@ describe("chat contract", () => {
       },
     };
     const { app } = createTestApp({ chatGateway: delayedGateway });
-    const token = await getBearerToken(app);
+    const session = await issueTestSession(app, "chat@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ title: "Intro", content: "This page parses content and answers questions." });
 
     const server = app.listen();
@@ -253,8 +233,9 @@ describe("chat contract", () => {
           port: address.port,
           path: "/api/v1/chat/",
           headers: {
-            Authorization: `Bearer ${token}`,
+            Cookie: session.cookie,
             "Content-Type": "application/json",
+            "X-Workspace-Id": session.workspaceId,
           },
         }, (res) => {
           res.setEncoding("utf8");
@@ -301,21 +282,21 @@ describe("chat contract", () => {
 
   it("accepts an existing conversation id without changing the request shape", async () => {
     const { app } = createTestApp();
-    const token = await getBearerToken(app);
+    const session = await issueTestSession(app, "chat@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ title: "Intro", content: "This page parses content and answers questions." });
 
     const first = await request(app)
       .post("/api/v1/chat/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({ query: "What does this page do?", stream: false });
 
     const second = await request(app)
       .post("/api/v1/chat/")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         conversationId: first.body.conversationId,
         query: "And what does it answer?",
@@ -329,17 +310,16 @@ describe("chat contract", () => {
 
   it("refuses out-of-corpus questions when only low-similarity partial matches exist", async () => {
     const { app } = createTestApp();
-    const token = await getBearerToken(app);
-    const authorization = `Bearer ${token}`;
+    const session = await issueTestSession(app, "chat@example.com");
 
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ title: "Cooking Pasta", content: "This guide explains how to cook pasta successfully." });
 
     await request(app)
       .put("/api/v1/settings/retrieval")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({
         queryRewriteEnabled: true,
         rerankEnabled: true,
@@ -353,7 +333,7 @@ describe("chat contract", () => {
 
     const response = await request(app)
       .post("/api/v1/chat/")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ query: "Can you cook Flan?", stream: false });
 
     expect(response.status).toBe(200);
@@ -373,25 +353,24 @@ describe("chat contract", () => {
 
   it("includes sourceChannel in history summaries so admins can identify anonymous conversations", async () => {
     const { app } = createTestApp();
-    const token = await getBearerToken(app);
-    const authorization = `Bearer ${token}`;
+    const session = await issueTestSession(app, "chat@example.com");
 
     // Enable anonymous chat
     await request(app)
       .put("/api/v1/settings/general")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ anonymousChatEnabled: true, anonymousRateLimit: 10 });
 
     const settings = await request(app)
       .get("/api/v1/settings/general")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
     const publicUrl = settings.body.anonymousChatUrl as string;
     const publicToken = publicUrl.split("/").pop()!;
 
     // Ingest a document so chat can answer
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ title: "Intro", content: "This page parses content and answers questions." });
 
     // Send an anonymous chat message
@@ -403,7 +382,7 @@ describe("chat contract", () => {
     // Admin lists chat history — should include anonymous conversation with sourceChannel
     const history = await request(app)
       .get("/api/v1/chat/history")
-      .set("Authorization", authorization);
+      .set(adminSessionHeaders(session));
 
     expect(history.status).toBe(200);
     expect(history.body.conversations).toEqual(

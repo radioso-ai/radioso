@@ -3,7 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { requireApiToken } from "../middleware/requireApiToken.js";
+import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
@@ -61,8 +61,9 @@ export const updateIngestionSettingsSchema = z.object({
 
 export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
+  const workspaceSession = requireWorkspaceSession(dependencies);
 
-  router.get("/retrieval", requireApiToken(dependencies), async (_req, res, next) => {
+  router.get("/retrieval", workspaceSession, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const [settings, metadataFieldSuggestions] = await Promise.all([
@@ -78,7 +79,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.put("/retrieval", requireApiToken(dependencies), validateBody(updateSettingsSchema), async (req, res, next) => {
+  router.put("/retrieval", workspaceSession, validateBody(updateSettingsSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
@@ -97,7 +98,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.get("/ingestion", requireApiToken(dependencies), async (_req, res, next) => {
+  router.get("/ingestion", workspaceSession, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.ingestionSettingsService.getForWorkspace(workspaceId);
@@ -107,7 +108,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.put("/ingestion", requireApiToken(dependencies), validateBody(updateIngestionSettingsSchema), async (req, res, next) => {
+  router.put("/ingestion", workspaceSession, validateBody(updateIngestionSettingsSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.ingestionSettingsService.updateForWorkspace(workspaceId, req.body);
@@ -117,7 +118,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.post("/ingestion/reprocess", requireApiToken(dependencies), async (_req, res, next) => {
+  router.post("/ingestion/reprocess", workspaceSession, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const result = await dependencies.workspaceIngestionReprocessService.reprocessWorkspace(workspaceId);
@@ -135,7 +136,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     return `${baseUrl}/${token}`;
   };
 
-  router.get("/general", requireApiToken(dependencies), async (_req, res, next) => {
+  router.get("/general", workspaceSession, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const workspace = await dependencies.workspaceRepository.findById(workspaceId);
@@ -153,7 +154,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  router.put("/general", requireApiToken(dependencies), validateBody(updateGeneralSettingsSchema), async (req, res, next) => {
+  router.put("/general", workspaceSession, validateBody(updateGeneralSettingsSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const workspace = await dependencies.workspaceRepository.findById(workspaceId);

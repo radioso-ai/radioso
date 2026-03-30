@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ExternalLink, Key, MessageSquare, Save, Trash2 } from 'lucide-react'
+import { ExternalLink, MessageSquare, Save, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
-import { generalSettingsApi, type GeneralSettings, workspaceApi } from '@/lib/api'
+import { generalSettingsApi, type GeneralSettings } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 
 export function GeneralTab() {
@@ -33,8 +33,6 @@ export function GeneralTab() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const isLastWorkspace = workspaces.length <= 1
   const deleteConfirmValid = deleteConfirmName === activeWorkspace?.name
-  const [token, setToken] = useState<string | null>(null)
-  const [isTokenLoading, setIsTokenLoading] = useState(true)
   const [anonSettings, setAnonSettings] = useState<GeneralSettings | null>(null)
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
@@ -42,22 +40,6 @@ export function GeneralTab() {
   useEffect(() => {
     setWorkspaceName(activeWorkspace?.name ?? '')
   }, [activeWorkspace?.name])
-
-  useEffect(() => {
-    if (!activeWorkspaceId) return
-    setIsTokenLoading(true)
-    const loadToken = async () => {
-      try {
-        const fetchedToken = await workspaceApi.getWorkspaceToken(activeWorkspaceId)
-        setToken(fetchedToken)
-      } catch (error) {
-        console.error('Failed to load token:', error)
-      } finally {
-        setIsTokenLoading(false)
-      }
-    }
-    void loadToken()
-  }, [activeWorkspaceId])
 
   useEffect(() => {
     setIsAnonLoading(true)
@@ -169,43 +151,35 @@ export function GeneralTab() {
 
           <div className="space-y-6">
             <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Developer API</h2>
-            {isTokenLoading ? (
-              <div className="flex items-center justify-center py-4">
-                <Spinner className="w-5 h-5" />
-              </div>
-            ) : (
-              <details className="rounded-lg border border-border bg-card p-4">
+            <details className="rounded-lg border border-border bg-card p-4">
                 <summary className="cursor-pointer list-none">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Key className="w-5 h-5 text-primary" />
-                    </div>
                     <div>
-                      <h3 className="font-medium text-foreground">API token and curl usage</h3>
+                      <h3 className="font-medium text-foreground">Session-authenticated admin API</h3>
                       <p className="text-sm text-muted-foreground">
-                        Post-onboarding access for SDKs, scripts, and direct API requests.
+                        Admin requests now use the browser session cookie together with the active workspace id.
                       </p>
                     </div>
                   </div>
                 </summary>
 
                 <div className="mt-4 space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="token" className="sr-only">API Token</Label>
-                    <CopyValueField value={token || ''} ariaLabel="Copy token" disabled={!token} />
-                  </div>
-
                   <div className="rounded bg-muted/50 p-3 space-y-2">
                     <p className="text-sm text-muted-foreground">
-                      Use this workspace-scoped token only after the workspace already works in the UI.
+                      Persistent browser bearer tokens are removed. Use a session-authenticated client or supply
+                      `X-Workspace-Id` alongside the admin session cookie.
                     </p>
-                    <code className="block p-2 bg-card border border-border rounded text-sm font-mono text-foreground overflow-x-auto">
-                      Authorization: Bearer {token?.slice(0, 15)}...
-                    </code>
+                    {activeWorkspaceId ? (
+                      <>
+                        <CopyValueField value={activeWorkspaceId} ariaLabel="Copy workspace id" />
+                        <code className="block p-2 bg-card border border-border rounded text-sm font-mono text-foreground overflow-x-auto">
+                          X-Workspace-Id: {activeWorkspaceId}
+                        </code>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </details>
-            )}
           </div>
 
           <div className="space-y-6">

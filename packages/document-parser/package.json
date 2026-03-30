@@ -12,8 +12,8 @@
     }
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "mammoth": "^1.11.0",
-    "pdf-parse": "^1.1.1",
-    "xlsx": "^0.18.5"
+    "pdf-parse": "^1.1.1"
   }
 }

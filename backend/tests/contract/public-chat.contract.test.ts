@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
-import { createTestApp, issueTestToken } from "../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 import { resetRateLimiterState } from "../../src/app/http/middleware/anonymousRateLimiter.js";
 
 describe("public chat contract", () => {
@@ -8,10 +8,14 @@ describe("public chat contract", () => {
     resetRateLimiterState();
   });
 
-  const enableAnonymousChat = async (app: any, token: string, anonymousRateLimit?: number) => {
+  const enableAnonymousChat = async (
+    app: any,
+    session: { cookie: string; workspaceId: string },
+    anonymousRateLimit?: number,
+  ) => {
     const response = await request(app)
       .put("/api/v1/settings/general")
-      .set("Authorization", `Bearer ${token}`)
+      .set(adminSessionHeaders(session))
       .send({
         anonymousChatEnabled: true,
         ...(anonymousRateLimit ? { anonymousRateLimit } : {}),
@@ -28,15 +32,15 @@ describe("public chat contract", () => {
 
   it("POST /api/v1/public/chat/:token creates conversation and returns response", async () => {
     const { app } = createTestApp();
-    const { token: bearerToken } = await issueTestToken(app);
+    const session = await issueTestSession(app, "public-chat-create@example.com");
 
     // Ingest a document so the bot has something to respond with
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${bearerToken}`)
+      .set(adminSessionHeaders(session))
       .send({ title: "Test Doc", content: "The answer is 42." });
 
-    const chatToken = await enableAnonymousChat(app, bearerToken);
+    const chatToken = await enableAnonymousChat(app, session);
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
@@ -54,13 +58,13 @@ describe("public chat contract", () => {
 
   it("subsequent requests with cookie reuse the same session", async () => {
     const { app } = createTestApp();
-    const { token: bearerToken } = await issueTestToken(app);
+    const session = await issueTestSession(app, "public-chat-session@example.com");
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${bearerToken}`)
+      .set(adminSessionHeaders(session))
       .send({ title: "Doc", content: "Hello world" });
 
-    const chatToken = await enableAnonymousChat(app, bearerToken);
+    const chatToken = await enableAnonymousChat(app, session);
 
     // First request — get cookie
     const first = await request(app)
@@ -82,13 +86,13 @@ describe("public chat contract", () => {
 
   it("GET /api/v1/public/chat/:token returns conversations for the session", async () => {
     const { app } = createTestApp();
-    const { token: bearerToken } = await issueTestToken(app);
+    const session = await issueTestSession(app, "public-chat-list@example.com");
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${bearerToken}`)
+      .set(adminSessionHeaders(session))
       .send({ title: "Doc", content: "Content" });
 
-    const chatToken = await enableAnonymousChat(app, bearerToken);
+    const chatToken = await enableAnonymousChat(app, session);
 
     // Create a conversation
     const chat = await request(app)
@@ -110,13 +114,13 @@ describe("public chat contract", () => {
 
   it("GET /api/v1/public/chat/:token/history/:conversationId returns messages", async () => {
     const { app } = createTestApp();
-    const { token: bearerToken } = await issueTestToken(app);
+    const session = await issueTestSession(app, "public-chat-history@example.com");
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${bearerToken}`)
+      .set(adminSessionHeaders(session))
       .send({ title: "Intro", content: "This page parses content and answers questions." });
 
-    const chatToken = await enableAnonymousChat(app, bearerToken);
+    const chatToken = await enableAnonymousChat(app, session);
 
     const chat = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
@@ -155,13 +159,13 @@ describe("public chat contract", () => {
 
   it("disabled workspace returns 404", async () => {
     const { app } = createTestApp();
-    const { token: bearerToken } = await issueTestToken(app);
-    const chatToken = await enableAnonymousChat(app, bearerToken);
+    const session = await issueTestSession(app, "public-chat-disabled@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
 
     // Disable
     await request(app)
       .put("/api/v1/settings/general")
-      .set("Authorization", `Bearer ${bearerToken}`)
+      .set(adminSessionHeaders(session))
       .send({ anonymousChatEnabled: false });
 
     const response = await request(app)
@@ -173,13 +177,13 @@ describe("public chat contract", () => {
 
   it("exceeding rate limit returns 429 with retryAfterSeconds", async () => {
     const { app } = createTestApp();
-    const { token: bearerToken } = await issueTestToken(app);
+    const session = await issueTestSession(app, "public-chat-rate-limit@example.com");
     await request(app)
       .post("/api/v1/document/")
-      .set("Authorization", `Bearer ${bearerToken}`)
+      .set(adminSessionHeaders(session))
       .send({ title: "Doc", content: "Content" });
 
-    const chatToken = await enableAnonymousChat(app, bearerToken, 1);
+    const chatToken = await enableAnonymousChat(app, session, 1);
 
     // First message should succeed
     const first = await request(app)
@@ -197,7 +201,11 @@ describe("public chat contract", () => {
       .send({ query: "second", stream: false });
 
     expect(second.status).toBe(429);
-    expect(second.body.code).toBe("rate_limit_exceeded");
-    expect(second.body.retryAfterSeconds).toBeGreaterThan(0);
+    expect(second.body.error).toMatchObject({
+      code: "rate_limit_exceeded",
+      details: {
+        retryAfterSeconds: expect.any(Number),
+      },
+    });
   });
 });

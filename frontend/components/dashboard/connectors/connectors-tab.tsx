@@ -98,6 +98,10 @@ export function ConnectorsTab({
   }, [loadConnectors, loadDetail, routeState.connectorId])
 
   useEffect(() => {
+    if (routeState.settingsTab !== 'connectors') {
+      return
+    }
+
     if (!connectors.length || !selectedConnectorId) {
       return
     }

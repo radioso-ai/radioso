@@ -19,6 +19,7 @@ import { DocumentImportDialog } from '@/components/dashboard/documents/document-
 import { DocumentList } from '@/components/dashboard/documents/document-list'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { getSafeDocumentsPage } from '@/lib/documents-pagination'
 
 type EditorMode = 'create' | 'edit' | 'view'
 const PAGE_SIZE = 100
@@ -64,6 +65,7 @@ export function DocumentsView({
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
   const [totalDocuments, setTotalDocuments] = useState(0)
   const [currentPage, setCurrentPage] = useState(routeState.documentsPage ?? 1)
+  const [hasLoadedDocuments, setHasLoadedDocuments] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
@@ -99,6 +101,7 @@ export function DocumentsView({
     } catch (error) {
       console.error('Failed to load documents:', error)
     } finally {
+      setHasLoadedDocuments(true)
       if (!options?.background) {
         setIsLoading(false)
       }
@@ -132,8 +135,12 @@ export function DocumentsView({
 
   useEffect(() => {
     setCurrentPage((page) => {
-      const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
-      const nextPage = Math.min(page, totalPages)
+      const nextPage = getSafeDocumentsPage({
+        currentPage: page,
+        totalDocuments,
+        pageSize: PAGE_SIZE,
+        hasLoadedDocuments,
+      })
       if (nextPage !== page) {
         router.replace(buildDashboardHref(accountId, {
           ...routeState,
@@ -143,7 +150,7 @@ export function DocumentsView({
       }
       return nextPage
     })
-  }, [accountId, routeState, router, totalDocuments])
+  }, [accountId, hasLoadedDocuments, routeState, router, totalDocuments])
 
   const setDocumentsPage = useCallback((page: number) => {
     setCurrentPage(page)

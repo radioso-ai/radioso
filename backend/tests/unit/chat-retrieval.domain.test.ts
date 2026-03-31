@@ -56,6 +56,25 @@ describe("chat retrieval domain", () => {
     ]);
   });
 
+  it("keeps prior history when history fits inside the context window", () => {
+    const service = new ConversationContextService();
+
+    const history = [
+      message("Who is Freya?"),
+      message("Freya wrote a book", "assistant"),
+    ];
+
+    const result = service.select({
+      query: "What about her later work?",
+      history,
+      rewriteCarryForwardLiterals: ["Freya"],
+    });
+
+    expect(result.selectedMessages).toEqual(history);
+    expect(result.selectionReason).toBe("full-history");
+    expect(result.rewriteCarryForwardLiterals).toEqual(["Freya"]);
+  });
+
   it("rewrites referential queries when enabled and context exists", async () => {
     const service = new QueryRewriteService({
       async rewrite(input) {

@@ -33,6 +33,11 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
           : rewrittenQuery.rejectionReason
             ? ("rejected" as const)
             : ("unchanged" as const);
+    const shouldResetPromptHistory =
+      rewrittenQuery.retrievalEligible &&
+      (rewrittenQuery.structuredResult?.turnKind === "fresh_subject" ||
+        rewrittenQuery.structuredResult?.turnKind === "explicit_recenter");
+    const promptHistory = shouldResetPromptHistory ? [] : input.contextWindow.selectedMessages;
 
     return {
       ...input,
@@ -42,6 +47,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       activeQuery,
       activeParsedQuery,
       activeSemanticQuery: activeParsedQuery.semanticQuery || activeQuery,
+      promptHistory,
       continuityDecision,
     };
   }

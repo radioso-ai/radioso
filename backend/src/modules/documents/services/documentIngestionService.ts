@@ -108,6 +108,7 @@ export interface DocumentRepositoryPort {
   }): Promise<DocumentRecord | null>;
   findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null>;
   listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]>;
+  listSummariesByIdsAndWorkspaceId(workspaceId: string, documentIds: string[]): Promise<DocumentSummaryRecord[]>;
   listSummaryPageByWorkspaceId(
     workspaceId: string,
     input: { limit: number; offset: number },

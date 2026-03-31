@@ -567,6 +567,10 @@ export class ChatService {
         continue;
       }
 
+      if (this.isUrlLikeLiteral(literal)) {
+        continue;
+      }
+
       if (unique.includes(literal)) {
         continue;
       }
@@ -578,5 +582,9 @@ export class ChatService {
     }
 
     return unique;
+  }
+
+  private isUrlLikeLiteral(value: string): boolean {
+    return /^https?:\/\//i.test(value) || /^www\./i.test(value);
   }
 }

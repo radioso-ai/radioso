@@ -26,6 +26,7 @@ export interface QueryInterpretationStageResult extends RetrievalContextStageRes
   activeQuery: string;
   activeParsedQuery: ParsedQueryInterpretation;
   activeSemanticQuery: string;
+  promptHistory: MessageRecord[];
   continuityDecision: "unchanged" | "updated" | "unresolved" | "rejected";
 }
 

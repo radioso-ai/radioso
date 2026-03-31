@@ -39,6 +39,7 @@ import {
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 
 const HISTORY_PAGE_SIZE = 50
 const MESSAGE_WINDOW_SIZE = 50
@@ -46,20 +47,32 @@ const MESSAGE_WINDOW_SIZE = 50
 export function ChatHistoryView({
   accountId,
   onboarding,
+  routeState,
 }: {
   accountId: string
   onboarding: WorkspaceOnboardingState
+  routeState: DashboardRouteState
 }) {
   const router = useRouter()
-  const [filter, setFilter] = useState<HistoryFilter>('all')
+  const [filter, setFilter] = useState<HistoryFilter>(routeState.historyFilter ?? 'all')
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([])
   const [conversationTotal, setConversationTotal] = useState(0)
-  const [conversationPage, setConversationPage] = useState(1)
+  const [conversationPage, setConversationPage] = useState(
+    routeState.historyFilter === 'chat' ? (routeState.historyPage ?? 1) : 1,
+  )
   const [searches, setSearches] = useState<DocumentSearchHistoryEntry[]>([])
   const [searchTotal, setSearchTotal] = useState(0)
-  const [searchPage, setSearchPage] = useState(1)
-  const [allPage, setAllPage] = useState(1)
-  const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(null)
+  const [searchPage, setSearchPage] = useState(
+    routeState.historyFilter === 'search' ? (routeState.historyPage ?? 1) : 1,
+  )
+  const [allPage, setAllPage] = useState(
+    routeState.historyFilter === 'all' || !routeState.historyFilter ? (routeState.historyPage ?? 1) : 1,
+  )
+  const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(
+    routeState.historyItemKind && routeState.historyItemId
+      ? { kind: routeState.historyItemKind, id: routeState.historyItemId }
+      : null,
+  )
   const [conversationDetail, setConversationDetail] = useState<ChatConversationDetail | null>(null)
   const [searchDetail, setSearchDetail] = useState<DocumentSearchResponse | null>(null)
   const [isListLoading, setIsListLoading] = useState(true)
@@ -74,6 +87,66 @@ export function ChatHistoryView({
   const [isDocumentLoading, setIsDocumentLoading] = useState(false)
   const [documentDetail, setDocumentDetail] = useState<DocumentDetails | null>(null)
   const [documentError, setDocumentError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const nextFilter = routeState.historyFilter ?? 'all'
+    setFilter(nextFilter)
+
+    const nextPage = routeState.historyPage ?? 1
+    if (nextFilter === 'all') {
+      setAllPage(nextPage)
+    } else if (nextFilter === 'chat') {
+      setConversationPage(nextPage)
+    } else {
+      setSearchPage(nextPage)
+    }
+
+    if (routeState.historyItemKind && routeState.historyItemId) {
+      setSelectedItem({ kind: routeState.historyItemKind, id: routeState.historyItemId })
+      return
+    }
+
+    setSelectedItem(null)
+  }, [
+    routeState.historyFilter,
+    routeState.historyItemId,
+    routeState.historyItemKind,
+    routeState.historyPage,
+  ])
+
+  const pushHistoryRoute = useCallback((next: {
+    filter?: HistoryFilter
+    page?: number
+    selectedItem?: SelectedHistoryItem
+  }) => {
+    const nextFilter = next.filter ?? filter
+    const nextPage = next.page ?? (
+      nextFilter === 'all'
+        ? allPage
+        : nextFilter === 'chat'
+          ? conversationPage
+          : searchPage
+    )
+    const nextSelectedItem = next.selectedItem === undefined ? selectedItem : next.selectedItem
+
+    router.push(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'history',
+      historyFilter: nextFilter,
+      historyPage: nextPage,
+      historyItemKind: nextSelectedItem?.kind,
+      historyItemId: nextSelectedItem?.id,
+    }))
+  }, [
+    accountId,
+    allPage,
+    conversationPage,
+    filter,
+    routeState,
+    router,
+    searchPage,
+    selectedItem,
+  ])
 
   const loadHistory = useCallback(async () => {
     setIsListLoading(true)
@@ -186,6 +259,18 @@ export function ChatHistoryView({
               : 'Failed to load search details.',
           ),
         )
+        if (
+          error &&
+          typeof error === 'object' &&
+          'error' in error &&
+          error.error &&
+          typeof error.error === 'object' &&
+          'code' in error.error &&
+          error.error.code === 'not_found'
+        ) {
+          setSelectedItem(null)
+          pushHistoryRoute({ selectedItem: null })
+        }
       } finally {
         if (isActive) {
           setIsDetailLoading(false)
@@ -198,7 +283,7 @@ export function ChatHistoryView({
     return () => {
       isActive = false
     }
-  }, [selectedItem])
+  }, [pushHistoryRoute, selectedItem])
 
   const assistantMessages = useMemo(
     () => conversationDetail?.messages.filter((message) => message.role === 'assistant') ?? [],
@@ -317,6 +402,50 @@ export function ChatHistoryView({
   const allTotal = conversationTotal + searchTotal
   const allTotalPages = Math.max(1, Math.ceil(allTotal / HISTORY_PAGE_SIZE))
 
+  useEffect(() => {
+    const activePage = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : searchPage
+    const activeTotalPages = filter === 'all'
+      ? allTotalPages
+      : filter === 'chat'
+        ? conversationTotalPages
+        : searchTotalPages
+
+    if (activePage <= activeTotalPages) {
+      return
+    }
+
+    const nextPage = activeTotalPages
+    if (filter === 'all') {
+      setAllPage(nextPage)
+    } else if (filter === 'chat') {
+      setConversationPage(nextPage)
+    } else {
+      setSearchPage(nextPage)
+    }
+
+    router.replace(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'history',
+      historyFilter: filter,
+      historyPage: nextPage,
+      historyItemKind: selectedItem?.kind,
+      historyItemId: selectedItem?.id,
+    }))
+  }, [
+    accountId,
+    allPage,
+    allTotalPages,
+    conversationPage,
+    conversationTotalPages,
+    filter,
+    routeState,
+    router,
+    searchPage,
+    searchTotalPages,
+    selectedItem?.id,
+    selectedItem?.kind,
+  ])
+
   const loadOlderMessages = useCallback(async () => {
     if (!selectedItem || selectedItem.kind !== 'chat' || !conversationDetail || !conversationDetail.hasOlderMessages) {
       return
@@ -372,6 +501,7 @@ export function ChatHistoryView({
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <HistoryList
         accountId={accountId}
+        workspaceId={routeState.workspaceId}
         onboarding={onboarding}
         filter={filter}
         isLoading={isListLoading}
@@ -388,14 +518,27 @@ export function ChatHistoryView({
         allTotalPages={allTotalPages}
         onFilterChange={(nextFilter) => {
           setFilter(nextFilter)
-          if (nextFilter === 'all') {
-            setAllPage(1)
-          }
+          if (nextFilter === 'all') setAllPage(1)
+          if (nextFilter === 'chat') setConversationPage(1)
+          if (nextFilter === 'search') setSearchPage(1)
+          pushHistoryRoute({ filter: nextFilter, page: 1, selectedItem: null })
         }}
-        onSelectItem={setSelectedItem}
-        onConversationPageChange={setConversationPage}
-        onSearchPageChange={setSearchPage}
-        onAllPageChange={setAllPage}
+        onSelectItem={(item) => {
+          setSelectedItem(item)
+          pushHistoryRoute({ selectedItem: item })
+        }}
+        onConversationPageChange={(page) => {
+          setConversationPage(page)
+          pushHistoryRoute({ filter: 'chat', page })
+        }}
+        onSearchPageChange={(page) => {
+          setSearchPage(page)
+          pushHistoryRoute({ filter: 'search', page })
+        }}
+        onAllPageChange={(page) => {
+          setAllPage(page)
+          pushHistoryRoute({ filter: 'all', page })
+        }}
         onNavigate={(href) => router.push(href)}
       />
 
@@ -405,6 +548,7 @@ export function ChatHistoryView({
           if (!open) {
             setSelectedItem(null)
             setShowGraph(false)
+            pushHistoryRoute({ selectedItem: null })
           }
         }}
         direction="right"

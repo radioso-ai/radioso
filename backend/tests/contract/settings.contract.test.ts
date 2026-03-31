@@ -19,11 +19,13 @@ describe("settings contract", () => {
       "citationDisplayEnabled",
       "createdAt",
       "customInstruction",
+      "lexicalRewriteInstructions",
       "metadataFieldSuggestions",
       "metadataRules",
       "queryRewriteEnabled",
       "rerankEnabled",
       "rerankTopK",
+      "semanticRewriteInstructions",
       "similarityThreshold",
       "updatedAt",
       "vectorTopK",
@@ -34,6 +36,8 @@ describe("settings contract", () => {
     expect(response.body.warmthLevel).toBe(5);
     expect(response.body.citationDisplayEnabled).toBe(true);
     expect(response.body.customInstruction).toBe("");
+    expect(response.body.semanticRewriteInstructions).toEqual(expect.any(String));
+    expect(response.body.lexicalRewriteInstructions).toEqual(expect.any(String));
     expect(response.body.metadataFieldSuggestions).toEqual([]);
     expect(response.body.metadataRules).toEqual([]);
   });
@@ -58,6 +62,8 @@ describe("settings contract", () => {
       .set(adminSessionHeaders(session))
       .send({
         queryRewriteEnabled: true,
+        semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
+        lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
         rerankEnabled: true,
         vectorTopK: 12,
         similarityThreshold: 0.4,
@@ -81,6 +87,8 @@ describe("settings contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       queryRewriteEnabled: true,
+      semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
+      lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
       rerankEnabled: true,
       vectorTopK: 12,
       similarityThreshold: 0.4,
@@ -122,6 +130,8 @@ describe("settings contract", () => {
       .set(adminSessionHeaders(session))
       .send({
         queryRewriteEnabled: true,
+        semanticRewriteInstructions: "Keep the meaning.",
+        lexicalRewriteInstructions: "Prefer exact notation.",
         rerankEnabled: true,
         vectorTopK: 12,
         similarityThreshold: 0.4,
@@ -159,6 +169,8 @@ describe("settings contract", () => {
     expect(secondUpdate.status).toBe(200);
     expect(secondUpdate.body.metadataRules).toEqual(firstUpdate.body.metadataRules);
     expect(secondUpdate.body.customInstruction).toBe("Cite paragraph numbers.");
+    expect(secondUpdate.body.semanticRewriteInstructions).toBe("Keep the meaning.");
+    expect(secondUpdate.body.lexicalRewriteInstructions).toBe("Prefer exact notation.");
   });
 
   it("returns default ingestion settings for a valid session workspace context", async () => {
@@ -234,7 +246,11 @@ describe("settings contract", () => {
     const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    RetrievalMetadataRule:/)?.[1] ?? "";
 
     expect(retrievalSettingsSchema).not.toContain("chunkingStrategy:");
+    expect(retrievalSettingsSchema).toContain("semanticRewriteInstructions:");
+    expect(retrievalSettingsSchema).toContain("lexicalRewriteInstructions:");
     expect(retrievalUpdateSchema).toContain("metadataRules:");
+    expect(retrievalUpdateSchema).toContain("semanticRewriteInstructions:");
+    expect(retrievalUpdateSchema).toContain("lexicalRewriteInstructions:");
     expect(retrievalUpdateSchema).not.toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");

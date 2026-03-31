@@ -6,6 +6,12 @@ import type {
 import { normalizeMetadataRules } from "../../modules/settings/domain/retrievalSettings.js";
 import type { RetrievalSettingsRepositoryPort } from "../../modules/settings/services/retrievalSettingsService.js";
 
+interface RetrievalSettingsPayload {
+  metadataRules?: unknown;
+  semanticRewriteInstructions?: unknown;
+  lexicalRewriteInstructions?: unknown;
+}
+
 interface RetrievalSettingsRow {
   workspace_id: string;
   query_rewrite_enabled: boolean;
@@ -21,20 +27,31 @@ interface RetrievalSettingsRow {
   updated_at: Date;
 }
 
-const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => ({
-  workspaceId: row.workspace_id,
-  queryRewriteEnabled: row.query_rewrite_enabled,
-  rerankEnabled: row.rerank_enabled,
-  vectorTopK: row.vector_top_k,
-  similarityThreshold: row.similarity_threshold,
-  rerankTopK: row.rerank_top_k,
-  warmthLevel: row.warmth_level,
-  citationDisplayEnabled: row.citation_display_enabled,
-  metadataRules: normalizeMetadataRules(row.attribute_controls),
-  customInstruction: row.custom_instruction,
-  createdAt: new Date(row.created_at),
-  updatedAt: new Date(row.updated_at),
-});
+const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => {
+  const payload =
+    row.attribute_controls && typeof row.attribute_controls === "object"
+      ? (row.attribute_controls as RetrievalSettingsPayload)
+      : {};
+
+  return {
+    workspaceId: row.workspace_id,
+    queryRewriteEnabled: row.query_rewrite_enabled,
+    semanticRewriteInstructions:
+      typeof payload.semanticRewriteInstructions === "string" ? payload.semanticRewriteInstructions : "",
+    lexicalRewriteInstructions:
+      typeof payload.lexicalRewriteInstructions === "string" ? payload.lexicalRewriteInstructions : "",
+    rerankEnabled: row.rerank_enabled,
+    vectorTopK: row.vector_top_k,
+    similarityThreshold: row.similarity_threshold,
+    rerankTopK: row.rerank_top_k,
+    warmthLevel: row.warmth_level,
+    citationDisplayEnabled: row.citation_display_enabled,
+    metadataRules: normalizeMetadataRules(payload),
+    customInstruction: row.custom_instruction,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  };
+};
 
 export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryPort {
   constructor(private readonly database: Database) {}
@@ -86,7 +103,11 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
         input.rerankTopK,
         input.warmthLevel,
         input.citationDisplayEnabled,
-        JSON.stringify({ metadataRules: input.metadataRules }),
+        JSON.stringify({
+          metadataRules: input.metadataRules,
+          semanticRewriteInstructions: input.semanticRewriteInstructions,
+          lexicalRewriteInstructions: input.lexicalRewriteInstructions,
+        }),
         input.customInstruction,
       ],
     );

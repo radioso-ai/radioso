@@ -185,6 +185,12 @@ components:
           format: uuid
         queryRewriteEnabled:
           type: boolean
+        semanticRewriteInstructions:
+          type: string
+          maxLength: 2000
+        lexicalRewriteInstructions:
+          type: string
+          maxLength: 2000
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -275,6 +281,8 @@ components:
       required:
         - workspaceId
         - queryRewriteEnabled
+        - semanticRewriteInstructions
+        - lexicalRewriteInstructions
         - rerankEnabled
         - vectorTopK
         - similarityThreshold
@@ -289,6 +297,12 @@ components:
       properties:
         queryRewriteEnabled:
           type: boolean
+        semanticRewriteInstructions:
+          type: string
+          maxLength: 2000
+        lexicalRewriteInstructions:
+          type: string
+          maxLength: 2000
         rerankEnabled:
           type: boolean
         vectorTopK:

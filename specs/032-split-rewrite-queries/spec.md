@@ -20,6 +20,7 @@ As an end user, I want the system to search semantically and lexically with quer
 1. **Given** a workspace with query rewrite enabled and rewrite instructions configured, **When** a user asks a query whose semantic meaning and lexical corpus form differ, **Then** the system produces separate semantic and lexical retrieval queries and uses them in the existing hybrid retrieval flow.
 2. **Given** a user query that already matches the best retrieval wording, **When** retrieval runs, **Then** the system preserves a stable semantic and lexical query without unnecessary drift from the original query.
 3. **Given** a query involving citation-like language such as legal section references, abbreviations, or corpus-native symbols, **When** lexical rewrite guidance applies, **Then** the lexical query prefers the notation likely to appear in indexed text while the semantic query remains meaning-preserving.
+4. **Given** a standalone retrieval request with no prior conversation history, **When** rewrite is enabled and split rewrite instructions are configured, **Then** the system may still produce distinct semantic and lexical retrieval queries without depending on history-only subject resolution.
 
 ---
 
@@ -105,6 +106,7 @@ As an operator debugging retrieval quality, I want retrieval trace and diagnosti
 - **FR-016**: The system MUST keep split rewrite behavior workspace-scoped so one workspace’s rewrite instructions do not affect another workspace.
 - **FR-017**: The system MUST preserve compatibility for existing retrieval settings records and retrieval requests that predate the split-query instruction fields.
 - **FR-018**: The system MUST NOT require deterministic normalization rules, custom per-workspace code, or user-authored scripting in this feature.
+- **FR-019**: The system MUST allow standalone retrieval requests with no prior conversation history to use semantic and lexical rewrite instructions when query rewrite is enabled, while avoiding history-dependent referential inference that lacks grounding.
 
 ### UI Tasks
 
@@ -124,6 +126,7 @@ As an operator debugging retrieval quality, I want retrieval trace and diagnosti
 ## Assumptions
 
 - The existing retrieval rewrite flow already provides the correct pipeline seam for this feature, so the work can build on current query-interpretation and trace infrastructure rather than redesigning retrieval orchestration.
+- Standalone retrieval requests without prior history can still benefit from notation- or alias-oriented rewriting, even though they do not allow subject resolution from conversation context.
 - Phase 1 needs only one lexical query in execution, but the data model and internal contracts should avoid blocking later support for multiple lexical variants.
 - Default instructions may be system-defined so that existing workspaces receive usable behavior without mandatory admin setup.
 - The existing retrieval settings API can expand additively to carry the new fields without introducing a new endpoint.

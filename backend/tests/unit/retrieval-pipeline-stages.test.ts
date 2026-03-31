@@ -190,6 +190,59 @@ describe("retrieval pipeline stages", () => {
     expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus 2015 § 4");
   });
 
+  it("rewrites standalone searches without requiring prior history", async () => {
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService({
+        async rewrite() {
+          return {
+            rewrittenQuery: "tulumaksuseadus paragrahv 4 osa 5",
+            semanticQuery: "tulumaksuseadus paragrahv 4 osa 5",
+            lexicalQuery: "tulumaksuseadus § 4 lg 5",
+            turnKind: "fresh_subject",
+            proposedActiveSubject: "tulumaksuseadus",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.88,
+          };
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "tulumaksuseadus paragrahv 4 osa 5",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer section symbols and legal citation notation.",
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+    });
+
+    expect(result.rewrittenQuery.status).toBe("applied");
+    expect(result.activeSemanticQuery).toBe("tulumaksuseadus paragrahv 4 osa 5");
+    expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus § 4 lg 5");
+    expect(result.promptHistory).toEqual([]);
+  });
+
   it("splits vector results between original and rewritten contexts", async () => {
     const contextStage = new RetrievalContextStageService(
       {

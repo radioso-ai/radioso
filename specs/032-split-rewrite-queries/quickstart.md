@@ -24,7 +24,15 @@
 4. Inspect retrieval diagnostics or covered tests.
 5. Confirm the active semantic query and active lexical query are both shown and differ when appropriate.
 
-## Scenario 4: Fall back safely when rewrite output is unusable
+## Scenario 4: Use split rewrite on a standalone search with no history
+
+1. Prepare a workspace corpus where indexed text uses legal citation notation or another corpus-native lexical form.
+2. Configure semantic and lexical rewrite instructions, and enable query rewrite.
+3. Run a standalone retrieval request with no prior conversation history, such as a document search for a citation-like query.
+4. Inspect retrieval diagnostics or covered tests.
+5. Confirm the semantic query may remain close to the original wording while the lexical query adopts the corpus-native notation.
+
+## Scenario 5: Fall back safely when rewrite output is unusable
 
 1. Simulate a rewrite response that returns an empty query or otherwise unusable output for one or both retrieval modes.
 2. Run retrieval with query rewrite enabled.

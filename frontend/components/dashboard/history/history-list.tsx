@@ -5,7 +5,7 @@ import { FileText, History, MessageSquareText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import type { ChatConversationSummary, DocumentSearchHistoryEntry } from '@/lib/api'
-import { buildAccountRoute } from '@/lib/dashboard-routes'
+import { buildDashboardHref } from '@/lib/dashboard-routes'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
@@ -132,6 +132,7 @@ function SearchCard({
 
 export function HistoryList({
   accountId,
+  workspaceId,
   onboarding,
   filter,
   isLoading,
@@ -154,6 +155,7 @@ export function HistoryList({
   onNavigate,
 }: {
   accountId: string
+  workspaceId?: string
   onboarding: WorkspaceOnboardingState
   filter: HistoryFilter
   isLoading: boolean
@@ -232,13 +234,25 @@ export function HistoryList({
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               {filter !== 'search' && onboarding.hasReadyDocuments ? (
-                <Button size="sm" onClick={() => onNavigate(buildAccountRoute(accountId, 'chat'))}>
+                <Button
+                  size="sm"
+                  onClick={() => onNavigate(buildDashboardHref(accountId, {
+                    section: 'chat',
+                    workspaceId,
+                  }))}
+                >
                   <MessageSquareText className="mr-2 h-4 w-4" />
                   Ask first question
                 </Button>
               ) : null}
               {(filter === 'chat' || filter === 'all') && !onboarding.hasReadyDocuments ? (
-                <Button size="sm" onClick={() => onNavigate(buildAccountRoute(accountId, 'documents'))}>
+                <Button
+                  size="sm"
+                  onClick={() => onNavigate(buildDashboardHref(accountId, {
+                    section: 'documents',
+                    workspaceId,
+                  }))}
+                >
                   <FileText className="mr-2 h-4 w-4" />
                   Open documents
                 </Button>

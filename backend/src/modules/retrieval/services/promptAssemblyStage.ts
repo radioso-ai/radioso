@@ -7,7 +7,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
   execute(input: ContextSelectionStageResult) {
     const prompt = this.promptBuilder.build({
       query: input.request.query,
-      history: input.request.history,
+      history: input.promptHistory,
       settings: {
         warmthLevel: input.settings.warmthLevel,
         customInstruction: input.settings.customInstruction,

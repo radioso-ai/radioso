@@ -40,6 +40,73 @@ describe("retrieval pipeline stages", () => {
     expect(result.activeParsedQuery.semanticQuery).toBe("retreats in Estonia under 300 EUR");
     expect(result.activeParsedQuery.lexicalQuery).toBe("retreats in Estonia under 300 EUR");
     expect(result.activeQuery).toBe("Find retreats in Estonia under 300 EUR");
+    expect(result.promptHistory).toEqual([]);
+  });
+
+  it("clears prompt history when rewrite marks a fresh subject", async () => {
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService({
+        async rewrite() {
+          return {
+            rewrittenQuery: "Eestis hetkel kehtiv kaibemaksumaar (kaibemaks)",
+            turnKind: "fresh_subject",
+            proposedActiveSubject: "kaibemaksumaar Eestis",
+            relatedEntities: ["tulumaks"],
+            unresolved: false,
+            confidence: 0.74,
+          };
+        },
+      }),
+    );
+
+    const history = [
+      {
+        id: "u1",
+        conversationId: "c1",
+        workspaceId: "a1",
+        role: "user" as const,
+        content: "Mis juhtub, kui ma ei maksa tulumaksu?",
+        createdAt: new Date(),
+      },
+      {
+        id: "a1",
+        conversationId: "c1",
+        workspaceId: "a1",
+        role: "assistant" as const,
+        content: "Tulumaksu vastus",
+        createdAt: new Date(),
+      },
+    ];
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "mis on hetkel kehtiv kaibemaks?",
+        history,
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: true,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: history,
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.activeQuery).toBe("Eestis hetkel kehtiv kaibemaksumaar (kaibemaks)");
+    expect(result.promptHistory).toEqual([]);
   });
 
   it("splits vector results between original and rewritten contexts", async () => {

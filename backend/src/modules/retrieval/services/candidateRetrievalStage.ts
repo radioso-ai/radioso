@@ -15,22 +15,24 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     const embeddingStartedAt = Date.now();
     const [activeEmbedding] = await this.embeddingService.embedChunks([input.activeSemanticQuery]);
     const activeEmbeddingDurationMs = Math.max(0, Date.now() - embeddingStartedAt);
-    const activeSearch = await this.searchWithFallback({
-      workspaceId: input.request.workspaceId,
-      queryEmbedding: activeEmbedding ?? [],
-      topK: input.settings.vectorTopK,
-      similarityThreshold: input.settings.similarityThreshold,
-      metadataFilter: input.request.metadataFilter,
-    });
+    const [activeSearch, lexicalContexts] = await Promise.all([
+      this.searchWithFallback({
+        workspaceId: input.request.workspaceId,
+        queryEmbedding: activeEmbedding ?? [],
+        topK: input.settings.vectorTopK,
+        similarityThreshold: input.settings.similarityThreshold,
+        metadataFilter: input.request.metadataFilter,
+      }),
+      this.lexicalSearch.search({
+        workspaceId: input.request.workspaceId,
+        query: input.activeParsedQuery.lexicalQuery || input.activeQuery,
+        topK: HYBRID_RETRIEVAL_DEFAULTS.lexicalTopK,
+        metadataFilter: input.request.metadataFilter,
+      }),
+    ]);
 
     const originalContexts = input.rewrittenQuery.retrievalEligible ? [] : activeSearch.contexts;
     const rewrittenContexts = input.rewrittenQuery.retrievalEligible ? activeSearch.contexts : [];
-    const lexicalContexts = await this.lexicalSearch.search({
-      workspaceId: input.request.workspaceId,
-      query: input.activeParsedQuery.lexicalQuery || input.activeQuery,
-      topK: HYBRID_RETRIEVAL_DEFAULTS.lexicalTopK,
-      metadataFilter: input.request.metadataFilter,
-    });
 
     return {
       ...input,

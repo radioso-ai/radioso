@@ -4,6 +4,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: radioso-postgres
+    shm_size: "1gb"
     environment:
       POSTGRES_DB: radioso
       POSTGRES_USER: postgres

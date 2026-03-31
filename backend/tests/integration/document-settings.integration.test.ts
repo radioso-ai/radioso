@@ -98,6 +98,8 @@ describe("document and settings integration", () => {
       .set("Authorization", firstAuthorization)
       .send({
         queryRewriteEnabled: true,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact notation and aliases.",
         rerankEnabled: true,
         vectorTopK: 25,
         similarityThreshold: 0.25,
@@ -123,6 +125,8 @@ describe("document and settings integration", () => {
       .set("Authorization", secondAuthorization);
 
     expect(firstUpdate.status).toBe(200);
+    expect(firstUpdate.body.semanticRewriteInstructions).toBe("Keep semantic retrieval meaning-preserving.");
+    expect(firstUpdate.body.lexicalRewriteInstructions).toBe("Prefer exact notation and aliases.");
     expect(firstUpdate.body.metadataRules).toContainEqual({
       id: "language-filter",
       field: "language",
@@ -134,6 +138,7 @@ describe("document and settings integration", () => {
     });
     expect(secondSettings.status).toBe(200);
     expect(secondSettings.body.metadataRules).toEqual([]);
+    expect(secondSettings.body.semanticRewriteInstructions).not.toBe(firstUpdate.body.semanticRewriteInstructions);
   });
 
   it("queues eligible workspace documents for reprocessing from ingestion settings", async () => {

@@ -85,11 +85,12 @@ describe("chat service streaming", () => {
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer", citationIndices: [0] }],
       retrievalInfo: expect.objectContaining({
-        parsedQuery: {
+        parsedQuery: expect.objectContaining({
+          originalQuery: "page do",
           semanticQuery: "page do",
           lexicalQuery: "page do",
           constraintSummary: [],
-        },
+        }),
         candidateCounts: {
           semantic: 1,
           lexical: 1,
@@ -98,6 +99,11 @@ describe("chat service streaming", () => {
         },
         fallbackApplied: false,
         rerankStatus: "skipped",
+        rewrite: expect.objectContaining({
+          status: "skipped",
+          eligible: false,
+          ran: false,
+        }),
       }),
       retrievalTrace: expect.objectContaining({
         stages: expect.arrayContaining([

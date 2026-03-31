@@ -21,6 +21,7 @@ describe("hybrid retrieval info", () => {
       materialDisagreement: false,
       continuityDecision: "reused",
       parsedQuery: {
+        originalQuery: "retreats in Estonia",
         semanticQuery: "retreats",
         lexicalQuery: "retreats",
         constraints: [
@@ -49,6 +50,7 @@ describe("hybrid retrieval info", () => {
 
     expect(result).toEqual({
       parsedQuery: {
+        originalQuery: "retreats in Estonia",
         semanticQuery: "retreats",
         lexicalQuery: "retreats",
         constraintSummary: ["in Estonia"],
@@ -76,6 +78,7 @@ describe("hybrid retrieval info", () => {
         materialDisagreement: false,
         continuityDecision: "reused",
         rejectionReason: undefined,
+        fallbackReason: undefined,
       },
     });
   });

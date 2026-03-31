@@ -78,6 +78,7 @@ export interface ParsedQueryConstraint {
 }
 
 export interface ParsedQueryInterpretation {
+  originalQuery?: string;
   semanticQuery: string;
   lexicalQuery: string;
   constraints: ParsedQueryConstraint[];

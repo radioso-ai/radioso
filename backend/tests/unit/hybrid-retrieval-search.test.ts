@@ -103,4 +103,22 @@ describe("hybrid retrieval search", () => {
     expect(results[0]?.similarity).toBe(1);
     expect(results[1]?.similarity).toBe(0.25);
   });
+
+  it("keeps legacy chunks searchable when search_text is null", async () => {
+    let executedSql = "";
+    const search = new PgLexicalSearch({
+      async query(sql: string) {
+        executedSql = sql;
+        return [];
+      },
+    } as never);
+
+    await search.search({
+      workspaceId: "a1",
+      query: "session cookie",
+      topK: 5,
+    });
+
+    expect(executedSql).toContain("coalesce(c.search_text, c.content, '')");
+  });
 });

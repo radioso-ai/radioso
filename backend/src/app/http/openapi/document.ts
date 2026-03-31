@@ -131,6 +131,8 @@ const RetrievalSettingsSchema = registry.register(
   z.object({
     workspaceId: z.string().uuid(),
     queryRewriteEnabled: z.boolean(),
+    semanticRewriteInstructions: z.string().max(2000),
+    lexicalRewriteInstructions: z.string().max(2000),
     rerankEnabled: z.boolean(),
     vectorTopK: z.number().int().min(1).max(300),
     similarityThreshold: z.number().min(0).max(1),

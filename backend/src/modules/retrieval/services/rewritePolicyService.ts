@@ -17,7 +17,13 @@ export class RewriteEligibilityService {
     originalQuery: string;
     rewrite: StructuredRewriteResult;
   }): { eligible: boolean; rejectionReason?: string } {
-    if (!this.isMateriallyDifferent(input.originalQuery, input.rewrite.rewrittenQuery)) {
+    const semanticQuery = input.rewrite.semanticQuery ?? input.rewrite.rewrittenQuery;
+    const lexicalQuery = input.rewrite.lexicalQuery ?? input.rewrite.rewrittenQuery;
+
+    if (
+      !this.isMateriallyDifferent(input.originalQuery, semanticQuery) &&
+      !this.isMateriallyDifferent(input.originalQuery, lexicalQuery)
+    ) {
       return { eligible: false, rejectionReason: "rewrite_not_materially_different" };
     }
 

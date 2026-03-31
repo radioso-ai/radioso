@@ -50,10 +50,11 @@ export class PgVectorSearch implements VectorSearchPort {
     similarityThreshold: number;
     metadataFilter?: Record<string, unknown>;
   }): Promise<RetrievedChunk[]> {
+    const maxDistance = 1 - input.similarityThreshold;
     const params: unknown[] = [
       input.workspaceId,
       `[${input.queryEmbedding.join(",")}]`,
-      input.similarityThreshold,
+      maxDistance,
       input.topK,
     ];
 
@@ -81,7 +82,7 @@ export class PgVectorSearch implements VectorSearchPort {
        WHERE c.workspace_id = $1
          AND d.status = 'ready'
          AND c.embedding IS NOT NULL
-         AND 1 - (c.embedding <=> $2::vector) >= $3
+         AND c.embedding <=> $2::vector <= $3
          ${metadataClause}
        ORDER BY c.embedding <=> $2::vector ASC
        LIMIT $4`,

@@ -18,11 +18,15 @@ export class RetrievalDiagnosticsStageService implements RetrievalDiagnosticsSta
       appliedConstraints: input.appliedConstraints,
       candidateFallbackApplied: input.candidateFallbackApplied,
       rewriteEligible: input.rewrittenQuery.retrievalEligible,
-      rewriteRan: input.rewrittenQuery.retrievalEligible && input.rewrittenQuery.effectiveQuery !== input.request.query,
+      rewriteRan:
+        input.rewrittenQuery.retrievalEligible &&
+        (input.rewrittenQuery.semanticQuery !== input.request.query ||
+          input.rewrittenQuery.lexicalQuery !== input.request.query),
       materialDisagreement: false,
       continuityDecision: input.continuityDecision,
       rewriteProposal: input.rewrittenQuery.structuredResult,
       rejectionReason: input.rewrittenQuery.rejectionReason,
+      fallbackReason: input.rewrittenQuery.fallbackReason,
     });
   }
 }

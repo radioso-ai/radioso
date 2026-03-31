@@ -19,6 +19,8 @@ describe("retrieval pipeline stages", () => {
       settings: {
         workspaceId: "a1",
         queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
         rerankEnabled: false,
         vectorTopK: 20,
         similarityThreshold: 0.2,
@@ -40,6 +42,149 @@ describe("retrieval pipeline stages", () => {
     expect(result.activeParsedQuery.semanticQuery).toBe("retreats in Estonia under 300 EUR");
     expect(result.activeParsedQuery.lexicalQuery).toBe("retreats in Estonia under 300 EUR");
     expect(result.activeQuery).toBe("Find retreats in Estonia under 300 EUR");
+    expect(result.promptHistory).toEqual([]);
+  });
+
+  it("clears prompt history when rewrite marks a fresh subject", async () => {
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService({
+        async rewrite() {
+          return {
+            rewrittenQuery: "Eestis hetkel kehtiv kaibemaksumaar (kaibemaks)",
+            semanticQuery: "Eestis hetkel kehtiv kaibemaksumaar",
+            lexicalQuery: "Eestis kehtiv km maar (kaibemaks)",
+            turnKind: "fresh_subject",
+            proposedActiveSubject: "kaibemaksumaar Eestis",
+            relatedEntities: ["tulumaks"],
+            unresolved: false,
+            confidence: 0.74,
+          };
+        },
+      }),
+    );
+
+    const history = [
+      {
+        id: "u1",
+        conversationId: "c1",
+        workspaceId: "a1",
+        role: "user" as const,
+        content: "Mis juhtub, kui ma ei maksa tulumaksu?",
+        createdAt: new Date(),
+      },
+      {
+        id: "a1",
+        conversationId: "c1",
+        workspaceId: "a1",
+        role: "assistant" as const,
+        content: "Tulumaksu vastus",
+        createdAt: new Date(),
+      },
+    ];
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "mis on hetkel kehtiv kaibemaks?",
+        history,
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: history,
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.activeQuery).toBe("Eestis hetkel kehtiv kaibemaksumaar");
+    expect(result.activeParsedQuery.semanticQuery).toBe("Eestis hetkel kehtiv kaibemaksumaar");
+    expect(result.activeParsedQuery.lexicalQuery).toBe("Eestis kehtiv km maar (kaibemaks)");
+    expect(result.promptHistory).toEqual([]);
+  });
+
+  it("uses distinct semantic and lexical rewritten queries when both are provided", async () => {
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService({
+        async rewrite() {
+          return {
+            rewrittenQuery: "tulumaksuseadus 2015 paragraaf 4",
+            semanticQuery: "tulumaksuseadus 2015 paragraaf 4",
+            lexicalQuery: "tulumaksuseadus 2015 § 4",
+            turnKind: "referential_followup",
+            proposedActiveSubject: "tulumaksuseadus 2015",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.91,
+          };
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "tulumaksuseadus 2015 paragraaf 4",
+        history: [       
+          {
+            id: "u1",
+            conversationId: "c1",
+            workspaceId: "a1",
+            role: "user" as const,
+            content: "räägi tulumaksuseadusest",
+            createdAt: new Date(),
+          },
+        ],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer section symbols and citation notation.",
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [
+          {
+            id: "u1",
+            conversationId: "c1",
+            workspaceId: "a1",
+            role: "user" as const,
+            content: "räägi tulumaksuseadusest",
+            createdAt: new Date(),
+          },
+        ],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.activeQuery).toBe("tulumaksuseadus 2015 paragraaf 4");
+    expect(result.activeSemanticQuery).toBe("tulumaksuseadus 2015 paragraaf 4");
+    expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus 2015 § 4");
   });
 
   it("splits vector results between original and rewritten contexts", async () => {
@@ -49,6 +194,8 @@ describe("retrieval pipeline stages", () => {
           return {
             workspaceId: "a1",
             queryRewriteEnabled: true,
+            semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+            lexicalRewriteInstructions: "Prefer exact notation.",
             rerankEnabled: false,
             vectorTopK: 20,
             similarityThreshold: 0.2,
@@ -69,6 +216,8 @@ describe("retrieval pipeline stages", () => {
         async rewrite() {
           return {
             rewrittenQuery: "summer retreat pricing",
+            semanticQuery: "summer retreat pricing",
+            lexicalQuery: "summer retreat price",
             turnKind: "referential_followup",
             proposedActiveSubject: "summer retreat",
             relatedEntities: [],
@@ -125,5 +274,6 @@ describe("retrieval pipeline stages", () => {
     expect(result.rewrittenContexts).toHaveLength(1);
     expect(result.lexicalContexts).toEqual([]);
     expect(result.activeQuery).toBe("summer retreat pricing");
+    expect(result.activeParsedQuery.lexicalQuery).toBe("summer retreat price");
   });
 });

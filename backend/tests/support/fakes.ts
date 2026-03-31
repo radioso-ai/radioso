@@ -327,6 +327,8 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
     const record: RetrievalSettingsRecord = {
       workspaceId,
       queryRewriteEnabled: input.queryRewriteEnabled,
+      semanticRewriteInstructions: input.semanticRewriteInstructions,
+      lexicalRewriteInstructions: input.lexicalRewriteInstructions,
       rerankEnabled: input.rerankEnabled,
       vectorTopK: input.vectorTopK,
       similarityThreshold: input.similarityThreshold,
@@ -898,6 +900,29 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async listSummariesByIdsAndWorkspaceId(workspaceId: string, documentIds: string[]): Promise<DocumentSummaryRecord[]> {
+    const allowedIds = new Set(documentIds);
+
+    return [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId && allowedIds.has(item.id))
+      .map((item) => ({
+        id: item.id,
+        workspaceId: item.workspaceId,
+        title: item.title,
+        status: item.status,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        metadata: item.metadata,
+        sourceKind: item.sourceKind,
+        sourceFilename: item.sourceFilename,
+        sourceMimeType: item.sourceMimeType,
+        sourceStorageBucket: item.sourceStorageBucket,
+        sourceStorageObject: item.sourceStorageObject,
+        sourceStorageGeneration: item.sourceStorageGeneration,
+        sourceSizeBytes: item.sourceSizeBytes,
+      }));
   }
 
   async listSummaryPageByWorkspaceId(

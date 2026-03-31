@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/services/auditService.js";
-import type { DocumentRecord, DocumentRepositoryPort } from "./documentIngestionService.js";
+import type { DocumentRepositoryPort, DocumentSummaryRecord } from "./documentIngestionService.js";
 import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
 
@@ -25,7 +25,7 @@ export interface DocumentSearchResult {
   score: number;
   rank: number;
   matchEvidence: string[];
-  sourceKind: DocumentRecord["sourceKind"];
+  sourceKind: DocumentSummaryRecord["sourceKind"];
   sourceFilename?: string | null;
   sourceMimeType?: string | null;
   actions: DocumentSearchAction[];
@@ -67,9 +67,10 @@ export class DocumentSearchService {
       metadataFilter: input.metadataFilter,
     });
 
-    const documents = await this.documentRepository.listByWorkspaceId(input.workspaceId);
+    const matchedDocumentIds = [...new Set(retrieval.contexts.map((context) => context.documentId))];
+    const documents = await this.documentRepository.listSummariesByIdsAndWorkspaceId(input.workspaceId, matchedDocumentIds);
     const documentsById = new Map(documents.map((document) => [document.id, document]));
-    const aggregated = new Map<string, { document: DocumentRecord; score: number; evidence: string[] }>();
+    const aggregated = new Map<string, { document: DocumentSummaryRecord; score: number; evidence: string[] }>();
 
     for (const context of retrieval.contexts) {
       const document = documentsById.get(context.documentId);
@@ -120,7 +121,7 @@ export class DocumentSearchService {
     return response;
   }
 
-  private toResult(document: DocumentRecord, score: number, evidence: string[], rank: number): DocumentSearchResult {
+  private toResult(document: DocumentSummaryRecord, score: number, evidence: string[], rank: number): DocumentSearchResult {
     return {
       documentId: document.id,
       title: document.title,

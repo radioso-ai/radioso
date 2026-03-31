@@ -139,6 +139,56 @@ const request = async <T>(
   return response.json() as Promise<T>;
 };
 
+const requestLongRunning = async <T>(
+  path: string,
+  init: RequestInit = {},
+  options: { withSession?: boolean; withApiToken?: boolean } = {},
+): Promise<T> => {
+  const headers = new Headers(init.headers);
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
+
+  if (!headers.has("Content-Type") && init.body && !isFormData) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (options.withApiToken) {
+    const workspaceId = getStoredActiveWorkspaceId();
+
+    if (!workspaceId) {
+      throw {
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Sign in again to continue.",
+        },
+      } satisfies ErrorResponse;
+    }
+
+    headers.set(WORKSPACE_HEADER, workspaceId);
+  }
+
+  const response = await fetch(path, {
+    ...init,
+    cache: "no-store",
+    headers,
+    credentials: options.withSession || options.withApiToken ? "include" : init.credentials,
+  });
+
+  if (!response.ok) {
+    throw await buildError(response);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return undefined as T;
+  }
+
+  return response.json() as Promise<T>;
+};
+
 // Types based on OpenAPI schema
 export interface RegisterRequest {
   email: string
@@ -165,6 +215,8 @@ export interface LoginResponse {
 
 export interface RetrievalSettings {
   queryRewriteEnabled: boolean
+  semanticRewriteInstructions: string
+  lexicalRewriteInstructions: string
   rerankEnabled: boolean
   vectorTopK: number
   similarityThreshold: number
@@ -329,10 +381,12 @@ export interface RetrievalInfo {
     materialDisagreement: boolean
     continuityDecision?: string
     rejectionReason?: string
+    fallbackReason?: string
   }
 }
 
 export interface ParsedQueryInfo {
+  originalQuery: string
   semanticQuery: string
   lexicalQuery: string
   constraintSummary: string[]
@@ -863,7 +917,7 @@ export const documentsApi = {
     query: string
     metadataFilter?: Record<string, string | number | boolean | null>
   }): Promise<DocumentSearchResponse> {
-    return request<DocumentSearchResponse>('/document/search', {
+    return requestLongRunning<DocumentSearchResponse>('/api/document/search', {
       method: 'POST',
       body: JSON.stringify(data),
     }, { withApiToken: true })

@@ -271,6 +271,14 @@
           "queryRewriteEnabled": {
             "type": "boolean"
           },
+          "semanticRewriteInstructions": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "lexicalRewriteInstructions": {
+            "type": "string",
+            "maxLength": 2000
+          },
           "rerankEnabled": {
             "type": "boolean"
           },
@@ -396,6 +404,8 @@
         "required": [
           "workspaceId",
           "queryRewriteEnabled",
+          "semanticRewriteInstructions",
+          "lexicalRewriteInstructions",
           "rerankEnabled",
           "vectorTopK",
           "similarityThreshold",
@@ -412,6 +422,14 @@
         "properties": {
           "queryRewriteEnabled": {
             "type": "boolean"
+          },
+          "semanticRewriteInstructions": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "lexicalRewriteInstructions": {
+            "type": "string",
+            "maxLength": 2000
           },
           "rerankEnabled": {
             "type": "boolean"

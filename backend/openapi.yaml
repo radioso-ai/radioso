@@ -125,6 +125,13 @@ components:
             $ref: "#/components/schemas/Workspace"
       required:
         - workspaces
+    WorkspaceTokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
     RegisterRequest:
       type: object
       properties:
@@ -1528,6 +1535,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/token:
+    get:
+      tags:
+        - Account
+      summary: Reveal the workspace API token for manual SDK or CLI use
+      operationId: getWorkspaceApiToken
+      security:
+        - sessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+      responses:
+        "200":
+          description: Workspace token returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceTokenResponse"
+        "400":
+          description: Invalid workspace id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Token reveal temporarily rate limited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
   /api/v1/workspace:
     get:
       tags:

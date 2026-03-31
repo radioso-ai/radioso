@@ -124,11 +124,11 @@ describe("auth contract", () => {
     expect(response.body.anonymousChatEnabled).toBe(false);
   });
 
-  it("does not expose workspace tokens through account routes", async () => {
+  it("reveals a workspace token through an explicit session-authenticated account route", async () => {
     const { app } = createTestApp();
 
     const registration = await request(app).post("/api/v1/auth/register").send({
-      email: "token-route-removed@example.com",
+      email: "token-route-restored@example.com",
       password: "verysecurepassword",
     });
     const cookie = registration.headers["set-cookie"]?.[0];
@@ -137,7 +137,34 @@ describe("auth contract", () => {
       .get(`/api/v1/account/workspaces/${registration.body.workspaceId}/token`)
       .set("Cookie", cookie);
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(200);
+    expect(response.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
+  });
+
+  it("rate limits repeated workspace token reveal requests", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        AUTH_RATE_LIMIT_MAX_ATTEMPTS: 1,
+      },
+    });
+
+    const registration = await request(app).post("/api/v1/auth/register").send({
+      email: "token-route-rate-limit@example.com",
+      password: "verysecurepassword",
+    });
+    const cookie = registration.headers["set-cookie"]?.[0];
+    const tokenRoute = `/api/v1/account/workspaces/${registration.body.workspaceId}/token`;
+
+    const first = await request(app)
+      .get(tokenRoute)
+      .set("Cookie", cookie);
+
+    const second = await request(app)
+      .get(tokenRoute)
+      .set("Cookie", cookie);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
   });
 
   it("rate limits repeated registration attempts", async () => {

@@ -14,9 +14,12 @@ import { Spinner } from '@/components/ui/spinner'
 import { DocumentStatus } from '@/components/dashboard/document-status'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import type { DocumentSummary } from '@/lib/api'
+import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
 function DocumentsPagination({
+  accountId,
+  routeState,
   pageStart,
   pageEnd,
   totalDocuments,
@@ -25,6 +28,8 @@ function DocumentsPagination({
   onPrevious,
   onNext,
 }: {
+  accountId: string
+  routeState: DashboardRouteState
   pageStart: number
   pageEnd: number
   totalDocuments: number
@@ -42,7 +47,11 @@ function DocumentsPagination({
         <PaginationContent>
           <PaginationItem>
             <PaginationPrevious
-              href="#"
+              href={buildDashboardHref(accountId, {
+                ...routeState,
+                section: 'documents',
+                documentsPage: Math.max(1, safeCurrentPage - 1),
+              })}
               onClick={(event) => {
                 event.preventDefault()
                 onPrevious()
@@ -58,7 +67,11 @@ function DocumentsPagination({
           </PaginationItem>
           <PaginationItem>
             <PaginationNext
-              href="#"
+              href={buildDashboardHref(accountId, {
+                ...routeState,
+                section: 'documents',
+                documentsPage: Math.min(totalPages, safeCurrentPage + 1),
+              })}
               onClick={(event) => {
                 event.preventDefault()
                 onNext()
@@ -156,6 +169,8 @@ export function DocumentList({
   documents,
   pageSize,
   currentPage,
+  accountId,
+  routeState,
   onboarding,
   deleteErrorById,
   retryErrorById,
@@ -175,6 +190,8 @@ export function DocumentList({
   documents: DocumentSummary[]
   pageSize: number
   currentPage: number
+  accountId: string
+  routeState: DashboardRouteState
   onboarding: WorkspaceOnboardingState
   deleteErrorById: Record<string, string>
   retryErrorById: Record<string, string>
@@ -232,6 +249,8 @@ export function DocumentList({
     <div className="w-full space-y-4">
       {totalDocuments > pageSize ? (
         <DocumentsPagination
+          accountId={accountId}
+          routeState={routeState}
           pageStart={pageStart}
           pageEnd={pageEnd}
           totalDocuments={totalDocuments}
@@ -259,6 +278,8 @@ export function DocumentList({
       </div>
       {totalDocuments > pageSize ? (
         <DocumentsPagination
+          accountId={accountId}
+          routeState={routeState}
           pageStart={pageStart}
           pageEnd={pageEnd}
           totalDocuments={totalDocuments}

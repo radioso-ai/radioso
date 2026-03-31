@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { useWorkspace } from '@/lib/workspace-context'
-import { buildAccountRoute } from '@/lib/dashboard-routes'
+import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { SAMPLE_QUESTIONS, type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useChatSession } from '@/lib/chat-context'
 
@@ -57,7 +57,10 @@ export function FirstRunExperience({ accountId, onboarding }: FirstRunExperience
 
   const handleUploadDocs = () => {
     onboarding.markActive()
-    router.push(buildAccountRoute(accountId, 'documents'))
+    router.push(buildDashboardHref(accountId, {
+      section: 'documents',
+      workspaceId: activeWorkspaceId ?? undefined,
+    }))
   }
 
   const handleAskQuestion = async (question: string) => {

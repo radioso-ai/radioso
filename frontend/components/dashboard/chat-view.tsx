@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { type CitationOpenResult } from './chat-citations'
 import { documentsApi } from '@/lib/api'
 import { useChatSession } from '@/lib/chat-context'
-import { buildAccountRoute } from '@/lib/dashboard-routes'
+import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useWorkspace } from '@/lib/workspace-context'
 import { ChatMessageThread } from './chat-message-thread'
@@ -79,7 +79,14 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
         description:
           'Radioso is preparing chunks and retrieval data. Give it a moment, then ask the first question.',
         primaryAction: (
-          <Button size="sm" variant="outline" onClick={() => router.push(buildAccountRoute(accountId, 'documents'))}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => router.push(buildDashboardHref(accountId, {
+              section: 'documents',
+              workspaceId: activeWorkspaceId ?? undefined,
+            }))}
+          >
             <FileText className="mr-2 h-4 w-4" />
             Open documents
           </Button>
@@ -98,7 +105,13 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
             'Add documents to this workspace before chatting. Starter docs are only used during the guided first-run flow.',
           primaryAction: (
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <Button size="sm" onClick={() => router.push(buildAccountRoute(accountId, 'documents'))}>
+              <Button
+                size="sm"
+                onClick={() => router.push(buildDashboardHref(accountId, {
+                  section: 'documents',
+                  workspaceId: activeWorkspaceId ?? undefined,
+                }))}
+              >
                 <FileText className="mr-2 h-4 w-4" />
                 Upload docs
               </Button>

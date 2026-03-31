@@ -125,6 +125,7 @@ export function IngestionSettingsPanel() {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-xl space-y-8">
           <SettingsCard
+            id="document-processing"
             icon={<Settings2 className="h-5 w-5 text-primary" />}
             title="Document Processing"
             description="Choose how new or updated documents are prepared for retrieval."
@@ -260,6 +261,7 @@ export function IngestionSettingsPanel() {
           </SettingsCard>
 
           <SettingsCard
+            id="existing-documents"
             icon={<RefreshCw className="h-5 w-5 text-primary" />}
             title="Existing Documents"
             description="Reprocess current documents so they use the latest ingestion settings."

@@ -37,10 +37,11 @@ import {
   User,
 } from 'lucide-react'
 import {
-  buildAccountRoute,
+  buildDashboardHref,
   type DashboardSection,
 } from '@/lib/dashboard-routes'
 import { WorkspaceSwitcher } from './workspace-switcher'
+import { useWorkspace } from '@/lib/workspace-context'
 
 interface AppSidebarProps {
   accountId: string
@@ -56,6 +57,7 @@ const navItems = [
 
 export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
   const { user, logout } = useAuth()
+  const { activeWorkspaceId } = useWorkspace()
   const { theme, setTheme } = useTheme()
 
   return (
@@ -86,7 +88,12 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.id}>
                   <SidebarMenuButton asChild isActive={currentView === item.id} tooltip={item.label}>
-                    <Link href={buildAccountRoute(accountId, item.id)}>
+                    <Link
+                      href={buildDashboardHref(accountId, {
+                        section: item.id,
+                        workspaceId: activeWorkspaceId ?? undefined,
+                      })}
+                    >
                       <item.icon className="w-4 h-4" />
                       <span>{item.label}</span>
                     </Link>

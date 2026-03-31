@@ -149,7 +149,7 @@ export function GeneralTab() {
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-xl space-y-8">
-          <div className="space-y-6">
+          <section id="workspace" className="space-y-6 scroll-mt-24">
             <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Workspace</h2>
             <div className="space-y-3">
               <Label htmlFor="workspaceName" className="text-foreground">Workspace Name</Label>
@@ -171,9 +171,9 @@ export function GeneralTab() {
               </div>
               {renameError ? <p className="text-sm text-destructive">{renameError}</p> : null}
             </div>
-          </div>
+          </section>
 
-          <div className="space-y-6">
+          <section id="developer-api" className="space-y-6 scroll-mt-24">
             <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Developer API</h2>
             <details className="rounded-lg border border-border bg-card p-4">
                 <summary className="cursor-pointer list-none">
@@ -232,9 +232,9 @@ export function GeneralTab() {
                   </div>
                 </div>
               </details>
-          </div>
+          </section>
 
-          <div className="space-y-6">
+          <section id="anonymous-chat" className="space-y-6 scroll-mt-24">
             <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Anonymous Chat Access</h2>
             {isAnonLoading ? (
               <div className="flex items-center justify-center py-4">
@@ -313,9 +313,9 @@ export function GeneralTab() {
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load anonymous chat settings.</p>
             )}
-          </div>
+          </section>
 
-          <div className="space-y-4 rounded-md border border-destructive/50 p-4">
+          <section id="danger-zone" className="space-y-4 rounded-md border border-destructive/50 p-4 scroll-mt-24">
             <h2 className="text-sm font-medium text-destructive uppercase tracking-wide">Danger Zone</h2>
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -387,7 +387,7 @@ export function GeneralTab() {
                 You cannot delete your only workspace. Create another workspace first.
               </p>
             ) : null}
-          </div>
+          </section>
         </div>
       </div>
     </div>

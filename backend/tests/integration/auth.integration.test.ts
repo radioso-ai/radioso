@@ -63,7 +63,7 @@ describe("auth integration", () => {
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
 
-  it("supports multi-workspace session flows without exposing workspace tokens", async () => {
+  it("supports multi-workspace session flows and explicit token reveal", async () => {
     const { app } = createTestApp();
     const register = await request(app).post("/api/v1/auth/register").send({
       email: "repeat@example.com",
@@ -92,7 +92,7 @@ describe("auth integration", () => {
       .get("/api/v1/settings/general")
       .set("Cookie", loginCookie)
       .set("X-Workspace-Id", defaultWorkspaceId);
-    const removedRoute = await request(app)
+    const tokenRoute = await request(app)
       .get(`/api/v1/account/workspaces/${created.body.id}/token`)
       .set("Cookie", loginCookie);
 
@@ -101,7 +101,8 @@ describe("auth integration", () => {
     expect(login.body.token).toBeUndefined();
     expect(preferredSettings.status).toBe(200);
     expect(defaultSettings.status).toBe(200);
-    expect(removedRoute.status).toBe(404);
+    expect(tokenRoute.status).toBe(200);
+    expect(tokenRoute.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
   });
 
   it("rotates an unreadable stored token instead of failing", async () => {

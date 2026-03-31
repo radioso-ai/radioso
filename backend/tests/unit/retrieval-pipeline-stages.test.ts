@@ -114,6 +114,7 @@ describe("retrieval pipeline stages", () => {
     });
 
     expect(result.activeQuery).toBe("Eestis hetkel kehtiv kaibemaksumaar");
+    expect(result.activeQuery).toBe("Eestis hetkel kehtiv kaibemaksumaar");
     expect(result.activeParsedQuery.semanticQuery).toBe("Eestis hetkel kehtiv kaibemaksumaar");
     expect(result.activeParsedQuery.lexicalQuery).toBe("Eestis kehtiv km maar (kaibemaks)");
     expect(result.promptHistory).toEqual([]);

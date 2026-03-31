@@ -121,6 +121,13 @@ const WorkspaceListResponseSchema = registry.register(
   }),
 );
 
+const WorkspaceTokenResponseSchema = registry.register(
+  "WorkspaceTokenResponse",
+  z.object({
+    token: z.string(),
+  }),
+);
+
 const RegisterRequestSchema = registry.register("RegisterRequest", registerSchema);
 const LoginRequestSchema = registry.register("LoginRequest", loginSchema);
 const WorkspaceCreateRequestSchema = registry.register("WorkspaceCreateRequest", createWorkspaceSchema);
@@ -793,6 +800,60 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/account/workspaces/{workspaceId}/token",
+  tags: ["Account"],
+  summary: "Reveal the workspace API token for manual SDK or CLI use",
+  operationId: "getWorkspaceApiToken",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    params: workspaceParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Workspace token returned",
+      content: {
+        "application/json": {
+          schema: WorkspaceTokenResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Invalid workspace id",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Workspace not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Token reveal temporarily rate limited",
+      content: {
+        "application/json": {
+          schema: RateLimitExceededSchema,
         },
       },
     },

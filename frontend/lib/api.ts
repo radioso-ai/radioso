@@ -1036,6 +1036,10 @@ export interface GeneralSettings {
   anonymousRateLimit: number
 }
 
+export interface WorkspaceTokenResponse {
+  token: string
+}
+
 // General Settings API
 export const generalSettingsApi = {
   async getGeneralSettings(): Promise<GeneralSettings> {
@@ -1052,6 +1056,14 @@ export const generalSettingsApi = {
       method: 'PUT',
       body: JSON.stringify(data),
     }, { withApiToken: true })
+  },
+}
+
+export const accountApi = {
+  async getWorkspaceToken(workspaceId: string): Promise<WorkspaceTokenResponse> {
+    return request<WorkspaceTokenResponse>(`/account/workspaces/${workspaceId}/token`, {
+      method: 'GET',
+    }, { withSession: true })
   },
 }
 

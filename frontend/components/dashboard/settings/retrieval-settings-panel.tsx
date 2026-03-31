@@ -344,7 +344,7 @@ export function RetrievalSettingsPanel() {
                 <div>
                   <Label htmlFor="queryRewrite" className="text-foreground">Query Rewrite</Label>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    Automatically optimize queries for better retrieval.
+                    Automatically optimize semantic and lexical retrieval queries.
                   </p>
                 </div>
                 <Switch
@@ -352,6 +352,57 @@ export function RetrievalSettingsPanel() {
                   checked={settings.queryRewriteEnabled}
                   onCheckedChange={(checked) => updateSetting('queryRewriteEnabled', checked)}
                 />
+              </div>
+
+              <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
+                <div className="space-y-1">
+                  <Label htmlFor="semanticRewriteInstructions" className="text-foreground">
+                    Semantic Rewrite Instructions
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Guides meaning-oriented retrieval. Keep these instructions focused on preserving the user&apos;s
+                    intent while making follow-ups standalone.
+                  </p>
+                </div>
+                <Textarea
+                  id="semanticRewriteInstructions"
+                  value={settings.semanticRewriteInstructions}
+                  onChange={(event) =>
+                    updateSetting('semanticRewriteInstructions', event.target.value.slice(0, 2000))
+                  }
+                  placeholder="e.g. Keep the same meaning, preserve proper nouns, and rewrite follow-ups into standalone questions."
+                  rows={4}
+                />
+                <p className="text-xs text-muted-foreground text-right">
+                  {settings.semanticRewriteInstructions.length} / 2000
+                </p>
+
+                <div className="space-y-1">
+                  <Label htmlFor="lexicalRewriteInstructions" className="text-foreground">
+                    Lexical Rewrite Instructions
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Guides exact-term retrieval. Use this to prefer aliases, abbreviations, citation forms, or
+                    corpus-native notation that should appear in indexed text.
+                  </p>
+                </div>
+                <Textarea
+                  id="lexicalRewriteInstructions"
+                  value={settings.lexicalRewriteInstructions}
+                  onChange={(event) =>
+                    updateSetting('lexicalRewriteInstructions', event.target.value.slice(0, 2000))
+                  }
+                  placeholder="e.g. Prefer section symbols, abbreviations, and exact citation notation when grounded in the query or context."
+                  rows={4}
+                />
+                <p className="text-xs text-muted-foreground text-right">
+                  {settings.lexicalRewriteInstructions.length} / 2000
+                </p>
+
+                <p className="text-sm text-muted-foreground">
+                  Phase 1 runs one semantic query and one lexical query per request. These instructions tune those two
+                  query shapes independently.
+                </p>
               </div>
 
               <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">

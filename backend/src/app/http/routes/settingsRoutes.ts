@@ -24,6 +24,8 @@ import {
 
 export const updateSettingsSchema = z.object({
   queryRewriteEnabled: z.boolean(),
+  semanticRewriteInstructions: z.string().max(2000).optional(),
+  lexicalRewriteInstructions: z.string().max(2000).optional(),
   rerankEnabled: z.boolean(),
   vectorTopK: z.number().int(),
   similarityThreshold: z.number(),
@@ -85,6 +87,8 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
       const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
       const settings = await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
         ...req.body,
+        semanticRewriteInstructions: req.body.semanticRewriteInstructions ?? existing.semanticRewriteInstructions,
+        lexicalRewriteInstructions: req.body.lexicalRewriteInstructions ?? existing.lexicalRewriteInstructions,
         metadataRules: req.body.metadataRules ?? existing.metadataRules,
         customInstruction: req.body.customInstruction ?? existing.customInstruction,
       });

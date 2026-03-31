@@ -37,6 +37,8 @@ export interface RetrievalMetadataRule {
 
 interface RetrievalSettingsPayload {
   metadataRules?: unknown;
+  semanticRewriteInstructions?: unknown;
+  lexicalRewriteInstructions?: unknown;
 }
 
 interface LegacyMetadataRule {
@@ -52,6 +54,8 @@ interface LegacyMetadataRule {
 export interface RetrievalSettingsRecord {
   workspaceId: string;
   queryRewriteEnabled: boolean;
+  semanticRewriteInstructions: string;
+  lexicalRewriteInstructions: string;
   rerankEnabled: boolean;
   vectorTopK: number;
   similarityThreshold: number;
@@ -66,6 +70,8 @@ export interface RetrievalSettingsRecord {
 
 export interface RetrievalSettingsInput {
   queryRewriteEnabled: boolean;
+  semanticRewriteInstructions: string;
+  lexicalRewriteInstructions: string;
   rerankEnabled: boolean;
   vectorTopK: number;
   similarityThreshold: number;
@@ -77,6 +83,12 @@ export interface RetrievalSettingsInput {
 }
 
 // Kept for internal retrieval tests that still exercise query-derived attribute logic.
+export const DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS =
+  "Rewrite for semantic retrieval with the same meaning. Keep the query standalone, preserve proper nouns and technical terms, and avoid adding new topics.";
+
+export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS =
+  "Rewrite for lexical retrieval using exact literals likely to appear in the corpus. Prefer aliases, abbreviations, citation forms, and corpus-native notation when grounded.";
+
 export const defaultAttributeControls = () => [
   { signalKey: "document_date", enabled: true, mode: "boost_only" as const },
   { signalKey: "document_period", enabled: true, mode: "boost_only" as const },
@@ -87,6 +99,8 @@ export const defaultAttributeControls = () => [
 export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettingsRecord => ({
   workspaceId,
   queryRewriteEnabled: false,
+  semanticRewriteInstructions: DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,
+  lexicalRewriteInstructions: DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
   rerankEnabled: false,
   vectorTopK: 15,
   similarityThreshold: 0.2,
@@ -100,6 +114,11 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
 });
 
 export const normalizeMetadataField = (value: string): string => value.trim();
+
+const normalizeRewriteInstruction = (value: string, fallback: string): string => {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  return normalized.length > 0 ? normalized : fallback;
+};
 
 export const createDefaultMetadataRule = (): RetrievalMetadataRule => ({
   id: randomUUID(),
@@ -192,6 +211,18 @@ export const normalizeMetadataRules = (value: unknown): RetrievalMetadataRule[] 
 };
 
 export const validateRetrievalSettings = (input: RetrievalSettingsInput): RetrievalSettingsInput => {
+  if (typeof input.semanticRewriteInstructions !== "string") {
+    throw badRequest("semanticRewriteInstructions must be a string");
+  }
+  if (typeof input.lexicalRewriteInstructions !== "string") {
+    throw badRequest("lexicalRewriteInstructions must be a string");
+  }
+  if (input.semanticRewriteInstructions.length > 2000) {
+    throw badRequest("semanticRewriteInstructions must not exceed 2000 characters");
+  }
+  if (input.lexicalRewriteInstructions.length > 2000) {
+    throw badRequest("lexicalRewriteInstructions must not exceed 2000 characters");
+  }
   if (input.vectorTopK < 1 || input.vectorTopK > 300) {
     throw badRequest("vectorTopK must be between 1 and 300");
   }
@@ -262,6 +293,14 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
 
   return {
     ...input,
+    semanticRewriteInstructions: normalizeRewriteInstruction(
+      input.semanticRewriteInstructions,
+      DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,
+    ),
+    lexicalRewriteInstructions: normalizeRewriteInstruction(
+      input.lexicalRewriteInstructions,
+      DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
+    ),
     metadataRules: input.metadataRules.map((rule) => ({
       ...rule,
       field: normalizeMetadataField(rule.field),

@@ -11,6 +11,7 @@ export class RetrievalInfoPresenter {
     return {
       parsedQuery: input.parsedQuery
         ? {
+            originalQuery: input.parsedQuery.originalQuery ?? input.parsedQuery.semanticQuery,
             semanticQuery: input.parsedQuery.semanticQuery,
             lexicalQuery: input.parsedQuery.lexicalQuery,
             constraintSummary: input.parsedQuery.constraints.map((constraint) => constraint.summary),
@@ -32,6 +33,7 @@ export class RetrievalInfoPresenter {
         materialDisagreement: input.materialDisagreement ?? false,
         continuityDecision: input.continuityDecision,
         rejectionReason: input.rejectionReason,
+        fallbackReason: input.fallbackReason,
       },
     };
   }

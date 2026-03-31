@@ -19,6 +19,7 @@ export class RetrievalExecutionTelemetryService {
     continuityDecision?: import("../domain/retrievalPipelineTypes.js").ContinuityDecision;
     rewriteProposal?: import("../domain/retrievalPipelineTypes.js").StructuredRewriteResult;
     rejectionReason?: string;
+    fallbackReason?: string;
   }): RetrievalExecutionDiagnostics {
     return {
       ...input,

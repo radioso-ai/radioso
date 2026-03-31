@@ -218,6 +218,7 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
               { label: 'Effective query', value: outputs.effectiveQuery as string | undefined },
               { label: 'Semantic query', value: outputs.semanticQuery as string | undefined },
               { label: 'Lexical query', value: outputs.lexicalQuery as string | undefined },
+              { label: 'Fallback reason', value: stage.reason },
               { label: 'Rewrite eligible', value: outputs.rewriteEligible as boolean | undefined },
               { label: 'Rewrite ran', value: outputs.rewriteRan as boolean | undefined },
               { label: 'Continuity decision', value: outputs.continuityDecision as string | undefined },

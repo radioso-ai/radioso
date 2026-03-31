@@ -31,6 +31,8 @@ export type RewriteTurnKind = (typeof REWRITE_TURN_KIND)[keyof typeof REWRITE_TU
 
 export interface StructuredRewriteResult {
   rewrittenQuery: string;
+  semanticQuery?: string;
+  lexicalQuery?: string;
   turnKind: RewriteTurnKind;
   proposedActiveSubject?: string;
   relatedEntities: string[];
@@ -44,6 +46,8 @@ export interface RewrittenRetrievalQuery {
   originalQuery: string;
   rewrittenQuery: string;
   effectiveQuery: string;
+  semanticQuery: string;
+  lexicalQuery: string;
   rewriteApplied: boolean;
   retrievalEligible: boolean;
   status: RewriteStatus;
@@ -78,6 +82,7 @@ export type RetrievalTraceStageStatus = "applied" | "skipped" | "fallback" | "re
 
 export interface RetrievalTraceSummary {
   parsedQuery?: {
+    originalQuery: string;
     semanticQuery: string;
     lexicalQuery: string;
     constraintSummary: string[];
@@ -98,6 +103,7 @@ export interface RetrievalTraceSummary {
     materialDisagreement: boolean;
     continuityDecision?: ContinuityDecision;
     rejectionReason?: string;
+    fallbackReason?: string;
   };
 }
 
@@ -150,4 +156,5 @@ export interface RetrievalExecutionDiagnostics {
   continuityDecision?: ContinuityDecision;
   rewriteProposal?: StructuredRewriteResult;
   rejectionReason?: string;
+  fallbackReason?: string;
 }

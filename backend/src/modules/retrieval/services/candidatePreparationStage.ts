@@ -13,6 +13,9 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
   ) {}
 
   async execute(input: CandidateRetrievalStageResult) {
+    const signalPolicies =
+      (input.settings as { signalPolicies?: Array<{ signalKey: string; enabled: boolean; mode: "boost_only" | "hard_filter" }> })
+        .signalPolicies ?? defaultAttributeControls();
     const normalizedCandidates = this.candidatePreparationService.prepare({
       original: input.originalContexts,
       rewritten: input.rewrittenContexts,
@@ -22,11 +25,11 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
     const queryScoredCandidates = this.attributeMatchScoringService.apply({
       candidates: mergedCandidates,
       parsedQuery: input.activeParsedQuery,
-      signalPolicies: defaultAttributeControls(),
+      signalPolicies,
     });
     const metadataRuleCandidates = this.metadataRuleScoringService.apply({
       candidates: queryScoredCandidates.candidates,
-      metadataRules: input.settings.metadataRules,
+      metadataRules: input.settings.metadataRules ?? [],
     });
 
     return {

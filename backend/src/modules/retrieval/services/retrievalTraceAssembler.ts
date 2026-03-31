@@ -109,6 +109,7 @@ export class RetrievalTraceAssembler {
           effectiveQuery: prompt.activeQuery,
           semanticQuery: prompt.activeParsedQuery.semanticQuery,
           lexicalQuery: prompt.activeParsedQuery.lexicalQuery,
+          lexicalEffectiveQuery: prompt.rewrittenQuery.lexicalQuery,
           continuityDecision: prompt.continuityDecision,
           promptHistoryCount: prompt.promptHistory.length,
           rewriteEligible: prompt.rewrittenQuery.retrievalEligible,

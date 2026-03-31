@@ -66,6 +66,7 @@ describe("edge cases", () => {
 
     expect(result.status).toBe("fallback");
     expect(result.effectiveQuery).toBe("What is it used for?");
+    expect(result.lexicalQuery).toBe("What is it used for?");
   });
 
   it("falls back when contextual rewrite assistance fails for a standalone query", async () => {
@@ -97,6 +98,8 @@ describe("edge cases", () => {
     expect(result.status).toBe("fallback");
     expect(result.effectiveQuery).toBe("What is the API rate limit?");
     expect(result.rewriteApplied).toBe(false);
+    expect(result.semanticQuery).toBe("What is the API rate limit?");
+    expect(result.lexicalQuery).toBe("What is the API rate limit?");
   });
 
   it("falls back to similarity ordering when rerank assistance errors", async () => {

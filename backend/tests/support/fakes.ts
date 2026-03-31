@@ -327,6 +327,8 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
     const record: RetrievalSettingsRecord = {
       workspaceId,
       queryRewriteEnabled: input.queryRewriteEnabled,
+      semanticRewriteInstructions: input.semanticRewriteInstructions,
+      lexicalRewriteInstructions: input.lexicalRewriteInstructions,
       rerankEnabled: input.rerankEnabled,
       vectorTopK: input.vectorTopK,
       similarityThreshold: input.similarityThreshold,

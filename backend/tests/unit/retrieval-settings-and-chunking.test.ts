@@ -16,6 +16,8 @@ describe("settings and chunking", () => {
     expect(() =>
       validateRetrievalSettings({
         queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
         rerankEnabled: false,
         vectorTopK: 0,
         similarityThreshold: 0.2,
@@ -32,6 +34,8 @@ describe("settings and chunking", () => {
     expect(() =>
       validateRetrievalSettings({
         queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: 0.2,
@@ -65,6 +69,8 @@ describe("settings and chunking", () => {
     expect(() =>
       validateRetrievalSettings({
         queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: 0.2,
@@ -94,6 +100,8 @@ describe("settings and chunking", () => {
     expect(defaults.citationDisplayEnabled).toBe(true);
     expect(defaults.metadataRules).toEqual([]);
     expect(defaults.customInstruction).toBe("");
+    expect(defaults.semanticRewriteInstructions).not.toBe("");
+    expect(defaults.lexicalRewriteInstructions).not.toBe("");
   });
 
   it("rejects customInstruction exceeding 2000 characters", () => {
@@ -106,6 +114,8 @@ describe("settings and chunking", () => {
     expect(() =>
       validateRetrievalSettings({
         queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: 0.2,
@@ -126,6 +136,8 @@ describe("settings and chunking", () => {
     };
     const baseInput = {
       queryRewriteEnabled: false,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
       rerankEnabled: false,
       vectorTopK: 15,
       similarityThreshold: 0.2,
@@ -138,6 +150,25 @@ describe("settings and chunking", () => {
     expect(validateRetrievalSettings({ ...baseInput, customInstruction: "" })).toBeDefined();
     expect(validateRetrievalSettings({ ...baseInput, customInstruction: "Cite paragraph numbers" })).toBeDefined();
     expect(validateRetrievalSettings({ ...baseInput, customInstruction: "a".repeat(2000) })).toBeDefined();
+  });
+
+  it("falls back to safe rewrite instructions when blank values are provided", () => {
+    const normalized = validateRetrievalSettings({
+      queryRewriteEnabled: true,
+      semanticRewriteInstructions: "   ",
+      lexicalRewriteInstructions: "",
+      rerankEnabled: false,
+      vectorTopK: 15,
+      similarityThreshold: 0.2,
+      rerankTopK: 5,
+      warmthLevel: 5,
+      citationDisplayEnabled: true,
+      metadataRules: [],
+      customInstruction: "",
+    });
+
+    expect(normalized.semanticRewriteInstructions).not.toBe("");
+    expect(normalized.lexicalRewriteInstructions).not.toBe("");
   });
 
   it("uses the current chunking defaults for ingestion settings", () => {

@@ -215,6 +215,8 @@ export interface LoginResponse {
 
 export interface RetrievalSettings {
   queryRewriteEnabled: boolean
+  semanticRewriteInstructions: string
+  lexicalRewriteInstructions: string
   rerankEnabled: boolean
   vectorTopK: number
   similarityThreshold: number
@@ -379,10 +381,12 @@ export interface RetrievalInfo {
     materialDisagreement: boolean
     continuityDecision?: string
     rejectionReason?: string
+    fallbackReason?: string
   }
 }
 
 export interface ParsedQueryInfo {
+  originalQuery: string
   semanticQuery: string
   lexicalQuery: string
   constraintSummary: string[]

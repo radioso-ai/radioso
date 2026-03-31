@@ -5,6 +5,8 @@ import { QueryInterpretationStageService } from "../../src/modules/retrieval/ser
 import { CandidateRetrievalStageService } from "../../src/modules/retrieval/services/candidateRetrievalStage.js";
 import { RetrievalContextStageService } from "../../src/modules/retrieval/services/retrievalContextStage.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
+import { RetrievalDiagnosticsStageService } from "../../src/modules/retrieval/services/retrievalDiagnosticsStage.js";
+import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
 
 describe("retrieval pipeline stages", () => {
   it("keeps structured query literals during query interpretation", async () => {
@@ -275,5 +277,95 @@ describe("retrieval pipeline stages", () => {
     expect(result.lexicalContexts).toEqual([]);
     expect(result.activeQuery).toBe("summer retreat pricing");
     expect(result.activeParsedQuery.lexicalQuery).toBe("summer retreat price");
+  });
+
+  it("reports rejected rewrites as having run in diagnostics", () => {
+    const stage = new RetrievalDiagnosticsStageService(new RetrievalExecutionTelemetryService());
+
+    const diagnostics = stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "what about her later work?",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "Keep meaning.",
+        lexicalRewriteInstructions: "Prefer exact notation.",
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+      originalParsedQuery: {
+        originalQuery: "what about her later work?",
+        semanticQuery: "what about her later work?",
+        lexicalQuery: "what about her later work?",
+        constraints: [],
+      },
+      originalPreparedQuery: {
+        originalQuery: "what about her later work?",
+        semanticQuery: "what about her later work?",
+        lexicalQuery: "what about her later work?",
+        constraints: [],
+      },
+      rewrittenQuery: {
+        originalQuery: "what about her later work?",
+        rewrittenQuery: "What did Arudra publish later?",
+        effectiveQuery: "what about her later work?",
+        semanticQuery: "what about her later work?",
+        lexicalQuery: "what about her later work?",
+        rewriteApplied: false,
+        retrievalEligible: false,
+        status: "rejected",
+        confidence: 0.9,
+        rejectionReason: "rewrite_not_materially_different",
+      },
+      activeQuery: "what about her later work?",
+      activeParsedQuery: {
+        originalQuery: "what about her later work?",
+        semanticQuery: "what about her later work?",
+        lexicalQuery: "what about her later work?",
+        constraints: [],
+      },
+      activeSemanticQuery: "what about her later work?",
+      promptHistory: [],
+      continuityDecision: "rejected",
+      activeEmbedding: [1, 0, 0],
+      activeEmbeddingDurationMs: 0,
+      originalContexts: [],
+      rewrittenContexts: [],
+      lexicalContexts: [],
+      vectorFallbackApplied: false,
+      normalizedCandidates: [],
+      mergedCandidates: [],
+      scoredCandidates: [],
+      appliedConstraints: [],
+      candidateFallbackApplied: false,
+      rerankedContexts: [],
+      rerankStatus: "skipped",
+      contexts: [],
+      prompt: "prompt",
+      citations: [],
+      responseSettings: {
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+      },
+    });
+
+    expect(diagnostics.rewriteStatus).toBe("rejected");
+    expect(diagnostics.rewriteRan).toBe(true);
   });
 });

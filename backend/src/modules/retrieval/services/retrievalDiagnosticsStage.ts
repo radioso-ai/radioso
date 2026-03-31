@@ -18,10 +18,7 @@ export class RetrievalDiagnosticsStageService implements RetrievalDiagnosticsSta
       appliedConstraints: input.appliedConstraints,
       candidateFallbackApplied: input.candidateFallbackApplied,
       rewriteEligible: input.rewrittenQuery.retrievalEligible,
-      rewriteRan:
-        input.rewrittenQuery.retrievalEligible &&
-        (input.rewrittenQuery.semanticQuery !== input.request.query ||
-          input.rewrittenQuery.lexicalQuery !== input.request.query),
+      rewriteRan: input.rewrittenQuery.status !== "skipped",
       materialDisagreement: false,
       continuityDecision: input.continuityDecision,
       rewriteProposal: input.rewrittenQuery.structuredResult,

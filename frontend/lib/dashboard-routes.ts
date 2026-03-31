@@ -1,48 +1,252 @@
 export type DashboardSection = 'chat' | 'history' | 'documents' | 'settings'
+export type HistoryFilter = 'all' | 'chat' | 'search'
+export type HistoryItemKind = 'chat' | 'search'
+export type SettingsTab = 'general' | 'ingestion' | 'retrieval' | 'connectors'
 
-export interface ParsedDashboardRoute {
+export interface DashboardRouteState {
   section: DashboardSection
+  workspaceId?: string
   documentId?: string
+  documentsPage?: number
+  historyFilter?: HistoryFilter
+  historyPage?: number
+  historyItemKind?: HistoryItemKind
+  historyItemId?: string
+  settingsTab?: SettingsTab
+  settingsAnchor?: string
+  connectorId?: string
 }
 
 const DEFAULT_SECTION: DashboardSection = 'chat'
+const DEFAULT_HISTORY_FILTER: HistoryFilter = 'all'
+const DEFAULT_SETTINGS_TAB: SettingsTab = 'general'
+
+const parsePositiveInt = (value: string | null): number | undefined => {
+  if (!value) {
+    return undefined
+  }
+
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+}
+
+const parseSection = (value: string | undefined): DashboardSection | null => {
+  if (value === 'chat' || value === 'history' || value === 'documents' || value === 'settings') {
+    return value
+  }
+
+  return null
+}
+
+const parseHistoryFilter = (value: string | null): HistoryFilter | undefined => {
+  if (value === 'all' || value === 'chat' || value === 'search') {
+    return value
+  }
+
+  return undefined
+}
+
+const parseHistoryItemKind = (value: string | null): HistoryItemKind | undefined => {
+  if (value === 'chat' || value === 'search') {
+    return value
+  }
+
+  return undefined
+}
+
+const parseSettingsTab = (value: string | null): SettingsTab | undefined => {
+  if (value === 'general' || value === 'ingestion' || value === 'retrieval' || value === 'connectors') {
+    return value
+  }
+
+  return undefined
+}
+
+const parseAnchor = (value: string | null): string | undefined => {
+  if (!value) {
+    return undefined
+  }
+
+  const normalized = value.trim().toLowerCase()
+  return normalized ? normalized : undefined
+}
+
+const normalizeWorkspaceId = (value: string | null): string | undefined => {
+  if (!value) {
+    return undefined
+  }
+
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
+}
+
+const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
+  const normalized: DashboardRouteState = {
+    section: state.section,
+    ...(state.workspaceId ? { workspaceId: state.workspaceId } : {}),
+  }
+
+  if (state.section === 'documents') {
+    if (state.documentId) {
+      normalized.documentId = state.documentId
+    }
+    if (state.documentsPage && state.documentsPage > 1) {
+      normalized.documentsPage = state.documentsPage
+    }
+    return normalized
+  }
+
+  if (state.section === 'history') {
+    if (state.historyFilter && state.historyFilter !== DEFAULT_HISTORY_FILTER) {
+      normalized.historyFilter = state.historyFilter
+    }
+    if (state.historyPage && state.historyPage > 1) {
+      normalized.historyPage = state.historyPage
+    }
+    if (state.historyItemKind && state.historyItemId) {
+      normalized.historyItemKind = state.historyItemKind
+      normalized.historyItemId = state.historyItemId
+    }
+    return normalized
+  }
+
+  if (state.section === 'settings') {
+    if (state.settingsTab && state.settingsTab !== DEFAULT_SETTINGS_TAB) {
+      normalized.settingsTab = state.settingsTab
+    }
+    if (state.settingsAnchor) {
+      normalized.settingsAnchor = state.settingsAnchor
+    }
+    if (
+      (state.settingsTab ?? DEFAULT_SETTINGS_TAB) === 'connectors' &&
+      state.connectorId
+    ) {
+      normalized.connectorId = state.connectorId
+    }
+    return normalized
+  }
+
+  return normalized
+}
+
+export const buildDashboardHref = (
+  accountId: string,
+  state: DashboardRouteState,
+) => {
+  const normalized = normalizeState(state)
+  const basePath = `/account/${accountId}`
+  let pathname = `${basePath}/${normalized.section}`
+
+  if (normalized.section === 'documents' && normalized.documentId) {
+    pathname = `${basePath}/documents/${normalized.documentId}`
+  }
+
+  const searchParams = new URLSearchParams()
+
+  if (normalized.workspaceId) {
+    searchParams.set('workspace', normalized.workspaceId)
+  }
+
+  if (normalized.section === 'documents' && normalized.documentsPage) {
+    searchParams.set('page', String(normalized.documentsPage))
+  }
+
+  if (normalized.section === 'history') {
+    if (normalized.historyFilter) {
+      searchParams.set('filter', normalized.historyFilter)
+    }
+    if (normalized.historyPage) {
+      searchParams.set('page', String(normalized.historyPage))
+    }
+    if (normalized.historyItemKind && normalized.historyItemId) {
+      searchParams.set('itemKind', normalized.historyItemKind)
+      searchParams.set('itemId', normalized.historyItemId)
+    }
+  }
+
+  if (normalized.section === 'settings') {
+    if (normalized.settingsTab) {
+      searchParams.set('tab', normalized.settingsTab)
+    }
+    if (normalized.settingsAnchor) {
+      searchParams.set('anchor', normalized.settingsAnchor)
+    }
+    if (normalized.connectorId) {
+      searchParams.set('connector', normalized.connectorId)
+    }
+  }
+
+  const query = searchParams.toString()
+  return query ? `${pathname}?${query}` : pathname
+}
 
 export const buildAccountRoute = (
   accountId: string,
   section: DashboardSection = DEFAULT_SECTION,
   documentId?: string,
-) => {
-  const basePath = `/account/${accountId}`
+) => buildDashboardHref(accountId, { section, documentId })
 
-  if (section === 'documents' && documentId) {
-    return `${basePath}/documents/${documentId}`
-  }
-
-  return `${basePath}/${section}`
-}
-
-export const parseDashboardSegments = (
+export const parseDashboardRoute = (
   segments: string[] | undefined,
-): ParsedDashboardRoute | null => {
+  searchParams?: Pick<URLSearchParams, 'get'> | null,
+): DashboardRouteState | null => {
   if (!segments || segments.length === 0) {
-    return { section: DEFAULT_SECTION }
+    return {
+      section: DEFAULT_SECTION,
+      workspaceId: normalizeWorkspaceId(searchParams?.get('workspace') ?? null),
+    }
   }
 
-  const [section, maybeDocumentId, ...rest] = segments
+  const [sectionCandidate, maybeDocumentId, ...rest] = segments
+  const section = parseSection(sectionCandidate)
 
-  if (rest.length > 0) {
+  if (!section || rest.length > 0) {
     return null
   }
 
-  if (section === 'chat' || section === 'history' || section === 'settings') {
-    return maybeDocumentId ? null : { section }
+  if (section !== 'documents' && maybeDocumentId) {
+    return null
   }
+
+  const workspaceId = normalizeWorkspaceId(searchParams?.get('workspace') ?? null)
 
   if (section === 'documents') {
-    return maybeDocumentId
-      ? { section: 'documents', documentId: maybeDocumentId }
-      : { section: 'documents' }
+    return normalizeState({
+      section,
+      workspaceId,
+      ...(maybeDocumentId ? { documentId: maybeDocumentId } : {}),
+      documentsPage: parsePositiveInt(searchParams?.get('page') ?? null),
+    })
   }
 
-  return null
+  if (section === 'history') {
+    return normalizeState({
+      section,
+      workspaceId,
+      historyFilter: parseHistoryFilter(searchParams?.get('filter') ?? null),
+      historyPage: parsePositiveInt(searchParams?.get('page') ?? null),
+      historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
+      historyItemId: searchParams?.get('itemId') ?? undefined,
+    })
+  }
+
+  if (section === 'settings') {
+    return normalizeState({
+      section,
+      workspaceId,
+      settingsTab: parseSettingsTab(searchParams?.get('tab') ?? null),
+      settingsAnchor: parseAnchor(searchParams?.get('anchor') ?? null),
+      connectorId: searchParams?.get('connector') ?? undefined,
+    })
+  }
+
+  return normalizeState({ section, workspaceId })
 }
+
+export const withDashboardWorkspace = (
+  state: DashboardRouteState,
+  workspaceId?: string | null,
+): DashboardRouteState => normalizeState({
+  ...state,
+  ...(workspaceId ? { workspaceId } : {}),
+})

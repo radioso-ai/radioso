@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 import { ConnectorCard } from '@/components/dashboard/connectors/connector-card'
 import { ConnectorConfigForm } from '@/components/dashboard/connectors/connector-config-form'
@@ -13,6 +14,7 @@ import {
   type ConnectorValidationIssue,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 
 const getValidationIssues = (error: unknown): ConnectorValidationIssue[] => {
   if (
@@ -36,7 +38,14 @@ const getValidationIssues = (error: unknown): ConnectorValidationIssue[] => {
   return []
 }
 
-export function ConnectorsTab() {
+export function ConnectorsTab({
+  accountId,
+  routeState,
+}: {
+  accountId: string
+  routeState: DashboardRouteState
+}) {
+  const router = useRouter()
   const [connectors, setConnectors] = useState<ConnectorSummary[]>([])
   const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(null)
   const [selectedConnector, setSelectedConnector] = useState<ConnectorDetail | null>(null)
@@ -48,10 +57,14 @@ export function ConnectorsTab() {
 
   const loadConnectors = useCallback(async () => {
     const list = await connectorsApi.listConnectors()
+    const requestedConnectorId = routeState.connectorId
+    const resolvedConnectorId = list.some((connector) => connector.id === requestedConnectorId)
+      ? requestedConnectorId ?? null
+      : list[0]?.id ?? null
     setConnectors(list)
-    setSelectedConnectorId((current) => current ?? list[0]?.id ?? null)
+    setSelectedConnectorId(resolvedConnectorId)
     return list
-  }, [])
+  }, [routeState.connectorId])
 
   const loadDetail = useCallback(async (connectorId: string) => {
     setIsDetailLoading(true)
@@ -67,8 +80,12 @@ export function ConnectorsTab() {
     const load = async () => {
       try {
         const list = await loadConnectors()
-        if (list[0]?.id) {
-          await loadDetail(list[0].id)
+        const resolvedConnectorId = list.some((connector) => connector.id === routeState.connectorId)
+          ? routeState.connectorId ?? null
+          : list[0]?.id ?? null
+
+        if (resolvedConnectorId) {
+          await loadDetail(resolvedConnectorId)
         }
       } catch (error) {
         setFormError(getApiErrorMessage(error, 'Failed to load connectors.'))
@@ -78,7 +95,24 @@ export function ConnectorsTab() {
     }
 
     void load()
-  }, [loadConnectors, loadDetail])
+  }, [loadConnectors, loadDetail, routeState.connectorId])
+
+  useEffect(() => {
+    if (!connectors.length || !selectedConnectorId) {
+      return
+    }
+
+    if (routeState.connectorId === selectedConnectorId) {
+      return
+    }
+
+    router.replace(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'settings',
+      settingsTab: 'connectors',
+      connectorId: selectedConnectorId,
+    }))
+  }, [accountId, connectors.length, routeState, router, selectedConnectorId])
 
   const selectConnector = async (connectorId: string) => {
     setSelectedConnectorId(connectorId)
@@ -86,6 +120,12 @@ export function ConnectorsTab() {
     setValidationIssues([])
     try {
       await loadDetail(connectorId)
+      router.push(buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'settings',
+        settingsTab: 'connectors',
+        connectorId,
+      }))
     } catch (error) {
       setFormError(getApiErrorMessage(error, 'Failed to load connector details.'))
     }

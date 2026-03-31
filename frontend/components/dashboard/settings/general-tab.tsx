@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
-import { generalSettingsApi, type GeneralSettings } from '@/lib/api'
+import { accountApi, generalSettingsApi, type GeneralSettings } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 
 export function GeneralTab() {
@@ -36,10 +36,19 @@ export function GeneralTab() {
   const [anonSettings, setAnonSettings] = useState<GeneralSettings | null>(null)
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
+  const [apiToken, setApiToken] = useState<string | null>(null)
+  const [apiTokenError, setApiTokenError] = useState<string | null>(null)
+  const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
 
   useEffect(() => {
     setWorkspaceName(activeWorkspace?.name ?? '')
   }, [activeWorkspace?.name])
+
+  useEffect(() => {
+    setApiToken(null)
+    setApiTokenError(null)
+    setIsApiTokenLoading(false)
+  }, [activeWorkspaceId])
 
   useEffect(() => {
     setIsAnonLoading(true)
@@ -121,6 +130,21 @@ export function GeneralTab() {
     }
   }
 
+  const handleRevealApiToken = async () => {
+    if (!activeWorkspaceId) return
+    setIsApiTokenLoading(true)
+    setApiTokenError(null)
+    try {
+      const response = await accountApi.getWorkspaceToken(activeWorkspaceId)
+      setApiToken(response.token)
+    } catch (error) {
+      console.error('Failed to reveal workspace token:', error)
+      setApiTokenError('Failed to reveal the workspace token')
+    } finally {
+      setIsApiTokenLoading(false)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto p-6">
@@ -166,8 +190,36 @@ export function GeneralTab() {
                 <div className="mt-4 space-y-4">
                   <div className="rounded bg-muted/50 p-3 space-y-2">
                     <p className="text-sm text-muted-foreground">
-                      Persistent browser bearer tokens are removed. Use a session-authenticated client or supply
-                      `X-Workspace-Id` alongside the admin session cookie.
+                      The web app keeps admin access on the session cookie. Reveal the workspace API token only when
+                      you need to paste it into curl, an SDK, or another client.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleRevealApiToken}
+                        disabled={!activeWorkspaceId || isApiTokenLoading}
+                      >
+                        {isApiTokenLoading ? <Spinner className="mr-2" /> : null}
+                        Reveal API token
+                      </Button>
+                      {apiToken ? (
+                        <Button size="sm" variant="ghost" onClick={() => setApiToken(null)}>
+                          Hide token
+                        </Button>
+                      ) : null}
+                    </div>
+                    {apiToken ? (
+                      <CopyValueField value={apiToken} ariaLabel="Copy API token" wrap className="min-w-[320px]" />
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        The token is fetched on demand, shown only in this tab, and cleared when you switch workspaces
+                        or reload.
+                      </p>
+                    )}
+                    {apiTokenError ? <p className="text-sm text-destructive">{apiTokenError}</p> : null}
+                    <p className="text-sm text-muted-foreground">
+                      Session-authenticated clients can also call admin routes with the active workspace id header.
                     </p>
                     {activeWorkspaceId ? (
                       <>

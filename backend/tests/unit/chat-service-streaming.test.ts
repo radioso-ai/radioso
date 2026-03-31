@@ -214,6 +214,98 @@ describe("chat service streaming", () => {
     ]);
   });
 
+  it("excludes URL-shaped citation titles from carry-forward literals", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const capturedInputs: Array<{ rewriteCarryForwardLiterals?: string[] }> = [];
+    const retrievalPipeline = {
+      async run(input: { query: string; rewriteCarryForwardLiterals?: string[] }) {
+        capturedInputs.push({ rewriteCarryForwardLiterals: input.rewriteCarryForwardLiterals });
+        return {
+          rewrittenQuery: input.query,
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "https://riigiteataja.ee/akt/118122025017.xml",
+              content: "full answer",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [
+            {
+              documentId: "doc-1",
+              chunkId: "chunk-1",
+              title: "https://riigiteataja.ee/akt/118122025017.xml",
+            },
+          ],
+          diagnostics: {
+            rewriteStatus: "applied",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            rewriteProposal: {
+              rewrittenQuery: "Eestis hetkel kehtiv kaibemaksumaar (KM)",
+              turnKind: "fresh_subject",
+              proposedActiveSubject: "kaibemaksumaar Eestis",
+              relatedEntities: [],
+              unresolved: false,
+              confidence: 0.8,
+            },
+            parsedQuery: {
+              semanticQuery: "kaibemaks",
+              lexicalQuery: "kaibemaks",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            warmthLevel: 5,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "full answer[[1]]";
+      },
+      async *streamAnswer() {
+        yield "full answer[[1]]";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    const first = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Mis juhtub, kui ma ei maksa tulumaksu?",
+      stream: false,
+    });
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: first.conversationId,
+      query: "mis on hetkel kehtiv kaibemaks?",
+      stream: false,
+    });
+
+    expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual(["kaibemaksumaar Eestis"]);
+    expect(capturedInputs[1]?.rewriteCarryForwardLiterals).toEqual(["kaibemaksumaar Eestis"]);
+  });
+
   it("includes the normalized final answer in the done event when a malformed anchor is truncated during streaming", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

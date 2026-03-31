@@ -299,6 +299,22 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return rows.map(mapDocument);
   }
 
+  async listSummariesByIdsAndWorkspaceId(workspaceId: string, documentIds: string[]): Promise<DocumentSummaryRecord[]> {
+    if (documentIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.database.query<DocumentRow>(
+      `SELECT ${documentSummarySelect}
+       FROM documents
+       WHERE workspace_id = $1
+         AND id = ANY($2::uuid[])`,
+      [workspaceId, documentIds],
+    );
+
+    return rows.map(mapDocumentSummary);
+  }
+
   async listSummaryPageByWorkspaceId(
     workspaceId: string,
     input: { limit: number; offset: number },

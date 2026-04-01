@@ -290,6 +290,14 @@
             "type": "string",
             "maxLength": 2000
           },
+          "answerSupportPolicy": {
+            "type": "string",
+            "enum": [
+              "strict",
+              "warn",
+              "off"
+            ]
+          },
           "rerankEnabled": {
             "type": "boolean"
           },
@@ -417,6 +425,7 @@
           "queryRewriteEnabled",
           "semanticRewriteInstructions",
           "lexicalRewriteInstructions",
+          "answerSupportPolicy",
           "rerankEnabled",
           "vectorTopK",
           "similarityThreshold",
@@ -441,6 +450,14 @@
           "lexicalRewriteInstructions": {
             "type": "string",
             "maxLength": 2000
+          },
+          "answerSupportPolicy": {
+            "type": "string",
+            "enum": [
+              "strict",
+              "warn",
+              "off"
+            ]
           },
           "rerankEnabled": {
             "type": "boolean"
@@ -1649,6 +1666,14 @@
             "type": "integer",
             "minimum": 0
           },
+          "answerSupportPolicy": {
+            "type": "string",
+            "enum": [
+              "strict",
+              "warn",
+              "off"
+            ]
+          },
           "segmentResults": {
             "type": "array",
             "items": {
@@ -1692,6 +1717,14 @@
               "grounded_success",
               "grounded_degraded_unsupported_segments",
               "no_context_refusal"
+            ]
+          },
+          "answerSupportPolicy": {
+            "type": "string",
+            "enum": [
+              "strict",
+              "warn",
+              "off"
             ]
           },
           "validation": {

@@ -61,12 +61,14 @@ describe("chat history service", () => {
           links: [],
         },
         answerOutcome: "grounded_degraded_unsupported_segments",
+        answerSupportPolicy: "strict",
         validation: {
           ran: true,
           answerModified: true,
           unsupportedSegmentCount: 1,
           supportedSegmentCount: 1,
           nonSubstantiveSegmentCount: 1,
+          answerSupportPolicy: "strict",
           segmentResults: [
             {
               text: "It answers questions.",
@@ -99,12 +101,14 @@ describe("chat history service", () => {
       stages: [expect.objectContaining({ stageId: "answer" })],
     });
     expect(debug?.answerOutcome).toBe("grounded_degraded_unsupported_segments");
+    expect(debug?.answerSupportPolicy).toBe("strict");
     expect(debug?.validation).toEqual({
       ran: true,
       answerModified: true,
       unsupportedSegmentCount: 1,
       supportedSegmentCount: 1,
       nonSubstantiveSegmentCount: 1,
+      answerSupportPolicy: "strict",
       segmentResults: [
         {
           text: "It answers questions.",

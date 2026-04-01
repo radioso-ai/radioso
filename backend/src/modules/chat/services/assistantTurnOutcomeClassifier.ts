@@ -19,7 +19,7 @@ export class AssistantTurnOutcomeClassifier {
       return ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL;
     }
 
-    if (input.validation.answerModified && input.validation.unsupportedSegmentCount > 0) {
+    if (input.validation.unsupportedSegmentCount > 0) {
       return ASSISTANT_TURN_OUTCOME.GROUNDED_DEGRADED_UNSUPPORTED_SEGMENTS;
     }
 

@@ -1,4 +1,5 @@
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
+import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSettings.js";
 
 export const VALIDATION_DISPOSITION = {
   SUPPORTED: "supported",
@@ -16,7 +17,7 @@ export const ASSISTANT_TURN_OUTCOME = {
 
 export type AssistantTurnOutcome = (typeof ASSISTANT_TURN_OUTCOME)[keyof typeof ASSISTANT_TURN_OUTCOME];
 
-export const DEFAULT_UNSUPPORTED_NOTICE = "I couldn't verify that part from the retrieved documents.";
+export const DEFAULT_UNSUPPORTED_NOTICE = "I couldn't verify that from the retrieved documents.";
 
 export interface AnswerValidationSummary {
   ran: boolean;
@@ -24,6 +25,7 @@ export interface AnswerValidationSummary {
   unsupportedSegmentCount: number;
   supportedSegmentCount: number;
   nonSubstantiveSegmentCount: number;
+  answerSupportPolicy?: AnswerSupportPolicy;
 }
 
 export interface AnswerSegmentValidationResult {

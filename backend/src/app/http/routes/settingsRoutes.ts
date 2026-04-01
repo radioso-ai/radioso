@@ -7,6 +7,7 @@ import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.j
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
+  answerSupportPolicies,
   metadataRuleEffects,
   metadataRuleOperators,
   metadataValueTypes,
@@ -26,6 +27,7 @@ export const updateSettingsSchema = z.object({
   queryRewriteEnabled: z.boolean(),
   semanticRewriteInstructions: z.string().max(2000).optional(),
   lexicalRewriteInstructions: z.string().max(2000).optional(),
+  answerSupportPolicy: z.enum(answerSupportPolicies).optional(),
   rerankEnabled: z.boolean(),
   vectorTopK: z.number().int(),
   similarityThreshold: z.number(),
@@ -89,6 +91,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         ...req.body,
         semanticRewriteInstructions: req.body.semanticRewriteInstructions ?? existing.semanticRewriteInstructions,
         lexicalRewriteInstructions: req.body.lexicalRewriteInstructions ?? existing.lexicalRewriteInstructions,
+        answerSupportPolicy: req.body.answerSupportPolicy ?? existing.answerSupportPolicy,
         metadataRules: req.body.metadataRules ?? existing.metadataRules,
         customInstruction: req.body.customInstruction ?? existing.customInstruction,
       });

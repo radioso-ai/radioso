@@ -59,6 +59,7 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
   responseSettings: {
     warmthLevel: number;
     citationDisplayEnabled: boolean;
+    answerSupportPolicy: RetrievalSettingsRecord["answerSupportPolicy"];
   };
 }
 

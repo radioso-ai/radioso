@@ -217,6 +217,7 @@ export interface RetrievalSettings {
   queryRewriteEnabled: boolean
   semanticRewriteInstructions: string
   lexicalRewriteInstructions: string
+  answerSupportPolicy: 'strict' | 'warn' | 'off'
   rerankEnabled: boolean
   vectorTopK: number
   similarityThreshold: number
@@ -479,6 +480,23 @@ export interface ChatConversationTurnDebug {
   recordedAt: string
   stream: boolean
   citationCount: number
+  answerOutcome?: 'grounded_success' | 'grounded_degraded_unsupported_segments' | 'no_context_refusal'
+  answerSupportPolicy?: 'strict' | 'warn' | 'off'
+  validation?: {
+    ran: boolean
+    answerModified: boolean
+    unsupportedSegmentCount: number
+    supportedSegmentCount: number
+    nonSubstantiveSegmentCount: number
+    answerSupportPolicy?: 'strict' | 'warn' | 'off'
+    segmentResults: Array<{
+      text: string
+      disposition: 'supported' | 'unsupported' | 'non_substantive'
+      replacementApplied: boolean
+      reason: string
+      citationIndices?: number[]
+    }>
+  }
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
   errorMessage?: string | null

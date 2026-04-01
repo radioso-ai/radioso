@@ -196,7 +196,6 @@ describe("settings and chunking", () => {
       }),
     ).toThrow("answerSupportPolicy must be a supported value");
   });
-
   it("uses the current chunking defaults for ingestion settings", () => {
     const defaults = defaultIngestionSettings("workspace-1");
 

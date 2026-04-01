@@ -96,7 +96,6 @@ export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS =
   "Rewrite for lexical retrieval using exact literals likely to appear in the corpus. Prefer aliases, abbreviations, citation forms, and corpus-native notation when grounded.";
 
 export const DEFAULT_ANSWER_SUPPORT_POLICY: AnswerSupportPolicy = "strict";
-
 export const defaultAttributeControls = () => [
   { signalKey: "document_date", enabled: true, mode: "boost_only" as const },
   { signalKey: "document_period", enabled: true, mode: "boost_only" as const },

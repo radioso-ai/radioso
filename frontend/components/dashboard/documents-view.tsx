@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FileText, Plus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
 import { DocumentSearchBar } from '@/components/dashboard/document-search-bar'
@@ -17,11 +18,15 @@ import { DocumentEditorDialog } from '@/components/dashboard/documents/document-
 import { DocumentImportDialog } from '@/components/dashboard/documents/document-import-dialog'
 import { DocumentList } from '@/components/dashboard/documents/document-list'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { getSafeDocumentsPage } from '@/lib/documents-pagination'
 
 type EditorMode = 'create' | 'edit' | 'view'
 const PAGE_SIZE = 100
 
 interface DocumentsViewProps {
+  routeState: DashboardRouteState
+  accountId: string
   selectedDocumentId?: string | null
   onSelectedDocumentChange?: (documentId: string | null) => void
   onboarding: WorkspaceOnboardingState
@@ -48,15 +53,19 @@ const parseMetadata = (raw: string): Record<string, string | number | boolean | 
 }
 
 export function DocumentsView({
+  routeState,
+  accountId,
   selectedDocumentId = null,
   onSelectedDocumentChange,
   onboarding,
 }: DocumentsViewProps) {
+  const router = useRouter()
   const justClosedDocumentIdRef = useRef<string | null>(null)
   const documentSearch = useDocumentSearch()
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
   const [totalDocuments, setTotalDocuments] = useState(0)
-  const [currentPage, setCurrentPage] = useState(1)
+  const [currentPage, setCurrentPage] = useState(routeState.documentsPage ?? 1)
+  const [hasLoadedDocuments, setHasLoadedDocuments] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
@@ -92,6 +101,7 @@ export function DocumentsView({
     } catch (error) {
       console.error('Failed to load documents:', error)
     } finally {
+      setHasLoadedDocuments(true)
       if (!options?.background) {
         setIsLoading(false)
       }
@@ -101,6 +111,10 @@ export function DocumentsView({
   useEffect(() => {
     void loadDocuments(currentPage)
   }, [currentPage, loadDocuments])
+
+  useEffect(() => {
+    setCurrentPage(routeState.documentsPage ?? 1)
+  }, [routeState.documentsPage])
 
   useEffect(() => {
     const hasActiveProcessing = documents.some((document) => {
@@ -121,10 +135,31 @@ export function DocumentsView({
 
   useEffect(() => {
     setCurrentPage((page) => {
-      const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
-      return Math.min(page, totalPages)
+      const nextPage = getSafeDocumentsPage({
+        currentPage: page,
+        totalDocuments,
+        pageSize: PAGE_SIZE,
+        hasLoadedDocuments,
+      })
+      if (nextPage !== page) {
+        router.replace(buildDashboardHref(accountId, {
+          ...routeState,
+          section: 'documents',
+          documentsPage: nextPage,
+        }))
+      }
+      return nextPage
     })
-  }, [totalDocuments])
+  }, [accountId, hasLoadedDocuments, routeState, router, totalDocuments])
+
+  const setDocumentsPage = useCallback((page: number) => {
+    setCurrentPage(page)
+    router.push(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'documents',
+      documentsPage: page,
+    }))
+  }, [accountId, routeState, router])
 
   const resetEditor = useCallback(() => {
     setEditorMode('create')
@@ -259,7 +294,7 @@ export function DocumentsView({
         : await documentsApi.createDocument(payload)
 
       void response
-      setCurrentPage(1)
+      setDocumentsPage(1)
       await loadDocuments(1)
       setIsDialogOpen(false)
       if (editorMode === 'edit') {
@@ -285,7 +320,7 @@ export function DocumentsView({
 
     try {
       await documentsApi.importDocument(importFile, importTitle)
-      setCurrentPage(1)
+      setDocumentsPage(1)
       await loadDocuments(1)
       setIsImportDialogOpen(false)
       resetImportDialog()
@@ -324,7 +359,7 @@ export function DocumentsView({
       const nextTotalDocuments = Math.max(0, totalDocuments - 1)
       const nextTotalPages = Math.max(1, Math.ceil(nextTotalDocuments / PAGE_SIZE))
       const nextPage = Math.min(currentPage, nextTotalPages)
-      setCurrentPage(nextPage)
+      setDocumentsPage(nextPage)
       await loadDocuments(nextPage)
       if (selectedDocumentId === deletingId) {
         onSelectedDocumentChange?.(null)
@@ -373,11 +408,11 @@ export function DocumentsView({
   const activeDeleteError = deleteCandidate ? deleteErrorById[deleteCandidate.id] : null
 
   const goToPreviousPage = () => {
-    setCurrentPage((page) => Math.max(1, page - 1))
+    setDocumentsPage(Math.max(1, currentPage - 1))
   }
 
   const goToNextPage = () => {
-    setCurrentPage((page) => Math.min(totalPages, page + 1))
+    setDocumentsPage(Math.min(totalPages, currentPage + 1))
   }
 
   return (
@@ -473,6 +508,8 @@ export function DocumentsView({
             documents={documents}
             pageSize={PAGE_SIZE}
             currentPage={currentPage}
+            accountId={accountId}
+            routeState={routeState}
             onboarding={onboarding}
             deleteErrorById={deleteErrorById}
             retryErrorById={retryErrorById}

@@ -287,6 +287,7 @@ export function RetrievalSettingsPanel() {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-xl space-y-8">
           <SettingsCard
+            id="assistant"
             icon={<Bot className="h-5 w-5 text-primary" />}
             title="Assistant"
             description="Control how grounded answers are presented to the user."
@@ -385,6 +386,7 @@ export function RetrievalSettingsPanel() {
           </SettingsCard>
 
           <SettingsCard
+            id="retrieval-pipeline"
             icon={<Search className="h-5 w-5 text-primary" />}
             title="Retrieval Pipeline"
             description="Control how the system expands, filters, and reranks evidence."

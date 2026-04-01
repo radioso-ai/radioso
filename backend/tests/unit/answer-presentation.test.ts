@@ -133,7 +133,7 @@ describe("answer presentation service", () => {
     ]);
   });
 
-  it("keeps only the first valid cited result at a claim boundary", () => {
+  it("keeps all distinct cited documents at a claim boundary", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
@@ -158,11 +158,12 @@ describe("answer presentation service", () => {
     expect(result.answer).toBe("Freya's books are available from Valmora Books.");
     expect(result.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Freya Rennick" },
+      { documentId: "doc-2", chunkId: "chunk-2", title: "Valmora Books" },
     ]);
     expect(result.answerSegments).toEqual([
       {
         text: "Freya's books are available from Valmora Books",
-        citationIndices: [0],
+        citationIndices: [0, 1],
       },
       {
         text: ".",
@@ -170,11 +171,11 @@ describe("answer presentation service", () => {
     ]);
   });
 
-  it("falls through to the next valid anchor when the first cited result is invalid", () => {
+  it("falls through to later valid anchors and keeps all distinct cited documents", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
-      answer: "The retreat is offered in Montelago[[9]][[2]].",
+      answer: "The retreat is offered in Montelago[[9]][[2]][[3]].",
       citationDisplayEnabled: true,
       citations: [
         {
@@ -189,17 +190,68 @@ describe("answer presentation service", () => {
           title: "Retreat Calendar",
           content: "The retreat is offered in Montelago.",
         },
+        {
+          documentId: "doc-3",
+          chunkId: "chunk-3",
+          title: "Venue Guide",
+          content: "The retreat venue is in Montelago.",
+        },
       ],
     });
 
     expect(result.answer).toBe("The retreat is offered in Montelago.");
     expect(result.citations).toEqual([
       { documentId: "doc-2", chunkId: "chunk-2", title: "Retreat Calendar" },
+      { documentId: "doc-3", chunkId: "chunk-3", title: "Venue Guide" },
     ]);
     expect(result.answerSegments).toEqual([
       {
         text: "The retreat is offered in Montelago",
-        citationIndices: [0],
+        citationIndices: [0, 1],
+      },
+      {
+        text: ".",
+      },
+    ]);
+  });
+
+  it("deduplicates repeated documents within a grouped anchor", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "Freya's books are available from Valmora Books[[1]][[2]][[3]].",
+      citationDisplayEnabled: true,
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Freya Rennick",
+          content: "Freya's books are available from Valmora Books.",
+        },
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-2",
+          title: "Freya Rennick",
+          content: "The author page lists several books and bundles.",
+        },
+        {
+          documentId: "doc-2",
+          chunkId: "chunk-3",
+          title: "Valmora Books",
+          content: "Freya's books are available from Valmora Books.",
+        },
+      ],
+    });
+
+    expect(result.answer).toBe("Freya's books are available from Valmora Books.");
+    expect(result.citations).toEqual([
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Freya Rennick" },
+      { documentId: "doc-2", chunkId: "chunk-3", title: "Valmora Books" },
+    ]);
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Freya's books are available from Valmora Books",
+        citationIndices: [0, 1],
       },
       {
         text: ".",

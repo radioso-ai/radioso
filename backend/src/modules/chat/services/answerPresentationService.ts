@@ -112,6 +112,8 @@ export class AnswerPresentationService {
     };
 
     const resolveCitationIndices = (resultNumbers: number[]): number[] => {
+      const resolvedIndices: number[] = [];
+
       for (const resultNumber of resultNumbers) {
         const citation = citations[resultNumber - 1];
         if (!citation) {
@@ -125,10 +127,12 @@ export class AnswerPresentationService {
           visibleCitations.push(citation);
         }
 
-        return [citationIndex];
+        if (!resolvedIndices.includes(citationIndex)) {
+          resolvedIndices.push(citationIndex);
+        }
       }
 
-      return [];
+      return resolvedIndices;
     };
 
     for (const anchorGroup of anchorGroups) {

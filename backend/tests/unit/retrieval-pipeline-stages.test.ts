@@ -416,6 +416,7 @@ describe("retrieval pipeline stages", () => {
       responseSettings: {
         warmthLevel: 5,
         citationDisplayEnabled: true,
+        answerSupportPolicy: "strict",
       },
     });
 

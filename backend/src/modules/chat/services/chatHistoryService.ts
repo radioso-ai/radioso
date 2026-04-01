@@ -13,6 +13,7 @@ import type { RetrievalExecutionDiagnostics, RetrievalTrace } from "../../retrie
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import type { AssistantTurnOutcome, ValidationDisposition } from "./answerSupportValidationTypes.js";
+import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSettings.js";
 
 export interface ChatConversationSummary {
   id: string;
@@ -32,12 +33,14 @@ export interface ChatConversationTurnDebug {
   stream: boolean;
   citationCount: number;
   answerOutcome?: AssistantTurnOutcome;
+  answerSupportPolicy?: AnswerSupportPolicy;
   validation?: {
     ran: boolean;
     answerModified: boolean;
     unsupportedSegmentCount: number;
     supportedSegmentCount: number;
     nonSubstantiveSegmentCount: number;
+    answerSupportPolicy?: AnswerSupportPolicy;
     segmentResults: Array<{
       text: string;
       disposition: ValidationDisposition;
@@ -98,6 +101,7 @@ export interface PublicConversationPage {
 
 interface ChatAuditMetadata {
   answerOutcome?: AssistantTurnOutcome;
+  answerSupportPolicy?: AnswerSupportPolicy;
   assistantMessageId?: string;
   stream?: boolean;
   citationCount?: number;
@@ -266,6 +270,10 @@ export class ChatHistoryService {
         stream: Boolean(metadata.stream),
         citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : 0,
         answerOutcome: metadata.answerOutcome,
+        answerSupportPolicy:
+          metadata.answerSupportPolicy === "strict" || metadata.answerSupportPolicy === "warn" || metadata.answerSupportPolicy === "off"
+            ? metadata.answerSupportPolicy
+            : undefined,
         validation: metadata.validation
           ? {
               ran: Boolean(metadata.validation.ran),
@@ -276,6 +284,12 @@ export class ChatHistoryService {
                 typeof metadata.validation.supportedSegmentCount === "number" ? metadata.validation.supportedSegmentCount : 0,
               nonSubstantiveSegmentCount:
                 typeof metadata.validation.nonSubstantiveSegmentCount === "number" ? metadata.validation.nonSubstantiveSegmentCount : 0,
+              answerSupportPolicy:
+                metadata.validation.answerSupportPolicy === "strict" ||
+                metadata.validation.answerSupportPolicy === "warn" ||
+                metadata.validation.answerSupportPolicy === "off"
+                  ? metadata.validation.answerSupportPolicy
+                  : undefined,
               segmentResults: (metadata.validation.segmentResults ?? []).map((segment) => ({
                 text: typeof segment.text === "string" ? segment.text : "",
                 disposition: (segment.disposition ?? "non_substantive") as ValidationDisposition,

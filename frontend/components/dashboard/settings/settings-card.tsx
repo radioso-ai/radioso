@@ -4,12 +4,14 @@ import type { ReactNode } from 'react'
 
 export function SettingsCard({
   id,
+  eyebrow,
   icon,
   title,
   description,
   children,
 }: {
   id?: string
+  eyebrow?: string
   icon: ReactNode
   title: string
   description: string
@@ -22,6 +24,11 @@ export function SettingsCard({
           {icon}
         </div>
         <div>
+          {eyebrow ? (
+            <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">
+              {eyebrow}
+            </p>
+          ) : null}
           <h3 className="font-medium text-foreground">{title}</h3>
           <p className="text-sm text-muted-foreground">{description}</p>
         </div>

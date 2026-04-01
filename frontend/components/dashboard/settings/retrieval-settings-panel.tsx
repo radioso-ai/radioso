@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react'
 import { Bot, Plus, Save, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
 
+import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { retrievalSettingDocs } from '@/components/dashboard/settings/settings-docs'
+import { PipelineConnector, SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -285,119 +288,29 @@ export function RetrievalSettingsPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-xl space-y-8">
-          <SettingsCard
-            id="assistant"
-            icon={<Bot className="h-5 w-5 text-primary" />}
-            title="Assistant"
-            description="Control how grounded answers are presented to the user."
-          >
-            <div className="space-y-4">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="warmthLevel" className="text-foreground">Warmth</Label>
-                  <span className="text-sm text-muted-foreground font-mono">
-                    {settings.warmthLevel}
-                  </span>
-                </div>
-                <Slider
-                  id="warmthLevel"
-                  min={1}
-                  max={10}
-                  step={1}
-                  value={[settings.warmthLevel]}
-                  onValueChange={([value]) => updateSetting('warmthLevel', value)}
-                />
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Terse</span>
-                  <span>Very warm</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Controls how concise or warm the assistant sounds without changing the underlying answer.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
-                <div>
-                  <Label htmlFor="citationDisplay" className="text-foreground">Show Citations</Label>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    Show inline source markers when supporting evidence is available.
-                  </p>
-                </div>
-                <Switch
-                  id="citationDisplay"
-                  checked={settings.citationDisplayEnabled}
-                  onCheckedChange={(checked) => updateSetting('citationDisplayEnabled', checked)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="space-y-1">
-                  <Label htmlFor="answerSupportPolicy" className="text-foreground">Unsupported Answer Policy</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Decide what happens when the assistant writes a claim that the retrieved documents do not support.
-                  </p>
-                </div>
-                <Select
-                  value={settings.answerSupportPolicy}
-                  onValueChange={(value) =>
-                    updateSetting('answerSupportPolicy', value as RetrievalSettings['answerSupportPolicy'])
-                  }
-                >
-                  <SelectTrigger id="answerSupportPolicy" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(answerSupportPolicyLabels).map(([value, meta]) => (
-                      <SelectItem key={value} value={value}>
-                        {meta.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-sm text-muted-foreground">
-                  {answerSupportPolicyLabels[settings.answerSupportPolicy].description}
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <Label htmlFor="customInstruction" className="text-foreground">Custom Instruction</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Give the assistant workspace-specific instructions. For example: &quot;Always cite the paragraph number when referencing legal provisions&quot; or &quot;Include a direct URL instead of saying visit their website.&quot;
-                  </p>
-                </div>
-                <Textarea
-                  id="customInstruction"
-                  value={settings.customInstruction}
-                  onChange={(event) => updateSetting('customInstruction', event.target.value.slice(0, 2000))}
-                  placeholder="e.g. Always cite the specific section of the Act when referencing legal provisions."
-                  rows={4}
-                />
-                <p className="text-xs text-muted-foreground text-right">
-                  {settings.customInstruction.length} / 2000
-                </p>
-              </div>
-
-              <p className="text-sm text-muted-foreground">
-                The assistant may still ask a clarification question when your request is missing information needed for a reliable answer.
-              </p>
-            </div>
-          </SettingsCard>
-
+        <div className="max-w-3xl space-y-2">
           <SettingsCard
             id="retrieval-pipeline"
+            eyebrow="Stage 1"
             icon={<Search className="h-5 w-5 text-primary" />}
-            title="Retrieval Pipeline"
-            description="Control how the system expands, filters, and reranks evidence."
+            title="Rewrite the incoming question"
+            description="Start by deciding whether the system should generate retrieval-specific semantic and lexical rewrites."
           >
             <div className="space-y-4">
               <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
                 <div>
-                  <Label htmlFor="queryRewrite" className="text-foreground">Query Rewrite</Label>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    Automatically optimize semantic and lexical retrieval queries.
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="queryRewrite" className="text-foreground">
+                      {retrievalSettingDocs.queryRewriteEnabled.label}
+                    </Label>
+                    <SettingTooltip
+                      label={retrievalSettingDocs.queryRewriteEnabled.label}
+                      content={retrievalSettingDocs.queryRewriteEnabled.details}
+                    />
+                  </div>
+                  <div className="mt-0.5 text-sm text-muted-foreground">
+                    <AssistantMarkdownContent content={retrievalSettingDocs.queryRewriteEnabled.summary} inline />
+                  </div>
                 </div>
                 <Switch
                   id="queryRewrite"
@@ -407,15 +320,12 @@ export function RetrievalSettingsPanel() {
               </div>
 
               <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
-                <div className="space-y-1">
-                  <Label htmlFor="semanticRewriteInstructions" className="text-foreground">
-                    Semantic Rewrite Instructions
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Guides meaning-oriented retrieval. Keep these instructions focused on preserving the user&apos;s
-                    intent while making follow-ups standalone.
-                  </p>
-                </div>
+                <SettingFieldHeader
+                  htmlFor="semanticRewriteInstructions"
+                  label={retrievalSettingDocs.semanticRewriteInstructions.label}
+                  description={retrievalSettingDocs.semanticRewriteInstructions.summary}
+                  tooltip={retrievalSettingDocs.semanticRewriteInstructions.details}
+                />
                 <Textarea
                   id="semanticRewriteInstructions"
                   value={settings.semanticRewriteInstructions}
@@ -429,15 +339,12 @@ export function RetrievalSettingsPanel() {
                   {settings.semanticRewriteInstructions.length} / 2000
                 </p>
 
-                <div className="space-y-1">
-                  <Label htmlFor="lexicalRewriteInstructions" className="text-foreground">
-                    Lexical Rewrite Instructions
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Guides exact-term retrieval. Use this to prefer aliases, abbreviations, citation forms, or
-                    corpus-native notation that should appear in indexed text.
-                  </p>
-                </div>
+                <SettingFieldHeader
+                  htmlFor="lexicalRewriteInstructions"
+                  label={retrievalSettingDocs.lexicalRewriteInstructions.label}
+                  description={retrievalSettingDocs.lexicalRewriteInstructions.summary}
+                  tooltip={retrievalSettingDocs.lexicalRewriteInstructions.details}
+                />
                 <Textarea
                   id="lexicalRewriteInstructions"
                   value={settings.lexicalRewriteInstructions}
@@ -456,30 +363,73 @@ export function RetrievalSettingsPanel() {
                   query shapes independently.
                 </p>
               </div>
+            </div>
+          </SettingsCard>
 
-              <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
-                <div>
-                  <Label htmlFor="rerank" className="text-foreground">Reranking</Label>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    Use a reranker to improve result relevance.
-                  </p>
+          <PipelineConnector />
+
+          <SettingsCard
+            eyebrow="Stage 2"
+            icon={<Search className="h-5 w-5 text-primary" />}
+            title="Retrieve and shape the candidate pool"
+            description="Run semantic search, apply thresholds, and keep persistent metadata rules close to the retrieval step they influence."
+          >
+            <div className="space-y-4">
+              <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <SettingFieldHeader
+                      htmlFor="vectorTopK"
+                      label={retrievalSettingDocs.vectorTopK.label}
+                      description={retrievalSettingDocs.vectorTopK.summary}
+                      tooltip={retrievalSettingDocs.vectorTopK.details}
+                      className="pr-4"
+                    />
+                    <span className="text-sm font-mono text-muted-foreground">{settings.vectorTopK}</span>
+                  </div>
+                  <Slider
+                    id="vectorTopK"
+                    min={1}
+                    max={300}
+                    step={1}
+                    value={[settings.vectorTopK]}
+                    onValueChange={([value]) => updateSetting('vectorTopK', value)}
+                  />
                 </div>
-                <Switch
-                  id="rerank"
-                  checked={settings.rerankEnabled}
-                  onCheckedChange={(checked) => updateSetting('rerankEnabled', checked)}
-                />
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <SettingFieldHeader
+                      htmlFor="similarity"
+                      label={retrievalSettingDocs.similarityThreshold.label}
+                      description={retrievalSettingDocs.similarityThreshold.summary}
+                      tooltip={retrievalSettingDocs.similarityThreshold.details}
+                      className="pr-4"
+                    />
+                    <span className="text-sm font-mono text-muted-foreground">
+                      {settings.similarityThreshold.toFixed(2)}
+                    </span>
+                  </div>
+                  <Slider
+                    id="similarity"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={[settings.similarityThreshold]}
+                    onValueChange={([value]) => updateSetting('similarityThreshold', value)}
+                  />
+                </div>
               </div>
 
               <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-4">
-                    <div className="space-y-1">
-                      <Label className="text-foreground">Metadata Rules</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Create always-on rules that boost or filter results by document metadata.
-                      </p>
-                    </div>
+                    <SettingFieldHeader
+                      label={retrievalSettingDocs.metadataRules.label}
+                      description={retrievalSettingDocs.metadataRules.summary}
+                      tooltip={retrievalSettingDocs.metadataRules.details}
+                      className="flex-1"
+                    />
                     <Button type="button" variant="outline" size="sm" onClick={addMetadataRule}>
                       <Plus className="mr-2 h-4 w-4" />
                       Add Rule
@@ -507,7 +457,11 @@ export function RetrievalSettingsPanel() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="grid flex-1 gap-3 md:grid-cols-2">
                             <div className="space-y-2">
-                              <Label className="text-foreground">Metadata Key</Label>
+                              <SettingFieldHeader
+                                label={retrievalSettingDocs.metadataKey.label}
+                                description={retrievalSettingDocs.metadataKey.summary}
+                                tooltip={retrievalSettingDocs.metadataKey.details}
+                              />
                               <Input
                                 value={rule.field}
                                 onChange={(event) => applyMetadataField(rule.id, event.target.value)}
@@ -516,7 +470,11 @@ export function RetrievalSettingsPanel() {
                               />
                             </div>
                             <div className="space-y-2">
-                              <Label className="text-foreground">Value Type</Label>
+                              <SettingFieldHeader
+                                label={retrievalSettingDocs.metadataValueType.label}
+                                description={retrievalSettingDocs.metadataValueType.summary}
+                                tooltip={retrievalSettingDocs.metadataValueType.details}
+                              />
                               <Select
                                 value={rule.valueType}
                                 onValueChange={(value) =>
@@ -542,7 +500,11 @@ export function RetrievalSettingsPanel() {
                               </p>
                             </div>
                             <div className="space-y-2">
-                              <Label className="text-foreground">Value</Label>
+                              <SettingFieldHeader
+                                label={retrievalSettingDocs.metadataValue.label}
+                                description={retrievalSettingDocs.metadataValue.summary}
+                                tooltip={retrievalSettingDocs.metadataValue.details}
+                              />
                               {rule.valueType === 'boolean' ? (
                                 <Select
                                   value={rule.value === 'false' ? 'false' : 'true'}
@@ -572,7 +534,11 @@ export function RetrievalSettingsPanel() {
                               )}
                             </div>
                             <div className="space-y-2">
-                              <Label className="text-foreground">Operator</Label>
+                              <SettingFieldHeader
+                                label={retrievalSettingDocs.metadataOperator.label}
+                                description={retrievalSettingDocs.metadataOperator.summary}
+                                tooltip={retrievalSettingDocs.metadataOperator.details}
+                              />
                               <Select
                                 value={rule.operator}
                                 onValueChange={(value) =>
@@ -597,7 +563,11 @@ export function RetrievalSettingsPanel() {
                               </p>
                             </div>
                             <div className="space-y-2">
-                              <Label className="text-foreground">Effect</Label>
+                              <SettingFieldHeader
+                                label={retrievalSettingDocs.metadataEffect.label}
+                                description={retrievalSettingDocs.metadataEffect.summary}
+                                tooltip={retrievalSettingDocs.metadataEffect.details}
+                              />
                               <Select
                                 value={rule.effect}
                                 onValueChange={(value) =>
@@ -623,6 +593,10 @@ export function RetrievalSettingsPanel() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
+                            <SettingTooltip
+                              label={retrievalSettingDocs.metadataEnabled.label}
+                              content={retrievalSettingDocs.metadataEnabled.details}
+                            />
                             <Switch
                               checked={rule.enabled}
                               onCheckedChange={(checked) => updateMetadataRule(rule.id, { enabled: checked })}
@@ -646,63 +620,172 @@ export function RetrievalSettingsPanel() {
             </div>
           </SettingsCard>
 
+          <PipelineConnector />
+
           <SettingsCard
+            eyebrow="Stage 3"
             icon={<SlidersHorizontal className="h-5 w-5 text-primary" />}
-            title="Search Tuning"
-            description="Adjust lower-level retrieval thresholds and candidate counts."
+            title="Rerank the retrieved candidates"
+            description="Optionally apply a stronger relevance pass before the final context is assembled."
           >
-            <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Advanced</p>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="rerank" className="text-foreground">
+                      {retrievalSettingDocs.rerankEnabled.label}
+                    </Label>
+                    <SettingTooltip
+                      label={retrievalSettingDocs.rerankEnabled.label}
+                      content={retrievalSettingDocs.rerankEnabled.details}
+                    />
+                  </div>
+                  <div className="mt-0.5 text-sm text-muted-foreground">
+                    <AssistantMarkdownContent content={retrievalSettingDocs.rerankEnabled.summary} inline />
+                  </div>
+                </div>
+                <Switch
+                  id="rerank"
+                  checked={settings.rerankEnabled}
+                  onCheckedChange={(checked) => updateSetting('rerankEnabled', checked)}
+                />
+              </div>
 
+              <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <SettingFieldHeader
+                      htmlFor="rerankTopK"
+                      label={retrievalSettingDocs.rerankTopK.label}
+                      description={retrievalSettingDocs.rerankTopK.summary}
+                      tooltip={retrievalSettingDocs.rerankTopK.details}
+                      className="pr-4"
+                    />
+                    <span className="text-sm font-mono text-muted-foreground">{settings.rerankTopK}</span>
+                  </div>
+                  <Slider
+                    id="rerankTopK"
+                    min={1}
+                    max={50}
+                    step={1}
+                    value={[settings.rerankTopK]}
+                    onValueChange={([value]) => updateSetting('rerankTopK', value)}
+                  />
+                </div>
+              </div>
+            </div>
+          </SettingsCard>
+
+          <PipelineConnector />
+
+          <SettingsCard
+            id="assistant"
+            eyebrow="Stage 4"
+            icon={<Bot className="h-5 w-5 text-primary" />}
+            title="Shape the final answer"
+            description="Once evidence is assembled, configure how the grounded response should read and what support it should expose."
+          >
+            <div className="space-y-4">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="vectorTopK" className="text-foreground">Vector Top K</Label>
-                  <span className="text-sm text-muted-foreground font-mono">{settings.vectorTopK}</span>
+                  <SettingFieldHeader
+                    htmlFor="warmthLevel"
+                    label={retrievalSettingDocs.warmthLevel.label}
+                    description={retrievalSettingDocs.warmthLevel.summary}
+                    tooltip={retrievalSettingDocs.warmthLevel.details}
+                    className="pr-4"
+                  />
+                  <span className="text-sm font-mono text-muted-foreground">{settings.warmthLevel}</span>
                 </div>
                 <Slider
-                  id="vectorTopK"
+                  id="warmthLevel"
                   min={1}
-                  max={300}
+                  max={10}
                   step={1}
-                  value={[settings.vectorTopK]}
-                  onValueChange={([value]) => updateSetting('vectorTopK', value)}
+                  value={[settings.warmthLevel]}
+                  onValueChange={([value]) => updateSetting('warmthLevel', value)}
                 />
-                <p className="text-sm text-muted-foreground">Number of chunks to retrieve from vector search.</p>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Terse</span>
+                  <span>Very warm</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="citationDisplay" className="text-foreground">
+                      {retrievalSettingDocs.citationDisplayEnabled.label}
+                    </Label>
+                    <SettingTooltip
+                      label={retrievalSettingDocs.citationDisplayEnabled.label}
+                      content={retrievalSettingDocs.citationDisplayEnabled.details}
+                    />
+                  </div>
+                  <div className="mt-0.5 text-sm text-muted-foreground">
+                    <AssistantMarkdownContent content={retrievalSettingDocs.citationDisplayEnabled.summary} inline />
+                  </div>
+                </div>
+                <Switch
+                  id="citationDisplay"
+                  checked={settings.citationDisplayEnabled}
+                  onCheckedChange={(checked) => updateSetting('citationDisplayEnabled', checked)}
+                />
+              </div>
+
+              <div className="space-y-2 rounded-md border border-border bg-muted/20 p-4">
+                <div className="space-y-1">
+                  <Label htmlFor="answerSupportPolicy" className="text-foreground">
+                    Unsupported Answer Policy
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Decide what happens when the assistant writes a claim that the retrieved documents do not support.
+                  </p>
+                </div>
+                <Select
+                  value={settings.answerSupportPolicy}
+                  onValueChange={(value) =>
+                    updateSetting('answerSupportPolicy', value as RetrievalSettings['answerSupportPolicy'])
+                  }
+                >
+                  <SelectTrigger id="answerSupportPolicy" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(answerSupportPolicyLabels).map(([value, meta]) => (
+                      <SelectItem key={value} value={value}>
+                        {meta.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  {answerSupportPolicyLabels[settings.answerSupportPolicy].description}
+                </p>
               </div>
 
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="similarity" className="text-foreground">Similarity Threshold</Label>
-                  <span className="text-sm text-muted-foreground font-mono">
-                    {settings.similarityThreshold.toFixed(2)}
-                  </span>
-                </div>
-                <Slider
-                  id="similarity"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={[settings.similarityThreshold]}
-                  onValueChange={([value]) => updateSetting('similarityThreshold', value)}
+                <SettingFieldHeader
+                  htmlFor="customInstruction"
+                  label={retrievalSettingDocs.customInstruction.label}
+                  description={retrievalSettingDocs.customInstruction.summary}
+                  tooltip={retrievalSettingDocs.customInstruction.details}
                 />
-                <p className="text-sm text-muted-foreground">Minimum similarity score for retrieved chunks.</p>
+                <Textarea
+                  id="customInstruction"
+                  value={settings.customInstruction}
+                  onChange={(event) => updateSetting('customInstruction', event.target.value.slice(0, 2000))}
+                  placeholder="e.g. Always cite the specific section of the Act when referencing legal provisions."
+                  rows={4}
+                />
+                <p className="text-xs text-right text-muted-foreground">
+                  {settings.customInstruction.length} / 2000
+                </p>
               </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="rerankTopK" className="text-foreground">Rerank Top K</Label>
-                  <span className="text-sm text-muted-foreground font-mono">{settings.rerankTopK}</span>
-                </div>
-                <Slider
-                  id="rerankTopK"
-                  min={1}
-                  max={50}
-                  step={1}
-                  value={[settings.rerankTopK]}
-                  onValueChange={([value]) => updateSetting('rerankTopK', value)}
-                />
-                <p className="text-sm text-muted-foreground">Number of chunks to keep after reranking.</p>
-              </div>
+              <p className="text-sm text-muted-foreground">
+                The assistant may still ask a clarification question when your request is missing information needed for a reliable answer.
+              </p>
             </div>
           </SettingsCard>
         </div>

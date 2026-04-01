@@ -1,5 +1,6 @@
 'use client'
 
+import { PipelineConnector } from '@/components/dashboard/settings/settings-flow'
 import type { RetrievalTrace, RetrievalTraceStage } from '@/lib/api'
 
 const STATUS_STYLES: Record<RetrievalTraceStage['status'], string> = {
@@ -106,15 +107,6 @@ function StageNode({
   )
 }
 
-function ConnectorLine() {
-  return (
-    <div className="relative -mt-2 -mb-2 flex h-10 justify-center">
-      <div className="h-full w-px bg-primary/50" />
-      <div className="absolute bottom-0 left-1/2 h-3 w-3 -translate-x-1/2 translate-y-1/2 rounded-full border border-blue-300 bg-blue-400 shadow-[0_0_14px_rgba(96,165,250,0.9)]" />
-    </div>
-  )
-}
-
 export function ChatRetrievalTraceGraph({
   retrievalTrace,
   selectedStageId,
@@ -135,7 +127,7 @@ export function ChatRetrievalTraceGraph({
       {beforePreparation.map((stage, index) => (
         <div key={stage.stageId} className="space-y-2">
           <StageNode stage={stage} isSelected={stage.stageId === selectedStageId} onSelect={onSelectStage} />
-          {index < beforePreparation.length - 1 || branchStages.length > 0 ? <ConnectorLine /> : null}
+          {index < beforePreparation.length - 1 || branchStages.length > 0 ? <PipelineConnector /> : null}
         </div>
       ))}
 
@@ -156,14 +148,14 @@ export function ChatRetrievalTraceGraph({
               ))}
             </div>
           </div>
-          <ConnectorLine />
+          <PipelineConnector />
         </div>
       ) : null}
 
       {afterPreparation.map((stage, index) => (
         <div key={stage.stageId} className="space-y-2">
           <StageNode stage={stage} isSelected={stage.stageId === selectedStageId} onSelect={onSelectStage} />
-          {index < afterPreparation.length - 1 ? <ConnectorLine /> : null}
+          {index < afterPreparation.length - 1 ? <PipelineConnector /> : null}
         </div>
       ))}
     </div>

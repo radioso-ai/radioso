@@ -18,7 +18,7 @@ The default local start command for the full Radioso stack is:
 
 That command checks Docker and other local prerequisites, helps create `backend/.env` when needed, and starts the local frontend, backend, and database stack through Docker Compose.
 
-After the stack is ready, open the app, sign in, let Radioso seed the starter docs for an empty workspace, wait for processing, and ask one of the suggested first questions.
+After the stack is ready, open the app on [http://localhost:3000](http://localhost:3000), sign in, let Radioso seed the starter docs for an empty workspace, wait for processing, and ask one of the suggested first questions.
 
 If you only need the standalone frontend development server, run:
 
@@ -26,7 +26,9 @@ If you only need the standalone frontend development server, run:
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+That starts the standalone Next.js app on [http://localhost:3001](http://localhost:3001).
+
+Workspace settings copy is sourced from repo-level markdown files under [`/docs/settings-docs`](../docs/settings-docs). Each setting owns a separate `.md` file that provides the label, inline summary, and tooltip copy rendered by the dashboard settings UI.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

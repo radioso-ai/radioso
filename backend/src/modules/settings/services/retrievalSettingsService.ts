@@ -49,18 +49,26 @@ export class RetrievalSettingsService {
   async updateForWorkspace(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
     try {
       const settings = await this.repository.upsert(workspaceId, validateRetrievalSettings(input));
-      await this.auditService.record({
-        workspaceId,
-        eventType: "settings.update",
-        eventStatus: "success",
-      });
+      try {
+        await this.auditService.record({
+          workspaceId,
+          eventType: "settings.update",
+          eventStatus: "success",
+        });
+      } catch {
+        // Audit logging must not turn a successful settings save into a 500.
+      }
       return settings;
     } catch (error) {
-      await this.auditService.record({
-        workspaceId,
-        eventType: "settings.update",
-        eventStatus: "failure",
-      });
+      try {
+        await this.auditService.record({
+          workspaceId,
+          eventType: "settings.update",
+          eventStatus: "failure",
+        });
+      } catch {
+        // Preserve the original write failure if failure-audit logging also breaks.
+      }
       throw error;
     }
   }

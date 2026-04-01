@@ -42,6 +42,7 @@
 - Existing responsibility-limited files are identified, and the plan explains how new behavior avoids turning them into god objects.
 - If the current structure is unclear or target files are already too large, the plan adds architecture/refactor stories that must land before feature work in those areas.
 - If backend HTTP contracts change, the plan identifies updates required in `backend/src/app/http/openapi/document.ts` and treats `backend/openapi.yaml` / `backend/openapi.json` as generated outputs, never hand-authored sources.
+- If contracts, workflows, settings behavior, or user-visible functionality change, the plan identifies which docs must be updated in the same feature work.
 
 ## Project Structure
 

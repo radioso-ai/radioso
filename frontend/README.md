@@ -28,7 +28,7 @@ npm run dev
 
 That starts the standalone Next.js app on [http://localhost:3001](http://localhost:3001).
 
-Workspace settings copy is sourced from repo-level markdown files under [`/docs/settings-docs`](../docs/settings-docs). Each setting owns a separate `.md` file that provides the label, inline summary, and tooltip copy rendered by the dashboard settings UI.
+Workspace settings copy is sourced from frontend markdown files under [`/content/settings-docs`](./content/settings-docs). Each setting owns a separate `.md` file that provides the label, inline summary, and tooltip copy rendered by the dashboard settings UI.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

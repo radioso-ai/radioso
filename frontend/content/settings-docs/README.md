@@ -22,7 +22,7 @@ Short inline copy shown next to the setting control.
 Long-form explanation shown in the right-side help panel.
 ```
 
-The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts`](../../frontend/components/dashboard/settings/settings-docs.ts) reads these sections and maps them into the settings UI.
+The frontend parser in [`components/dashboard/settings/settings-docs.ts`](../../components/dashboard/settings/settings-docs.ts) reads these sections and maps them into the settings UI.
 
 ## UI mapping
 

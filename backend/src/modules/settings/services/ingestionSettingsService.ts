@@ -33,18 +33,26 @@ export class IngestionSettingsService {
   async updateForWorkspace(workspaceId: string, input: IngestionSettingsInput): Promise<IngestionSettingsRecord> {
     try {
       const settings = await this.repository.upsert(workspaceId, validateIngestionSettings(input));
-      await this.auditService.record({
-        workspaceId,
-        eventType: "ingestion_settings.update",
-        eventStatus: "success",
-      });
+      try {
+        await this.auditService.record({
+          workspaceId,
+          eventType: "ingestion_settings.update",
+          eventStatus: "success",
+        });
+      } catch {
+        // Audit logging must not turn a successful settings save into a 500.
+      }
       return settings;
     } catch (error) {
-      await this.auditService.record({
-        workspaceId,
-        eventType: "ingestion_settings.update",
-        eventStatus: "failure",
-      });
+      try {
+        await this.auditService.record({
+          workspaceId,
+          eventType: "ingestion_settings.update",
+          eventStatus: "failure",
+        });
+      } catch {
+        // Preserve the original write failure if failure-audit logging also breaks.
+      }
       throw error;
     }
   }

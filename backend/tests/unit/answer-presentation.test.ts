@@ -133,7 +133,7 @@ describe("answer presentation service", () => {
     ]);
   });
 
-  it("keeps only the first valid cited result at a claim boundary", () => {
+  it("keeps all distinct cited documents at a claim boundary", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
@@ -158,11 +158,12 @@ describe("answer presentation service", () => {
     expect(result.answer).toBe("Narayani's books are available from Ananda Edizioni.");
     expect(result.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Narayani Anaya" },
+      { documentId: "doc-2", chunkId: "chunk-2", title: "Ananda Edizioni" },
     ]);
     expect(result.answerSegments).toEqual([
       {
         text: "Narayani's books are available from Ananda Edizioni",
-        citationIndices: [0],
+        citationIndices: [0, 1],
       },
       {
         text: ".",
@@ -170,11 +171,11 @@ describe("answer presentation service", () => {
     ]);
   });
 
-  it("falls through to the next valid anchor when the first cited result is invalid", () => {
+  it("falls through to later valid anchors and keeps all distinct cited documents", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
-      answer: "The retreat is offered in Assisi[[9]][[2]].",
+      answer: "The retreat is offered in Assisi[[9]][[2]][[3]].",
       citationDisplayEnabled: true,
       citations: [
         {
@@ -189,17 +190,68 @@ describe("answer presentation service", () => {
           title: "Retreat Calendar",
           content: "The retreat is offered in Assisi.",
         },
+        {
+          documentId: "doc-3",
+          chunkId: "chunk-3",
+          title: "Venue Guide",
+          content: "The retreat venue is in Assisi.",
+        },
       ],
     });
 
     expect(result.answer).toBe("The retreat is offered in Assisi.");
     expect(result.citations).toEqual([
       { documentId: "doc-2", chunkId: "chunk-2", title: "Retreat Calendar" },
+      { documentId: "doc-3", chunkId: "chunk-3", title: "Venue Guide" },
     ]);
     expect(result.answerSegments).toEqual([
       {
         text: "The retreat is offered in Assisi",
-        citationIndices: [0],
+        citationIndices: [0, 1],
+      },
+      {
+        text: ".",
+      },
+    ]);
+  });
+
+  it("deduplicates repeated documents within a grouped anchor", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "Narayani's books are available from Ananda Edizioni[[1]][[2]][[3]].",
+      citationDisplayEnabled: true,
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Narayani Anaya",
+          content: "Narayani's books are available from Ananda Edizioni.",
+        },
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-2",
+          title: "Narayani Anaya",
+          content: "The author page lists several books and bundles.",
+        },
+        {
+          documentId: "doc-2",
+          chunkId: "chunk-3",
+          title: "Ananda Edizioni",
+          content: "Narayani's books are available from Ananda Edizioni.",
+        },
+      ],
+    });
+
+    expect(result.answer).toBe("Narayani's books are available from Ananda Edizioni.");
+    expect(result.citations).toEqual([
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Narayani Anaya" },
+      { documentId: "doc-2", chunkId: "chunk-3", title: "Ananda Edizioni" },
+    ]);
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Narayani's books are available from Ananda Edizioni",
+        citationIndices: [0, 1],
       },
       {
         text: ".",

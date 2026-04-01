@@ -94,6 +94,27 @@ const metadataRuleEffectLabels: Record<
   },
 }
 
+const answerSupportPolicyLabels: Record<
+  RetrievalSettings['answerSupportPolicy'],
+  { label: string; description: string }
+> = {
+  strict: {
+    label: 'Strict grounding',
+    description:
+      'Replace unsupported claims with a short model-generated non-verification notice in the user’s language.',
+  },
+  warn: {
+    label: 'Warn only',
+    description:
+      'Keep unsupported text visible and record support validation details for review.',
+  },
+  off: {
+    label: 'Off',
+    description:
+      'Skip post-generation support replacement entirely and return the model answer unchanged.',
+  },
+}
+
 const operatorOptionsForValueType = (
   valueType: RetrievalSettings['metadataRules'][number]['valueType']
 ): RetrievalSettings['metadataRules'][number]['operator'][] => {
@@ -308,6 +329,35 @@ export function RetrievalSettingsPanel() {
                   checked={settings.citationDisplayEnabled}
                   onCheckedChange={(checked) => updateSetting('citationDisplayEnabled', checked)}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <Label htmlFor="answerSupportPolicy" className="text-foreground">Unsupported Answer Policy</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Decide what happens when the assistant writes a claim that the retrieved documents do not support.
+                  </p>
+                </div>
+                <Select
+                  value={settings.answerSupportPolicy}
+                  onValueChange={(value) =>
+                    updateSetting('answerSupportPolicy', value as RetrievalSettings['answerSupportPolicy'])
+                  }
+                >
+                  <SelectTrigger id="answerSupportPolicy" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(answerSupportPolicyLabels).map(([value, meta]) => (
+                      <SelectItem key={value} value={value}>
+                        {meta.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  {answerSupportPolicyLabels[settings.answerSupportPolicy].description}
+                </p>
               </div>
 
               <div className="space-y-3">

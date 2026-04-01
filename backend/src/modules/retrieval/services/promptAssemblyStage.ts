@@ -22,6 +22,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       responseSettings: {
         warmthLevel: input.settings.warmthLevel,
         citationDisplayEnabled: input.settings.citationDisplayEnabled,
+        answerSupportPolicy: input.settings.answerSupportPolicy,
       },
     };
   }

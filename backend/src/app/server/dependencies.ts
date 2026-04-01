@@ -151,6 +151,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     retrievalPipeline,
     llmRegistry.createChatGateway(),
     auditService,
+    llmRegistry.createUnsupportedNoticeGenerator(),
   );
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,

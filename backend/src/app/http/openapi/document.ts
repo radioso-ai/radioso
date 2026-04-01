@@ -29,6 +29,7 @@ import {
 } from "../routes/publicChatRoutes.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
+  answerSupportPolicies,
   metadataRuleEffects,
   metadataRuleOperators,
   metadataValueTypes,
@@ -140,6 +141,7 @@ const RetrievalSettingsSchema = registry.register(
     queryRewriteEnabled: z.boolean(),
     semanticRewriteInstructions: z.string().max(2000),
     lexicalRewriteInstructions: z.string().max(2000),
+    answerSupportPolicy: z.enum(answerSupportPolicies),
     rerankEnabled: z.boolean(),
     vectorTopK: z.number().int().min(1).max(300),
     similarityThreshold: z.number().min(0).max(1),
@@ -500,6 +502,7 @@ const ValidationDebugSchema = registry.register(
     unsupportedSegmentCount: z.number().int().min(0),
     supportedSegmentCount: z.number().int().min(0),
     nonSubstantiveSegmentCount: z.number().int().min(0),
+    answerSupportPolicy: z.enum(answerSupportPolicies).optional(),
     segmentResults: z.array(ValidationSegmentResultSchema),
   }),
 );
@@ -512,6 +515,7 @@ const ChatConversationMessageDebugSchema = registry.register(
     stream: z.boolean(),
     citationCount: z.number().int().min(0),
     answerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal"]).optional(),
+    answerSupportPolicy: z.enum(answerSupportPolicies).optional(),
     validation: ValidationDebugSchema.optional(),
     retrievalInfo: RetrievalInfoSchema.optional(),
     retrievalTrace: RetrievalTraceSchema.optional(),

@@ -17,4 +17,4 @@ if [ ! -d node_modules ] || [ "$CURRENT_HASH" != "$SAVED_HASH" ]; then
   printf '%s' "$CURRENT_HASH" > "$LOCKFILE_HASH_FILE"
 fi
 
-exec npx next dev -H 0.0.0.0 -p 3000
+exec npx next dev --webpack -H 0.0.0.0 -p 3000

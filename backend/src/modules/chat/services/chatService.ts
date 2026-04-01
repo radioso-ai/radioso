@@ -16,7 +16,14 @@ import {
 } from "./answerSupportValidationTypes.js";
 import { AssistantTurnOutcomeClassifier } from "./assistantTurnOutcomeClassifier.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
+import {
+  DefaultUnsupportedNoticeGenerator,
+  type UnsupportedNoticeGenerator,
+} from "./unsupportedNoticeGenerator.js";
+import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSettings.js";
+import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
+import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -53,6 +60,7 @@ interface PreparedSession {
 
 interface ChatAnswerAuditMetadata {
   answerOutcome?: AssistantTurnOutcome;
+  answerSupportPolicy?: AnswerSupportPolicy;
   validation?: AnswerValidationSummary & {
     segmentResults?: Array<Pick<AnswerSegmentValidationResult, "text" | "disposition" | "replacementApplied" | "reason" | "citationIndices">>;
   };
@@ -110,7 +118,12 @@ export class ChatService {
     private readonly retrievalPipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
+    private readonly unsupportedNoticeGenerator: UnsupportedNoticeGenerator = new DefaultUnsupportedNoticeGenerator(),
   ) {}
+
+  private getAnswerSupportPolicy(session: PreparedSession): AnswerSupportPolicy {
+    return session.retrieval.responseSettings?.answerSupportPolicy ?? DEFAULT_ANSWER_SUPPORT_POLICY;
+  }
 
   async answer(input: {
     workspaceId: string;
@@ -168,6 +181,7 @@ export class ChatService {
         segmentResults: presentation.segmentResults,
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
+        answerSupportPolicy: presentation.validation.answerSupportPolicy,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
         stream: input.stream,
@@ -210,6 +224,9 @@ export class ChatService {
 
       let rawAnswer = "";
       const answerStartedAt = Date.now();
+      const answerSupportPolicy = this.getAnswerSupportPolicy(session);
+      const suppressRawStreaming =
+        session.retrieval.contexts.length > 0 && shouldReplaceUnsupportedSegments(answerSupportPolicy);
 
       if (session.retrieval.contexts.length === 0) {
         rawAnswer = "I could not find relevant information in your documents.";
@@ -229,7 +246,7 @@ export class ChatService {
           }
           rawAnswer = `${rawAnswer}${text}`;
           const safe = sanitizer.push(text);
-          if (!safe) {
+          if (!safe || suppressRawStreaming) {
             continue;
           }
           yield {
@@ -239,7 +256,7 @@ export class ChatService {
         }
 
         const trailing = sanitizer.flush();
-        if (trailing) {
+        if (trailing && !suppressRawStreaming) {
           yield {
             type: "chunk",
             text: trailing,
@@ -247,7 +264,14 @@ export class ChatService {
         }
       }
 
-      const presentation = this.presentAnswer(session, rawAnswer);
+      const presentation = await this.presentAnswer(session, rawAnswer, input.query);
+
+      if (suppressRawStreaming && presentation.answer.length > 0) {
+        yield {
+          type: "chunk",
+          text: presentation.answer,
+        };
+      }
 
       const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics);
       const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
@@ -281,6 +305,7 @@ export class ChatService {
         segmentResults: presentation.segmentResults,
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
+        answerSupportPolicy: presentation.validation.answerSupportPolicy,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
         stream: input.stream,
@@ -356,10 +381,10 @@ export class ChatService {
           prompt: session.retrieval.prompt,
         });
 
-    return this.presentAnswer(session, answer);
+    return this.presentAnswer(session, answer, query);
   }
 
-  private presentAnswer(session: PreparedSession, answer: string): PresentedAnswer {
+  private async presentAnswer(session: PreparedSession, answer: string, query: string): Promise<PresentedAnswer> {
     const citationEvidence = session.retrieval.contexts.map((context) => ({
       documentId: context.documentId,
       chunkId: context.chunkId,
@@ -383,6 +408,7 @@ export class ChatService {
           unsupportedSegmentCount: 0,
           supportedSegmentCount: 0,
           nonSubstantiveSegmentCount: 0,
+          answerSupportPolicy: this.getAnswerSupportPolicy(session),
         },
         segmentResults: [],
       };
@@ -393,11 +419,14 @@ export class ChatService {
       citations: citationEvidence,
     });
 
-    const validated = this.answerSupportValidator.validate({
+    const validated = await this.answerSupportValidator.validate({
+      query,
       answer: normalized.answer,
       answerSegments: normalized.answerSegments,
       citationEvidence: normalized.citationEvidence,
       citationDisplayEnabled,
+      answerSupportPolicy: this.getAnswerSupportPolicy(session),
+      unsupportedNoticeGenerator: this.unsupportedNoticeGenerator,
     });
 
     return {
@@ -420,6 +449,7 @@ export class ChatService {
     segmentResults: AnswerSegmentValidationResult[];
     citations: ChatCitation[];
     answerSegments?: AnswerSegment[];
+    answerSupportPolicy?: AnswerSupportPolicy;
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
     retrievalTrace: RetrievalTrace;
     stream: boolean;
@@ -436,6 +466,7 @@ export class ChatService {
         assistantMessageId: input.assistantMessageId,
         stream: input.stream,
         answerOutcome: input.answerOutcome,
+        answerSupportPolicy: input.answerSupportPolicy,
         validation: {
           ...input.validation,
           segmentResults: input.segmentResults.map((segment) => ({

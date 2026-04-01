@@ -1,15 +1,20 @@
 import type { Database } from "../../shared/infra/database.js";
 import type {
+  AnswerSupportPolicy,
   RetrievalSettingsInput,
   RetrievalSettingsRecord,
 } from "../../modules/settings/domain/retrievalSettings.js";
-import { normalizeMetadataRules } from "../../modules/settings/domain/retrievalSettings.js";
+import {
+  DEFAULT_ANSWER_SUPPORT_POLICY,
+  normalizeMetadataRules,
+} from "../../modules/settings/domain/retrievalSettings.js";
 import type { RetrievalSettingsRepositoryPort } from "../../modules/settings/services/retrievalSettingsService.js";
 
 interface RetrievalSettingsPayload {
   metadataRules?: unknown;
   semanticRewriteInstructions?: unknown;
   lexicalRewriteInstructions?: unknown;
+  answerSupportPolicy?: unknown;
 }
 
 interface RetrievalSettingsRow {
@@ -40,6 +45,10 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => {
       typeof payload.semanticRewriteInstructions === "string" ? payload.semanticRewriteInstructions : "",
     lexicalRewriteInstructions:
       typeof payload.lexicalRewriteInstructions === "string" ? payload.lexicalRewriteInstructions : "",
+    answerSupportPolicy:
+      typeof payload.answerSupportPolicy === "string"
+        ? (payload.answerSupportPolicy as AnswerSupportPolicy)
+        : DEFAULT_ANSWER_SUPPORT_POLICY,
     rerankEnabled: row.rerank_enabled,
     vectorTopK: row.vector_top_k,
     similarityThreshold: row.similarity_threshold,
@@ -107,6 +116,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
           metadataRules: input.metadataRules,
           semanticRewriteInstructions: input.semanticRewriteInstructions,
           lexicalRewriteInstructions: input.lexicalRewriteInstructions,
+          answerSupportPolicy: input.answerSupportPolicy,
         }),
         input.customInstruction,
       ],

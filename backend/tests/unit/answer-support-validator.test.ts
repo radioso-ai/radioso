@@ -7,6 +7,7 @@ import {
   DEFAULT_UNSUPPORTED_NOTICE,
 } from "../../src/modules/chat/services/assistantTurnOutcomeClassifier.js";
 import type { CitationEvidence } from "../../src/modules/chat/services/answerPresentationService.js";
+import type { UnsupportedNoticeGenerator } from "../../src/modules/chat/services/unsupportedNoticeGenerator.js";
 
 const citations: CitationEvidence[] = [
   {
@@ -17,11 +18,18 @@ const citations: CitationEvidence[] = [
   },
 ];
 
+const staticNoticeGenerator = (text = DEFAULT_UNSUPPORTED_NOTICE): UnsupportedNoticeGenerator => ({
+  async generate() {
+    return text;
+  },
+});
+
 describe("answer support validator", () => {
-  it("keeps supported segments, replaces unsupported substantive segments, and preserves non-substantive wrappers", () => {
+  it("keeps supported segments, replaces unsupported substantive segments, and preserves non-substantive wrappers", async () => {
     const validator = new AnswerSupportValidator();
 
-    const result = validator.validate({
+    const result = await validator.validate({
+      query: "What does the page explain?",
       answer: "The page explains testing and parsing content for users. It also offers 24/7 phone support. Thanks!",
       answerSegments: [
         {
@@ -35,6 +43,8 @@ describe("answer support validator", () => {
       ],
       citationEvidence: citations,
       citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      unsupportedNoticeGenerator: staticNoticeGenerator(),
     });
 
     expect(result.answer).toBe(
@@ -59,6 +69,7 @@ describe("answer support validator", () => {
       unsupportedSegmentCount: 1,
       supportedSegmentCount: 1,
       nonSubstantiveSegmentCount: 3,
+      answerSupportPolicy: "strict",
     });
     expect(result.segmentResults.map((segment) => segment.disposition)).toEqual([
       "supported",
@@ -69,10 +80,11 @@ describe("answer support validator", () => {
     ]);
   });
 
-  it("collapses fully unsupported substantive answers to only the unsupported notice", () => {
+  it("collapses fully unsupported substantive answers to only the unsupported notice", async () => {
     const validator = new AnswerSupportValidator();
 
-    const result = validator.validate({
+    const result = await validator.validate({
+      query: "What support is offered?",
       answer: "It also offers 24/7 phone support and a discount code.",
       answerSegments: [
         { text: "It also offers 24/7 phone support and a discount code" },
@@ -80,6 +92,8 @@ describe("answer support validator", () => {
       ],
       citationEvidence: [],
       citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      unsupportedNoticeGenerator: staticNoticeGenerator(),
     });
 
     expect(result.answer).toBe(DEFAULT_UNSUPPORTED_NOTICE);
@@ -91,13 +105,15 @@ describe("answer support validator", () => {
       unsupportedSegmentCount: 1,
       supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 1,
+      answerSupportPolicy: "strict",
     });
   });
 
-  it("omits visible citation artifacts when citation display is disabled but still classifies support correctly", () => {
+  it("omits visible citation artifacts when citation display is disabled but still classifies support correctly", async () => {
     const validator = new AnswerSupportValidator();
 
-    const result = validator.validate({
+    const result = await validator.validate({
+      query: "What does the page explain?",
       answer: "The page explains testing and parsing content for users.",
       answerSegments: [
         {
@@ -108,6 +124,8 @@ describe("answer support validator", () => {
       ],
       citationEvidence: citations,
       citationDisplayEnabled: false,
+      answerSupportPolicy: "strict",
+      unsupportedNoticeGenerator: staticNoticeGenerator(),
     });
 
     expect(result.answer).toBe("The page explains testing and parsing content for users.");
@@ -117,10 +135,11 @@ describe("answer support validator", () => {
     expect(result.validation.supportedSegmentCount).toBe(1);
   });
 
-  it("treats common conversational wrappers as non-substantive", () => {
+  it("treats common conversational wrappers as non-substantive", async () => {
     const validator = new AnswerSupportValidator();
 
-    const result = validator.validate({
+    const result = await validator.validate({
+      query: "Can you help?",
       answer: "Sure. Of course! Glad to help.",
       answerSegments: [
         { text: "Sure" },
@@ -132,6 +151,8 @@ describe("answer support validator", () => {
       ],
       citationEvidence: [],
       citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      unsupportedNoticeGenerator: staticNoticeGenerator(),
     });
 
     expect(result.answer).toBe("Sure. Of course! Glad to help.");
@@ -149,13 +170,15 @@ describe("answer support validator", () => {
       unsupportedSegmentCount: 0,
       supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 6,
+      answerSupportPolicy: "strict",
     });
   });
 
-  it("deduplicates consecutive unsupported notices within mixed answers", () => {
+  it("deduplicates consecutive unsupported notices within mixed answers", async () => {
     const validator = new AnswerSupportValidator();
 
-    const result = validator.validate({
+    const result = await validator.validate({
+      query: "What does the page explain?",
       answer: "The page explains testing and parsing content for users. It offers 24/7 phone support. It also offers a discount code.",
       answerSegments: [
         {
@@ -170,6 +193,8 @@ describe("answer support validator", () => {
       ],
       citationEvidence: citations,
       citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      unsupportedNoticeGenerator: staticNoticeGenerator(),
     });
 
     expect(result.answer).toBe(
@@ -181,6 +206,29 @@ describe("answer support validator", () => {
       { text: DEFAULT_UNSUPPORTED_NOTICE },
     ]);
     expect(result.validation.unsupportedSegmentCount).toBe(2);
+  });
+
+  it("preserves unsupported content under warn without replacing it", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Who is Narayani?",
+      answer: "Narayani is a teacher and author.",
+      answerSegments: [{ text: "Narayani is a teacher and author" }, { text: "." }],
+      citationEvidence: [],
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "warn",
+      unsupportedNoticeGenerator: staticNoticeGenerator("No pude verificar esa parte."),
+    });
+
+    expect(result.answer).toBe("Narayani is a teacher and author.");
+    expect(result.validation.answerModified).toBe(false);
+    expect(result.validation.answerSupportPolicy).toBe("warn");
+    expect(result.segmentResults[0]).toMatchObject({
+      text: "Narayani is a teacher and author",
+      replacementApplied: false,
+      disposition: "unsupported",
+    });
   });
 });
 
@@ -214,6 +262,24 @@ describe("assistant turn outcome classifier", () => {
           unsupportedSegmentCount: 1,
           supportedSegmentCount: 1,
           nonSubstantiveSegmentCount: 0,
+        },
+      }),
+    ).toBe(ASSISTANT_TURN_OUTCOME.GROUNDED_DEGRADED_UNSUPPORTED_SEGMENTS);
+  });
+
+  it("returns degraded outcome when unsupported segments are preserved under warn/off", () => {
+    const classifier = new AssistantTurnOutcomeClassifier();
+
+    expect(
+      classifier.classify({
+        hadRetrievedContext: true,
+        validation: {
+          ran: true,
+          answerModified: false,
+          unsupportedSegmentCount: 1,
+          supportedSegmentCount: 0,
+          nonSubstantiveSegmentCount: 0,
+          answerSupportPolicy: "warn",
         },
       }),
     ).toBe(ASSISTANT_TURN_OUTCOME.GROUNDED_DEGRADED_UNSUPPORTED_SEGMENTS);

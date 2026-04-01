@@ -178,6 +178,7 @@ describe("chat service streaming", () => {
           responseSettings: {
             citationDisplayEnabled: true,
             warmthLevel: 5,
+            answerSupportPolicy: "strict",
           },
         };
       },
@@ -273,6 +274,7 @@ describe("chat service streaming", () => {
           responseSettings: {
             citationDisplayEnabled: true,
             warmthLevel: 5,
+            answerSupportPolicy: "strict",
           },
         };
       },
@@ -383,7 +385,7 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts.join("")).toBe("full answer ");
+    expect(chunkTexts.join("")).toBe(DEFAULT_UNSUPPORTED_NOTICE);
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
@@ -487,7 +489,7 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts).toEqual(["full answer"]);
+    expect(chunkTexts).toEqual([DEFAULT_UNSUPPORTED_NOTICE]);
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
@@ -656,6 +658,7 @@ describe("chat service streaming", () => {
           responseSettings: {
             citationDisplayEnabled: true,
             warmthLevel: 5,
+            answerSupportPolicy: "strict",
           },
         };
       },
@@ -697,7 +700,7 @@ describe("chat service streaming", () => {
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 
-  it("streams grounded answers incrementally before returning the validated final answer", async () => {
+  it("buffers strict-mode chunks until the validated final answer is available", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -734,25 +737,17 @@ describe("chat service streaming", () => {
           responseSettings: {
             citationDisplayEnabled: true,
             warmthLevel: 5,
+            answerSupportPolicy: "strict",
           },
         };
       },
     } as const;
-    let releaseSecondChunk: (() => void) | undefined;
-    let markSecondChunkBlocked: (() => void) | undefined;
-    const secondChunkBlocked = new Promise<void>((resolve) => {
-      markSecondChunkBlocked = resolve;
-    });
     const chatGateway: ChatGateway = {
       async answer() {
         return "unused";
       },
       async *streamAnswer() {
         yield "The page explains testing and parsing content for users[[1]]. ";
-        await new Promise<void>((resolve) => {
-          releaseSecondChunk = resolve;
-          markSecondChunkBlocked?.();
-        });
         yield "It also offers 24/7 phone support.";
       },
     };
@@ -772,26 +767,13 @@ describe("chat service streaming", () => {
     })[Symbol.asyncIterator]();
 
     const conversationEvent = await iterator.next();
-    const firstChunkEvent = await iterator.next();
 
     expect(conversationEvent.value).toEqual({
       type: "conversation",
       conversationId: expect.any(String),
     });
-    expect(firstChunkEvent.value).toEqual({
-      type: "chunk",
-      text: "The page explains testing and parsing content for users. ",
-    });
 
-    const pendingNextEvent = iterator.next();
-    await secondChunkBlocked;
-    releaseSecondChunk?.();
-
-    const events: ChatStreamEvent[] = [conversationEvent.value!, firstChunkEvent.value!];
-    const secondChunkEvent = await pendingNextEvent;
-    if (!secondChunkEvent.done) {
-      events.push(secondChunkEvent.value);
-    }
+    const events: ChatStreamEvent[] = [conversationEvent.value!];
     for await (const event of { [Symbol.asyncIterator]: () => iterator }) {
       events.push(event);
     }
@@ -802,7 +784,7 @@ describe("chat service streaming", () => {
       .join("");
 
     expect(streamedText).toBe(
-      "The page explains testing and parsing content for users. It also offers 24/7 phone support.",
+      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
     );
     expect(events.findIndex((event) => event.type === "chunk")).toBeGreaterThanOrEqual(0);
     expect(events.findIndex((event) => event.type === "chunk")).toBeLessThan(
@@ -812,6 +794,100 @@ describe("chat service streaming", () => {
       expect.objectContaining({
         type: "done",
         answer: `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
+      }),
+    );
+  });
+
+  it("continues incremental streaming under warn mode even when the final outcome is degraded", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "who is narayani",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Event listing",
+              content: "Narayani leads a satsang this weekend.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Event listing" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "who is narayani",
+              lexicalQuery: "who is narayani",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            warmthLevel: 5,
+            answerSupportPolicy: "warn",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "unused";
+      },
+      async *streamAnswer() {
+        yield "Narayani is a teacher";
+        yield " and author.";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Who is Narayani?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    const chunkTexts = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
+      .map((event) => event.text);
+
+    expect(chunkTexts).toEqual(["Narayani is a teacher", " and author."]);
+    expect(events.at(-1)).toEqual(
+      expect.objectContaining({
+        type: "done",
+        answer: "Narayani is a teacher and author.",
+        retrievalTrace: expect.objectContaining({
+          stages: expect.arrayContaining([
+            expect.objectContaining({
+              stageId: "answer",
+              kind: "answer_outcome",
+              outputs: expect.objectContaining({
+                outcome: "grounded_degraded_unsupported_segments",
+              }),
+            }),
+          ]),
+        }),
       }),
     );
   });

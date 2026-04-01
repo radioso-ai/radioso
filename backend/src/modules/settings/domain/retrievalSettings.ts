@@ -35,10 +35,14 @@ export interface RetrievalMetadataRule {
   enabled: boolean;
 }
 
+export const answerSupportPolicies = ["strict", "warn", "off"] as const;
+export type AnswerSupportPolicy = (typeof answerSupportPolicies)[number];
+
 interface RetrievalSettingsPayload {
   metadataRules?: unknown;
   semanticRewriteInstructions?: unknown;
   lexicalRewriteInstructions?: unknown;
+  answerSupportPolicy?: unknown;
 }
 
 interface LegacyMetadataRule {
@@ -56,6 +60,7 @@ export interface RetrievalSettingsRecord {
   queryRewriteEnabled: boolean;
   semanticRewriteInstructions: string;
   lexicalRewriteInstructions: string;
+  answerSupportPolicy: AnswerSupportPolicy;
   rerankEnabled: boolean;
   vectorTopK: number;
   similarityThreshold: number;
@@ -72,6 +77,7 @@ export interface RetrievalSettingsInput {
   queryRewriteEnabled: boolean;
   semanticRewriteInstructions: string;
   lexicalRewriteInstructions: string;
+  answerSupportPolicy: AnswerSupportPolicy;
   rerankEnabled: boolean;
   vectorTopK: number;
   similarityThreshold: number;
@@ -89,6 +95,8 @@ export const DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS =
 export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS =
   "Rewrite for lexical retrieval using exact literals likely to appear in the corpus. Prefer aliases, abbreviations, citation forms, and corpus-native notation when grounded.";
 
+export const DEFAULT_ANSWER_SUPPORT_POLICY: AnswerSupportPolicy = "strict";
+
 export const defaultAttributeControls = () => [
   { signalKey: "document_date", enabled: true, mode: "boost_only" as const },
   { signalKey: "document_period", enabled: true, mode: "boost_only" as const },
@@ -101,6 +109,7 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   queryRewriteEnabled: false,
   semanticRewriteInstructions: DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,
   lexicalRewriteInstructions: DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
+  answerSupportPolicy: DEFAULT_ANSWER_SUPPORT_POLICY,
   rerankEnabled: false,
   vectorTopK: 15,
   similarityThreshold: 0.2,
@@ -217,6 +226,9 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   if (typeof input.lexicalRewriteInstructions !== "string") {
     throw badRequest("lexicalRewriteInstructions must be a string");
   }
+  if (!answerSupportPolicies.includes(input.answerSupportPolicy)) {
+    throw badRequest("answerSupportPolicy must be a supported value");
+  }
   if (input.semanticRewriteInstructions.length > 2000) {
     throw badRequest("semanticRewriteInstructions must not exceed 2000 characters");
   }
@@ -301,6 +313,7 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
       input.lexicalRewriteInstructions,
       DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
     ),
+    answerSupportPolicy: input.answerSupportPolicy,
     metadataRules: input.metadataRules.map((rule) => ({
       ...rule,
       field: normalizeMetadataField(rule.field),

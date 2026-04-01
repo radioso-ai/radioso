@@ -191,6 +191,12 @@ components:
         lexicalRewriteInstructions:
           type: string
           maxLength: 2000
+        answerSupportPolicy:
+          type: string
+          enum: &a2
+            - strict
+            - warn
+            - off
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -242,7 +248,7 @@ components:
                 enum: *a1
               operator:
                 type: string
-                enum: &a2
+                enum: &a3
                   - equals
                   - not_equals
                   - contains
@@ -255,7 +261,7 @@ components:
                 type: string
               effect:
                 type: string
-                enum: &a3
+                enum: &a4
                   - boost
                   - filter
               enabled:
@@ -283,6 +289,7 @@ components:
         - queryRewriteEnabled
         - semanticRewriteInstructions
         - lexicalRewriteInstructions
+        - answerSupportPolicy
         - rerankEnabled
         - vectorTopK
         - similarityThreshold
@@ -303,6 +310,9 @@ components:
         lexicalRewriteInstructions:
           type: string
           maxLength: 2000
+        answerSupportPolicy:
+          type: string
+          enum: *a2
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -331,12 +341,12 @@ components:
                 enum: *a1
               operator:
                 type: string
-                enum: *a2
+                enum: *a3
               value:
                 type: string
               effect:
                 type: string
-                enum: *a3
+                enum: *a4
               enabled:
                 type: boolean
             required:
@@ -366,7 +376,7 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a4
+          enum: &a5
             - fixed_window
             - structured_semantic
         fixedWindowChunkSize:
@@ -397,7 +407,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a4
+          enum: *a5
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -432,12 +442,12 @@ components:
           enum: *a1
         operator:
           type: string
-          enum: *a2
+          enum: *a3
         value:
           type: string
         effect:
           type: string
-          enum: *a3
+          enum: *a4
         enabled:
           type: boolean
       required:
@@ -1119,6 +1129,9 @@ components:
         nonSubstantiveSegmentCount:
           type: integer
           minimum: 0
+        answerSupportPolicy:
+          type: string
+          enum: *a2
         segmentResults:
           type: array
           items:
@@ -1152,6 +1165,9 @@ components:
             - grounded_success
             - grounded_degraded_unsupported_segments
             - no_context_refusal
+        answerSupportPolicy:
+          type: string
+          enum: *a2
         validation:
           $ref: "#/components/schemas/ValidationDebug"
         retrievalInfo:

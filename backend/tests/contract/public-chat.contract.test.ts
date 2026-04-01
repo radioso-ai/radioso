@@ -147,6 +147,53 @@ describe("public chat contract", () => {
     );
   });
 
+  it("applies the workspace answer support policy to anonymous chat", async () => {
+    const { app } = createTestApp({
+      chatGateway: {
+        async answer() {
+          return "Narayani is a teacher and author.";
+        },
+        async *streamAnswer() {
+          yield "Narayani is a teacher and author.";
+        },
+      },
+    });
+    const session = await issueTestSession(app, "public-chat-policy@example.com");
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Event listing", content: "Narayani leads a satsang this weekend." });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set(adminSessionHeaders(session))
+      .send({
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep the query standalone.",
+        lexicalRewriteInstructions: "Prefer exact literals.",
+        answerSupportPolicy: "warn",
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        warmthLevel: 5,
+        citationDisplayEnabled: true,
+        metadataRules: [],
+        customInstruction: "",
+      })
+      .expect(200);
+
+    const chatToken = await enableAnonymousChat(app, session);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .send({ query: "Who is Narayani?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toBe("Narayani is a teacher and author.");
+    expect(response.body.answer).not.toBe("I couldn't verify that from the retrieved documents.");
+  });
+
   it("invalid token returns 404", async () => {
     const { app } = createTestApp();
 

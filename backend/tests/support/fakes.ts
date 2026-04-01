@@ -329,6 +329,7 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       queryRewriteEnabled: input.queryRewriteEnabled,
       semanticRewriteInstructions: input.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.lexicalRewriteInstructions,
+      answerSupportPolicy: input.answerSupportPolicy,
       rerankEnabled: input.rerankEnabled,
       vectorTopK: input.vectorTopK,
       similarityThreshold: input.similarityThreshold,

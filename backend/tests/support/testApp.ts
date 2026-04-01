@@ -7,6 +7,10 @@ import { randomUUID } from "node:crypto";
 
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import {
+  DefaultUnsupportedNoticeGenerator,
+  type UnsupportedNoticeGenerator,
+} from "../../src/modules/chat/services/unsupportedNoticeGenerator.js";
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
@@ -103,6 +107,7 @@ export const createTestDependencies = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   whatsappFetch?: typeof fetch;
   whatsappDebounceMs?: number;
+  unsupportedNoticeGenerator?: UnsupportedNoticeGenerator;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
     ...createTestEnv(),
@@ -434,6 +439,7 @@ export const createTestDependencies = (overrides: {
       retrievalPipeline,
       chatGateway,
       auditService,
+      overrides.unsupportedNoticeGenerator ?? new DefaultUnsupportedNoticeGenerator(),
     ),
     chatHistoryService: new ChatHistoryService(
       conversationRepository,
@@ -475,6 +481,7 @@ export const createTestApp = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   whatsappFetch?: typeof fetch;
   whatsappDebounceMs?: number;
+  unsupportedNoticeGenerator?: UnsupportedNoticeGenerator;
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);
   const app = createApp(dependencies);

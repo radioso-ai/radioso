@@ -1,9 +1,12 @@
 import type { AnswerSegment, CitationEvidence } from "./answerPresentationService.js";
+import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSettings.js";
+import { shouldPreserveUnsupportedSegments, shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import {
   DEFAULT_UNSUPPORTED_NOTICE,
   type ValidatedAnswer,
   VALIDATION_DISPOSITION,
 } from "./answerSupportValidationTypes.js";
+import type { UnsupportedNoticeGenerator } from "./unsupportedNoticeGenerator.js";
 
 const NON_SUBSTANTIVE_PHRASES = new Set([
   "hello",
@@ -49,13 +52,16 @@ const toChatCitation = (citation: CitationEvidence) => ({
 });
 
 export class AnswerSupportValidator {
-  validate(input: {
+  async validate(input: {
+    query: string;
     answer: string;
     answerSegments: AnswerSegment[];
     citationEvidence: CitationEvidence[];
     citationDisplayEnabled: boolean;
-  }): ValidatedAnswer {
-    const segmentResults = input.answerSegments.map((segment) => {
+    answerSupportPolicy: AnswerSupportPolicy;
+    unsupportedNoticeGenerator: UnsupportedNoticeGenerator;
+  }): Promise<ValidatedAnswer> {
+    const segmentResults = await Promise.all(input.answerSegments.map(async (segment) => {
       if (isNonSubstantiveText(segment.text)) {
         return {
           originalText: segment.text,
@@ -78,21 +84,36 @@ export class AnswerSupportValidator {
         } as const;
       }
 
+      if (shouldPreserveUnsupportedSegments(input.answerSupportPolicy)) {
+        return {
+          originalText: segment.text,
+          text: segment.text,
+          disposition: VALIDATION_DISPOSITION.UNSUPPORTED,
+          replacementApplied: false,
+          reason: "missing_support_reference",
+        } as const;
+      }
+
+      const generatedNotice = await input.unsupportedNoticeGenerator.generate({
+        query: input.query,
+        unsupportedText: segment.text,
+      });
+
       return {
         originalText: segment.text,
-        text: `${preservePrefix(segment.text)}${DEFAULT_UNSUPPORTED_NOTICE}`,
+        text: `${preservePrefix(segment.text)}${generatedNotice || DEFAULT_UNSUPPORTED_NOTICE}`,
         disposition: VALIDATION_DISPOSITION.UNSUPPORTED,
         replacementApplied: true,
         reason: "missing_support_reference",
       } as const;
-    });
+    }));
 
     const supportedSegmentCount = segmentResults.filter((segment) => segment.disposition === VALIDATION_DISPOSITION.SUPPORTED).length;
     const unsupportedSegmentCount = segmentResults.filter((segment) => segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED).length;
     const nonSubstantiveSegmentCount = segmentResults.filter((segment) => segment.disposition === VALIDATION_DISPOSITION.NON_SUBSTANTIVE).length;
 
-    const visibleSegments = supportedSegmentCount === 0 && unsupportedSegmentCount > 0
-      ? [{ text: DEFAULT_UNSUPPORTED_NOTICE }]
+    const visibleSegments = supportedSegmentCount === 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)
+      ? [{ text: stripPrefix(segmentResults.find((segment) => segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED)?.text ?? DEFAULT_UNSUPPORTED_NOTICE) }]
       : this.buildVisibleSegments(segmentResults);
 
     const { citations, answerSegments } = this.compactVisibleArtifacts(visibleSegments, input.citationEvidence);
@@ -104,10 +125,11 @@ export class AnswerSupportValidator {
       answerSegments: input.citationDisplayEnabled ? answerSegments : undefined,
       validation: {
         ran: true,
-        answerModified: unsupportedSegmentCount > 0,
+        answerModified: segmentResults.some((segment) => segment.replacementApplied),
         unsupportedSegmentCount,
         supportedSegmentCount,
         nonSubstantiveSegmentCount,
+        answerSupportPolicy: input.answerSupportPolicy,
       },
       segmentResults,
     };
@@ -161,7 +183,9 @@ export class AnswerSupportValidator {
       visibleSegments.push({ text: segment.text });
 
       if (segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED) {
-        latestMeaningfulSegmentText = DEFAULT_UNSUPPORTED_NOTICE;
+        latestMeaningfulSegmentText = segment.replacementApplied
+          ? DEFAULT_UNSUPPORTED_NOTICE
+          : segment.text.trim();
         continue;
       }
 

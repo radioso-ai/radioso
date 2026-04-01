@@ -6,6 +6,14 @@ const nextConfig = {
   experimental: {
     externalDir: true,
   },
+  turbopack: {
+    rules: {
+      '*.md': {
+        loaders: ['raw-loader'],
+        as: '*.js',
+      },
+    },
+  },
   allowedDevOrigins: ["127.0.0.1"],
   images: {
     unoptimized: true,

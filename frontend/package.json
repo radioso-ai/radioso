@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3001",
+    "dev": "next dev --webpack --port 3001",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
@@ -71,6 +71,7 @@
     "eslint": "^9.22.0",
     "eslint-config-next": "16.2.1",
     "postcss": "^8.5",
+    "raw-loader": "^4.0.2",
     "tailwindcss": "^4.2.0",
     "tw-animate-css": "1.3.3",
     "vitest": "^3.2.4",

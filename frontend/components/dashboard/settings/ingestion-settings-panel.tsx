@@ -3,6 +3,11 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw, Save, Search, Settings2, SlidersHorizontal } from 'lucide-react'
 
+import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
+import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { PipelineConnector, SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
+import { chunkingStrategyOptions } from '@/components/dashboard/settings/settings-options'
+import { ingestionSettingDocs } from '@/components/dashboard/settings/settings-docs'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
@@ -15,8 +20,6 @@ import {
 import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
 import { type IngestionSettings, settingsApi } from '@/lib/api'
-import { SettingsCard } from '@/components/dashboard/settings/settings-card'
-import { chunkingStrategyOptions } from '@/components/dashboard/settings/settings-options'
 
 export function IngestionSettingsPanel() {
   const [settings, setSettings] = useState<IngestionSettings | null>(null)
@@ -123,20 +126,21 @@ export function IngestionSettingsPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-xl space-y-8">
+        <div className="max-w-2xl space-y-2">
           <SettingsCard
             id="document-processing"
+            eyebrow="Stage 1"
             icon={<Settings2 className="h-5 w-5 text-primary" />}
-            title="Document Processing"
-            description="Choose how new or updated documents are prepared for retrieval."
+            title="Choose a chunking strategy"
+            description="Set the splitting approach first, then tune the active strategy before reprocessing existing documents."
           >
             <div className="space-y-4">
-              <div className="space-y-1">
-                <Label htmlFor="chunkingStrategy" className="text-foreground">Chunking Strategy</Label>
-                <p className="text-sm text-muted-foreground">
-                  Choose how newly ingested or updated documents are split into retrieval chunks.
-                </p>
-              </div>
+              <SettingFieldHeader
+                htmlFor="chunkingStrategy"
+                label={ingestionSettingDocs.chunkingStrategy.label}
+                description={ingestionSettingDocs.chunkingStrategy.summary}
+                tooltip={ingestionSettingDocs.chunkingStrategy.details}
+              />
               <Select
                 value={settings.chunkingStrategy}
                 onValueChange={(value) =>
@@ -167,115 +171,164 @@ export function IngestionSettingsPanel() {
               <p className="text-sm text-muted-foreground">
                 Changes apply to future ingests and document updates immediately. Existing stored chunks stay as they are until you reprocess those documents.
               </p>
-              <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
-                <div className="flex items-center gap-2">
-                  {settings.chunkingStrategy === 'fixed_window' ? (
-                    <SlidersHorizontal className="h-4 w-4 text-primary" />
-                  ) : (
-                    <Search className="h-4 w-4 text-primary" />
-                  )}
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {settings.chunkingStrategy === 'fixed_window' ? 'Fixed Window Tuning' : 'Structured Semantic Tuning'}
-                  </p>
-                </div>
-
-                {settings.chunkingStrategy === 'fixed_window' ? (
-                  <>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="fixedWindowChunkSize" className="text-foreground">Chunk Size</Label>
-                        <span className="text-sm text-muted-foreground font-mono">{settings.fixedWindowChunkSize}</span>
-                      </div>
-                      <Slider
-                        id="fixedWindowChunkSize"
-                        min={100}
-                        max={4000}
-                        step={10}
-                        value={[settings.fixedWindowChunkSize]}
-                        onValueChange={([value]) => updateSetting('fixedWindowChunkSize', value)}
-                      />
-                      <p className="text-sm text-muted-foreground">
-                        Larger chunks keep more context together. Smaller chunks create more retrieval units.
-                      </p>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="fixedWindowChunkOverlap" className="text-foreground">Chunk Overlap</Label>
-                        <span className="text-sm text-muted-foreground font-mono">{settings.fixedWindowChunkOverlap}</span>
-                      </div>
-                      <Slider
-                        id="fixedWindowChunkOverlap"
-                        min={0}
-                        max={2000}
-                        step={10}
-                        value={[Math.min(settings.fixedWindowChunkOverlap, 2000)]}
-                        onValueChange={([value]) => updateSetting('fixedWindowChunkOverlap', value)}
-                      />
-                      <p className="text-sm text-muted-foreground">
-                        Overlap helps adjacent chunks share context. It must stay smaller than the chunk size.
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="structuredMinChunkSize" className="text-foreground">Minimum Chunk Size</Label>
-                        <span className="text-sm text-muted-foreground font-mono">{settings.structuredMinChunkSize}</span>
-                      </div>
-                      <Slider
-                        id="structuredMinChunkSize"
-                        min={1}
-                        max={1000}
-                        step={1}
-                        value={[Math.min(settings.structuredMinChunkSize, 1000)]}
-                        onValueChange={([value]) => updateSetting('structuredMinChunkSize', value)}
-                      />
-                      <p className="text-sm text-muted-foreground">
-                        Small structural fragments can be merged until they reach at least this target.
-                      </p>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="structuredMaxChunkSize" className="text-foreground">Maximum Chunk Size</Label>
-                        <span className="text-sm text-muted-foreground font-mono">{settings.structuredMaxChunkSize}</span>
-                      </div>
-                      <Slider
-                        id="structuredMaxChunkSize"
-                        min={1}
-                        max={2000}
-                        step={1}
-                        value={[Math.min(settings.structuredMaxChunkSize, 2000)]}
-                        onValueChange={([value]) => updateSetting('structuredMaxChunkSize', value)}
-                      />
-                      <p className="text-sm text-muted-foreground">
-                        Structure-aware chunks stop growing when they hit this upper bound.
-                      </p>
-                    </div>
-                  </>
-                )}
-              </div>
             </div>
           </SettingsCard>
 
+          <PipelineConnector />
+
+          <SettingsCard
+            eyebrow="Stage 2"
+            icon={
+              settings.chunkingStrategy === 'fixed_window' ? (
+                <SlidersHorizontal className="h-5 w-5 text-primary" />
+              ) : (
+                <Search className="h-5 w-5 text-primary" />
+              )
+            }
+            title={settings.chunkingStrategy === 'fixed_window' ? 'Tune fixed windows' : 'Tune structure-aware chunks'}
+            description={
+              settings.chunkingStrategy === 'fixed_window'
+                ? 'These controls define the chunk size and overlap used for fixed-window splitting.'
+                : 'These controls define the min and max chunk bounds used when structure-aware splitting groups adjacent content.'
+            }
+          >
+            <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
+              <div className="flex items-center gap-2">
+                {settings.chunkingStrategy === 'fixed_window' ? (
+                  <SlidersHorizontal className="h-4 w-4 text-primary" />
+                ) : (
+                  <Search className="h-4 w-4 text-primary" />
+                )}
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {settings.chunkingStrategy === 'fixed_window' ? 'Fixed Window Tuning' : 'Structured Semantic Tuning'}
+                </p>
+              </div>
+
+              {settings.chunkingStrategy === 'fixed_window' ? (
+                <>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <SettingFieldHeader
+                        htmlFor="fixedWindowChunkSize"
+                        label={ingestionSettingDocs.fixedWindowChunkSize.label}
+                        tooltip={ingestionSettingDocs.fixedWindowChunkSize.details}
+                        description={ingestionSettingDocs.fixedWindowChunkSize.summary}
+                        className="pr-4"
+                      />
+                      <span className="text-sm font-mono text-muted-foreground">{settings.fixedWindowChunkSize}</span>
+                    </div>
+                    <Slider
+                      id="fixedWindowChunkSize"
+                      min={100}
+                      max={4000}
+                      step={10}
+                      value={[settings.fixedWindowChunkSize]}
+                      onValueChange={([value]) => updateSetting('fixedWindowChunkSize', value)}
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <SettingFieldHeader
+                        htmlFor="fixedWindowChunkOverlap"
+                        label={ingestionSettingDocs.fixedWindowChunkOverlap.label}
+                        tooltip={ingestionSettingDocs.fixedWindowChunkOverlap.details}
+                        description={ingestionSettingDocs.fixedWindowChunkOverlap.summary}
+                        className="pr-4"
+                      />
+                      <span className="text-sm font-mono text-muted-foreground">{settings.fixedWindowChunkOverlap}</span>
+                    </div>
+                    <Slider
+                      id="fixedWindowChunkOverlap"
+                      min={0}
+                      max={2000}
+                      step={10}
+                      value={[Math.min(settings.fixedWindowChunkOverlap, 2000)]}
+                      onValueChange={([value]) => updateSetting('fixedWindowChunkOverlap', value)}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <SettingFieldHeader
+                        htmlFor="structuredMinChunkSize"
+                        label={ingestionSettingDocs.structuredMinChunkSize.label}
+                        tooltip={ingestionSettingDocs.structuredMinChunkSize.details}
+                        description={ingestionSettingDocs.structuredMinChunkSize.summary}
+                        className="pr-4"
+                      />
+                      <span className="text-sm font-mono text-muted-foreground">{settings.structuredMinChunkSize}</span>
+                    </div>
+                    <Slider
+                      id="structuredMinChunkSize"
+                      min={1}
+                      max={1000}
+                      step={1}
+                      value={[Math.min(settings.structuredMinChunkSize, 1000)]}
+                      onValueChange={([value]) => updateSetting('structuredMinChunkSize', value)}
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <SettingFieldHeader
+                        htmlFor="structuredMaxChunkSize"
+                        label={ingestionSettingDocs.structuredMaxChunkSize.label}
+                        tooltip={ingestionSettingDocs.structuredMaxChunkSize.details}
+                        description={ingestionSettingDocs.structuredMaxChunkSize.summary}
+                        className="pr-4"
+                      />
+                      <span className="text-sm font-mono text-muted-foreground">{settings.structuredMaxChunkSize}</span>
+                    </div>
+                    <Slider
+                      id="structuredMaxChunkSize"
+                      min={1}
+                      max={2000}
+                      step={1}
+                      value={[Math.min(settings.structuredMaxChunkSize, 2000)]}
+                      onValueChange={([value]) => updateSetting('structuredMaxChunkSize', value)}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </SettingsCard>
+
+          <PipelineConnector />
+
           <SettingsCard
             id="existing-documents"
+            eyebrow="Stage 3"
             icon={<RefreshCw className="h-5 w-5 text-primary" />}
-            title="Existing Documents"
-            description="Reprocess current documents so they use the latest ingestion settings."
+            title="Apply changes to existing documents"
+            description="Save the new ingestion settings, then re-queue eligible documents when you want stored chunks rewritten."
           >
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Saving settings does not rewrite existing chunks. Use this action when you want current documents to be re-queued with the latest ingestion configuration.
-              </p>
-              <div className="flex items-center gap-3">
-                <Button onClick={handleReprocess} disabled={isReprocessing || isSaving}>
-                  {isReprocessing || isSaving ? <Spinner className="mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                  Reprocess Existing Documents
-                </Button>
-                {reprocessMessage ? <p className="text-sm text-muted-foreground">{reprocessMessage}</p> : null}
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-foreground">{ingestionSettingDocs.reprocess.label}</Label>
+                  <SettingTooltip
+                    label={ingestionSettingDocs.reprocess.label}
+                    content={ingestionSettingDocs.reprocess.details}
+                  />
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  <AssistantMarkdownContent content={ingestionSettingDocs.reprocess.summary} inline />
+                </div>
+              </div>
+              <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
+                <p className="text-sm text-muted-foreground">
+                  Saving settings does not rewrite existing chunks. Use this action when you want current documents to be re-queued with the latest ingestion configuration.
+                </p>
+                <div className="flex items-center gap-3">
+                  <Button onClick={handleReprocess} disabled={isReprocessing || isSaving}>
+                    {isReprocessing || isSaving ? <Spinner className="mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                    Reprocess Existing Documents
+                  </Button>
+                  {reprocessMessage ? <p className="text-sm text-muted-foreground">{reprocessMessage}</p> : null}
+                </div>
               </div>
             </div>
           </SettingsCard>

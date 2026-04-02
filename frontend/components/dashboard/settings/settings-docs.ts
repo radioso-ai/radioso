@@ -30,22 +30,37 @@ export interface SettingDoc {
 
 const normalizeSection = (value: string) => value.trim().replace(/\n{3,}/g, '\n\n')
 
+const extractSection = (source: string, heading: 'Summary' | 'Details' | 'Tooltip') => {
+  const marker = `## ${heading}`
+  const start = source.indexOf(marker)
+  if (start < 0) {
+    return null
+  }
+
+  const afterHeading = source.indexOf('\n', start)
+  if (afterHeading < 0) {
+    return ''
+  }
+
+  const remainder = source.slice(afterHeading + 1)
+  const nextSectionIndex = remainder.search(/^##\s+/m)
+  return nextSectionIndex >= 0 ? remainder.slice(0, nextSectionIndex) : remainder
+}
+
 const parseSettingDoc = (source: string): SettingDoc => {
   const normalized = source.trim()
   const labelMatch = normalized.match(/^#\s+(.+)$/m)
-  const summaryMatch = normalized.match(/^##\s+Summary\s*\n+([\s\S]*?)(?=^##\s+|$)/m)
-  const detailsMatch =
-    normalized.match(/^##\s+Details\s*\n+([\s\S]*?)(?=^##\s+|$)/m) ??
-    normalized.match(/^##\s+Tooltip\s*\n+([\s\S]*?)(?=^##\s+|$)/m)
+  const summary = extractSection(normalized, 'Summary')
+  const details = extractSection(normalized, 'Details') ?? extractSection(normalized, 'Tooltip')
 
-  if (!labelMatch || !summaryMatch || !detailsMatch) {
+  if (!labelMatch || summary === null || details === null) {
     throw new Error('Invalid setting doc format. Expected # heading plus ## Summary and ## Details sections.')
   }
 
   return {
     label: normalizeSection(labelMatch[1]),
-    summary: normalizeSection(summaryMatch[1]),
-    details: normalizeSection(detailsMatch[1]),
+    summary: normalizeSection(summary),
+    details: normalizeSection(details),
   }
 }
 

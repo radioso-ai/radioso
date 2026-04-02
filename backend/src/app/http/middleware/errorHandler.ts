@@ -50,6 +50,13 @@ export const errorHandler = (error: unknown, req: Request, res: Response, _next:
     return;
   }
 
+  console.error("Unhandled request error", {
+    method: req.method,
+    path: req.originalUrl || req.path,
+    workspaceId: req.header("x-workspace-id"),
+    error,
+  });
+
   res.status(500).json({
     error: {
       code: "internal_error",

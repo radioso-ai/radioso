@@ -132,7 +132,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new QueryRewriteService(llmRegistry.createRewriteGateway()),
     new CandidatePreparationService(),
     new AttributeMatchScoringService(),
-    new RerankService(llmRegistry.createRerankGateway()),
+    new RerankService(llmRegistry.createRerankGateway(), logger),
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),

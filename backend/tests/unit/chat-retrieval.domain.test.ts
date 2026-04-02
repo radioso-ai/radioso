@@ -127,6 +127,67 @@ describe("chat retrieval domain", () => {
     expect(result.rewriteApplied).toBe(false);
   });
 
+  it("keeps explicit first-turn queries unchanged when rewrite introduces excessive drift", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Identify who or what Narayani refers to as a person, deity, title, or concept.",
+          semanticQuery: "Identify who or what Narayani refers to as a person, deity, title, or concept.",
+          lexicalQuery: 'Narayani "who is Narayani"',
+          turnKind: "fresh_subject",
+          proposedActiveSubject: "Narayani",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.6,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Who is Narayani?",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+    });
+
+    expect(result.status).toBe("fallback");
+    expect(result.semanticQuery).toBe("Who is Narayani?");
+    expect(result.lexicalQuery).toBe("Who is Narayani?");
+    expect(result.rewriteApplied).toBe(false);
+  });
+
+  it("keeps lexical rewrite close to the original on first-turn queries", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Who is Narayani?",
+          semanticQuery: "Who is Narayani?",
+          lexicalQuery: "Narayani Swami Kriyananda Ananda Europe Jayadev Shurjo",
+          turnKind: "fresh_subject",
+          proposedActiveSubject: "Narayani",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.7,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Who is Narayani?",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+    });
+
+    expect(result.lexicalQuery).toBe("Who is Narayani?");
+  });
+
   it("allows unresolved rewrites to run rewritten retrieval", async () => {
     const service = new QueryRewriteService({
       async rewrite() {
@@ -285,38 +346,114 @@ describe("chat retrieval domain", () => {
     expect(result.contexts[0]?.chunkId).toBe("c2");
   });
 
+  it("allows later batches to surface when reranking large candidate sets", async () => {
+    const service = new RerankService({
+      async rerank(input) {
+        return input.contexts.map((context) => ({
+          chunkId: context.chunkId,
+          relevanceScore: context.chunkId === "c25" ? 0.99 : 0.01,
+        }));
+      },
+    });
+
+    const contexts = Array.from({ length: 25 }, (_, index) => ({
+      chunkId: `c${index + 1}`,
+      documentId: `d${index + 1}`,
+      title: `Doc ${index + 1}`,
+      content: `content ${index + 1}`,
+      similarity: 1 - index / 100,
+      retrievalSources: ["semantic_original"] as const,
+      retrievalText: `Doc ${index + 1} content ${index + 1}`,
+      semanticScore: 1 - index / 100,
+      lexicalScore: 0,
+    }));
+
+    const result = await service.rerank({
+      query: "target",
+      enabled: true,
+      topK: 1,
+      contexts,
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.contexts[0]?.chunkId).toBe("c25");
+  });
+
+  it("parses OpenAI rerank JSON object responses", async () => {
+    const gateway = new OpenAISemanticRerankGateway(
+      {
+        responses: {
+          async create() {
+            return {
+              output_text: JSON.stringify({
+                scores: [
+                  { candidateIndex: 2, relevanceScore: 0.9 },
+                  { candidateIndex: 1, relevanceScore: 0.2 },
+                ],
+              }),
+            };
+          },
+        },
+      } as never,
+      "gpt-5.2",
+    );
+
+    const result = await gateway.rerank({
+      query: "Who is Narayani?",
+      contexts: [
+        { chunkId: "a", documentId: "d1", title: "A", content: "", retrievalText: "A", similarity: 0.2 },
+        { chunkId: "b", documentId: "d2", title: "B", content: "", retrievalText: "B", similarity: 0.1 },
+      ] as never,
+    });
+
+    expect(result).toEqual([
+      { chunkId: "b", relevanceScore: 0.9 },
+      { chunkId: "a", relevanceScore: 0.2 },
+    ]);
+  });
+
   it("uses enriched retrieval text when building rerank candidates", async () => {
     let prompt = "";
     let createInput:
       | {
-          messages: Array<{ content: string }>;
           temperature?: number;
-          max_completion_tokens?: number;
+          max_output_tokens?: number;
           model: string;
+          instructions?: string;
+          input?: string;
+          text?: {
+            format?: {
+              type: "json_schema";
+              name: string;
+              strict?: boolean | null;
+              schema: Record<string, unknown>;
+            };
+          };
         }
       | undefined;
     const gateway = new OpenAISemanticRerankGateway(
       {
-        chat: {
-          completions: {
-            create: async (input: {
-              messages: Array<{ content: string }>;
-              temperature?: number;
-              max_completion_tokens?: number;
-              model: string;
-            }) => {
-              createInput = input;
-              prompt = input.messages[1]?.content ?? "";
-              return {
-                choices: [
-                  {
-                    message: {
-                      content: "[]",
-                    },
-                  },
-                ],
+        responses: {
+          create: async (input: {
+            temperature?: number;
+            max_output_tokens?: number;
+            model: string;
+            instructions?: string;
+            input?: string;
+            text?: {
+              format?: {
+                type: "json_schema";
+                name: string;
+                strict?: boolean | null;
+                schema: Record<string, unknown>;
               };
-            },
+            };
+          }) => {
+            createInput = input;
+            prompt = input.input ?? "";
+            return {
+              output_text: '{"scores":[]}',
+            };
           },
         },
       } as never,
@@ -341,12 +478,21 @@ describe("chat retrieval domain", () => {
     });
 
     expect(prompt).toContain("Title: Summer Retreat | Dates: 2026-06-12 to 2026-06-15 | Location: Estonia");
+    expect(prompt).toContain("1. c1 |");
     expect(prompt).not.toContain("RAW BODY CONTENT SHOULD NOT BE USED");
     expect(createInput).toMatchObject({
       model: "gpt-test",
       temperature: 0.2,
-      max_completion_tokens: 100,
+      max_output_tokens: 200,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "rerank_scores",
+        },
+      },
     });
+
+    expect(createInput?.max_output_tokens).toBe(200);
   });
 
   it("does not send temperature in rewrite requests", async () => {
@@ -527,6 +673,97 @@ describe("chat retrieval domain", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.chunkId).toBe("c2");
+  });
+
+  it("skips near-duplicate contexts so later distinct chunks can fit", () => {
+    const service = new PromptContextSelectorService(200);
+
+    const result = service.select({
+      topK: 4,
+      contexts: [
+        {
+          chunkId: "c1",
+          documentId: "d1",
+          title: "Calendar A",
+          content: "Hosted by Ananda Assisi. Joy is within you. Zoom satsang details and registration.",
+          similarity: 0.95,
+          retrievalSources: ["lexical"],
+          retrievalText: "Calendar A Hosted by Ananda Assisi. Joy is within you. Zoom satsang details and registration.",
+          semanticScore: 0,
+          lexicalScore: 0.95,
+          relevanceScore: 0.95,
+          rerankPosition: 0,
+        },
+        {
+          chunkId: "c2",
+          documentId: "d2",
+          title: "Calendar B",
+          content: "Hosted by Ananda Assisi. Joy is within you. Zoom satsang details and registration.",
+          similarity: 0.94,
+          retrievalSources: ["lexical"],
+          retrievalText: "Calendar B Hosted by Ananda Assisi. Joy is within you. Zoom satsang details and registration.",
+          semanticScore: 0,
+          lexicalScore: 0.94,
+          relevanceScore: 0.94,
+          rerankPosition: 1,
+        },
+        {
+          chunkId: "c3",
+          documentId: "d3",
+          title: "Narayani",
+          content: "Narayani is originally from Spain and later became Swami Kriyananda's assistant.",
+          similarity: 0.7,
+          retrievalSources: ["semantic_original"],
+          retrievalText: "Narayani is originally from Spain and later became Swami Kriyananda's assistant.",
+          semanticScore: 0.7,
+          lexicalScore: 0,
+          relevanceScore: 0.7,
+          rerankPosition: 2,
+        },
+      ],
+    });
+
+    expect(result).toHaveLength(2);
+    expect(result.map((context) => context.chunkId)).toEqual(["c1", "c3"]);
+  });
+
+  it("keeps chunks that share an opening prefix but diverge later", () => {
+    const selector = new PromptContextSelectorService(200);
+
+    const sharedPrefix = "Event header and boilerplate introduction ".repeat(6);
+    const result = selector.select({
+      topK: 3,
+      contexts: [
+        {
+          chunkId: "c1",
+          documentId: "d1",
+          title: "A",
+          content: `${sharedPrefix} unique ending alpha`,
+          similarity: 0.9,
+          relevanceScore: 0.9,
+          retrievalSources: ["semantic_original"],
+          retrievalText: "A",
+          semanticScore: 0.9,
+          lexicalScore: 0,
+          rerankPosition: 0,
+        },
+        {
+          chunkId: "c2",
+          documentId: "d2",
+          title: "B",
+          content: `${sharedPrefix} unique ending beta`,
+          similarity: 0.8,
+          relevanceScore: 0.8,
+          retrievalSources: ["semantic_original"],
+          retrievalText: "B",
+          semanticScore: 0.8,
+          lexicalScore: 0,
+          rerankPosition: 1,
+        },
+      ],
+    });
+
+    expect(result.map((context) => context.chunkId)).toEqual(["c1", "c2"]);
   });
 
   it("builds prompts with contexts and citations", () => {

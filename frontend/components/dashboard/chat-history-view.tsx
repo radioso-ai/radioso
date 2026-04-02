@@ -19,6 +19,7 @@ import {
   DrawerContent,
   DrawerDescription,
   DrawerHeader,
+  DrawerTitle,
 } from '@/components/ui/drawer'
 import { ActionButton } from '@/components/ui/action-button'
 import { Button } from '@/components/ui/button'
@@ -566,6 +567,9 @@ export function ChatHistoryView({
           <DrawerHeader className="border-b border-border">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
+                <DrawerTitle className="sr-only">
+                  {selectedItem?.kind === 'chat' ? 'Conversation details' : 'Search details'}
+                </DrawerTitle>
                 {selectedItem ? (
                   <CopyValueField
                     label={selectedItem.kind === 'chat' ? 'Conversation ID:' : 'Search ID:'}

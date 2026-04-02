@@ -28,7 +28,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
@@ -49,7 +48,7 @@ describe("chat integration", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(second.body.conversationId).toEqual(first.body.conversationId);
-    expect(second.body.answer).toContain("Warmth:5");
+    expect(second.body.answer).toContain("The page explains testing and parsing content for users");
   });
 
   it("returns a safe answer when no relevant chunks are found", async () => {
@@ -181,7 +180,6 @@ describe("chat integration", () => {
         vectorTopK: 100,
         similarityThreshold: 0.8,
         rerankTopK: 20,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
@@ -203,7 +201,6 @@ describe("chat integration", () => {
         vectorTopK: 100,
         similarityThreshold: 0.2,
         rerankTopK: 20,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
@@ -257,7 +254,6 @@ describe("chat integration", () => {
         vectorTopK: 50,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
@@ -466,7 +462,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
@@ -538,7 +533,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
@@ -592,10 +586,10 @@ describe("chat integration", () => {
     expect(response.body.citations[0]?.title).toBe("Feature Flags");
   });
 
-  it("applies persisted warmth settings to generated answers", async () => {
+  it("applies persisted retrieval settings without adding tone markers to answers", async () => {
     const { app } = createTestApp();
 
-    const { token } = await issueTestToken(app, "warmth@example.com");
+    const { token } = await issueTestToken(app, "answer-settings@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -612,7 +606,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 9,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });
@@ -623,7 +616,7 @@ describe("chat integration", () => {
       .send({ query: "What does the page explain?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toContain("Warmth:9");
+    expect(response.body.answer).toContain("The page explains testing and parsing content for users");
   });
 
   it("omits citation metadata when citation display is disabled", async () => {
@@ -646,7 +639,6 @@ describe("chat integration", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: false,
         chunkingStrategy: "fixed_window",
       });
@@ -687,7 +679,6 @@ describe("chat integration", () => {
         vectorTopK: 50,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
       });

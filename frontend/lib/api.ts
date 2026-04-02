@@ -222,7 +222,6 @@ export interface RetrievalSettings {
   vectorTopK: number
   similarityThreshold: number
   rerankTopK: number
-  warmthLevel: number
   citationDisplayEnabled: boolean
   metadataFieldSuggestions: MetadataFieldSuggestion[]
   metadataRules: RetrievalMetadataRule[]

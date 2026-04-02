@@ -34,7 +34,6 @@ describe("retrieval benchmark integration", () => {
         vectorTopK: 100,
         similarityThreshold: 0.2,
         rerankTopK: 20,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
         signalPolicies: [
@@ -138,7 +137,6 @@ describe("retrieval benchmark integration", () => {
           vectorTopK: 100,
           similarityThreshold: 0.2,
           rerankTopK: 20,
-          warmthLevel: 5,
           citationDisplayEnabled: true,
           chunkingStrategy: "fixed_window",
           signalPolicies: [

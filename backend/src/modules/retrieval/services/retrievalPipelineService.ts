@@ -39,7 +39,6 @@ export interface RetrievalPipelineResult {
   prompt: string;
   citations: PromptBuildResult["citations"];
   responseSettings: {
-    warmthLevel: number;
     citationDisplayEnabled: boolean;
     answerSupportPolicy: import("../../settings/domain/retrievalSettings.js").AnswerSupportPolicy;
   };

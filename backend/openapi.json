@@ -315,11 +315,6 @@
             "type": "integer",
             "minimum": 1
           },
-          "warmthLevel": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10
-          },
           "citationDisplayEnabled": {
             "type": "boolean"
           },
@@ -430,7 +425,6 @@
           "vectorTopK",
           "similarityThreshold",
           "rerankTopK",
-          "warmthLevel",
           "citationDisplayEnabled",
           "customInstruction",
           "createdAt",
@@ -469,9 +463,6 @@
             "type": "number"
           },
           "rerankTopK": {
-            "type": "integer"
-          },
-          "warmthLevel": {
             "type": "integer"
           },
           "citationDisplayEnabled": {
@@ -548,7 +539,6 @@
           "vectorTopK",
           "similarityThreshold",
           "rerankTopK",
-          "warmthLevel",
           "citationDisplayEnabled"
         ]
       },

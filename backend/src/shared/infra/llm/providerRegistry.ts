@@ -2,10 +2,10 @@ import { ModelChatGateway } from "../../../modules/chat/services/chatService.js"
 import { ModelUnsupportedNoticeGenerator } from "../../../modules/chat/services/unsupportedNoticeGenerator.js";
 import { ModelEmbeddingGateway } from "../../../modules/retrieval/services/embeddingService.js";
 import { ModelQueryRewriteGateway } from "../../../modules/retrieval/services/queryRewriteService.js";
-import { ModelRerankGateway } from "../../../modules/retrieval/services/rerankService.js";
+import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../../modules/retrieval/services/rerankService.js";
 import { ClaudeTextGenerationClient } from "./claudeProvider.js";
 import { GeminiTextGenerationClient } from "./geminiProvider.js";
-import { OpenAIEmbeddingClient, OpenAITextGenerationClient } from "./openaiProvider.js";
+import { createOpenAIClient, OpenAIEmbeddingClient, OpenAITextGenerationClient } from "./openaiProvider.js";
 import type { AppLogger } from "../../observability/logger.js";
 import {
   type EmbeddingClient,
@@ -54,7 +54,15 @@ export class LlmProviderRegistry {
   }
 
   createRerankGateway() {
-    return new ModelRerankGateway(this.createTextClient(this.config.rerank));
+    if (this.config.rerank.provider === "openai") {
+      return new OpenAISemanticRerankGateway(
+        createOpenAIClient(this.config.rerank),
+        this.config.rerank.model,
+        this.logger,
+      );
+    }
+
+    return new ModelRerankGateway(this.createTextClient(this.config.rerank), this.logger);
   }
 
   createEmbeddingGateway() {

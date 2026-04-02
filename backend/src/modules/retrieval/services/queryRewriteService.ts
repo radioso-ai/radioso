@@ -152,6 +152,7 @@ export class QueryRewriteService {
     }
 
     try {
+      const hasConversationContext = input.contextWindow.selectedMessages.length > 0;
       const rawResult = await this.gateway?.rewrite({
         query: input.query,
         contextMessages: input.contextWindow.selectedMessages,
@@ -160,8 +161,16 @@ export class QueryRewriteService {
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
       });
       const result = this.normalizeStructuredResult(input.query, rawResult);
-      const semanticQuery = this.selectUsableQuery(input.query, result.semanticQuery ?? result.rewrittenQuery);
-      const lexicalQuery = this.selectUsableQuery(input.query, result.lexicalQuery ?? result.rewrittenQuery);
+      const semanticQuery = this.selectSemanticQuery(
+        input.query,
+        result.semanticQuery ?? result.rewrittenQuery,
+        hasConversationContext,
+      );
+      const lexicalQuery = this.selectLexicalQuery(
+        input.query,
+        result.lexicalQuery ?? result.rewrittenQuery,
+        hasConversationContext,
+      );
       const compatibilityRewrite = semanticQuery;
       const applied = semanticQuery !== input.query || lexicalQuery !== input.query;
 
@@ -324,7 +333,52 @@ export class QueryRewriteService {
   private selectUsableQuery(originalQuery: string, candidateQuery: string): string {
     return this.isUsableRewrite(originalQuery, candidateQuery) ? candidateQuery : originalQuery;
   }
+
+  private selectSemanticQuery(originalQuery: string, candidateQuery: string, hasConversationContext: boolean): string {
+    const selected = this.selectUsableQuery(originalQuery, candidateQuery);
+    if (selected === originalQuery) {
+      return originalQuery;
+    }
+
+    if (!hasConversationContext && this.introducesExcessiveTermDrift(originalQuery, selected)) {
+      return originalQuery;
+    }
+
+    return selected;
+  }
+
+  private selectLexicalQuery(originalQuery: string, candidateQuery: string, hasConversationContext: boolean): string {
+    const selected = this.selectUsableQuery(originalQuery, candidateQuery);
+    if (selected === originalQuery) {
+      return originalQuery;
+    }
+
+    if (!hasConversationContext) {
+      return originalQuery;
+    }
+
+    return selected;
+  }
+
+  private introducesExcessiveTermDrift(originalQuery: string, candidateQuery: string): boolean {
+    return this.countNewTerms(originalQuery, candidateQuery) > 2;
+  }
+
+  private countNewTerms(originalQuery: string, candidateQuery: string): number {
+    const originalTerms = new Set(tokenizeRewriteTerms(originalQuery));
+    const candidateTerms = tokenizeRewriteTerms(candidateQuery);
+
+    return candidateTerms.filter((term) => !originalTerms.has(term)).length;
+  }
 }
+
+const tokenizeRewriteTerms = (value: string): string[] =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3);
 
 const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
   const normalized = raw.trim().replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim();

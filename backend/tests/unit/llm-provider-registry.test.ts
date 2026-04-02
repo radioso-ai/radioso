@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
+import { OpenAITextGenerationClient } from "../../src/shared/infra/llm/openaiProvider.js";
 import {
   LlmProviderRegistry,
   ProviderConfigurationError,
@@ -192,5 +194,107 @@ describe("LlmProviderRegistry", () => {
       rerank: { capability: "rerank", provider: "openai", model: "gpt-5.2" },
       embeddings: { capability: "embeddings", provider: "openai", model: "text-embedding-3-small" },
     });
+  });
+
+  it("uses the legacy chat-completions rerank gateway for openai-compatible providers", () => {
+    const config = resolveLlmConfig({
+      OPENAI_API_KEY: "openai-key",
+      OPENAI_CHAT_MODEL: "gpt-5.2",
+      OPENAI_VECTOR_MODEL: "text-embedding-3-small",
+      LLM_RERANK_PROVIDER: "openai-compatible",
+      LLM_RERANK_MODEL: "gpt-oss-20b",
+      OPENAI_COMPATIBLE_API_KEY: "compat-key",
+      OPENAI_COMPATIBLE_BASE_URL: "https://llm.example/v1",
+    });
+
+    const registry = new LlmProviderRegistry(config);
+
+    expect(registry.createRerankGateway()).toBeInstanceOf(ModelRerankGateway);
+  });
+
+  it("uses the Responses API rerank gateway only for native OpenAI", () => {
+    const config = resolveLlmConfig({
+      OPENAI_API_KEY: "openai-key",
+      OPENAI_CHAT_MODEL: "gpt-5.2",
+      OPENAI_VECTOR_MODEL: "text-embedding-3-small",
+      OPENAI_RERANK_MODEL: "gpt-5.2",
+    });
+
+    const registry = new LlmProviderRegistry(config);
+
+    expect(registry.createRerankGateway()).toBeInstanceOf(OpenAISemanticRerankGateway);
+  });
+});
+
+describe("OpenAITextGenerationClient", () => {
+  it("uses max_tokens for openai-compatible chat completions", async () => {
+    let request: Record<string, unknown> | undefined;
+    const client = new OpenAITextGenerationClient({
+      capability: "chat",
+      provider: "openai-compatible",
+      model: "gpt-oss-20b",
+      apiKey: "compat-key",
+      baseUrl: "https://llm.example/v1",
+    });
+
+    (
+      client as unknown as {
+        client: {
+          chat: {
+            completions: {
+              create(input: Record<string, unknown>): Promise<{ choices: Array<{ message: { content: string } }> }>;
+            };
+          };
+        };
+      }
+    ).client.chat.completions.create = async (input) => {
+      request = input;
+      return { choices: [{ message: { content: "ok" } }] };
+    };
+
+    await client.complete({
+      prompt: "hello",
+      maxOutputTokens: 123,
+    });
+
+    expect(request).toMatchObject({
+      max_tokens: 123,
+    });
+    expect(request).not.toHaveProperty("max_completion_tokens");
+  });
+
+  it("uses max_completion_tokens for native OpenAI chat completions", async () => {
+    let request: Record<string, unknown> | undefined;
+    const client = new OpenAITextGenerationClient({
+      capability: "chat",
+      provider: "openai",
+      model: "gpt-5.2",
+      apiKey: "openai-key",
+    });
+
+    (
+      client as unknown as {
+        client: {
+          chat: {
+            completions: {
+              create(input: Record<string, unknown>): Promise<{ choices: Array<{ message: { content: string } }> }>;
+            };
+          };
+        };
+      }
+    ).client.chat.completions.create = async (input) => {
+      request = input;
+      return { choices: [{ message: { content: "ok" } }] };
+    };
+
+    await client.complete({
+      prompt: "hello",
+      maxOutputTokens: 123,
+    });
+
+    expect(request).toMatchObject({
+      max_completion_tokens: 123,
+    });
+    expect(request).not.toHaveProperty("max_tokens");
   });
 });

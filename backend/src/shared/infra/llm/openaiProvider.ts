@@ -16,7 +16,15 @@ const buildMessages = (input: { systemPrompt?: string; prompt: string }) => {
   return messages;
 };
 
-const createClient = (config: LlmCapabilityConfig): OpenAI =>
+const buildTokenLimit = (
+  provider: LlmCapabilityConfig["provider"],
+  maxOutputTokens?: number,
+): { max_completion_tokens?: number; max_tokens?: number } =>
+  provider === "openai-compatible"
+    ? { max_tokens: maxOutputTokens }
+    : { max_completion_tokens: maxOutputTokens };
+
+export const createOpenAIClient = (config: LlmCapabilityConfig): OpenAI =>
   new OpenAI({
     apiKey: config.apiKey,
     baseURL: config.baseUrl,
@@ -27,7 +35,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
   private readonly client: OpenAI;
 
   constructor(private readonly config: LlmCapabilityConfig) {
-    this.client = createClient(config);
+    this.client = createOpenAIClient(config);
     this.metadata = {
       capability: config.capability,
       provider: config.provider,
@@ -44,7 +52,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
     const response = await this.client.chat.completions.create({
       model: this.config.model,
       temperature: input.temperature,
-      max_tokens: input.maxOutputTokens,
+      ...buildTokenLimit(this.config.provider, input.maxOutputTokens),
       messages: buildMessages(input),
     });
 
@@ -61,7 +69,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
       model: this.config.model,
       stream: true,
       temperature: input.temperature,
-      max_tokens: input.maxOutputTokens,
+      ...buildTokenLimit(this.config.provider, input.maxOutputTokens),
       messages: buildMessages(input),
     });
 
@@ -82,7 +90,7 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
     private readonly config: LlmCapabilityConfig,
     private readonly logger?: AppLogger,
   ) {
-    this.client = createClient(config);
+    this.client = createOpenAIClient(config);
     this.metadata = {
       capability: config.capability,
       provider: config.provider,

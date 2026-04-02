@@ -113,6 +113,7 @@ interface ChatAuditMetadata {
     unsupportedSegmentCount?: number;
     supportedSegmentCount?: number;
     nonSubstantiveSegmentCount?: number;
+    answerSupportPolicy?: AnswerSupportPolicy;
     segmentResults?: Array<{
       text?: string;
       disposition?: ValidationDisposition;

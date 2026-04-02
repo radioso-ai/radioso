@@ -21,7 +21,6 @@ import rerankTopKSource from '../../../docs/settings-docs/retrieval/rerank-top-k
 import semanticRewriteInstructionsSource from '../../../docs/settings-docs/retrieval/semantic-rewrite-instructions.md'
 import similarityThresholdSource from '../../../docs/settings-docs/retrieval/similarity-threshold.md'
 import vectorTopKSource from '../../../docs/settings-docs/retrieval/vector-top-k.md'
-import warmthLevelSource from '../../../docs/settings-docs/retrieval/warmth-level.md'
 
 export interface SettingDoc {
   label: string
@@ -68,7 +67,6 @@ export const retrievalSettingDocs = {
   metadataRules: parseSettingDoc(metadataRulesSource),
   rerankEnabled: parseSettingDoc(rerankEnabledSource),
   rerankTopK: parseSettingDoc(rerankTopKSource),
-  warmthLevel: parseSettingDoc(warmthLevelSource),
   answerSupportPolicy: parseSettingDoc(answerSupportPolicySource),
   citationDisplayEnabled: parseSettingDoc(citationDisplayEnabledSource),
   customInstruction: parseSettingDoc(customInstructionSource),

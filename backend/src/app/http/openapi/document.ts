@@ -155,7 +155,6 @@ const RetrievalSettingsSchema = registry.register(
     vectorTopK: z.number().int().min(1).max(300),
     similarityThreshold: z.number().min(0).max(1),
     rerankTopK: z.number().int().min(1),
-    warmthLevel: z.number().int().min(1).max(10),
     citationDisplayEnabled: z.boolean(),
     metadataFieldSuggestions: z.array(
       z.object({

@@ -686,31 +686,6 @@ export function RetrievalSettingsPanel() {
             description="Once evidence is assembled, configure how the grounded response should read and what support it should expose."
           >
             <div className="space-y-4">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <SettingFieldHeader
-                    htmlFor="warmthLevel"
-                    label={retrievalSettingDocs.warmthLevel.label}
-                    description={retrievalSettingDocs.warmthLevel.summary}
-                    tooltip={retrievalSettingDocs.warmthLevel.details}
-                    className="pr-4"
-                  />
-                  <span className="text-sm font-mono text-muted-foreground">{settings.warmthLevel}</span>
-                </div>
-                <Slider
-                  id="warmthLevel"
-                  min={1}
-                  max={10}
-                  step={1}
-                  value={[settings.warmthLevel]}
-                  onValueChange={([value]) => updateSetting('warmthLevel', value)}
-                />
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Terse</span>
-                  <span>Very warm</span>
-                </div>
-              </div>
-
               <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
                 <div>
                   <div className="flex items-center gap-1.5">

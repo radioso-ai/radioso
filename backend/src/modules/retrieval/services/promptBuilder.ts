@@ -13,7 +13,6 @@ export class PromptBuilder {
     history: MessageRecord[];
     contexts: FinalPromptContext[];
     settings: {
-      warmthLevel: number;
       customInstruction?: string;
     };
   }): PromptBuildResult {
@@ -37,13 +36,11 @@ export class PromptBuilder {
         return `Result ${index + 1} (${context.title}): ${prefix}${metadataLine}${context.content}`;
       })
       .join("\n\n");
-    const warmthInstruction = this.getWarmthInstruction(input.settings.warmthLevel);
     const customInstructionBlock = this.renderCustomInstruction(input.settings.customInstruction);
 
     return {
       prompt: [
         "You are a retrieval-grounded assistant.",
-        warmthInstruction,
         ...(customInstructionBlock ? [customInstructionBlock] : []),
         "Answer only from the retrieved context when relevant.",
         "Every substantive grounded claim you keep in the answer must be followed immediately by its matching [[n]] citation anchor.",
@@ -70,18 +67,6 @@ export class PromptBuilder {
         title: context.title,
       })),
     };
-  }
-
-  private getWarmthInstruction(warmthLevel: number): string {
-    if (warmthLevel <= 3) {
-      return `Use a terse, direct tone, short answers to the point, don't suggest any help.  Warmth:${warmthLevel} out of 10`;
-    }
-
-    if (warmthLevel <= 7) {
-      return `Use a clear, natural, moderately warm tone. Warmth:${warmthLevel} out of 10`;
-    }
-
-    return `Use a warm, considerate tone. Acknowledge the user's questions. Warmth:${warmthLevel} out of 10`;
   }
 
   private renderCustomInstruction(customInstruction?: string): string | null {

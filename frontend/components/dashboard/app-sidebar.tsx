@@ -27,6 +27,7 @@ import { useTheme } from 'next-themes'
 import {
   MessageSquare,
   History,
+  Beaker,
   FileText,
   Settings,
   LogOut,
@@ -52,6 +53,7 @@ const navItems = [
   { id: 'chat' as const, label: 'Chat', icon: MessageSquare },
   { id: 'documents' as const, label: 'Documents', icon: FileText },
   { id: 'history' as const, label: 'History', icon: History },
+  { id: 'evals' as const, label: 'Evals', icon: Beaker },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 

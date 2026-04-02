@@ -1,4 +1,4 @@
-export type DashboardSection = 'chat' | 'history' | 'documents' | 'settings'
+export type DashboardSection = 'chat' | 'history' | 'documents' | 'evals' | 'settings'
 export type HistoryFilter = 'all' | 'chat' | 'search'
 export type HistoryItemKind = 'chat' | 'search'
 export type SettingsTab = 'general' | 'ingestion' | 'retrieval' | 'connectors'
@@ -12,6 +12,7 @@ export interface DashboardRouteState {
   historyPage?: number
   historyItemKind?: HistoryItemKind
   historyItemId?: string
+  evalDatasetId?: string
   settingsTab?: SettingsTab
   settingsAnchor?: string
   connectorId?: string
@@ -31,7 +32,7 @@ const parsePositiveInt = (value: string | null): number | undefined => {
 }
 
 const parseSection = (value: string | undefined): DashboardSection | null => {
-  if (value === 'chat' || value === 'history' || value === 'documents' || value === 'settings') {
+  if (value === 'chat' || value === 'history' || value === 'documents' || value === 'evals' || value === 'settings') {
     return value
   }
 
@@ -110,6 +111,13 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     return normalized
   }
 
+  if (state.section === 'evals') {
+    if (state.evalDatasetId) {
+      normalized.evalDatasetId = state.evalDatasetId
+    }
+    return normalized
+  }
+
   if (state.section === 'settings') {
     if (state.settingsTab && state.settingsTab !== DEFAULT_SETTINGS_TAB) {
       normalized.settingsTab = state.settingsTab
@@ -162,6 +170,10 @@ export const buildDashboardHref = (
       searchParams.set('itemKind', normalized.historyItemKind)
       searchParams.set('itemId', normalized.historyItemId)
     }
+  }
+
+  if (normalized.section === 'evals' && normalized.evalDatasetId) {
+    searchParams.set('dataset', normalized.evalDatasetId)
   }
 
   if (normalized.section === 'settings') {
@@ -228,6 +240,14 @@ export const parseDashboardRoute = (
       historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
       historyItemId: searchParams?.get('itemId') ?? undefined,
     })
+  }
+
+  if (section === 'evals') {
+    return {
+      section: 'evals',
+      workspaceId: normalizeWorkspaceId(searchParams?.get('workspace') ?? null),
+      evalDatasetId: searchParams?.get('dataset') ?? undefined,
+    }
   }
 
   if (section === 'settings') {

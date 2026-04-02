@@ -534,6 +534,158 @@ export interface ChatHistoryListResponse {
   total: number
 }
 
+export type EvalExpectedRefusalBehavior = 'refusal' | 'answer'
+export type EvalAnswerOutcome = 'grounded_success' | 'grounded_degraded_unsupported_segments' | 'no_context_refusal'
+export type EvalComparisonOutcome = 'improved' | 'regressed' | 'unchanged' | 'unscored'
+
+export interface EvalCaseConversationMessage {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+}
+
+export interface EvalCaseExpectations {
+  expectedDocumentIds?: string[]
+  expectedCitationTitles?: string[]
+  expectedRefusalBehavior?: EvalExpectedRefusalBehavior
+  expectedAnswerOutcome?: EvalAnswerOutcome
+  requiredPhrases?: string[]
+  forbiddenPhrases?: string[]
+  latencyBudgetMs?: number
+}
+
+export interface EvalDatasetSummary {
+  id: string
+  workspaceId: string
+  name: string
+  description: string
+  status: 'active' | 'archived'
+  createdByAccountId: string | null
+  createdAt: string
+  updatedAt: string
+  caseCount: number
+  runCount: number
+  lastRunAt: string | null
+}
+
+export interface EvalImportDraft {
+  title: string
+  query: string
+  conversationContext: EvalCaseConversationMessage[]
+  sourceType: 'manual' | 'conversation_import'
+  provenance: Record<string, unknown>
+  seededExpectations: EvalCaseExpectations
+  unavailable: string[]
+}
+
+export interface EvalCase {
+  id: string
+  datasetId: string
+  workspaceId: string
+  title: string
+  sourceType: 'manual' | 'conversation_import'
+  query: string
+  conversationContext: EvalCaseConversationMessage[]
+  expectations: EvalCaseExpectations
+  provenance: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface EvalDimensionResult {
+  verdict: 'pass' | 'fail' | 'unscored'
+  expected?: unknown
+  actual?: unknown
+  reason?: string
+}
+
+export interface EvalCaseScore {
+  documentMatch: EvalDimensionResult
+  citationMatch: EvalDimensionResult
+  refusalMatch: EvalDimensionResult
+  answerOutcomeMatch: EvalDimensionResult
+  answerContainsMatch: EvalDimensionResult
+  latencyMatch: EvalDimensionResult
+  overallVerdict: 'pass' | 'fail'
+  reasons: string[]
+}
+
+export interface EvalReplayDiagnostics {
+  retrievalInfo: RetrievalInfo
+  retrievalTrace?: RetrievalTrace
+  citations?: Citation[]
+  answerSegments?: AnswerSegment[]
+  answerOutcome: EvalAnswerOutcome
+  answerSupportPolicy?: string
+  answer: string
+  latencyMs: number
+}
+
+export interface EvalCaseResult {
+  caseId: string
+  status: 'pass' | 'fail' | 'skipped' | 'invalid'
+  score: EvalCaseScore
+  diagnostics: EvalReplayDiagnostics
+  comparisonOutcome?: EvalComparisonOutcome
+  comparisonReasons?: string[]
+}
+
+export interface EvalRunSummary {
+  totalCases: number
+  passCount: number
+  failCount: number
+  skippedCount: number
+  invalidCount: number
+  improvementCount: number
+  regressionCount: number
+  unchangedCount: number
+}
+
+export interface EvalRun {
+  id: string
+  datasetId: string
+  workspaceId: string
+  label: string | null
+  baselineRunId: string | null
+  createdByAccountId: string | null
+  runMetadata: Record<string, unknown>
+  summary: EvalRunSummary
+  results: EvalCaseResult[]
+  startedAt: string
+  completedAt: string
+}
+
+export interface EvalDatasetDetail {
+  id: string
+  workspaceId: string
+  name: string
+  description: string
+  status: 'active' | 'archived'
+  createdByAccountId: string | null
+  createdAt: string
+  updatedAt: string
+  cases: EvalCase[]
+  runs: EvalRun[]
+}
+
+export interface EvalRunComparisonCase {
+  caseId: string
+  title: string
+  outcome: EvalComparisonOutcome
+  reasons: string[]
+  baselineStatus?: 'pass' | 'fail' | 'skipped' | 'invalid'
+  candidateStatus?: 'pass' | 'fail' | 'skipped' | 'invalid'
+}
+
+export interface EvalRunComparison {
+  baselineRunId: string
+  candidateRunId: string
+  regressions: number
+  improvements: number
+  unchanged: number
+  unscored: number
+  cases: EvalRunComparisonCase[]
+}
+
 interface ChatStreamHandlers {
   onConversation?: (payload: ChatStreamConversation) => void
   onChunk?: (payload: ChatStreamChunk) => void
@@ -1042,6 +1194,75 @@ export const chatApi = {
 
     const query = searchParams.toString()
     return request<ChatConversationDetail>(`/chat/history/${conversationId}${query ? `?${query}` : ''}`, {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+}
+
+export const evalApi = {
+  async listDatasets(): Promise<{ datasets: EvalDatasetSummary[] }> {
+    return request<{ datasets: EvalDatasetSummary[] }>('/evals/datasets', {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async createDataset(data: { name: string; description?: string }): Promise<EvalDatasetSummary> {
+    return request<EvalDatasetSummary>('/evals/datasets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async getDataset(datasetId: string): Promise<EvalDatasetDetail> {
+    return request<EvalDatasetDetail>(`/evals/datasets/${datasetId}`, {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async importChatHistory(data: { conversationId: string; assistantMessageId: string }): Promise<{ importDraft: EvalImportDraft }> {
+    return request<{ importDraft: EvalImportDraft }>('/evals/import/chat-history', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async createCase(
+    datasetId: string,
+    data: {
+      title: string
+      query: string
+      conversationContext?: EvalCaseConversationMessage[]
+      sourceType?: 'manual' | 'conversation_import'
+      expectations?: EvalCaseExpectations
+      provenance?: Record<string, unknown>
+    },
+  ): Promise<EvalCase> {
+    return request<EvalCase>(`/evals/datasets/${datasetId}/cases`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async runDataset(datasetId: string, data?: { label?: string; baselineRunId?: string; runMetadata?: Record<string, unknown> }): Promise<EvalRun> {
+    return request<EvalRun>(`/evals/datasets/${datasetId}/runs`, {
+      method: 'POST',
+      body: JSON.stringify(data ?? {}),
+    }, { withApiToken: true })
+  },
+
+  async getRun(datasetId: string, runId: string): Promise<EvalRun> {
+    return request<EvalRun>(`/evals/datasets/${datasetId}/runs/${runId}`, {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async getComparison(datasetId: string, runId: string, baselineRunId?: string): Promise<EvalRunComparison> {
+    const searchParams = new URLSearchParams()
+    if (baselineRunId) {
+      searchParams.set('baselineRunId', baselineRunId)
+    }
+    const query = searchParams.toString()
+    return request<EvalRunComparison>(`/evals/datasets/${datasetId}/runs/${runId}/comparison${query ? `?${query}` : ''}`, {
       method: 'GET',
     }, { withApiToken: true })
   },

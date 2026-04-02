@@ -44,6 +44,8 @@ import { ConnectorRegistry } from "../../src/modules/connectors/services/connect
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
 import { WhatsAppPlugin } from "../../src/modules/connectors/plugins/whatsapp/whatsappPlugin.js";
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
+import { EvalReplayService } from "../../src/modules/evals/services/evalReplayService.js";
+import { EvalLabService } from "../../src/modules/evals/services/evalLabService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
@@ -64,6 +66,7 @@ import {
   InMemoryWorkspaceRepository,
   InMemoryConnectorDatabase,
   InMemoryAbuseControlRepository,
+  InMemoryEvalRepository,
 } from "./fakes.js";
 
 export const createTestEnv = (): Env => ({
@@ -409,6 +412,21 @@ export const createTestDependencies = (overrides: {
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
 
+  const chatHistoryService = new ChatHistoryService(
+    conversationRepository,
+    messageRepository,
+    auditEventRepository,
+  );
+  const evalLabService = new EvalLabService(
+    new InMemoryEvalRepository(),
+    chatHistoryService,
+    new EvalReplayService(
+      retrievalPipeline,
+      chatGateway,
+      overrides.unsupportedNoticeGenerator ?? new DefaultUnsupportedNoticeGenerator(),
+    ),
+  );
+
   const dependencies: AppDependencies = {
     env,
     logger: createLogger("silent"),
@@ -441,11 +459,8 @@ export const createTestDependencies = (overrides: {
       auditService,
       overrides.unsupportedNoticeGenerator ?? new DefaultUnsupportedNoticeGenerator(),
     ),
-    chatHistoryService: new ChatHistoryService(
-      conversationRepository,
-      messageRepository,
-      auditEventRepository,
-    ),
+    chatHistoryService,
+    evalLabService,
     workspaceRepository,
     conversationRepository,
     messageRepository,

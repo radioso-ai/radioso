@@ -9,7 +9,6 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       query: input.request.query,
       history: input.promptHistory,
       settings: {
-        warmthLevel: input.settings.warmthLevel,
         customInstruction: input.settings.customInstruction,
       },
       contexts: input.contexts,
@@ -20,7 +19,6 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       prompt: prompt.prompt,
       citations: prompt.citations,
       responseSettings: {
-        warmthLevel: input.settings.warmthLevel,
         citationDisplayEnabled: input.settings.citationDisplayEnabled,
         answerSupportPolicy: input.settings.answerSupportPolicy,
       },

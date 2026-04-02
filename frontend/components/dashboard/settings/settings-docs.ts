@@ -4,6 +4,7 @@ import fixedWindowChunkSizeSource from '../../../docs/settings-docs/ingestion/fi
 import reprocessSource from '../../../docs/settings-docs/ingestion/reprocess-existing-documents.md'
 import structuredMaxChunkSizeSource from '../../../docs/settings-docs/ingestion/structured-max-chunk-size.md'
 import structuredMinChunkSizeSource from '../../../docs/settings-docs/ingestion/structured-min-chunk-size.md'
+import answerSupportPolicySource from '../../../docs/settings-docs/retrieval/answer-support-policy.md'
 import citationDisplayEnabledSource from '../../../docs/settings-docs/retrieval/citation-display-enabled.md'
 import customInstructionSource from '../../../docs/settings-docs/retrieval/custom-instruction.md'
 import lexicalRewriteInstructionsSource from '../../../docs/settings-docs/retrieval/lexical-rewrite-instructions.md'
@@ -20,7 +21,6 @@ import rerankTopKSource from '../../../docs/settings-docs/retrieval/rerank-top-k
 import semanticRewriteInstructionsSource from '../../../docs/settings-docs/retrieval/semantic-rewrite-instructions.md'
 import similarityThresholdSource from '../../../docs/settings-docs/retrieval/similarity-threshold.md'
 import vectorTopKSource from '../../../docs/settings-docs/retrieval/vector-top-k.md'
-import warmthLevelSource from '../../../docs/settings-docs/retrieval/warmth-level.md'
 
 export interface SettingDoc {
   label: string
@@ -30,22 +30,37 @@ export interface SettingDoc {
 
 const normalizeSection = (value: string) => value.trim().replace(/\n{3,}/g, '\n\n')
 
+const extractSection = (source: string, heading: 'Summary' | 'Details' | 'Tooltip') => {
+  const marker = `## ${heading}`
+  const start = source.indexOf(marker)
+  if (start < 0) {
+    return null
+  }
+
+  const afterHeading = source.indexOf('\n', start)
+  if (afterHeading < 0) {
+    return ''
+  }
+
+  const remainder = source.slice(afterHeading + 1)
+  const nextSectionIndex = remainder.search(/^##\s+/m)
+  return nextSectionIndex >= 0 ? remainder.slice(0, nextSectionIndex) : remainder
+}
+
 const parseSettingDoc = (source: string): SettingDoc => {
   const normalized = source.trim()
   const labelMatch = normalized.match(/^#\s+(.+)$/m)
-  const summaryMatch = normalized.match(/^##\s+Summary\s*\n+([\s\S]*?)(?=^##\s+|$)/m)
-  const detailsMatch =
-    normalized.match(/^##\s+Details\s*\n+([\s\S]*?)(?=^##\s+|$)/m) ??
-    normalized.match(/^##\s+Tooltip\s*\n+([\s\S]*?)(?=^##\s+|$)/m)
+  const summary = extractSection(normalized, 'Summary')
+  const details = extractSection(normalized, 'Details') ?? extractSection(normalized, 'Tooltip')
 
-  if (!labelMatch || !summaryMatch || !detailsMatch) {
+  if (!labelMatch || summary === null || details === null) {
     throw new Error('Invalid setting doc format. Expected # heading plus ## Summary and ## Details sections.')
   }
 
   return {
     label: normalizeSection(labelMatch[1]),
-    summary: normalizeSection(summaryMatch[1]),
-    details: normalizeSection(detailsMatch[1]),
+    summary: normalizeSection(summary),
+    details: normalizeSection(details),
   }
 }
 
@@ -67,7 +82,7 @@ export const retrievalSettingDocs = {
   metadataRules: parseSettingDoc(metadataRulesSource),
   rerankEnabled: parseSettingDoc(rerankEnabledSource),
   rerankTopK: parseSettingDoc(rerankTopKSource),
-  warmthLevel: parseSettingDoc(warmthLevelSource),
+  answerSupportPolicy: parseSettingDoc(answerSupportPolicySource),
   citationDisplayEnabled: parseSettingDoc(citationDisplayEnabledSource),
   customInstruction: parseSettingDoc(customInstructionSource),
   metadataKey: parseSettingDoc(metadataKeySource),

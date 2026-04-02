@@ -734,14 +734,12 @@ export function RetrievalSettingsPanel() {
               </div>
 
               <div className="space-y-2 rounded-md border border-border bg-muted/20 p-4">
-                <div className="space-y-1">
-                  <Label htmlFor="answerSupportPolicy" className="text-foreground">
-                    Unsupported Answer Policy
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Decide what happens when the assistant writes a claim that the retrieved documents do not support.
-                  </p>
-                </div>
+                <SettingFieldHeader
+                  htmlFor="answerSupportPolicy"
+                  label={retrievalSettingDocs.answerSupportPolicy.label}
+                  description={retrievalSettingDocs.answerSupportPolicy.summary}
+                  tooltip={retrievalSettingDocs.answerSupportPolicy.details}
+                />
                 <Select
                   value={settings.answerSupportPolicy}
                   onValueChange={(value) =>

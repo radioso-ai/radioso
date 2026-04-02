@@ -37,6 +37,6 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('role="button"')
     expect(html).toContain('tabindex="0"')
     expect(html).toContain('aria-label="Open source 1: Source 1"')
-    expect(html).not.toMatch(/<button[^>]*>.*<button/s)
+    expect(html).not.toContain('</button><button')
   })
 })

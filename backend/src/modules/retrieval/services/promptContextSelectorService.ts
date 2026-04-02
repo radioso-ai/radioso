@@ -10,9 +10,15 @@ export class PromptContextSelectorService {
     topK: number;
   }): FinalPromptContext[] {
     const selected: FinalPromptContext[] = [];
+    const seenNormalizedContents = new Set<string>();
     let consumed = 0;
 
     for (const context of input.contexts.slice(0, input.topK)) {
+      const duplicateKey = this.buildDuplicateKey(context.content);
+      if (duplicateKey && seenNormalizedContents.has(duplicateKey)) {
+        continue;
+      }
+
       const estimatedTokenCost = this.estimateTokenCost(context.content);
       if (estimatedTokenCost > this.tokenBudget) {
         continue;
@@ -23,6 +29,9 @@ export class PromptContextSelectorService {
       }
 
       consumed += estimatedTokenCost;
+      if (duplicateKey) {
+        seenNormalizedContents.add(duplicateKey);
+      }
       selected.push({
         ...context,
         promptPosition: selected.length,
@@ -35,5 +44,12 @@ export class PromptContextSelectorService {
 
   private estimateTokenCost(content: string): number {
     return Math.max(1, Math.ceil(content.length / 4));
+  }
+
+  private buildDuplicateKey(content: string): string {
+    return content
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
   }
 }

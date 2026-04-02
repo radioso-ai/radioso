@@ -8,25 +8,42 @@ export async function POST(request: Request) {
   const cookie = request.headers.get('cookie')
   const body = await request.text()
 
-  const upstream = await fetch(`${BACKEND_BASE}/api/v1/chat/`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}),
-      ...(cookie ? { Cookie: cookie } : {}),
-    },
-    body,
-    cache: 'no-store',
-  })
+  try {
+    const upstream = await fetch(`${BACKEND_BASE}/api/v1/chat/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}),
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      body,
+      cache: 'no-store',
+    })
 
-  const contentType = upstream.headers.get('content-type') ?? 'application/json'
+    const contentType = upstream.headers.get('content-type') ?? 'application/json'
 
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: {
-      'Content-Type': contentType,
-      'Cache-Control': 'no-cache',
-      'X-Accel-Buffering': 'no',
-    },
-  })
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+      },
+    })
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? `Chat backend is unavailable: ${error.message}`
+        : 'Chat backend is unavailable.'
+
+    return Response.json(
+      {
+        error: {
+          code: 'UPSTREAM_UNAVAILABLE',
+          message,
+        },
+      },
+      { status: 503 },
+    )
+  }
 }

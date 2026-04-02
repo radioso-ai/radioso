@@ -69,7 +69,10 @@ const CitationMarker = ({
     <HoverCardTrigger asChild>
       <button
         type="button"
-        onClick={() => onOpenDocument(citation, index)}
+        onClick={(event) => {
+          event.stopPropagation()
+          void onOpenDocument(citation, index)
+        }}
         className="mx-0.5 inline-flex translate-y-[-0.15rem] items-center rounded-full border border-primary/25 bg-primary/8 px-1.5 py-0.5 align-baseline text-[11px] font-semibold leading-none text-primary transition-colors hover:border-primary/40 hover:bg-primary/14"
         aria-label={`Open source ${index + 1}: ${getCitationLabel(citation, index)}`}
       >

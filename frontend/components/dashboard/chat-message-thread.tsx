@@ -1,5 +1,7 @@
 'use client'
 
+import type { KeyboardEvent } from 'react'
+
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
 import type { AnswerSegment, Citation } from '@/lib/api'
@@ -43,6 +45,24 @@ export function ChatMessageThread({
     onMessageSelect?.(messageId)
   }
 
+  const getSelectableMessageProps = (messageId: string) => {
+    if (!onMessageSelect) {
+      return {}
+    }
+
+    return {
+      role: 'button' as const,
+      tabIndex: 0,
+      onClick: () => handleSelectMessage(messageId),
+      onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          handleSelectMessage(messageId)
+        }
+      },
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       {messages.map((message, index) => {
@@ -64,9 +84,8 @@ export function ChatMessageThread({
             <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] ${message.role === 'user' ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
                 {message.role === 'user' ? (
-                  <button
-                    type="button"
-                    onClick={() => handleSelectMessage(message.id)}
+                  <div
+                    {...getSelectableMessageProps(message.id)}
                     className={`rounded-lg border px-4 py-3 text-primary-foreground ${
                       selectedMessageId === message.id
                         ? 'border-white/90 bg-primary ring-1 ring-white/50'
@@ -74,11 +93,10 @@ export function ChatMessageThread({
                     } ${onMessageSelect ? 'cursor-pointer transition hover:border-white/80' : 'bg-primary'}`}
                   >
                     <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(message.content)}</p>
-                  </button>
+                  </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleSelectMessage(message.id)}
+                  <div
+                    {...getSelectableMessageProps(message.id)}
                     className={`rounded-lg border bg-card px-4 py-3 text-left text-foreground ${
                       selectedMessageId === message.id
                         ? 'border-primary/70 ring-1 ring-primary/60'
@@ -103,7 +121,7 @@ export function ChatMessageThread({
                         />
                       </div>
                     )}
-                  </button>
+                  </div>
                 )}
                 <p className="px-1 text-xs text-muted-foreground">
                   {timeFormatter.format(new Date(message.createdAt))}

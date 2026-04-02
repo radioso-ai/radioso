@@ -43,6 +43,35 @@ const MAX_QUERY_LENGTH = 2_000;
 
 const normalizeText = (value: string, maxLength: number): string => value.trim().slice(0, maxLength);
 
+const normalizeExpectedCitations = (
+  citations: unknown,
+): Array<{ documentId: string; title: string }> => {
+  if (!Array.isArray(citations)) {
+    return [];
+  }
+
+  return citations.flatMap((citation) => {
+    if (!citation || typeof citation !== "object") {
+      return [];
+    }
+
+    const documentId =
+      "documentId" in citation && typeof citation.documentId === "string"
+        ? citation.documentId
+        : null;
+    const title =
+      "title" in citation && typeof citation.title === "string"
+        ? citation.title.trim()
+        : "";
+
+    if (!documentId) {
+      return [];
+    }
+
+    return [{ documentId, title }];
+  });
+};
+
 export class EvalLabService {
   constructor(
     private readonly repository: EvalRepositoryPort,
@@ -123,9 +152,12 @@ export class EvalLabService {
       }))
       .filter((message) => message.content.length > 0);
 
+    const normalizedCitations = normalizeExpectedCitations(selectedAssistant.citations);
     const seededExpectations = {
-      expectedDocumentIds: selectedAssistant.citations?.map((citation) => citation.documentId) ?? [],
-      expectedCitationTitles: selectedAssistant.citations?.map((citation) => citation.title) ?? [],
+      expectedDocumentIds: normalizedCitations.map((citation) => citation.documentId),
+      expectedCitationTitles: normalizedCitations
+        .map((citation) => citation.title)
+        .filter((title) => title.length > 0),
       expectedRefusalBehavior: selectedAssistant.debug?.answerOutcome === "no_context_refusal" ? "refusal" : "answer",
       expectedAnswerOutcome: selectedAssistant.debug?.answerOutcome,
     } satisfies EvalCaseCreateInput["expectations"];

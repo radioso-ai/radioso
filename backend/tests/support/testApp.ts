@@ -376,17 +376,15 @@ export const createTestDependencies = (overrides: {
   );
   const defaultChatGateway: ChatGateway = {
     async answer(input): Promise<string> {
-      const warmthMatch = input.prompt.match(/Warmth:(\d+)/);
-      const warmthLevel = warmthMatch ? Number(warmthMatch[1]) : 5;
       const firstContext = input.prompt
         .match(/Result 1 \([^)]+\): ([\s\S]*?)(?:\n\n|$)/)?.[1]
         ?.trim();
 
       if (firstContext) {
-        return `Warmth:${warmthLevel} ${firstContext}[[1]]`.trim();
+        return `${firstContext}[[1]]`.trim();
       }
 
-      return `Warmth:${warmthLevel} history:${input.history.length} ${input.query}`.trim();
+      return `history:${input.history.length} ${input.query}`.trim();
     },
     async *streamAnswer(input) {
       const content = await this.answer(input);

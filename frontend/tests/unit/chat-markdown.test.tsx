@@ -42,6 +42,7 @@ const value = 1
     const html = renderToStaticMarkup(<AssistantMarkdownContent content={'First paragraph\n\nSecond paragraph'} />)
 
     expect(html).toContain('<p')
+    expect(html).toContain('text-foreground')
     expect(html).toContain('First paragraph')
     expect(html).toContain('Second paragraph')
   })

@@ -291,7 +291,6 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
         <Section title="Prompt assembly">
           <KeyValueList
             rows={[
-              { label: 'Warmth level', value: settings.warmthLevel as number | undefined },
               { label: 'Citations enabled', value: settings.citationDisplayEnabled as boolean | undefined },
               { label: 'Prompt context count', value: metrics.promptContextCount as number | undefined },
               { label: 'Citation count', value: metrics.citationCount as number | undefined },

@@ -210,10 +210,6 @@ components:
         rerankTopK:
           type: integer
           minimum: 1
-        warmthLevel:
-          type: integer
-          minimum: 1
-          maximum: 10
         citationDisplayEnabled:
           type: boolean
         metadataFieldSuggestions:
@@ -294,7 +290,6 @@ components:
         - vectorTopK
         - similarityThreshold
         - rerankTopK
-        - warmthLevel
         - citationDisplayEnabled
         - customInstruction
         - createdAt
@@ -320,8 +315,6 @@ components:
         similarityThreshold:
           type: number
         rerankTopK:
-          type: integer
-        warmthLevel:
           type: integer
         citationDisplayEnabled:
           type: boolean
@@ -366,7 +359,6 @@ components:
         - vectorTopK
         - similarityThreshold
         - rerankTopK
-        - warmthLevel
         - citationDisplayEnabled
     IngestionSettings:
       type: object

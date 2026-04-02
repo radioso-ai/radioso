@@ -326,7 +326,6 @@ describe("chat contract", () => {
         vectorTopK: 80,
         similarityThreshold: 0.8,
         rerankTopK: 15,
-        warmthLevel: 5,
         citationDisplayEnabled: false,
         chunkingStrategy: "fixed_window",
       });

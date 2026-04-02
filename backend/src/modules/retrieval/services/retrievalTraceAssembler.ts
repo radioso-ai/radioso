@@ -189,7 +189,6 @@ export class RetrievalTraceAssembler {
       }),
       buildStage("prompt", "prompt_assembly", "Prompt assembly", "applied", timings.promptAssembly, {
         settings: {
-          warmthLevel: prompt.responseSettings.warmthLevel,
           citationDisplayEnabled: prompt.responseSettings.citationDisplayEnabled,
         },
         outputs: {

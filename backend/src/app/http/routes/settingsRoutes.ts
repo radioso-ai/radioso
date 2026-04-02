@@ -32,7 +32,6 @@ export const updateSettingsSchema = z.object({
   vectorTopK: z.number().int(),
   similarityThreshold: z.number(),
   rerankTopK: z.number().int(),
-  warmthLevel: z.number().int(),
   citationDisplayEnabled: z.boolean(),
   metadataRules: z
     .array(

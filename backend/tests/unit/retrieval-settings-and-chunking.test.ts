@@ -23,31 +23,11 @@ describe("settings and chunking", () => {
         vectorTopK: 0,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 0,
         citationDisplayEnabled: true,
         metadataRules: [],
         customInstruction: "",
       }),
     ).toThrow("vectorTopK must be between 1 and 300");
-  });
-
-  it("rejects warmth values outside the supported range", () => {
-    expect(() =>
-      validateRetrievalSettings({
-        queryRewriteEnabled: false,
-        semanticRewriteInstructions: "",
-        lexicalRewriteInstructions: "",
-        answerSupportPolicy: "strict",
-        rerankEnabled: false,
-        vectorTopK: 15,
-        similarityThreshold: 0.2,
-        rerankTopK: 5,
-        warmthLevel: 11,
-        citationDisplayEnabled: true,
-        metadataRules: [],
-        customInstruction: "",
-      }),
-    ).toThrow("warmthLevel must be between 1 and 10");
   });
 
   it("rejects ingestion settings with unsupported chunking strategies", () => {
@@ -78,7 +58,6 @@ describe("settings and chunking", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         metadataRules: [metadataRule],
         customInstruction: "",
@@ -99,7 +78,6 @@ describe("settings and chunking", () => {
 
     expect(defaults.vectorTopK).toBe(15);
     expect(defaults.similarityThreshold).toBe(0.2);
-    expect(defaults.warmthLevel).toBe(5);
     expect(defaults.citationDisplayEnabled).toBe(true);
     expect(defaults.metadataRules).toEqual([]);
     expect(defaults.customInstruction).toBe("");
@@ -125,7 +103,6 @@ describe("settings and chunking", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         metadataRules: [metadataRule],
         customInstruction: "a".repeat(2001),
@@ -148,7 +125,6 @@ describe("settings and chunking", () => {
       vectorTopK: 15,
       similarityThreshold: 0.2,
       rerankTopK: 5,
-      warmthLevel: 5,
       citationDisplayEnabled: true,
       metadataRules: [metadataRule],
     };
@@ -168,7 +144,6 @@ describe("settings and chunking", () => {
       vectorTopK: 15,
       similarityThreshold: 0.2,
       rerankTopK: 5,
-      warmthLevel: 5,
       citationDisplayEnabled: true,
       metadataRules: [],
       customInstruction: "",
@@ -189,7 +164,6 @@ describe("settings and chunking", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         metadataRules: [],
         customInstruction: "",

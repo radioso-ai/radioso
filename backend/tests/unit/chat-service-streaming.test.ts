@@ -177,7 +177,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            warmthLevel: 5,
             answerSupportPolicy: "strict",
           },
         };
@@ -273,7 +272,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            warmthLevel: 5,
             answerSupportPolicy: "strict",
           },
         };
@@ -657,7 +655,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            warmthLevel: 5,
             answerSupportPolicy: "strict",
           },
         };
@@ -736,7 +733,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            warmthLevel: 5,
             answerSupportPolicy: "strict",
           },
         };
@@ -834,7 +830,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            warmthLevel: 5,
             answerSupportPolicy: "warn",
           },
         };

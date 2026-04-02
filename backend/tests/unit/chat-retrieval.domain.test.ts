@@ -772,7 +772,6 @@ describe("chat retrieval domain", () => {
       query: "What does the page do?",
       history: [],
       settings: {
-        warmthLevel: 9,
       },
       contexts: [
         {
@@ -794,7 +793,7 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.prompt).toContain("The page parses content.");
-    expect(result.prompt).toContain("warm");
+    expect(result.prompt).not.toContain("Warmth:");
     expect(result.prompt).toContain("Do not end the answer with a question");
     expect(result.prompt).toContain("Result 1 (Intro):");
     expect(result.prompt).toContain("[[1]]");
@@ -807,7 +806,6 @@ describe("chat retrieval domain", () => {
       query: "What is this about?",
       history: [],
       settings: {
-        warmthLevel: 5,
       },
       contexts: [
         {
@@ -838,7 +836,6 @@ describe("chat retrieval domain", () => {
       query: "What is this about?",
       history: [],
       settings: {
-        warmthLevel: 5,
       },
       contexts: [
         {
@@ -868,7 +865,6 @@ describe("chat retrieval domain", () => {
       query: "What are the work permit requirements?",
       history: [],
       settings: {
-        warmthLevel: 5,
         customInstruction: "Always cite the paragraph number from the Immigration Act.",
       },
       contexts: [],
@@ -884,7 +880,6 @@ describe("chat retrieval domain", () => {
       query: "What are the work permit requirements?",
       history: [],
       settings: {
-        warmthLevel: 5,
         customInstruction: "",
       },
       contexts: [],
@@ -899,7 +894,6 @@ describe("chat retrieval domain", () => {
       query: "test",
       history: [],
       settings: {
-        warmthLevel: 5,
         customInstruction: "Line one\nLine two\tTabbed\x00Null\x01Control",
       },
       contexts: [],

@@ -104,7 +104,6 @@ describe("document and settings integration", () => {
         vectorTopK: 25,
         similarityThreshold: 0.25,
         rerankTopK: 8,
-        warmthLevel: 6,
         citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [
@@ -222,7 +221,6 @@ describe("document and settings integration", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         customInstruction: "",
         metadataRules: [

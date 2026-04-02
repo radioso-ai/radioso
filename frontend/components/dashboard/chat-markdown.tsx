@@ -97,12 +97,12 @@ const createMarkdownComponents = (inline: boolean): Components => ({
   ),
   img: () => null,
   li: ({ children, className }) => (
-    <li className={cn('ml-1', className)}>
+    <li className={cn('ml-1 text-foreground', className)}>
       {children}
     </li>
   ),
   ol: ({ children, className }) => (
-    <ol className={cn('ml-5 list-decimal space-y-1', className)}>
+    <ol className={cn('ml-5 list-decimal space-y-1 text-foreground', className)}>
       {children}
     </ol>
   ),
@@ -110,7 +110,7 @@ const createMarkdownComponents = (inline: boolean): Components => ({
     inline ? (
       <Fragment>{children}</Fragment>
     ) : (
-      <p className={cn('m-0', className)}>
+      <p className={cn('m-0 text-foreground', className)}>
         {children}
       </p>
     )
@@ -131,7 +131,7 @@ const createMarkdownComponents = (inline: boolean): Components => ({
     </strong>
   ),
   ul: ({ children, className }) => (
-    <ul className={cn('ml-5 list-disc space-y-1', className)}>
+    <ul className={cn('ml-5 list-disc space-y-1 text-foreground', className)}>
       {children}
     </ul>
   ),

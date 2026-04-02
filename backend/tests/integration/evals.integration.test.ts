@@ -99,7 +99,6 @@ describe("eval regression lab", () => {
         vectorTopK: 1,
         similarityThreshold: 0.99,
         rerankTopK: 1,
-        warmthLevel: 5,
         citationDisplayEnabled: false,
         metadataRules: [],
         customInstruction: "",

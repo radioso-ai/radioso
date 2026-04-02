@@ -30,11 +30,9 @@ describe("settings contract", () => {
       "similarityThreshold",
       "updatedAt",
       "vectorTopK",
-      "warmthLevel",
       "workspaceId",
     ]);
     expect(response.body.vectorTopK).toBe(15);
-    expect(response.body.warmthLevel).toBe(5);
     expect(response.body.citationDisplayEnabled).toBe(true);
     expect(response.body.customInstruction).toBe("");
     expect(response.body.semanticRewriteInstructions).toEqual(expect.any(String));
@@ -71,7 +69,6 @@ describe("settings contract", () => {
         vectorTopK: 12,
         similarityThreshold: 0.4,
         rerankTopK: 6,
-        warmthLevel: 8,
         citationDisplayEnabled: false,
         customInstruction: "Always cite the paragraph number from the Immigration Act.",
         metadataRules: [
@@ -97,7 +94,6 @@ describe("settings contract", () => {
       vectorTopK: 12,
       similarityThreshold: 0.4,
       rerankTopK: 6,
-      warmthLevel: 8,
       citationDisplayEnabled: false,
       customInstruction: "Always cite the paragraph number from the Immigration Act.",
       metadataRules: [
@@ -141,7 +137,6 @@ describe("settings contract", () => {
         vectorTopK: 12,
         similarityThreshold: 0.4,
         rerankTopK: 6,
-        warmthLevel: 8,
         citationDisplayEnabled: false,
         customInstruction: "Cite paragraph numbers.",
         metadataRules: [
@@ -166,7 +161,6 @@ describe("settings contract", () => {
         vectorTopK: 20,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
       });
 

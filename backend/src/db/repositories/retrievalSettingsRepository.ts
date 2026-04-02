@@ -24,7 +24,6 @@ interface RetrievalSettingsRow {
   vector_top_k: number;
   similarity_threshold: number;
   rerank_top_k: number;
-  warmth_level: number;
   citation_display_enabled: boolean;
   attribute_controls: unknown;
   custom_instruction: string;
@@ -53,7 +52,6 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => {
     vectorTopK: row.vector_top_k,
     similarityThreshold: row.similarity_threshold,
     rerankTopK: row.rerank_top_k,
-    warmthLevel: row.warmth_level,
     citationDisplayEnabled: row.citation_display_enabled,
     metadataRules: normalizeMetadataRules(payload),
     customInstruction: row.custom_instruction,
@@ -67,7 +65,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
 
   async findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null> {
     const [row] = await this.database.query<RetrievalSettingsRow>(
-      `SELECT workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, attribute_controls, custom_instruction, created_at, updated_at
+      `SELECT workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, citation_display_enabled, attribute_controls, custom_instruction, created_at, updated_at
        FROM retrieval_settings
        WHERE workspace_id = $1`,
       [workspaceId],
@@ -102,7 +100,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
                      attribute_controls = EXCLUDED.attribute_controls,
                      custom_instruction = EXCLUDED.custom_instruction,
                      updated_at = NOW()
-       RETURNING workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, warmth_level, citation_display_enabled, attribute_controls, custom_instruction, created_at, updated_at`,
+       RETURNING workspace_id, query_rewrite_enabled, rerank_enabled, vector_top_k, similarity_threshold, rerank_top_k, citation_display_enabled, attribute_controls, custom_instruction, created_at, updated_at`,
       [
         workspaceId,
         input.queryRewriteEnabled,
@@ -110,7 +108,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
         input.vectorTopK,
         input.similarityThreshold,
         input.rerankTopK,
-        input.warmthLevel,
+        5,
         input.citationDisplayEnabled,
         JSON.stringify({
           metadataRules: input.metadataRules,

@@ -29,7 +29,6 @@ describe("edge cases", () => {
       query: "What happened?",
       history: [],
       settings: {
-        warmthLevel: 5,
       },
       contexts: [],
     });
@@ -155,7 +154,6 @@ describe("edge cases", () => {
             vectorTopK: 100,
             similarityThreshold: 0.8,
             rerankTopK: 20,
-            warmthLevel: 5,
             citationDisplayEnabled: true,
             signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
@@ -225,7 +223,6 @@ describe("edge cases", () => {
             vectorTopK: 20,
             similarityThreshold: 0.2,
             rerankTopK: 5,
-            warmthLevel: 5,
             citationDisplayEnabled: true,
             signalPolicies: defaultAttributeControls().map((control) =>
               control.signalKey === "document_location" || control.signalKey === "document_amount"
@@ -302,7 +299,6 @@ describe("edge cases", () => {
             vectorTopK: 20,
             similarityThreshold: 0.2,
             rerankTopK: 5,
-            warmthLevel: 5,
             citationDisplayEnabled: true,
             signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
@@ -361,7 +357,6 @@ describe("edge cases", () => {
             vectorTopK: 20,
             similarityThreshold: 0.2,
             rerankTopK: 5,
-            warmthLevel: 5,
             citationDisplayEnabled: true,
             signalPolicies: defaultAttributeControls().map((control) =>
               control.signalKey === "document_location" || control.signalKey === "document_amount"
@@ -422,7 +417,6 @@ describe("edge cases", () => {
             vectorTopK: 20,
             similarityThreshold: 0.2,
             rerankTopK: 5,
-            warmthLevel: 5,
             citationDisplayEnabled: true,
             signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
@@ -535,7 +529,6 @@ describe("edge cases", () => {
             vectorTopK: 20,
             similarityThreshold: 0.2,
             rerankTopK: 5,
-            warmthLevel: 5,
             citationDisplayEnabled: true,
             signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
@@ -633,7 +626,6 @@ describe("edge cases", () => {
             vectorTopK: 20,
             similarityThreshold: 0.2,
             rerankTopK: 5,
-            warmthLevel: 5,
             citationDisplayEnabled: true,
             signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
@@ -737,7 +729,6 @@ describe("edge cases", () => {
             vectorTopK: 20,
             similarityThreshold: 0.2,
             rerankTopK: 5,
-            warmthLevel: 5,
             citationDisplayEnabled: true,
             signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
@@ -859,7 +850,6 @@ describe("edge cases", () => {
             vectorTopK: 20,
             similarityThreshold: 0.2,
             rerankTopK: 5,
-            warmthLevel: 5,
             citationDisplayEnabled: true,
             signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),

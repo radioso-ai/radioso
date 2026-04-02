@@ -65,7 +65,6 @@ export interface RetrievalSettingsRecord {
   vectorTopK: number;
   similarityThreshold: number;
   rerankTopK: number;
-  warmthLevel: number;
   citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
@@ -82,7 +81,6 @@ export interface RetrievalSettingsInput {
   vectorTopK: number;
   similarityThreshold: number;
   rerankTopK: number;
-  warmthLevel: number;
   citationDisplayEnabled: boolean;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
@@ -113,7 +111,6 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   vectorTopK: 15,
   similarityThreshold: 0.2,
   rerankTopK: 5,
-  warmthLevel: 5,
   citationDisplayEnabled: true,
   metadataRules: [],
   customInstruction: "",
@@ -242,9 +239,6 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   }
   if (input.rerankTopK < 1) {
     throw badRequest("rerankTopK must be greater than 0");
-  }
-  if (!Number.isInteger(input.warmthLevel) || input.warmthLevel < 1 || input.warmthLevel > 10) {
-    throw badRequest("warmthLevel must be between 1 and 10");
   }
   if (!Array.isArray(input.metadataRules)) {
     throw badRequest("metadataRules must be an array");

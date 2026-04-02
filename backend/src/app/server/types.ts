@@ -21,6 +21,7 @@ import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
+import type { EvalLabService } from "../../modules/evals/services/evalLabService.js";
 
 export interface AppDependencies {
   env: Env;
@@ -41,6 +42,7 @@ export interface AppDependencies {
   documentDeletionService: DocumentDeletionService;
   chatService: ChatService;
   chatHistoryService: ChatHistoryService;
+  evalLabService: EvalLabService;
   workspaceRepository: WorkspaceRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
   messageRepository: MessageRepositoryPort;

@@ -3,7 +3,7 @@ import express from "express";
 import swaggerUi from "swagger-ui-express";
 
 import { createHttpLogger } from "../../shared/observability/logger.js";
-import { badRequest } from "../../shared/domain/errors.js";
+import { badRequest, payloadTooLarge } from "../../shared/domain/errors.js";
 import { errorHandler } from "../http/middleware/errorHandler.js";
 import { createOpenApiDocument } from "../http/openapi/document.js";
 import { createApiRouter } from "../http/routes/index.js";
@@ -29,7 +29,7 @@ export const createApp = (dependencies: AppDependencies) => {
         const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         size += buffer.length;
         if (size > 1024 * 1024) {
-          next(badRequest("Request body exceeds maximum size"));
+          next(payloadTooLarge());
           return;
         }
         chunks.push(buffer);

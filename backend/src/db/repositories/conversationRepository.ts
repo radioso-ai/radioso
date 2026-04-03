@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
+import { decodeCursor, encodeCursor } from "../../shared/domain/cursorPagination.js";
 
 export interface ConversationRecord {
   id: string;
@@ -13,17 +14,15 @@ export interface ConversationRecord {
 
 export interface ConversationRepositoryPort {
   create(workspaceId: string, sourceChannel?: string | null, anonymousSessionId?: string | null): Promise<ConversationRecord>;
-  listByWorkspaceId(workspaceId: string): Promise<ConversationRecord[]>;
-  listByAnonymousSession(workspaceId: string, anonymousSessionId: string): Promise<ConversationRecord[]>;
   listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset: number },
-  ): Promise<{ conversations: ConversationRecord[]; total: number }>;
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   listPageByAnonymousSession(
     workspaceId: string,
     anonymousSessionId: string,
-    input: { limit: number; offset: number },
-  ): Promise<{ conversations: ConversationRecord[]; total: number }>;
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null>;
   findByIdAndAnonymousSession(conversationId: string, anonymousSessionId: string): Promise<ConversationRecord | null>;
   touch(conversationId: string): Promise<void>;
@@ -61,22 +60,10 @@ export class ConversationRepository implements ConversationRepositoryPort {
     return mapConversation(row);
   }
 
-  async listByWorkspaceId(workspaceId: string): Promise<ConversationRecord[]> {
-    const rows = await this.database.query<ConversationRow>(
-      `SELECT id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at
-       FROM conversations
-       WHERE workspace_id = $1
-       ORDER BY updated_at DESC, created_at DESC`,
-      [workspaceId],
-    );
-
-    return rows.map(mapConversation);
-  }
-
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset: number },
-  ): Promise<{ conversations: ConversationRecord[]; total: number }> {
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const [countRow] = await this.database.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
        FROM conversations
@@ -84,19 +71,60 @@ export class ConversationRepository implements ConversationRepositoryPort {
       [workspaceId],
     );
 
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const params: Array<string | number> = [workspaceId];
+    let cursorClause = "";
+
+    if (cursor) {
+      params.push(cursor.keys.updatedAt, cursor.keys.createdAt, cursor.keys.id);
+      cursorClause = `
+         AND (
+           updated_at < $2::timestamptz
+           OR (
+             updated_at = $2::timestamptz
+             AND (
+               created_at < $3::timestamptz
+               OR (created_at = $3::timestamptz AND id < $4::uuid)
+             )
+           )
+         )`;
+    }
+
+    const limitParam = params.length + 1;
+    params.push(input.limit + 1);
+
+    let offsetClause = "";
+    if (!cursor) {
+      offsetClause = `OFFSET $${params.length + 1}`;
+      params.push(input.offset ?? 0);
+    }
+
     const rows = await this.database.query<ConversationRow>(
       `SELECT id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at
        FROM conversations
        WHERE workspace_id = $1
-       ORDER BY updated_at DESC, created_at DESC
-       LIMIT $2
-       OFFSET $3`,
-      [workspaceId, input.limit, input.offset],
+       ${cursorClause}
+       ORDER BY updated_at DESC, created_at DESC, id DESC
+       LIMIT $${limitParam}
+       ${offsetClause}`,
+      params,
     );
 
+    const conversations = rows.slice(0, input.limit).map(mapConversation);
+    const hasMore = rows.length > input.limit;
+    const lastConversation = conversations.at(-1);
+
     return {
-      conversations: rows.map(mapConversation),
+      conversations,
       total: Number(countRow?.count ?? "0"),
+      nextCursor: hasMore && lastConversation
+        ? encodeCursor({
+            updatedAt: lastConversation.updatedAt.toISOString(),
+            createdAt: lastConversation.createdAt.toISOString(),
+            id: lastConversation.id,
+          })
+        : null,
+      hasMore,
     };
   }
 
@@ -111,23 +139,11 @@ export class ConversationRepository implements ConversationRepositoryPort {
     return row ? mapConversation(row) : null;
   }
 
-  async listByAnonymousSession(workspaceId: string, anonymousSessionId: string): Promise<ConversationRecord[]> {
-    const rows = await this.database.query<ConversationRow>(
-      `SELECT id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at
-       FROM conversations
-       WHERE workspace_id = $1 AND anonymous_session_id = $2
-       ORDER BY updated_at DESC, created_at DESC`,
-      [workspaceId, anonymousSessionId],
-    );
-
-    return rows.map(mapConversation);
-  }
-
   async listPageByAnonymousSession(
     workspaceId: string,
     anonymousSessionId: string,
-    input: { limit: number; offset: number },
-  ): Promise<{ conversations: ConversationRecord[]; total: number }> {
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const [countRow] = await this.database.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
        FROM conversations
@@ -135,19 +151,60 @@ export class ConversationRepository implements ConversationRepositoryPort {
       [workspaceId, anonymousSessionId],
     );
 
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const params: Array<string | number> = [workspaceId, anonymousSessionId];
+    let cursorClause = "";
+
+    if (cursor) {
+      params.push(cursor.keys.updatedAt, cursor.keys.createdAt, cursor.keys.id);
+      cursorClause = `
+         AND (
+           updated_at < $3::timestamptz
+           OR (
+             updated_at = $3::timestamptz
+             AND (
+               created_at < $4::timestamptz
+               OR (created_at = $4::timestamptz AND id < $5::uuid)
+             )
+           )
+         )`;
+    }
+
+    const limitParam = params.length + 1;
+    params.push(input.limit + 1);
+
+    let offsetClause = "";
+    if (!cursor) {
+      offsetClause = `OFFSET $${params.length + 1}`;
+      params.push(input.offset ?? 0);
+    }
+
     const rows = await this.database.query<ConversationRow>(
       `SELECT id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at
        FROM conversations
        WHERE workspace_id = $1 AND anonymous_session_id = $2
-       ORDER BY updated_at DESC, created_at DESC
-       LIMIT $3
-       OFFSET $4`,
-      [workspaceId, anonymousSessionId, input.limit, input.offset],
+       ${cursorClause}
+       ORDER BY updated_at DESC, created_at DESC, id DESC
+       LIMIT $${limitParam}
+       ${offsetClause}`,
+      params,
     );
 
+    const conversations = rows.slice(0, input.limit).map(mapConversation);
+    const hasMore = rows.length > input.limit;
+    const lastConversation = conversations.at(-1);
+
     return {
-      conversations: rows.map(mapConversation),
+      conversations,
       total: Number(countRow?.count ?? "0"),
+      nextCursor: hasMore && lastConversation
+        ? encodeCursor({
+            updatedAt: lastConversation.updatedAt.toISOString(),
+            createdAt: lastConversation.createdAt.toISOString(),
+            id: lastConversation.id,
+          })
+        : null,
+      hasMore,
     };
   }
 

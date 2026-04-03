@@ -596,9 +596,17 @@ components:
         total:
           type: integer
           minimum: 0
+        nextCursor:
+          type:
+            - string
+            - "null"
+        hasMore:
+          type: boolean
       required:
         - documents
         - total
+        - nextCursor
+        - hasMore
     DocumentSearchAction:
       type: object
       properties:
@@ -706,9 +714,17 @@ components:
         total:
           type: integer
           minimum: 0
+        nextCursor:
+          type:
+            - string
+            - "null"
+        hasMore:
+          type: boolean
       required:
         - searches
         - total
+        - nextCursor
+        - hasMore
     DocumentSearchRequest:
       type: object
       properties:
@@ -1083,9 +1099,17 @@ components:
         total:
           type: integer
           minimum: 0
+        nextCursor:
+          type:
+            - string
+            - "null"
+        hasMore:
+          type: boolean
       required:
         - conversations
         - total
+        - nextCursor
+        - hasMore
     ValidationDisposition:
       type: string
       enum:
@@ -1254,6 +1278,10 @@ components:
           minimum: 1
         hasOlderMessages:
           type: boolean
+        nextCursor:
+          type:
+            - string
+            - "null"
         messages:
           type: array
           items:
@@ -1271,6 +1299,7 @@ components:
         - messageWindowOffset
         - messageWindowLimit
         - hasOlderMessages
+        - nextCursor
         - messages
     PublicConversationSummary:
       type: object
@@ -1314,10 +1343,18 @@ components:
         total:
           type: integer
           minimum: 0
+        nextCursor:
+          type:
+            - string
+            - "null"
+        hasMore:
+          type: boolean
       required:
         - workspaceName
         - conversations
         - total
+        - nextCursor
+        - hasMore
     RateLimitExceededResponse:
       type: object
       properties:
@@ -1992,6 +2029,12 @@ paths:
           required: false
           name: offset
           in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
       responses:
         "200":
           description: Document search history returned
@@ -2060,6 +2103,12 @@ paths:
             minimum: 0
           required: false
           name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
           in: query
       responses:
         "200":
@@ -2331,6 +2380,12 @@ paths:
           required: false
           name: offset
           in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
       responses:
         "200":
           description: Chat history summaries
@@ -2371,6 +2426,12 @@ paths:
             minimum: 0
           required: false
           name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
           in: query
       responses:
         "200":
@@ -2680,6 +2741,12 @@ paths:
           required: false
           name: offset
           in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
       responses:
         "200":
           description: Conversation summaries returned
@@ -2728,6 +2795,12 @@ paths:
             minimum: 0
           required: false
           name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
           in: query
       responses:
         "200":

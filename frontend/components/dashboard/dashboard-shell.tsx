@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
@@ -25,6 +25,8 @@ export function DashboardShell({
   routeState,
 }: DashboardShellProps) {
   const router = useRouter()
+  const routeWorkspaceSyncKeyRef = useRef<string | null>(null)
+  const pendingRouteWorkspaceIdRef = useRef<string | null>(null)
   const { activeWorkspaceId, workspaces, isLoading: isWorkspaceLoading, switchWorkspace } = useWorkspace()
   const onboarding = useWorkspaceOnboarding(activeWorkspaceId, workspaces.length)
   const requestedWorkspaceId = routeState.workspaceId
@@ -34,10 +36,19 @@ export function DashboardShell({
   const currentView = routeState.section
 
   useEffect(() => {
-    if (!requestedWorkspaceId || !requestedWorkspaceExists || activeWorkspaceId === requestedWorkspaceId) {
+    const syncKey = requestedWorkspaceExists ? (requestedWorkspaceId ?? null) : null
+    if (routeWorkspaceSyncKeyRef.current === syncKey) {
       return
     }
 
+    routeWorkspaceSyncKeyRef.current = syncKey
+
+    if (!requestedWorkspaceId || !requestedWorkspaceExists || activeWorkspaceId === requestedWorkspaceId) {
+      pendingRouteWorkspaceIdRef.current = null
+      return
+    }
+
+    pendingRouteWorkspaceIdRef.current = requestedWorkspaceId
     void switchWorkspace(requestedWorkspaceId)
   }, [activeWorkspaceId, requestedWorkspaceExists, requestedWorkspaceId, switchWorkspace])
 
@@ -46,7 +57,17 @@ export function DashboardShell({
       return
     }
 
-    if (requestedWorkspaceId && requestedWorkspaceExists && requestedWorkspaceId !== activeWorkspaceId) {
+    const pendingRouteWorkspaceId = pendingRouteWorkspaceIdRef.current
+    if (pendingRouteWorkspaceId && activeWorkspaceId === pendingRouteWorkspaceId) {
+      pendingRouteWorkspaceIdRef.current = null
+    }
+
+    if (
+      pendingRouteWorkspaceId &&
+      requestedWorkspaceId === pendingRouteWorkspaceId &&
+      requestedWorkspaceExists &&
+      requestedWorkspaceId !== activeWorkspaceId
+    ) {
       return
     }
 

@@ -15,6 +15,9 @@ export class AppError extends Error {
 export const badRequest = (message: string, details?: unknown): AppError =>
   new AppError(400, "bad_request", message, details);
 
+export const payloadTooLarge = (message = "Request body exceeds maximum size"): AppError =>
+  new AppError(413, "payload_too_large", message);
+
 export const unauthorized = (message = "Unauthorized"): AppError =>
   new AppError(401, "unauthorized", message);
 

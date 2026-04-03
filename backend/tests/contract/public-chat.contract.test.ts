@@ -249,7 +249,6 @@ describe("public chat contract", () => {
         vectorTopK: 15,
         similarityThreshold: 0.2,
         rerankTopK: 5,
-        warmthLevel: 5,
         citationDisplayEnabled: true,
         metadataRules: [],
         customInstruction: "",

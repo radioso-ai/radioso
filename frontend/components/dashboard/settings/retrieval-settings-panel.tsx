@@ -686,31 +686,6 @@ export function RetrievalSettingsPanel() {
             description="Once evidence is assembled, configure how the grounded response should read and what support it should expose."
           >
             <div className="space-y-4">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <SettingFieldHeader
-                    htmlFor="warmthLevel"
-                    label={retrievalSettingDocs.warmthLevel.label}
-                    description={retrievalSettingDocs.warmthLevel.summary}
-                    tooltip={retrievalSettingDocs.warmthLevel.details}
-                    className="pr-4"
-                  />
-                  <span className="text-sm font-mono text-muted-foreground">{settings.warmthLevel}</span>
-                </div>
-                <Slider
-                  id="warmthLevel"
-                  min={1}
-                  max={10}
-                  step={1}
-                  value={[settings.warmthLevel]}
-                  onValueChange={([value]) => updateSetting('warmthLevel', value)}
-                />
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Terse</span>
-                  <span>Very warm</span>
-                </div>
-              </div>
-
               <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
                 <div>
                   <div className="flex items-center gap-1.5">
@@ -734,14 +709,12 @@ export function RetrievalSettingsPanel() {
               </div>
 
               <div className="space-y-2 rounded-md border border-border bg-muted/20 p-4">
-                <div className="space-y-1">
-                  <Label htmlFor="answerSupportPolicy" className="text-foreground">
-                    Unsupported Answer Policy
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Decide what happens when the assistant writes a claim that the retrieved documents do not support.
-                  </p>
-                </div>
+                <SettingFieldHeader
+                  htmlFor="answerSupportPolicy"
+                  label={retrievalSettingDocs.answerSupportPolicy.label}
+                  description={retrievalSettingDocs.answerSupportPolicy.summary}
+                  tooltip={retrievalSettingDocs.answerSupportPolicy.details}
+                />
                 <Select
                   value={settings.answerSupportPolicy}
                   onValueChange={(value) =>

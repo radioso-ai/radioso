@@ -19,6 +19,7 @@ import {
   DrawerContent,
   DrawerDescription,
   DrawerHeader,
+  DrawerTitle,
 } from '@/components/ui/drawer'
 import { ActionButton } from '@/components/ui/action-button'
 import { Button } from '@/components/ui/button'
@@ -37,6 +38,7 @@ import {
   SelectedHistoryItem,
 } from '@/components/dashboard/history/history-list'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
+import { AddToEvalDialog } from '@/components/dashboard/history/add-to-eval-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -100,6 +102,7 @@ export function ChatHistoryView({
   const [isDocumentLoading, setIsDocumentLoading] = useState(false)
   const [documentDetail, setDocumentDetail] = useState<DocumentDetails | null>(null)
   const [documentError, setDocumentError] = useState<string | null>(null)
+  const [isEvalDialogOpen, setIsEvalDialogOpen] = useState(false)
 
   useEffect(() => {
     const nextFilter = routeState.historyFilter ?? 'all'
@@ -734,6 +737,9 @@ export function ChatHistoryView({
           <DrawerHeader className="border-b border-border">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
+                <DrawerTitle className="sr-only">
+                  {selectedItem?.kind === 'chat' ? 'Conversation details' : 'Search details'}
+                </DrawerTitle>
                 {selectedItem ? (
                   <CopyValueField
                     label={selectedItem.kind === 'chat' ? 'Conversation ID:' : 'Search ID:'}
@@ -788,6 +794,18 @@ export function ChatHistoryView({
                 </div>
 
                 <div className="min-h-0 overflow-y-auto rounded-xl border border-border/70 bg-background/50 p-4">
+                  {selectedDiagnosticsAssistantMessage?.role === 'assistant' ? (
+                    <div className="mb-3 flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsEvalDialogOpen(true)}
+                      >
+                        Add to eval dataset
+                      </Button>
+                    </div>
+                  ) : null}
                   <ChatDiagnosticsPanel
                     selectedMessage={selectedThreadMessage}
                     diagnosticsMessage={selectedDiagnosticsAssistantMessage}
@@ -913,6 +931,21 @@ export function ChatHistoryView({
             setDocumentDetail(null)
             setDocumentError(null)
           }
+        }}
+      />
+
+      <AddToEvalDialog
+        open={isEvalDialogOpen}
+        conversationId={conversationDetail?.conversationId ?? null}
+        assistantMessageId={selectedDiagnosticsAssistantMessage?.role === 'assistant' ? selectedDiagnosticsAssistantMessage.id : null}
+        onOpenChange={setIsEvalDialogOpen}
+        onSaved={(datasetId) => {
+          setIsEvalDialogOpen(false)
+          router.push(buildDashboardHref(accountId, {
+            ...routeState,
+            section: 'evals',
+            evalDatasetId: datasetId,
+          }))
         }}
       />
     </div>

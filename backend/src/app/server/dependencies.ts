@@ -47,6 +47,9 @@ import { RetrievalSettingsService } from "../../modules/settings/services/retrie
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
 import { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
+import { EvalRepository } from "../../db/repositories/evalRepository.js";
+import { EvalReplayService } from "../../modules/evals/services/evalReplayService.js";
+import { EvalLabService } from "../../modules/evals/services/evalLabService.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { Database } from "../../shared/infra/database.js";
 import { AppError } from "../../shared/domain/errors.js";
@@ -129,7 +132,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new QueryRewriteService(llmRegistry.createRewriteGateway()),
     new CandidatePreparationService(),
     new AttributeMatchScoringService(),
-    new RerankService(llmRegistry.createRerankGateway()),
+    new RerankService(llmRegistry.createRerankGateway(), logger),
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
@@ -157,6 +160,15 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     conversationRepository,
     messageRepository,
     auditEventRepository,
+  );
+  const evalLabService = new EvalLabService(
+    new EvalRepository(database),
+    chatHistoryService,
+    new EvalReplayService(
+      retrievalPipeline,
+      llmRegistry.createChatGateway(),
+      llmRegistry.createUnsupportedNoticeGenerator(),
+    ),
   );
   const workspaceRepository = new WorkspaceRepository(database);
   const workspaceService = new WorkspaceService(workspaceRepository, auditService);
@@ -202,6 +214,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     documentDeletionService,
     chatService,
     chatHistoryService,
+    evalLabService,
     workspaceRepository,
     conversationRepository,
     messageRepository,

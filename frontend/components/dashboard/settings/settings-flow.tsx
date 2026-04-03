@@ -56,7 +56,7 @@ export function SettingTooltip({
           </SheetDescription>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          <div className="prose prose-sm max-w-none dark:prose-invert prose-p:leading-7 prose-li:leading-7">
+          <div className="space-y-4 text-sm leading-7">
             {typeof content === 'string' ? <AssistantMarkdownContent content={content} /> : content}
           </div>
         </div>

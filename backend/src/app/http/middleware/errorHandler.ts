@@ -11,6 +11,24 @@ const isPayloadTooLargeError = (error: unknown): error is { status?: number; typ
   );
 
 export const errorHandler = (error: unknown, req: Request, res: Response, _next: NextFunction): void => {
+  if (error instanceof AppError && error.code === "payload_too_large") {
+    const requestPath = req.originalUrl || req.path;
+    const isInlineDocumentMutation =
+      requestPath.startsWith("/api/v1/document/") &&
+      !requestPath.includes("/import") &&
+      (req.method === "POST" || req.method === "PUT") &&
+      req.is("application/json");
+    res.status(413).json({
+      error: {
+        code: "payload_too_large",
+        message: isInlineDocumentMutation
+          ? "Document content exceeds the inline size limit. Import the file instead."
+          : error.message,
+      },
+    });
+    return;
+  }
+
   if (error instanceof AppError) {
     res.status(error.statusCode).json({
       error: {
@@ -49,6 +67,13 @@ export const errorHandler = (error: unknown, req: Request, res: Response, _next:
     });
     return;
   }
+
+  console.error("Unhandled request error", {
+    method: req.method,
+    path: req.originalUrl || req.path,
+    workspaceId: req.header("x-workspace-id"),
+    error,
+  });
 
   res.status(500).json({
     error: {

@@ -24,6 +24,15 @@ import {
 } from "../routes/documentRoutes.js";
 import { chatSchema, conversationParamsSchema } from "../routes/chatRoutes.js";
 import {
+  createEvalCaseSchema,
+  createEvalDatasetSchema,
+  createEvalRunSchema,
+  evalComparisonQuerySchema,
+  evalDatasetParamsSchema,
+  evalRunParamsSchema,
+  importChatHistorySchema,
+} from "../routes/evalRoutes.js";
+import {
   anonymousChatSchema,
   publicConversationParamsSchema,
 } from "../routes/publicChatRoutes.js";
@@ -146,7 +155,6 @@ const RetrievalSettingsSchema = registry.register(
     vectorTopK: z.number().int().min(1).max(300),
     similarityThreshold: z.number().min(0).max(1),
     rerankTopK: z.number().int().min(1),
-    warmthLevel: z.number().int().min(1).max(10),
     citationDisplayEnabled: z.boolean(),
     metadataFieldSuggestions: z.array(
       z.object({
@@ -559,6 +567,196 @@ const ChatConversationDetailSchema = registry.register(
     hasOlderMessages: z.boolean(),
     nextCursor: z.string().nullable(),
     messages: z.array(ChatConversationMessageSchema),
+  }),
+);
+
+const EvalCaseConversationMessageSchema = registry.register(
+  "EvalCaseConversationMessage",
+  z.object({
+    role: z.enum(["user", "assistant", "system"]),
+    content: z.string(),
+  }),
+);
+
+const EvalCaseExpectationsSchema = registry.register(
+  "EvalCaseExpectations",
+  z.object({
+    expectedDocumentIds: z.array(z.string().uuid()).optional(),
+    expectedCitationTitles: z.array(z.string()).optional(),
+    expectedRefusalBehavior: z.enum(["refusal", "answer"]).optional(),
+    expectedAnswerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal"]).optional(),
+    requiredPhrases: z.array(z.string()).optional(),
+    forbiddenPhrases: z.array(z.string()).optional(),
+    latencyBudgetMs: z.number().int().positive().optional(),
+  }),
+);
+
+const EvalDatasetSchema = registry.register(
+  "EvalDataset",
+  z.object({
+    id: z.string().uuid(),
+    workspaceId: z.string().uuid(),
+    name: z.string(),
+    description: z.string(),
+    status: z.enum(["active", "archived"]),
+    createdByAccountId: z.string().uuid().nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  }),
+);
+
+const EvalDatasetSummarySchema = registry.register(
+  "EvalDatasetSummary",
+  EvalDatasetSchema.extend({
+    caseCount: z.number().int().min(0),
+    runCount: z.number().int().min(0),
+    lastRunAt: z.string().datetime().nullable(),
+  }),
+);
+
+const EvalCaseSchema = registry.register(
+  "EvalCase",
+  z.object({
+    id: z.string().uuid(),
+    datasetId: z.string().uuid(),
+    workspaceId: z.string().uuid(),
+    title: z.string(),
+    sourceType: z.enum(["manual", "conversation_import"]),
+    query: z.string(),
+    conversationContext: z.array(EvalCaseConversationMessageSchema),
+    expectations: EvalCaseExpectationsSchema,
+    provenance: z.record(z.unknown()),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  }),
+);
+
+const EvalImportDraftSchema = registry.register(
+  "EvalImportDraft",
+  z.object({
+    title: z.string(),
+    query: z.string(),
+    conversationContext: z.array(EvalCaseConversationMessageSchema),
+    sourceType: z.enum(["manual", "conversation_import"]),
+    provenance: z.record(z.unknown()),
+    seededExpectations: EvalCaseExpectationsSchema,
+    unavailable: z.array(z.string()),
+  }),
+);
+
+const EvalDatasetListResponseSchema = registry.register(
+  "EvalDatasetListResponse",
+  z.object({
+    datasets: z.array(EvalDatasetSummarySchema),
+  }),
+);
+
+const EvalDimensionResultSchema = registry.register(
+  "EvalDimensionResult",
+  z.object({
+    verdict: z.enum(["pass", "fail", "unscored"]),
+    expected: z.unknown().optional(),
+    actual: z.unknown().optional(),
+    reason: z.string().optional(),
+  }),
+);
+
+const EvalCaseScoreSchema = registry.register(
+  "EvalCaseScore",
+  z.object({
+    documentMatch: EvalDimensionResultSchema,
+    citationMatch: EvalDimensionResultSchema,
+    refusalMatch: EvalDimensionResultSchema,
+    answerOutcomeMatch: EvalDimensionResultSchema,
+    answerContainsMatch: EvalDimensionResultSchema,
+    latencyMatch: EvalDimensionResultSchema,
+    overallVerdict: z.enum(["pass", "fail"]),
+    reasons: z.array(z.string()),
+  }),
+);
+
+const EvalReplayDiagnosticsSchema = registry.register(
+  "EvalReplayDiagnostics",
+  z.object({
+    retrievalInfo: RetrievalInfoSchema,
+    retrievalTrace: RetrievalTraceSchema.optional(),
+    citations: z.array(CitationSchema).optional(),
+    answerSegments: z.array(AnswerSegmentSchema).optional(),
+    answerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal"]),
+    answerSupportPolicy: z.string().optional(),
+    answer: z.string(),
+    latencyMs: z.number().int().min(0),
+  }),
+);
+
+const EvalCaseResultSchema = registry.register(
+  "EvalCaseResult",
+  z.object({
+    caseId: z.string().uuid(),
+    status: z.enum(["pass", "fail", "skipped", "invalid"]),
+    score: EvalCaseScoreSchema,
+    diagnostics: EvalReplayDiagnosticsSchema,
+    comparisonOutcome: z.enum(["improved", "regressed", "unchanged", "unscored"]).optional(),
+    comparisonReasons: z.array(z.string()).optional(),
+  }),
+);
+
+const EvalRunSummarySchema = registry.register(
+  "EvalRunSummary",
+  z.object({
+    totalCases: z.number().int().min(0),
+    passCount: z.number().int().min(0),
+    failCount: z.number().int().min(0),
+    skippedCount: z.number().int().min(0),
+    invalidCount: z.number().int().min(0),
+    improvementCount: z.number().int().min(0),
+    regressionCount: z.number().int().min(0),
+    unchangedCount: z.number().int().min(0),
+  }),
+);
+
+const EvalRunSchema = registry.register(
+  "EvalRun",
+  z.object({
+    id: z.string().uuid(),
+    datasetId: z.string().uuid(),
+    workspaceId: z.string().uuid(),
+    label: z.string().nullable(),
+    baselineRunId: z.string().uuid().nullable(),
+    createdByAccountId: z.string().uuid().nullable(),
+    runMetadata: z.record(z.unknown()),
+    summary: EvalRunSummarySchema,
+    results: z.array(EvalCaseResultSchema),
+    startedAt: z.string().datetime(),
+    completedAt: z.string().datetime(),
+  }),
+);
+
+const EvalDatasetDetailSchema = registry.register(
+  "EvalDatasetDetail",
+  EvalDatasetSchema.extend({
+    cases: z.array(EvalCaseSchema),
+    runs: z.array(EvalRunSchema),
+  }),
+);
+
+const EvalRunComparisonSchema = registry.register(
+  "EvalRunComparison",
+  z.object({
+    baselineRunId: z.string().uuid(),
+    candidateRunId: z.string().uuid(),
+    regressions: z.number().int().min(0),
+    improvements: z.number().int().min(0),
+    unchanged: z.number().int().min(0),
+    unscored: z.number().int().min(0),
+    cases: z.array(z.object({
+      caseId: z.string().uuid(),
+      title: z.string(),
+      outcome: z.enum(["improved", "regressed", "unchanged", "unscored"]),
+      reasons: z.array(z.string()),
+      baselineStatus: z.enum(["pass", "fail", "skipped", "invalid"]).optional(),
+      candidateStatus: z.enum(["pass", "fail", "skipped", "invalid"]).optional(),
+    })),
   }),
 );
 
@@ -1790,6 +1988,282 @@ registry.registerPath({
     },
     404: {
       description: "Conversation not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/evals/datasets",
+  tags: ["Evals"],
+  summary: "List eval datasets for the active workspace",
+  operationId: "listEvalDatasets",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Eval dataset summaries",
+      content: {
+        "application/json": {
+          schema: EvalDatasetListResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/evals/datasets",
+  tags: ["Evals"],
+  summary: "Create an eval dataset",
+  operationId: "createEvalDataset",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: createEvalDatasetSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Eval dataset created",
+      content: {
+        "application/json": {
+          schema: EvalDatasetSummarySchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/evals/datasets/{datasetId}",
+  tags: ["Evals"],
+  summary: "Get one eval dataset with its cases and runs",
+  operationId: "getEvalDataset",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: evalDatasetParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Eval dataset detail",
+      content: {
+        "application/json": {
+          schema: EvalDatasetDetailSchema,
+        },
+      },
+    },
+    404: {
+      description: "Eval dataset not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/evals/import/chat-history",
+  tags: ["Evals"],
+  summary: "Create an eval import draft from chat history",
+  operationId: "importEvalChatHistory",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: importChatHistorySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Eval import draft returned",
+      content: {
+        "application/json": {
+          schema: z.object({ importDraft: EvalImportDraftSchema }),
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/evals/datasets/{datasetId}/cases",
+  tags: ["Evals"],
+  summary: "Add an eval case to a dataset",
+  operationId: "createEvalCase",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: evalDatasetParamsSchema,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: createEvalCaseSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Eval case created",
+      content: {
+        "application/json": {
+          schema: EvalCaseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Eval dataset not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/evals/datasets/{datasetId}/runs",
+  tags: ["Evals"],
+  summary: "Run an eval dataset",
+  operationId: "createEvalRun",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: evalDatasetParamsSchema,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: createEvalRunSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Eval run created",
+      content: {
+        "application/json": {
+          schema: EvalRunSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/evals/datasets/{datasetId}/runs/{runId}",
+  tags: ["Evals"],
+  summary: "Get an eval run",
+  operationId: "getEvalRun",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: evalRunParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Eval run returned",
+      content: {
+        "application/json": {
+          schema: EvalRunSchema,
+        },
+      },
+    },
+    404: {
+      description: "Eval run not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/evals/datasets/{datasetId}/runs/{runId}/comparison",
+  tags: ["Evals"],
+  summary: "Compare an eval run to a baseline",
+  operationId: "getEvalRunComparison",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: evalRunParamsSchema,
+    query: evalComparisonQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Eval run comparison returned",
+      content: {
+        "application/json": {
+          schema: EvalRunComparisonSchema,
+        },
+      },
+    },
+    400: {
+      description: "Comparison unavailable",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

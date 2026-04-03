@@ -34,7 +34,8 @@ export const documentSearchHistoryParamsSchema = z.object({
 
 export const documentListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(MAX_DOCUMENT_LIST_LIMIT).default(MAX_DOCUMENT_LIST_LIMIT),
-  offset: z.coerce.number().int().min(0).default(0),
+  offset: z.coerce.number().int().min(0).optional(),
+  cursor: z.string().min(1).optional(),
 });
 
 export const createDocumentRoutes = (dependencies: AppDependencies): Router => {

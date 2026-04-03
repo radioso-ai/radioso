@@ -80,6 +80,8 @@ describe("document contract", () => {
         traceAvailable: true,
       }),
     ]);
+    expect(listResponse.body.nextCursor).toBeNull();
+    expect(listResponse.body.hasMore).toBe(false);
 
     const replayResponse = await request(app)
       .get(`/api/v1/document/search/history/${searchResponse.body.searchId}`)
@@ -319,6 +321,39 @@ describe("document contract", () => {
         ragStatus: "processed",
       }),
     ]);
+    expect(listResponse.body.nextCursor).toBeNull();
+    expect(listResponse.body.hasMore).toBe(false);
+  });
+
+  it("supports cursor pagination for document lists", async () => {
+    const { app } = createTestApp();
+
+    const session = await issueTestSession(app, "document-list-cursor@example.com");
+
+    for (const title of ["Doc A", "Doc B", "Doc C"]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set(adminSessionHeaders(session))
+        .send({ title, content: `${title} content` });
+    }
+
+    const firstPage = await request(app)
+      .get("/api/v1/document/?limit=2")
+      .set(adminSessionHeaders(session));
+
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body.documents).toHaveLength(2);
+    expect(firstPage.body.hasMore).toBe(true);
+    expect(firstPage.body.nextCursor).toEqual(expect.any(String));
+
+    const secondPage = await request(app)
+      .get(`/api/v1/document/?limit=2&cursor=${encodeURIComponent(firstPage.body.nextCursor)}`)
+      .set(adminSessionHeaders(session));
+
+    expect(secondPage.status).toBe(200);
+    expect(secondPage.body.documents).toHaveLength(1);
+    expect(secondPage.body.hasMore).toBe(false);
+    expect(secondPage.body.nextCursor).toBeNull();
   });
 
   it("rejects invalid document list paging query values with a client error", async () => {
@@ -334,6 +369,22 @@ describe("document contract", () => {
     expect(response.body.error).toMatchObject({
       code: "bad_request",
       message: "Invalid request query",
+    });
+  });
+
+  it("rejects malformed document cursors with a client error", async () => {
+    const { app } = createTestApp();
+
+    const session = await issueTestSession(app, "document-list-bad-cursor@example.com");
+
+    const response = await request(app)
+      .get("/api/v1/document/?cursor=not-a-cursor")
+      .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: "bad_request",
+      message: "Invalid cursor",
     });
   });
 

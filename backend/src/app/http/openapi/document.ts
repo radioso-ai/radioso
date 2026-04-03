@@ -277,6 +277,8 @@ const DocumentListResponseSchema = registry.register(
   z.object({
     documents: z.array(DocumentSummarySchema),
     total: z.number().int().min(0),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
   }),
 );
 
@@ -323,6 +325,8 @@ const DocumentSearchHistoryListResponseSchema = registry.register(
   z.object({
     searches: z.array(DocumentSearchHistoryEntrySchema),
     total: z.number().int().min(0),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
   }),
 );
 const DocumentSearchRequestSchema = registry.register("DocumentSearchRequest", documentSearchSchema);
@@ -483,6 +487,8 @@ const ChatHistoryListResponseSchema = registry.register(
   z.object({
     conversations: z.array(ChatConversationSummarySchema),
     total: z.number().int().min(0),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
   }),
 );
 
@@ -559,6 +565,7 @@ const ChatConversationDetailSchema = registry.register(
     messageWindowOffset: z.number().int().min(0),
     messageWindowLimit: z.number().int().min(1),
     hasOlderMessages: z.boolean(),
+    nextCursor: z.string().nullable(),
     messages: z.array(ChatConversationMessageSchema),
   }),
 );
@@ -771,6 +778,8 @@ const PublicConversationListResponseSchema = registry.register(
     workspaceName: z.string(),
     conversations: z.array(PublicConversationSummarySchema),
     total: z.number().int().min(0),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
   }),
 );
 
@@ -1544,6 +1553,7 @@ registry.registerPath({
     query: z.object({
       limit: z.number().int().min(1).max(100).optional(),
       offset: z.number().int().min(0).optional(),
+      cursor: z.string().min(1).optional(),
     }),
   },
   responses: {
@@ -1615,6 +1625,7 @@ registry.registerPath({
     query: z.object({
       limit: z.number().int().min(1).max(100).optional(),
       offset: z.number().int().min(0).optional(),
+      cursor: z.string().min(1).optional(),
     }),
   },
   responses: {
@@ -1912,6 +1923,7 @@ registry.registerPath({
     query: z.object({
       limit: z.number().int().min(1).max(100).optional(),
       offset: z.number().int().min(0).optional(),
+      cursor: z.string().min(1).optional(),
     }),
   },
   responses: {
@@ -1946,6 +1958,7 @@ registry.registerPath({
     query: z.object({
       limit: z.number().int().min(1).max(100).optional(),
       offset: z.number().int().min(0).optional(),
+      cursor: z.string().min(1).optional(),
     }),
   },
   responses: {
@@ -2548,6 +2561,7 @@ registry.registerPath({
     query: z.object({
       limit: z.number().int().min(1).max(100).optional(),
       offset: z.number().int().min(0).optional(),
+      cursor: z.string().min(1).optional(),
     }),
   },
   responses: {
@@ -2582,6 +2596,7 @@ registry.registerPath({
     query: z.object({
       limit: z.number().int().min(1).max(100).optional(),
       offset: z.number().int().min(0).optional(),
+      cursor: z.string().min(1).optional(),
     }),
   },
   responses: {

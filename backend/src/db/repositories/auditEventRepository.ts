@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
+import { decodeCursor, encodeCursor } from "../../shared/domain/cursorPagination.js";
 
 export interface AuditEventRecord {
   id: string;
@@ -26,11 +27,10 @@ export interface AuditEventRepositoryPort {
     conversationId: string,
     assistantMessageIds: string[],
   ): Promise<AuditEventRecord[]>;
-  listDocumentSearchEventsByWorkspaceId(workspaceId: string): Promise<AuditEventRecord[]>;
   listDocumentSearchEventPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset: number },
-  ): Promise<{ events: AuditEventRecord[]; total: number }>;
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ events: AuditEventRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   findDocumentSearchEventBySearchId(workspaceId: string, searchId: string): Promise<AuditEventRecord | null>;
 }
 
@@ -111,23 +111,10 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     return rows.map(mapAuditEvent);
   }
 
-  async listDocumentSearchEventsByWorkspaceId(workspaceId: string): Promise<AuditEventRecord[]> {
-    const rows = await this.database.query<AuditEventRow>(
-      `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
-       FROM audit_events
-       WHERE workspace_id = $1
-         AND event_type = 'document.search'
-       ORDER BY created_at DESC`,
-      [workspaceId],
-    );
-
-    return rows.map(mapAuditEvent);
-  }
-
   async listDocumentSearchEventPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset: number },
-  ): Promise<{ events: AuditEventRecord[]; total: number }> {
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ events: AuditEventRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const [countRow] = await this.database.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
        FROM audit_events
@@ -136,20 +123,54 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
       [workspaceId],
     );
 
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const params: Array<string | number> = [workspaceId];
+    let cursorClause = "";
+
+    if (cursor) {
+      params.push(cursor.keys.createdAt, cursor.keys.id);
+      cursorClause = `
+         AND (
+           created_at < $2::timestamptz
+           OR (created_at = $2::timestamptz AND id < $3::uuid)
+         )`;
+    }
+
+    const limitParam = params.length + 1;
+    params.push(input.limit + 1);
+
+    let offsetClause = "";
+    if (!cursor) {
+      offsetClause = `OFFSET $${params.length + 1}`;
+      params.push(input.offset ?? 0);
+    }
+
     const rows = await this.database.query<AuditEventRow>(
       `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
        FROM audit_events
        WHERE workspace_id = $1
          AND event_type = 'document.search'
-       ORDER BY created_at DESC
-       LIMIT $2
-       OFFSET $3`,
-      [workspaceId, input.limit, input.offset],
+       ${cursorClause}
+       ORDER BY created_at DESC, id DESC
+       LIMIT $${limitParam}
+       ${offsetClause}`,
+      params,
     );
 
+    const events = rows.slice(0, input.limit).map(mapAuditEvent);
+    const hasMore = rows.length > input.limit;
+    const lastEvent = events.at(-1);
+
     return {
-      events: rows.map(mapAuditEvent),
+      events,
       total: Number(countRow?.count ?? "0"),
+      nextCursor: hasMore && lastEvent
+        ? encodeCursor({
+            createdAt: lastEvent.createdAt.toISOString(),
+            id: lastEvent.id,
+          })
+        : null,
+      hasMore,
     };
   }
 

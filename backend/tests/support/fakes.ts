@@ -60,8 +60,6 @@ import type {
   DocumentStorageReadInput,
   DocumentStorageUploadInput,
 } from "../../src/modules/documents/infra/gcsDocumentStorage.js";
-import { notFound } from "../../src/shared/domain/errors.js";
-import { createLogger } from "../../src/shared/observability/logger.js";
 import type {
   EvalCaseCreateInput,
   EvalCaseRecord,
@@ -70,6 +68,9 @@ import type {
   EvalRunRecord,
 } from "../../src/modules/evals/domain/evalTypes.js";
 import type { EvalRepositoryPort } from "../../src/modules/evals/services/evalLabService.js";
+import { notFound } from "../../src/shared/domain/errors.js";
+import { decodeCursor, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
+import { createLogger } from "../../src/shared/observability/logger.js";
 
 interface InMemoryConnectorConfigRecord {
   id: string;
@@ -935,15 +936,35 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 
   async listSummaryPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset: number },
-  ): Promise<{ documents: DocumentSummaryRecord[]; total: number }> {
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const documents = [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      .sort((a, b) => {
+        const timeDiff = b.createdAt.getTime() - a.createdAt.getTime();
+        return timeDiff !== 0 ? timeDiff : b.id.localeCompare(a.id);
+      });
+
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const startIndex = cursor
+      ? documents.findIndex(
+          (item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id,
+        ) + 1
+      : (input.offset ?? 0);
+    const slice = documents.slice(Math.max(0, startIndex), Math.max(0, startIndex) + input.limit);
+    const hasMore = Math.max(0, startIndex) + input.limit < documents.length;
+    const lastDocument = slice.at(-1);
 
     return {
-      documents: documents.slice(input.offset, input.offset + input.limit),
+      documents: slice,
       total: documents.length,
+      nextCursor: hasMore && lastDocument
+        ? encodeCursor({
+            createdAt: lastDocument.createdAt.toISOString(),
+            id: lastDocument.id,
+          })
+        : null,
+      hasMore,
     };
   }
 
@@ -1443,15 +1464,35 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
-  ): Promise<{ conversations: ConversationRecord[]; total: number }> {
+    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const conversations = [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)
-      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+      .sort((left, right) => {
+        const timeDiff = right.updatedAt.getTime() - left.updatedAt.getTime();
+        return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
+      });
+
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const startIndex = cursor
+      ? conversations.findIndex(
+          (item) => item.updatedAt.toISOString() === cursor.keys.updatedAt && item.id === cursor.keys.id,
+        ) + 1
+      : (input.offset ?? 0);
+    const slice = conversations.slice(Math.max(0, startIndex), Math.max(0, startIndex) + input.limit);
+    const hasMore = Math.max(0, startIndex) + input.limit < conversations.length;
+    const lastConversation = slice.at(-1);
 
     return {
-      conversations: conversations.slice(input.offset, input.offset + input.limit),
+      conversations: slice,
       total: conversations.length,
+      nextCursor: hasMore && lastConversation
+        ? encodeCursor({
+            updatedAt: lastConversation.updatedAt.toISOString(),
+            id: lastConversation.id,
+          })
+        : null,
+      hasMore,
     };
   }
 
@@ -1464,15 +1505,35 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
   async listPageByAnonymousSession(
     workspaceId: string,
     anonymousSessionId: string,
-    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
-  ): Promise<{ conversations: ConversationRecord[]; total: number }> {
+    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const conversations = [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId && item.anonymousSessionId === anonymousSessionId)
-      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+      .sort((left, right) => {
+        const timeDiff = right.updatedAt.getTime() - left.updatedAt.getTime();
+        return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
+      });
+
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const startIndex = cursor
+      ? conversations.findIndex(
+          (item) => item.updatedAt.toISOString() === cursor.keys.updatedAt && item.id === cursor.keys.id,
+        ) + 1
+      : (input.offset ?? 0);
+    const slice = conversations.slice(Math.max(0, startIndex), Math.max(0, startIndex) + input.limit);
+    const hasMore = Math.max(0, startIndex) + input.limit < conversations.length;
+    const lastConversation = slice.at(-1);
 
     return {
-      conversations: conversations.slice(input.offset, input.offset + input.limit),
+      conversations: slice,
       total: conversations.length,
+      nextCursor: hasMore && lastConversation
+        ? encodeCursor({
+            updatedAt: lastConversation.updatedAt.toISOString(),
+            id: lastConversation.id,
+          })
+        : null,
+      hasMore,
     };
   }
 
@@ -1498,15 +1559,33 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
 
   async listWindowByConversationId(
     conversationId: string,
-    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
-  ): Promise<{ messages: MessageRecord[]; total: number }> {
+    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
+  ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const messages = [...(this.items.get(conversationId) ?? [])];
-    const latestFirst = [...messages].reverse();
-    const window = latestFirst.slice(input.offset, input.offset + input.limit).reverse();
+    const latestFirst = [...messages].sort((left, right) => {
+      const timeDiff = right.createdAt.getTime() - left.createdAt.getTime();
+      return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
+    });
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const startIndex = cursor
+      ? latestFirst.findIndex(
+          (item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id,
+        ) + 1
+      : (input.offset ?? 0);
+    const slice = latestFirst.slice(Math.max(0, startIndex), Math.max(0, startIndex) + input.limit);
+    const hasMore = Math.max(0, startIndex) + input.limit < latestFirst.length;
+    const oldestFetched = slice.at(-1);
 
     return {
-      messages: window,
+      messages: [...slice].reverse(),
       total: messages.length,
+      nextCursor: hasMore && oldestFetched
+        ? encodeCursor({
+            createdAt: oldestFetched.createdAt.toISOString(),
+            id: oldestFetched.id,
+          })
+        : null,
+      hasMore,
     };
   }
 
@@ -1606,15 +1685,32 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
 
   async listDocumentSearchEventPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
-  ): Promise<{ events: AuditEventRecord[]; total: number }> {
+    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
+  ): Promise<{ events: AuditEventRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const events = this.items
       .filter((event) => event.workspaceId === workspaceId && event.eventType === "document.search")
-      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+      .sort((left, right) => {
+        const timeDiff = right.createdAt.getTime() - left.createdAt.getTime();
+        return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
+      });
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const startIndex = cursor
+      ? events.findIndex((item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id) + 1
+      : (input.offset ?? 0);
+    const slice = events.slice(Math.max(0, startIndex), Math.max(0, startIndex) + input.limit);
+    const hasMore = Math.max(0, startIndex) + input.limit < events.length;
+    const lastEvent = slice.at(-1);
 
     return {
-      events: events.slice(input.offset, input.offset + input.limit),
+      events: slice,
       total: events.length,
+      nextCursor: hasMore && lastEvent
+        ? encodeCursor({
+            createdAt: lastEvent.createdAt.toISOString(),
+            id: lastEvent.id,
+          })
+        : null,
+      hasMore,
     };
   }
 

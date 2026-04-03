@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import {
@@ -46,6 +46,13 @@ import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-ro
 const HISTORY_PAGE_SIZE = 50
 const MESSAGE_WINDOW_SIZE = 50
 
+interface HistoryPageSnapshot<T> {
+  items: T[]
+  total: number
+  hasMore: boolean
+  nextCursor: string | null
+}
+
 export function ChatHistoryView({
   accountId,
   onboarding,
@@ -56,14 +63,20 @@ export function ChatHistoryView({
   routeState: DashboardRouteState
 }) {
   const router = useRouter()
+  const conversationCursorByPageRef = useRef(new Map<number, string | null>([[1, null]]))
+  const conversationPageCacheRef = useRef(new Map<number, HistoryPageSnapshot<ChatConversationSummary>>())
+  const searchCursorByPageRef = useRef(new Map<number, string | null>([[1, null]]))
+  const searchPageCacheRef = useRef(new Map<number, HistoryPageSnapshot<DocumentSearchHistoryEntry>>())
   const [filter, setFilter] = useState<HistoryFilter>(routeState.historyFilter ?? 'all')
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([])
   const [conversationTotal, setConversationTotal] = useState(0)
+  const [hasConversationNextPage, setHasConversationNextPage] = useState(false)
   const [conversationPage, setConversationPage] = useState(
     routeState.historyFilter === 'chat' ? (routeState.historyPage ?? 1) : 1,
   )
   const [searches, setSearches] = useState<DocumentSearchHistoryEntry[]>([])
   const [searchTotal, setSearchTotal] = useState(0)
+  const [hasSearchNextPage, setHasSearchNextPage] = useState(false)
   const [searchPage, setSearchPage] = useState(
     routeState.historyFilter === 'search' ? (routeState.historyPage ?? 1) : 1,
   )
@@ -151,39 +164,157 @@ export function ChatHistoryView({
     selectedItem,
   ])
 
+  const resetConversationPagination = useCallback(() => {
+    conversationCursorByPageRef.current = new Map([[1, null]])
+    conversationPageCacheRef.current = new Map()
+  }, [])
+
+  const resetSearchPagination = useCallback(() => {
+    searchCursorByPageRef.current = new Map([[1, null]])
+    searchPageCacheRef.current = new Map()
+  }, [])
+
+  const loadConversationPages = useCallback(async (
+    pageCount: number,
+    options?: { reset?: boolean },
+  ): Promise<HistoryPageSnapshot<ChatConversationSummary>[]> => {
+    if (options?.reset) {
+      resetConversationPagination()
+    }
+
+    const cursorByPage = conversationCursorByPageRef.current
+    const pageCache = conversationPageCacheRef.current
+
+    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+      if (pageCache.has(pageNumber)) {
+        const cached = pageCache.get(pageNumber)
+        if (cached && !cursorByPage.has(pageNumber + 1)) {
+          cursorByPage.set(pageNumber + 1, cached.nextCursor)
+        }
+        continue
+      }
+
+      const cursor = cursorByPage.get(pageNumber) ?? null
+      if (pageNumber > 1 && cursor === null) {
+        const previousPage = pageCache.get(pageNumber - 1)
+        const emptySnapshot: HistoryPageSnapshot<ChatConversationSummary> = {
+          items: [],
+          total: previousPage?.total ?? 0,
+          hasMore: false,
+          nextCursor: null,
+        }
+        pageCache.set(pageNumber, emptySnapshot)
+        continue
+      }
+
+      const response = await chatApi.listHistory({
+        limit: HISTORY_PAGE_SIZE,
+        ...(cursor ? { cursor } : {}),
+      })
+      const snapshot: HistoryPageSnapshot<ChatConversationSummary> = {
+        items: response.conversations,
+        total: response.total,
+        hasMore: response.hasMore,
+        nextCursor: response.nextCursor,
+      }
+
+      pageCache.set(pageNumber, snapshot)
+      cursorByPage.set(pageNumber + 1, response.nextCursor)
+    }
+
+    return Array.from({ length: pageCount }, (_, index) => (
+      pageCache.get(index + 1) ?? { items: [], total: 0, hasMore: false, nextCursor: null }
+    ))
+  }, [resetConversationPagination])
+
+  const loadSearchPages = useCallback(async (
+    pageCount: number,
+    options?: { reset?: boolean },
+  ): Promise<HistoryPageSnapshot<DocumentSearchHistoryEntry>[]> => {
+    if (options?.reset) {
+      resetSearchPagination()
+    }
+
+    const cursorByPage = searchCursorByPageRef.current
+    const pageCache = searchPageCacheRef.current
+
+    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+      if (pageCache.has(pageNumber)) {
+        const cached = pageCache.get(pageNumber)
+        if (cached && !cursorByPage.has(pageNumber + 1)) {
+          cursorByPage.set(pageNumber + 1, cached.nextCursor)
+        }
+        continue
+      }
+
+      const cursor = cursorByPage.get(pageNumber) ?? null
+      if (pageNumber > 1 && cursor === null) {
+        const previousPage = pageCache.get(pageNumber - 1)
+        const emptySnapshot: HistoryPageSnapshot<DocumentSearchHistoryEntry> = {
+          items: [],
+          total: previousPage?.total ?? 0,
+          hasMore: false,
+          nextCursor: null,
+        }
+        pageCache.set(pageNumber, emptySnapshot)
+        continue
+      }
+
+      const response = await documentsApi.listSearchHistory({
+        limit: HISTORY_PAGE_SIZE,
+        ...(cursor ? { cursor } : {}),
+      })
+      const snapshot: HistoryPageSnapshot<DocumentSearchHistoryEntry> = {
+        items: response.searches,
+        total: response.total,
+        hasMore: response.hasMore,
+        nextCursor: response.nextCursor,
+      }
+
+      pageCache.set(pageNumber, snapshot)
+      cursorByPage.set(pageNumber + 1, response.nextCursor)
+    }
+
+    return Array.from({ length: pageCount }, (_, index) => (
+      pageCache.get(index + 1) ?? { items: [], total: 0, hasMore: false, nextCursor: null }
+    ))
+  }, [resetSearchPagination])
+
   const loadHistory = useCallback(async () => {
     setIsListLoading(true)
     setListError(null)
 
-    const listLimit = filter === 'all' ? allPage * HISTORY_PAGE_SIZE : HISTORY_PAGE_SIZE
-    const chatOffset = filter === 'all' ? 0 : (conversationPage - 1) * HISTORY_PAGE_SIZE
-    const searchOffset = filter === 'all' ? 0 : (searchPage - 1) * HISTORY_PAGE_SIZE
-
     const [chatResult, searchResult] = await Promise.allSettled([
-      chatApi.listHistory({
-        limit: listLimit,
-        offset: chatOffset,
-      }),
-      documentsApi.listSearchHistory({
-        limit: listLimit,
-        offset: searchOffset,
-      }),
+      filter === 'search'
+        ? Promise.resolve<HistoryPageSnapshot<ChatConversationSummary>[]>([])
+        : loadConversationPages(filter === 'all' ? allPage : conversationPage),
+      filter === 'chat'
+        ? Promise.resolve<HistoryPageSnapshot<DocumentSearchHistoryEntry>[]>([])
+        : loadSearchPages(filter === 'all' ? allPage : searchPage),
     ])
 
     if (chatResult.status === 'fulfilled') {
-      setConversations(chatResult.value.conversations)
-      setConversationTotal(chatResult.value.total)
+      const loadedConversations = chatResult.value.flatMap((page) => page.items)
+      const lastChatPage = chatResult.value.at(-1)
+      setConversations(loadedConversations)
+      setConversationTotal(lastChatPage?.total ?? 0)
+      setHasConversationNextPage(lastChatPage?.hasMore ?? false)
     } else {
       setConversations([])
       setConversationTotal(0)
+      setHasConversationNextPage(false)
     }
 
     if (searchResult.status === 'fulfilled') {
-      setSearches(searchResult.value.searches)
-      setSearchTotal(searchResult.value.total)
+      const loadedSearches = searchResult.value.flatMap((page) => page.items)
+      const lastSearchPage = searchResult.value.at(-1)
+      setSearches(loadedSearches)
+      setSearchTotal(lastSearchPage?.total ?? 0)
+      setHasSearchNextPage(lastSearchPage?.hasMore ?? false)
     } else {
       setSearches([])
       setSearchTotal(0)
+      setHasSearchNextPage(false)
     }
 
     const errors: string[] = []
@@ -196,11 +327,17 @@ export function ChatHistoryView({
 
     setListError(errors.length > 0 ? errors.join(' ') : null)
     setIsListLoading(false)
-  }, [allPage, conversationPage, filter, searchPage])
+  }, [allPage, conversationPage, filter, loadConversationPages, loadSearchPages, searchPage])
 
   useEffect(() => {
     void loadHistory()
   }, [loadHistory, accountId])
+
+  useEffect(() => {
+    resetConversationPagination()
+    resetSearchPagination()
+    void loadHistory()
+  }, [accountId, loadHistory, resetConversationPagination, resetSearchPagination, routeState.workspaceId])
 
   useEffect(() => {
     if (!selectedItem) {
@@ -226,7 +363,6 @@ export function ChatHistoryView({
         if (selectedItem.kind === 'chat') {
           const detail = await chatApi.getHistoryConversation(selectedItem.id, {
             limit: MESSAGE_WINDOW_SIZE,
-            offset: 0,
           })
           if (!isActive) {
             return
@@ -404,6 +540,7 @@ export function ChatHistoryView({
   const searchTotalPages = Math.max(1, Math.ceil(searchTotal / HISTORY_PAGE_SIZE))
   const allTotal = conversationTotal + searchTotal
   const allTotalPages = Math.max(1, Math.ceil(allTotal / HISTORY_PAGE_SIZE))
+  const allHasNextPage = hasConversationNextPage || hasSearchNextPage
 
   useEffect(() => {
     const activePage = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : searchPage
@@ -450,7 +587,13 @@ export function ChatHistoryView({
   ])
 
   const loadOlderMessages = useCallback(async () => {
-    if (!selectedItem || selectedItem.kind !== 'chat' || !conversationDetail || !conversationDetail.hasOlderMessages) {
+    if (
+      !selectedItem ||
+      selectedItem.kind !== 'chat' ||
+      !conversationDetail ||
+      !conversationDetail.hasOlderMessages ||
+      !conversationDetail.nextCursor
+    ) {
       return
     }
 
@@ -460,7 +603,7 @@ export function ChatHistoryView({
     try {
       const older = await chatApi.getHistoryConversation(selectedItem.id, {
         limit: MESSAGE_WINDOW_SIZE,
-        offset: conversationDetail.messages.length,
+        ...(conversationDetail.nextCursor ? { cursor: conversationDetail.nextCursor } : {}),
       })
       setConversationDetail((current) => {
         if (!current) {
@@ -500,6 +643,24 @@ export function ChatHistoryView({
     return merged.slice(start, start + HISTORY_PAGE_SIZE)
   }, [allPage, conversations, searches])
 
+  const conversationPageItems = useMemo(() => {
+    if (filter !== 'chat') {
+      return conversations
+    }
+
+    const start = (conversationPage - 1) * HISTORY_PAGE_SIZE
+    return conversations.slice(start, start + HISTORY_PAGE_SIZE)
+  }, [conversationPage, conversations, filter])
+
+  const searchPageItems = useMemo(() => {
+    if (filter !== 'search') {
+      return searches
+    }
+
+    const start = (searchPage - 1) * HISTORY_PAGE_SIZE
+    return searches.slice(start, start + HISTORY_PAGE_SIZE)
+  }, [filter, searchPage, searches])
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <HistoryList
@@ -510,10 +671,10 @@ export function ChatHistoryView({
         isLoading={isListLoading}
         hasAnyHistory={hasAnyHistory}
         listError={listError}
-        conversations={conversations}
+        conversations={conversationPageItems}
         conversationPage={conversationPage}
         conversationTotalPages={conversationTotalPages}
-        searches={searches}
+        searches={searchPageItems}
         searchPage={searchPage}
         searchTotalPages={searchTotalPages}
         allHistoryItems={allHistoryItems}
@@ -531,14 +692,23 @@ export function ChatHistoryView({
           pushHistoryRoute({ selectedItem: item })
         }}
         onConversationPageChange={(page) => {
+          if (page > conversationPage && !hasConversationNextPage) {
+            return
+          }
           setConversationPage(page)
           pushHistoryRoute({ filter: 'chat', page })
         }}
         onSearchPageChange={(page) => {
+          if (page > searchPage && !hasSearchNextPage) {
+            return
+          }
           setSearchPage(page)
           pushHistoryRoute({ filter: 'search', page })
         }}
         onAllPageChange={(page) => {
+          if (page > allPage && !allHasNextPage) {
+            return
+          }
           setAllPage(page)
           pushHistoryRoute({ filter: 'all', page })
         }}
@@ -604,7 +774,13 @@ export function ChatHistoryView({
                 <div className="min-h-0 overflow-y-auto pr-1">
                   {conversationDetail.hasOlderMessages ? (
                     <div className="mb-3 flex justify-center">
-                      <Button type="button" size="sm" variant="outline" onClick={() => void loadOlderMessages()}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={isDetailLoading || !conversationDetail.nextCursor}
+                        onClick={() => void loadOlderMessages()}
+                      >
                         Load older messages
                       </Button>
                     </div>

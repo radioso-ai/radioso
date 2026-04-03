@@ -2,33 +2,21 @@ services:
   backend:
     build:
       context: ..
-      dockerfile: infra/backend.dev.Dockerfile
+      dockerfile: infra/backend.Dockerfile
     environment:
       NODE_ENV: development
-    volumes:
-      - ../backend:/app/backend
-      - ../packages/connector-api:/app/packages/connector-api
-      - ../packages/document-parser:/app/packages/document-parser
-      - ${HOME}/.config/gcloud/keys:${HOME}/.config/gcloud/keys:ro
-      - radioso_backend_node_modules:/app/backend/node_modules
-    command: ["backend-dev-entrypoint.sh", "dev:http"]
+    command: ["npm", "run", "start:http"]
 
   backend-worker:
     build:
       context: ..
-      dockerfile: infra/backend.dev.Dockerfile
+      dockerfile: infra/backend.Dockerfile
     environment:
       NODE_ENV: development
     depends_on:
       backend:
         condition: service_healthy
-    volumes:
-      - ../backend:/app/backend
-      - ../packages/connector-api:/app/packages/connector-api
-      - ../packages/document-parser:/app/packages/document-parser
-      - ${HOME}/.config/gcloud/keys:${HOME}/.config/gcloud/keys:ro
-      - radioso_backend_node_modules:/app/backend/node_modules
-    command: ["backend-dev-entrypoint.sh", "dev:worker"]
+    command: ["npm", "run", "start:worker"]
 
   frontend:
     build:
@@ -44,5 +32,4 @@ services:
       - radioso_frontend_node_modules:/app/node_modules
 
 volumes:
-  radioso_backend_node_modules:
   radioso_frontend_node_modules:

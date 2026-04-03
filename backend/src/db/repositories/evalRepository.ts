@@ -18,11 +18,11 @@ interface EvalDatasetRow {
   description: string;
   status: "active" | "archived";
   created_by_account_id: string | null;
-  created_at: Date;
-  updated_at: Date;
+  created_at: Date | string;
+  updated_at: Date | string;
   case_count?: number;
-  run_count?: number;
-  last_run_at?: Date | null;
+  run_count?: number | string;
+  last_run_at?: Date | string | null;
 }
 
 interface EvalCaseRow {
@@ -35,8 +35,8 @@ interface EvalCaseRow {
   conversation_context: unknown;
   expectations: unknown;
   provenance: unknown;
-  created_at: Date;
-  updated_at: Date;
+  created_at: Date | string;
+  updated_at: Date | string;
 }
 
 interface EvalRunRow {
@@ -49,11 +49,11 @@ interface EvalRunRow {
   run_metadata: unknown;
   summary: unknown;
   results: unknown;
-  started_at: Date;
-  completed_at: Date;
+  started_at: Date | string;
+  completed_at: Date | string;
 }
 
-const toIsoString = (value: Date | null | undefined): string | null => (value ? new Date(value).toISOString() : null);
+const toIsoString = (value: Date | string | null | undefined): string | null => (value ? new Date(value).toISOString() : null);
 
 const mapDataset = (row: EvalDatasetRow): EvalDatasetRecord => ({
   id: row.id,
@@ -62,8 +62,8 @@ const mapDataset = (row: EvalDatasetRow): EvalDatasetRecord => ({
   description: row.description,
   status: row.status,
   createdByAccountId: row.created_by_account_id,
-  createdAt: row.created_at.toISOString(),
-  updatedAt: row.updated_at.toISOString(),
+  createdAt: toIsoString(row.created_at) ?? new Date(0).toISOString(),
+  updatedAt: toIsoString(row.updated_at) ?? new Date(0).toISOString(),
 });
 
 const mapDatasetSummary = (row: EvalDatasetRow): EvalDatasetSummary => ({
@@ -83,8 +83,8 @@ const mapCase = (row: EvalCaseRow): EvalCaseRecord => ({
   conversationContext: Array.isArray(row.conversation_context) ? (row.conversation_context as EvalCaseRecord["conversationContext"]) : [],
   expectations: row.expectations && typeof row.expectations === "object" ? (row.expectations as EvalCaseRecord["expectations"]) : {},
   provenance: row.provenance && typeof row.provenance === "object" ? (row.provenance as Record<string, unknown>) : {},
-  createdAt: row.created_at.toISOString(),
-  updatedAt: row.updated_at.toISOString(),
+  createdAt: toIsoString(row.created_at) ?? new Date(0).toISOString(),
+  updatedAt: toIsoString(row.updated_at) ?? new Date(0).toISOString(),
 });
 
 const defaultRunSummary: EvalRunSummary = {
@@ -108,8 +108,8 @@ const mapRun = (row: EvalRunRow): EvalRunRecord => ({
   runMetadata: row.run_metadata && typeof row.run_metadata === "object" ? (row.run_metadata as Record<string, unknown>) : {},
   summary: row.summary && typeof row.summary === "object" ? (row.summary as EvalRunSummary) : defaultRunSummary,
   results: Array.isArray(row.results) ? (row.results as EvalRunRecord["results"]) : [],
-  startedAt: row.started_at.toISOString(),
-  completedAt: row.completed_at.toISOString(),
+  startedAt: toIsoString(row.started_at) ?? new Date(0).toISOString(),
+  completedAt: toIsoString(row.completed_at) ?? new Date(0).toISOString(),
 });
 
 export class EvalRepository implements EvalRepositoryPort {

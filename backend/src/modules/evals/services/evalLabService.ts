@@ -328,8 +328,9 @@ export class EvalLabService {
       throw badRequest("No baseline run is available for comparison");
     }
 
+    const comparedResults = this.applyComparison(cases, candidateRun.results, baselineRun);
     const byCaseTitle = new Map(cases.map((evalCase) => [evalCase.id, evalCase.title]));
-    const casesComparison = candidateRun.results.map<EvalCaseComparison>((result) => ({
+    const casesComparison = comparedResults.map<EvalCaseComparison>((result) => ({
       caseId: result.caseId,
       title: byCaseTitle.get(result.caseId) ?? "Untitled case",
       outcome: result.comparisonOutcome ?? "unscored",

@@ -110,6 +110,31 @@ describe("public chat contract", () => {
     expect(list.status).toBe(200);
     expect(list.body.conversations).toHaveLength(1);
     expect(list.body.conversations[0].id).toBe(chat.body.conversationId);
+    expect(list.body.nextCursor).toBeNull();
+    expect(list.body.hasMore).toBe(false);
+  });
+
+  it("rejects malformed anonymous history cursors with a client error", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-bad-cursor@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+
+    const first = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .send({ query: "hello", stream: false });
+
+    const cookies = first.headers["set-cookie"];
+    const anonCookie = findAnonymousCookie(cookies);
+
+    const response = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}?cursor=not-a-cursor`)
+      .set("Cookie", anonCookie!);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: "bad_request",
+      message: "Invalid cursor",
+    });
   });
 
   it("GET /api/v1/public/chat/:token/history/:conversationId returns messages", async () => {
@@ -145,6 +170,54 @@ describe("public chat contract", () => {
         }),
       ]),
     );
+    expect(detail.body.nextCursor).toBeNull();
+    expect(detail.body.hasOlderMessages).toBe(false);
+  });
+
+  it("supports cursor pagination for anonymous chat history lists", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-list-cursor@example.com");
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Doc", content: "Content" });
+
+    const chatToken = await enableAnonymousChat(app, session);
+
+    const firstConversation = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .send({ query: "first", stream: false });
+
+    const cookies = firstConversation.headers["set-cookie"];
+    const anonCookie = findAnonymousCookie(cookies);
+
+    await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("Cookie", anonCookie!)
+      .send({ query: "second", stream: false });
+
+    await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("Cookie", anonCookie!)
+      .send({ query: "third", stream: false });
+
+    const firstPage = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}?limit=2`)
+      .set("Cookie", anonCookie!);
+
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body.conversations).toHaveLength(2);
+    expect(firstPage.body.hasMore).toBe(true);
+    expect(firstPage.body.nextCursor).toEqual(expect.any(String));
+
+    const secondPage = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}?limit=2&cursor=${encodeURIComponent(firstPage.body.nextCursor)}`)
+      .set("Cookie", anonCookie!);
+
+    expect(secondPage.status).toBe(200);
+    expect(secondPage.body.conversations).toHaveLength(1);
+    expect(secondPage.body.hasMore).toBe(false);
+    expect(secondPage.body.nextCursor).toBeNull();
   });
 
   it("applies the workspace answer support policy to anonymous chat", async () => {

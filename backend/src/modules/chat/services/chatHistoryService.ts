@@ -77,12 +77,15 @@ export interface ChatConversationDetail {
   messageWindowOffset: number;
   messageWindowLimit: number;
   hasOlderMessages: boolean;
+  nextCursor: string | null;
   messages: ChatConversationTurn[];
 }
 
 export interface ChatConversationPage {
   conversations: ChatConversationSummary[];
   total: number;
+  nextCursor: string | null;
+  hasMore: boolean;
 }
 
 export interface PublicConversationSummary {
@@ -97,6 +100,8 @@ export interface PublicConversationSummary {
 export interface PublicConversationPage {
   conversations: PublicConversationSummary[];
   total: number;
+  nextCursor: string | null;
+  hasMore: boolean;
 }
 
 interface ChatAuditMetadata {
@@ -145,23 +150,28 @@ export class ChatHistoryService {
 
   async listConversations(
     workspaceId: string,
-    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
   ): Promise<ChatConversationPage> {
-    const { conversations, total } = await this.conversationRepository.listPageByWorkspaceId(workspaceId, input);
+    const { conversations, total, nextCursor, hasMore } = await this.conversationRepository.listPageByWorkspaceId(
+      workspaceId,
+      input,
+    );
     const messageSummaries = await this.messageRepository.summarizeByConversationIds(conversations.map((conversation) => conversation.id));
 
     return {
       conversations: conversations.map((conversation) => this.buildSummary(conversation, messageSummaries.get(conversation.id))),
       total,
+      nextCursor,
+      hasMore,
     };
   }
 
   async listAnonymousConversations(
     workspaceId: string,
     anonymousSessionId: string,
-    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
   ): Promise<PublicConversationPage> {
-    const { conversations, total } = await this.conversationRepository.listPageByAnonymousSession(
+    const { conversations, total, nextCursor, hasMore } = await this.conversationRepository.listPageByAnonymousSession(
       workspaceId,
       anonymousSessionId,
       input,
@@ -181,13 +191,15 @@ export class ChatHistoryService {
         };
       }),
       total,
+      nextCursor,
+      hasMore,
     };
   }
 
   async getConversation(
     workspaceId: string,
     conversationId: string,
-    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -195,7 +207,7 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total }, messageSummaries] = await Promise.all([
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries] = await Promise.all([
       this.messageRepository.listWindowByConversationId(conversation.id, input),
       this.messageRepository.summarizeByConversationIds([conversation.id]),
     ]);
@@ -222,9 +234,10 @@ export class ChatHistoryService {
       userMessageCount: messageSummary?.userMessageCount ?? 0,
       assistantMessageCount: messageSummary?.assistantMessageCount ?? 0,
       messagesTotal: total,
-      messageWindowOffset: input.offset,
+      messageWindowOffset: input.offset ?? 0,
       messageWindowLimit: input.limit,
-      hasOlderMessages: input.offset + messages.length < total,
+      hasOlderMessages: hasMore,
+      nextCursor,
       messages: messages.map((message) => ({
         id: message.id,
         role: message.role,

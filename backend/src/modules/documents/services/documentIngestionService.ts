@@ -107,12 +107,11 @@ export interface DocumentRepositoryPort {
     failureReason?: string | null;
   }): Promise<DocumentRecord | null>;
   findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null>;
-  listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]>;
   listSummariesByIdsAndWorkspaceId(workspaceId: string, documentIds: string[]): Promise<DocumentSummaryRecord[]>;
   listSummaryPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset: number },
-  ): Promise<{ documents: DocumentSummaryRecord[]; total: number }>;
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   update(input: DocumentUpdateInput): Promise<DocumentRecord>;
   updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord>;
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
@@ -148,6 +147,8 @@ export interface DocumentSummary {
 export interface DocumentListPage {
   documents: DocumentSummary[];
   total: number;
+  nextCursor: string | null;
+  hasMore: boolean;
 }
 
 export interface DocumentDetails extends DocumentSummary {
@@ -343,12 +344,17 @@ export class DocumentIngestionService {
 
   async listForWorkspace(
     workspaceId: string,
-    input: { limit: number; offset: number },
+    input: { limit: number; offset?: number; cursor?: string },
   ): Promise<DocumentListPage> {
-    const { documents, total } = await this.documentRepository.listSummaryPageByWorkspaceId(workspaceId, input);
+    const { documents, total, nextCursor, hasMore } = await this.documentRepository.listSummaryPageByWorkspaceId(
+      workspaceId,
+      input,
+    );
     return {
       documents: documents.map((document) => this.toSummary(document)),
       total,
+      nextCursor,
+      hasMore,
     };
   }
 

@@ -40,6 +40,13 @@ const EMPTY_FORM = {
 
 const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.docx,.xlsx'
 
+interface DocumentPageSnapshot {
+  documents: DocumentSummary[]
+  total: number
+  hasMore: boolean
+  nextCursor: string | null
+}
+
 const parseMetadata = (raw: string): Record<string, string | number | boolean | null> | null => {
   const trimmed = raw.trim()
   if (!trimmed) return {}
@@ -61,9 +68,13 @@ export function DocumentsView({
 }: DocumentsViewProps) {
   const router = useRouter()
   const justClosedDocumentIdRef = useRef<string | null>(null)
+  const documentWorkspaceKeyRef = useRef(`${accountId}:${routeState.workspaceId ?? ''}`)
+  const documentCursorByPageRef = useRef(new Map<number, string | null>([[1, null]]))
+  const documentPageCacheRef = useRef(new Map<number, DocumentPageSnapshot>())
   const documentSearch = useDocumentSearch()
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
   const [totalDocuments, setTotalDocuments] = useState(0)
+  const [hasNextPage, setHasNextPage] = useState(false)
   const [currentPage, setCurrentPage] = useState(routeState.documentsPage ?? 1)
   const [hasLoadedDocuments, setHasLoadedDocuments] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -86,18 +97,80 @@ export function DocumentsView({
   const [retryErrorById, setRetryErrorById] = useState<Record<string, string>>({})
   const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
 
-  const loadDocuments = useCallback(async (page: number, options?: { background?: boolean }) => {
+  const resetDocumentPagination = useCallback(() => {
+    documentCursorByPageRef.current = new Map([[1, null]])
+    documentPageCacheRef.current = new Map()
+  }, [])
+
+  const loadDocuments = useCallback(async (
+    page: number,
+    options?: { background?: boolean; reset?: boolean },
+  ) => {
     if (!options?.background) {
       setIsLoading(true)
     }
 
     try {
-      const response = await documentsApi.listDocuments({
-        limit: PAGE_SIZE,
-        offset: (page - 1) * PAGE_SIZE,
-      })
-      setDocuments(response.documents)
-      setTotalDocuments(response.total)
+      if (options?.reset) {
+        resetDocumentPagination()
+      }
+
+      const cursorByPage = documentCursorByPageRef.current
+      const pageCache = documentPageCacheRef.current
+
+      let response = pageCache.get(page)
+
+      if (!response) {
+        for (let pageNumber = 1; pageNumber <= page; pageNumber += 1) {
+          const cachedPage = pageCache.get(pageNumber)
+          if (cachedPage) {
+            if (!cursorByPage.has(pageNumber + 1)) {
+              cursorByPage.set(pageNumber + 1, cachedPage.nextCursor)
+            }
+            response = cachedPage
+            continue
+          }
+
+          const cursor = cursorByPage.get(pageNumber) ?? null
+          if (pageNumber > 1 && cursor === null) {
+            const previousPage = pageCache.get(pageNumber - 1)
+            const emptySnapshot: DocumentPageSnapshot = {
+              documents: [],
+              total: previousPage?.total ?? 0,
+              hasMore: false,
+              nextCursor: null,
+            }
+            pageCache.set(pageNumber, emptySnapshot)
+            response = emptySnapshot
+            continue
+          }
+
+          const nextResponse = await documentsApi.listDocuments({
+            limit: PAGE_SIZE,
+            ...(cursor ? { cursor } : {}),
+          })
+          const snapshot: DocumentPageSnapshot = {
+            documents: nextResponse.documents,
+            total: nextResponse.total,
+            hasMore: nextResponse.hasMore,
+            nextCursor: nextResponse.nextCursor,
+          }
+          pageCache.set(pageNumber, snapshot)
+          cursorByPage.set(pageNumber + 1, nextResponse.nextCursor)
+          response = snapshot
+        }
+      }
+
+      const pageSnapshot = response ?? {
+        documents: [],
+        total: 0,
+        hasMore: false,
+        nextCursor: null,
+      }
+
+      setDocuments(pageSnapshot.documents)
+      setTotalDocuments(pageSnapshot.total)
+      setHasNextPage(pageSnapshot.hasMore)
     } catch (error) {
       console.error('Failed to load documents:', error)
     } finally {
@@ -106,11 +179,21 @@ export function DocumentsView({
         setIsLoading(false)
       }
     }
-  }, [])
+  }, [resetDocumentPagination])
 
   useEffect(() => {
+    const nextWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
+    const workspaceChanged = documentWorkspaceKeyRef.current !== nextWorkspaceKey
+
+    if (workspaceChanged) {
+      documentWorkspaceKeyRef.current = nextWorkspaceKey
+      resetDocumentPagination()
+      void loadDocuments(currentPage, { reset: true })
+      return
+    }
+
     void loadDocuments(currentPage)
-  }, [currentPage, loadDocuments])
+  }, [accountId, currentPage, loadDocuments, resetDocumentPagination, routeState.workspaceId])
 
   useEffect(() => {
     setCurrentPage(routeState.documentsPage ?? 1)
@@ -127,7 +210,7 @@ export function DocumentsView({
     }
 
     const timeoutId = window.setTimeout(() => {
-      void loadDocuments(currentPage, { background: true })
+      void loadDocuments(currentPage, { background: true, reset: true })
     }, 2000)
 
     return () => window.clearTimeout(timeoutId)
@@ -295,7 +378,7 @@ export function DocumentsView({
 
       void response
       setDocumentsPage(1)
-      await loadDocuments(1)
+      await loadDocuments(1, { reset: true })
       setIsDialogOpen(false)
       if (editorMode === 'edit') {
         onSelectedDocumentChange?.(null)
@@ -321,7 +404,7 @@ export function DocumentsView({
     try {
       await documentsApi.importDocument(importFile, importTitle)
       setDocumentsPage(1)
-      await loadDocuments(1)
+      await loadDocuments(1, { reset: true })
       setIsImportDialogOpen(false)
       resetImportDialog()
     } catch (error) {
@@ -360,7 +443,7 @@ export function DocumentsView({
       const nextTotalPages = Math.max(1, Math.ceil(nextTotalDocuments / PAGE_SIZE))
       const nextPage = Math.min(currentPage, nextTotalPages)
       setDocumentsPage(nextPage)
-      await loadDocuments(nextPage)
+      await loadDocuments(nextPage, { reset: true })
       if (selectedDocumentId === deletingId) {
         onSelectedDocumentChange?.(null)
       }
@@ -385,7 +468,7 @@ export function DocumentsView({
 
     try {
       await documentsApi.reprocessDocument(documentId)
-      await loadDocuments(currentPage)
+      await loadDocuments(currentPage, { reset: true })
     } catch (error) {
       setRetryErrorById((current) => ({
         ...current,
@@ -412,6 +495,10 @@ export function DocumentsView({
   }
 
   const goToNextPage = () => {
+    if (!hasNextPage) {
+      return
+    }
+
     setDocumentsPage(Math.min(totalPages, currentPage + 1))
   }
 
@@ -508,6 +595,7 @@ export function DocumentsView({
             documents={documents}
             pageSize={PAGE_SIZE}
             currentPage={currentPage}
+            hasNextPage={hasNextPage}
             accountId={accountId}
             routeState={routeState}
             onboarding={onboarding}

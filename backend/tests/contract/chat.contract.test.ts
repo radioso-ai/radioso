@@ -38,6 +38,8 @@ describe("chat contract", () => {
         preview: expect.any(String),
       }),
     ]);
+    expect(response.body.nextCursor).toBeNull();
+    expect(response.body.hasMore).toBe(false);
   });
 
   it("returns a conversation history detail with debug metadata", async () => {
@@ -97,6 +99,43 @@ describe("chat contract", () => {
         }),
       ],
     });
+    expect(response.body.nextCursor).toBeNull();
+    expect(response.body.hasOlderMessages).toBe(false);
+  });
+
+  it("supports cursor pagination for chat history lists", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "chat-history-cursor@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+
+    for (const query of ["first", "second", "third"]) {
+      await request(app)
+        .post("/api/v1/chat/")
+        .set(adminSessionHeaders(session))
+        .send({ query, stream: false });
+    }
+
+    const firstPage = await request(app)
+      .get("/api/v1/chat/history?limit=2")
+      .set(adminSessionHeaders(session));
+
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body.conversations).toHaveLength(2);
+    expect(firstPage.body.hasMore).toBe(true);
+    expect(firstPage.body.nextCursor).toEqual(expect.any(String));
+
+    const secondPage = await request(app)
+      .get(`/api/v1/chat/history?limit=2&cursor=${encodeURIComponent(firstPage.body.nextCursor)}`)
+      .set(adminSessionHeaders(session));
+
+    expect(secondPage.status).toBe(200);
+    expect(secondPage.body.conversations).toHaveLength(1);
+    expect(secondPage.body.hasMore).toBe(false);
+    expect(secondPage.body.nextCursor).toBeNull();
   });
 
   it("rejects an invalid history conversation id with a client error", async () => {
@@ -111,6 +150,21 @@ describe("chat contract", () => {
     expect(response.body.error).toMatchObject({
       code: expect.any(String),
       message: expect.any(String),
+    });
+  });
+
+  it("rejects malformed chat history cursors with a client error", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "chat-bad-cursor@example.com");
+
+    const response = await request(app)
+      .get("/api/v1/chat/history?cursor=not-a-cursor")
+      .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: "bad_request",
+      message: "Invalid cursor",
     });
   });
 

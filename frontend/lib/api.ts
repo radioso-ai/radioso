@@ -306,6 +306,8 @@ export interface DocumentDetails extends DocumentSummary {
 export interface DocumentListResponse {
   documents: DocumentSummary[]
   total: number
+  nextCursor: string | null
+  hasMore: boolean
 }
 
 export interface DocumentSearchAction {
@@ -349,6 +351,8 @@ export interface DocumentSearchHistoryEntry {
 export interface DocumentSearchHistoryListResponse {
   searches: DocumentSearchHistoryEntry[]
   total: number
+  nextCursor: string | null
+  hasMore: boolean
 }
 
 export interface ChatRequest {
@@ -524,6 +528,7 @@ export interface ChatConversationDetail {
   messageWindowOffset: number
   messageWindowLimit: number
   hasOlderMessages: boolean
+  nextCursor: string | null
   messages: ChatConversationTurn[]
 }
 
@@ -531,6 +536,8 @@ export interface ChatHistoryListResponse {
   workspaceName?: string
   conversations: ChatConversationSummary[]
   total: number
+  nextCursor: string | null
+  hasMore: boolean
 }
 
 export type EvalExpectedRefusalBehavior = 'refusal' | 'answer'
@@ -1035,13 +1042,16 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async listDocuments(input?: { limit?: number; offset?: number }): Promise<DocumentListResponse> {
+  async listDocuments(input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentListResponse> {
     const searchParams = new URLSearchParams()
     if (input?.limit !== undefined) {
       searchParams.set('limit', String(input.limit))
     }
     if (input?.offset !== undefined) {
       searchParams.set('offset', String(input.offset))
+    }
+    if (input?.cursor !== undefined) {
+      searchParams.set('cursor', input.cursor)
     }
 
     const query = searchParams.toString()
@@ -1092,13 +1102,16 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async listSearchHistory(input?: { limit?: number; offset?: number }): Promise<DocumentSearchHistoryListResponse> {
+  async listSearchHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentSearchHistoryListResponse> {
     const searchParams = new URLSearchParams()
     if (input?.limit !== undefined) {
       searchParams.set('limit', String(input.limit))
     }
     if (input?.offset !== undefined) {
       searchParams.set('offset', String(input.offset))
+    }
+    if (input?.cursor !== undefined) {
+      searchParams.set('cursor', input.cursor)
     }
 
     const query = searchParams.toString()
@@ -1164,13 +1177,16 @@ export const chatApi = {
     return streamChatEvents(response, handlers)
   },
 
-  async listHistory(input?: { limit?: number; offset?: number }): Promise<ChatHistoryListResponse> {
+  async listHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<ChatHistoryListResponse> {
     const searchParams = new URLSearchParams()
     if (input?.limit !== undefined) {
       searchParams.set('limit', String(input.limit))
     }
     if (input?.offset !== undefined) {
       searchParams.set('offset', String(input.offset))
+    }
+    if (input?.cursor !== undefined) {
+      searchParams.set('cursor', input.cursor)
     }
 
     const query = searchParams.toString()
@@ -1181,7 +1197,7 @@ export const chatApi = {
 
   async getHistoryConversation(
     conversationId: string,
-    input?: { limit?: number; offset?: number },
+    input?: { limit?: number; offset?: number; cursor?: string },
   ): Promise<ChatConversationDetail> {
     const searchParams = new URLSearchParams()
     if (input?.limit !== undefined) {
@@ -1189,6 +1205,9 @@ export const chatApi = {
     }
     if (input?.offset !== undefined) {
       searchParams.set('offset', String(input.offset))
+    }
+    if (input?.cursor !== undefined) {
+      searchParams.set('cursor', input.cursor)
     }
 
     const query = searchParams.toString()
@@ -1357,7 +1376,7 @@ export const publicChatApi = {
 
   async listConversations(
     token: string,
-    input?: { limit?: number; offset?: number },
+    input?: { limit?: number; offset?: number; cursor?: string },
   ): Promise<ChatHistoryListResponse> {
     const searchParams = new URLSearchParams()
     if (input?.limit !== undefined) {
@@ -1365,6 +1384,9 @@ export const publicChatApi = {
     }
     if (input?.offset !== undefined) {
       searchParams.set('offset', String(input.offset))
+    }
+    if (input?.cursor !== undefined) {
+      searchParams.set('cursor', input.cursor)
     }
 
     const query = searchParams.toString()
@@ -1377,7 +1399,7 @@ export const publicChatApi = {
   async getConversationDetail(
     token: string,
     conversationId: string,
-    input?: { limit?: number; offset?: number },
+    input?: { limit?: number; offset?: number; cursor?: string },
   ): Promise<ChatConversationDetail> {
     const searchParams = new URLSearchParams()
     if (input?.limit !== undefined) {
@@ -1385,6 +1407,9 @@ export const publicChatApi = {
     }
     if (input?.offset !== undefined) {
       searchParams.set('offset', String(input.offset))
+    }
+    if (input?.cursor !== undefined) {
+      searchParams.set('cursor', input.cursor)
     }
 
     const query = searchParams.toString()

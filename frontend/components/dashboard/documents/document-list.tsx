@@ -25,6 +25,7 @@ function DocumentsPagination({
   totalDocuments,
   safeCurrentPage,
   totalPages,
+  hasNextPage,
   onPrevious,
   onNext,
 }: {
@@ -35,6 +36,7 @@ function DocumentsPagination({
   totalDocuments: number
   safeCurrentPage: number
   totalPages: number
+  hasNextPage: boolean
   onPrevious: () => void
   onNext: () => void
 }) {
@@ -76,8 +78,8 @@ function DocumentsPagination({
                 event.preventDefault()
                 onNext()
               }}
-              aria-disabled={safeCurrentPage === totalPages}
-              className={safeCurrentPage === totalPages ? 'pointer-events-none opacity-50' : undefined}
+              aria-disabled={!hasNextPage}
+              className={!hasNextPage ? 'pointer-events-none opacity-50' : undefined}
             />
           </PaginationItem>
         </PaginationContent>
@@ -169,6 +171,7 @@ export function DocumentList({
   documents,
   pageSize,
   currentPage,
+  hasNextPage,
   accountId,
   routeState,
   onboarding,
@@ -190,6 +193,7 @@ export function DocumentList({
   documents: DocumentSummary[]
   pageSize: number
   currentPage: number
+  hasNextPage: boolean
   accountId: string
   routeState: DashboardRouteState
   onboarding: WorkspaceOnboardingState
@@ -256,6 +260,7 @@ export function DocumentList({
           totalDocuments={totalDocuments}
           safeCurrentPage={safeCurrentPage}
           totalPages={totalPages}
+          hasNextPage={hasNextPage}
           onPrevious={onPreviousPage}
           onNext={onNextPage}
         />
@@ -285,6 +290,7 @@ export function DocumentList({
           totalDocuments={totalDocuments}
           safeCurrentPage={safeCurrentPage}
           totalPages={totalPages}
+          hasNextPage={hasNextPage}
           onPrevious={onPreviousPage}
           onNext={onNextPage}
         />

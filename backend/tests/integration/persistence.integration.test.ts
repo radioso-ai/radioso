@@ -8,6 +8,7 @@ import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { ChunkRepository } from "../../src/db/repositories/chunkRepository.js";
+import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import { IngestionSettingsRepository } from "../../src/db/repositories/ingestionSettingsRepository.js";
@@ -48,7 +49,7 @@ const noopAuditRepository = {
     return [];
   },
   async listDocumentSearchEventPageByWorkspaceId() {
-    return { events: [], total: 0 };
+    return { events: [], total: 0, nextCursor: null, hasMore: false };
   },
   async findDocumentSearchEventBySearchId() {
     return null;
@@ -181,6 +182,79 @@ describeIfDatabase("persistence integration", () => {
     expect(workspaces[0]?.name).toBe("Default");
 
     await database.query("DELETE FROM workspaces WHERE account_id = $1", [account.id]);
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
+  });
+
+  it("paginates conversations without skipping rows when updated_at ties", async () => {
+    const accountRepository = new AccountRepository(database);
+    const conversationRepository = new ConversationRepository(database);
+
+    const account = await accountRepository.create({
+      email: `conversation-cursor-${randomUUID()}@example.com`,
+      passwordHash: "hash-conversation",
+    });
+    const workspace = await workspaceRepository.create(account.id, "Conversation Workspace");
+
+    const sharedUpdatedAt = new Date("2026-01-01T00:00:00.000Z");
+    const firstCreatedAt = new Date("2026-01-01T00:00:02.000Z");
+    const secondCreatedAt = new Date("2026-01-01T00:00:01.000Z");
+    const thirdCreatedAt = new Date("2026-01-01T00:00:00.000Z");
+
+    const firstConversationId = randomUUID();
+    const secondConversationId = randomUUID();
+    const thirdConversationId = randomUUID();
+
+    await database.query(
+      `INSERT INTO conversations (
+         id,
+         workspace_id,
+         source_channel,
+         anonymous_session_id,
+         created_at,
+         updated_at
+       )
+       VALUES
+         ($1, $2, NULL, NULL, $3, $4),
+         ($5, $2, NULL, NULL, $6, $4),
+         ($7, $2, NULL, NULL, $8, $9)`,
+      [
+        firstConversationId,
+        workspace.id,
+        firstCreatedAt,
+        sharedUpdatedAt,
+        secondConversationId,
+        secondCreatedAt,
+        thirdConversationId,
+        thirdCreatedAt,
+        new Date("2025-12-31T23:59:59.000Z"),
+      ],
+    );
+
+    const firstPage = await conversationRepository.listPageByWorkspaceId(workspace.id, { limit: 1 });
+    expect(firstPage.conversations).toHaveLength(1);
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+
+    const secondPage = await conversationRepository.listPageByWorkspaceId(workspace.id, {
+      limit: 1,
+      cursor: firstPage.nextCursor ?? undefined,
+    });
+    const thirdPage = await conversationRepository.listPageByWorkspaceId(workspace.id, {
+      limit: 1,
+      cursor: secondPage.nextCursor ?? undefined,
+    });
+
+    expect([
+      firstPage.conversations[0]?.id,
+      secondPage.conversations[0]?.id,
+      thirdPage.conversations[0]?.id,
+    ]).toEqual([
+      firstConversationId,
+      secondConversationId,
+      thirdConversationId,
+    ]);
+
+    await database.query("DELETE FROM conversations WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM workspaces WHERE id = $1", [workspace.id]);
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 

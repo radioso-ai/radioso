@@ -14,6 +14,7 @@ import {
   type MetadataFieldSuggestion,
   type MetadataValueType,
 } from "../../modules/settings/domain/retrievalSettings.js";
+import { decodeCursor, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { Database } from "../../shared/infra/database.js";
 import { notFound } from "../../shared/domain/errors.js";
 
@@ -317,8 +318,8 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
   async listSummaryPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset: number },
-  ): Promise<{ documents: DocumentSummaryRecord[]; total: number }> {
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const [countRow] = await this.database.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
        FROM documents
@@ -326,19 +327,53 @@ export class DocumentRepository implements DocumentRepositoryPort {
       [workspaceId],
     );
 
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const params: Array<string | number> = [workspaceId];
+    let cursorClause = "";
+
+    if (cursor) {
+      params.push(cursor.keys.createdAt, cursor.keys.id);
+      cursorClause = `
+         AND (
+           created_at < $2::timestamptz
+           OR (created_at = $2::timestamptz AND id < $3::uuid)
+         )`;
+    }
+
+    const limitParam = params.length + 1;
+    params.push(input.limit + 1);
+
+    let offsetClause = "";
+    if (!cursor) {
+      offsetClause = `OFFSET $${params.length + 1}`;
+      params.push(input.offset ?? 0);
+    }
+
     const rows = await this.database.query<DocumentRow>(
       `SELECT ${documentSummarySelect}
        FROM documents
        WHERE workspace_id = $1
-       ORDER BY created_at DESC
-       LIMIT $2
-       OFFSET $3`,
-      [workspaceId, input.limit, input.offset],
+       ${cursorClause}
+       ORDER BY created_at DESC, id DESC
+       LIMIT $${limitParam}
+       ${offsetClause}`,
+      params,
     );
 
+    const documents = rows.slice(0, input.limit).map(mapDocumentSummary);
+    const hasMore = rows.length > input.limit;
+    const lastDocument = documents.at(-1);
+
     return {
-      documents: rows.map(mapDocumentSummary),
+      documents,
       total: Number(countRow?.count ?? "0"),
+      nextCursor: hasMore && lastDocument
+        ? encodeCursor({
+            createdAt: lastDocument.createdAt.toISOString(),
+            id: lastDocument.id,
+          })
+        : null,
+      hasMore,
     };
   }
 

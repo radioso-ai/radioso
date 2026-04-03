@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
+import { decodeCursor, encodeCursor } from "../../shared/domain/cursorPagination.js";
 
 export interface MessageRecord {
   id: string;
@@ -22,8 +23,8 @@ export interface MessageRepositoryPort {
   listByConversationId(conversationId: string): Promise<MessageRecord[]>;
   listWindowByConversationId(
     conversationId: string,
-    input: { limit: number; offset: number },
-  ): Promise<{ messages: MessageRecord[]; total: number }>;
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   summarizeByConversationIds(conversationIds: string[]): Promise<Map<string, ConversationMessageSummary>>;
   create(input: {
     conversationId: string;
@@ -68,8 +69,8 @@ export class MessageRepository implements MessageRepositoryPort {
 
   async listWindowByConversationId(
     conversationId: string,
-    input: { limit: number; offset: number },
-  ): Promise<{ messages: MessageRecord[]; total: number }> {
+    input: { limit: number; offset?: number; cursor?: string },
+  ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const [countRow] = await this.database.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
        FROM messages
@@ -77,19 +78,53 @@ export class MessageRepository implements MessageRepositoryPort {
       [conversationId],
     );
 
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const params: Array<string | number> = [conversationId];
+    let cursorClause = "";
+
+    if (cursor) {
+      params.push(cursor.keys.createdAt, cursor.keys.id);
+      cursorClause = `
+         AND (
+           created_at < $2::timestamptz
+           OR (created_at = $2::timestamptz AND id < $3::uuid)
+         )`;
+    }
+
+    const limitParam = params.length + 1;
+    params.push(input.limit + 1);
+
+    let offsetClause = "";
+    if (!cursor) {
+      offsetClause = `OFFSET $${params.length + 1}`;
+      params.push(input.offset ?? 0);
+    }
+
     const rows = await this.database.query<MessageRow>(
       `SELECT id, conversation_id, workspace_id, role, content, created_at
        FROM messages
        WHERE conversation_id = $1
+       ${cursorClause}
        ORDER BY created_at DESC, id DESC
-       LIMIT $2
-       OFFSET $3`,
-      [conversationId, input.limit, input.offset],
+       LIMIT $${limitParam}
+       ${offsetClause}`,
+      params,
     );
 
+    const latestFirst = rows.slice(0, input.limit).map(mapMessage);
+    const hasMore = rows.length > input.limit;
+    const oldestFetched = latestFirst.at(-1);
+
     return {
-      messages: rows.map(mapMessage).reverse(),
+      messages: latestFirst.reverse(),
       total: Number(countRow?.count ?? "0"),
+      nextCursor: hasMore && oldestFetched
+        ? encodeCursor({
+            createdAt: oldestFetched.createdAt.toISOString(),
+            id: oldestFetched.id,
+          })
+        : null,
+      hasMore,
     };
   }
 

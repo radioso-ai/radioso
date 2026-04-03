@@ -129,6 +129,7 @@ export function AnonymousChatProvider({
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false)
   const [isUnavailable, setIsUnavailable] = useState(false)
   const [hasOlderMessages, setHasOlderMessages] = useState(false)
+  const [nextMessageCursor, setNextMessageCursor] = useState<string | null>(null)
   const [rateLimitError, setRateLimitError] = useState<string | null>(null)
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null)
 
@@ -142,11 +143,12 @@ export function AnonymousChatProvider({
       setWorkspaceName(null)
       setConversationId(undefined)
       setHasOlderMessages(false)
+      setNextMessageCursor(null)
       setRateLimitError(null)
       setRetryAfterSeconds(null)
 
       try {
-        const response = await publicChatApi.listConversations(token, { limit: 1, offset: 0 })
+        const response = await publicChatApi.listConversations(token, { limit: 1 })
         if (cancelled) return
 
         setWorkspaceName(response.workspaceName ?? null)
@@ -158,13 +160,13 @@ export function AnonymousChatProvider({
 
         const detail = await publicChatApi.getConversationDetail(token, response.conversations[0].id, {
           limit: MESSAGE_WINDOW_SIZE,
-          offset: 0,
         })
         if (cancelled) return
 
         setConversationId(detail.conversationId)
         setMessages(toChatMessages(detail))
         setHasOlderMessages(detail.hasOlderMessages)
+        setNextMessageCursor(detail.nextCursor)
       } catch (error) {
         if (cancelled) return
         const structuredError = getErrorResponse(error)
@@ -218,7 +220,6 @@ export function AnonymousChatProvider({
 
       const detail = await publicChatApi.getConversationDetail(token, nextConversationId, {
         limit: MESSAGE_WINDOW_SIZE,
-        offset: 0,
       })
       const assistantMessage = getLatestAssistantMessage(detail)
       if (!assistantMessage) {
@@ -227,6 +228,7 @@ export function AnonymousChatProvider({
 
       setConversationId(detail.conversationId)
       setHasOlderMessages(detail.hasOlderMessages)
+      setNextMessageCursor(detail.nextCursor)
       setMessages((prev) =>
         prev.map((message) =>
           message.id === assistantMessageId
@@ -359,7 +361,7 @@ export function AnonymousChatProvider({
   )
 
   const loadOlderMessages = useCallback(async () => {
-    if (!conversationId || isLoadingOlderMessages || !hasOlderMessages) {
+    if (!conversationId || isLoadingOlderMessages || !hasOlderMessages || !nextMessageCursor) {
       return
     }
 
@@ -368,7 +370,7 @@ export function AnonymousChatProvider({
     try {
       const detail = await publicChatApi.getConversationDetail(token, conversationId, {
         limit: MESSAGE_WINDOW_SIZE,
-        offset: messages.length,
+        cursor: nextMessageCursor,
       })
       const olderMessages = toChatMessages(detail)
       setMessages((current) => {
@@ -377,10 +379,11 @@ export function AnonymousChatProvider({
         return [...nextOlder, ...current]
       })
       setHasOlderMessages(detail.hasOlderMessages)
+      setNextMessageCursor(detail.nextCursor)
     } finally {
       setIsLoadingOlderMessages(false)
     }
-  }, [conversationId, hasOlderMessages, isLoadingOlderMessages, messages.length, token])
+  }, [conversationId, hasOlderMessages, isLoadingOlderMessages, nextMessageCursor, token])
 
   const value = useMemo<AnonymousChatContextValue>(
     () => ({

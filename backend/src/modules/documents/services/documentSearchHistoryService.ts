@@ -23,6 +23,8 @@ export interface DocumentSearchHistoryEntry {
 export interface DocumentSearchHistoryPage {
   searches: DocumentSearchHistoryEntry[];
   total: number;
+  nextCursor: string | null;
+  hasMore: boolean;
 }
 
 export class DocumentSearchHistoryService {
@@ -33,9 +35,12 @@ export class DocumentSearchHistoryService {
 
   async listHistory(
     workspaceId: string,
-    input: { limit: number; offset: number } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
   ): Promise<DocumentSearchHistoryPage> {
-    const { events, total } = await this.auditEventRepository.listDocumentSearchEventPageByWorkspaceId(workspaceId, input);
+    const { events, total, nextCursor, hasMore } = await this.auditEventRepository.listDocumentSearchEventPageByWorkspaceId(
+      workspaceId,
+      input,
+    );
 
     return {
       searches: events.map((event) => {
@@ -50,6 +55,8 @@ export class DocumentSearchHistoryService {
         };
       }),
       total,
+      nextCursor,
+      hasMore,
     };
   }
 

@@ -45,6 +45,27 @@ describe("auth contract", () => {
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
 
+  it("accepts JSON auth requests when the content type includes charset UTF-8", async () => {
+    const { app } = createTestApp();
+
+    await request(app).post("/api/v1/auth/register").send({
+      email: "charset-login@example.com",
+      password: "verysecurepassword",
+    });
+
+    const response = await request(app)
+      .post("/api/v1/auth/login")
+      .set("Content-Type", "application/json; charset=UTF-8")
+      .send(JSON.stringify({
+        email: "charset-login@example.com",
+        password: "verysecurepassword",
+      }));
+
+    expect(response.status).toBe(200);
+    expect(response.body.workspaceId).toBeDefined();
+    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
+  });
+
   it("honors a preferred workspace on login when it belongs to the account", async () => {
     const { app } = createTestApp();
 

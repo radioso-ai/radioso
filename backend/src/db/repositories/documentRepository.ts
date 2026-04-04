@@ -14,7 +14,7 @@ import {
   type MetadataFieldSuggestion,
   type MetadataValueType,
 } from "../../modules/settings/domain/retrievalSettings.js";
-import { decodeCursor, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { Database } from "../../shared/infra/database.js";
 import { notFound } from "../../shared/domain/errors.js";
 
@@ -320,14 +320,15 @@ export class DocumentRepository implements DocumentRepositoryPort {
     workspaceId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
-    const [countRow] = await this.database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM documents
-       WHERE workspace_id = $1`,
-      [workspaceId],
-    );
-
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
+    const total = cursor?.totalSnapshot !== undefined
+      ? Number(cursor.totalSnapshot)
+      : Number((await this.database.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+           FROM documents
+           WHERE workspace_id = $1`,
+          [workspaceId],
+        ))[0]?.count ?? "0");
     const params: Array<string | number> = [workspaceId];
     let cursorClause = "";
 
@@ -366,12 +367,12 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
     return {
       documents,
-      total: Number(countRow?.count ?? "0"),
+      total,
       nextCursor: hasMore && lastDocument
         ? encodeCursor({
             createdAt: lastDocument.createdAt.toISOString(),
             id: lastDocument.id,
-          })
+          }, total)
         : null,
       hasMore,
     };

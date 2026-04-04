@@ -69,7 +69,7 @@ import type {
 } from "../../src/modules/evals/domain/evalTypes.js";
 import type { EvalRepositoryPort } from "../../src/modules/evals/services/evalLabService.js";
 import { notFound } from "../../src/shared/domain/errors.js";
-import { decodeCursor, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
+import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
 interface InMemoryConnectorConfigRecord {
@@ -945,7 +945,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         return timeDiff !== 0 ? timeDiff : b.id.localeCompare(a.id);
       });
 
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
     const startIndex = cursor
       ? documents.findIndex(
           (item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id,
@@ -1473,7 +1473,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
         return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
       });
 
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
     const startIndex = cursor
       ? conversations.findIndex(
           (item) => item.updatedAt.toISOString() === cursor.keys.updatedAt && item.id === cursor.keys.id,
@@ -1489,6 +1489,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       nextCursor: hasMore && lastConversation
         ? encodeCursor({
             updatedAt: lastConversation.updatedAt.toISOString(),
+            createdAt: lastConversation.createdAt.toISOString(),
             id: lastConversation.id,
           })
         : null,
@@ -1514,7 +1515,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
         return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
       });
 
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
     const startIndex = cursor
       ? conversations.findIndex(
           (item) => item.updatedAt.toISOString() === cursor.keys.updatedAt && item.id === cursor.keys.id,
@@ -1530,6 +1531,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       nextCursor: hasMore && lastConversation
         ? encodeCursor({
             updatedAt: lastConversation.updatedAt.toISOString(),
+            createdAt: lastConversation.createdAt.toISOString(),
             id: lastConversation.id,
           })
         : null,
@@ -1537,14 +1539,18 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     };
   }
 
-  async findByIdAndAnonymousSession(conversationId: string, anonymousSessionId: string): Promise<ConversationRecord | null> {
+  async findByIdAndAnonymousSession(
+    conversationId: string,
+    workspaceId: string,
+    anonymousSessionId: string,
+  ): Promise<ConversationRecord | null> {
     const item = this.items.get(conversationId);
-    return item && item.anonymousSessionId === anonymousSessionId ? item : null;
+    return item && item.workspaceId === workspaceId && item.anonymousSessionId === anonymousSessionId ? item : null;
   }
 
-  async touch(conversationId: string): Promise<void> {
+  async touch(conversationId: string, workspaceId: string): Promise<void> {
     const item = this.items.get(conversationId);
-    if (item) {
+    if (item && item.workspaceId === workspaceId) {
       item.updatedAt = new Date();
     }
   }
@@ -1553,20 +1559,21 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 export class InMemoryMessageRepository implements MessageRepositoryPort {
   readonly items = new Map<string, MessageRecord[]>();
 
-  async listByConversationId(conversationId: string): Promise<MessageRecord[]> {
-    return [...(this.items.get(conversationId) ?? [])];
+  async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
+    return [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
   }
 
   async listWindowByConversationId(
+    workspaceId: string,
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
   ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
-    const messages = [...(this.items.get(conversationId) ?? [])];
+    const messages = [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
     const latestFirst = [...messages].sort((left, right) => {
       const timeDiff = right.createdAt.getTime() - left.createdAt.getTime();
       return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
     });
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
     const startIndex = cursor
       ? latestFirst.findIndex(
           (item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id,
@@ -1589,11 +1596,14 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     };
   }
 
-  async summarizeByConversationIds(conversationIds: string[]): Promise<Map<string, ConversationMessageSummary>> {
+  async summarizeByConversationIds(
+    workspaceId: string,
+    conversationIds: string[],
+  ): Promise<Map<string, ConversationMessageSummary>> {
     const summaries = new Map<string, ConversationMessageSummary>();
 
     for (const conversationId of conversationIds) {
-      const messages = this.items.get(conversationId) ?? [];
+      const messages = (this.items.get(conversationId) ?? []).filter((message) => message.workspaceId === workspaceId);
       const latestMessage = [...messages].reverse().find((message) => message.content.trim().length > 0);
       const normalized = latestMessage?.content.replace(/\s+/g, " ").trim() ?? "";
       summaries.set(conversationId, {
@@ -1693,7 +1703,7 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
         const timeDiff = right.createdAt.getTime() - left.createdAt.getTime();
         return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
       });
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
     const startIndex = cursor
       ? events.findIndex((item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id) + 1
       : (input.offset ?? 0);

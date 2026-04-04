@@ -107,6 +107,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
       // Verify the conversation belongs to this anonymous session, not just the workspace
       const conversation = await dependencies.conversationRepository.findByIdAndAnonymousSession(
         conversationId,
+        res.locals.workspaceId as string,
         anonymousSessionId,
       );
       if (!conversation) {

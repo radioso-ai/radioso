@@ -60,7 +60,14 @@ import type { AppDependencies } from "./types.js";
 
 export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const logger = createLogger();
-  const database = new Database(env.DATABASE_URL);
+  const database = new Database(env.DATABASE_URL, {
+    poolMax: env.DB_POOL_MAX,
+    idleTimeoutMs: env.DB_POOL_IDLE_TIMEOUT_MS,
+    connectionTimeoutMs: env.DB_POOL_CONNECTION_TIMEOUT_MS,
+    statementTimeoutMs: env.DB_STATEMENT_TIMEOUT_MS,
+    queryTimeoutMs: env.DB_QUERY_TIMEOUT_MS,
+    applicationName: `radioso-${env.NODE_ENV}`,
+  });
   const auditEventRepository = new AuditEventRepository(database);
   const auditService = new AuditService(logger, auditEventRepository);
   const llmRegistry = new LlmProviderRegistry(resolveLlmConfig(env), logger);

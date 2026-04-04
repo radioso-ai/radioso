@@ -339,7 +339,7 @@ export class ChatService {
       ? await this.ensureConversation(input.conversationId, input.workspaceId, input.anonymousSessionId)
       : null;
     const history = conversation
-      ? await this.messageRepository.listByConversationId(conversation.id)
+      ? await this.messageRepository.listByConversationId(input.workspaceId, conversation.id)
       : [];
     const carryForwardLiterals = conversation
       ? await this.loadRewriteCarryForwardLiterals(input.workspaceId, conversation.id)
@@ -454,7 +454,7 @@ export class ChatService {
     retrievalTrace: RetrievalTrace;
     stream: boolean;
   }): Promise<void> {
-    await this.conversationRepository.touch(input.conversationId);
+    await this.conversationRepository.touch(input.conversationId, input.workspaceId);
     await this.auditService.record({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
@@ -512,7 +512,7 @@ export class ChatService {
         content: "Sorry, something went wrong. Please try again.",
       });
       assistantMessageId = assistantMessage.id;
-      await this.conversationRepository.touch(session.conversation.id);
+      await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
     }
 
     await this.auditService.record({
@@ -548,8 +548,12 @@ export class ChatService {
   private async ensureConversation(conversationId: string, workspaceId: string, anonymousSessionId?: string | null) {
     // When an anonymous session is provided, verify the conversation belongs to that session
     if (anonymousSessionId) {
-      const conversation = await this.conversationRepository.findByIdAndAnonymousSession(conversationId, anonymousSessionId);
-      if (!conversation || conversation.workspaceId !== workspaceId) {
+      const conversation = await this.conversationRepository.findByIdAndAnonymousSession(
+        conversationId,
+        workspaceId,
+        anonymousSessionId,
+      );
+      if (!conversation) {
         throw notFound("Conversation not found");
       }
       return conversation;

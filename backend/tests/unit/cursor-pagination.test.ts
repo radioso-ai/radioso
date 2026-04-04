@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CursorPaginationError, decodeCursor, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
+import { CursorPaginationError, decodeCursor, decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 
 describe("cursor pagination helpers", () => {
   it("round-trips opaque cursor payloads", () => {
@@ -48,5 +48,26 @@ describe("cursor pagination helpers", () => {
 
     expect(() => decodeCursor(invalidKeys)).toThrowError(CursorPaginationError);
     expect(() => decodeCursor(invalidKeys)).toThrow("Cursor keys must be string pairs");
+  });
+
+  it("rejects cursors missing required keys for a pagination shape", () => {
+    const missingCreatedAt = encodeCursor({ id: "abc-123" });
+
+    expect(() => decodeCursorWithKeys(missingCreatedAt, ["createdAt", "id"])).toThrowError(CursorPaginationError);
+    expect(() => decodeCursorWithKeys(missingCreatedAt, ["createdAt", "id"])).toThrow(
+      "Cursor payload is missing required key: createdAt",
+    );
+  });
+
+  it("rejects cursors with blank required key values", () => {
+    const blankCreatedAt = encodeCursor({
+      createdAt: "   ",
+      id: "abc-123",
+    });
+
+    expect(() => decodeCursorWithKeys(blankCreatedAt, ["createdAt", "id"])).toThrowError(CursorPaginationError);
+    expect(() => decodeCursorWithKeys(blankCreatedAt, ["createdAt", "id"])).toThrow(
+      "Cursor payload is missing required key: createdAt",
+    );
   });
 });

@@ -1,10 +1,28 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
+export interface DatabaseOptions {
+  poolMax?: number;
+  idleTimeoutMs?: number;
+  connectionTimeoutMs?: number;
+  statementTimeoutMs?: number;
+  queryTimeoutMs?: number;
+  applicationName?: string;
+}
+
 export class Database {
   readonly pool: Pool;
 
-  constructor(connectionString: string) {
-    this.pool = new Pool({ connectionString });
+  constructor(connectionString: string, options: DatabaseOptions = {}) {
+    this.pool = new Pool({
+      connectionString,
+      max: options.poolMax,
+      idleTimeoutMillis: options.idleTimeoutMs,
+      connectionTimeoutMillis: options.connectionTimeoutMs,
+      statement_timeout: options.statementTimeoutMs,
+      query_timeout: options.queryTimeoutMs,
+      application_name: options.applicationName,
+      keepAlive: true,
+    });
   }
 
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {

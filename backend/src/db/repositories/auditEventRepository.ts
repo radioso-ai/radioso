@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
-import { decodeCursor, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 
 export interface AuditEventRecord {
   id: string;
@@ -115,15 +115,16 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     workspaceId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ events: AuditEventRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
-    const [countRow] = await this.database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM audit_events
-       WHERE workspace_id = $1
-         AND event_type = 'document.search'`,
-      [workspaceId],
-    );
-
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
+    const total = cursor?.totalSnapshot !== undefined
+      ? Number(cursor.totalSnapshot)
+      : Number((await this.database.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+           FROM audit_events
+           WHERE workspace_id = $1
+             AND event_type = 'document.search'`,
+          [workspaceId],
+        ))[0]?.count ?? "0");
     const params: Array<string | number> = [workspaceId];
     let cursorClause = "";
 
@@ -163,12 +164,12 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
 
     return {
       events,
-      total: Number(countRow?.count ?? "0"),
+      total,
       nextCursor: hasMore && lastEvent
         ? encodeCursor({
             createdAt: lastEvent.createdAt.toISOString(),
             id: lastEvent.id,
-          })
+          }, total)
         : null,
       hasMore,
     };

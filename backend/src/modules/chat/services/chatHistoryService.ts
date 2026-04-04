@@ -156,7 +156,10 @@ export class ChatHistoryService {
       workspaceId,
       input,
     );
-    const messageSummaries = await this.messageRepository.summarizeByConversationIds(conversations.map((conversation) => conversation.id));
+    const messageSummaries = await this.messageRepository.summarizeByConversationIds(
+      workspaceId,
+      conversations.map((conversation) => conversation.id),
+    );
 
     return {
       conversations: conversations.map((conversation) => this.buildSummary(conversation, messageSummaries.get(conversation.id))),
@@ -176,7 +179,10 @@ export class ChatHistoryService {
       anonymousSessionId,
       input,
     );
-    const messageSummaries = await this.messageRepository.summarizeByConversationIds(conversations.map((conversation) => conversation.id));
+    const messageSummaries = await this.messageRepository.summarizeByConversationIds(
+      workspaceId,
+      conversations.map((conversation) => conversation.id),
+    );
 
     return {
       conversations: conversations.map((conversation) => {
@@ -208,8 +214,8 @@ export class ChatHistoryService {
     }
 
     const [{ messages, total, nextCursor, hasMore }, messageSummaries] = await Promise.all([
-      this.messageRepository.listWindowByConversationId(conversation.id, input),
-      this.messageRepository.summarizeByConversationIds([conversation.id]),
+      this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
+      this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
     ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")

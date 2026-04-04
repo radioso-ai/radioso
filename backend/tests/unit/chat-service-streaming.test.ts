@@ -71,7 +71,7 @@ describe("chat service streaming", () => {
       if (event.type === "chunk") {
         expect(event.text).not.toContain("[[");
         const [conversationId] = conversationRepository.items.keys();
-        const persisted = await messageRepository.listByConversationId(conversationId!);
+        const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
         expect(persisted.map((message) => message.role)).toEqual(["user"]);
       }
     }
@@ -117,7 +117,7 @@ describe("chat service streaming", () => {
     });
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId(conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
       { role: "user", content: "What does this page do?" },
       { role: "assistant", content: "full answer" },
@@ -410,7 +410,7 @@ describe("chat service streaming", () => {
     });
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId(conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
       content: DEFAULT_UNSUPPORTED_NOTICE,
@@ -514,7 +514,7 @@ describe("chat service streaming", () => {
     });
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId(conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
       content: DEFAULT_UNSUPPORTED_NOTICE,
@@ -523,7 +523,7 @@ describe("chat service streaming", () => {
 
   it("does not persist a duplicate assistant turn when touch fails after the assistant answer is written", async () => {
     class FailingTouchConversationRepository extends InMemoryConversationRepository {
-      override async touch(): Promise<void> {
+      override async touch(_conversationId: string, _workspaceId: string): Promise<void> {
         throw new Error("touch failed");
       }
     }
@@ -578,7 +578,7 @@ describe("chat service streaming", () => {
     })).rejects.toThrow("touch failed");
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId(conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
       { role: "user", content: "What does this page do?" },
       { role: "assistant", content: "I could not find relevant information in your documents." },
@@ -693,7 +693,7 @@ describe("chat service streaming", () => {
     ]);
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId(conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 

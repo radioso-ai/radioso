@@ -69,7 +69,7 @@ import type {
 } from "../../src/modules/evals/domain/evalTypes.js";
 import type { EvalRepositoryPort } from "../../src/modules/evals/services/evalLabService.js";
 import { notFound } from "../../src/shared/domain/errors.js";
-import { decodeCursor, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
+import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
 interface InMemoryConnectorConfigRecord {
@@ -945,7 +945,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         return timeDiff !== 0 ? timeDiff : b.id.localeCompare(a.id);
       });
 
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
     const startIndex = cursor
       ? documents.findIndex(
           (item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id,
@@ -1473,7 +1473,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
         return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
       });
 
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
     const startIndex = cursor
       ? conversations.findIndex(
           (item) => item.updatedAt.toISOString() === cursor.keys.updatedAt && item.id === cursor.keys.id,
@@ -1489,6 +1489,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       nextCursor: hasMore && lastConversation
         ? encodeCursor({
             updatedAt: lastConversation.updatedAt.toISOString(),
+            createdAt: lastConversation.createdAt.toISOString(),
             id: lastConversation.id,
           })
         : null,
@@ -1514,7 +1515,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
         return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
       });
 
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
     const startIndex = cursor
       ? conversations.findIndex(
           (item) => item.updatedAt.toISOString() === cursor.keys.updatedAt && item.id === cursor.keys.id,
@@ -1530,6 +1531,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       nextCursor: hasMore && lastConversation
         ? encodeCursor({
             updatedAt: lastConversation.updatedAt.toISOString(),
+            createdAt: lastConversation.createdAt.toISOString(),
             id: lastConversation.id,
           })
         : null,
@@ -1571,7 +1573,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       const timeDiff = right.createdAt.getTime() - left.createdAt.getTime();
       return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
     });
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
     const startIndex = cursor
       ? latestFirst.findIndex(
           (item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id,
@@ -1701,7 +1703,7 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
         const timeDiff = right.createdAt.getTime() - left.createdAt.getTime();
         return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
       });
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
     const startIndex = cursor
       ? events.findIndex((item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id) + 1
       : (input.offset ?? 0);

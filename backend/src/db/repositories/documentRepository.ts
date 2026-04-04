@@ -14,7 +14,7 @@ import {
   type MetadataFieldSuggestion,
   type MetadataValueType,
 } from "../../modules/settings/domain/retrievalSettings.js";
-import { decodeCursor, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { Database } from "../../shared/infra/database.js";
 import { notFound } from "../../shared/domain/errors.js";
 
@@ -320,7 +320,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     workspaceId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
     const total = cursor?.totalSnapshot !== undefined
       ? Number(cursor.totalSnapshot)
       : Number((await this.database.query<{ count: string }>(

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
-import { decodeCursor, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 
 export interface MessageRecord {
   id: string;
@@ -77,7 +77,7 @@ export class MessageRepository implements MessageRepositoryPort {
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
     const total = cursor?.totalSnapshot !== undefined
       ? Number(cursor.totalSnapshot)
       : Number((await this.database.query<{ count: string }>(

@@ -6,6 +6,10 @@ export interface CursorPayload {
   totalSnapshot?: string;
 }
 
+export interface RequiredCursorPayload<TKeys extends string> extends CursorPayload {
+  keys: Record<TKeys, string>;
+}
+
 export class CursorPaginationError extends AppError {
   constructor(message: string) {
     super(400, "bad_request", message);
@@ -62,4 +66,19 @@ export const decodeCursor = (cursor: string): CursorPayload => {
 
     throw new CursorPaginationError("Invalid cursor");
   }
+};
+
+export const decodeCursorWithKeys = <TKeys extends string>(
+  cursor: string,
+  requiredKeys: readonly TKeys[],
+): RequiredCursorPayload<TKeys> => {
+  const parsed = decodeCursor(cursor);
+
+  for (const key of requiredKeys) {
+    if (!(key in parsed.keys) || parsed.keys[key].trim().length === 0) {
+      throw new CursorPaginationError(`Cursor payload is missing required key: ${key}`);
+    }
+  }
+
+  return parsed as RequiredCursorPayload<TKeys>;
 };

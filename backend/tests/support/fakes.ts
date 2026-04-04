@@ -1537,14 +1537,18 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     };
   }
 
-  async findByIdAndAnonymousSession(conversationId: string, anonymousSessionId: string): Promise<ConversationRecord | null> {
+  async findByIdAndAnonymousSession(
+    conversationId: string,
+    workspaceId: string,
+    anonymousSessionId: string,
+  ): Promise<ConversationRecord | null> {
     const item = this.items.get(conversationId);
-    return item && item.anonymousSessionId === anonymousSessionId ? item : null;
+    return item && item.workspaceId === workspaceId && item.anonymousSessionId === anonymousSessionId ? item : null;
   }
 
-  async touch(conversationId: string): Promise<void> {
+  async touch(conversationId: string, workspaceId: string): Promise<void> {
     const item = this.items.get(conversationId);
-    if (item) {
+    if (item && item.workspaceId === workspaceId) {
       item.updatedAt = new Date();
     }
   }
@@ -1553,15 +1557,16 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 export class InMemoryMessageRepository implements MessageRepositoryPort {
   readonly items = new Map<string, MessageRecord[]>();
 
-  async listByConversationId(conversationId: string): Promise<MessageRecord[]> {
-    return [...(this.items.get(conversationId) ?? [])];
+  async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
+    return [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
   }
 
   async listWindowByConversationId(
+    workspaceId: string,
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
   ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
-    const messages = [...(this.items.get(conversationId) ?? [])];
+    const messages = [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
     const latestFirst = [...messages].sort((left, right) => {
       const timeDiff = right.createdAt.getTime() - left.createdAt.getTime();
       return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
@@ -1589,11 +1594,14 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     };
   }
 
-  async summarizeByConversationIds(conversationIds: string[]): Promise<Map<string, ConversationMessageSummary>> {
+  async summarizeByConversationIds(
+    workspaceId: string,
+    conversationIds: string[],
+  ): Promise<Map<string, ConversationMessageSummary>> {
     const summaries = new Map<string, ConversationMessageSummary>();
 
     for (const conversationId of conversationIds) {
-      const messages = this.items.get(conversationId) ?? [];
+      const messages = (this.items.get(conversationId) ?? []).filter((message) => message.workspaceId === workspaceId);
       const latestMessage = [...messages].reverse().find((message) => message.content.trim().length > 0);
       const normalized = latestMessage?.content.replace(/\s+/g, " ").trim() ?? "";
       summaries.set(conversationId, {

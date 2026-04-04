@@ -24,8 +24,12 @@ export interface ConversationRepositoryPort {
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null>;
-  findByIdAndAnonymousSession(conversationId: string, anonymousSessionId: string): Promise<ConversationRecord | null>;
-  touch(conversationId: string): Promise<void>;
+  findByIdAndAnonymousSession(
+    conversationId: string,
+    workspaceId: string,
+    anonymousSessionId: string,
+  ): Promise<ConversationRecord | null>;
+  touch(conversationId: string, workspaceId: string): Promise<void>;
 }
 
 interface ConversationRow {
@@ -64,14 +68,15 @@ export class ConversationRepository implements ConversationRepositoryPort {
     workspaceId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
-    const [countRow] = await this.database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM conversations
-       WHERE workspace_id = $1`,
-      [workspaceId],
-    );
-
     const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const total = cursor?.totalSnapshot !== undefined
+      ? Number(cursor.totalSnapshot)
+      : Number((await this.database.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+           FROM conversations
+           WHERE workspace_id = $1`,
+          [workspaceId],
+        ))[0]?.count ?? "0");
     const params: Array<string | number> = [workspaceId];
     let cursorClause = "";
 
@@ -116,13 +121,13 @@ export class ConversationRepository implements ConversationRepositoryPort {
 
     return {
       conversations,
-      total: Number(countRow?.count ?? "0"),
+      total,
       nextCursor: hasMore && lastConversation
         ? encodeCursor({
             updatedAt: lastConversation.updatedAt.toISOString(),
             createdAt: lastConversation.createdAt.toISOString(),
             id: lastConversation.id,
-          })
+          }, total)
         : null,
       hasMore,
     };
@@ -144,14 +149,15 @@ export class ConversationRepository implements ConversationRepositoryPort {
     anonymousSessionId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
-    const [countRow] = await this.database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM conversations
-       WHERE workspace_id = $1 AND anonymous_session_id = $2`,
-      [workspaceId, anonymousSessionId],
-    );
-
     const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const total = cursor?.totalSnapshot !== undefined
+      ? Number(cursor.totalSnapshot)
+      : Number((await this.database.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+           FROM conversations
+           WHERE workspace_id = $1 AND anonymous_session_id = $2`,
+          [workspaceId, anonymousSessionId],
+        ))[0]?.count ?? "0");
     const params: Array<string | number> = [workspaceId, anonymousSessionId];
     let cursorClause = "";
 
@@ -196,35 +202,40 @@ export class ConversationRepository implements ConversationRepositoryPort {
 
     return {
       conversations,
-      total: Number(countRow?.count ?? "0"),
+      total,
       nextCursor: hasMore && lastConversation
         ? encodeCursor({
             updatedAt: lastConversation.updatedAt.toISOString(),
             createdAt: lastConversation.createdAt.toISOString(),
             id: lastConversation.id,
-          })
+          }, total)
         : null,
       hasMore,
     };
   }
 
-  async findByIdAndAnonymousSession(conversationId: string, anonymousSessionId: string): Promise<ConversationRecord | null> {
+  async findByIdAndAnonymousSession(
+    conversationId: string,
+    workspaceId: string,
+    anonymousSessionId: string,
+  ): Promise<ConversationRecord | null> {
     const [row] = await this.database.query<ConversationRow>(
       `SELECT id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at
        FROM conversations
-       WHERE id = $1 AND anonymous_session_id = $2`,
-      [conversationId, anonymousSessionId],
+       WHERE id = $1 AND workspace_id = $2 AND anonymous_session_id = $3`,
+      [conversationId, workspaceId, anonymousSessionId],
     );
 
     return row ? mapConversation(row) : null;
   }
 
-  async touch(conversationId: string): Promise<void> {
+  async touch(conversationId: string, workspaceId: string): Promise<void> {
     await this.database.query(
       `UPDATE conversations
        SET updated_at = NOW()
-       WHERE id = $1`,
-      [conversationId],
+       WHERE id = $1
+         AND workspace_id = $2`,
+      [conversationId, workspaceId],
     );
   }
 }

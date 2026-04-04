@@ -20,12 +20,16 @@ export interface ConversationMessageSummary {
 }
 
 export interface MessageRepositoryPort {
-  listByConversationId(conversationId: string): Promise<MessageRecord[]>;
+  listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]>;
   listWindowByConversationId(
+    workspaceId: string,
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
-  summarizeByConversationIds(conversationIds: string[]): Promise<Map<string, ConversationMessageSummary>>;
+  summarizeByConversationIds(
+    workspaceId: string,
+    conversationIds: string[],
+  ): Promise<Map<string, ConversationMessageSummary>>;
   create(input: {
     conversationId: string;
     workspaceId: string;
@@ -55,39 +59,43 @@ const mapMessage = (row: MessageRow): MessageRecord => ({
 export class MessageRepository implements MessageRepositoryPort {
   constructor(private readonly database: Database) {}
 
-  async listByConversationId(conversationId: string): Promise<MessageRecord[]> {
+  async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     const rows = await this.database.query<MessageRow>(
       `SELECT id, conversation_id, workspace_id, role, content, created_at
        FROM messages
-       WHERE conversation_id = $1
+       WHERE workspace_id = $1
+         AND conversation_id = $2
        ORDER BY created_at ASC`,
-      [conversationId],
+      [workspaceId, conversationId],
     );
 
     return rows.map(mapMessage);
   }
 
   async listWindowByConversationId(
+    workspaceId: string,
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
-    const [countRow] = await this.database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM messages
-       WHERE conversation_id = $1`,
-      [conversationId],
-    );
-
     const cursor = input.cursor ? decodeCursor(input.cursor) : null;
-    const params: Array<string | number> = [conversationId];
+    const total = cursor?.totalSnapshot !== undefined
+      ? Number(cursor.totalSnapshot)
+      : Number((await this.database.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+           FROM messages
+           WHERE workspace_id = $1
+             AND conversation_id = $2`,
+          [workspaceId, conversationId],
+        ))[0]?.count ?? "0");
+    const params: Array<string | number> = [workspaceId, conversationId];
     let cursorClause = "";
 
     if (cursor) {
       params.push(cursor.keys.createdAt, cursor.keys.id);
       cursorClause = `
          AND (
-           created_at < $2::timestamptz
-           OR (created_at = $2::timestamptz AND id < $3::uuid)
+           created_at < $3::timestamptz
+           OR (created_at = $3::timestamptz AND id < $4::uuid)
          )`;
     }
 
@@ -103,7 +111,8 @@ export class MessageRepository implements MessageRepositoryPort {
     const rows = await this.database.query<MessageRow>(
       `SELECT id, conversation_id, workspace_id, role, content, created_at
        FROM messages
-       WHERE conversation_id = $1
+       WHERE workspace_id = $1
+         AND conversation_id = $2
        ${cursorClause}
        ORDER BY created_at DESC, id DESC
        LIMIT $${limitParam}
@@ -117,18 +126,21 @@ export class MessageRepository implements MessageRepositoryPort {
 
     return {
       messages: latestFirst.reverse(),
-      total: Number(countRow?.count ?? "0"),
+      total,
       nextCursor: hasMore && oldestFetched
         ? encodeCursor({
             createdAt: oldestFetched.createdAt.toISOString(),
             id: oldestFetched.id,
-          })
+          }, total)
         : null,
       hasMore,
     };
   }
 
-  async summarizeByConversationIds(conversationIds: string[]): Promise<Map<string, ConversationMessageSummary>> {
+  async summarizeByConversationIds(
+    workspaceId: string,
+    conversationIds: string[],
+  ): Promise<Map<string, ConversationMessageSummary>> {
     const summaries = new Map<string, ConversationMessageSummary>();
     if (conversationIds.length === 0) {
       return summaries;
@@ -145,17 +157,19 @@ export class MessageRepository implements MessageRepositoryPort {
               COUNT(*) FILTER (WHERE role = 'user')::text AS user_message_count,
               COUNT(*) FILTER (WHERE role = 'assistant')::text AS assistant_message_count
        FROM messages
-       WHERE conversation_id = ANY($1::uuid[])
+       WHERE workspace_id = $1
+         AND conversation_id = ANY($2::uuid[])
        GROUP BY conversation_id`,
-      [conversationIds],
+      [workspaceId, conversationIds],
     );
 
     const previewRows = await this.database.query<{ conversation_id: string; content: string }>(
       `SELECT DISTINCT ON (conversation_id) conversation_id, content
        FROM messages
-       WHERE conversation_id = ANY($1::uuid[])
+       WHERE workspace_id = $1
+         AND conversation_id = ANY($2::uuid[])
        ORDER BY conversation_id, created_at DESC, id DESC`,
-      [conversationIds],
+      [workspaceId, conversationIds],
     );
 
     const previewByConversationId = new Map(

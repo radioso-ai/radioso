@@ -12,6 +12,7 @@ export type DocumentSearchRequest = components["schemas"]["DocumentSearchRequest
 export type DocumentSearchResponse = components["schemas"]["DocumentSearchResponse"];
 export type ChatRequest = components["schemas"]["ChatRequest"];
 export type ChatResponse = components["schemas"]["ChatResponse"];
+export type ChatCreateRequest = Omit<ChatRequest, "stream"> & { stream?: false };
 
 export interface DocumentListQuery {
   limit?: number;
@@ -89,11 +90,14 @@ export class GeneratedRadiosoClient {
     });
   }
 
-  createChatResponse(body: ChatRequest): Promise<ChatResponse> {
+  createChatResponse(body: ChatCreateRequest): Promise<ChatResponse> {
     return requestJson(this.config, {
       method: "POST",
       path: "/api/v1/chat/",
-      body,
+      body: {
+        ...body,
+        stream: false,
+      },
     });
   }
 }

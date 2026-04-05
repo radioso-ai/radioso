@@ -36,7 +36,9 @@ const buildHeaders = (
   }
 
   result.set("Authorization", `Bearer ${config.apiToken}`);
-  result.set("Accept", "application/json");
+  if (!result.has("Accept")) {
+    result.set("Accept", "application/json");
+  }
 
   if (body && !(body instanceof FormData) && !result.has("Content-Type")) {
     result.set("Content-Type", "application/json");

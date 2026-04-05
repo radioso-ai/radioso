@@ -1,9 +1,10 @@
 import { createClientConfig, type RadiosoClientOptions } from "./core/config.js";
-import { GeneratedRadiosoClient, type ChatRequest } from "./generated/client.js";
+import { GeneratedRadiosoClient, type ChatCreateRequest, type ChatRequest } from "./generated/client.js";
 import { streamChat, type RadiosoChatStreamEvent } from "./streaming/chatStream.js";
 
 export { RadiosoError } from "./core/errors.js";
 export type {
+  ChatCreateRequest,
   ChatRequest,
   ChatResponse,
   DocumentCreateRequest,
@@ -40,7 +41,13 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
       search: (body: Parameters<GeneratedRadiosoClient["searchDocuments"]>[0]) => generated.searchDocuments(body),
     },
     chat: {
-      create: (body: ChatRequest) => generated.createChatResponse(body),
+      create: (body: ChatCreateRequest) => {
+        if ((body as { stream?: boolean }).stream === true) {
+          throw new Error("chat.create() does not support stream=true. Use chat.stream() instead.");
+        }
+
+        return generated.createChatResponse(body);
+      },
       stream: (body: Omit<ChatRequest, "stream">): AsyncGenerator<RadiosoChatStreamEvent> => streamChat(config, body),
     },
   };

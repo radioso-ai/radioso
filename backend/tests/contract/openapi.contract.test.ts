@@ -29,4 +29,20 @@ describe("openapi contract", () => {
     expect(paths["/api/v1/public/chat/{token}"]?.get).not.toHaveProperty("security");
     expect(paths["/api/v1/public/chat/{token}/history/{conversationId}"]?.get).not.toHaveProperty("security");
   });
+
+  it("advertises bearer auth separately from the session cookie scheme", () => {
+    const document = createOpenApiDocument();
+    const schemes = document.components?.securitySchemes ?? {};
+    const bearerAuth = schemes.bearerAuth;
+    const sessionCookie = schemes.sessionCookie;
+
+    expect(bearerAuth).toEqual({
+      type: "http",
+      scheme: "bearer",
+      bearerFormat: "APIKey",
+    });
+    expect(sessionCookie).toBeDefined();
+    expect(bearerAuth).not.toEqual(sessionCookie);
+    expect(document.paths?.["/api/v1/document/"]?.post?.security).toEqual([{ bearerAuth: [] }]);
+  });
 });

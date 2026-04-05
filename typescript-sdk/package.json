@@ -1,0 +1,25 @@
+{
+  "name": "@radioso/typescript-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist",
+    "openapi",
+    "README.md"
+  ],
+  "scripts": {
+    "sync": "node ./scripts/sync-openapi.mjs",
+    "build": "npm run sync && tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "openapi-typescript": "^7.10.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

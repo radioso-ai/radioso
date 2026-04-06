@@ -23,6 +23,10 @@ components:
       type: apiKey
       in: cookie
       name: radioso_session
+    workspaceSelection:
+      type: apiKey
+      in: header
+      name: X-Workspace-Id
     bearerAuth:
       type: http
       scheme: bearer
@@ -74,14 +78,10 @@ components:
           format: uuid
         workspaceName:
           type: string
-        token:
-          type: string
-          pattern: ^sk_proj_[a-f0-9]+$
       required:
         - userId
         - workspaceId
         - workspaceName
-        - token
     LoginResponse:
       type: object
       properties:
@@ -93,22 +93,10 @@ components:
           format: uuid
         workspaceName:
           type: string
-        token:
-          type: string
-          pattern: ^sk_proj_[a-f0-9]+$
       required:
         - userId
         - workspaceId
         - workspaceName
-        - token
-    AccountTokenResponse:
-      type: object
-      properties:
-        token:
-          type: string
-          pattern: ^sk_proj_[a-f0-9]+$
-      required:
-        - token
     Workspace:
       type: object
       properties:
@@ -141,6 +129,13 @@ components:
             $ref: "#/components/schemas/Workspace"
       required:
         - workspaces
+    WorkspaceTokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
     RegisterRequest:
       type: object
       properties:
@@ -162,6 +157,9 @@ components:
         password:
           type: string
           minLength: 1
+        preferredWorkspaceId:
+          type: string
+          format: uuid
       required:
         - email
         - password
@@ -191,6 +189,18 @@ components:
           format: uuid
         queryRewriteEnabled:
           type: boolean
+        semanticRewriteInstructions:
+          type: string
+          maxLength: 2000
+        lexicalRewriteInstructions:
+          type: string
+          maxLength: 2000
+        answerSupportPolicy:
+          type: string
+          enum: &a2
+            - strict
+            - warn
+            - off
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -204,16 +214,25 @@ components:
         rerankTopK:
           type: integer
           minimum: 1
-        warmthLevel:
-          type: integer
-          minimum: 1
-          maximum: 10
         citationDisplayEnabled:
           type: boolean
         metadataFieldSuggestions:
           type: array
           items:
-            type: string
+            type: object
+            properties:
+              field:
+                type: string
+              inferredType:
+                type: string
+                enum: &a1
+                  - string
+                  - number
+                  - date
+                  - boolean
+            required:
+              - field
+              - inferredType
           default: []
         metadataRules:
           type: array
@@ -224,9 +243,12 @@ components:
                 type: string
               field:
                 type: string
+              valueType:
+                type: string
+                enum: *a1
               operator:
                 type: string
-                enum: &a1
+                enum: &a3
                   - equals
                   - not_equals
                   - contains
@@ -239,7 +261,7 @@ components:
                 type: string
               effect:
                 type: string
-                enum: &a2
+                enum: &a4
                   - boost
                   - filter
               enabled:
@@ -247,6 +269,7 @@ components:
             required:
               - id
               - field
+              - valueType
               - operator
               - value
               - effect
@@ -264,11 +287,13 @@ components:
       required:
         - workspaceId
         - queryRewriteEnabled
+        - semanticRewriteInstructions
+        - lexicalRewriteInstructions
+        - answerSupportPolicy
         - rerankEnabled
         - vectorTopK
         - similarityThreshold
         - rerankTopK
-        - warmthLevel
         - citationDisplayEnabled
         - customInstruction
         - createdAt
@@ -278,6 +303,15 @@ components:
       properties:
         queryRewriteEnabled:
           type: boolean
+        semanticRewriteInstructions:
+          type: string
+          maxLength: 2000
+        lexicalRewriteInstructions:
+          type: string
+          maxLength: 2000
+        answerSupportPolicy:
+          type: string
+          enum: *a2
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -285,8 +319,6 @@ components:
         similarityThreshold:
           type: number
         rerankTopK:
-          type: integer
-        warmthLevel:
           type: integer
         citationDisplayEnabled:
           type: boolean
@@ -301,19 +333,23 @@ components:
               field:
                 type: string
                 minLength: 1
-              operator:
+              valueType:
                 type: string
                 enum: *a1
+              operator:
+                type: string
+                enum: *a3
               value:
                 type: string
               effect:
                 type: string
-                enum: *a2
+                enum: *a4
               enabled:
                 type: boolean
             required:
               - id
               - field
+              - valueType
               - operator
               - value
               - effect
@@ -327,7 +363,6 @@ components:
         - vectorTopK
         - similarityThreshold
         - rerankTopK
-        - warmthLevel
         - citationDisplayEnabled
     IngestionSettings:
       type: object
@@ -337,7 +372,7 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a3
+          enum: &a5
             - fixed_window
             - structured_semantic
         fixedWindowChunkSize:
@@ -368,7 +403,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a3
+          enum: *a5
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -398,19 +433,23 @@ components:
           type: string
         field:
           type: string
-        operator:
+        valueType:
           type: string
           enum: *a1
+        operator:
+          type: string
+          enum: *a3
         value:
           type: string
         effect:
           type: string
-          enum: *a2
+          enum: *a4
         enabled:
           type: boolean
       required:
         - id
         - field
+        - valueType
         - operator
         - value
         - effect
@@ -550,8 +589,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DocumentSummary"
+        total:
+          type: integer
+          minimum: 0
+        nextCursor:
+          type:
+            - string
+            - "null"
+        hasMore:
+          type: boolean
       required:
         - documents
+        - total
+        - nextCursor
+        - hasMore
     DocumentSearchAction:
       type: object
       properties:
@@ -656,8 +707,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DocumentSearchHistoryEntry"
+        total:
+          type: integer
+          minimum: 0
+        nextCursor:
+          type:
+            - string
+            - "null"
+        hasMore:
+          type: boolean
       required:
         - searches
+        - total
+        - nextCursor
+        - hasMore
     DocumentSearchRequest:
       type: object
       properties:
@@ -1029,8 +1092,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatConversationSummary"
+        total:
+          type: integer
+          minimum: 0
+        nextCursor:
+          type:
+            - string
+            - "null"
+        hasMore:
+          type: boolean
       required:
         - conversations
+        - total
+        - nextCursor
+        - hasMore
     ValidationDisposition:
       type: string
       enum:
@@ -1074,6 +1149,9 @@ components:
         nonSubstantiveSegmentCount:
           type: integer
           minimum: 0
+        answerSupportPolicy:
+          type: string
+          enum: *a2
         segmentResults:
           type: array
           items:
@@ -1107,6 +1185,9 @@ components:
             - grounded_success
             - grounded_degraded_unsupported_segments
             - no_context_refusal
+        answerSupportPolicy:
+          type: string
+          enum: *a2
         validation:
           $ref: "#/components/schemas/ValidationDebug"
         retrievalInfo:
@@ -1182,6 +1263,21 @@ components:
         assistantMessageCount:
           type: integer
           minimum: 0
+        messagesTotal:
+          type: integer
+          minimum: 0
+        messageWindowOffset:
+          type: integer
+          minimum: 0
+        messageWindowLimit:
+          type: integer
+          minimum: 1
+        hasOlderMessages:
+          type: boolean
+        nextCursor:
+          type:
+            - string
+            - "null"
         messages:
           type: array
           items:
@@ -1195,7 +1291,496 @@ components:
         - messageCount
         - userMessageCount
         - assistantMessageCount
+        - messagesTotal
+        - messageWindowOffset
+        - messageWindowLimit
+        - hasOlderMessages
+        - nextCursor
         - messages
+    EvalCaseConversationMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+            - system
+        content:
+          type: string
+      required:
+        - role
+        - content
+    EvalCaseExpectations:
+      type: object
+      properties:
+        expectedDocumentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        expectedCitationTitles:
+          type: array
+          items:
+            type: string
+        expectedRefusalBehavior:
+          type: string
+          enum:
+            - refusal
+            - answer
+        expectedAnswerOutcome:
+          type: string
+          enum:
+            - grounded_success
+            - grounded_degraded_unsupported_segments
+            - no_context_refusal
+        requiredPhrases:
+          type: array
+          items:
+            type: string
+        forbiddenPhrases:
+          type: array
+          items:
+            type: string
+        latencyBudgetMs:
+          type: integer
+          exclusiveMinimum: 0
+    EvalDataset:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - archived
+        createdByAccountId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - workspaceId
+        - name
+        - description
+        - status
+        - createdByAccountId
+        - createdAt
+        - updatedAt
+    EvalDatasetSummary:
+      allOf:
+        - $ref: "#/components/schemas/EvalDataset"
+        - type: object
+          properties:
+            caseCount:
+              type: integer
+              minimum: 0
+            runCount:
+              type: integer
+              minimum: 0
+            lastRunAt:
+              type:
+                - string
+                - "null"
+              format: date-time
+          required:
+            - caseCount
+            - runCount
+            - lastRunAt
+    EvalCase:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        datasetId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        sourceType:
+          type: string
+          enum:
+            - manual
+            - conversation_import
+        query:
+          type: string
+        conversationContext:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalCaseConversationMessage"
+        expectations:
+          $ref: "#/components/schemas/EvalCaseExpectations"
+        provenance:
+          type: object
+          additionalProperties: {}
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - datasetId
+        - workspaceId
+        - title
+        - sourceType
+        - query
+        - conversationContext
+        - expectations
+        - provenance
+        - createdAt
+        - updatedAt
+    EvalImportDraft:
+      type: object
+      properties:
+        title:
+          type: string
+        query:
+          type: string
+        conversationContext:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalCaseConversationMessage"
+        sourceType:
+          type: string
+          enum:
+            - manual
+            - conversation_import
+        provenance:
+          type: object
+          additionalProperties: {}
+        seededExpectations:
+          $ref: "#/components/schemas/EvalCaseExpectations"
+        unavailable:
+          type: array
+          items:
+            type: string
+      required:
+        - title
+        - query
+        - conversationContext
+        - sourceType
+        - provenance
+        - seededExpectations
+        - unavailable
+    EvalDatasetListResponse:
+      type: object
+      properties:
+        datasets:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalDatasetSummary"
+      required:
+        - datasets
+    EvalDimensionResult:
+      type: object
+      properties:
+        verdict:
+          type: string
+          enum:
+            - pass
+            - fail
+            - unscored
+        expected: {}
+        actual: {}
+        reason:
+          type: string
+      required:
+        - verdict
+    EvalCaseScore:
+      type: object
+      properties:
+        documentMatch:
+          $ref: "#/components/schemas/EvalDimensionResult"
+        citationMatch:
+          $ref: "#/components/schemas/EvalDimensionResult"
+        refusalMatch:
+          $ref: "#/components/schemas/EvalDimensionResult"
+        answerOutcomeMatch:
+          $ref: "#/components/schemas/EvalDimensionResult"
+        answerContainsMatch:
+          $ref: "#/components/schemas/EvalDimensionResult"
+        latencyMatch:
+          $ref: "#/components/schemas/EvalDimensionResult"
+        overallVerdict:
+          type: string
+          enum:
+            - pass
+            - fail
+        reasons:
+          type: array
+          items:
+            type: string
+      required:
+        - documentMatch
+        - citationMatch
+        - refusalMatch
+        - answerOutcomeMatch
+        - answerContainsMatch
+        - latencyMatch
+        - overallVerdict
+        - reasons
+    EvalReplayDiagnostics:
+      type: object
+      properties:
+        retrievalInfo:
+          $ref: "#/components/schemas/RetrievalInfo"
+        retrievalTrace:
+          $ref: "#/components/schemas/RetrievalTrace"
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Citation"
+        answerSegments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnswerSegment"
+        answerOutcome:
+          type: string
+          enum:
+            - grounded_success
+            - grounded_degraded_unsupported_segments
+            - no_context_refusal
+        answerSupportPolicy:
+          type: string
+        answer:
+          type: string
+        latencyMs:
+          type: integer
+          minimum: 0
+      required:
+        - retrievalInfo
+        - answerOutcome
+        - answer
+        - latencyMs
+    EvalCaseResult:
+      type: object
+      properties:
+        caseId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - pass
+            - fail
+            - skipped
+            - invalid
+        score:
+          $ref: "#/components/schemas/EvalCaseScore"
+        diagnostics:
+          $ref: "#/components/schemas/EvalReplayDiagnostics"
+        comparisonOutcome:
+          type: string
+          enum:
+            - improved
+            - regressed
+            - unchanged
+            - unscored
+        comparisonReasons:
+          type: array
+          items:
+            type: string
+      required:
+        - caseId
+        - status
+        - score
+        - diagnostics
+    EvalRunSummary:
+      type: object
+      properties:
+        totalCases:
+          type: integer
+          minimum: 0
+        passCount:
+          type: integer
+          minimum: 0
+        failCount:
+          type: integer
+          minimum: 0
+        skippedCount:
+          type: integer
+          minimum: 0
+        invalidCount:
+          type: integer
+          minimum: 0
+        improvementCount:
+          type: integer
+          minimum: 0
+        regressionCount:
+          type: integer
+          minimum: 0
+        unchangedCount:
+          type: integer
+          minimum: 0
+      required:
+        - totalCases
+        - passCount
+        - failCount
+        - skippedCount
+        - invalidCount
+        - improvementCount
+        - regressionCount
+        - unchangedCount
+    EvalRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        datasetId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        label:
+          type:
+            - string
+            - "null"
+        baselineRunId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        createdByAccountId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        runMetadata:
+          type: object
+          additionalProperties: {}
+        summary:
+          $ref: "#/components/schemas/EvalRunSummary"
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalCaseResult"
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - datasetId
+        - workspaceId
+        - label
+        - baselineRunId
+        - createdByAccountId
+        - runMetadata
+        - summary
+        - results
+        - startedAt
+        - completedAt
+    EvalDatasetDetail:
+      allOf:
+        - $ref: "#/components/schemas/EvalDataset"
+        - type: object
+          properties:
+            cases:
+              type: array
+              items:
+                $ref: "#/components/schemas/EvalCase"
+            runs:
+              type: array
+              items:
+                $ref: "#/components/schemas/EvalRun"
+          required:
+            - cases
+            - runs
+    EvalRunComparison:
+      type: object
+      properties:
+        baselineRunId:
+          type: string
+          format: uuid
+        candidateRunId:
+          type: string
+          format: uuid
+        regressions:
+          type: integer
+          minimum: 0
+        improvements:
+          type: integer
+          minimum: 0
+        unchanged:
+          type: integer
+          minimum: 0
+        unscored:
+          type: integer
+          minimum: 0
+        cases:
+          type: array
+          items:
+            type: object
+            properties:
+              caseId:
+                type: string
+                format: uuid
+              title:
+                type: string
+              outcome:
+                type: string
+                enum:
+                  - improved
+                  - regressed
+                  - unchanged
+                  - unscored
+              reasons:
+                type: array
+                items:
+                  type: string
+              baselineStatus:
+                type: string
+                enum:
+                  - pass
+                  - fail
+                  - skipped
+                  - invalid
+              candidateStatus:
+                type: string
+                enum:
+                  - pass
+                  - fail
+                  - skipped
+                  - invalid
+            required:
+              - caseId
+              - title
+              - outcome
+              - reasons
+      required:
+        - baselineRunId
+        - candidateRunId
+        - regressions
+        - improvements
+        - unchanged
+        - unscored
+        - cases
     PublicConversationSummary:
       type: object
       properties:
@@ -1235,9 +1820,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PublicConversationSummary"
+        total:
+          type: integer
+          minimum: 0
+        nextCursor:
+          type:
+            - string
+            - "null"
+        hasMore:
+          type: boolean
       required:
         - workspaceName
         - conversations
+        - total
+        - nextCursor
+        - hasMore
     RateLimitExceededResponse:
       type: object
       properties:
@@ -1485,6 +2082,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/token:
+    get:
+      tags:
+        - Account
+      summary: Reveal the workspace API token for manual SDK or CLI use
+      operationId: getWorkspaceApiToken
+      security:
+        - sessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+      responses:
+        "200":
+          description: Workspace token returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceTokenResponse"
+        "400":
+          description: Invalid workspace id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Token reveal temporarily rate limited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
   /api/v1/workspace:
     get:
       tags:
@@ -1607,40 +2250,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Workspace not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/account/workspaces/{workspaceId}/token:
-    get:
-      tags:
-        - Account
-      summary: Return the API token for a specific workspace
-      operationId: getWorkspaceToken
-      security:
-        - sessionCookie: []
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: workspaceId
-          in: path
-      responses:
-        "200":
-          description: Token returned
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AccountTokenResponse"
         "401":
           description: Authentication required
           content:
@@ -1886,6 +2495,26 @@ paths:
       operationId: listDocumentSearchHistory
       security:
         - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
       responses:
         "200":
           description: Document search history returned
@@ -1941,6 +2570,26 @@ paths:
       operationId: listDocuments
       security:
         - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
       responses:
         "200":
           description: Documents returned
@@ -2197,6 +2846,26 @@ paths:
       operationId: listChatHistory
       security:
         - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
       responses:
         "200":
           description: Chat history summaries
@@ -2225,6 +2894,25 @@ paths:
           required: true
           name: conversationId
           in: path
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
       responses:
         "200":
           description: Historical conversation detail
@@ -2246,6 +2934,364 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/evals/datasets:
+    get:
+      tags:
+        - Evals
+      summary: List eval datasets for the active workspace
+      operationId: listEvalDatasets
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Eval dataset summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalDatasetListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Evals
+      summary: Create an eval dataset
+      operationId: createEvalDataset
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                description:
+                  type: string
+                  maxLength: 500
+              required:
+                - name
+      responses:
+        "201":
+          description: Eval dataset created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalDatasetSummary"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/evals/datasets/{datasetId}:
+    get:
+      tags:
+        - Evals
+      summary: Get one eval dataset with its cases and runs
+      operationId: getEvalDataset
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: datasetId
+          in: path
+      responses:
+        "200":
+          description: Eval dataset detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalDatasetDetail"
+        "404":
+          description: Eval dataset not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/evals/import/chat-history:
+    post:
+      tags:
+        - Evals
+      summary: Create an eval import draft from chat history
+      operationId: importEvalChatHistory
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                conversationId:
+                  type: string
+                  format: uuid
+                assistantMessageId:
+                  type: string
+                  format: uuid
+              required:
+                - conversationId
+                - assistantMessageId
+      responses:
+        "200":
+          description: Eval import draft returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  importDraft:
+                    $ref: "#/components/schemas/EvalImportDraft"
+                required:
+                  - importDraft
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/evals/datasets/{datasetId}/cases:
+    post:
+      tags:
+        - Evals
+      summary: Add an eval case to a dataset
+      operationId: createEvalCase
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: datasetId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                sourceType:
+                  type: string
+                  enum:
+                    - manual
+                    - conversation_import
+                query:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+                conversationContext:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      role:
+                        type: string
+                        enum:
+                          - user
+                          - assistant
+                          - system
+                      content:
+                        type: string
+                        minLength: 1
+                        maxLength: 2000
+                    required:
+                      - role
+                      - content
+                  maxItems: 12
+                expectations:
+                  type: object
+                  properties:
+                    expectedDocumentIds:
+                      type: array
+                      items:
+                        type: string
+                        format: uuid
+                    expectedCitationTitles:
+                      type: array
+                      items:
+                        type: string
+                    expectedRefusalBehavior:
+                      type: string
+                      enum:
+                        - refusal
+                        - answer
+                    expectedAnswerOutcome:
+                      type: string
+                      enum:
+                        - grounded_success
+                        - grounded_degraded_unsupported_segments
+                        - no_context_refusal
+                    requiredPhrases:
+                      type: array
+                      items:
+                        type: string
+                    forbiddenPhrases:
+                      type: array
+                      items:
+                        type: string
+                    latencyBudgetMs:
+                      type: integer
+                      exclusiveMinimum: 0
+                provenance:
+                  type: object
+                  additionalProperties: {}
+              required:
+                - title
+                - query
+      responses:
+        "201":
+          description: Eval case created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalCase"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Eval dataset not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/evals/datasets/{datasetId}/runs:
+    post:
+      tags:
+        - Evals
+      summary: Run an eval dataset
+      operationId: createEvalRun
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: datasetId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  maxLength: 120
+                baselineRunId:
+                  type: string
+                  format: uuid
+                runMetadata:
+                  type: object
+                  additionalProperties: {}
+      responses:
+        "201":
+          description: Eval run created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalRun"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/evals/datasets/{datasetId}/runs/{runId}:
+    get:
+      tags:
+        - Evals
+      summary: Get an eval run
+      operationId: getEvalRun
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: datasetId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: runId
+          in: path
+      responses:
+        "200":
+          description: Eval run returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalRun"
+        "404":
+          description: Eval run not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/evals/datasets/{datasetId}/runs/{runId}/comparison:
+    get:
+      tags:
+        - Evals
+      summary: Compare an eval run to a baseline
+      operationId: getEvalRunComparison
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: datasetId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: runId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: baselineRunId
+          in: query
+      responses:
+        "200":
+          description: Eval run comparison returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalRunComparison"
+        "400":
+          description: Comparison unavailable
           content:
             application/json:
               schema:
@@ -2520,6 +3566,25 @@ paths:
           required: true
           name: token
           in: path
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
       responses:
         "200":
           description: Conversation summaries returned
@@ -2556,6 +3621,25 @@ paths:
           required: true
           name: conversationId
           in: path
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
       responses:
         "200":
           description: Historical conversation detail
@@ -2648,3 +3732,4 @@ paths:
         "404":
           description: Connector config not found
 webhooks: {}
+

@@ -60,6 +60,12 @@ const workspaceSelectionScheme = registry.registerComponent("securitySchemes", "
   name: "X-Workspace-Id",
 });
 
+const bearerAuthScheme = registry.registerComponent("securitySchemes", "bearerAuth", {
+  type: "http",
+  scheme: "bearer",
+  bearerFormat: "APIKey",
+});
+
 const anonymousSessionCookieScheme = registry.registerComponent("securitySchemes", "anonymousSessionCookie", {
   type: "apiKey",
   in: "cookie",
@@ -67,7 +73,6 @@ const anonymousSessionCookieScheme = registry.registerComponent("securitySchemes
 });
 
 const workspaceAdminSecurity = [{ [sessionCookieScheme.name]: [], [workspaceSelectionScheme.name]: [] }];
-const bearerAuthScheme = sessionCookieScheme;
 
 const ErrorResponseSchema = registry.register(
   "ErrorResponse",

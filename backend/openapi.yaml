@@ -27,6 +27,10 @@ components:
       type: apiKey
       in: header
       name: X-Workspace-Id
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: APIKey
   schemas:
     ErrorResponse:
       type: object
@@ -2265,7 +2269,7 @@ paths:
       summary: Get retrieval settings for the authenticated workspace
       operationId: getRetrievalSettings
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       responses:
         "200":
           description: Retrieval settings returned
@@ -2285,7 +2289,7 @@ paths:
       summary: Update retrieval settings for the authenticated workspace
       operationId: updateRetrievalSettings
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -2318,7 +2322,7 @@ paths:
       summary: Get ingestion settings for the authenticated workspace
       operationId: getIngestionSettings
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       responses:
         "200":
           description: Ingestion settings returned
@@ -2338,7 +2342,7 @@ paths:
       summary: Update ingestion settings for the authenticated workspace
       operationId: updateIngestionSettings
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -2371,7 +2375,7 @@ paths:
       summary: Queue eligible workspace documents for reprocessing using current ingestion settings
       operationId: reprocessWorkspaceIngestion
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       responses:
         "202":
           description: Workspace documents accepted for reprocessing
@@ -2392,7 +2396,7 @@ paths:
       summary: Get general workspace settings
       operationId: getGeneralSettings
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       responses:
         "200":
           description: General settings returned
@@ -2418,7 +2422,7 @@ paths:
       summary: Update general workspace settings
       operationId: updateGeneralSettings
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -2457,7 +2461,7 @@ paths:
       summary: Search documents for the authenticated workspace
       operationId: searchDocuments
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -2490,7 +2494,7 @@ paths:
       summary: List document search history for the authenticated workspace
       operationId: listDocumentSearchHistory
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: integer
@@ -2531,7 +2535,7 @@ paths:
       summary: Replay one historical document search
       operationId: getDocumentSearchHistory
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -2565,7 +2569,7 @@ paths:
       summary: List documents for the authenticated workspace
       operationId: listDocuments
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: integer
@@ -2605,7 +2609,7 @@ paths:
       summary: Queue a document for background processing
       operationId: createDocument
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -2638,7 +2642,7 @@ paths:
       summary: Get a document
       operationId: getDocument
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -2671,7 +2675,7 @@ paths:
       summary: Update and requeue a document
       operationId: updateDocument
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -2735,7 +2739,7 @@ paths:
       summary: Delete a document
       operationId: deleteDocument
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -2765,7 +2769,7 @@ paths:
       summary: Requeue an existing document for processing
       operationId: reprocessDocument
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -2799,7 +2803,7 @@ paths:
       summary: Ask a retrieval-grounded question
       operationId: createChatResponse
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -2841,7 +2845,7 @@ paths:
       summary: List saved chat conversations
       operationId: listChatHistory
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: integer
@@ -2882,7 +2886,7 @@ paths:
       summary: Get a saved conversation and its debug metadata
       operationId: getChatHistoryConversation
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -2941,7 +2945,7 @@ paths:
       summary: List eval datasets for the active workspace
       operationId: listEvalDatasets
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       responses:
         "200":
           description: Eval dataset summaries
@@ -2961,7 +2965,7 @@ paths:
       summary: Create an eval dataset
       operationId: createEvalDataset
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -2998,7 +3002,7 @@ paths:
       summary: Get one eval dataset with its cases and runs
       operationId: getEvalDataset
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -3026,7 +3030,7 @@ paths:
       summary: Create an eval import draft from chat history
       operationId: importEvalChatHistory
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -3068,7 +3072,7 @@ paths:
       summary: Add an eval case to a dataset
       operationId: createEvalCase
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -3181,7 +3185,7 @@ paths:
       summary: Run an eval dataset
       operationId: createEvalRun
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -3225,7 +3229,7 @@ paths:
       summary: Get an eval run
       operationId: getEvalRun
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -3259,7 +3263,7 @@ paths:
       summary: Compare an eval run to a baseline
       operationId: getEvalRunComparison
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -3299,7 +3303,7 @@ paths:
       summary: List connectors for the authenticated workspace
       operationId: listConnectors
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       responses:
         "200":
           description: Connectors returned
@@ -3320,7 +3324,7 @@ paths:
       summary: Get connector detail
       operationId: getConnectorDetail
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -3353,7 +3357,7 @@ paths:
       summary: Save connector config
       operationId: updateConnectorConfig
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -3412,7 +3416,7 @@ paths:
       summary: Enable a connector
       operationId: enableConnector
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string
@@ -3465,7 +3469,7 @@ paths:
       summary: Disable a connector
       operationId: disableConnector
       security:
-        - sessionCookie: []
+        - bearerAuth: []
       parameters:
         - schema:
             type: string

@@ -1,0 +1,40 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { createRadiosoClient } from "../../src/index.js";
+
+const encoder = new TextEncoder();
+
+describe("sdk stream integration", () => {
+  it("exposes streaming chat through the public client", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode('event: conversation\ndata: {"conversationId":"c1"}\n\n'));
+            controller.enqueue(encoder.encode('event: chunk\ndata: {"text":"hel"}\n\n'));
+            controller.enqueue(encoder.encode('event: chunk\ndata: {"text":"lo"}\n\n'));
+            controller.enqueue(encoder.encode('event: done\ndata: {"conversationId":"c1","answer":"hello","retrievalInfo":{},"retrievalTrace":{}}\n\n'));
+            controller.close();
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const client = createRadiosoClient({
+      baseUrl: "https://api.example.com",
+      apiToken: "token-123",
+      fetch: fetchMock as typeof fetch,
+    });
+
+    const events = [];
+    for await (const event of client.chat.stream({ query: "hello" })) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual(["conversation", "chunk", "chunk", "done"]);
+  });
+});

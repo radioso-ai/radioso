@@ -1,8 +1,8 @@
-# Specification Quality Checklist: Hivec TypeScript SDK Repository
+# Specification Quality Checklist: Radioso TypeScript SDK
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
-**Created**: 2026-03-21  
-**Feature**: [/Users/dm/code/radioso/specs/022-typescript-sdk-repo/spec.md](/Users/dm/code/radioso/specs/022-typescript-sdk-repo/spec.md)
+**Created**: 2026-04-04  
+**Feature**: [/Users/dm/conductor/workspaces/radioso/colombo/specs/022-typescript-sdk-repo/spec.md](/Users/dm/conductor/workspaces/radioso/colombo/specs/022-typescript-sdk-repo/spec.md)
 
 ## Content Quality
 
@@ -32,6 +32,6 @@
 
 ## Notes
 
-- Validation completed against the draft spec on 2026-03-21.
-- No clarification markers remain.
-- No additional iteration was required before planning readiness.
+- Validation refreshed against the narrowed v1 SDK draft on 2026-04-04.
+- Scope now explicitly favors token-based external workflows and excludes session-only or browser-only workflows from the initial release.
+- The draft keeps repository separation out of the first release until the package surface and contract-refresh workflow are proven stable.

@@ -1,4 +1,5 @@
 import { notFound } from "../../../shared/domain/errors.js";
+import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
@@ -196,8 +197,9 @@ export class ChatService {
         retrievalTrace,
       };
     } catch (error) {
-      await this.recordFailure(input, session, assistantMessageId, error);
-      throw error;
+      const normalizedError = normalizeProviderCredentialError(error);
+      await this.recordFailure(input, session, assistantMessageId, normalizedError);
+      throw normalizedError;
     }
   }
 
@@ -321,8 +323,9 @@ export class ChatService {
         retrievalTrace,
       };
     } catch (error) {
-      await this.recordFailure(input, session, assistantMessageId, error);
-      throw error;
+      const normalizedError = normalizeProviderCredentialError(error);
+      await this.recordFailure(input, session, assistantMessageId, normalizedError);
+      throw normalizedError;
     }
   }
 

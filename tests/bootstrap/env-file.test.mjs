@@ -47,3 +47,26 @@ test("writeEnvFileAtomic writes rendered env content", async () => {
   const written = await fs.readFile(filePath, "utf8");
   assert.match(written, /OPENAI_API_KEY=sk-test/);
 });
+
+test("renderEnvFile omits blank optional values", () => {
+  const content = renderEnvFile({
+    PORT: "8080",
+    NODE_ENV: "development",
+    DATABASE_URL: "postgres://example",
+    INTEGRATION_DATABASE_URL: "postgres://example",
+    OPENAI_API_KEY: "sk-test",
+    OPENAI_COMPATIBLE_API_KEY: "",
+    OPENAI_COMPATIBLE_BASE_URL: "",
+    LLM_PROVIDER: "openai",
+    SESSION_COOKIE_NAME: "radioso_session",
+    SESSION_COOKIE_SECRET: "secret",
+    SESSION_TTL_HOURS: "168",
+    CONNECTOR_ENCRYPTION_KEY: "connector",
+    DOCUMENT_UPLOAD_MAX_BYTES: "10485760",
+    PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
+  });
+
+  assert.match(content, /OPENAI_API_KEY=sk-test/);
+  assert.doesNotMatch(content, /OPENAI_COMPATIBLE_API_KEY=/);
+  assert.doesNotMatch(content, /OPENAI_COMPATIBLE_BASE_URL=/);
+});

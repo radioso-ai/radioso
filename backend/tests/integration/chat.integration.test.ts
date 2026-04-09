@@ -65,6 +65,53 @@ describe("chat integration", () => {
     expect(response.body.answer).toContain("could not find relevant information");
   });
 
+  it("returns an actionable provider setup error when the model provider rejects credentials", async () => {
+    const failingGateway: ChatGateway = {
+      async answer() {
+        throw {
+          status: 401,
+          code: "invalid_api_key",
+          error: {
+            message: "Incorrect API key provided.",
+            code: "invalid_api_key",
+          },
+        };
+      },
+      async *streamAnswer() {
+        throw {
+          status: 401,
+          code: "invalid_api_key",
+          error: {
+            message: "Incorrect API key provided.",
+            code: "invalid_api_key",
+          },
+        };
+      },
+    };
+    const { app } = createTestApp({ chatGateway: failingGateway });
+
+    const { token } = await issueTestToken(app, "provider-error@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does the page explain?", stream: false });
+
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "service_unavailable",
+        message: "The configured AI provider rejected the credentials. Update backend/.env and restart Radioso.",
+      },
+    });
+  });
+
   it("replaces unsupported substantive content in mixed-support answers before delivery", async () => {
     const mixedGateway: ChatGateway = {
       async answer() {

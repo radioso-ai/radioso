@@ -127,6 +127,9 @@ function DocumentCard({
           {isImported && document.sourceFilename ? (
             <p className="mt-1 text-xs text-muted-foreground">Imported from {document.sourceFilename}</p>
           ) : null}
+          {isFailed && document.failureReason ? (
+            <p className="mt-1 text-xs text-destructive">{document.failureReason}</p>
+          ) : null}
           <MetadataBadges metadata={document.metadata} />
         </div>
       </button>

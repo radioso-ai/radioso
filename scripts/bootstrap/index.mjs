@@ -7,9 +7,9 @@ import {
   startComposeStack,
 } from "./compose-runner.mjs";
 import { buildEnvValues, renderEnvFile, writeEnvFileAtomic } from "./env-file.mjs";
-import { collectAnswers, DEMO_MODE_API_KEY, planQuestions } from "./prompt-flow.mjs";
+import { collectAnswers, planQuestions } from "./prompt-flow.mjs";
 import { detectEnvState, runPreflightChecks } from "./preflight.mjs";
-import { getEnvContract } from "./support/env-contract.mjs";
+import { getEnvContract, getProviderRequiredKeys } from "./support/env-contract.mjs";
 import { detectAnsiSupport } from "./support/ansi-capabilities.mjs";
 import { formatMessage, renderHeader } from "./terminal-theme.mjs";
 
@@ -45,6 +45,33 @@ const printPreflightResults = (results, ansi) => {
   }
 };
 
+const validateProviderConfig = (values, contract = getEnvContract()) => {
+  const provider = values.LLM_PROVIDER || contract.defaults.LLM_PROVIDER || "openai";
+  const missingKeys = getProviderRequiredKeys(provider).filter((key) => {
+    const value = values[key];
+    return value === undefined || value === null || value === "";
+  });
+
+  if (missingKeys.length > 0) {
+    throw new Error(`Missing required provider configuration: ${missingKeys.join(", ")}`);
+  }
+};
+
+const printConfigurationSummary = (values, ansi) => {
+  process.stdout.write(`${formatMessage("helper", "\nConfiguration summary:\n", ansi)}`);
+  process.stdout.write(`${formatMessage("helper", `- AI provider: ${values.LLM_PROVIDER}\n`, ansi)}`);
+  process.stdout.write(
+    `${formatMessage(
+      "helper",
+      `- External document storage: ${values.DOCUMENT_STORAGE_BUCKET ? "enabled" : "disabled"}\n`,
+      ansi,
+    )}`,
+  );
+  process.stdout.write(
+    `${formatMessage("helper", "- Document processing and chat will use the configured provider credentials.\n", ansi)}`,
+  );
+};
+
 const renderPostStartGuide = (report, ansi) => {
   const [frontendUrl = "http://127.0.0.1:3000", backendUrl = "http://127.0.0.1:8080"] = report.applicationUrls;
 
@@ -56,15 +83,6 @@ const summarizeStartup = (report, ansi, options = {}) => {
   if (report.ok) {
     process.stdout.write(`${formatMessage("success", "\nRadioso is ready.\n", ansi)}`);
     renderPostStartGuide(report, ansi);
-    if (options.demoModeEnabled) {
-      process.stdout.write(
-        `${formatMessage(
-          "warning",
-          "- Limited demo mode: the UI can be explored, but chat answers require a real provider key. Re-run with --reconfigure when ready.\n",
-          ansi,
-        )}`,
-      );
-    }
     return null;
   }
 
@@ -110,6 +128,9 @@ export const main = async (argv = process.argv.slice(2)) => {
     process.stdout.write(`${formatMessage("helper", "Using existing backend/.env\n", ansi)}`);
   }
 
+  validateProviderConfig(values, contract);
+  printConfigurationSummary(values, ansi);
+
   process.stdout.write(`\n${formatMessage("helper", attach ? "Starting Docker services in attached mode...\n" : "Starting Docker services...\n", ansi)}`);
   if (attach) {
     const result = await attachComposeStack();
@@ -121,9 +142,7 @@ export const main = async (argv = process.argv.slice(2)) => {
   }
 
   const report = await startComposeStack();
-  const result = summarizeStartup(report, ansi, {
-    demoModeEnabled: values.OPENAI_API_KEY === DEMO_MODE_API_KEY,
-  });
+  const result = summarizeStartup(report, ansi);
   if (typeof result === "number") {
     return result;
   }

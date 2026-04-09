@@ -136,6 +136,7 @@ export interface DocumentSummary {
   title: string;
   status: string;
   ragStatus: "processed" | "pending";
+  failureReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
   metadata: Record<string, unknown>;
@@ -160,6 +161,7 @@ export interface DocumentSummaryRecord extends DocumentSourceRecord {
   workspaceId: string;
   title: string;
   status: string;
+  failureReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
   metadata: Record<string, unknown>;
@@ -364,6 +366,7 @@ export class DocumentIngestionService {
       title: document.title,
       status: document.status,
       ragStatus: document.status === "ready" ? "processed" : "pending",
+      failureReason: document.failureReason ?? null,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
       metadata: document.metadata,

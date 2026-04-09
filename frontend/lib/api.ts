@@ -291,6 +291,7 @@ export interface DocumentSummary {
   title: string
   status: string
   ragStatus: 'processed' | 'pending'
+  failureReason?: string | null
   createdAt: string
   updatedAt: string
   metadata: Record<string, string | number | boolean | null>

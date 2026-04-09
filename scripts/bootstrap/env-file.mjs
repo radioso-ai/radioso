@@ -67,7 +67,11 @@ export const renderEnvFile = (values, contract = getEnvContract()) => {
     if (!(key in values)) {
       continue;
     }
-    lines.push(`${key}=${values[key] ?? ""}`);
+    const value = values[key];
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+    lines.push(`${key}=${value}`);
   }
   return `${lines.join("\n")}\n`;
 };

@@ -264,6 +264,7 @@ const DocumentSummarySchema = registry.register(
     title: z.string(),
     status: DocumentStatusSchema,
     ragStatus: RagStatusSchema,
+    failureReason: z.string().nullable().optional(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),

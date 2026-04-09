@@ -475,6 +475,48 @@ describe("document ingestion", () => {
     expect([...jobRepository.items.values()].at(-1)?.status).toBe("failed");
   });
 
+  it("stores an actionable provider credential failure reason after exhausting retries", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+    const processingWorker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      {
+        async process() {
+          throw {
+            status: 401,
+            code: "invalid_api_key",
+            error: {
+              message: "Incorrect API key provided.",
+              code: "invalid_api_key",
+            },
+          };
+        },
+      } as any,
+      auditService,
+      createLogger("silent"),
+    );
+
+    await ingestionService.ingest({
+      workspaceId: "workspace-1",
+      title: "Provider failure",
+      content: "Broken content",
+    });
+
+    expect(await processingWorker.runOnce()).toBe(true);
+    expect(await processingWorker.runOnce(new Date(Date.now() + 2_000))).toBe(true);
+    expect(await processingWorker.runOnce(new Date(Date.now() + 6_000))).toBe(true);
+
+    const [document] = await documentRepository.listByWorkspaceId("workspace-1");
+    expect(document.status).toBe("failed");
+    expect(document.failureReason).toBe(
+      "The configured AI provider rejected the credentials. Update backend/.env and restart Radioso.",
+    );
+  });
+
   it("reprocesses imported documents from the stored original file", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

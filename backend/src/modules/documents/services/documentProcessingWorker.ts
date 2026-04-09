@@ -7,6 +7,7 @@ import type {
   DocumentProcessingJobRepositoryPort,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { DocumentProcessingService } from "./documentProcessingService.js";
+import { getProviderFailureReason } from "../../../shared/infra/llm/providerErrors.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const MAX_ATTEMPTS = 3;
@@ -115,7 +116,7 @@ export class DocumentProcessingWorker {
   }
 
   private async handleFailure(job: DocumentProcessingJobRecord, error: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : "Unknown document processing error";
+    const message = getProviderFailureReason(error);
     const hasRetriesRemaining = job.attemptCount < MAX_ATTEMPTS;
 
     if (hasRetriesRemaining) {

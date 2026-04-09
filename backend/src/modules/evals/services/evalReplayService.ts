@@ -39,14 +39,13 @@ export class EvalReplayService {
     query: string;
     conversationContext?: EvalCaseConversationMessage[];
   }): Promise<EvalReplayDiagnostics> {
+    const startedAt = Date.now();
     const history = this.toMessageHistory(input.workspaceId, input.conversationContext ?? []);
     const retrieval = await this.retrievalPipeline.run({
       workspaceId: input.workspaceId,
       query: input.query,
       history,
     });
-
-    const startedAt = Date.now();
     const answerSupportPolicy = retrieval.responseSettings?.answerSupportPolicy ?? DEFAULT_ANSWER_SUPPORT_POLICY;
 
     const rawAnswer =

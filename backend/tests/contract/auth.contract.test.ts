@@ -16,6 +16,10 @@ describe("auth contract", () => {
     expect(response.body.userId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
+    expect(response.body.accountId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    expect(response.body.organizationName).toBe("Alice Organization");
     expect(response.body.workspaceId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
@@ -39,6 +43,8 @@ describe("auth contract", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.userId).toBeDefined();
+    expect(response.body.accountId).toBe(registration.body.accountId);
+    expect(response.body.organizationName).toBe("Bob Organization");
     expect(response.body.workspaceId).toBe(registration.body.workspaceId);
     expect(response.body.workspaceName).toBe("Default");
     expect(response.body.token).toBeUndefined();
@@ -87,6 +93,7 @@ describe("auth contract", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(response.body.organizationName).toBe("Preferred Organization");
     expect(response.body.workspaceId).toBe(created.body.id);
     expect(response.body.workspaceName).toBe("Research");
     expect(response.body.token).toBeUndefined();
@@ -160,6 +167,44 @@ describe("auth contract", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
+  });
+
+  it("creates and accepts account invitations", async () => {
+    const { app } = createTestApp();
+
+    const owner = await request(app).post("/api/v1/auth/register").send({
+      email: "owner-invite@example.com",
+      password: "verysecurepassword",
+    });
+    const ownerCookie = owner.headers["set-cookie"]?.[0];
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", ownerCookie)
+      .send({ email: "invitee@example.com" });
+
+    expect(invitation.status).toBe(201);
+    expect(invitation.body.acceptanceUrl).toMatch(/^\/invite\/[a-f0-9]+$/);
+
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+    const invitationLookup = await request(app)
+      .get(`/api/v1/auth/invitations/${invitationToken}`);
+
+    expect(invitationLookup.status).toBe(200);
+    expect(invitationLookup.body.email).toBe("invitee@example.com");
+    expect(invitationLookup.body.status).toBe("pending");
+
+    const accepted = await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+      .send({
+        email: "invitee@example.com",
+        password: "verysecurepassword",
+      });
+
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.accountId).toBe(owner.body.accountId);
+    expect(accepted.body.organizationName).toBe(owner.body.organizationName);
+    expect(accepted.body.userId).not.toBe(owner.body.userId);
   });
 
   it("rate limits repeated workspace token reveal requests", async () => {

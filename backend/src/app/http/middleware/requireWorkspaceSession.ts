@@ -13,10 +13,12 @@ export const requireWorkspaceSession = (dependencies: AppDependencies): RequestH
       if (sessionToken) {
         try {
           const session = await dependencies.authService.authenticateSession(sessionToken);
+          await dependencies.accountAccessService.requireActiveMembership(session.accountId, session.userId);
           const resolved = await dependencies.workspaceSessionService.resolve({
             accountId: session.accountId,
             workspaceId: req.header(WORKSPACE_HEADER),
           });
+          res.locals.userId = session.userId;
           res.locals.accountId = resolved.accountId;
           res.locals.workspaceId = resolved.workspaceId;
           res.locals.sessionId = session.sessionId;

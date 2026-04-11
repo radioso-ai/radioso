@@ -14,6 +14,8 @@ export const requireSession = (dependencies: AppDependencies): RequestHandler =>
       }
 
       const session = await dependencies.authService.authenticateSession(sessionToken);
+      await dependencies.accountAccessService.requireActiveMembership(session.accountId, session.userId);
+      res.locals.userId = session.userId;
       res.locals.accountId = session.accountId;
       res.locals.sessionId = session.sessionId;
       next();

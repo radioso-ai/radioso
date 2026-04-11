@@ -1,7 +1,10 @@
 import { getEnv, type Env } from "../config/env.js";
 import { ChatService } from "../../modules/chat/services/chatService.js";
 import { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
+import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
+import { AccountInvitationRepository } from "../../db/repositories/accountInvitationRepository.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
+import { UserRepository } from "../../db/repositories/userRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
@@ -14,6 +17,8 @@ import { IngestionSettingsRepository } from "../../db/repositories/ingestionSett
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
+import { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
+import { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import { AuditService } from "../../modules/audit/services/auditService.js";
 import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
@@ -70,6 +75,15 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   });
   const auditEventRepository = new AuditEventRepository(database);
   const auditService = new AuditService(logger, auditEventRepository);
+  const accountMembershipRepository = new AccountMembershipRepository(database);
+  const userRepository = new UserRepository(database);
+  const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
+  const accountInvitationService = new AccountInvitationService(
+    new AccountInvitationRepository(database),
+    userRepository,
+    accountAccessService,
+    auditService,
+  );
   const llmRegistry = new LlmProviderRegistry(resolveLlmConfig(env), logger);
   logger.info({ llmProviders: llmRegistry.describe() }, "Resolved LLM providers");
   const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database), auditService);
@@ -196,9 +210,12 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const authService = new AuthService({
     env,
     accountRepository: new AccountRepository(database),
+    userRepository,
     sessionRepository: new SessionRepository(database),
     workspaceTokenRepository: new WorkspaceTokenRepository(database),
     workspaceService,
+    accountAccessService,
+    accountInvitationService,
     auditService,
   });
 
@@ -206,6 +223,8 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     env,
     logger,
     authService,
+    accountAccessService,
+    accountInvitationService,
     workspaceSessionService,
     abuseControlService,
     auditService,

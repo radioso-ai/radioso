@@ -1,13 +1,17 @@
 import type { Env } from "../../../app/config/env.js";
 import { conflict, unauthorized } from "../../../shared/domain/errors.js";
+import type { AccountAccessService } from "../../account/services/accountAccessService.js";
+import type { AccountInvitationService } from "../../account/services/accountInvitationService.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { WorkspaceService } from "../../workspace/services/workspaceService.js";
+import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
 import {
   decryptSecret,
   encryptSecret,
   generateApiToken,
   generateSessionToken,
   hashPassword,
+  deriveOrganizationName,
   normalizeEmail,
   serializeSessionCookie,
   sha256,
@@ -17,6 +21,7 @@ import {
 
 export interface AccountRecord {
   id: string;
+  name: string;
   email: string;
   passwordHash: string;
   createdAt: Date;
@@ -25,6 +30,7 @@ export interface AccountRecord {
 
 export interface SessionRecord {
   id: string;
+  userId: string;
   accountId: string;
   sessionTokenHash: string;
   createdAt: Date;
@@ -45,13 +51,13 @@ export interface WorkspaceTokenRecord {
 }
 
 export interface AccountRepositoryPort {
-  create(params: { email: string; passwordHash: string }): Promise<AccountRecord>;
+  create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord>;
   findByEmail(email: string): Promise<AccountRecord | null>;
   findById(id: string): Promise<AccountRecord | null>;
 }
 
 export interface SessionRepositoryPort {
-  create(params: { accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord>;
+  create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord>;
   findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<SessionRecord | null>;
   touch(sessionId: string, lastSeenAt: Date): Promise<void>;
 }
@@ -72,23 +78,52 @@ export interface WorkspaceTokenRepositoryPort {
 interface AuthServiceDependencies {
   env: Env;
   accountRepository: AccountRepositoryPort;
+  userRepository: UserRepositoryPort;
   sessionRepository: SessionRepositoryPort;
   workspaceTokenRepository: WorkspaceTokenRepositoryPort;
   workspaceService: WorkspaceService;
+  accountAccessService: AccountAccessService;
+  accountInvitationService: AccountInvitationService;
   auditService: AuditService;
 }
 
 export class AuthService {
   constructor(private readonly dependencies: AuthServiceDependencies) {}
 
-  async register(input: { email: string; password: string }): Promise<{
+  async listAccessibleAccounts(userId: string): Promise<Array<{
+    accountId: string;
+    organizationName: string;
+    role: "owner" | "member";
+    workspaceId: string;
+    workspaceName: string;
+  }>> {
+    const memberships = await this.dependencies.accountAccessService.listUserMemberships(userId);
+
+    return Promise.all(
+      memberships.map(async (membership) => {
+        const account = await this.dependencies.accountRepository.findById(membership.accountId);
+        const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(membership.accountId);
+        return {
+          accountId: membership.accountId,
+          organizationName: account?.name ?? deriveOrganizationName(account?.email ?? "organization@example.com"),
+          role: membership.role,
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+        };
+      }),
+    );
+  }
+
+  async register(input: { email: string; password: string; organizationName?: string | null }): Promise<{
     userId: string;
+    accountId: string;
+    organizationName: string;
     workspaceId: string;
     workspaceName: string;
     sessionCookie: string;
   }> {
     const email = normalizeEmail(input.email);
-    const existing = await this.dependencies.accountRepository.findByEmail(email);
+    const existing = await this.dependencies.userRepository.findByEmail(email);
 
     if (existing) {
       await this.dependencies.auditService.record({
@@ -100,9 +135,16 @@ export class AuthService {
     }
 
     const passwordHash = await hashPassword(input.password);
-    const account = await this.dependencies.accountRepository.create({ email, passwordHash });
+    const organizationName = input.organizationName?.trim() || deriveOrganizationName(email);
+    const account = await this.dependencies.accountRepository.create({ name: organizationName, email, passwordHash });
+    const user = await this.dependencies.userRepository.create({ id: account.id, email, passwordHash });
+    await this.dependencies.accountAccessService.ensureMembership({
+      accountId: account.id,
+      userId: user.id,
+      role: "owner",
+    });
     const workspace = await this.dependencies.workspaceService.createDefault(account.id);
-    const sessionCookie = await this.createSessionCookie(account.id);
+    const sessionCookie = await this.createSessionCookie(user.id, account.id);
 
     await this.dependencies.auditService.record({
       accountId: account.id,
@@ -112,23 +154,32 @@ export class AuthService {
     });
 
     return {
-      userId: account.id,
+      userId: user.id,
+      accountId: account.id,
+      organizationName: account.name,
       workspaceId: workspace.id,
       workspaceName: workspace.name,
       sessionCookie,
     };
   }
 
-  async login(input: { email: string; password: string; preferredWorkspaceId?: string | null }): Promise<{
+  async login(input: {
+    email: string;
+    password: string;
+    preferredWorkspaceId?: string | null;
+    preferredAccountId?: string | null;
+  }): Promise<{
     userId: string;
+    accountId: string;
+    organizationName: string;
     workspaceId: string;
     workspaceName: string;
     sessionCookie: string;
   }> {
     const email = normalizeEmail(input.email);
-    const account = await this.dependencies.accountRepository.findByEmail(email);
+    const user = await this.dependencies.userRepository.findByEmail(email);
 
-    if (!account || !(await verifyPassword(input.password, account.passwordHash))) {
+    if (!user || !(await verifyPassword(input.password, user.passwordHash))) {
       await this.dependencies.auditService.record({
         eventType: "auth.login",
         eventStatus: "failure",
@@ -137,27 +188,144 @@ export class AuthService {
       throw unauthorized("Invalid email or password");
     }
 
+    const membership = await this.dependencies.accountAccessService.resolveLoginAccount(user.id, input.preferredAccountId);
     const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(
-      account.id,
+      membership.accountId,
       input.preferredWorkspaceId,
     );
-    const sessionCookie = await this.createSessionCookie(account.id);
+    const sessionCookie = await this.createSessionCookie(user.id, membership.accountId);
     await this.dependencies.auditService.record({
-      accountId: account.id,
+      accountId: membership.accountId,
       eventType: "auth.login",
       eventStatus: "success",
       metadata: { email },
     });
 
     return {
-      userId: account.id,
+      userId: user.id,
+      accountId: membership.accountId,
+      organizationName: (await this.dependencies.accountRepository.findById(membership.accountId))?.name
+        ?? deriveOrganizationName(email),
       workspaceId: workspace.id,
       workspaceName: workspace.name,
       sessionCookie,
     };
   }
 
-  async authenticateSession(sessionToken: string): Promise<{ accountId: string; sessionId: string }> {
+  async getInvitation(input: { invitationToken: string }): Promise<{
+    accountId: string;
+    email: string;
+    status: "pending" | "accepted" | "revoked" | "expired";
+    expiresAt: string;
+  }> {
+    return this.dependencies.accountInvitationService.getInvitation(input.invitationToken);
+  }
+
+  async acceptInvitation(input: {
+    invitationToken: string;
+    email: string;
+    password: string;
+  }): Promise<{
+    userId: string;
+    accountId: string;
+    organizationName: string;
+    workspaceId: string;
+    workspaceName: string;
+    sessionCookie: string;
+  }> {
+    const email = normalizeEmail(input.email);
+    const invitation = await this.dependencies.accountInvitationService.getInvitation(input.invitationToken);
+    if (invitation.email !== email) {
+      await this.dependencies.auditService.record({
+        accountId: invitation.accountId,
+        eventType: "account.invitation.accept",
+        eventStatus: "failure",
+        metadata: { email, reason: "email_mismatch" },
+      });
+      throw unauthorized("Invitation email does not match");
+    }
+
+    const existingUser = await this.dependencies.userRepository.findByEmail(email);
+    const user = existingUser
+      ? existingUser
+      : await this.dependencies.userRepository.create({
+          email,
+          passwordHash: await hashPassword(input.password),
+        });
+
+    if (existingUser) {
+      const passwordValid = await verifyPassword(input.password, existingUser.passwordHash);
+      if (!passwordValid) {
+        await this.dependencies.auditService.record({
+          accountId: invitation.accountId,
+          eventType: "account.invitation.accept",
+          eventStatus: "failure",
+          metadata: { email, reason: "invalid_password" },
+        });
+        throw unauthorized("Invalid email or password");
+      }
+    }
+
+    const { accountId } = await this.dependencies.accountInvitationService.acceptInvitation(
+      input.invitationToken,
+      user.id,
+    );
+    const account = await this.dependencies.accountRepository.findById(accountId);
+    const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(accountId);
+    const sessionCookie = await this.createSessionCookie(user.id, accountId);
+
+    return {
+      userId: user.id,
+      accountId,
+      organizationName: account?.name ?? deriveOrganizationName(email),
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      sessionCookie,
+    };
+  }
+
+  async switchAccount(input: {
+    userId: string;
+    targetAccountId: string;
+    preferredWorkspaceId?: string | null;
+  }): Promise<{
+    userId: string;
+    accountId: string;
+    organizationName: string;
+    workspaceId: string;
+    workspaceName: string;
+    sessionCookie: string;
+  }> {
+    const membership = await this.dependencies.accountAccessService.requireActiveMembership(
+      input.targetAccountId,
+      input.userId,
+    );
+    const account = await this.dependencies.accountRepository.findById(membership.accountId);
+    const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(
+      membership.accountId,
+      input.preferredWorkspaceId,
+    );
+    const sessionCookie = await this.createSessionCookie(input.userId, membership.accountId);
+
+    await this.dependencies.auditService.record({
+      accountId: membership.accountId,
+      workspaceId: workspace.id,
+      eventType: "auth.account.switch",
+      eventStatus: "success",
+      metadata: { userId: input.userId },
+    });
+
+    return {
+      userId: input.userId,
+      accountId: membership.accountId,
+      organizationName: account?.name ?? deriveOrganizationName(account?.email ?? "organization@example.com"),
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      sessionCookie,
+    };
+  }
+
+  async authenticateSession(sessionToken: string): Promise<{ userId: string; accountId: string; sessionId: string }> {
     const tokenHash = sha256(sessionToken);
     const session = await this.dependencies.sessionRepository.findActiveByTokenHash(tokenHash, new Date());
 
@@ -166,7 +334,7 @@ export class AuthService {
     }
 
     await this.dependencies.sessionRepository.touch(session.id, new Date());
-    return { accountId: session.accountId, sessionId: session.id };
+    return { userId: session.userId, accountId: session.accountId, sessionId: session.id };
   }
 
   async getTokenForWorkspace(workspaceId: string, accountId: string): Promise<{ token: string }> {
@@ -231,11 +399,12 @@ export class AuthService {
     return { token };
   }
 
-  private async createSessionCookie(accountId: string): Promise<string> {
+  private async createSessionCookie(userId: string, accountId: string): Promise<string> {
     const sessionToken = generateSessionToken();
     const expiresAt = new Date(Date.now() + this.dependencies.env.SESSION_TTL_HOURS * 60 * 60 * 1000);
 
     await this.dependencies.sessionRepository.create({
+      userId,
       accountId,
       sessionTokenHash: sha256(sessionToken),
       expiresAt,

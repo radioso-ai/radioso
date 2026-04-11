@@ -30,6 +30,7 @@ const getErrorMessage = (error: unknown) => {
 
 export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
   const { login } = useAuth()
+  const [organizationName, setOrganizationName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -53,9 +54,13 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
     setIsLoading(true)
 
     try {
-      const response = await authApi.register({ email, password })
+      const response = await authApi.register({
+        email,
+        password,
+        organizationName: organizationName.trim() || undefined,
+      })
       seedWorkspaceSession(response.workspaceId)
-      await login(email, response.userId)
+      await login(email, response.userId, response.accountId)
     } catch (error) {
       setError(getErrorMessage(error))
     } finally {
@@ -65,6 +70,18 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="organizationName">Organization Name</Label>
+        <Input
+          id="organizationName"
+          type="text"
+          placeholder="Acme"
+          value={organizationName}
+          onChange={(e) => setOrganizationName(e.target.value)}
+          maxLength={80}
+          disabled={isLoading}
+        />
+      </div>
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -106,7 +123,7 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       )}
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? <Spinner className="mr-2" /> : null}
-        Create Account
+        Create Organization
       </Button>
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{' '}

@@ -2,11 +2,16 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { createTestApp } from "../support/testApp.js";
+import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
+import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import {
   createAuditService,
   InMemoryAccountRepository,
+  InMemoryAccountInvitationRepository,
+  InMemoryAccountMembershipRepository,
+  InMemoryUserRepository,
   InMemoryWorkspaceRepository,
   InMemoryWorkspaceTokenRepository,
   InMemorySessionRepository,
@@ -57,6 +62,8 @@ describe("auth integration", () => {
     });
 
     expect(response.status).toBe(201);
+    expect(response.body.accountId).toBeDefined();
+    expect(response.body.organizationName).toBe("Bootstrap Organization");
     expect(response.body.workspaceName).toBe("Default");
     expect(response.body.workspaceId).toBeDefined();
     expect(response.body.token).toBeUndefined();
@@ -109,6 +116,16 @@ describe("auth integration", () => {
     const env = createTestEnv();
     const auditService = createAuditService();
     const accountRepository = new InMemoryAccountRepository();
+    const userRepository = new InMemoryUserRepository();
+    const accountMembershipRepository = new InMemoryAccountMembershipRepository();
+    accountMembershipRepository.setUserRepository(userRepository);
+    const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
+    const accountInvitationService = new AccountInvitationService(
+      new InMemoryAccountInvitationRepository(),
+      userRepository,
+      accountAccessService,
+      auditService,
+    );
     const sessionRepository = new InMemorySessionRepository();
     const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
     const workspaceRepository = new InMemoryWorkspaceRepository();
@@ -117,14 +134,28 @@ describe("auth integration", () => {
       env,
       auditService,
       accountRepository,
+      userRepository,
       sessionRepository,
       workspaceTokenRepository,
       workspaceService,
+      accountAccessService,
+      accountInvitationService,
     });
 
     const account = await accountRepository.create({
+      name: "Rotate Organization",
       email: "rotate@example.com",
       passwordHash: "hash",
+    });
+    await userRepository.create({
+      id: account.id,
+      email: account.email,
+      passwordHash: account.passwordHash,
+    });
+    await accountAccessService.ensureMembership({
+      accountId: account.id,
+      userId: account.id,
+      role: "owner",
     });
     const workspace = await workspaceService.createDefault(account.id);
 
@@ -159,6 +190,7 @@ describe("auth integration", () => {
     const workspaceService = new WorkspaceService(workspaceRepository, auditService);
     const accountRepository = new InMemoryAccountRepository();
     const account = await accountRepository.create({
+      name: "Default Workspace Organization",
       email: "default-workspace@example.com",
       passwordHash: "hash",
     });
@@ -193,9 +225,220 @@ describe("auth integration", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(response.body.accountId).toBe(registration.body.accountId);
+    expect(response.body.organizationName).toBe("Multi Workspace Organization");
     expect(response.body.workspaceId).toBe(created.body.id);
     expect(response.body.workspaceName).toBe("Research");
     expect(response.body.token).toBeUndefined();
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
+  });
+
+  it("lets an invited user access the shared account workspaces", async () => {
+    const { app } = createTestApp();
+
+    const owner = await request(app).post("/api/v1/auth/register").send({
+      email: "owner-shared@example.com",
+      password: "verysecurepassword",
+    });
+    const ownerCookie = owner.headers["set-cookie"]?.[0];
+
+    const createdWorkspace = await request(app)
+      .post("/api/v1/workspace")
+      .set("Cookie", ownerCookie)
+      .send({ name: "Shared Workspace" });
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", ownerCookie)
+      .send({ email: "teammate-shared@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const accepted = await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+      .send({
+        email: "teammate-shared@example.com",
+        password: "verysecurepassword",
+      });
+
+    const invitedCookie = accepted.headers["set-cookie"]?.[0];
+    const workspaces = await request(app)
+      .get("/api/v1/workspace")
+      .set("Cookie", invitedCookie);
+
+    expect(workspaces.status).toBe(200);
+    expect(workspaces.body.workspaces.map((workspace: { id: string }) => workspace.id)).toEqual(
+      expect.arrayContaining([owner.body.workspaceId, createdWorkspace.body.id]),
+    );
+  });
+
+  it("lets an account owner remove a member and immediately revoke that account access", async () => {
+    const { app } = createTestApp();
+
+    const owner = await request(app).post("/api/v1/auth/register").send({
+      email: "owner-remove@example.com",
+      password: "verysecurepassword",
+    });
+    const ownerCookie = owner.headers["set-cookie"]?.[0];
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", ownerCookie)
+      .send({ email: "member-remove@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const accepted = await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+      .send({
+        email: "member-remove@example.com",
+        password: "verysecurepassword",
+      });
+    const memberCookie = accepted.headers["set-cookie"]?.[0];
+
+    const beforeRemoval = await request(app)
+      .get("/api/v1/account/users")
+      .set("Cookie", ownerCookie);
+    const memberEntry = beforeRemoval.body.users.find((user: { email: string }) => user.email === "member-remove@example.com");
+
+    const removed = await request(app)
+      .delete(`/api/v1/account/users/${memberEntry.membershipId}`)
+      .set("Cookie", ownerCookie);
+
+    const memberAccess = await request(app)
+      .get("/api/v1/workspace")
+      .set("Cookie", memberCookie);
+
+    expect(removed.status).toBe(204);
+    expect(memberAccess.status).toBe(401);
+  });
+
+  it("logs a multi-account user into the invited account when no preferred account is provided", async () => {
+    const { app } = createTestApp();
+
+    const existingAccount = await request(app).post("/api/v1/auth/register").send({
+      email: "multi-account@example.com",
+      password: "verysecurepassword",
+    });
+
+    const invitingAccount = await request(app).post("/api/v1/auth/register").send({
+      email: "owner-second-account@example.com",
+      password: "verysecurepassword",
+    });
+    const invitingCookie = invitingAccount.headers["set-cookie"]?.[0];
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", invitingCookie)
+      .send({ email: "multi-account@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const accepted = await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+      .send({
+        email: "multi-account@example.com",
+        password: "verysecurepassword",
+      });
+
+    const login = await request(app).post("/api/v1/auth/login").send({
+      email: "multi-account@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(accepted.status).toBe(200);
+    expect(login.status).toBe(200);
+    expect(login.body.accountId).toBe(invitingAccount.body.accountId);
+    expect(login.body.organizationName).toBe(invitingAccount.body.organizationName);
+    expect(login.body.workspaceId).toBe(invitingAccount.body.workspaceId);
+  });
+
+  it("switches the active session to another accessible account", async () => {
+    const { app } = createTestApp();
+
+    const primary = await request(app).post("/api/v1/auth/register").send({
+      email: "switcher@example.com",
+      password: "verysecurepassword",
+    });
+
+    const secondary = await request(app).post("/api/v1/auth/register").send({
+      email: "owner-switch-target@example.com",
+      password: "verysecurepassword",
+    });
+    const secondaryCookie = secondary.headers["set-cookie"]?.[0];
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", secondaryCookie)
+      .send({ email: "switcher@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+      .send({
+        email: "switcher@example.com",
+        password: "verysecurepassword",
+      })
+      .expect(200);
+
+    const switched = await request(app)
+      .post("/api/v1/account/switch")
+      .set("Cookie", primary.headers["set-cookie"]?.[0])
+      .send({
+        accountId: secondary.body.accountId,
+        preferredWorkspaceId: secondary.body.workspaceId,
+      });
+
+    const switchedCookie = switched.headers["set-cookie"]?.[0];
+    const workspaces = await request(app)
+      .get("/api/v1/workspace")
+      .set("Cookie", switchedCookie);
+
+    expect(switched.status).toBe(200);
+    expect(switched.body.accountId).toBe(secondary.body.accountId);
+    expect(switched.body.organizationName).toBe(secondary.body.organizationName);
+    expect(switched.body.workspaceId).toBe(secondary.body.workspaceId);
+    expect(workspaces.status).toBe(200);
+    expect(workspaces.body.workspaces.map((workspace: { id: string }) => workspace.id)).toEqual(
+      expect.arrayContaining([secondary.body.workspaceId]),
+    );
+  });
+
+  it("audits invitation acceptance failures when an existing invited user enters the wrong password", async () => {
+    const { app, dependencies } = createTestApp();
+
+    const owner = await request(app).post("/api/v1/auth/register").send({
+      email: "owner-audit@example.com",
+      password: "verysecurepassword",
+    });
+    const ownerCookie = owner.headers["set-cookie"]?.[0];
+
+    await request(app).post("/api/v1/auth/register").send({
+      email: "existing-invitee@example.com",
+      password: "correct-password",
+    });
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", ownerCookie)
+      .send({ email: "existing-invitee@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const accepted = await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+      .send({
+        email: "existing-invitee@example.com",
+        password: "wrong-password",
+      });
+
+    expect(accepted.status).toBe(401);
+    expect(dependencies.auditService.events).toContainEqual(
+      expect.objectContaining({
+        accountId: owner.body.accountId,
+        eventType: "account.invitation.accept",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          email: "existing-invitee@example.com",
+          reason: "invalid_password",
+        }),
+      }),
+    );
   });
 });

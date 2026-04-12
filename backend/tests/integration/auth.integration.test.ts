@@ -375,6 +375,83 @@ describe("auth integration", () => {
     expect(memberAccess.status).toBe(401);
   });
 
+  it("still lets a removed user list and switch to other accessible accounts from the same session", async () => {
+    const { app } = createTestApp();
+
+    const primaryOwner = await request(app).post("/api/v1/auth/register").send({
+      email: "primary-owner@example.com",
+      password: "verysecurepassword",
+    });
+    const primaryOwnerCookie = primaryOwner.headers["set-cookie"]?.[0];
+
+    const memberInvite = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", primaryOwnerCookie)
+      .send({ email: "multi-account-member@example.com" });
+    const primaryInvitationToken = memberInvite.body.acceptanceUrl.split("/").at(-1);
+
+    const acceptedPrimary = await request(app)
+      .post(`/api/v1/auth/invitations/${primaryInvitationToken}/accept`)
+      .send({
+        email: "multi-account-member@example.com",
+        password: "verysecurepassword",
+      });
+    const memberCookie = acceptedPrimary.headers["set-cookie"]?.[0];
+
+    const secondaryOwner = await request(app).post("/api/v1/auth/register").send({
+      email: "secondary-owner@example.com",
+      password: "verysecurepassword",
+    });
+    const secondaryOwnerCookie = secondaryOwner.headers["set-cookie"]?.[0];
+
+    const secondaryInvite = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", secondaryOwnerCookie)
+      .send({ email: "multi-account-member@example.com" });
+    const secondaryInvitationToken = secondaryInvite.body.acceptanceUrl.split("/").at(-1);
+
+    await request(app)
+      .post(`/api/v1/auth/invitations/${secondaryInvitationToken}/accept`)
+      .send({
+        email: "multi-account-member@example.com",
+        password: "verysecurepassword",
+      })
+      .expect(200);
+
+    const beforeRemoval = await request(app)
+      .get("/api/v1/account/users")
+      .set("Cookie", primaryOwnerCookie);
+    const memberEntry = beforeRemoval.body.users.find((user: { email: string }) => user.email === "multi-account-member@example.com");
+
+    await request(app)
+      .delete(`/api/v1/account/users/${memberEntry.membershipId}`)
+      .set("Cookie", primaryOwnerCookie)
+      .expect(204);
+
+    const accounts = await request(app)
+      .get("/api/v1/account/accounts")
+      .set("Cookie", memberCookie);
+
+    const switched = await request(app)
+      .post("/api/v1/account/switch")
+      .set("Cookie", memberCookie)
+      .send({
+        accountId: secondaryOwner.body.accountId,
+        preferredWorkspaceId: secondaryOwner.body.workspaceId,
+      });
+
+    expect(accounts.status).toBe(200);
+    expect(accounts.body.accounts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          accountId: secondaryOwner.body.accountId,
+        }),
+      ]),
+    );
+    expect(switched.status).toBe(200);
+    expect(switched.body.accountId).toBe(secondaryOwner.body.accountId);
+  });
+
   it("logs a multi-account user into the invited account when no preferred account is provided", async () => {
     const { app } = createTestApp();
 

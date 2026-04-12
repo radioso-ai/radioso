@@ -3,7 +3,12 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { unauthorized } from "../../../shared/domain/errors.js";
 import type { AppDependencies } from "../../server/types.js";
 
-export const requireSession = (dependencies: AppDependencies): RequestHandler => {
+export const requireSession = (
+  dependencies: AppDependencies,
+  options: { requireActiveMembership?: boolean } = {},
+): RequestHandler => {
+  const requireActiveMembership = options.requireActiveMembership ?? true;
+
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const sessionToken = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];
@@ -14,7 +19,9 @@ export const requireSession = (dependencies: AppDependencies): RequestHandler =>
       }
 
       const session = await dependencies.authService.authenticateSession(sessionToken);
-      await dependencies.accountAccessService.requireActiveMembership(session.accountId, session.userId);
+      if (requireActiveMembership) {
+        await dependencies.accountAccessService.requireActiveMembership(session.accountId, session.userId);
+      }
       res.locals.userId = session.userId;
       res.locals.accountId = session.accountId;
       res.locals.sessionId = session.sessionId;

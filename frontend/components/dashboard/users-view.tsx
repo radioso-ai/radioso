@@ -21,7 +21,6 @@ export function UsersView({ accountId: _accountId }: { accountId: string }) {
   const [email, setEmail] = useState('')
   const [inviteLink, setInviteLink] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const pendingInvitations = invitations.filter((invitation) => invitation.status === 'pending')
   const currentUser = users.find((user) => user.userId === currentUserId)
   const canManageUsers = currentUser?.role === 'owner'
 
@@ -175,23 +174,28 @@ export function UsersView({ accountId: _accountId }: { accountId: string }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Pending invitations</CardTitle>
+          <CardTitle>Invitations</CardTitle>
           <CardDescription>
-            {pendingInvitations.length === 0
-              ? 'No pending invitations.'
-              : `${pendingInvitations.length} pending invitation${pendingInvitations.length === 1 ? '' : 's'}`}
+            {invitations.length === 0
+              ? 'No invitations yet.'
+              : `${invitations.length} invitation${invitations.length === 1 ? '' : 's'} across all statuses`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {pendingInvitations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Pending invitations will appear here.</p>
+          {invitations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Invitation activity will appear here.</p>
           ) : (
-            pendingInvitations.map((invitation) => (
+            invitations.map((invitation) => (
               <div key={invitation.id} className="rounded-lg border border-border px-4 py-3">
                 <p className="text-sm font-medium text-foreground">{invitation.email}</p>
                 <p className="text-xs text-muted-foreground">
                   {invitation.status} · expires {new Date(invitation.expiresAt).toLocaleString()}
                 </p>
+                {invitation.acceptedAt ? (
+                  <p className="text-xs text-muted-foreground">
+                    accepted {new Date(invitation.acceptedAt).toLocaleString()}
+                  </p>
+                ) : null}
               </div>
             ))
           )}

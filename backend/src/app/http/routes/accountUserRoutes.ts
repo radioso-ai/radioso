@@ -29,6 +29,7 @@ export const renameAccountSchema = z.object({
 export const createAccountUserRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
   const authenticatedSession = requireSession(dependencies);
+  const authenticatedUserSession = requireSession(dependencies, { requireActiveMembership: false });
 
   router.get("/users", authenticatedSession, async (_req, res, next) => {
     try {
@@ -56,7 +57,7 @@ export const createAccountUserRoutes = (dependencies: AppDependencies): Router =
     }
   });
 
-  router.get("/accounts", authenticatedSession, async (_req, res, next) => {
+  router.get("/accounts", authenticatedUserSession, async (_req, res, next) => {
     try {
       const { userId, accountId } = res.locals as { userId: string; accountId: string };
       const accounts = await dependencies.authService.listAccessibleAccounts(userId);
@@ -69,7 +70,7 @@ export const createAccountUserRoutes = (dependencies: AppDependencies): Router =
     }
   });
 
-  router.post("/accounts", authenticatedSession, validateBody(createAccountSchema), async (req, res, next) => {
+  router.post("/accounts", authenticatedUserSession, validateBody(createAccountSchema), async (req, res, next) => {
     try {
       const { userId } = res.locals as { userId: string };
       const result = await dependencies.authService.createOrganization({
@@ -104,7 +105,7 @@ export const createAccountUserRoutes = (dependencies: AppDependencies): Router =
     }
   });
 
-  router.post("/switch", authenticatedSession, validateBody(accountSwitchSchema), async (req, res, next) => {
+  router.post("/switch", authenticatedUserSession, validateBody(accountSwitchSchema), async (req, res, next) => {
     try {
       const { userId } = res.locals as { userId: string };
       const result = await dependencies.authService.switchAccount({

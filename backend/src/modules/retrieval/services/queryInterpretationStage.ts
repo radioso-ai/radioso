@@ -77,6 +77,29 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       (rewrittenQuery.structuredResult?.turnKind === "fresh_subject" ||
         rewrittenQuery.structuredResult?.turnKind === "explicit_recenter");
     const promptHistory = shouldResetPromptHistory ? [] : input.contextWindow.selectedMessages;
+    const activeRetrievalSubqueries =
+      rewrittenQuery.retrievalEligible && rewrittenQuery.retrievalSubqueries && rewrittenQuery.retrievalSubqueries.length > 1
+        ? rewrittenQuery.retrievalSubqueries.map((subquery) => ({
+            ...subquery,
+            semanticQuery:
+              hardFilterSignalKeys.size > 0
+                ? stripEnabledConstraintLiterals(subquery.semanticQuery, parsedQueryBase, hardFilterSignalKeys)
+                : subquery.semanticQuery,
+            lexicalQuery:
+              hardFilterSignalKeys.size > 0
+                ? stripEnabledConstraintLiterals(subquery.lexicalQuery, parsedQueryBase, hardFilterSignalKeys)
+                : subquery.lexicalQuery,
+            responseLanguagePolicy: subquery.responseLanguagePolicy ?? rewrittenQuery.responseLanguagePolicy,
+          }))
+        : [
+            {
+              id: "primary",
+              label: activeQuery,
+              semanticQuery: activeParsedQuery.semanticQuery || activeQuery,
+              lexicalQuery: activeParsedQuery.lexicalQuery || activeQuery,
+              responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
+            },
+          ];
 
     return {
       ...input,
@@ -86,6 +109,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       activeQuery,
       activeParsedQuery,
       activeSemanticQuery: activeParsedQuery.semanticQuery || activeQuery,
+      activeRetrievalSubqueries,
       promptHistory,
       continuityDecision,
     };

@@ -1,4 +1,10 @@
-import type { RetrievalExecutionDiagnostics, RewriteStatus, RerankStatus } from "../domain/retrievalPipelineTypes.js";
+import type {
+  ResponseLanguagePolicy,
+  RetrievalExecutionDiagnostics,
+  RetrievalSubquery,
+  RewriteStatus,
+  RerankStatus,
+} from "../domain/retrievalPipelineTypes.js";
 
 export class RetrievalExecutionTelemetryService {
   create(input: {
@@ -18,6 +24,8 @@ export class RetrievalExecutionTelemetryService {
     materialDisagreement?: boolean;
     continuityDecision?: import("../domain/retrievalPipelineTypes.js").ContinuityDecision;
     rewriteProposal?: import("../domain/retrievalPipelineTypes.js").StructuredRewriteResult;
+    retrievalSubqueries?: RetrievalSubquery[];
+    responseLanguagePolicy?: ResponseLanguagePolicy;
     rejectionReason?: string;
     fallbackReason?: string;
   }): RetrievalExecutionDiagnostics {

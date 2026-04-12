@@ -76,6 +76,8 @@ components:
         accountId:
           type: string
           format: uuid
+        organizationName:
+          type: string
         workspaceId:
           type: string
           format: uuid
@@ -84,6 +86,7 @@ components:
       required:
         - userId
         - accountId
+        - organizationName
         - workspaceId
         - workspaceName
     LoginResponse:
@@ -95,6 +98,8 @@ components:
         accountId:
           type: string
           format: uuid
+        organizationName:
+          type: string
         workspaceId:
           type: string
           format: uuid
@@ -103,6 +108,7 @@ components:
       required:
         - userId
         - accountId
+        - organizationName
         - workspaceId
         - workspaceName
     Workspace:
@@ -153,6 +159,10 @@ components:
         password:
           type: string
           minLength: 8
+        organizationName:
+          type: string
+          minLength: 1
+          maxLength: 80
       required:
         - email
         - password
@@ -299,6 +309,43 @@ components:
         - currentUserId
         - users
         - invitations
+    AccessibleAccount:
+      type: object
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        organizationName:
+          type: string
+        role:
+          type: string
+          enum:
+            - owner
+            - member
+        workspaceId:
+          type: string
+          format: uuid
+        workspaceName:
+          type: string
+      required:
+        - accountId
+        - organizationName
+        - role
+        - workspaceId
+        - workspaceName
+    AccessibleAccountsResponse:
+      type: object
+      properties:
+        currentAccountId:
+          type: string
+          format: uuid
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccessibleAccount"
+      required:
+        - currentAccountId
+        - accounts
     CreateAccountInvitationResponse:
       allOf:
         - $ref: "#/components/schemas/AccountInvitation"
@@ -701,6 +748,10 @@ components:
           $ref: "#/components/schemas/DocumentStatus"
         ragStatus:
           $ref: "#/components/schemas/RagStatus"
+        failureReason:
+          type:
+            - string
+            - "null"
         createdAt:
           type: string
           format: date-time
@@ -951,6 +1002,28 @@ components:
         - lexical
         - merged
         - final
+    RetrievalSubquery:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        semanticQuery:
+          type: string
+        lexicalQuery:
+          type: string
+        reason:
+          type: string
+        responseLanguagePolicy:
+          type: string
+          enum:
+            - match_user_question
+      required:
+        - id
+        - label
+        - semanticQuery
+        - lexicalQuery
     AppliedConstraint:
       type: object
       properties:
@@ -999,6 +1072,14 @@ components:
       properties:
         parsedQuery:
           $ref: "#/components/schemas/ParsedQuery"
+        retrievalSubqueries:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievalSubquery"
+        responseLanguagePolicy:
+          type: string
+          enum:
+            - match_user_question
         candidateCounts:
           $ref: "#/components/schemas/CandidateCounts"
         appliedConstraints:
@@ -2324,6 +2405,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/accounts:
+    get:
+      tags:
+        - Account
+      summary: List accessible accounts for the current user
+      operationId: listAccessibleAccounts
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Accessible accounts returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessibleAccountsResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/account/invitations:
     post:
       tags:
@@ -2353,6 +2455,84 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Invitation already pending or user already has access
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/switch:
+    post:
+      tags:
+        - Account
+      summary: Switch the current session to another accessible account
+      operationId: switchAccount
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accountId:
+                  type: string
+                  format: uuid
+                preferredWorkspaceId:
+                  type: string
+                  format: uuid
+              required:
+                - accountId
+      responses:
+        "200":
+          description: Account switched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/users/{membershipId}:
+    delete:
+      tags:
+        - Account
+      summary: Remove account user access
+      operationId: removeAccountUser
+      security:
+        - sessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: membershipId
+          in: path
+      responses:
+        "204":
+          description: Account user removed
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Owner access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Membership not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Membership cannot be removed
           content:
             application/json:
               schema:

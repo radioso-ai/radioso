@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { FinalPromptContext } from "../domain/retrievalPipelineTypes.js";
+import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { renderStructuredAttributeSummary } from "../domain/structuredAttributes.js";
 
 export interface PromptBuildResult {
@@ -14,6 +14,7 @@ export class PromptBuilder {
     contexts: FinalPromptContext[];
     settings: {
       customInstruction?: string;
+      responseLanguagePolicy?: ResponseLanguagePolicy;
     };
   }): PromptBuildResult {
     const historySection = input.history
@@ -42,6 +43,7 @@ export class PromptBuilder {
       prompt: [
         "You are a retrieval-grounded assistant.",
         ...(customInstructionBlock ? [customInstructionBlock] : []),
+        this.renderResponseLanguageInstruction(input.settings.responseLanguagePolicy ?? "match_user_question"),
         "Answer only from the retrieved context when relevant.",
         "Every substantive grounded claim you keep in the answer must be followed immediately by its matching [[n]] citation anchor.",
         "Do not group multiple substantive claims under one citation anchor.",
@@ -74,5 +76,13 @@ export class PromptBuilder {
     const sanitized = customInstruction.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
     if (!sanitized.trim()) return null;
     return `Workspace-specific instructions:\n${sanitized}`;
+  }
+
+  private renderResponseLanguageInstruction(responseLanguagePolicy: ResponseLanguagePolicy): string {
+    switch (responseLanguagePolicy) {
+      case "match_user_question":
+      default:
+        return "Respond in the same language as the current user question. Do not switch to the language of the retrieved context or sources.";
+    }
   }
 }

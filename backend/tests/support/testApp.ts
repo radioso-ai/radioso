@@ -5,6 +5,8 @@ import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
 import { randomUUID } from "node:crypto";
 
+import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
+import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import {
@@ -53,6 +55,9 @@ import {
   createAuditService,
   InMemoryAuditEventRepository,
   InMemoryAccountRepository,
+  InMemoryAccountInvitationRepository,
+  InMemoryAccountMembershipRepository,
+  InMemoryUserRepository,
   InMemoryWorkspaceTokenRepository,
   InMemoryChunkRepository,
   InMemoryConversationRepository,
@@ -124,6 +129,16 @@ export const createTestDependencies = (overrides: {
   const auditEventRepository = new InMemoryAuditEventRepository();
   const auditService = createAuditService(auditEventRepository);
   const accountRepository = new InMemoryAccountRepository();
+  const userRepository = new InMemoryUserRepository();
+  const accountMembershipRepository = new InMemoryAccountMembershipRepository();
+  accountMembershipRepository.setUserRepository(userRepository);
+  const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
+  const accountInvitationService = new AccountInvitationService(
+    new InMemoryAccountInvitationRepository(),
+    userRepository,
+    accountAccessService,
+    auditService,
+  );
   const sessionRepository = new InMemorySessionRepository();
   const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
   const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
@@ -434,15 +449,20 @@ export const createTestDependencies = (overrides: {
     env,
     logger: createLogger("silent"),
     auditService,
+    accountAccessService,
+    accountInvitationService,
     workspaceSessionService,
     abuseControlService,
     authService: new AuthService({
       env,
       auditService,
       accountRepository,
+      userRepository,
       sessionRepository,
       workspaceTokenRepository,
       workspaceService,
+      accountAccessService,
+      accountInvitationService,
     }),
     workspaceService,
     ingestionSettingsService,
@@ -534,7 +554,7 @@ export const issueTestToken = async (
     throw new Error("Test app dependencies were not registered for token issuance");
   }
 
-  const tokenResponse = await dependencies.authService.getTokenForWorkspace(workspaceId, register.body.userId as string);
+  const tokenResponse = await dependencies.authService.getTokenForWorkspace(workspaceId, register.body.accountId as string);
 
   return { token: tokenResponse.token, cookie, workspaceId };
 };

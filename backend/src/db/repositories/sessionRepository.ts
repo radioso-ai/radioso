@@ -5,6 +5,7 @@ import type { SessionRecord, SessionRepositoryPort } from "../../modules/auth/se
 
 interface SessionRow {
   id: string;
+  user_id: string;
   account_id: string;
   session_token_hash: string;
   created_at: Date;
@@ -15,6 +16,7 @@ interface SessionRow {
 
 const mapSession = (row: SessionRow): SessionRecord => ({
   id: row.id,
+  userId: row.user_id,
   accountId: row.account_id,
   sessionTokenHash: row.session_token_hash,
   createdAt: new Date(row.created_at),
@@ -26,12 +28,12 @@ const mapSession = (row: SessionRow): SessionRecord => ({
 export class SessionRepository implements SessionRepositoryPort {
   constructor(private readonly database: Database) {}
 
-  async create(params: { accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord> {
+  async create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord> {
     const [row] = await this.database.query<SessionRow>(
-      `INSERT INTO sessions (id, account_id, session_token_hash, expires_at)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, account_id, session_token_hash, created_at, expires_at, last_seen_at, revoked_at`,
-      [randomUUID(), params.accountId, params.sessionTokenHash, params.expiresAt],
+      `INSERT INTO sessions (id, user_id, account_id, session_token_hash, expires_at)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, user_id, account_id, session_token_hash, created_at, expires_at, last_seen_at, revoked_at`,
+      [randomUUID(), params.userId, params.accountId, params.sessionTokenHash, params.expiresAt],
     );
 
     return mapSession(row);
@@ -39,7 +41,7 @@ export class SessionRepository implements SessionRepositoryPort {
 
   async findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<SessionRecord | null> {
     const [row] = await this.database.query<SessionRow>(
-      `SELECT id, account_id, session_token_hash, created_at, expires_at, last_seen_at, revoked_at
+      `SELECT id, user_id, account_id, session_token_hash, created_at, expires_at, last_seen_at, revoked_at
        FROM sessions
        WHERE session_token_hash = $1
          AND revoked_at IS NULL

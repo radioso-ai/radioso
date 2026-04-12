@@ -10,6 +10,7 @@ import { ChatHistoryView } from './chat-history-view'
 import { DocumentsView } from './documents-view'
 import { EvalsView } from './evals-view'
 import { SettingsView } from './settings-view'
+import { UsersView } from './users-view'
 import { FirstRunExperience } from './first-run-experience'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -159,6 +160,9 @@ export function DashboardShell({
           )}
           {currentView === 'settings' && (
             <SettingsView accountId={accountId} routeState={routeState} />
+          )}
+          {currentView === 'users' && (
+            <UsersView accountId={accountId} />
           )}
         </div>
       </SidebarInset>

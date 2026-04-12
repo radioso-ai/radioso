@@ -31,6 +31,23 @@ interface WorkspaceContextValue {
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
 
+export const resolveBootstrapWorkspaceId = (
+  workspaces: Workspace[],
+  storedWorkspaceId: string | null,
+): string | null => {
+  const storedMatch = workspaces.find((workspace) => workspace.id === storedWorkspaceId)
+  if (storedMatch) {
+    return storedMatch.id
+  }
+
+  const defaultWorkspace = workspaces.find((workspace) => workspace.name === 'Default')
+  if (defaultWorkspace) {
+    return defaultWorkspace.id
+  }
+
+  return workspaces.at(-1)?.id ?? null
+}
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user, isBootstrapping, logout } = useAuth()
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -57,7 +74,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setWorkspaces(list)
 
         const storedId = getStoredActiveWorkspaceId()
-        const targetId = list.find((w) => w.id === storedId)?.id ?? list[0]?.id ?? null
+        const targetId = resolveBootstrapWorkspaceId(list, storedId)
 
         if (targetId) {
           activateWorkspaceToken(targetId)

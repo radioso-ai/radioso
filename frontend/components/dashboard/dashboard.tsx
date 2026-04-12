@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Spinner } from '@/components/ui/spinner'
 import { useAuth } from '@/lib/auth-context'
 import { buildAccountRoute } from '@/lib/dashboard-routes'
+import { getStoredActiveWorkspaceId } from '@/lib/api'
 
 export function Dashboard() {
   const router = useRouter()
@@ -13,7 +14,9 @@ export function Dashboard() {
 
   useEffect(() => {
     if (!isBootstrapping && user) {
-      router.replace(buildAccountRoute(user.userId, 'chat'))
+      const workspaceId =
+        typeof window !== 'undefined' ? getStoredActiveWorkspaceId() ?? undefined : undefined
+      router.replace(buildAccountRoute(user.accountId, 'chat', undefined, workspaceId))
     }
   }, [isBootstrapping, router, user])
 

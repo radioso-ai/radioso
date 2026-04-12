@@ -10,6 +10,8 @@ import type { WorkspaceIngestionReprocessService } from "../../modules/documents
 import type { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import type { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
+import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
+import type { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import type { AuditService } from "../../modules/audit/services/auditService.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
@@ -27,6 +29,8 @@ export interface AppDependencies {
   env: Env;
   logger: AppLogger;
   authService: AuthService;
+  accountAccessService: AccountAccessService;
+  accountInvitationService: AccountInvitationService;
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
   auditService: AuditService;

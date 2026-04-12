@@ -8,7 +8,9 @@ const buildUrl = (
   path: string,
   query?: Record<string, QueryValue>,
 ): string => {
-  const url = new URL(path, `${baseUrl}/`);
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
+  const normalizedPath = path.replace(/^\/+/, "");
+  const url = new URL(`${normalizedBaseUrl}/${normalizedPath}`);
 
   if (query) {
     for (const [key, value] of Object.entries(query)) {

@@ -36,6 +36,7 @@ import {
   Monitor,
   ChevronUp,
   User,
+  Users,
 } from 'lucide-react'
 import {
   buildDashboardHref,
@@ -80,7 +81,7 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
       </SidebarHeader>
 
       <div className="px-2">
-        <WorkspaceSwitcher />
+        <WorkspaceSwitcher accountId={accountId} currentView={currentView} />
       </div>
 
       <SidebarContent>
@@ -148,6 +149,18 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
                   <Monitor className="w-4 h-4 mr-2" />
                   System
                   {theme === 'system' && <span className="ml-auto text-xs">✓</span>}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link
+                    href={buildDashboardHref(accountId, {
+                      section: 'users',
+                      workspaceId: activeWorkspaceId ?? undefined,
+                    })}
+                  >
+                    <Users className="w-4 h-4 mr-2" />
+                    Users
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">

@@ -1,6 +1,18 @@
 import { randomUUID } from "node:crypto";
 
 import type {
+  AccountMembershipRecord,
+  AccountMembershipRepositoryPort,
+  AccountMembershipRole,
+  AccountMembershipStatus,
+  AccountMembershipUserRecord,
+} from "../../src/db/repositories/accountMembershipRepository.js";
+import type {
+  AccountInvitationRecord,
+  AccountInvitationRepositoryPort,
+  AccountInvitationStatus,
+} from "../../src/db/repositories/accountInvitationRepository.js";
+import type {
   AccountRecord,
   AccountRepositoryPort,
   SessionRecord,
@@ -8,6 +20,7 @@ import type {
   WorkspaceTokenRecord,
   WorkspaceTokenRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
+import type { UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
 import type { AbuseControlEntry, AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import type {
@@ -109,9 +122,10 @@ interface InMemoryConnectorMessageLogRecord {
 export class InMemoryAccountRepository implements AccountRepositoryPort {
   private readonly items = new Map<string, AccountRecord>();
 
-  async create(params: { email: string; passwordHash: string }): Promise<AccountRecord> {
+  async create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord> {
     const record: AccountRecord = {
       id: randomUUID(),
+      name: params.name,
       email: params.email,
       passwordHash: params.passwordHash,
       createdAt: new Date(),
@@ -129,14 +143,59 @@ export class InMemoryAccountRepository implements AccountRepositoryPort {
   async findById(id: string): Promise<AccountRecord | null> {
     return this.items.get(id) ?? null;
   }
+
+  async updateName(id: string, name: string): Promise<AccountRecord> {
+    const existing = this.items.get(id);
+    if (!existing) {
+      throw notFound("Account not found");
+    }
+
+    const updated: AccountRecord = {
+      ...existing,
+      name,
+      updatedAt: new Date(),
+    };
+    this.items.set(id, updated);
+    return updated;
+  }
+}
+
+export class InMemoryUserRepository implements UserRepositoryPort {
+  private readonly items = new Map<string, UserRecord>();
+
+  async create(params: { id?: string; email: string; passwordHash: string }): Promise<UserRecord> {
+    const record: UserRecord = {
+      id: params.id ?? randomUUID(),
+      email: params.email,
+      passwordHash: params.passwordHash,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findByEmail(email: string): Promise<UserRecord | null> {
+    return [...this.items.values()].find((item) => item.email === email) ?? null;
+  }
+
+  async findById(id: string): Promise<UserRecord | null> {
+    return this.items.get(id) ?? null;
+  }
+
+  async deleteById(id: string): Promise<boolean> {
+    return this.items.delete(id);
+  }
 }
 
 export class InMemorySessionRepository implements SessionRepositoryPort {
   private readonly items = new Map<string, SessionRecord>();
 
-  async create(params: { accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord> {
+  async create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord> {
     const record: SessionRecord = {
       id: randomUUID(),
+      userId: params.userId,
       accountId: params.accountId,
       sessionTokenHash: params.sessionTokenHash,
       createdAt: new Date(),
@@ -162,6 +221,154 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
     if (item) {
       item.lastSeenAt = lastSeenAt;
     }
+  }
+}
+
+export class InMemoryAccountMembershipRepository implements AccountMembershipRepositoryPort {
+  private readonly items = new Map<string, AccountMembershipRecord>();
+  private userRepository: UserRepositoryPort | null = null;
+
+  setUserRepository(userRepository: UserRepositoryPort): void {
+    this.userRepository = userRepository;
+  }
+
+  async create(params: {
+    accountId: string;
+    userId: string;
+    role: AccountMembershipRole;
+    status?: AccountMembershipStatus;
+  }): Promise<AccountMembershipRecord> {
+    const existing = [...this.items.values()].find(
+      (item) => item.accountId === params.accountId && item.userId === params.userId,
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const record: AccountMembershipRecord = {
+      id: randomUUID(),
+      accountId: params.accountId,
+      userId: params.userId,
+      role: params.role,
+      status: params.status ?? "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findActiveByAccountAndUser(accountId: string, userId: string): Promise<AccountMembershipRecord | null> {
+    return (
+      [...this.items.values()].find(
+        (item) => item.accountId === accountId && item.userId === userId && item.status === "active",
+      ) ?? null
+    );
+  }
+
+  async findById(id: string): Promise<AccountMembershipRecord | null> {
+    return this.items.get(id) ?? null;
+  }
+
+  async listActiveByAccount(accountId: string): Promise<AccountMembershipUserRecord[]> {
+    if (!this.userRepository) {
+      throw new Error("User repository is required for membership listings");
+    }
+
+    const memberships = [...this.items.values()]
+      .filter((item) => item.accountId === accountId && item.status === "active")
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+
+    const users = await Promise.all(
+      memberships.map(async (membership) => ({
+        membership,
+        user: await this.userRepository!.findById(membership.userId),
+      })),
+    );
+
+    return users.map(({ membership, user }) => ({
+      ...membership,
+      email: user?.email ?? "unknown@example.com",
+    }));
+  }
+
+  async listActiveByUser(userId: string): Promise<AccountMembershipRecord[]> {
+    return [...this.items.values()]
+      .filter((item) => item.userId === userId && item.status === "active")
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  }
+
+  async deleteById(id: string): Promise<boolean> {
+    return this.items.delete(id);
+  }
+}
+
+export class InMemoryAccountInvitationRepository implements AccountInvitationRepositoryPort {
+  private readonly items = new Map<string, AccountInvitationRecord>();
+
+  async create(params: {
+    accountId: string;
+    email: string;
+    invitedByMembershipId: string;
+    tokenHash: string;
+    status?: AccountInvitationStatus;
+    expiresAt: Date;
+  }): Promise<AccountInvitationRecord> {
+    const record: AccountInvitationRecord = {
+      id: randomUUID(),
+      accountId: params.accountId,
+      email: params.email,
+      invitedByMembershipId: params.invitedByMembershipId,
+      tokenHash: params.tokenHash,
+      status: params.status ?? "pending",
+      expiresAt: params.expiresAt,
+      acceptedAt: null,
+      acceptedByUserId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findPendingByAccountAndEmail(accountId: string, email: string): Promise<AccountInvitationRecord | null> {
+    return (
+      [...this.items.values()].find(
+        (item) => item.accountId === accountId && item.email === email && item.status === "pending",
+      ) ?? null
+    );
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<AccountInvitationRecord | null> {
+    return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
+  }
+
+  async listByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
+    return [...this.items.values()]
+      .filter((item) => item.accountId === accountId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  }
+
+  async update(params: {
+    id: string;
+    status: AccountInvitationStatus;
+    acceptedAt?: Date | null;
+    acceptedByUserId?: string | null;
+  }): Promise<AccountInvitationRecord> {
+    const existing = this.items.get(params.id);
+    if (!existing) {
+      throw notFound("Invitation not found");
+    }
+
+    const updated: AccountInvitationRecord = {
+      ...existing,
+      status: params.status,
+      acceptedAt: params.acceptedAt ?? null,
+      acceptedByUserId: params.acceptedByUserId ?? null,
+      updatedAt: new Date(),
+    };
+    this.items.set(updated.id, updated);
+    return updated;
   }
 }
 

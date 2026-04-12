@@ -9,12 +9,23 @@ import { validateBody } from "../middleware/validate.js";
 export const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
+  organizationName: z.string().trim().min(1).max(80).optional(),
 });
 
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
   preferredWorkspaceId: z.string().uuid().optional(),
+  preferredAccountId: z.string().uuid().optional(),
+});
+
+export const invitationTokenParamsSchema = z.object({
+  invitationToken: z.string().min(1),
+});
+
+export const invitationAcceptSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
 });
 
 export const createAuthRoutes = (dependencies: AppDependencies): Router => {
@@ -50,6 +61,8 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
       res.setHeader("Set-Cookie", result.sessionCookie);
       res.status(201).json({
         userId: result.userId,
+        accountId: result.accountId,
+        organizationName: result.organizationName,
         workspaceId: result.workspaceId,
         workspaceName: result.workspaceName,
       });
@@ -64,6 +77,8 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
       res.setHeader("Set-Cookie", result.sessionCookie);
       res.status(200).json({
         userId: result.userId,
+        accountId: result.accountId,
+        organizationName: result.organizationName,
         workspaceId: result.workspaceId,
         workspaceName: result.workspaceName,
       });
@@ -71,6 +86,41 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
       next(error);
     }
   });
+
+  router.get("/invitations/:invitationToken", async (req, res, next) => {
+    try {
+      const params = invitationTokenParamsSchema.parse(req.params);
+      const invitation = await dependencies.authService.getInvitation(params);
+      res.status(200).json(invitation);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post(
+    "/invitations/:invitationToken/accept",
+    validateBody(invitationAcceptSchema),
+    async (req, res, next) => {
+      try {
+        const params = invitationTokenParamsSchema.parse(req.params);
+        const result = await dependencies.authService.acceptInvitation({
+          invitationToken: params.invitationToken,
+          email: req.body.email,
+          password: req.body.password,
+        });
+        res.setHeader("Set-Cookie", result.sessionCookie);
+        res.status(200).json({
+          userId: result.userId,
+          accountId: result.accountId,
+          organizationName: result.organizationName,
+          workspaceId: result.workspaceId,
+          workspaceName: result.workspaceName,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   return router;
 };

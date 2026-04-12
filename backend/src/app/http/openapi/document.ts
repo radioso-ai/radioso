@@ -5,7 +5,13 @@ import {
   extendZodWithOpenApi,
 } from "@asteasolutions/zod-to-openapi";
 
-import { registerSchema, loginSchema } from "../routes/authRoutes.js";
+import {
+  invitationAcceptSchema,
+  invitationTokenParamsSchema,
+  registerSchema,
+  loginSchema,
+} from "../routes/authRoutes.js";
+import { accountMembershipParamsSchema, accountSwitchSchema, createAccountInvitationSchema } from "../routes/accountUserRoutes.js";
 import {
   createWorkspaceSchema,
   renameWorkspaceSchema,
@@ -104,6 +110,8 @@ const RegisterResponseSchema = registry.register(
   "RegisterResponse",
   z.object({
     userId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    organizationName: z.string(),
     workspaceId: z.string().uuid(),
     workspaceName: z.string(),
   }),
@@ -113,6 +121,8 @@ const LoginResponseSchema = registry.register(
   "LoginResponse",
   z.object({
     userId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    organizationName: z.string(),
     workspaceId: z.string().uuid(),
     workspaceName: z.string(),
   }),
@@ -145,8 +155,80 @@ const WorkspaceTokenResponseSchema = registry.register(
 
 const RegisterRequestSchema = registry.register("RegisterRequest", registerSchema);
 const LoginRequestSchema = registry.register("LoginRequest", loginSchema);
+const InvitationAcceptRequestSchema = registry.register("InvitationAcceptRequest", invitationAcceptSchema);
+const AccountInvitationCreateRequestSchema = registry.register("AccountInvitationCreateRequest", createAccountInvitationSchema);
 const WorkspaceCreateRequestSchema = registry.register("WorkspaceCreateRequest", createWorkspaceSchema);
 const WorkspaceRenameRequestSchema = registry.register("WorkspaceRenameRequest", renameWorkspaceSchema);
+
+const AccountUserSchema = registry.register(
+  "AccountUser",
+  z.object({
+    membershipId: z.string().uuid(),
+    userId: z.string().uuid(),
+    email: z.string().email(),
+    role: z.enum(["owner", "member"]),
+    status: z.literal("active"),
+    createdAt: z.string().datetime(),
+  }),
+);
+
+const AccountInvitationSchema = registry.register(
+  "AccountInvitation",
+  z.object({
+    id: z.string().uuid(),
+    email: z.string().email(),
+    status: z.enum(["pending", "accepted", "revoked", "expired"]),
+    expiresAt: z.string().datetime(),
+    acceptedAt: z.string().datetime().nullable(),
+    createdAt: z.string().datetime(),
+  }),
+);
+
+const AccountUsersResponseSchema = registry.register(
+  "AccountUsersResponse",
+  z.object({
+    accountId: z.string().uuid(),
+    currentUserId: z.string().uuid(),
+    users: z.array(AccountUserSchema),
+    invitations: z.array(AccountInvitationSchema),
+  }),
+);
+
+const AccessibleAccountSchema = registry.register(
+  "AccessibleAccount",
+  z.object({
+    accountId: z.string().uuid(),
+    organizationName: z.string(),
+    role: z.enum(["owner", "member"]),
+    workspaceId: z.string().uuid(),
+    workspaceName: z.string(),
+  }),
+);
+
+const AccessibleAccountsResponseSchema = registry.register(
+  "AccessibleAccountsResponse",
+  z.object({
+    currentAccountId: z.string().uuid(),
+    accounts: z.array(AccessibleAccountSchema),
+  }),
+);
+
+const CreateAccountInvitationResponseSchema = registry.register(
+  "CreateAccountInvitationResponse",
+  AccountInvitationSchema.extend({
+    acceptanceUrl: z.string(),
+  }),
+);
+
+const InvitationDetailsResponseSchema = registry.register(
+  "InvitationDetailsResponse",
+  z.object({
+    accountId: z.string().uuid(),
+    email: z.string().email(),
+    status: z.enum(["pending", "accepted", "revoked", "expired"]),
+    expiresAt: z.string().datetime(),
+  }),
+);
 
 const RetrievalSettingsSchema = registry.register(
   "RetrievalSettings",
@@ -1014,6 +1096,273 @@ registry.registerPath({
     },
     500: {
       description: "Unexpected server error",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/auth/invitations/{invitationToken}",
+  tags: ["Auth"],
+  summary: "Get invitation details for an account join flow",
+  operationId: "getAccountInvitation",
+  request: {
+    params: invitationTokenParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Invitation details returned",
+      content: {
+        "application/json": {
+          schema: InvitationDetailsResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Invitation not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/invitations/{invitationToken}/accept",
+  tags: ["Auth"],
+  summary: "Accept an invitation and establish a session for the joined account",
+  operationId: "acceptAccountInvitation",
+  request: {
+    params: invitationTokenParamsSchema,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: InvitationAcceptRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Invitation accepted and session established",
+      content: {
+        "application/json": {
+          schema: LoginResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Invitation email mismatch or invalid credentials",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Invitation not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: "Invitation is no longer valid",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/account/users",
+  tags: ["Account"],
+  summary: "List active account users and invitations",
+  operationId: "listAccountUsers",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Account users returned",
+      content: {
+        "application/json": {
+          schema: AccountUsersResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/account/accounts",
+  tags: ["Account"],
+  summary: "List accessible accounts for the current user",
+  operationId: "listAccessibleAccounts",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Accessible accounts returned",
+      content: {
+        "application/json": {
+          schema: AccessibleAccountsResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/account/invitations",
+  tags: ["Account"],
+  summary: "Create an account invitation",
+  operationId: "createAccountInvitation",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: AccountInvitationCreateRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Invitation created",
+      content: {
+        "application/json": {
+          schema: CreateAccountInvitationResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: "Invitation already pending or user already has access",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/account/switch",
+  tags: ["Account"],
+  summary: "Switch the current session to another accessible account",
+  operationId: "switchAccount",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: accountSwitchSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Account switched",
+      content: {
+        "application/json": {
+          schema: LoginResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/account/users/{membershipId}",
+  tags: ["Account"],
+  summary: "Remove account user access",
+  operationId: "removeAccountUser",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    params: accountMembershipParamsSchema,
+  },
+  responses: {
+    204: {
+      description: "Account user removed",
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: "Owner access required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Membership not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: "Membership cannot be removed",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

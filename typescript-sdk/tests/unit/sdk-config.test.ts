@@ -45,6 +45,28 @@ describe("sdk config", () => {
     expect(headers.get("authorization")).toBe("Bearer token-123");
   });
 
+  it("preserves a base-url path prefix when building request urls", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ workspaceId: "w1" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const client = createRadiosoClient({
+      baseUrl: "https://api.example.com/backend/",
+      apiToken: "token-123",
+      fetch: fetchMock as typeof fetch,
+    });
+
+    await client.settings.getRetrieval();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/backend/api/v1/settings/retrieval",
+      expect.anything(),
+    );
+  });
+
   it("preserves a caller-provided accept header for streaming requests", async () => {
     const fetchMock = vi.fn(async () =>
       new Response("", {

@@ -25,7 +25,7 @@ export function AuthPage() {
         </div>
         <div className="bg-card border border-border rounded-lg p-6 shadow-sm">
           <h2 className="text-lg font-medium text-card-foreground mb-4">
-            {mode === 'login' ? 'Welcome back' : 'Create an account'}
+            {mode === 'login' ? 'Welcome back' : 'Create an organization'}
           </h2>
           {mode === 'login' ? (
             <LoginForm onSwitchToRegister={() => setMode('register')} />

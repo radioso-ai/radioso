@@ -74,7 +74,7 @@ export function SettingsView({
         </div>
 
         <TabsContent value="general" className="flex-1 overflow-hidden">
-          <GeneralTab />
+          <GeneralTab accountId={accountId} />
         </TabsContent>
 
         <TabsContent value="ingestion" className="flex-1 overflow-hidden">

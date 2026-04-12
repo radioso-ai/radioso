@@ -11,6 +11,18 @@ const deriveKey = (secret: string): Buffer => scryptSync(secret, "radioso-auth",
 
 export const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 
+export const deriveOrganizationName = (email: string): string => {
+  const localPart = normalizeEmail(email).split("@")[0] ?? "";
+  const normalized = localPart.replace(/[._+-]+/g, " ").trim();
+  const words = normalized
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
+
+  const label = words.join(" ").trim();
+  return `${label.length > 0 ? label : "My"} Organization`;
+};
+
 export const hashPassword = async (password: string): Promise<string> => bcrypt.hash(password, 12);
 
 export const verifyPassword = async (password: string, passwordHash: string): Promise<boolean> =>

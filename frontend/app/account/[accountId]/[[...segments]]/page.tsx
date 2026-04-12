@@ -11,6 +11,7 @@ import {
   buildDashboardHref,
   parseDashboardRoute,
 } from '@/lib/dashboard-routes'
+import { getStoredActiveWorkspaceId } from '@/lib/api'
 
 const getParamValue = (value: string | string[] | undefined) => {
   if (Array.isArray(value)) {
@@ -44,12 +45,14 @@ export default function AccountDashboardPage() {
     }
 
     if (!parsedRoute) {
-      router.replace(buildDashboardHref(user.userId, { section: 'chat' }))
+      const workspaceId =
+        typeof window !== 'undefined' ? getStoredActiveWorkspaceId() ?? undefined : undefined
+      router.replace(buildDashboardHref(user.accountId, { section: 'chat', workspaceId }))
       return
     }
 
-    if (routeAccountId !== user.userId) {
-      router.replace(buildDashboardHref(user.userId, parsedRoute))
+    if (routeAccountId !== user.accountId) {
+      router.replace(buildDashboardHref(user.accountId, parsedRoute))
     }
   }, [isBootstrapping, parsedRoute, routeAccountId, router, user])
 
@@ -65,7 +68,7 @@ export default function AccountDashboardPage() {
     return <AuthPage />
   }
 
-  if (!routeAccountId || !parsedRoute || routeAccountId !== user.userId) {
+  if (!routeAccountId || !parsedRoute || routeAccountId !== user.accountId) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner className="h-6 w-6" />
@@ -75,7 +78,7 @@ export default function AccountDashboardPage() {
 
   return (
     <DashboardShell
-      accountId={user.userId}
+      accountId={user.accountId}
       routeState={parsedRoute}
     />
   )

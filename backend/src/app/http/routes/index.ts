@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
 import { createAccountRoutes } from "./accountRoutes.js";
+import { createAccountUserRoutes } from "./accountUserRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
 import { createChatRoutes } from "./chatRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
@@ -19,6 +20,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   });
   router.use("/api/v1/auth", createAuthRoutes(dependencies));
   router.use("/api/v1/account", createAccountRoutes(dependencies));
+  router.use("/api/v1/account", createAccountUserRoutes(dependencies));
   router.use("/api/v1/workspace", createWorkspaceRoutes(dependencies));
   router.use("/api/v1/settings", createSettingsRoutes(dependencies));
   router.use("/api/v1/connectors", createConnectorRoutes(dependencies));

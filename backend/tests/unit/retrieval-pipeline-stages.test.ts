@@ -239,6 +239,118 @@ describe("retrieval pipeline stages", () => {
     expect(result.promptHistory).toEqual([]);
   });
 
+  it("decomposes retrieval into multiple subqueries when rewrite provides them", async () => {
+    const interpretationStage = new QueryInterpretationStageService(
+      new QueryRewriteService({
+        async rewrite() {
+          return {
+            rewrittenQuery: "who is freya and tomas",
+            semanticQuery: "who is freya and tomas",
+            lexicalQuery: "who is freya and tomas",
+            retrievalSubqueries: [
+              {
+                id: "",
+                label: "Freya",
+                semanticQuery: "who is freya",
+                lexicalQuery: "freya",
+              },
+              {
+                id: "",
+                label: "Tomas",
+                semanticQuery: "who is tomas",
+                lexicalQuery: "tomas",
+              },
+            ],
+            turnKind: "comparative",
+            proposedActiveSubject: "Freya",
+            relatedEntities: ["Tomas"],
+            unresolved: false,
+            confidence: 0.92,
+          };
+        },
+      }),
+    );
+
+    const interpreted = await interpretationStage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "who is freya and tomas?",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and names.",
+        answerSupportPolicy: "strict",
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+    });
+
+    expect(interpreted.activeRetrievalSubqueries).toHaveLength(2);
+    expect(interpreted.activeRetrievalSubqueries.map((subquery) => subquery.label)).toEqual(["Freya", "Tomas"]);
+
+    const vectorQueries: string[] = [];
+    const lexicalQueries: string[] = [];
+    const retrievalStage = new CandidateRetrievalStageService(
+      {
+        async embedChunks(chunks) {
+          return chunks.map((_, index) => [index + 1]);
+        },
+      },
+      {
+        async search(input) {
+          vectorQueries.push(String(input.queryEmbedding[0]));
+          return [
+            {
+              chunkId: `semantic-${input.queryEmbedding[0]}`,
+              documentId: `doc-semantic-${input.queryEmbedding[0]}`,
+              title: input.queryEmbedding[0] === 1 ? "Freya" : "Tomas",
+              content: "profile",
+              similarity: 0.9,
+            },
+          ];
+        },
+      },
+      {
+        async search(input) {
+          lexicalQueries.push(input.query);
+          return [
+            {
+              chunkId: `lexical-${input.query}`,
+              documentId: `doc-lexical-${input.query}`,
+              title: input.query,
+              content: "profile",
+              similarity: 0.8,
+            },
+          ];
+        },
+      },
+    );
+
+    const retrieved = await retrievalStage.execute(interpreted);
+
+    expect(vectorQueries).toEqual(["1", "2"]);
+    expect(lexicalQueries).toEqual(["freya", "tomas"]);
+    expect(retrieved.retrievalBranches).toHaveLength(2);
+    expect(retrieved.retrievalBranches.map((branch) => branch.label)).toEqual(["Freya", "Tomas"]);
+    expect(retrieved.rewrittenContexts).toHaveLength(2);
+    expect(retrieved.lexicalContexts).toHaveLength(2);
+  });
+
   it("splits vector results between original and rewritten contexts", async () => {
     const contextStage = new RetrievalContextStageService(
       {
@@ -389,6 +501,14 @@ describe("retrieval pipeline stages", () => {
         constraints: [],
       },
       activeSemanticQuery: "what about her later work?",
+      activeRetrievalSubqueries: [
+        {
+          id: "primary",
+          label: "what about her later work?",
+          semanticQuery: "what about her later work?",
+          lexicalQuery: "what about her later work?",
+        },
+      ],
       promptHistory: [],
       continuityDecision: "rejected",
       activeEmbedding: [1, 0, 0],
@@ -396,6 +516,7 @@ describe("retrieval pipeline stages", () => {
       originalContexts: [],
       rewrittenContexts: [],
       lexicalContexts: [],
+      retrievalBranches: [],
       vectorFallbackApplied: false,
       normalizedCandidates: [],
       mergedCandidates: [],

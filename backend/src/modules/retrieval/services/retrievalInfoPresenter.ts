@@ -17,6 +17,18 @@ export class RetrievalInfoPresenter {
             constraintSummary: input.parsedQuery.constraints.map((constraint) => constraint.summary),
           }
         : undefined,
+      retrievalSubqueries:
+        input.retrievalSubqueries && input.retrievalSubqueries.length > 1
+          ? input.retrievalSubqueries.map((subquery) => ({
+              id: subquery.id,
+              label: subquery.label,
+              semanticQuery: subquery.semanticQuery,
+              lexicalQuery: subquery.lexicalQuery,
+              reason: subquery.reason,
+              responseLanguagePolicy: subquery.responseLanguagePolicy,
+            }))
+          : undefined,
+      responseLanguagePolicy: input.responseLanguagePolicy,
       candidateCounts: {
         semantic: input.originalCandidateCount + input.rewrittenCandidateCount,
         lexical: input.lexicalCandidateCount ?? 0,

@@ -21,9 +21,9 @@ const getSequentialStages = (trace: RetrievalTrace) =>
     .filter((stage): stage is RetrievalTraceStage => Boolean(stage))
 
 const getBranchStages = (trace: RetrievalTrace) =>
-  ['semantic_original', 'semantic_rewritten', 'lexical']
-    .map((stageId) => getStage(trace, stageId))
-    .filter((stage): stage is RetrievalTraceStage => Boolean(stage))
+  trace.stages.filter((stage) =>
+    stage.kind === 'semantic_original' || stage.kind === 'semantic_rewritten' || stage.kind === 'lexical',
+  )
 
 const chunkCount = (stage: RetrievalTraceStage) => {
   if (typeof stage.metrics?.candidateCount === 'number') {
@@ -49,6 +49,12 @@ const summaryLine = (stage: RetrievalTraceStage) => {
 
   if (stage.stageId === 'interpretation') {
     const constraintCount = stage.metrics?.parsedConstraintCount
+    const subqueries = Array.isArray((stage.outputs as { retrievalSubqueries?: unknown[] } | undefined)?.retrievalSubqueries)
+      ? ((stage.outputs as { retrievalSubqueries?: unknown[] }).retrievalSubqueries?.length ?? 0)
+      : 0
+    if (subqueries > 1) {
+      return `${subqueries} retrieval branches`
+    }
     return typeof constraintCount === 'number' ? `${constraintCount} parsed constraints` : 'Query analysis'
   }
 

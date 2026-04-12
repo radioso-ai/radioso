@@ -10,6 +10,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       history: input.promptHistory,
       settings: {
         customInstruction: input.settings.customInstruction,
+        responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
       },
       contexts: input.contexts,
     });
@@ -21,6 +22,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       responseSettings: {
         citationDisplayEnabled: input.settings.citationDisplayEnabled,
         answerSupportPolicy: input.settings.answerSupportPolicy,
+        responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
       },
     };
   }

@@ -23,6 +23,7 @@ export class RetrievalDiagnosticsStageService implements RetrievalDiagnosticsSta
       continuityDecision: input.continuityDecision,
       rewriteProposal: input.rewrittenQuery.structuredResult,
       retrievalSubqueries: input.activeRetrievalSubqueries,
+      responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy,
       rejectionReason: input.rewrittenQuery.rejectionReason,
       fallbackReason: input.rewrittenQuery.fallbackReason,
     });

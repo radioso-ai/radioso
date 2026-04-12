@@ -41,6 +41,7 @@ export interface RetrievalPipelineResult {
   responseSettings: {
     citationDisplayEnabled: boolean;
     answerSupportPolicy: import("../../settings/domain/retrievalSettings.js").AnswerSupportPolicy;
+    responseLanguagePolicy?: import("../domain/retrievalPipelineTypes.js").ResponseLanguagePolicy;
   };
   diagnostics: RetrievalExecutionDiagnostics;
   trace: import("../domain/retrievalPipelineTypes.js").RetrievalTrace;

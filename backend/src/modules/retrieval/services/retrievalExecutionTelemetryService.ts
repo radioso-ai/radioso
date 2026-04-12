@@ -1,4 +1,5 @@
 import type {
+  ResponseLanguagePolicy,
   RetrievalExecutionDiagnostics,
   RetrievalSubquery,
   RewriteStatus,
@@ -24,6 +25,7 @@ export class RetrievalExecutionTelemetryService {
     continuityDecision?: import("../domain/retrievalPipelineTypes.js").ContinuityDecision;
     rewriteProposal?: import("../domain/retrievalPipelineTypes.js").StructuredRewriteResult;
     retrievalSubqueries?: RetrievalSubquery[];
+    responseLanguagePolicy?: ResponseLanguagePolicy;
     rejectionReason?: string;
     fallbackReason?: string;
   }): RetrievalExecutionDiagnostics {

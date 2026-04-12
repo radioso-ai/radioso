@@ -382,6 +382,7 @@ export interface AnswerSegment {
 export interface RetrievalInfo {
   parsedQuery?: ParsedQueryInfo
   retrievalSubqueries?: RetrievalSubqueryInfo[]
+  responseLanguagePolicy?: 'match_user_question'
   candidateCounts: CandidateCounts
   appliedConstraints?: AppliedConstraintInfo[]
   fallbackApplied: boolean
@@ -410,6 +411,7 @@ export interface RetrievalSubqueryInfo {
   semanticQuery: string
   lexicalQuery: string
   reason?: string
+  responseLanguagePolicy?: 'match_user_question'
 }
 
 export interface CandidateCounts {

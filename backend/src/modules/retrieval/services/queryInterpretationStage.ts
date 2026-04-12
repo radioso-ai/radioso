@@ -89,6 +89,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
               hardFilterSignalKeys.size > 0
                 ? stripEnabledConstraintLiterals(subquery.lexicalQuery, parsedQueryBase, hardFilterSignalKeys)
                 : subquery.lexicalQuery,
+            responseLanguagePolicy: subquery.responseLanguagePolicy ?? rewrittenQuery.responseLanguagePolicy,
           }))
         : [
             {
@@ -96,6 +97,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
               label: activeQuery,
               semanticQuery: activeParsedQuery.semanticQuery || activeQuery,
               lexicalQuery: activeParsedQuery.lexicalQuery || activeQuery,
+              responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
             },
           ];
 

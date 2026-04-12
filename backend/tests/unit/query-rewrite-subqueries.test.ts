@@ -10,18 +10,21 @@ describe("query rewrite subqueries", () => {
           rewrittenQuery: "who is narayani and arudra?",
           semanticQuery: "who is narayani and arudra?",
           lexicalQuery: "who is narayani and arudra?",
+          responseLanguagePolicy: "match_user_question",
           retrievalSubqueries: [
             {
               id: "",
               label: "Narayani",
               semanticQuery: "who is narayani",
               lexicalQuery: "narayani",
+              responseLanguagePolicy: "match_user_question",
             },
             {
               id: "",
               label: "Arudra",
               semanticQuery: "who is arudra",
               lexicalQuery: "arudra",
+              responseLanguagePolicy: "match_user_question",
             },
           ],
           turnKind: "comparative",
@@ -47,7 +50,9 @@ describe("query rewrite subqueries", () => {
 
     expect(result.status).toBe("applied");
     expect(result.retrievalEligible).toBe(true);
+    expect(result.responseLanguagePolicy).toBe("match_user_question");
     expect(result.retrievalSubqueries).toHaveLength(2);
     expect(result.retrievalSubqueries?.map((subquery) => subquery.label)).toEqual(["Narayani", "Arudra"]);
+    expect(result.retrievalSubqueries?.every((subquery) => subquery.responseLanguagePolicy === "match_user_question")).toBe(true);
   });
 });

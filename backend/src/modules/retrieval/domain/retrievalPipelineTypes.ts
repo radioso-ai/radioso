@@ -29,10 +29,13 @@ export const REWRITE_TURN_KIND = {
 
 export type RewriteTurnKind = (typeof REWRITE_TURN_KIND)[keyof typeof REWRITE_TURN_KIND];
 
+export type ResponseLanguagePolicy = "match_user_question";
+
 export interface StructuredRewriteResult {
   rewrittenQuery: string;
   semanticQuery?: string;
   lexicalQuery?: string;
+  responseLanguagePolicy?: ResponseLanguagePolicy;
   retrievalSubqueries?: RetrievalSubquery[];
   turnKind: RewriteTurnKind;
   proposedActiveSubject?: string;
@@ -47,6 +50,7 @@ export interface RetrievalSubquery {
   semanticQuery: string;
   lexicalQuery: string;
   reason?: string;
+  responseLanguagePolicy?: ResponseLanguagePolicy;
 }
 
 export type ContinuityDecision = "unchanged" | "reused" | "updated" | "unresolved" | "rejected";
@@ -57,6 +61,7 @@ export interface RewrittenRetrievalQuery {
   effectiveQuery: string;
   semanticQuery: string;
   lexicalQuery: string;
+  responseLanguagePolicy?: ResponseLanguagePolicy;
   retrievalSubqueries?: RetrievalSubquery[];
   rewriteApplied: boolean;
   retrievalEligible: boolean;
@@ -103,7 +108,9 @@ export interface RetrievalTraceSummary {
     semanticQuery: string;
     lexicalQuery: string;
     reason?: string;
+    responseLanguagePolicy?: ResponseLanguagePolicy;
   }>;
+  responseLanguagePolicy?: ResponseLanguagePolicy;
   candidateCounts: {
     semantic: number;
     lexical: number;
@@ -173,6 +180,7 @@ export interface RetrievalExecutionDiagnostics {
   continuityDecision?: ContinuityDecision;
   rewriteProposal?: StructuredRewriteResult;
   retrievalSubqueries?: RetrievalSubquery[];
+  responseLanguagePolicy?: ResponseLanguagePolicy;
   rejectionReason?: string;
   fallbackReason?: string;
 }

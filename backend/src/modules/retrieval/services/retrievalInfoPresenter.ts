@@ -25,8 +25,10 @@ export class RetrievalInfoPresenter {
               semanticQuery: subquery.semanticQuery,
               lexicalQuery: subquery.lexicalQuery,
               reason: subquery.reason,
+              responseLanguagePolicy: subquery.responseLanguagePolicy,
             }))
           : undefined,
+      responseLanguagePolicy: input.responseLanguagePolicy,
       candidateCounts: {
         semantic: input.originalCandidateCount + input.rewrittenCandidateCount,
         lexical: input.lexicalCandidateCount ?? 0,

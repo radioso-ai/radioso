@@ -40,6 +40,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           semanticQuery: subquery.semanticQuery,
           lexicalQuery: subquery.lexicalQuery,
           reason: subquery.reason,
+          responseLanguagePolicy: subquery.responseLanguagePolicy,
           source: input.rewrittenQuery.retrievalEligible ? ("rewritten" as const) : ("original" as const),
           semanticContexts: semanticSearch.contexts,
           lexicalContexts,

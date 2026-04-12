@@ -463,6 +463,7 @@ const RetrievalSubquerySchema = registry.register(
     semanticQuery: z.string(),
     lexicalQuery: z.string(),
     reason: z.string().optional(),
+    responseLanguagePolicy: z.enum(["match_user_question"]).optional(),
   }),
 );
 
@@ -493,6 +494,7 @@ const RetrievalInfoSchema = registry.register(
   z.object({
     parsedQuery: ParsedQuerySchema.optional(),
     retrievalSubqueries: z.array(RetrievalSubquerySchema).optional(),
+    responseLanguagePolicy: z.enum(["match_user_question"]).optional(),
     candidateCounts: CandidateCountsSchema,
     appliedConstraints: z.array(AppliedConstraintSchema).optional(),
     fallbackApplied: z.boolean(),

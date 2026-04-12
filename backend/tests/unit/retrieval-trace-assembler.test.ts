@@ -53,9 +53,10 @@ describe("retrieval trace assembler", () => {
           effectiveQuery: "who is narayani and arudra?",
           semanticQuery: "who is narayani and arudra?",
           lexicalQuery: "who is narayani and arudra?",
+          responseLanguagePolicy: "match_user_question",
           retrievalSubqueries: [
-            { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani" },
-            { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra" },
+            { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani", responseLanguagePolicy: "match_user_question" },
+            { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra", responseLanguagePolicy: "match_user_question" },
           ],
           rewriteApplied: true,
           retrievalEligible: true,
@@ -71,8 +72,8 @@ describe("retrieval trace assembler", () => {
         },
         activeSemanticQuery: "who is narayani and arudra?",
         activeRetrievalSubqueries: [
-          { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani" },
-          { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra" },
+          { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani", responseLanguagePolicy: "match_user_question" },
+          { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra", responseLanguagePolicy: "match_user_question" },
         ],
         promptHistory: [],
         continuityDecision: "updated",
@@ -117,6 +118,7 @@ describe("retrieval trace assembler", () => {
             label: "Narayani",
             semanticQuery: "who is narayani",
             lexicalQuery: "narayani",
+            responseLanguagePolicy: "match_user_question",
             source: "rewritten",
             semanticContexts: [
               {
@@ -142,6 +144,7 @@ describe("retrieval trace assembler", () => {
             label: "Arudra",
             semanticQuery: "who is arudra",
             lexicalQuery: "arudra",
+            responseLanguagePolicy: "match_user_question",
             source: "rewritten",
             semanticContexts: [
               {
@@ -177,6 +180,7 @@ describe("retrieval trace assembler", () => {
         responseSettings: {
           citationDisplayEnabled: true,
           answerSupportPolicy: "strict",
+          responseLanguagePolicy: "match_user_question",
         },
       },
       diagnostics: {
@@ -202,9 +206,10 @@ describe("retrieval trace assembler", () => {
         materialDisagreement: false,
         continuityDecision: "updated",
         retrievalSubqueries: [
-          { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani" },
-          { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra" },
+          { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani", responseLanguagePolicy: "match_user_question" },
+          { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra", responseLanguagePolicy: "match_user_question" },
         ],
+        responseLanguagePolicy: "match_user_question",
       },
       timings: {
         traceStartedAt: "2026-04-12T14:14:16.000Z",
@@ -224,8 +229,9 @@ describe("retrieval trace assembler", () => {
     expect(trace.stages.filter((stage) => stage.kind === "semantic_rewritten")).toHaveLength(2);
     expect(trace.stages.filter((stage) => stage.kind === "lexical")).toHaveLength(2);
     expect(trace.summary?.retrievalSubqueries).toEqual([
-      expect.objectContaining({ label: "Narayani", lexicalQuery: "narayani" }),
-      expect.objectContaining({ label: "Arudra", lexicalQuery: "arudra" }),
+      expect.objectContaining({ label: "Narayani", lexicalQuery: "narayani", responseLanguagePolicy: "match_user_question" }),
+      expect.objectContaining({ label: "Arudra", lexicalQuery: "arudra", responseLanguagePolicy: "match_user_question" }),
     ]);
+    expect(trace.summary?.responseLanguagePolicy).toBe("match_user_question");
   });
 });

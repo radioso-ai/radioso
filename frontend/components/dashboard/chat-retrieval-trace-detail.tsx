@@ -218,6 +218,7 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
               { label: 'Effective query', value: outputs.effectiveQuery as string | undefined },
               { label: 'Semantic query', value: outputs.semanticQuery as string | undefined },
               { label: 'Lexical query', value: outputs.lexicalQuery as string | undefined },
+              { label: 'Response language policy', value: outputs.responseLanguagePolicy as string | undefined },
               { label: 'Fallback reason', value: stage.reason },
               { label: 'Rewrite eligible', value: outputs.rewriteEligible as boolean | undefined },
               { label: 'Rewrite ran', value: outputs.rewriteRan as boolean | undefined },
@@ -240,6 +241,7 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
             rows={[
               { label: 'Query', value: (inputs.query as string | undefined) ?? (settings.query as string | undefined) },
               { label: 'Subquery', value: settings.subqueryLabel as string | undefined },
+              { label: 'Response language policy', value: settings.responseLanguagePolicy as string | undefined },
               { label: 'Top K', value: settings.topK as number | undefined },
               { label: 'Threshold', value: settings.similarityThreshold as number | undefined },
               { label: 'Candidate count', value: outputs.candidateCount as number | undefined },

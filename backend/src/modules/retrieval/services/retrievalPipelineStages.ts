@@ -3,6 +3,7 @@ import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSet
 import type {
   ConversationContextWindow,
   RetrievalSubquery,
+  ResponseLanguagePolicy,
   RewrittenRetrievalQuery,
 } from "../domain/retrievalPipelineTypes.js";
 import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
@@ -13,6 +14,7 @@ export interface RetrievalPipelineRequest {
   workspaceId: string;
   query: string;
   history: MessageRecord[];
+  responseLanguagePolicy?: ResponseLanguagePolicy;
   rewriteCarryForwardLiterals?: string[];
   metadataFilter?: Record<string, unknown>;
 }
@@ -41,6 +43,7 @@ export interface RetrievalBranchResult {
   semanticQuery: string;
   lexicalQuery: string;
   reason?: string;
+  responseLanguagePolicy?: ResponseLanguagePolicy;
   source: "original" | "rewritten";
   semanticContexts: RetrievedChunk[];
   lexicalContexts: RetrievedChunk[];
@@ -76,6 +79,7 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
   responseSettings: {
     citationDisplayEnabled: boolean;
     answerSupportPolicy: RetrievalSettingsRecord["answerSupportPolicy"];
+    responseLanguagePolicy?: ResponseLanguagePolicy;
   };
 }
 

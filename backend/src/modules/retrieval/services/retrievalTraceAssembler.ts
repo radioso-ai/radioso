@@ -86,6 +86,7 @@ export class RetrievalTraceAssembler {
       label: prompt.retrievalBranches.length === 1 ? "Semantic retrieval" : `Semantic retrieval: ${branch.label}`,
       query: branch.semanticQuery,
       reason: branch.reason,
+      responseLanguagePolicy: branch.responseLanguagePolicy,
       contexts: branch.semanticContexts,
     }));
     const lexicalBranches = prompt.retrievalBranches.map((branch, index) => ({
@@ -97,6 +98,7 @@ export class RetrievalTraceAssembler {
       label: prompt.retrievalBranches.length === 1 ? "Lexical retrieval" : `Lexical retrieval: ${branch.label}`,
       query: branch.lexicalQuery,
       reason: branch.reason,
+      responseLanguagePolicy: branch.responseLanguagePolicy,
       contexts: branch.lexicalContexts,
     }));
     const semanticTiming = {
@@ -147,12 +149,14 @@ export class RetrievalTraceAssembler {
           semanticQuery: prompt.activeParsedQuery.semanticQuery,
           lexicalQuery: prompt.activeParsedQuery.lexicalQuery,
           lexicalEffectiveQuery: prompt.rewrittenQuery.lexicalQuery,
+          responseLanguagePolicy: prompt.rewrittenQuery.responseLanguagePolicy,
           retrievalSubqueries: (diagnostics.retrievalSubqueries ?? []).map((subquery) => ({
             id: subquery.id,
             label: subquery.label,
             semanticQuery: subquery.semanticQuery,
             lexicalQuery: subquery.lexicalQuery,
             reason: subquery.reason,
+            responseLanguagePolicy: subquery.responseLanguagePolicy,
           })),
           continuityDecision: prompt.continuityDecision,
           promptHistoryCount: prompt.promptHistory.length,
@@ -174,6 +178,7 @@ export class RetrievalTraceAssembler {
             topK: prompt.settings.vectorTopK,
             similarityThreshold: prompt.settings.similarityThreshold,
             subqueryLabel: branch.label.replace(/^Semantic retrieval:\s*/, ""),
+            responseLanguagePolicy: branch.responseLanguagePolicy,
           },
           inputs: {
             query: branch.query,
@@ -194,6 +199,7 @@ export class RetrievalTraceAssembler {
           settings: {
             query: branch.query,
             subqueryLabel: branch.label.replace(/^Lexical retrieval:\s*/, ""),
+            responseLanguagePolicy: branch.responseLanguagePolicy,
           },
           outputs: {
             candidateCount: branch.contexts.length,
@@ -234,6 +240,7 @@ export class RetrievalTraceAssembler {
       buildStage("prompt", "prompt_assembly", "Prompt assembly", "applied", timings.promptAssembly, {
         settings: {
           citationDisplayEnabled: prompt.responseSettings.citationDisplayEnabled,
+          responseLanguagePolicy: prompt.responseSettings.responseLanguagePolicy,
         },
         outputs: {
           citations: prompt.citations.map((citation) => ({
@@ -295,7 +302,9 @@ export class RetrievalTraceAssembler {
           semanticQuery: subquery.semanticQuery,
           lexicalQuery: subquery.lexicalQuery,
           reason: subquery.reason,
+          responseLanguagePolicy: subquery.responseLanguagePolicy,
         })),
+        responseLanguagePolicy: diagnostics.responseLanguagePolicy,
         candidateCounts: {
           semantic: diagnostics.originalCandidateCount + diagnostics.rewrittenCandidateCount,
           lexical: diagnostics.lexicalCandidateCount ?? 0,

@@ -65,11 +65,48 @@ const toChunkRefs = (
   title: context.title,
 }));
 
+const toSafeStageId = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+
 export class RetrievalTraceAssembler {
   assemble(input: RetrievalTraceAssemblerInput): RetrievalTrace {
     const { prompt, diagnostics, timings } = input;
     const rewriteReason = prompt.rewrittenQuery.rejectionReason ?? prompt.rewrittenQuery.fallbackReason;
-    const semanticStageId = prompt.rewrittenQuery.retrievalEligible ? "semantic_rewritten" : "semantic_original";
+    const semanticKind = prompt.rewrittenQuery.retrievalEligible ? "semantic_rewritten" : "semantic_original";
+    const semanticBranches = prompt.retrievalBranches.map((branch, index) => ({
+      stageId:
+        prompt.retrievalBranches.length === 1
+          ? semanticKind
+          : `${semanticKind}_${index + 1}_${toSafeStageId(branch.label || branch.subqueryId)}`,
+      kind: semanticKind,
+      label: prompt.retrievalBranches.length === 1 ? "Semantic retrieval" : `Semantic retrieval: ${branch.label}`,
+      query: branch.semanticQuery,
+      reason: branch.reason,
+      contexts: branch.semanticContexts,
+    }));
+    const lexicalBranches = prompt.retrievalBranches.map((branch, index) => ({
+      stageId:
+        prompt.retrievalBranches.length === 1
+          ? "lexical"
+          : `lexical_${index + 1}_${toSafeStageId(branch.label || branch.subqueryId)}`,
+      kind: "lexical",
+      label: prompt.retrievalBranches.length === 1 ? "Lexical retrieval" : `Lexical retrieval: ${branch.label}`,
+      query: branch.lexicalQuery,
+      reason: branch.reason,
+      contexts: branch.lexicalContexts,
+    }));
+    const semanticTiming = {
+      startedAt: timings.semanticRetrieval.startedAt,
+      durationMs: Math.max(0, Math.round(timings.semanticRetrieval.durationMs / Math.max(semanticBranches.length, 1))),
+    };
+    const lexicalTiming = {
+      startedAt: timings.lexicalRetrieval.startedAt,
+      durationMs: Math.max(0, Math.round(timings.lexicalRetrieval.durationMs / Math.max(lexicalBranches.length, 1))),
+    };
 
     const stages: RetrievalTraceStage[] = [
       buildStage("context", "context", "Context", "applied", timings.retrievalContext, {
@@ -110,6 +147,13 @@ export class RetrievalTraceAssembler {
           semanticQuery: prompt.activeParsedQuery.semanticQuery,
           lexicalQuery: prompt.activeParsedQuery.lexicalQuery,
           lexicalEffectiveQuery: prompt.rewrittenQuery.lexicalQuery,
+          retrievalSubqueries: (diagnostics.retrievalSubqueries ?? []).map((subquery) => ({
+            id: subquery.id,
+            label: subquery.label,
+            semanticQuery: subquery.semanticQuery,
+            lexicalQuery: subquery.lexicalQuery,
+            reason: subquery.reason,
+          })),
           continuityDecision: prompt.continuityDecision,
           promptHistoryCount: prompt.promptHistory.length,
           rewriteEligible: prompt.rewrittenQuery.retrievalEligible,
@@ -124,43 +168,43 @@ export class RetrievalTraceAssembler {
           reason: rewriteReason,
         },
       ),
-      buildStage(
-        semanticStageId,
-        semanticStageId,
-        prompt.rewrittenQuery.retrievalEligible ? "Semantic retrieval (rewritten)" : "Semantic retrieval",
-        prompt.vectorFallbackApplied ? "fallback" : "applied",
-        timings.semanticRetrieval,
-        {
+      ...semanticBranches.map((branch) =>
+        buildStage(branch.stageId, branch.kind, branch.label, prompt.vectorFallbackApplied ? "fallback" : "applied", semanticTiming, {
           settings: {
             topK: prompt.settings.vectorTopK,
             similarityThreshold: prompt.settings.similarityThreshold,
+            subqueryLabel: branch.label.replace(/^Semantic retrieval:\s*/, ""),
           },
           inputs: {
-            query: prompt.activeSemanticQuery,
+            query: branch.query,
           },
           outputs: {
-            candidateCount: prompt.originalContexts.length + prompt.rewrittenContexts.length,
-            chunks: toChunkRefs([...prompt.originalContexts, ...prompt.rewrittenContexts]),
+            candidateCount: branch.contexts.length,
+            chunks: toChunkRefs(branch.contexts),
           },
           metrics: {
-            candidateCount: prompt.originalContexts.length + prompt.rewrittenContexts.length,
+            candidateCount: branch.contexts.length,
             queryEmbeddingDurationMs: diagnostics.queryEmbeddingDurationMs ?? 0,
           },
-          reason: prompt.vectorFallbackApplied ? "Vector retrieval used fallback behavior." : undefined,
-        },
+          reason: branch.reason ?? (prompt.vectorFallbackApplied ? "Vector retrieval used fallback behavior." : undefined),
+        }),
       ),
-      buildStage("lexical", "lexical", "Lexical retrieval", "applied", timings.lexicalRetrieval, {
-        settings: {
-          query: prompt.activeParsedQuery.lexicalQuery || prompt.activeQuery,
-        },
-        outputs: {
-          candidateCount: prompt.lexicalContexts.length,
-          chunks: toChunkRefs(prompt.lexicalContexts),
-        },
-        metrics: {
-          candidateCount: prompt.lexicalContexts.length,
-        },
-      }),
+      ...lexicalBranches.map((branch) =>
+        buildStage(branch.stageId, branch.kind, branch.label, "applied", lexicalTiming, {
+          settings: {
+            query: branch.query,
+            subqueryLabel: branch.label.replace(/^Lexical retrieval:\s*/, ""),
+          },
+          outputs: {
+            candidateCount: branch.contexts.length,
+            chunks: toChunkRefs(branch.contexts),
+          },
+          metrics: {
+            candidateCount: branch.contexts.length,
+          },
+          reason: branch.reason,
+        }),
+      ),
       buildStage("preparation", "candidate_preparation", "Candidate preparation", diagnostics.fallbackApplied ? "fallback" : "applied", timings.candidatePreparation, {
         outputs: {
           appliedConstraintSummaries: prompt.appliedConstraints.map((constraint) => constraint.summary),
@@ -220,10 +264,10 @@ export class RetrievalTraceAssembler {
 
     const links: RetrievalTraceLink[] = [
       { fromStageId: "context", toStageId: "interpretation", kind: "sequence" },
-      { fromStageId: "interpretation", toStageId: semanticStageId, kind: "branch" },
-      { fromStageId: "interpretation", toStageId: "lexical", kind: "branch" },
-      { fromStageId: semanticStageId, toStageId: "preparation", kind: "converge" },
-      { fromStageId: "lexical", toStageId: "preparation", kind: "converge" },
+      ...semanticBranches.map((branch) => ({ fromStageId: "interpretation", toStageId: branch.stageId, kind: "branch" as const })),
+      ...lexicalBranches.map((branch) => ({ fromStageId: "interpretation", toStageId: branch.stageId, kind: "branch" as const })),
+      ...semanticBranches.map((branch) => ({ fromStageId: branch.stageId, toStageId: "preparation", kind: "converge" as const })),
+      ...lexicalBranches.map((branch) => ({ fromStageId: branch.stageId, toStageId: "preparation", kind: "converge" as const })),
       { fromStageId: "preparation", toStageId: "selection", kind: "sequence" },
       { fromStageId: "selection", toStageId: "prompt", kind: "sequence" },
       { fromStageId: "prompt", toStageId: "diagnostics", kind: "sequence" },
@@ -236,6 +280,41 @@ export class RetrievalTraceAssembler {
       totalDurationMs: timings.totalDurationMs,
       stages,
       links,
+      summary: {
+        parsedQuery: diagnostics.parsedQuery
+          ? {
+              originalQuery: diagnostics.parsedQuery.originalQuery ?? diagnostics.parsedQuery.semanticQuery,
+              semanticQuery: diagnostics.parsedQuery.semanticQuery,
+              lexicalQuery: diagnostics.parsedQuery.lexicalQuery,
+              constraintSummary: diagnostics.parsedQuery.constraints.map((constraint) => constraint.summary),
+            }
+          : undefined,
+        retrievalSubqueries: (diagnostics.retrievalSubqueries ?? []).map((subquery) => ({
+          id: subquery.id,
+          label: subquery.label,
+          semanticQuery: subquery.semanticQuery,
+          lexicalQuery: subquery.lexicalQuery,
+          reason: subquery.reason,
+        })),
+        candidateCounts: {
+          semantic: diagnostics.originalCandidateCount + diagnostics.rewrittenCandidateCount,
+          lexical: diagnostics.lexicalCandidateCount ?? 0,
+          merged: diagnostics.normalizedCandidateCount,
+          final: diagnostics.finalContextCount,
+        },
+        appliedConstraints: diagnostics.appliedConstraints,
+        fallbackApplied: diagnostics.fallbackApplied,
+        rerankStatus: diagnostics.rerankStatus,
+        rewrite: {
+          status: diagnostics.rewriteStatus,
+          eligible: Boolean(diagnostics.rewriteEligible),
+          ran: Boolean(diagnostics.rewriteRan),
+          materialDisagreement: Boolean(diagnostics.materialDisagreement),
+          continuityDecision: diagnostics.continuityDecision,
+          rejectionReason: diagnostics.rejectionReason,
+          fallbackReason: diagnostics.fallbackReason,
+        },
+      },
     };
   }
 }

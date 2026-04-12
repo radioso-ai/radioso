@@ -227,17 +227,19 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
           />
           <StringList values={asStringList(outputs.parsedConstraints)} />
         </Section>
+        <RawBlock label="Retrieval subqueries" value={outputs.retrievalSubqueries} />
       </>
     )
   }
 
-  if (stage.stageId === 'semantic_original' || stage.stageId === 'semantic_rewritten' || stage.stageId === 'lexical') {
+  if (stage.kind === 'semantic_original' || stage.kind === 'semantic_rewritten' || stage.kind === 'lexical') {
     return (
       <>
         <Section title="Retrieval">
           <KeyValueList
             rows={[
               { label: 'Query', value: (inputs.query as string | undefined) ?? (settings.query as string | undefined) },
+              { label: 'Subquery', value: settings.subqueryLabel as string | undefined },
               { label: 'Top K', value: settings.topK as number | undefined },
               { label: 'Threshold', value: settings.similarityThreshold as number | undefined },
               { label: 'Candidate count', value: outputs.candidateCount as number | undefined },

@@ -1,6 +1,10 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSettings.js";
-import type { ConversationContextWindow, RewrittenRetrievalQuery } from "../domain/retrievalPipelineTypes.js";
+import type {
+  ConversationContextWindow,
+  RetrievalSubquery,
+  RewrittenRetrievalQuery,
+} from "../domain/retrievalPipelineTypes.js";
 import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
@@ -26,8 +30,20 @@ export interface QueryInterpretationStageResult extends RetrievalContextStageRes
   activeQuery: string;
   activeParsedQuery: ParsedQueryInterpretation;
   activeSemanticQuery: string;
+  activeRetrievalSubqueries: RetrievalSubquery[];
   promptHistory: MessageRecord[];
   continuityDecision: "unchanged" | "updated" | "unresolved" | "rejected";
+}
+
+export interface RetrievalBranchResult {
+  subqueryId: string;
+  label: string;
+  semanticQuery: string;
+  lexicalQuery: string;
+  reason?: string;
+  source: "original" | "rewritten";
+  semanticContexts: RetrievedChunk[];
+  lexicalContexts: RetrievedChunk[];
 }
 
 export interface CandidateRetrievalStageResult extends QueryInterpretationStageResult {
@@ -36,6 +52,7 @@ export interface CandidateRetrievalStageResult extends QueryInterpretationStageR
   originalContexts: RetrievedChunk[];
   rewrittenContexts: RetrievedChunk[];
   lexicalContexts: RetrievedChunk[];
+  retrievalBranches: RetrievalBranchResult[];
   vectorFallbackApplied: boolean;
 }
 

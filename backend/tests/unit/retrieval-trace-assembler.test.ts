@@ -1,0 +1,231 @@
+import { describe, expect, it } from "vitest";
+
+import { RetrievalTraceAssembler } from "../../src/modules/retrieval/services/retrievalTraceAssembler.js";
+
+describe("retrieval trace assembler", () => {
+  it("emits branch stages for decomposed retrieval subqueries", () => {
+    const assembler = new RetrievalTraceAssembler();
+
+    const trace = assembler.assemble({
+      prompt: {
+        request: {
+          workspaceId: "w1",
+          query: "who is narayani and arudra?",
+          history: [],
+        },
+        settings: {
+          workspaceId: "w1",
+          queryRewriteEnabled: true,
+          semanticRewriteInstructions: "",
+          lexicalRewriteInstructions: "",
+          answerSupportPolicy: "strict",
+          rerankEnabled: true,
+          vectorTopK: 20,
+          similarityThreshold: 0.2,
+          rerankTopK: 5,
+          citationDisplayEnabled: true,
+          metadataRules: [],
+          customInstruction: "",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        contextWindow: {
+          selectedMessages: [],
+          truncated: false,
+          selectionReason: "no-history",
+          rewriteCarryForwardLiterals: [],
+        },
+        originalParsedQuery: {
+          originalQuery: "who is narayani and arudra?",
+          semanticQuery: "who is narayani and arudra?",
+          lexicalQuery: "who is narayani and arudra?",
+          constraints: [],
+        },
+        originalPreparedQuery: {
+          originalQuery: "who is narayani and arudra?",
+          semanticQuery: "who is narayani and arudra?",
+          lexicalQuery: "who is narayani and arudra?",
+          constraints: [],
+        },
+        rewrittenQuery: {
+          originalQuery: "who is narayani and arudra?",
+          rewrittenQuery: "who is narayani and arudra?",
+          effectiveQuery: "who is narayani and arudra?",
+          semanticQuery: "who is narayani and arudra?",
+          lexicalQuery: "who is narayani and arudra?",
+          retrievalSubqueries: [
+            { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani" },
+            { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra" },
+          ],
+          rewriteApplied: true,
+          retrievalEligible: true,
+          status: "applied",
+          confidence: 0.9,
+        },
+        activeQuery: "who is narayani and arudra?",
+        activeParsedQuery: {
+          originalQuery: "who is narayani and arudra?",
+          semanticQuery: "who is narayani and arudra?",
+          lexicalQuery: "who is narayani and arudra?",
+          constraints: [],
+        },
+        activeSemanticQuery: "who is narayani and arudra?",
+        activeRetrievalSubqueries: [
+          { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani" },
+          { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra" },
+        ],
+        promptHistory: [],
+        continuityDecision: "updated",
+        activeEmbedding: [1, 0, 0],
+        activeEmbeddingDurationMs: 12,
+        originalContexts: [],
+        rewrittenContexts: [
+          {
+            chunkId: "n1",
+            documentId: "d1",
+            title: "Narayani",
+            content: "Narayani profile",
+            similarity: 0.9,
+          },
+          {
+            chunkId: "a1",
+            documentId: "d2",
+            title: "Arudra",
+            content: "Arudra profile",
+            similarity: 0.88,
+          },
+        ],
+        lexicalContexts: [
+          {
+            chunkId: "ln1",
+            documentId: "d1",
+            title: "Narayani",
+            content: "Narayani profile",
+            similarity: 1,
+          },
+          {
+            chunkId: "la1",
+            documentId: "d2",
+            title: "Arudra",
+            content: "Arudra profile",
+            similarity: 1,
+          },
+        ],
+        retrievalBranches: [
+          {
+            subqueryId: "subquery_1",
+            label: "Narayani",
+            semanticQuery: "who is narayani",
+            lexicalQuery: "narayani",
+            source: "rewritten",
+            semanticContexts: [
+              {
+                chunkId: "n1",
+                documentId: "d1",
+                title: "Narayani",
+                content: "Narayani profile",
+                similarity: 0.9,
+              },
+            ],
+            lexicalContexts: [
+              {
+                chunkId: "ln1",
+                documentId: "d1",
+                title: "Narayani",
+                content: "Narayani profile",
+                similarity: 1,
+              },
+            ],
+          },
+          {
+            subqueryId: "subquery_2",
+            label: "Arudra",
+            semanticQuery: "who is arudra",
+            lexicalQuery: "arudra",
+            source: "rewritten",
+            semanticContexts: [
+              {
+                chunkId: "a1",
+                documentId: "d2",
+                title: "Arudra",
+                content: "Arudra profile",
+                similarity: 0.88,
+              },
+            ],
+            lexicalContexts: [
+              {
+                chunkId: "la1",
+                documentId: "d2",
+                title: "Arudra",
+                content: "Arudra profile",
+                similarity: 1,
+              },
+            ],
+          },
+        ],
+        vectorFallbackApplied: false,
+        normalizedCandidates: [],
+        mergedCandidates: [],
+        scoredCandidates: [],
+        appliedConstraints: [],
+        candidateFallbackApplied: false,
+        rerankedContexts: [],
+        rerankStatus: "applied",
+        contexts: [],
+        prompt: "prompt",
+        citations: [],
+        responseSettings: {
+          citationDisplayEnabled: true,
+          answerSupportPolicy: "strict",
+        },
+      },
+      diagnostics: {
+        rewriteStatus: "applied",
+        rerankStatus: "applied",
+        originalCandidateCount: 0,
+        rewrittenCandidateCount: 2,
+        lexicalCandidateCount: 2,
+        normalizedCandidateCount: 2,
+        finalContextCount: 0,
+        queryEmbeddingDurationMs: 12,
+        parsedQuery: {
+          originalQuery: "who is narayani and arudra?",
+          semanticQuery: "who is narayani and arudra?",
+          lexicalQuery: "who is narayani and arudra?",
+          constraints: [],
+        },
+        appliedConstraints: [],
+        candidateFallbackApplied: false,
+        fallbackApplied: false,
+        rewriteEligible: true,
+        rewriteRan: true,
+        materialDisagreement: false,
+        continuityDecision: "updated",
+        retrievalSubqueries: [
+          { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani" },
+          { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra" },
+        ],
+      },
+      timings: {
+        traceStartedAt: "2026-04-12T14:14:16.000Z",
+        traceCompletedAt: "2026-04-12T14:14:24.000Z",
+        totalDurationMs: 8_000,
+        retrievalContext: { startedAt: "2026-04-12T14:14:16.000Z", durationMs: 10 },
+        queryInterpretation: { startedAt: "2026-04-12T14:14:16.010Z", durationMs: 20 },
+        semanticRetrieval: { startedAt: "2026-04-12T14:14:16.030Z", durationMs: 600 },
+        lexicalRetrieval: { startedAt: "2026-04-12T14:14:16.630Z", durationMs: 400 },
+        candidatePreparation: { startedAt: "2026-04-12T14:14:17.030Z", durationMs: 20 },
+        contextSelection: { startedAt: "2026-04-12T14:14:17.050Z", durationMs: 20 },
+        promptAssembly: { startedAt: "2026-04-12T14:14:17.070Z", durationMs: 10 },
+        diagnostics: { startedAt: "2026-04-12T14:14:17.080Z", durationMs: 10 },
+      },
+    });
+
+    expect(trace.stages.filter((stage) => stage.kind === "semantic_rewritten")).toHaveLength(2);
+    expect(trace.stages.filter((stage) => stage.kind === "lexical")).toHaveLength(2);
+    expect(trace.summary?.retrievalSubqueries).toEqual([
+      expect.objectContaining({ label: "Narayani", lexicalQuery: "narayani" }),
+      expect.objectContaining({ label: "Arudra", lexicalQuery: "arudra" }),
+    ]);
+  });
+});

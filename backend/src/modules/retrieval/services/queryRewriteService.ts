@@ -2,6 +2,7 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import type {
   ConversationContextWindow,
+  RetrievalSubquery,
   RewrittenRetrievalQuery,
   RewriteTurnKind,
   StructuredRewriteResult,
@@ -28,13 +29,14 @@ Do not broaden the query into extra subtopics, checklists, or suggested facets t
 Produce:
 - semanticQuery: optimized for meaning-preserving semantic retrieval
 - lexicalQuery: optimized for literal lexical retrieval using aliases, abbreviations, citation forms, or corpus-native notation when grounded
+- retrievalSubqueries: optional list of narrowly scoped retrieval lookups when the question should be searched in parts, such as distinct people or entities that need separate retrieval
 - rewrittenQuery: a compatibility field that should mirror semanticQuery
 Confidence means certainty in subject resolution and turn interpretation, not answer confidence:
 - use 0.0-0.4 when ambiguity remains or the subject is only weakly implied
 - use 0.5-0.7 when the likely subject is supported by user context but still inferential
 - use 0.8-1.0 only when the current turn or explicit user context clearly supports the subject
 Return strict JSON matching this blueprint exactly:
-{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":true,"confidence":0.0}
+{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":true,"confidence":0.0}
 Do not wrap the JSON in markdown fences.`;
 
 export interface QueryRewriteGateway {
@@ -172,7 +174,10 @@ export class QueryRewriteService {
         hasConversationContext,
       );
       const compatibilityRewrite = semanticQuery;
-      const applied = semanticQuery !== input.query || lexicalQuery !== input.query;
+      const applied =
+        semanticQuery !== input.query ||
+        lexicalQuery !== input.query ||
+        Boolean(result.retrievalSubqueries && result.retrievalSubqueries.length > 1);
 
       if (applied) {
         const eligibility = this.eligibilityService.evaluate({
@@ -190,6 +195,7 @@ export class QueryRewriteService {
           effectiveQuery: eligibility.eligible ? semanticQuery : input.query,
           semanticQuery: eligibility.eligible ? semanticQuery : input.query,
           lexicalQuery: eligibility.eligible ? lexicalQuery : input.query,
+          retrievalSubqueries: eligibility.eligible ? result.retrievalSubqueries : undefined,
           rewriteApplied: eligibility.eligible,
           retrievalEligible: eligibility.eligible,
           status: eligibility.eligible ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
@@ -221,6 +227,7 @@ export class QueryRewriteService {
       effectiveQuery: query,
       semanticQuery: query,
       lexicalQuery: query,
+      retrievalSubqueries: undefined,
       rewriteApplied: false,
       retrievalEligible: false,
       status: REWRITE_STATUS.SKIPPED,
@@ -235,6 +242,7 @@ export class QueryRewriteService {
       effectiveQuery: query,
       semanticQuery: query,
       lexicalQuery: query,
+      retrievalSubqueries: undefined,
       rewriteApplied: false,
       retrievalEligible: false,
       status: REWRITE_STATUS.FALLBACK,
@@ -254,6 +262,7 @@ export class QueryRewriteService {
       effectiveQuery: query,
       semanticQuery: query,
       lexicalQuery: query,
+      retrievalSubqueries: rewrite.retrievalSubqueries,
       rewriteApplied: false,
       retrievalEligible: false,
       status: REWRITE_STATUS.REJECTED,
@@ -284,6 +293,7 @@ export class QueryRewriteService {
         rewrittenQuery: this.normalizeRewrite(result.rewrittenQuery),
         semanticQuery: this.normalizeRewrite(result.semanticQuery ?? result.rewrittenQuery),
         lexicalQuery: this.normalizeRewrite(result.lexicalQuery ?? result.rewrittenQuery),
+        retrievalSubqueries: this.normalizeRetrievalSubqueries(result.retrievalSubqueries),
         turnKind: this.normalizeTurnKind(result.turnKind),
         proposedActiveSubject: result.proposedActiveSubject?.trim() || undefined,
         relatedEntities: [...new Set((result.relatedEntities ?? []).map((entity) => entity.trim()).filter(Boolean))],
@@ -296,6 +306,7 @@ export class QueryRewriteService {
       rewrittenQuery: this.normalizeRewrite(result?.rewrittenQuery ?? originalQuery),
       semanticQuery: this.normalizeRewrite(result?.semanticQuery ?? result?.rewrittenQuery ?? originalQuery),
       lexicalQuery: this.normalizeRewrite(result?.lexicalQuery ?? result?.rewrittenQuery ?? originalQuery),
+      retrievalSubqueries: undefined,
       turnKind: REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP,
       proposedActiveSubject: undefined,
       relatedEntities: [],
@@ -316,6 +327,39 @@ export class QueryRewriteService {
       default:
         return REWRITE_TURN_KIND.AMBIGUOUS;
     }
+  }
+
+  private normalizeRetrievalSubqueries(retrievalSubqueries?: RetrievalSubquery[]): RetrievalSubquery[] | undefined {
+    if (!Array.isArray(retrievalSubqueries)) {
+      return undefined;
+    }
+
+    const normalized = retrievalSubqueries
+      .map((subquery, index) => {
+        const label = this.normalizeRewrite(subquery?.label);
+        const semanticQuery = this.normalizeRewrite(subquery?.semanticQuery);
+        const lexicalQuery = this.normalizeRewrite(subquery?.lexicalQuery ?? semanticQuery);
+        if (!label || !semanticQuery || !lexicalQuery) {
+          return null;
+        }
+
+        return {
+          id: `subquery_${index + 1}`,
+          label,
+          semanticQuery,
+          lexicalQuery,
+          reason: this.normalizeOptionalRewrite(subquery?.reason),
+        };
+      })
+      .filter((subquery): subquery is NonNullable<typeof subquery> => subquery !== null)
+      .slice(0, 4);
+
+    return normalized.length > 1 ? normalized : undefined;
+  }
+
+  private normalizeOptionalRewrite(rewrittenQuery?: string): string | undefined {
+    const normalized = this.normalizeRewrite(rewrittenQuery);
+    return normalized.length > 0 ? normalized : undefined;
   }
 
   private isUsableRewrite(originalQuery: string, rewrittenQuery: string): boolean {
@@ -383,6 +427,25 @@ const tokenizeRewriteTerms = (value: string): string[] =>
 const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
   const normalized = raw.trim().replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim();
   const parsed = JSON.parse(normalized) as Partial<StructuredRewriteResult>;
+  const parsedSubqueries = Array.isArray(parsed.retrievalSubqueries)
+    ? parsed.retrievalSubqueries
+        .filter((entry) => Boolean(entry) && typeof entry === "object")
+        .map((entry) => ({
+          id: "",
+          label: typeof (entry as { label?: unknown }).label === "string" ? (entry as { label: string }).label : "",
+          semanticQuery:
+            typeof (entry as { semanticQuery?: unknown }).semanticQuery === "string"
+              ? (entry as { semanticQuery: string }).semanticQuery
+              : "",
+          lexicalQuery:
+            typeof (entry as { lexicalQuery?: unknown }).lexicalQuery === "string"
+              ? (entry as { lexicalQuery: string }).lexicalQuery
+              : typeof (entry as { semanticQuery?: unknown }).semanticQuery === "string"
+                ? (entry as { semanticQuery: string }).semanticQuery
+                : "",
+          reason: typeof (entry as { reason?: unknown }).reason === "string" ? (entry as { reason: string }).reason : undefined,
+        }))
+    : undefined;
 
   return {
     rewrittenQuery: typeof parsed.rewrittenQuery === "string" ? parsed.rewrittenQuery : "",
@@ -398,6 +461,7 @@ const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
         : typeof parsed.rewrittenQuery === "string"
           ? parsed.rewrittenQuery
           : "",
+    retrievalSubqueries: parsedSubqueries,
     turnKind:
       typeof parsed.turnKind === "string" ? (parsed.turnKind as RewriteTurnKind) : REWRITE_TURN_KIND.AMBIGUOUS,
     proposedActiveSubject: typeof parsed.proposedActiveSubject === "string" ? parsed.proposedActiveSubject : undefined,

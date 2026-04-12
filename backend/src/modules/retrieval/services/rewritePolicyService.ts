@@ -19,6 +19,11 @@ export class RewriteEligibilityService {
   }): { eligible: boolean; rejectionReason?: string } {
     const semanticQuery = input.rewrite.semanticQuery ?? input.rewrite.rewrittenQuery;
     const lexicalQuery = input.rewrite.lexicalQuery ?? input.rewrite.rewrittenQuery;
+    const retrievalSubqueries = input.rewrite.retrievalSubqueries ?? [];
+
+    if (retrievalSubqueries.length > 1) {
+      return { eligible: true };
+    }
 
     if (
       !this.isMateriallyDifferent(input.originalQuery, semanticQuery) &&

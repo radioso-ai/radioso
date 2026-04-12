@@ -13,35 +13,58 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
 
   async execute(input: QueryInterpretationStageResult) {
     const embeddingStartedAt = Date.now();
-    const [activeEmbedding] = await this.embeddingService.embedChunks([input.activeSemanticQuery]);
+    const semanticQueries = input.activeRetrievalSubqueries.map((subquery) => subquery.semanticQuery);
+    const embeddings = await this.embeddingService.embedChunks(semanticQueries);
     const activeEmbeddingDurationMs = Math.max(0, Date.now() - embeddingStartedAt);
-    const [activeSearch, lexicalContexts] = await Promise.all([
-      this.searchWithFallback({
-        workspaceId: input.request.workspaceId,
-        queryEmbedding: activeEmbedding ?? [],
-        topK: input.settings.vectorTopK,
-        similarityThreshold: input.settings.similarityThreshold,
-        metadataFilter: input.request.metadataFilter,
-      }),
-      this.lexicalSearch.search({
-        workspaceId: input.request.workspaceId,
-        query: input.activeParsedQuery.lexicalQuery || input.activeQuery,
-        topK: HYBRID_RETRIEVAL_DEFAULTS.lexicalTopK,
-        metadataFilter: input.request.metadataFilter,
-      }),
-    ]);
+    const retrievalBranches = await Promise.all(
+      input.activeRetrievalSubqueries.map(async (subquery, index) => {
+        const [semanticSearch, lexicalContexts] = await Promise.all([
+          this.searchWithFallback({
+            workspaceId: input.request.workspaceId,
+            queryEmbedding: embeddings[index] ?? [],
+            topK: input.settings.vectorTopK,
+            similarityThreshold: input.settings.similarityThreshold,
+            metadataFilter: input.request.metadataFilter,
+          }),
+          this.lexicalSearch.search({
+            workspaceId: input.request.workspaceId,
+            query: subquery.lexicalQuery,
+            topK: HYBRID_RETRIEVAL_DEFAULTS.lexicalTopK,
+            metadataFilter: input.request.metadataFilter,
+          }),
+        ]);
 
-    const originalContexts = input.rewrittenQuery.retrievalEligible ? [] : activeSearch.contexts;
-    const rewrittenContexts = input.rewrittenQuery.retrievalEligible ? activeSearch.contexts : [];
+        return {
+          subqueryId: subquery.id,
+          label: subquery.label,
+          semanticQuery: subquery.semanticQuery,
+          lexicalQuery: subquery.lexicalQuery,
+          reason: subquery.reason,
+          source: input.rewrittenQuery.retrievalEligible ? ("rewritten" as const) : ("original" as const),
+          semanticContexts: semanticSearch.contexts,
+          lexicalContexts,
+          fallbackApplied: semanticSearch.fallbackApplied,
+        };
+      }),
+    );
+
+    const originalContexts = input.rewrittenQuery.retrievalEligible
+      ? []
+      : retrievalBranches.flatMap((branch) => branch.semanticContexts);
+    const rewrittenContexts = input.rewrittenQuery.retrievalEligible
+      ? retrievalBranches.flatMap((branch) => branch.semanticContexts)
+      : [];
+    const lexicalContexts = retrievalBranches.flatMap((branch) => branch.lexicalContexts);
 
     return {
       ...input,
-      activeEmbedding: activeEmbedding ?? [],
+      activeEmbedding: embeddings[0] ?? [],
       activeEmbeddingDurationMs,
       originalContexts,
       rewrittenContexts,
       lexicalContexts,
-      vectorFallbackApplied: activeSearch.fallbackApplied,
+      retrievalBranches: retrievalBranches.map(({ fallbackApplied: _fallbackApplied, ...branch }) => branch),
+      vectorFallbackApplied: retrievalBranches.some((branch) => branch.fallbackApplied),
     };
   }
 

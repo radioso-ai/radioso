@@ -455,6 +455,17 @@ const CandidateCountsSchema = registry.register(
   }),
 );
 
+const RetrievalSubquerySchema = registry.register(
+  "RetrievalSubquery",
+  z.object({
+    id: z.string(),
+    label: z.string(),
+    semanticQuery: z.string(),
+    lexicalQuery: z.string(),
+    reason: z.string().optional(),
+  }),
+);
+
 const AppliedConstraintSchema = registry.register(
   "AppliedConstraint",
   z.object({
@@ -481,6 +492,7 @@ const RetrievalInfoSchema = registry.register(
   "RetrievalInfo",
   z.object({
     parsedQuery: ParsedQuerySchema.optional(),
+    retrievalSubqueries: z.array(RetrievalSubquerySchema).optional(),
     candidateCounts: CandidateCountsSchema,
     appliedConstraints: z.array(AppliedConstraintSchema).optional(),
     fallbackApplied: z.boolean(),

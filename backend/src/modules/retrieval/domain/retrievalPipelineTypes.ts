@@ -33,11 +33,20 @@ export interface StructuredRewriteResult {
   rewrittenQuery: string;
   semanticQuery?: string;
   lexicalQuery?: string;
+  retrievalSubqueries?: RetrievalSubquery[];
   turnKind: RewriteTurnKind;
   proposedActiveSubject?: string;
   relatedEntities: string[];
   unresolved: boolean;
   confidence: number;
+}
+
+export interface RetrievalSubquery {
+  id: string;
+  label: string;
+  semanticQuery: string;
+  lexicalQuery: string;
+  reason?: string;
 }
 
 export type ContinuityDecision = "unchanged" | "reused" | "updated" | "unresolved" | "rejected";
@@ -48,6 +57,7 @@ export interface RewrittenRetrievalQuery {
   effectiveQuery: string;
   semanticQuery: string;
   lexicalQuery: string;
+  retrievalSubqueries?: RetrievalSubquery[];
   rewriteApplied: boolean;
   retrievalEligible: boolean;
   status: RewriteStatus;
@@ -87,6 +97,13 @@ export interface RetrievalTraceSummary {
     lexicalQuery: string;
     constraintSummary: string[];
   };
+  retrievalSubqueries?: Array<{
+    id: string;
+    label: string;
+    semanticQuery: string;
+    lexicalQuery: string;
+    reason?: string;
+  }>;
   candidateCounts: {
     semantic: number;
     lexical: number;
@@ -155,6 +172,7 @@ export interface RetrievalExecutionDiagnostics {
   materialDisagreement?: boolean;
   continuityDecision?: ContinuityDecision;
   rewriteProposal?: StructuredRewriteResult;
+  retrievalSubqueries?: RetrievalSubquery[];
   rejectionReason?: string;
   fallbackReason?: string;
 }

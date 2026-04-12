@@ -381,6 +381,7 @@ export interface AnswerSegment {
 
 export interface RetrievalInfo {
   parsedQuery?: ParsedQueryInfo
+  retrievalSubqueries?: RetrievalSubqueryInfo[]
   candidateCounts: CandidateCounts
   appliedConstraints?: AppliedConstraintInfo[]
   fallbackApplied: boolean
@@ -401,6 +402,14 @@ export interface ParsedQueryInfo {
   semanticQuery: string
   lexicalQuery: string
   constraintSummary: string[]
+}
+
+export interface RetrievalSubqueryInfo {
+  id: string
+  label: string
+  semanticQuery: string
+  lexicalQuery: string
+  reason?: string
 }
 
 export interface CandidateCounts {
@@ -444,7 +453,9 @@ export interface RetrievalTrace {
   totalDurationMs?: number
   stages: RetrievalTraceStage[]
   links: RetrievalTraceLink[]
-  summary?: RetrievalInfo
+  summary?: RetrievalInfo & {
+    retrievalSubqueries?: RetrievalSubqueryInfo[]
+  }
 }
 
 export interface ChatResponse {

@@ -30,6 +30,7 @@ export interface UserRepositoryPort {
   create(params: { id?: string; email: string; passwordHash: string }): Promise<UserRecord>;
   findByEmail(email: string): Promise<UserRecord | null>;
   findById(id: string): Promise<UserRecord | null>;
+  deleteById(id: string): Promise<boolean>;
 }
 
 export class UserRepository implements UserRepositoryPort {
@@ -66,5 +67,10 @@ export class UserRepository implements UserRepositoryPort {
     );
 
     return row ? mapUser(row) : null;
+  }
+
+  async deleteById(id: string): Promise<boolean> {
+    const result = await this.database.pool.query("DELETE FROM users WHERE id = $1", [id]);
+    return (result.rowCount ?? 0) > 0;
   }
 }

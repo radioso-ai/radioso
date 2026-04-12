@@ -296,12 +296,6 @@ export class AuthService {
     }
 
     const existingUser = await this.dependencies.userRepository.findByEmail(email);
-    const user = existingUser
-      ? existingUser
-      : await this.dependencies.userRepository.create({
-          email,
-          passwordHash: await hashPassword(input.password),
-        });
 
     if (existingUser) {
       const passwordValid = await verifyPassword(input.password, existingUser.passwordHash);
@@ -316,10 +310,29 @@ export class AuthService {
       }
     }
 
-    const { accountId } = await this.dependencies.accountInvitationService.acceptInvitation(
-      input.invitationToken,
-      user.id,
-    );
+    const user = existingUser
+      ? existingUser
+      : await this.dependencies.userRepository.create({
+          email,
+          passwordHash: await hashPassword(input.password),
+        });
+
+    let createdUserId: string | null = existingUser ? null : user.id;
+
+    let accountId: string;
+    try {
+      ({ accountId } = await this.dependencies.accountInvitationService.acceptInvitation(
+        input.invitationToken,
+        user.id,
+      ));
+      createdUserId = null;
+    } catch (error) {
+      if (createdUserId) {
+        await this.dependencies.userRepository.deleteById(createdUserId);
+      }
+      throw error;
+    }
+
     const account = await this.dependencies.accountRepository.findById(accountId);
     const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(accountId);
     const sessionCookie = await this.createSessionCookie(user.id, accountId);

@@ -292,6 +292,49 @@ describe("auth integration", () => {
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
 
+  it("does not leave behind a user when invitation acceptance fails for a new email", async () => {
+    const { app, dependencies } = createTestApp();
+
+    const owner = await request(app).post("/api/v1/auth/register").send({
+      email: "owner-expired@example.com",
+      password: "verysecurepassword",
+    });
+    const ownerCookie = owner.headers["set-cookie"]?.[0];
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", ownerCookie)
+      .send({ email: "new-user-expired@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const invitationRecord = await dependencies.accountInvitationService["invitationRepository"].findPendingByAccountAndEmail(
+      owner.body.accountId,
+      "new-user-expired@example.com",
+    );
+    if (!invitationRecord) {
+      throw new Error("Expected invitation record");
+    }
+    await dependencies.accountInvitationService["invitationRepository"].update({
+      id: invitationRecord.id,
+      status: "revoked",
+    });
+
+    const accepted = await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+      .send({
+        email: "new-user-expired@example.com",
+        password: "verysecurepassword",
+      });
+
+    const registration = await request(app).post("/api/v1/auth/register").send({
+      email: "new-user-expired@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(accepted.status).toBe(409);
+    expect(registration.status).toBe(201);
+  });
+
   it("lets an account owner remove a member and immediately revoke that account access", async () => {
     const { app } = createTestApp();
 

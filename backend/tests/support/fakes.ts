@@ -183,6 +183,10 @@ export class InMemoryUserRepository implements UserRepositoryPort {
   async findById(id: string): Promise<UserRecord | null> {
     return this.items.get(id) ?? null;
   }
+
+  async deleteById(id: string): Promise<boolean> {
+    return this.items.delete(id);
+  }
 }
 
 export class InMemorySessionRepository implements SessionRepositoryPort {

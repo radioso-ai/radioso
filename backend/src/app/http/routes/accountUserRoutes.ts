@@ -18,6 +18,14 @@ export const accountSwitchSchema = z.object({
   preferredWorkspaceId: z.string().uuid().optional(),
 });
 
+export const createAccountSchema = z.object({
+  organizationName: z.string().trim().min(1).max(80),
+});
+
+export const renameAccountSchema = z.object({
+  organizationName: z.string().trim().min(1).max(80),
+});
+
 export const createAccountUserRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
   const authenticatedSession = requireSession(dependencies);
@@ -61,6 +69,26 @@ export const createAccountUserRoutes = (dependencies: AppDependencies): Router =
     }
   });
 
+  router.post("/accounts", authenticatedSession, validateBody(createAccountSchema), async (req, res, next) => {
+    try {
+      const { userId } = res.locals as { userId: string };
+      const result = await dependencies.authService.createOrganization({
+        userId,
+        organizationName: req.body.organizationName,
+      });
+      res.setHeader("Set-Cookie", result.sessionCookie);
+      res.status(201).json({
+        userId: result.userId,
+        accountId: result.accountId,
+        organizationName: result.organizationName,
+        workspaceId: result.workspaceId,
+        workspaceName: result.workspaceName,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/invitations", authenticatedSession, validateBody(createAccountInvitationSchema), async (req, res, next) => {
     try {
       const { accountId, userId } = res.locals as { accountId: string; userId: string };
@@ -92,6 +120,20 @@ export const createAccountUserRoutes = (dependencies: AppDependencies): Router =
         workspaceId: result.workspaceId,
         workspaceName: result.workspaceName,
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/", authenticatedSession, validateBody(renameAccountSchema), async (req, res, next) => {
+    try {
+      const { accountId, userId } = res.locals as { accountId: string; userId: string };
+      const result = await dependencies.authService.renameOrganization({
+        accountId,
+        userId,
+        organizationName: req.body.organizationName,
+      });
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

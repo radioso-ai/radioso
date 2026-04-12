@@ -143,6 +143,21 @@ export class InMemoryAccountRepository implements AccountRepositoryPort {
   async findById(id: string): Promise<AccountRecord | null> {
     return this.items.get(id) ?? null;
   }
+
+  async updateName(id: string, name: string): Promise<AccountRecord> {
+    const existing = this.items.get(id);
+    if (!existing) {
+      throw notFound("Account not found");
+    }
+
+    const updated: AccountRecord = {
+      ...existing,
+      name,
+      updatedAt: new Date(),
+    };
+    this.items.set(id, updated);
+    return updated;
+  }
 }
 
 export class InMemoryUserRepository implements UserRepositoryPort {

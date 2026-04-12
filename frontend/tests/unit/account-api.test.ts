@@ -149,4 +149,61 @@ describe('accountApi.getWorkspaceToken', () => {
       }),
     )
   })
+
+  it('creates organizations with session credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      headers: {
+        get: () => 'application/json',
+      },
+      json: async () => ({
+        userId: 'user-1',
+        accountId: 'account-3',
+        organizationName: 'Third Org',
+        workspaceId: 'workspace-3',
+        workspaceName: 'Default',
+      }),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await accountApi.createOrganization('Third Org')
+
+    expect(response.organizationName).toBe('Third Org')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/account/accounts',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+      }),
+    )
+  })
+
+  it('renames organizations with session credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+      },
+      json: async () => ({
+        accountId: 'account-1',
+        organizationName: 'Renamed Org',
+      }),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await accountApi.renameOrganization('Renamed Org')
+
+    expect(response.organizationName).toBe('Renamed Org')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/account',
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'include',
+      }),
+    )
+  })
 })

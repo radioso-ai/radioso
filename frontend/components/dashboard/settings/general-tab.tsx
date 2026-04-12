@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ExternalLink, MessageSquare, Save, Trash2 } from 'lucide-react'
+import { Building2, ExternalLink, MessageSquare, Save, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
@@ -22,9 +22,13 @@ import { Switch } from '@/components/ui/switch'
 import { accountApi, generalSettingsApi, type GeneralSettings } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 
-export function GeneralTab() {
+export function GeneralTab({ accountId }: { accountId: string }) {
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace } = useWorkspace()
   const [workspaceName, setWorkspaceName] = useState(activeWorkspace?.name ?? '')
+  const [organizationName, setOrganizationName] = useState('')
+  const [isOrganizationLoading, setIsOrganizationLoading] = useState(true)
+  const [isOrganizationSaving, setIsOrganizationSaving] = useState(false)
+  const [organizationError, setOrganizationError] = useState<string | null>(null)
   const [isRenameSaving, setIsRenameSaving] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
   const hasNameChange = workspaceName.trim() !== (activeWorkspace?.name ?? '')
@@ -43,6 +47,33 @@ export function GeneralTab() {
   useEffect(() => {
     setWorkspaceName(activeWorkspace?.name ?? '')
   }, [activeWorkspace?.name])
+
+  useEffect(() => {
+    let active = true
+
+    const loadOrganization = async () => {
+      setIsOrganizationLoading(true)
+      try {
+        const response = await accountApi.listAccounts()
+        if (!active) return
+        const current = response.accounts.find((account) => account.accountId === accountId)
+        setOrganizationName(current?.organizationName ?? '')
+        setOrganizationError(null)
+      } catch {
+        if (!active) return
+        setOrganizationError('Failed to load organization')
+      } finally {
+        if (active) {
+          setIsOrganizationLoading(false)
+        }
+      }
+    }
+
+    void loadOrganization()
+    return () => {
+      active = false
+    }
+  }, [accountId])
 
   useEffect(() => {
     setApiToken(null)
@@ -118,6 +149,26 @@ export function GeneralTab() {
     }
   }
 
+  const handleOrganizationRename = async () => {
+    const trimmed = organizationName.trim()
+    if (!trimmed || trimmed.length > 80) {
+      setOrganizationError('Organization name must be between 1 and 80 characters')
+      return
+    }
+
+    setIsOrganizationSaving(true)
+    setOrganizationError(null)
+    try {
+      const updated = await accountApi.renameOrganization(trimmed)
+      setOrganizationName(updated.organizationName)
+      window.dispatchEvent(new Event('radioso:accounts-updated'))
+    } catch {
+      setOrganizationError('Failed to rename organization')
+    } finally {
+      setIsOrganizationSaving(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!activeWorkspace || !deleteConfirmValid) return
     setIsDeleting(true)
@@ -149,6 +200,47 @@ export function GeneralTab() {
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-xl space-y-8">
+          <section id="organization" className="space-y-6 scroll-mt-24">
+            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Organization</h2>
+            {isOrganizationLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Spinner className="w-5 h-5" />
+              </div>
+            ) : (
+              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                    <Building2 className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Organization Name</p>
+                      <p className="text-sm text-muted-foreground">
+                        Update the label shown in the organization picker and invite flows.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        value={organizationName}
+                        onChange={(event) => {
+                          setOrganizationName(event.target.value)
+                          setOrganizationError(null)
+                        }}
+                        maxLength={80}
+                        className="flex-1"
+                      />
+                      <Button size="sm" onClick={handleOrganizationRename} disabled={!organizationName.trim() || isOrganizationSaving}>
+                        {isOrganizationSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                        Save
+                      </Button>
+                    </div>
+                    {organizationError ? <p className="text-sm text-destructive">{organizationError}</p> : null}
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+
           <section id="workspace" className="space-y-6 scroll-mt-24">
             <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Workspace</h2>
             <div className="space-y-3">

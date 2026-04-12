@@ -1366,6 +1366,11 @@ export interface WorkspaceTokenResponse {
   token: string
 }
 
+export interface RenameOrganizationResponse {
+  accountId: string
+  organizationName: string
+}
+
 // General Settings API
 export const generalSettingsApi = {
   async getGeneralSettings(): Promise<GeneralSettings> {
@@ -1418,6 +1423,20 @@ export const accountApi = {
         accountId,
         ...(preferredWorkspaceId ? { preferredWorkspaceId } : {}),
       }),
+    }, { withSession: true })
+  },
+
+  async createOrganization(organizationName: string): Promise<LoginResponse> {
+    return request<LoginResponse>('/account/accounts', {
+      method: 'POST',
+      body: JSON.stringify({ organizationName }),
+    }, { withSession: true })
+  },
+
+  async renameOrganization(organizationName: string): Promise<RenameOrganizationResponse> {
+    return request<RenameOrganizationResponse>('/account', {
+      method: 'PATCH',
+      body: JSON.stringify({ organizationName }),
     }, { withSession: true })
   },
 

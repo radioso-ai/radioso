@@ -37,7 +37,6 @@ import {
   ChevronUp,
   User,
   Users,
-  Building2,
 } from 'lucide-react'
 import {
   buildDashboardHref,
@@ -45,9 +44,6 @@ import {
 } from '@/lib/dashboard-routes'
 import { WorkspaceSwitcher } from './workspace-switcher'
 import { useWorkspace } from '@/lib/workspace-context'
-import { accountApi, seedWorkspaceSession } from '@/lib/api'
-import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
 
 interface AppSidebarProps {
   accountId: string
@@ -63,74 +59,9 @@ const navItems = [
 ]
 
 export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
-  const router = useRouter()
-  const { user, login, logout } = useAuth()
+  const { user, logout } = useAuth()
   const { activeWorkspaceId } = useWorkspace()
   const { theme, setTheme } = useTheme()
-  const [accounts, setAccounts] = useState<Array<{
-    accountId: string
-    organizationName: string
-    role: 'owner' | 'member'
-    workspaceId: string
-    workspaceName: string
-  }>>([])
-  const [accountsLoaded, setAccountsLoaded] = useState(false)
-  const [accountsLoadFailed, setAccountsLoadFailed] = useState(false)
-  const [isSwitchingAccountId, setIsSwitchingAccountId] = useState<string | null>(null)
-
-  useEffect(() => {
-    let active = true
-
-    const loadAccounts = async () => {
-      if (!user) {
-        if (!active) return
-        setAccounts([])
-        setAccountsLoaded(true)
-        setAccountsLoadFailed(false)
-        return
-      }
-
-      try {
-        const response = await accountApi.listAccounts()
-        if (!active) return
-        setAccounts(response.accounts)
-        setAccountsLoadFailed(false)
-      } catch {
-        if (!active) return
-        setAccounts([])
-        setAccountsLoadFailed(true)
-      } finally {
-        if (!active) return
-        setAccountsLoaded(true)
-      }
-    }
-
-    setAccountsLoaded(false)
-    setAccountsLoadFailed(false)
-    void loadAccounts()
-    return () => {
-      active = false
-    }
-  }, [user?.accountId, user?.userId])
-
-  const handleAccountSwitch = async (targetAccountId: string, preferredWorkspaceId: string) => {
-    if (!user || isSwitchingAccountId) {
-      return
-    }
-
-    setIsSwitchingAccountId(targetAccountId)
-    try {
-      const response = await accountApi.switchAccount(targetAccountId, preferredWorkspaceId)
-      seedWorkspaceSession(response.workspaceId)
-      await login(user.email, response.userId, response.accountId)
-      router.replace(buildDashboardHref(response.accountId, {
-        section: currentView,
-        workspaceId: response.workspaceId,
-      }))
-    } finally {
-      setIsSwitchingAccountId(null)
-    }
-  }
 
   return (
     <Sidebar collapsible="icon">
@@ -150,7 +81,7 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
       </SidebarHeader>
 
       <div className="px-2">
-        <WorkspaceSwitcher />
+        <WorkspaceSwitcher accountId={accountId} currentView={currentView} />
       </div>
 
       <SidebarContent>
@@ -220,42 +151,6 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
                   {theme === 'system' && <span className="ml-auto text-xs">✓</span>}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                {accountsLoaded ? (
-                  accounts.length > 1 ? (
-                    <>
-                      {accounts.map((account) => (
-                      <DropdownMenuItem
-                        key={account.accountId}
-                        onClick={() => void handleAccountSwitch(account.accountId, account.workspaceId)}
-                        disabled={account.accountId === accountId || isSwitchingAccountId !== null}
-                      >
-                        <Building2 className="w-4 h-4 mr-2" />
-                        <span className="truncate">
-                          {account.organizationName}
-                          {account.accountId === accountId ? ' (Current)' : ''}
-                        </span>
-                      </DropdownMenuItem>
-                      ))}
-                      <DropdownMenuSeparator />
-                    </>
-                  ) : accountsLoadFailed ? (
-                    <>
-                      <DropdownMenuItem disabled>
-                        <Building2 className="w-4 h-4 mr-2" />
-                        Organizations unavailable
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                    </>
-                  ) : null
-                ) : (
-                  <>
-                    <DropdownMenuItem disabled>
-                      <Building2 className="w-4 h-4 mr-2" />
-                      Loading organizations...
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
                 <DropdownMenuItem asChild>
                   <Link
                     href={buildDashboardHref(accountId, {

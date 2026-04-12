@@ -56,4 +56,17 @@ export class AccountRepository implements AccountRepositoryPort {
 
     return row ? mapAccount(row) : null;
   }
+
+  async updateName(id: string, name: string): Promise<AccountRecord> {
+    const [row] = await this.database.query<AccountRow>(
+      `UPDATE accounts
+       SET name = $2,
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, name, email, password_hash, created_at, updated_at`,
+      [id, name],
+    );
+
+    return mapAccount(row);
+  }
 }

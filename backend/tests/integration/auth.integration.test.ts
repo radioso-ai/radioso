@@ -271,6 +271,27 @@ describe("auth integration", () => {
     );
   });
 
+  it("creates a new organization for the signed-in user and switches the session to it", async () => {
+    const { app } = createTestApp();
+
+    const registration = await request(app).post("/api/v1/auth/register").send({
+      email: "multi-org@example.com",
+      password: "verysecurepassword",
+    });
+
+    const response = await request(app)
+      .post("/api/v1/account/accounts")
+      .set("Cookie", registration.headers["set-cookie"]?.[0])
+      .send({ organizationName: "Second Organization" });
+
+    expect(response.status).toBe(201);
+    expect(response.body.userId).toBe(registration.body.userId);
+    expect(response.body.accountId).not.toBe(registration.body.accountId);
+    expect(response.body.organizationName).toBe("Second Organization");
+    expect(response.body.workspaceName).toBe("Default");
+    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
+  });
+
   it("lets an account owner remove a member and immediately revoke that account access", async () => {
     const { app } = createTestApp();
 
@@ -398,6 +419,39 @@ describe("auth integration", () => {
     expect(workspaces.status).toBe(200);
     expect(workspaces.body.workspaces.map((workspace: { id: string }) => workspace.id)).toEqual(
       expect.arrayContaining([secondary.body.workspaceId]),
+    );
+  });
+
+  it("renames the active organization", async () => {
+    const { app } = createTestApp();
+
+    const registration = await request(app).post("/api/v1/auth/register").send({
+      email: "rename-org@example.com",
+      password: "verysecurepassword",
+      organizationName: "Original Org",
+    });
+
+    const rename = await request(app)
+      .patch("/api/v1/account")
+      .set("Cookie", registration.headers["set-cookie"]?.[0])
+      .send({ organizationName: "Renamed Org" });
+
+    const accounts = await request(app)
+      .get("/api/v1/account/accounts")
+      .set("Cookie", registration.headers["set-cookie"]?.[0]);
+
+    expect(rename.status).toBe(200);
+    expect(rename.body).toEqual({
+      accountId: registration.body.accountId,
+      organizationName: "Renamed Org",
+    });
+    expect(accounts.body.accounts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          accountId: registration.body.accountId,
+          organizationName: "Renamed Org",
+        }),
+      ]),
     );
   });
 

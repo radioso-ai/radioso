@@ -54,6 +54,7 @@ export interface AccountRepositoryPort {
   create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord>;
   findByEmail(email: string): Promise<AccountRecord | null>;
   findById(id: string): Promise<AccountRecord | null>;
+  updateName(id: string, name: string): Promise<AccountRecord>;
 }
 
 export interface SessionRepositoryPort {
@@ -151,6 +152,55 @@ export class AuthService {
       eventType: "auth.register",
       eventStatus: "success",
       metadata: { email },
+    });
+
+    return {
+      userId: user.id,
+      accountId: account.id,
+      organizationName: account.name,
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      sessionCookie,
+    };
+  }
+
+  async createOrganization(input: {
+    userId: string;
+    organizationName: string;
+  }): Promise<{
+    userId: string;
+    accountId: string;
+    organizationName: string;
+    workspaceId: string;
+    workspaceName: string;
+    sessionCookie: string;
+  }> {
+    const user = await this.dependencies.userRepository.findById(input.userId);
+    if (!user) {
+      throw unauthorized("Invalid session");
+    }
+
+    const account = await this.dependencies.accountRepository.create({
+      name: input.organizationName.trim(),
+      email: user.email,
+      passwordHash: user.passwordHash,
+    });
+    await this.dependencies.accountAccessService.ensureMembership({
+      accountId: account.id,
+      userId: user.id,
+      role: "owner",
+    });
+    const workspace = await this.dependencies.workspaceService.createDefault(account.id);
+    const sessionCookie = await this.createSessionCookie(user.id, account.id);
+
+    await this.dependencies.auditService.record({
+      accountId: account.id,
+      eventType: "account.create",
+      eventStatus: "success",
+      metadata: {
+        actorUserId: user.id,
+        organizationName: account.name,
+      },
     });
 
     return {
@@ -322,6 +372,30 @@ export class AuthService {
       workspaceId: workspace.id,
       workspaceName: workspace.name,
       sessionCookie,
+    };
+  }
+
+  async renameOrganization(input: {
+    accountId: string;
+    userId: string;
+    organizationName: string;
+  }): Promise<{ accountId: string; organizationName: string }> {
+    await this.dependencies.accountAccessService.requireActiveMembership(input.accountId, input.userId);
+    const account = await this.dependencies.accountRepository.updateName(input.accountId, input.organizationName.trim());
+
+    await this.dependencies.auditService.record({
+      accountId: account.id,
+      eventType: "account.update",
+      eventStatus: "success",
+      metadata: {
+        actorUserId: input.userId,
+        organizationName: account.name,
+      },
+    });
+
+    return {
+      accountId: account.id,
+      organizationName: account.name,
     };
   }
 

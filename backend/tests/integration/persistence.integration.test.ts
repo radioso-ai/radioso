@@ -98,10 +98,12 @@ describeIfDatabase("persistence integration", () => {
     const vectorSearch = new PgVectorSearch(database);
 
     const accountA = await accountRepository.create({
+      name: "Persist A Organization",
       email: `persist-a-${randomUUID()}@example.com`,
       passwordHash: "hash-a",
     });
     const accountB = await accountRepository.create({
+      name: "Persist B Organization",
       email: `persist-b-${randomUUID()}@example.com`,
       passwordHash: "hash-b",
     });
@@ -169,6 +171,7 @@ describeIfDatabase("persistence integration", () => {
   it("does not create duplicate default workspaces when migrations rerun", async () => {
     const accountRepository = new AccountRepository(database);
     const account = await accountRepository.create({
+      name: "Migration Default Organization",
       email: `migration-default-${randomUUID()}@example.com`,
       passwordHash: "hash-default",
     });
@@ -190,6 +193,7 @@ describeIfDatabase("persistence integration", () => {
     const conversationRepository = new ConversationRepository(database);
 
     const account = await accountRepository.create({
+      name: "Conversation Cursor Organization",
       email: `conversation-cursor-${randomUUID()}@example.com`,
       passwordHash: "hash-conversation",
     });
@@ -298,6 +302,7 @@ describeIfDatabase("persistence integration", () => {
     );
 
     const account = await accountRepository.create({
+      name: "Title Aware Organization",
       email: `title-aware-${randomUUID()}@example.com`,
       passwordHash: "hash-a",
     });
@@ -349,10 +354,12 @@ describeIfDatabase("persistence integration", () => {
     const chunkRepository = new ChunkRepository(database);
 
     const ownerAccount = await accountRepository.create({
+      name: "Delete Owner Organization",
       email: `delete-owner-${randomUUID()}@example.com`,
       passwordHash: "hash-owner",
     });
     const otherAccount = await accountRepository.create({
+      name: "Delete Other Organization",
       email: `delete-other-${randomUUID()}@example.com`,
       passwordHash: "hash-other",
     });
@@ -416,6 +423,7 @@ describeIfDatabase("persistence integration", () => {
     const documentRepository = new DocumentRepository(database);
 
     const account = await accountRepository.create({
+      name: "Imported Source Organization",
       email: `imported-source-${randomUUID()}@example.com`,
       passwordHash: "hash-source",
     });

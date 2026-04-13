@@ -248,4 +248,159 @@ describe("EvalLabService", () => {
       ],
     });
   });
+
+  it("falls back to the nearest older run when comparing historical runs without an explicit baseline", async () => {
+    const evalCase: EvalCaseRecord = {
+      id: "case-1",
+      datasetId: "dataset-1",
+      workspaceId: "workspace-1",
+      title: "Case 1",
+      sourceType: "manual",
+      query: "What changed?",
+      conversationContext: [],
+      expectations: {},
+      provenance: {},
+      createdAt: "2026-04-04T00:00:00.000Z",
+      updatedAt: "2026-04-04T00:00:00.000Z",
+    };
+
+    const failedScore = {
+      documentMatch: { verdict: "unscored" as const },
+      citationMatch: { verdict: "unscored" as const },
+      refusalMatch: { verdict: "unscored" as const },
+      answerOutcomeMatch: { verdict: "unscored" as const },
+      answerContainsMatch: { verdict: "unscored" as const },
+      latencyMatch: { verdict: "unscored" as const },
+      overallVerdict: "fail" as const,
+      reasons: ["Older baseline failed."],
+    };
+    const passedScore = {
+      ...failedScore,
+      overallVerdict: "pass" as const,
+      reasons: [],
+    };
+
+    const newestRun: EvalRunRecord = {
+      id: "run-newest",
+      datasetId: "dataset-1",
+      workspaceId: "workspace-1",
+      label: "Newest",
+      baselineRunId: null,
+      createdByAccountId: null,
+      runMetadata: {},
+      summary: {
+        totalCases: 1,
+        passCount: 1,
+        failCount: 0,
+        skippedCount: 0,
+        invalidCount: 0,
+        improvementCount: 0,
+        regressionCount: 0,
+        unchangedCount: 0,
+      },
+      results: [{
+        caseId: "case-1",
+        status: "pass",
+        score: passedScore,
+        diagnostics: {
+          retrievalInfo: retrievalInfoStub,
+          answerOutcome: "grounded_success",
+          answer: "newest",
+          latencyMs: 10,
+        },
+      }],
+      startedAt: "2026-04-06T00:00:00.000Z",
+      completedAt: "2026-04-06T00:00:01.000Z",
+    };
+
+    const candidateRun: EvalRunRecord = {
+      id: "run-candidate",
+      datasetId: "dataset-1",
+      workspaceId: "workspace-1",
+      label: "Candidate",
+      baselineRunId: null,
+      createdByAccountId: null,
+      runMetadata: {},
+      summary: {
+        totalCases: 1,
+        passCount: 1,
+        failCount: 0,
+        skippedCount: 0,
+        invalidCount: 0,
+        improvementCount: 0,
+        regressionCount: 0,
+        unchangedCount: 0,
+      },
+      results: [{
+        caseId: "case-1",
+        status: "pass",
+        score: passedScore,
+        diagnostics: {
+          retrievalInfo: retrievalInfoStub,
+          answerOutcome: "grounded_success",
+          answer: "candidate",
+          latencyMs: 10,
+        },
+      }],
+      startedAt: "2026-04-05T00:00:00.000Z",
+      completedAt: "2026-04-05T00:00:01.000Z",
+    };
+
+    const olderRun: EvalRunRecord = {
+      id: "run-older",
+      datasetId: "dataset-1",
+      workspaceId: "workspace-1",
+      label: "Older",
+      baselineRunId: null,
+      createdByAccountId: null,
+      runMetadata: {},
+      summary: {
+        totalCases: 1,
+        passCount: 0,
+        failCount: 1,
+        skippedCount: 0,
+        invalidCount: 0,
+        improvementCount: 0,
+        regressionCount: 0,
+        unchangedCount: 0,
+      },
+      results: [{
+        caseId: "case-1",
+        status: "fail",
+        score: failedScore,
+        diagnostics: {
+          retrievalInfo: retrievalInfoStub,
+          answerOutcome: "grounded_success",
+          answer: "older",
+          latencyMs: 10,
+        },
+      }],
+      startedAt: "2026-04-04T00:00:00.000Z",
+      completedAt: "2026-04-04T00:00:01.000Z",
+    };
+
+    const repository: EvalRepositoryPort = {
+      ...createRepositoryStub(),
+      findRunById: async () => candidateRun,
+      listRuns: async () => [newestRun, candidateRun, olderRun],
+      listCases: async () => [evalCase],
+    };
+
+    const service = new EvalLabService(
+      repository,
+      {} as ChatHistoryService,
+      {} as EvalReplayService,
+    );
+
+    await expect(
+      service.compareRun("workspace-1", "dataset-1", "run-candidate"),
+    ).resolves.toMatchObject({
+      baselineRunId: "run-older",
+      candidateRunId: "run-candidate",
+      improvements: 1,
+      regressions: 0,
+      unchanged: 0,
+      unscored: 0,
+    });
+  });
 });

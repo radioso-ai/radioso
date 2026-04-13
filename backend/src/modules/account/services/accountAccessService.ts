@@ -63,6 +63,13 @@ export class AccountAccessService {
     return this.membershipRepository.create(params);
   }
 
+  async removeMembershipIfExists(accountId: string, userId: string): Promise<void> {
+    const membership = await this.membershipRepository.findActiveByAccountAndUser(accountId, userId);
+    if (membership) {
+      await this.membershipRepository.deleteById(membership.id);
+    }
+  }
+
   async requireMembershipById(id: string): Promise<AccountMembershipRecord> {
     const membership = await this.membershipRepository.findById(id);
     if (!membership || membership.status !== "active") {

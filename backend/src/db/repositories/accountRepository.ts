@@ -69,4 +69,15 @@ export class AccountRepository implements AccountRepositoryPort {
 
     return mapAccount(row);
   }
+
+  async deleteById(id: string): Promise<boolean> {
+    const rows = await this.database.query<{ id: string }>(
+      `DELETE FROM accounts
+       WHERE id = $1
+       RETURNING id`,
+      [id],
+    );
+
+    return rows.length > 0;
+  }
 }

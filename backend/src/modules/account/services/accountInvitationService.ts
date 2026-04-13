@@ -157,6 +157,21 @@ export class AccountInvitationService {
     return { accountId: invitation.accountId };
   }
 
+  async revertAcceptance(token: string, userId: string): Promise<void> {
+    const invitation = await this.requireInvitation(token);
+    if (invitation.status !== "accepted" || invitation.acceptedByUserId !== userId) {
+      return;
+    }
+
+    await this.accountAccessService.removeMembershipIfExists(invitation.accountId, userId);
+    await this.invitationRepository.update({
+      id: invitation.id,
+      status: "pending",
+      acceptedAt: null,
+      acceptedByUserId: null,
+    });
+  }
+
   private async requireInvitation(token: string): Promise<AccountInvitationRecord> {
     const invitation = await this.invitationRepository.findByTokenHash(sha256(token));
     if (!invitation) {

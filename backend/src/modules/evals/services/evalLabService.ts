@@ -322,7 +322,11 @@ export class EvalLabService {
         ? runs.find((run) => run.id === baselineRunId) ?? null
         : candidateRun.baselineRunId
           ? runs.find((run) => run.id === candidateRun.baselineRunId) ?? null
-          : runs.find((run) => run.id !== candidateRun.id) ?? null;
+          : runs.find(
+              (run) =>
+                run.id !== candidateRun.id
+                && new Date(run.completedAt).getTime() < new Date(candidateRun.completedAt).getTime(),
+            ) ?? null;
 
     if (!baselineRun) {
       throw badRequest("No baseline run is available for comparison");

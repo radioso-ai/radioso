@@ -55,6 +55,7 @@ export interface AccountRepositoryPort {
   findByEmail(email: string): Promise<AccountRecord | null>;
   findById(id: string): Promise<AccountRecord | null>;
   updateName(id: string, name: string): Promise<AccountRecord>;
+  deleteById(id: string): Promise<boolean>;
 }
 
 export interface SessionRepositoryPort {
@@ -138,30 +139,36 @@ export class AuthService {
     const passwordHash = await hashPassword(input.password);
     const organizationName = input.organizationName?.trim() || deriveOrganizationName(email);
     const account = await this.dependencies.accountRepository.create({ name: organizationName, email, passwordHash });
-    const user = await this.dependencies.userRepository.create({ id: account.id, email, passwordHash });
-    await this.dependencies.accountAccessService.ensureMembership({
-      accountId: account.id,
-      userId: user.id,
-      role: "owner",
-    });
-    const workspace = await this.dependencies.workspaceService.createDefault(account.id);
-    const sessionCookie = await this.createSessionCookie(user.id, account.id);
 
-    await this.dependencies.auditService.record({
-      accountId: account.id,
-      eventType: "auth.register",
-      eventStatus: "success",
-      metadata: { email },
-    });
+    try {
+      const user = await this.dependencies.userRepository.create({ id: account.id, email, passwordHash });
+      await this.dependencies.accountAccessService.ensureMembership({
+        accountId: account.id,
+        userId: user.id,
+        role: "owner",
+      });
+      const workspace = await this.dependencies.workspaceService.createDefault(account.id);
+      const sessionCookie = await this.createSessionCookie(user.id, account.id);
 
-    return {
-      userId: user.id,
-      accountId: account.id,
-      organizationName: account.name,
-      workspaceId: workspace.id,
-      workspaceName: workspace.name,
-      sessionCookie,
-    };
+      await this.dependencies.auditService.record({
+        accountId: account.id,
+        eventType: "auth.register",
+        eventStatus: "success",
+        metadata: { email },
+      });
+
+      return {
+        userId: user.id,
+        accountId: account.id,
+        organizationName: account.name,
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        sessionCookie,
+      };
+    } catch (error) {
+      await this.rollbackCreatedAccount(account.id, account.id);
+      throw error;
+    }
   }
 
   async createOrganization(input: {
@@ -185,32 +192,38 @@ export class AuthService {
       email: user.email,
       passwordHash: user.passwordHash,
     });
-    await this.dependencies.accountAccessService.ensureMembership({
-      accountId: account.id,
-      userId: user.id,
-      role: "owner",
-    });
-    const workspace = await this.dependencies.workspaceService.createDefault(account.id);
-    const sessionCookie = await this.createSessionCookie(user.id, account.id);
 
-    await this.dependencies.auditService.record({
-      accountId: account.id,
-      eventType: "account.create",
-      eventStatus: "success",
-      metadata: {
-        actorUserId: user.id,
+    try {
+      await this.dependencies.accountAccessService.ensureMembership({
+        accountId: account.id,
+        userId: user.id,
+        role: "owner",
+      });
+      const workspace = await this.dependencies.workspaceService.createDefault(account.id);
+      const sessionCookie = await this.createSessionCookie(user.id, account.id);
+
+      await this.dependencies.auditService.record({
+        accountId: account.id,
+        eventType: "account.create",
+        eventStatus: "success",
+        metadata: {
+          actorUserId: user.id,
+          organizationName: account.name,
+        },
+      });
+
+      return {
+        userId: user.id,
+        accountId: account.id,
         organizationName: account.name,
-      },
-    });
-
-    return {
-      userId: user.id,
-      accountId: account.id,
-      organizationName: account.name,
-      workspaceId: workspace.id,
-      workspaceName: workspace.name,
-      sessionCookie,
-    };
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        sessionCookie,
+      };
+    } catch (error) {
+      await this.rollbackCreatedAccount(account.id);
+      throw error;
+    }
   }
 
   async login(input: {
@@ -317,7 +330,7 @@ export class AuthService {
           passwordHash: await hashPassword(input.password),
         });
 
-    let createdUserId: string | null = existingUser ? null : user.id;
+    const createdUserId: string | null = existingUser ? null : user.id;
 
     let accountId: string;
     try {
@@ -325,7 +338,6 @@ export class AuthService {
         input.invitationToken,
         user.id,
       ));
-      createdUserId = null;
     } catch (error) {
       if (createdUserId) {
         await this.dependencies.userRepository.deleteById(createdUserId);
@@ -333,18 +345,26 @@ export class AuthService {
       throw error;
     }
 
-    const account = await this.dependencies.accountRepository.findById(accountId);
-    const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(accountId);
-    const sessionCookie = await this.createSessionCookie(user.id, accountId);
+    try {
+      const account = await this.dependencies.accountRepository.findById(accountId);
+      const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(accountId);
+      const sessionCookie = await this.createSessionCookie(user.id, accountId);
 
-    return {
-      userId: user.id,
-      accountId,
-      organizationName: account?.name ?? deriveOrganizationName(email),
-      workspaceId: workspace.id,
-      workspaceName: workspace.name,
-      sessionCookie,
-    };
+      return {
+        userId: user.id,
+        accountId,
+        organizationName: account?.name ?? deriveOrganizationName(email),
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        sessionCookie,
+      };
+    } catch (error) {
+      await this.dependencies.accountInvitationService.revertAcceptance(input.invitationToken, user.id);
+      if (createdUserId) {
+        await this.dependencies.userRepository.deleteById(createdUserId);
+      }
+      throw error;
+    }
   }
 
   async switchAccount(input: {
@@ -498,5 +518,12 @@ export class AuthService {
     });
 
     return serializeSessionCookie(sessionToken, this.dependencies.env);
+  }
+
+  private async rollbackCreatedAccount(accountId: string, createdUserId?: string): Promise<void> {
+    await this.dependencies.accountRepository.deleteById(accountId);
+    if (createdUserId) {
+      await this.dependencies.userRepository.deleteById(createdUserId);
+    }
   }
 }

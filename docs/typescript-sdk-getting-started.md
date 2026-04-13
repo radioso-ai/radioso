@@ -56,14 +56,27 @@ npm run build
 ## What You Can Do With It Right Now
 
 ```ts
+client.settings.getRetrieval(...)
+client.settings.updateRetrieval(...)
+client.settings.getIngestion(...)
+client.settings.updateIngestion(...)
+client.settings.reprocessIngestion()
+client.settings.getGeneral(...)
+client.settings.updateGeneral(...)
+
 client.documents.list(...)
 client.documents.create(...)
 client.documents.get(...)
 client.documents.update(...)
 client.documents.delete(...)
 client.documents.search(...)
+client.documents.listHistory(...)
+client.documents.getHistory(...)
+client.documents.reprocess(...)
 
 client.chat.create(...)
+client.chat.listHistory(...)
+client.chat.getHistoryConversation(...)
 client.chat.stream(...)
 ```
 

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { badRequest } from "../../../shared/domain/errors.js";
+import { retrievalConstraintSignalKeys, type RetrievalConstraintSignalKey } from "../../retrieval/domain/retrievalConstraintSchema.js";
 
 export const metadataRuleOperators = [
   "equals",
@@ -94,12 +95,11 @@ export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS =
   "Rewrite for lexical retrieval using exact literals likely to appear in the corpus. Prefer aliases, abbreviations, citation forms, and corpus-native notation when grounded.";
 
 export const DEFAULT_ANSWER_SUPPORT_POLICY: AnswerSupportPolicy = "strict";
-export const defaultAttributeControls = () => [
-  { signalKey: "document_date", enabled: true, mode: "boost_only" as const },
-  { signalKey: "document_period", enabled: true, mode: "boost_only" as const },
-  { signalKey: "document_amount", enabled: true, mode: "boost_only" as const },
-  { signalKey: "document_location", enabled: true, mode: "boost_only" as const },
-];
+export const defaultAttributeControls = (): Array<{
+  signalKey: RetrievalConstraintSignalKey;
+  enabled: boolean;
+  mode: "boost_only";
+}> => retrievalConstraintSignalKeys.map((signalKey) => ({ signalKey, enabled: true, mode: "boost_only" }));
 
 export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettingsRecord => ({
   workspaceId,

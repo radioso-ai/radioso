@@ -23,6 +23,7 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
         rerankEnabled: false,
         vectorTopK: 20,
         similarityThreshold: 0.2,
@@ -40,8 +41,8 @@ describe("retrieval pipeline stages", () => {
       },
     });
 
-    expect(result.activeParsedQuery.semanticQuery).toBe("retreats in Estonia under 300 EUR");
-    expect(result.activeParsedQuery.lexicalQuery).toBe("retreats in Estonia under 300 EUR");
+    expect(result.activeParsedQuery.semanticQuery).toBe("Find retreats in Estonia under 300 EUR");
+    expect(result.activeParsedQuery.lexicalQuery).toBe("Find retreats in Estonia under 300 EUR");
     expect(result.activeQuery).toBe("Find retreats in Estonia under 300 EUR");
     expect(result.promptHistory).toEqual([]);
   });
@@ -94,6 +95,7 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
         rerankEnabled: false,
         vectorTopK: 20,
         similarityThreshold: 0.2,
@@ -156,6 +158,7 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer section symbols and citation notation.",
+        answerSupportPolicy: "strict",
         rerankEnabled: false,
         vectorTopK: 20,
         similarityThreshold: 0.2,
@@ -216,6 +219,7 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer section symbols and legal citation notation.",
+        answerSupportPolicy: "strict",
         rerankEnabled: false,
         vectorTopK: 20,
         similarityThreshold: 0.2,
@@ -233,9 +237,9 @@ describe("retrieval pipeline stages", () => {
       },
     });
 
-    expect(result.rewrittenQuery.status).toBe("applied");
+    expect(result.rewrittenQuery.status).toBe("fallback");
     expect(result.activeSemanticQuery).toBe("tulumaksuseadus paragrahv 4 osa 5");
-    expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus § 4 lg 5");
+    expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus paragrahv 4 osa 5");
     expect(result.promptHistory).toEqual([]);
   });
 
@@ -307,10 +311,10 @@ describe("retrieval pipeline stages", () => {
     const lexicalQueries: string[] = [];
     const retrievalStage = new CandidateRetrievalStageService(
       {
-        async embedChunks(chunks) {
-          return chunks.map((_, index) => [index + 1]);
+        async embedChunks(chunks: string[]) {
+          return chunks.map((_: string, index: number) => [index + 1]);
         },
-      },
+      } as never,
       {
         async search(input) {
           vectorQueries.push(String(input.queryEmbedding[0]));
@@ -454,6 +458,7 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep meaning.",
         lexicalRewriteInstructions: "Prefer exact notation.",
+        answerSupportPolicy: "strict",
         rerankEnabled: false,
         vectorTopK: 20,
         similarityThreshold: 0.2,

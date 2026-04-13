@@ -10,7 +10,36 @@ import { CandidatePreparationService } from "../../src/modules/retrieval/service
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
+import { SemanticQueryConstraintService } from "../../src/modules/retrieval/services/semanticQueryConstraintService.js";
 import { defaultAttributeControls } from "../../src/modules/settings/domain/retrievalSettings.js";
+
+const estoniaBudgetConstraintService = () =>
+  new SemanticQueryConstraintService({
+    async interpret() {
+      return {
+        semanticQuery: "retreats in Estonia under 300 EUR",
+        lexicalQuery: "retreats in Estonia under 300 EUR",
+        constraints: [
+          {
+            signalKey: "document_location",
+            operator: "match",
+            confidence: 0.95,
+            summary: "in Estonia",
+            sourceText: "in Estonia",
+            value: { matchKey: "estonia", displayName: "Estonia" },
+          },
+          {
+            signalKey: "document_amount",
+            operator: "lte",
+            confidence: 0.95,
+            summary: "under 300 EUR",
+            sourceText: "under 300 EUR",
+            value: { amount: 300, currencyCode: "EUR" },
+          },
+        ],
+      };
+    },
+  });
 
 describe("edge cases", () => {
   it("normalizes short content into a single chunk", () => {
@@ -196,6 +225,7 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
+      estoniaBudgetConstraintService(),
     );
 
     const result = await service.run({
@@ -259,6 +289,7 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
+      estoniaBudgetConstraintService(),
     );
 
     const result = await service.run({
@@ -331,6 +362,7 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
+      estoniaBudgetConstraintService(),
     );
 
     const result = await service.run({
@@ -344,7 +376,7 @@ describe("edge cases", () => {
     expect(result.diagnostics.parsedQuery?.semanticQuery).toBe("retreats in Estonia under 300 EUR");
   });
 
-  it("strips hard_filter attribute literals before semantic and lexical retrieval", async () => {
+  it("keeps hard_filter attribute literals in retrieval queries", async () => {
     const embeddedQueries: string[] = [];
     const lexicalQueries: string[] = [];
     const service = new RetrievalPipelineService(
@@ -393,6 +425,7 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
+      estoniaBudgetConstraintService(),
     );
 
     const result = await service.run({
@@ -401,9 +434,9 @@ describe("edge cases", () => {
       history: [],
     });
 
-    expect(embeddedQueries).toEqual(["retreats"]);
-    expect(lexicalQueries).toEqual(["retreats"]);
-    expect(result.diagnostics.parsedQuery?.semanticQuery).toBe("retreats");
+    expect(embeddedQueries).toEqual(["retreats in Estonia under 300 EUR"]);
+    expect(lexicalQueries).toEqual(["retreats in Estonia under 300 EUR"]);
+    expect(result.diagnostics.parsedQuery?.semanticQuery).toBe("retreats in Estonia under 300 EUR");
   });
 
   it("preserves original constraints when rewrite omits structured literals", async () => {
@@ -479,6 +512,24 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
+      new SemanticQueryConstraintService({
+        async interpret() {
+          return {
+            semanticQuery: "Is it under 300 EUR?",
+            lexicalQuery: "Is it under 300 EUR?",
+            constraints: [
+              {
+                signalKey: "document_amount",
+                operator: "lte",
+                confidence: 0.95,
+                summary: "under 300 EUR",
+                sourceText: "under 300 EUR",
+                value: { amount: 300, currencyCode: "EUR" },
+              },
+            ],
+          };
+        },
+      }),
     );
 
     const result = await service.run({

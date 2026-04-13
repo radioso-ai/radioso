@@ -6,10 +6,10 @@ import { normalizeMarkdown, type ChunkingStrategy } from "../../retrieval/domain
 import {
   emptyStructuredAttributes,
   renderStructuredAttributeSummary,
+  type StructuredAttributes,
 } from "../../retrieval/domain/structuredAttributes.js";
-import { normalizeStructuredAttributes } from "../../retrieval/services/attributeNormalizer.js";
-import { renderSearchText } from "../../retrieval/services/searchTextRenderer.js";
-import { extractRawStructuredAttributes } from "../../retrieval/services/structuredAttributeExtractor.js";
+import { CompositeDocumentAttributeExtractionService, type DocumentAttributeExtractionService } from "../../retrieval/services/documentAttributeExtractionService.js";
+import { renderMetadataSearchText, renderSearchText } from "../../retrieval/services/searchTextRenderer.js";
 import { deriveChunkSection, deriveDocumentSubject } from "../../retrieval/services/subjectIdentityService.js";
 import type { IngestionSettingsRecord } from "../../settings/domain/ingestionSettings.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -73,6 +73,7 @@ export class DocumentProcessingService {
     private readonly chunkingStrategyRegistry: ChunkingStrategyRegistryPort,
     private readonly documentSourceContentService: DocumentSourceContentServicePort = inlineDocumentSourceContentService,
     private readonly logger?: AppLogger,
+    private readonly documentAttributeExtractionService: DocumentAttributeExtractionService = new CompositeDocumentAttributeExtractionService(),
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -125,9 +126,15 @@ export class DocumentProcessingService {
       },
     });
     const chunkingDurationMs = Math.max(0, Date.now() - chunkingStartedAt);
-    const enrichedChunks = chunks.map((chunk) => {
-      const structuredAttributes = normalizeStructuredAttributes(extractRawStructuredAttributes(chunk.content));
-      const attributeText = renderStructuredAttributeSummary(structuredAttributes);
+    const enrichedChunks = await Promise.all(chunks.map(async (chunk) => {
+      const structuredAttributes = await this.documentAttributeExtractionService.extract({
+        title: documentWithContent.title,
+        content: chunk.content,
+        metadata: documentWithContent.metadata ?? {},
+      });
+      const attributeText = [renderStructuredAttributeSummary(structuredAttributes), renderMetadataSearchText(documentWithContent.metadata ?? {})]
+        .filter((value) => value.length > 0)
+        .join(" | ");
       const searchText = renderSearchText({
         title: documentWithContent.title,
         subjectLabel: documentSubject,
@@ -138,10 +145,10 @@ export class DocumentProcessingService {
 
       return {
         ...chunk,
-        structuredAttributes,
+        structuredAttributes: structuredAttributes as StructuredAttributes,
         searchText,
       };
-    });
+    }));
     const embeddingStartedAt = Date.now();
     const embeddings = await this.embeddingService.embedChunks(
       enrichedChunks.map((chunk) => chunk.searchText),

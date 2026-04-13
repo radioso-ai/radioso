@@ -122,7 +122,7 @@ describe("chat service streaming", () => {
       { role: "user", content: "What does this page do?" },
       { role: "assistant", content: "full answer" },
     ]);
-    expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual(["Intro"]);
+    expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual([]);
   });
 
   it("loads literal-only carry-forward from the previous successful answer", async () => {
@@ -214,10 +214,7 @@ describe("chat service streaming", () => {
     });
 
     expect(capturedInputs[0]?.rewriteCarryForwardLiterals).toBeUndefined();
-    expect(capturedInputs[1]?.rewriteCarryForwardLiterals).toEqual([
-      "Narayani",
-      "La mia anima ricorda Swami Kriyananda",
-    ]);
+    expect(capturedInputs[1]?.rewriteCarryForwardLiterals).toEqual(["Narayani"]);
   });
 
   it("excludes URL-shaped citation titles from carry-forward literals", async () => {
@@ -310,6 +307,81 @@ describe("chat service streaming", () => {
 
     expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual(["kaibemaksumaar Eestis"]);
     expect(capturedInputs[1]?.rewriteCarryForwardLiterals).toEqual(["kaibemaksumaar Eestis"]);
+  });
+
+  it("does not persist related entities as carry-forward literals", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "Does Narayani work with Arudra?",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Narayani",
+              content: "full answer",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Narayani" }],
+          diagnostics: {
+            rewriteStatus: "applied",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            rewriteProposal: {
+              rewrittenQuery: "Does Narayani work with Arudra?",
+              turnKind: "referential_relation",
+              proposedActiveSubject: "Narayani",
+              relatedEntities: ["Arudra"],
+              unresolved: true,
+              confidence: 0.62,
+            },
+            parsedQuery: {
+              semanticQuery: "does narayani work with arudra",
+              lexicalQuery: "does narayani work with arudra",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "full answer[[1]]";
+      },
+      async *streamAnswer() {
+        yield "full answer[[1]]";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Does she work with Arudra?",
+      stream: false,
+    });
+
+    expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual(["Narayani"]);
   });
 
   it("includes the normalized final answer in the done event when a malformed anchor is truncated during streaming", async () => {

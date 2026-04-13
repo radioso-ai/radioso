@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { defaultAttributeControls } from "../../src/modules/settings/domain/retrievalSettings.js";
 import type { RetrievedCandidate } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
-import { parseQueryConstraints } from "../../src/modules/retrieval/services/queryConstraintParser.js";
 import { AttributeMatchScoringService } from "../../src/modules/retrieval/services/attributeMatchScoringService.js";
+import { SemanticQueryConstraintService } from "../../src/modules/retrieval/services/semanticQueryConstraintService.js";
 
 const candidate = (overrides: Partial<RetrievedCandidate> = {}): RetrievedCandidate => ({
   chunkId: "chunk-1",
@@ -45,9 +45,49 @@ const candidate = (overrides: Partial<RetrievedCandidate> = {}): RetrievedCandid
   ...overrides,
 });
 
+const buildSemanticParser = () =>
+  new SemanticQueryConstraintService({
+    async interpret({ query }) {
+      expect(query).toBe("Find retreats in Estonia under 300 EUR after 2026-06-10");
+      return {
+        semanticQuery: "retreats in Estonia under 300 EUR after 2026-06-10",
+        lexicalQuery: "retreats in Estonia under 300 EUR after 2026-06-10",
+        constraints: [
+          {
+            signalKey: "document_location",
+            operator: "match",
+            confidence: 0.95,
+            summary: "in Estonia",
+            sourceText: "in Estonia",
+            value: { matchKey: "estonia", displayName: "Estonia" },
+          },
+          {
+            signalKey: "document_amount",
+            operator: "lte",
+            confidence: 0.95,
+            summary: "under 300 EUR",
+            sourceText: "under 300 EUR",
+            value: { amount: 300, currencyCode: "EUR" },
+          },
+          {
+            signalKey: "document_period",
+            operator: "gte",
+            confidence: 0.95,
+            summary: "after 2026-06-10",
+            sourceText: "after 2026-06-10",
+            value: { date: "2026-06-10" },
+          },
+        ],
+      };
+    },
+  });
+
 describe("hybrid query constraints", () => {
-  it("parses supported query constraints for date, money, and location", () => {
-    const result = parseQueryConstraints("Find retreats in Estonia under 300 EUR after 2026-06-10");
+  it("normalizes semantic constraints from the query service", async () => {
+    const result = await buildSemanticParser().interpret({
+      query: "Find retreats in Estonia under 300 EUR after 2026-06-10",
+      history: [],
+    });
 
     expect(result.semanticQuery).toBe("retreats in Estonia under 300 EUR after 2026-06-10");
     expect(result.lexicalQuery).toBe("retreats in Estonia under 300 EUR after 2026-06-10");
@@ -73,53 +113,12 @@ describe("hybrid query constraints", () => {
     ]);
   });
 
-  it("parses lowercase locations and exact single-date constraints", () => {
-    const result = parseQueryConstraints("Find retreats in estonia on 2026-06-12");
-
-    expect(result.semanticQuery).toBe("retreats in estonia on 2026-06-12");
-    expect(result.lexicalQuery).toBe("retreats in estonia on 2026-06-12");
-    expect(result.constraints).toEqual([
-      expect.objectContaining({
-        signalKey: "document_location",
-        operator: "match",
-        value: expect.objectContaining({ matchKey: "estonia" }),
-        sourceText: "in estonia",
-      }),
-      expect.objectContaining({
-        signalKey: "document_date",
-        operator: "eq",
-        value: expect.objectContaining({ date: "2026-06-12" }),
-        sourceText: "on 2026-06-12",
-      }),
-    ]);
-  });
-
-  it("parses locations when ordinary free text follows the place name", () => {
-    const retreatResult = parseQueryConstraints("Find retreats in Estonia with lodging");
-    const docsResult = parseQueryConstraints("Find docs in New York about visas");
-
-    expect(retreatResult.constraints).toEqual([
-      expect.objectContaining({
-        signalKey: "document_location",
-        operator: "match",
-        summary: "in Estonia",
-        sourceText: "in Estonia",
-      }),
-    ]);
-    expect(docsResult.constraints).toEqual([
-      expect.objectContaining({
-        signalKey: "document_location",
-        operator: "match",
-        summary: "in New York",
-        sourceText: "in New York",
-        value: expect.objectContaining({ matchKey: "new york" }),
-      }),
-    ]);
-  });
-
-  it("uses hard filtering when high-confidence constraints and settings allow it", () => {
+  it("uses hard filtering when high-confidence constraints and settings allow it", async () => {
     const service = new AttributeMatchScoringService();
-    const parsed = parseQueryConstraints("Find retreats in Estonia under 300 EUR after 2026-06-10");
+    const parsed = await buildSemanticParser().interpret({
+      query: "Find retreats in Estonia under 300 EUR after 2026-06-10",
+      history: [],
+    });
     const controls = defaultAttributeControls().map((control) =>
       control.signalKey === "document_location" || control.signalKey === "document_amount" || control.signalKey === "document_period"
         ? { ...control, mode: "hard_filter" as const }
@@ -164,9 +163,29 @@ describe("hybrid query constraints", () => {
     expect(result.appliedConstraints.every((constraint) => constraint.mode === "hard_filter")).toBe(true);
   });
 
-  it("applies the date_range control independently of single-date controls", () => {
+  it("applies the date_range control independently of single-date controls", async () => {
     const service = new AttributeMatchScoringService();
-    const parsed = parseQueryConstraints("Find retreats after 2026-06-10");
+    const parsed = await new SemanticQueryConstraintService({
+      async interpret() {
+        return {
+          semanticQuery: "retreats after 2026-06-10",
+          lexicalQuery: "retreats after 2026-06-10",
+          constraints: [
+            {
+              signalKey: "document_period",
+              operator: "gte",
+              confidence: 0.95,
+              summary: "after 2026-06-10",
+              sourceText: "after 2026-06-10",
+              value: { date: "2026-06-10" },
+            },
+          ],
+        };
+      },
+    }).interpret({
+      query: "Find retreats after 2026-06-10",
+      history: [],
+    });
     const controls = defaultAttributeControls().map((control) =>
       control.signalKey === "document_period"
         ? { ...control, mode: "hard_filter" as const }
@@ -190,9 +209,12 @@ describe("hybrid query constraints", () => {
     });
   });
 
-  it("relaxes hard filters to boosts when too few candidates remain", () => {
+  it("relaxes hard filters to boosts when too few candidates remain", async () => {
     const service = new AttributeMatchScoringService();
-    const parsed = parseQueryConstraints("Find retreats in Estonia under 300 EUR after 2026-06-10");
+    const parsed = await buildSemanticParser().interpret({
+      query: "Find retreats in Estonia under 300 EUR after 2026-06-10",
+      history: [],
+    });
     const controls = defaultAttributeControls().map((control) =>
       control.signalKey === "document_location" || control.signalKey === "document_amount" || control.signalKey === "document_period"
         ? { ...control, mode: "hard_filter" as const }

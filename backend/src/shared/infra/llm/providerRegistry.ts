@@ -1,7 +1,9 @@
 import { ModelChatGateway } from "../../../modules/chat/services/chatService.js";
 import { ModelUnsupportedNoticeGenerator } from "../../../modules/chat/services/unsupportedNoticeGenerator.js";
 import { ModelEmbeddingGateway } from "../../../modules/retrieval/services/embeddingService.js";
+import { ModelDocumentAttributeExtractionGateway } from "../../../modules/retrieval/services/documentAttributeExtractionService.js";
 import { ModelQueryRewriteGateway } from "../../../modules/retrieval/services/queryRewriteService.js";
+import { ModelSemanticQueryConstraintGateway } from "../../../modules/retrieval/services/semanticQueryConstraintService.js";
 import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../../modules/retrieval/services/rerankService.js";
 import { ClaudeTextGenerationClient } from "./claudeProvider.js";
 import { GeminiTextGenerationClient } from "./geminiProvider.js";
@@ -51,6 +53,14 @@ export class LlmProviderRegistry {
 
   createRewriteGateway() {
     return new ModelQueryRewriteGateway(this.createTextClient(this.config.rewrite));
+  }
+
+  createSemanticQueryConstraintGateway() {
+    return new ModelSemanticQueryConstraintGateway(this.createTextClient(this.config.rewrite));
+  }
+
+  createDocumentAttributeExtractionGateway() {
+    return new ModelDocumentAttributeExtractionGateway(this.createTextClient(this.config.rewrite));
   }
 
   createRerankGateway() {

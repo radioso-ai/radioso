@@ -6,6 +6,7 @@ In-repo SDK package for token-based Radioso integrations.
 
 - v1 is token-first.
 - Session-only and browser-admin workflows are out of scope.
+- Session-authenticated workspace CRUD is not part of the public v1 SDK.
 - The SDK contract snapshot is synced from `../backend/openapi.json` and `../backend/openapi.yaml`.
 
 ## Development
@@ -22,13 +23,23 @@ npm run build
 - `createRadiosoClient({ baseUrl, apiToken })`
 - `client.settings.getRetrieval()`
 - `client.settings.updateRetrieval(...)`
+- `client.settings.getIngestion()`
+- `client.settings.updateIngestion(...)`
+- `client.settings.reprocessIngestion()`
+- `client.settings.getGeneral()`
+- `client.settings.updateGeneral(...)`
 - `client.documents.list(...)`
 - `client.documents.create(...)`
 - `client.documents.get(...)`
 - `client.documents.update(...)`
 - `client.documents.delete(...)`
 - `client.documents.search(...)`
+- `client.documents.listHistory(...)`
+- `client.documents.getHistory(...)`
+- `client.documents.reprocess(...)`
 - `client.chat.create(...)`
+- `client.chat.listHistory(...)`
+- `client.chat.getHistoryConversation(...)`
 - `client.chat.stream(...)`
 
 ## Contract Refresh

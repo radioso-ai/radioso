@@ -67,6 +67,65 @@ const search = await client.documents.search({
 });
 ```
 
+List document search history:
+
+```ts
+const history = await client.documents.listHistory({ limit: 10 });
+```
+
+Replay one historical search:
+
+```ts
+const replay = await client.documents.getHistory("search-id");
+```
+
+Reprocess a document:
+
+```ts
+await client.documents.reprocess("document-id");
+```
+
+## Settings
+
+Read ingestion settings:
+
+```ts
+const ingestion = await client.settings.getIngestion();
+```
+
+Update ingestion settings:
+
+```ts
+await client.settings.updateIngestion({
+  chunkingStrategy: "fixed_window",
+  fixedWindowChunkSize: 800,
+  fixedWindowChunkOverlap: 120,
+  structuredMinChunkSize: 400,
+  structuredMaxChunkSize: 1200,
+});
+```
+
+Queue workspace-wide reprocessing after an ingestion change:
+
+```ts
+await client.settings.reprocessIngestion();
+```
+
+Read general settings:
+
+```ts
+const general = await client.settings.getGeneral();
+```
+
+Update general settings:
+
+```ts
+await client.settings.updateGeneral({
+  anonymousChatEnabled: true,
+  anonymousRateLimit: 10,
+});
+```
+
 ## Non-Streaming Chat
 
 ```ts
@@ -102,6 +161,18 @@ for await (const event of client.chat.stream({
 }
 ```
 
+List chat history:
+
+```ts
+const conversations = await client.chat.listHistory({ limit: 20 });
+```
+
+Fetch one historical conversation:
+
+```ts
+const conversation = await client.chat.getHistoryConversation("conversation-id", { limit: 50 });
+```
+
 ## Error Handling
 
 The SDK turns request failures into `RadiosoError`, so you can handle them in one place.
@@ -125,5 +196,6 @@ try {
 - `baseUrl` should be the Radioso server origin, without a trailing slash.
 - The SDK sends the API token as `Authorization: Bearer <token>`.
 - Streaming chat is layered on top of the same `/api/v1/chat/` endpoint, with `stream: true`.
+- Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.
 - Run `npm run sync` in [`typescript-sdk/`](/Users/dm/conductor/workspaces/radioso/typescript-sdk/typescript-sdk) after backend API changes so the generated types stay up to date.
 - Search and answer settings are documented separately in [Retrieval Settings](./typescript-sdk-retrieval-settings.md).

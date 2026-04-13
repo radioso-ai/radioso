@@ -1,28 +1,38 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FileText, Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-import { Button } from '@/components/ui/button'
+import { DocumentDeleteDialog } from '@/components/dashboard/documents/document-delete-dialog'
+import { DocumentEditorDialog } from '@/components/dashboard/documents/document-editor-dialog'
+import {
+  DocumentEditorPage,
+  type DocumentEditorValues,
+} from '@/components/dashboard/documents/document-editor-page'
+import { DocumentImportDialog } from '@/components/dashboard/documents/document-import-dialog'
+import { DocumentList } from '@/components/dashboard/documents/document-list'
 import { DocumentSearchBar } from '@/components/dashboard/document-search-bar'
 import { DocumentSearchResults } from '@/components/dashboard/document-search-results'
+import { useDocumentSearch } from '@/components/dashboard/use-document-search'
+import { Button } from '@/components/ui/button'
 import {
   type DocumentSummary,
   documentsApi,
 } from '@/lib/api'
-import { type WorkspaceOnboardingState } from '@/lib/onboarding'
-import { useDocumentSearch } from '@/components/dashboard/use-document-search'
-import { DocumentDeleteDialog } from '@/components/dashboard/documents/document-delete-dialog'
-import { DocumentEditorDialog } from '@/components/dashboard/documents/document-editor-dialog'
-import { DocumentImportDialog } from '@/components/dashboard/documents/document-import-dialog'
-import { DocumentList } from '@/components/dashboard/documents/document-list'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getSafeDocumentsPage } from '@/lib/documents-pagination'
+import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
-type EditorMode = 'create' | 'edit' | 'view'
 const PAGE_SIZE = 100
+const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.docx,.xlsx'
+
+const EMPTY_FORM: DocumentEditorValues = {
+  title: '',
+  content: '',
+  metadata: '',
+}
 
 interface DocumentsViewProps {
   routeState: DashboardRouteState
@@ -31,14 +41,6 @@ interface DocumentsViewProps {
   onSelectedDocumentChange?: (documentId: string | null) => void
   onboarding: WorkspaceOnboardingState
 }
-
-const EMPTY_FORM = {
-  title: '',
-  content: '',
-  metadata: '',
-}
-
-const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.docx,.xlsx'
 
 interface DocumentPageSnapshot {
   documents: DocumentSummary[]
@@ -72,6 +74,7 @@ export function DocumentsView({
   const documentCursorByPageRef = useRef(new Map<number, string | null>([[1, null]]))
   const documentPageCacheRef = useRef(new Map<number, DocumentPageSnapshot>())
   const documentSearch = useDocumentSearch()
+
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
   const [totalDocuments, setTotalDocuments] = useState(0)
   const [hasNextPage, setHasNextPage] = useState(false)
@@ -80,12 +83,14 @@ export function DocumentsView({
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [isDocumentLoading, setIsDocumentLoading] = useState(false)
-  const [editorMode, setEditorMode] = useState<EditorMode>('create')
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null)
-  const [formValues, setFormValues] = useState(EMPTY_FORM)
+  const [activeDocument, setActiveDocument] = useState<DocumentSummary | null>(null)
+  const [isEditingDetail, setIsEditingDetail] = useState(false)
+  const [isMetadataSheetOpen, setIsMetadataSheetOpen] = useState(false)
+  const [formValues, setFormValues] = useState<DocumentEditorValues>(EMPTY_FORM)
   const [importTitle, setImportTitle] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
@@ -95,6 +100,7 @@ export function DocumentsView({
   const [deleteErrorById, setDeleteErrorById] = useState<Record<string, string>>({})
   const [retryingDocumentId, setRetryingDocumentId] = useState<string | null>(null)
   const [retryErrorById, setRetryErrorById] = useState<Record<string, string>>({})
+
   const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
 
   const resetDocumentPagination = useCallback(() => {
@@ -244,19 +250,22 @@ export function DocumentsView({
     }))
   }, [accountId, routeState, router])
 
-  const resetEditor = useCallback(() => {
-    setEditorMode('create')
+  const resetDetailState = useCallback(() => {
     setEditingDocumentId(null)
-    setFormValues(EMPTY_FORM)
+    setActiveDocument(null)
+    setIsEditingDetail(false)
+    setIsMetadataSheetOpen(false)
     setMetadataError(null)
     setIsDocumentLoading(false)
+    setFormValues(EMPTY_FORM)
   }, [])
 
-  const openCreateDialog = () => {
-    justClosedDocumentIdRef.current = null
-    resetEditor()
-    setIsDialogOpen(true)
-  }
+  const resetCreateDialog = useCallback(() => {
+    setEditingDocumentId(null)
+    setMetadataError(null)
+    setFormValues(EMPTY_FORM)
+    setIsSaving(false)
+  }, [])
 
   const resetImportDialog = useCallback(() => {
     setImportTitle('')
@@ -264,86 +273,76 @@ export function DocumentsView({
     setImportError(null)
   }, [])
 
+  const openCreateDialog = () => {
+    justClosedDocumentIdRef.current = null
+    resetCreateDialog()
+    setIsCreateDialogOpen(true)
+  }
+
   const openImportDialog = () => {
     resetImportDialog()
     setIsImportDialogOpen(true)
   }
 
-  const openEditDialog = useCallback(async (documentId: string) => {
+  const openDocumentPage = useCallback(async (documentId: string) => {
     justClosedDocumentIdRef.current = null
     setEditingDocumentId(documentId)
     setIsDocumentLoading(true)
 
     try {
       const document = await documentsApi.getDocument(documentId)
-      const metadataStr = Object.keys(document.metadata ?? {}).length > 0
-        ? JSON.stringify(document.metadata, null, 2)
-        : ''
-
-      setEditorMode(document.sourceKind === 'inline_text' ? 'edit' : 'view')
+      setActiveDocument(document)
       setFormValues({
         title: document.title,
         content: document.content,
-        metadata: metadataStr,
+        metadata: Object.keys(document.metadata ?? {}).length > 0
+          ? JSON.stringify(document.metadata, null, 2)
+          : '',
       })
-      setIsDialogOpen(true)
+      setIsEditingDetail(false)
+      setMetadataError(null)
     } catch (error) {
       console.error('Failed to load document:', error)
-      setIsDialogOpen(false)
       onSelectedDocumentChange?.(null)
-      resetEditor()
+      resetDetailState()
     } finally {
       setIsDocumentLoading(false)
     }
-  }, [onSelectedDocumentChange, resetEditor])
+  }, [onSelectedDocumentChange, resetDetailState])
 
   useEffect(() => {
     if (!selectedDocumentId) {
       justClosedDocumentIdRef.current = null
-      if ((editorMode === 'edit' || editorMode === 'view') && isDialogOpen && !isSaving) {
-        setIsDialogOpen(false)
-        resetEditor()
+      if (!isSaving) {
+        resetDetailState()
       }
       return
     }
 
-    if (justClosedDocumentIdRef.current === selectedDocumentId && !isDialogOpen) {
+    if (justClosedDocumentIdRef.current === selectedDocumentId && !isDocumentLoading) {
       return
     }
 
-    if (
-      (editorMode === 'edit' || editorMode === 'view') &&
-      editingDocumentId === selectedDocumentId &&
-      isDialogOpen
-    ) {
+    if (editingDocumentId === selectedDocumentId && activeDocument) {
       return
     }
 
-    void openEditDialog(selectedDocumentId)
+    void openDocumentPage(selectedDocumentId)
   }, [
+    activeDocument,
     editingDocumentId,
-    editorMode,
-    isDialogOpen,
+    isDocumentLoading,
     isSaving,
-    openEditDialog,
-    resetEditor,
+    openDocumentPage,
+    resetDetailState,
     selectedDocumentId,
   ])
 
-  const handleDialogChange = (open: boolean) => {
+  const handleCreateDialogChange = (open: boolean) => {
+    setIsCreateDialogOpen(open)
     if (!open && !isSaving) {
-      justClosedDocumentIdRef.current = editingDocumentId
-      setIsDialogOpen(false)
-      if (editorMode === 'edit' || editorMode === 'view') {
-        onSelectedDocumentChange?.(null)
-      }
-      window.setTimeout(() => {
-        resetEditor()
-      }, 0)
-      return
+      resetCreateDialog()
     }
-
-    setIsDialogOpen(open)
   }
 
   const handleImportDialogChange = (open: boolean) => {
@@ -353,8 +352,8 @@ export function DocumentsView({
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     if (!formValues.title.trim() || !formValues.content.trim()) return
 
     const metadata = parseMetadata(formValues.metadata)
@@ -372,18 +371,19 @@ export function DocumentsView({
         content: formValues.content.trim(),
         ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
       }
-      const response = editingDocumentId
-        ? await documentsApi.updateDocument(editingDocumentId, payload)
-        : await documentsApi.createDocument(payload)
 
-      void response
-      setDocumentsPage(1)
-      await loadDocuments(1, { reset: true })
-      setIsDialogOpen(false)
-      if (editorMode === 'edit') {
-        onSelectedDocumentChange?.(null)
+      if (editingDocumentId) {
+        await documentsApi.updateDocument(editingDocumentId, payload)
+        await loadDocuments(currentPage, { reset: true })
+        await openDocumentPage(editingDocumentId)
+        setIsEditingDetail(false)
+      } else {
+        await documentsApi.createDocument(payload)
+        setDocumentsPage(1)
+        await loadDocuments(1, { reset: true })
+        setIsCreateDialogOpen(false)
+        resetCreateDialog()
       }
-      resetEditor()
     } catch (error) {
       console.error(`Failed to ${editingDocumentId ? 'update' : 'create'} document:`, error)
     } finally {
@@ -490,6 +490,18 @@ export function DocumentsView({
 
   const activeDeleteError = deleteCandidate ? deleteErrorById[deleteCandidate.id] : null
 
+  const activeDetailDocument = useMemo(() => {
+    if (activeDocument) {
+      return activeDocument
+    }
+
+    if (!editingDocumentId) {
+      return null
+    }
+
+    return documents.find((document) => document.id === editingDocumentId) ?? null
+  }, [activeDocument, documents, editingDocumentId])
+
   const goToPreviousPage = () => {
     setDocumentsPage(Math.max(1, currentPage - 1))
   }
@@ -504,42 +516,14 @@ export function DocumentsView({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-border px-6 py-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="min-w-0 flex-1 space-y-2">
-          <div>
-            <h1 className="text-lg font-medium text-foreground">Documents</h1>
-            <p className="text-sm text-muted-foreground">Manage your knowledge base</p>
-          </div>
-          <DocumentSearchBar
-            query={documentSearch.query}
-            onQueryChange={documentSearch.setQuery}
-            onSubmit={() => void documentSearch.runSearch()}
-            onClear={documentSearch.clearSearch}
-            isSearching={documentSearch.isSearching}
-          />
-        </div>
-        <div className="flex items-center gap-2 xl:shrink-0">
-          <Button size="sm" variant="outline" className="h-11 px-4" onClick={openImportDialog}>
-            <FileText className="mr-2 h-4 w-4" />
-            Import File
-          </Button>
-          <Button size="sm" className="h-11 px-4" onClick={openCreateDialog}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Document
-          </Button>
-        </div>
-        </div>
-      </div>
-
       <DocumentEditorDialog
-        open={isDialogOpen}
-        mode={editorMode}
+        open={isCreateDialogOpen}
+        mode="create"
         values={formValues}
         metadataError={metadataError}
         isSaving={isSaving}
-        isLoading={isDocumentLoading}
-        onOpenChange={handleDialogChange}
+        isLoading={false}
+        onOpenChange={handleCreateDialogChange}
         onChange={(field, value) => setFormValues((current) => ({ ...current, [field]: value }))}
         onMetadataChange={(value) => {
           setFormValues((current) => ({ ...current, metadata: value }))
@@ -575,51 +559,111 @@ export function DocumentsView({
         onConfirm={() => void handleConfirmDelete()}
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        {documentSearch.activeSearch || documentSearch.searchError ? (
-          <DocumentSearchResults
-            search={documentSearch.activeSearch}
-            error={documentSearch.searchError}
-            onOpenDocument={(documentId) => {
-              if (onSelectedDocumentChange) {
-                onSelectedDocumentChange(documentId)
-                return
-              }
-              void openEditDialog(documentId)
-            }}
-          />
-        ) : (
-          <DocumentList
-            isLoading={isLoading}
-            totalDocuments={totalDocuments}
-            documents={documents}
-            pageSize={PAGE_SIZE}
-            currentPage={currentPage}
-            hasNextPage={hasNextPage}
-            accountId={accountId}
-            routeState={routeState}
-            onboarding={onboarding}
-            deleteErrorById={deleteErrorById}
-            retryErrorById={retryErrorById}
-            deletingDocumentId={deletingDocumentId}
-            retryingDocumentId={retryingDocumentId}
-            formatDate={formatDate}
-            onPreviousPage={goToPreviousPage}
-            onNextPage={goToNextPage}
-            onOpenDocument={(documentId) => {
-              if (onSelectedDocumentChange) {
-                onSelectedDocumentChange(documentId)
-                return
-              }
-              void openEditDialog(documentId)
-            }}
-            onOpenImport={openImportDialog}
-            onOpenCreate={openCreateDialog}
-            onDelete={setDeleteCandidate}
-            onRetry={(documentId) => void handleRetry(documentId)}
-          />
-        )}
-      </div>
+      {selectedDocumentId ? (
+        <DocumentEditorPage
+          document={activeDetailDocument}
+          values={formValues}
+          metadataError={metadataError}
+          isLoading={isDocumentLoading}
+          isSaving={isSaving}
+          isEditing={isEditingDetail}
+          isMetadataOpen={isMetadataSheetOpen}
+          onBack={() => {
+            justClosedDocumentIdRef.current = editingDocumentId
+            onSelectedDocumentChange?.(null)
+          }}
+          onChange={(field, value) => setFormValues((current) => ({ ...current, [field]: value }))}
+          onMetadataChange={(value) => {
+            setFormValues((current) => ({ ...current, metadata: value }))
+            setMetadataError(null)
+          }}
+          onEditingChange={(editing) => {
+            if (!editing && editingDocumentId) {
+              void openDocumentPage(editingDocumentId)
+              return
+            }
+            setIsEditingDetail(editing)
+          }}
+          onMetadataOpenChange={setIsMetadataSheetOpen}
+          onSubmit={handleSubmit}
+        />
+      ) : (
+        <>
+          <div className="shrink-0 border-b border-border px-6 py-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <div className="min-w-0 flex-1 space-y-2">
+                <div>
+                  <h1 className="text-lg font-medium text-foreground">Documents</h1>
+                  <p className="text-sm text-muted-foreground">Manage your knowledge base</p>
+                </div>
+                <DocumentSearchBar
+                  query={documentSearch.query}
+                  onQueryChange={documentSearch.setQuery}
+                  onSubmit={() => void documentSearch.runSearch()}
+                  onClear={documentSearch.clearSearch}
+                  isSearching={documentSearch.isSearching}
+                />
+              </div>
+              <div className="flex items-center gap-2 xl:shrink-0">
+                <Button size="sm" variant="outline" className="h-11 px-4" onClick={openImportDialog}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Import File
+                </Button>
+                <Button size="sm" className="h-11 px-4" onClick={openCreateDialog}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Document
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-6">
+            {documentSearch.activeSearch || documentSearch.searchError ? (
+              <DocumentSearchResults
+                search={documentSearch.activeSearch}
+                error={documentSearch.searchError}
+                onOpenDocument={(documentId) => {
+                  if (onSelectedDocumentChange) {
+                    onSelectedDocumentChange(documentId)
+                    return
+                  }
+                  void openDocumentPage(documentId)
+                }}
+              />
+            ) : (
+              <DocumentList
+                isLoading={isLoading}
+                totalDocuments={totalDocuments}
+                documents={documents}
+                pageSize={PAGE_SIZE}
+                currentPage={currentPage}
+                hasNextPage={hasNextPage}
+                accountId={accountId}
+                routeState={routeState}
+                onboarding={onboarding}
+                deleteErrorById={deleteErrorById}
+                retryErrorById={retryErrorById}
+                deletingDocumentId={deletingDocumentId}
+                retryingDocumentId={retryingDocumentId}
+                formatDate={formatDate}
+                onPreviousPage={goToPreviousPage}
+                onNextPage={goToNextPage}
+                onOpenDocument={(documentId) => {
+                  if (onSelectedDocumentChange) {
+                    onSelectedDocumentChange(documentId)
+                    return
+                  }
+                  void openDocumentPage(documentId)
+                }}
+                onOpenImport={openImportDialog}
+                onOpenCreate={openCreateDialog}
+                onDelete={setDeleteCandidate}
+                onRetry={(documentId) => void handleRetry(documentId)}
+              />
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

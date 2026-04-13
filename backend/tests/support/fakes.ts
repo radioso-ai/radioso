@@ -158,6 +158,10 @@ export class InMemoryAccountRepository implements AccountRepositoryPort {
     this.items.set(id, updated);
     return updated;
   }
+
+  async deleteById(id: string): Promise<boolean> {
+    return this.items.delete(id);
+  }
 }
 
 export class InMemoryUserRepository implements UserRepositoryPort {

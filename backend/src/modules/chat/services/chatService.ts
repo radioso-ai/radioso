@@ -485,7 +485,6 @@ export class ChatService {
         answerSegments: input.answerSegments,
         carryForwardLiterals: this.buildCarryForwardLiterals({
           diagnostics: input.diagnostics,
-          citations: input.citations,
         }),
         retrieval: input.diagnostics,
         retrievalTrace: input.retrievalTrace,
@@ -586,13 +585,8 @@ export class ChatService {
 
   private buildCarryForwardLiterals(input: {
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
-    citations: ChatCitation[];
   }): string[] {
-    const candidates = [
-      input.diagnostics.rewriteProposal?.proposedActiveSubject,
-      ...(input.diagnostics.rewriteProposal?.relatedEntities ?? []),
-      ...input.citations.map((citation) => citation.title),
-    ];
+    const candidates = [input.diagnostics.rewriteProposal?.proposedActiveSubject];
 
     const unique: string[] = [];
     for (const value of candidates) {

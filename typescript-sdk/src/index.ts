@@ -7,16 +7,25 @@ export type {
   ChatCreateRequest,
   ChatRequest,
   ChatResponse,
+  ChatConversationDetail,
+  ChatHistoryListResponse,
   DocumentCreateRequest,
   DocumentDetails,
   DocumentListResponse,
   DocumentOperationResponse,
   DocumentSearchRequest,
+  DocumentSearchHistoryListResponse,
   DocumentSearchResponse,
   DocumentListQuery,
+  GeneralSettingsResponse,
+  IngestionSettings,
+  PaginationQuery,
   RetrievalSettings,
   UpdateDocumentRequest,
+  UpdateGeneralSettingsRequest,
+  UpdateIngestionSettingsRequest,
   UpdateRetrievalSettingsRequest,
+  WorkspaceIngestionReprocessResponse,
 } from "./generated/client.js";
 export type { RadiosoClientOptions } from "./core/config.js";
 export type { RadiosoChatStreamEvent } from "./streaming/chatStream.js";
@@ -30,6 +39,13 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
       getRetrieval: () => generated.getRetrievalSettings(),
       updateRetrieval: (body: Parameters<GeneratedRadiosoClient["updateRetrievalSettings"]>[0]) =>
         generated.updateRetrievalSettings(body),
+      getIngestion: () => generated.getIngestionSettings(),
+      updateIngestion: (body: Parameters<GeneratedRadiosoClient["updateIngestionSettings"]>[0]) =>
+        generated.updateIngestionSettings(body),
+      reprocessIngestion: () => generated.reprocessWorkspaceIngestion(),
+      getGeneral: () => generated.getGeneralSettings(),
+      updateGeneral: (body: Parameters<GeneratedRadiosoClient["updateGeneralSettings"]>[0]) =>
+        generated.updateGeneralSettings(body),
     },
     documents: {
       list: (query?: Parameters<GeneratedRadiosoClient["listDocuments"]>[0]) => generated.listDocuments(query),
@@ -39,6 +55,10 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
         generated.updateDocument(documentId, body),
       delete: (documentId: string) => generated.deleteDocument(documentId),
       search: (body: Parameters<GeneratedRadiosoClient["searchDocuments"]>[0]) => generated.searchDocuments(body),
+      listHistory: (query?: Parameters<GeneratedRadiosoClient["listDocumentSearchHistory"]>[0]) =>
+        generated.listDocumentSearchHistory(query),
+      getHistory: (searchId: string) => generated.getDocumentSearchHistory(searchId),
+      reprocess: (documentId: string) => generated.reprocessDocument(documentId),
     },
     chat: {
       create: (body: ChatCreateRequest) => {
@@ -48,6 +68,11 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
 
         return generated.createChatResponse(body);
       },
+      listHistory: (query?: Parameters<GeneratedRadiosoClient["listChatHistory"]>[0]) => generated.listChatHistory(query),
+      getHistoryConversation: (
+        conversationId: string,
+        query?: Parameters<GeneratedRadiosoClient["getChatHistoryConversation"]>[1],
+      ) => generated.getChatHistoryConversation(conversationId, query),
       stream: (body: Omit<ChatRequest, "stream">): AsyncGenerator<RadiosoChatStreamEvent> => streamChat(config, body),
     },
   };

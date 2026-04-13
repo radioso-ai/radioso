@@ -55,6 +55,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/invitations/{invitationToken}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get invitation details for an account join flow */
+        get: operations["getAccountInvitation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invitations/{invitationToken}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept an invitation and establish a session for the joined account */
+        post: operations["acceptAccountInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List active account users and invitations */
+        get: operations["listAccountUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List accessible accounts for the current user */
+        get: operations["listAccessibleAccounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an account invitation */
+        post: operations["createAccountInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Switch the current session to another accessible account */
+        post: operations["switchAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/users/{membershipId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove account user access */
+        delete: operations["removeAccountUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/account/workspaces/{workspaceId}/token": {
         parameters: {
             query?: never;
@@ -615,12 +734,18 @@ export interface components {
             /** Format: uuid */
             userId: string;
             /** Format: uuid */
+            accountId: string;
+            organizationName: string;
+            /** Format: uuid */
             workspaceId: string;
             workspaceName: string;
         };
         LoginResponse: {
             /** Format: uuid */
             userId: string;
+            /** Format: uuid */
+            accountId: string;
+            organizationName: string;
             /** Format: uuid */
             workspaceId: string;
             workspaceName: string;
@@ -646,6 +771,7 @@ export interface components {
             /** Format: email */
             email: string;
             password: string;
+            organizationName?: string;
         };
         LoginRequest: {
             /** Format: email */
@@ -653,12 +779,87 @@ export interface components {
             password: string;
             /** Format: uuid */
             preferredWorkspaceId?: string;
+            /** Format: uuid */
+            preferredAccountId?: string;
+        };
+        InvitationAcceptRequest: {
+            /** Format: email */
+            email: string;
+            password: string;
+        };
+        AccountInvitationCreateRequest: {
+            /** Format: email */
+            email: string;
         };
         WorkspaceCreateRequest: {
             name: string;
         };
         WorkspaceRenameRequest: {
             name: string;
+        };
+        AccountUser: {
+            /** Format: uuid */
+            membershipId: string;
+            /** Format: uuid */
+            userId: string;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            role: "owner" | "member";
+            /** @enum {string} */
+            status: "active";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AccountInvitation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            status: "pending" | "accepted" | "revoked" | "expired";
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            acceptedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AccountUsersResponse: {
+            /** Format: uuid */
+            accountId: string;
+            /** Format: uuid */
+            currentUserId: string;
+            users: components["schemas"]["AccountUser"][];
+            invitations: components["schemas"]["AccountInvitation"][];
+        };
+        AccessibleAccount: {
+            /** Format: uuid */
+            accountId: string;
+            organizationName: string;
+            /** @enum {string} */
+            role: "owner" | "member";
+            /** Format: uuid */
+            workspaceId: string;
+            workspaceName: string;
+        };
+        AccessibleAccountsResponse: {
+            /** Format: uuid */
+            currentAccountId: string;
+            accounts: components["schemas"]["AccessibleAccount"][];
+        };
+        CreateAccountInvitationResponse: components["schemas"]["AccountInvitation"] & {
+            acceptanceUrl: string;
+        };
+        InvitationDetailsResponse: {
+            /** Format: uuid */
+            accountId: string;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            status: "pending" | "accepted" | "revoked" | "expired";
+            /** Format: date-time */
+            expiresAt: string;
         };
         RetrievalSettings: {
             /** Format: uuid */
@@ -794,6 +995,7 @@ export interface components {
             title: string;
             status: components["schemas"]["DocumentStatus"];
             ragStatus: components["schemas"]["RagStatus"];
+            failureReason?: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -880,6 +1082,15 @@ export interface components {
             merged: number;
             final: number;
         };
+        RetrievalSubquery: {
+            id: string;
+            label: string;
+            semanticQuery: string;
+            lexicalQuery: string;
+            reason?: string;
+            /** @enum {string} */
+            responseLanguagePolicy?: "match_user_question";
+        };
         AppliedConstraint: {
             signalKey: string;
             /** @enum {string} */
@@ -898,6 +1109,9 @@ export interface components {
         };
         RetrievalInfo: {
             parsedQuery?: components["schemas"]["ParsedQuery"];
+            retrievalSubqueries?: components["schemas"]["RetrievalSubquery"][];
+            /** @enum {string} */
+            responseLanguagePolicy?: "match_user_question";
             candidateCounts: components["schemas"]["CandidateCounts"];
             appliedConstraints?: components["schemas"]["AppliedConstraint"][];
             fallbackApplied: boolean;
@@ -1441,6 +1655,284 @@ export interface operations {
             };
             /** @description Unexpected server error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAccountInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitationToken: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation details returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationDetailsResponse"];
+                };
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acceptAccountInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitationToken: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Invitation accepted and session established */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Invitation email mismatch or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation is no longer valid */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAccountUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Account users returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountUsersResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAccessibleAccounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accessible accounts returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessibleAccountsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAccountInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountInvitationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Invitation created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateAccountInvitationResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation already pending or user already has access */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    switchAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    accountId: string;
+                    /** Format: uuid */
+                    preferredWorkspaceId?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Account switched */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeAccountUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                membershipId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Account user removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Owner access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Membership not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Membership cannot be removed */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

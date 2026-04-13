@@ -30,7 +30,7 @@
 - **Rationale**: This keeps the first release coherent for external developers and avoids dragging browser-session, admin-only, or internal flows into a package that should be externally consumable.
 - **Alternatives considered**:
   - Full parity with all documented routes: rejected because many routes are designed around browser sessions or first-party UI behavior.
-  - Chat-only SDK: rejected because documents, workspace-scoped settings, and basic workspace operations are part of a credible external integration surface.
+  - Chat-only SDK: rejected because documents, workspace-scoped settings, search/chat history, and related token-auth workflows are part of a credible external integration surface.
 
 ## Decision 5: Make contract refresh a first-class workflow
 

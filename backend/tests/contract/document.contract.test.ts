@@ -476,6 +476,65 @@ describe("document contract", () => {
     });
   });
 
+  it("treats POST with the same externalDocumentId as an idempotent write within one workspace", async () => {
+    const { app } = createTestApp();
+
+    const session = await issueTestSession(app, "document-external-id@example.com");
+
+    const firstResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "External document",
+        content: "First content",
+        externalDocumentId: "crm-123",
+      });
+
+    const secondResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "External document",
+        content: "Second content",
+        externalDocumentId: "crm-123",
+      });
+
+    expect(firstResponse.status).toBe(202);
+    expect(secondResponse.status).toBe(202);
+    expect(secondResponse.body.documentId).toBe(firstResponse.body.documentId);
+
+    const getResponse = await request(app)
+      .get(`/api/v1/document/${firstResponse.body.documentId}`)
+      .set(adminSessionHeaders(session));
+
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.body).toMatchObject({
+      id: firstResponse.body.documentId,
+      content: "Second content",
+      externalDocumentId: "crm-123",
+    });
+  });
+
+  it("rejects blank externalDocumentId values", async () => {
+    const { app } = createTestApp();
+
+    const session = await issueTestSession(app, "document-external-id-blank@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Blank external ID",
+        content: "Content",
+        externalDocumentId: "   ",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: "bad_request",
+    });
+  });
+
   it("returns empty metadata object when document is created without metadata", async () => {
     const { app } = createTestApp();
 
@@ -542,6 +601,95 @@ describe("document contract", () => {
       .set(adminSessionHeaders(session));
 
     expect(afterMetadataUpdate.body.metadata).toEqual({ language: "fr" });
+  });
+
+  it("returns externalDocumentId on GET and list responses when present", async () => {
+    const { app } = createTestApp();
+
+    const session = await issueTestSession(app, "document-external-id-read@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Readable external doc",
+        content: "Readable content",
+        externalDocumentId: "crm-123",
+      });
+
+    const getResponse = await request(app)
+      .get(`/api/v1/document/${createResponse.body.documentId}`)
+      .set(adminSessionHeaders(session));
+
+    const listResponse = await request(app)
+      .get("/api/v1/document/")
+      .set(adminSessionHeaders(session));
+
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.body.externalDocumentId).toBe("crm-123");
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.documents).toEqual([
+      expect.objectContaining({
+        id: createResponse.body.documentId,
+        externalDocumentId: "crm-123",
+      }),
+    ]);
+  });
+
+  it("preserves repeated create behavior when externalDocumentId is omitted", async () => {
+    const { app } = createTestApp();
+
+    const session = await issueTestSession(app, "document-external-id-omitted@example.com");
+
+    const firstResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "No external ID",
+        content: "First content",
+      });
+
+    const secondResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "No external ID",
+        content: "First content",
+      });
+
+    expect(firstResponse.status).toBe(202);
+    expect(secondResponse.status).toBe(202);
+    expect(secondResponse.body.documentId).not.toBe(firstResponse.body.documentId);
+  });
+
+  it("rejects attempts to change externalDocumentId once it is set", async () => {
+    const { app } = createTestApp();
+
+    const session = await issueTestSession(app, "document-external-id-immutable@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Immutable external doc",
+        content: "Original content",
+        externalDocumentId: "crm-123",
+      });
+
+    const updateResponse = await request(app)
+      .put(`/api/v1/document/${createResponse.body.documentId}`)
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Immutable external doc",
+        content: "Updated content",
+        externalDocumentId: "crm-456",
+      });
+
+    expect(updateResponse.status).toBe(409);
+    expect(updateResponse.body.error).toMatchObject({
+      code: "conflict",
+      message: "externalDocumentId cannot be changed once set",
+    });
   });
 
   it("returns not_found when deleting a document outside the authenticated account", async () => {

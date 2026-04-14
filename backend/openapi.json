@@ -1062,6 +1062,10 @@
                 }
               ]
             }
+          },
+          "externalDocumentId": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -1143,6 +1147,12 @@
               ]
             },
             "default": {}
+          },
+          "externalDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4786,6 +4796,10 @@
                         }
                       ]
                     }
+                  },
+                  "externalDocumentId": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [

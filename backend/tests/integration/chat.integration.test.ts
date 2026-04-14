@@ -835,7 +835,6 @@ describe("chat integration", () => {
         storedChunks.map((chunk) => ({
           ...chunk,
           searchText: null,
-          structuredAttributes: null,
         })),
       );
     }

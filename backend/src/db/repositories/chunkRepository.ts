@@ -10,7 +10,7 @@ export const insertChunks = async (client: PoolClient, chunks: ChunkRecord[]): P
 
   const values: unknown[] = [];
   const placeholders = chunks.map((chunk, index) => {
-    const offset = index * 11;
+    const offset = index * 10;
     values.push(
       chunk.id,
       chunk.documentId,
@@ -18,18 +18,17 @@ export const insertChunks = async (client: PoolClient, chunks: ChunkRecord[]): P
       chunk.chunkIndex,
       chunk.content,
       chunk.searchText ?? chunk.content,
-      JSON.stringify(chunk.structuredAttributes ?? {}),
       `[${chunk.embedding.join(",")}]`,
       chunk.startOffset,
       chunk.endOffset,
       JSON.stringify(chunk.metadata ?? {}),
     );
 
-    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}::jsonb, $${offset + 8}::vector, $${offset + 9}, $${offset + 10}, $${offset + 11}::jsonb)`;
+    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}::vector, $${offset + 8}, $${offset + 9}, $${offset + 10}::jsonb)`;
   });
 
   await client.query(
-    `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, structured_attributes, embedding, start_offset, end_offset, metadata)
+    `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, embedding, start_offset, end_offset, metadata)
      VALUES ${placeholders.join(", ")}`,
     values,
   );

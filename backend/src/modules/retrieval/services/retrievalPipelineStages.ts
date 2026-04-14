@@ -6,7 +6,7 @@ import type {
   ResponseLanguagePolicy,
   RewrittenRetrievalQuery,
 } from "../domain/retrievalPipelineTypes.js";
-import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
+import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 
@@ -63,7 +63,7 @@ export interface CandidatePreparationStageResult extends CandidateRetrievalStage
   normalizedCandidates: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
   mergedCandidates: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
   scoredCandidates: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
-  appliedConstraints: import("../domain/structuredAttributes.js").AppliedConstraint[];
+  appliedConstraints: AppliedConstraint[];
   candidateFallbackApplied: boolean;
 }
 

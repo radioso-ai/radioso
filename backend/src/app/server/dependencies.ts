@@ -35,7 +35,6 @@ import { WorkspaceIngestionReprocessService } from "../../modules/documents/serv
 import { PgLexicalSearch } from "../../modules/retrieval/infra/lexicalSearch.js";
 import { PgVectorSearch } from "../../modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../modules/retrieval/services/candidatePreparationService.js";
-import { AttributeMatchScoringService } from "../../modules/retrieval/services/attributeMatchScoringService.js";
 import { ConversationContextService } from "../../modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../modules/retrieval/services/promptBuilder.js";
 import { PromptContextSelectorService } from "../../modules/retrieval/services/promptContextSelectorService.js";
@@ -47,12 +46,6 @@ import { RerankService } from "../../modules/retrieval/services/rerankService.js
 import { RetrievalPipelineService } from "../../modules/retrieval/services/retrievalPipelineService.js";
 import { RetrievalExecutionTelemetryService } from "../../modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import { EmbeddingService } from "../../modules/retrieval/services/embeddingService.js";
-import {
-  CompositeDocumentAttributeExtractionService,
-  MetadataBackedDocumentAttributeExtractionService,
-  SemanticDocumentAttributeExtractionService,
-} from "../../modules/retrieval/services/documentAttributeExtractionService.js";
-import { SemanticQueryConstraintService } from "../../modules/retrieval/services/semanticQueryConstraintService.js";
 import { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
@@ -129,10 +122,6 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     chunkingStrategyRegistry,
     documentSourceContentService,
     logger,
-    new CompositeDocumentAttributeExtractionService(
-      new MetadataBackedDocumentAttributeExtractionService(),
-      new SemanticDocumentAttributeExtractionService(llmRegistry.createDocumentAttributeExtractionGateway()),
-    ),
   );
   const documentIngestionService = new DocumentIngestionService(
     documentRepository,
@@ -162,12 +151,11 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new ConversationContextService(),
     new QueryRewriteService(llmRegistry.createRewriteGateway()),
     new CandidatePreparationService(),
-    new AttributeMatchScoringService(),
+    undefined,
     new RerankService(llmRegistry.createRerankGateway(), logger),
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
-    new SemanticQueryConstraintService(llmRegistry.createSemanticQueryConstraintGateway()),
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,

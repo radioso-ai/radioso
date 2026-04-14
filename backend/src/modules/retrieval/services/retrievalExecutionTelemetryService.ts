@@ -5,6 +5,7 @@ import type {
   RewriteStatus,
   RerankStatus,
 } from "../domain/retrievalPipelineTypes.js";
+import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 
 export class RetrievalExecutionTelemetryService {
   create(input: {
@@ -16,8 +17,8 @@ export class RetrievalExecutionTelemetryService {
     normalizedCandidateCount: number;
     finalContextCount: number;
     queryEmbeddingDurationMs?: number;
-    parsedQuery?: import("../domain/structuredAttributes.js").ParsedQueryInterpretation;
-    appliedConstraints?: import("../domain/structuredAttributes.js").AppliedConstraint[];
+    parsedQuery?: ParsedQueryInterpretation;
+    appliedConstraints?: AppliedConstraint[];
     candidateFallbackApplied: boolean;
     rewriteEligible?: boolean;
     rewriteRan?: boolean;

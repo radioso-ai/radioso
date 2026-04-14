@@ -36,12 +36,6 @@ describe("retrieval benchmark integration", () => {
         rerankTopK: 20,
         citationDisplayEnabled: true,
         chunkingStrategy: "fixed_window",
-        signalPolicies: [
-          { signalKey: "document_date", enabled: true, mode: "hard_filter" },
-          { signalKey: "document_period", enabled: true, mode: "boost_only" },
-          { signalKey: "document_amount", enabled: true, mode: "hard_filter" },
-          { signalKey: "document_location", enabled: true, mode: "hard_filter" },
-        ],
       });
 
     for (const scenario of directAnswerQueries) {
@@ -139,12 +133,6 @@ describe("retrieval benchmark integration", () => {
           rerankTopK: 20,
           citationDisplayEnabled: true,
           chunkingStrategy: "fixed_window",
-          signalPolicies: [
-            { signalKey: "document_date", enabled: true, mode: "hard_filter" },
-            { signalKey: "document_period", enabled: true, mode: "boost_only" },
-            { signalKey: "document_amount", enabled: true, mode: "hard_filter" },
-            { signalKey: "document_location", enabled: true, mode: "hard_filter" },
-          ],
         });
 
       return authorization;

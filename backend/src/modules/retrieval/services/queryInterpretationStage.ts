@@ -1,19 +1,17 @@
-import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
+import type { ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
-import { SemanticQueryConstraintService } from "./semanticQueryConstraintService.js";
 import type { QueryInterpretationStage as QueryInterpretationStageContract, RetrievalContextStageResult } from "./retrievalPipelineStages.js";
 
 export class QueryInterpretationStageService implements QueryInterpretationStageContract {
-  constructor(
-    private readonly queryRewriteService: QueryRewriteService,
-    private readonly semanticQueryConstraintService: SemanticQueryConstraintService = new SemanticQueryConstraintService(),
-  ) {}
+  constructor(private readonly queryRewriteService: QueryRewriteService) {}
 
   async execute(input: RetrievalContextStageResult) {
-    const originalParsedQuery = await this.semanticQueryConstraintService.interpret({
-      query: input.request.query,
-      history: input.contextWindow.selectedMessages,
-    });
+    const originalParsedQuery: ParsedQueryInterpretation = {
+      originalQuery: input.request.query,
+      semanticQuery: input.request.query,
+      lexicalQuery: input.request.query,
+      constraints: [],
+    };
     const prepareQueries = (
       parsedQuery: ParsedQueryInterpretation,
       semanticQuery: string,

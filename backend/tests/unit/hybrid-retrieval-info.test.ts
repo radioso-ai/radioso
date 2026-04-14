@@ -24,28 +24,9 @@ describe("hybrid retrieval info", () => {
         originalQuery: "retreats in Estonia",
         semanticQuery: "retreats",
         lexicalQuery: "retreats",
-        constraints: [
-          {
-            signalKey: "document_location",
-            operator: "match",
-            confidence: 0.95,
-            summary: "in Estonia",
-            sourceText: "in Estonia",
-            value: {
-              matchKey: "estonia",
-              displayName: "Estonia",
-            },
-          },
-        ],
+        constraints: [],
       },
-      appliedConstraints: [
-        {
-          signalKey: "document_location",
-          mode: "hard_filter",
-          outcome: "applied",
-          summary: "in Estonia",
-        },
-      ],
+      appliedConstraints: [],
     });
 
     expect(result).toEqual({
@@ -53,7 +34,7 @@ describe("hybrid retrieval info", () => {
         originalQuery: "retreats in Estonia",
         semanticQuery: "retreats",
         lexicalQuery: "retreats",
-        constraintSummary: ["in Estonia"],
+        constraintSummary: [],
       },
       candidateCounts: {
         semantic: 6,
@@ -61,14 +42,7 @@ describe("hybrid retrieval info", () => {
         merged: 5,
         final: 3,
       },
-      appliedConstraints: [
-        {
-          signalKey: "document_location",
-          mode: "hard_filter",
-          outcome: "applied",
-          summary: "in Estonia",
-        },
-      ],
+      appliedConstraints: undefined,
       fallbackApplied: true,
       rerankStatus: "applied",
       rewrite: {

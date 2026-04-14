@@ -1,7 +1,6 @@
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { DocumentProcessingQueueSnapshot } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { normalizeMarkdown } from "../../retrieval/domain/chunking/chunkingStrategy.js";
-import type { StructuredAttributes } from "../../retrieval/domain/structuredAttributes.js";
 import { conflict, notFound } from "../../../shared/domain/errors.js";
 
 export type DocumentSourceKind = "inline_text" | "uploaded_file";
@@ -86,7 +85,6 @@ export interface ChunkRecord {
   chunkIndex: number;
   content: string;
   searchText?: string | null;
-  structuredAttributes?: StructuredAttributes | null;
   embedding: number[];
   startOffset: number;
   endOffset: number;

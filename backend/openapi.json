@@ -122,6 +122,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationName": {
+            "type": "string"
+          },
           "workspaceId": {
             "type": "string",
             "format": "uuid"
@@ -132,6 +139,8 @@
         },
         "required": [
           "userId",
+          "accountId",
+          "organizationName",
           "workspaceId",
           "workspaceName"
         ]
@@ -143,6 +152,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationName": {
+            "type": "string"
+          },
           "workspaceId": {
             "type": "string",
             "format": "uuid"
@@ -153,6 +169,8 @@
         },
         "required": [
           "userId",
+          "accountId",
+          "organizationName",
           "workspaceId",
           "workspaceName"
         ]
@@ -223,6 +241,11 @@
           "password": {
             "type": "string",
             "minLength": 8
+          },
+          "organizationName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
           }
         },
         "required": [
@@ -244,11 +267,44 @@
           "preferredWorkspaceId": {
             "type": "string",
             "format": "uuid"
+          },
+          "preferredAccountId": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
           "email",
           "password"
+        ]
+      },
+      "InvitationAcceptRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "AccountInvitationCreateRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        },
+        "required": [
+          "email"
         ]
       },
       "WorkspaceCreateRequest": {
@@ -275,6 +331,226 @@
         },
         "required": [
           "name"
+        ]
+      },
+      "AccountUser": {
+        "type": "object",
+        "properties": {
+          "membershipId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "member"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "membershipId",
+          "userId",
+          "email",
+          "role",
+          "status",
+          "createdAt"
+        ]
+      },
+      "AccountInvitation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "revoked",
+              "expired"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acceptedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "status",
+          "expiresAt",
+          "acceptedAt",
+          "createdAt"
+        ]
+      },
+      "AccountUsersResponse": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currentUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountUser"
+            }
+          },
+          "invitations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountInvitation"
+            }
+          }
+        },
+        "required": [
+          "accountId",
+          "currentUserId",
+          "users",
+          "invitations"
+        ]
+      },
+      "AccessibleAccount": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "member"
+            ]
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "organizationName",
+          "role",
+          "workspaceId",
+          "workspaceName"
+        ]
+      },
+      "AccessibleAccountsResponse": {
+        "type": "object",
+        "properties": {
+          "currentAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccessibleAccount"
+            }
+          }
+        },
+        "required": [
+          "currentAccountId",
+          "accounts"
+        ]
+      },
+      "CreateAccountInvitationResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AccountInvitation"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "acceptanceUrl": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "acceptanceUrl"
+            ]
+          }
+        ]
+      },
+      "InvitationDetailsResponse": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "revoked",
+              "expired"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "accountId",
+          "email",
+          "status",
+          "expiresAt"
         ]
       },
       "RetrievalSettings": {
@@ -1222,6 +1498,38 @@
           "final"
         ]
       },
+      "RetrievalSubquery": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "semanticQuery": {
+            "type": "string"
+          },
+          "lexicalQuery": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "responseLanguagePolicy": {
+            "type": "string",
+            "enum": [
+              "match_user_question"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "semanticQuery",
+          "lexicalQuery"
+        ]
+      },
       "AppliedConstraint": {
         "type": "object",
         "properties": {
@@ -1288,6 +1596,18 @@
         "properties": {
           "parsedQuery": {
             "$ref": "#/components/schemas/ParsedQuery"
+          },
+          "retrievalSubqueries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetrievalSubquery"
+            }
+          },
+          "responseLanguagePolicy": {
+            "type": "string",
+            "enum": [
+              "match_user_question"
+            ]
           },
           "candidateCounts": {
             "$ref": "#/components/schemas/CandidateCounts"
@@ -3053,6 +3373,377 @@
           },
           "500": {
             "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/invitations/{invitationToken}": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get invitation details for an account join flow",
+        "operationId": "getAccountInvitation",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "invitationToken",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invitation details returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationDetailsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invitation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/invitations/{invitationToken}/accept": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Accept an invitation and establish a session for the joined account",
+        "operationId": "acceptAccountInvitation",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "invitationToken",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationAcceptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Invitation accepted and session established",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invitation email mismatch or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invitation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invitation is no longer valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/users": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "List active account users and invitations",
+        "operationId": "listAccountUsers",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account users returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountUsersResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/accounts": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "List accessible accounts for the current user",
+        "operationId": "listAccessibleAccounts",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accessible accounts returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessibleAccountsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/invitations": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Create an account invitation",
+        "operationId": "createAccountInvitation",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountInvitationCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Invitation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateAccountInvitationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invitation already pending or user already has access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/switch": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Switch the current session to another accessible account",
+        "operationId": "switchAccount",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "preferredWorkspaceId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "accountId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account switched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/users/{membershipId}": {
+      "delete": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Remove account user access",
+        "operationId": "removeAccountUser",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "membershipId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Account user removed"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Membership not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Membership cannot be removed",
             "content": {
               "application/json": {
                 "schema": {

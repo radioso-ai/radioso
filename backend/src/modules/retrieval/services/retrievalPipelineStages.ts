@@ -1,6 +1,11 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSettings.js";
-import type { ConversationContextWindow, RewrittenRetrievalQuery } from "../domain/retrievalPipelineTypes.js";
+import type {
+  ConversationContextWindow,
+  RetrievalSubquery,
+  ResponseLanguagePolicy,
+  RewrittenRetrievalQuery,
+} from "../domain/retrievalPipelineTypes.js";
 import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
@@ -9,6 +14,7 @@ export interface RetrievalPipelineRequest {
   workspaceId: string;
   query: string;
   history: MessageRecord[];
+  responseLanguagePolicy?: ResponseLanguagePolicy;
   rewriteCarryForwardLiterals?: string[];
   metadataFilter?: Record<string, unknown>;
 }
@@ -26,8 +32,21 @@ export interface QueryInterpretationStageResult extends RetrievalContextStageRes
   activeQuery: string;
   activeParsedQuery: ParsedQueryInterpretation;
   activeSemanticQuery: string;
+  activeRetrievalSubqueries: RetrievalSubquery[];
   promptHistory: MessageRecord[];
   continuityDecision: "unchanged" | "updated" | "unresolved" | "rejected";
+}
+
+export interface RetrievalBranchResult {
+  subqueryId: string;
+  label: string;
+  semanticQuery: string;
+  lexicalQuery: string;
+  reason?: string;
+  responseLanguagePolicy?: ResponseLanguagePolicy;
+  source: "original" | "rewritten";
+  semanticContexts: RetrievedChunk[];
+  lexicalContexts: RetrievedChunk[];
 }
 
 export interface CandidateRetrievalStageResult extends QueryInterpretationStageResult {
@@ -36,6 +55,7 @@ export interface CandidateRetrievalStageResult extends QueryInterpretationStageR
   originalContexts: RetrievedChunk[];
   rewrittenContexts: RetrievedChunk[];
   lexicalContexts: RetrievedChunk[];
+  retrievalBranches: RetrievalBranchResult[];
   vectorFallbackApplied: boolean;
 }
 
@@ -59,6 +79,7 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
   responseSettings: {
     citationDisplayEnabled: boolean;
     answerSupportPolicy: RetrievalSettingsRecord["answerSupportPolicy"];
+    responseLanguagePolicy?: ResponseLanguagePolicy;
   };
 }
 
@@ -89,50 +110,3 @@ export interface PromptAssemblyStage {
 export interface RetrievalDiagnosticsStage {
   execute(input: PromptAssemblyStageResult): import("../domain/retrievalPipelineTypes.js").RetrievalExecutionDiagnostics;
 }
-
-export const stripEnabledConstraintLiterals = (
-  query: string,
-  parsedQuery: ParsedQueryInterpretation,
-  enabledSignalKeys: Set<string>,
-): string => {
-  const stripped = parsedQuery.constraints
-    .filter((constraint) => enabledSignalKeys.has(constraint.signalKey))
-    .reduce((value, constraint) => {
-      if (!constraint.sourceText) {
-        return value;
-      }
-
-      const escaped = constraint.sourceText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return value.replace(new RegExp(`\\b${escaped}\\b`, "i"), " ");
-    }, query)
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return stripped || query;
-};
-
-export const mergeParsedQueries = (
-  originalParsedQuery: ParsedQueryInterpretation,
-  rewrittenParsedQuery: ParsedQueryInterpretation,
-): ParsedQueryInterpretation => {
-  const seenConstraintKeys = new Set<string>();
-  const constraints = [...originalParsedQuery.constraints, ...rewrittenParsedQuery.constraints].filter((constraint) => {
-    const key = JSON.stringify({
-      signalKey: constraint.signalKey,
-      operator: constraint.operator,
-      summary: constraint.summary,
-      value: constraint.value,
-    });
-    if (seenConstraintKeys.has(key)) {
-      return false;
-    }
-    seenConstraintKeys.add(key);
-    return true;
-  });
-
-  return {
-    semanticQuery: rewrittenParsedQuery.semanticQuery,
-    lexicalQuery: rewrittenParsedQuery.lexicalQuery,
-    constraints,
-  };
-};

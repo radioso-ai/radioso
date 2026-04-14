@@ -1,4 +1,4 @@
-export type DashboardSection = 'chat' | 'history' | 'documents' | 'evals' | 'settings'
+export type DashboardSection = 'chat' | 'history' | 'documents' | 'evals' | 'settings' | 'users'
 export type HistoryFilter = 'all' | 'chat' | 'search'
 export type HistoryItemKind = 'chat' | 'search'
 export type SettingsTab = 'general' | 'ingestion' | 'retrieval' | 'connectors'
@@ -32,7 +32,7 @@ const parsePositiveInt = (value: string | null): number | undefined => {
 }
 
 const parseSection = (value: string | undefined): DashboardSection | null => {
-  if (value === 'chat' || value === 'history' || value === 'documents' || value === 'evals' || value === 'settings') {
+  if (value === 'chat' || value === 'history' || value === 'documents' || value === 'evals' || value === 'settings' || value === 'users') {
     return value
   }
 
@@ -196,7 +196,8 @@ export const buildAccountRoute = (
   accountId: string,
   section: DashboardSection = DEFAULT_SECTION,
   documentId?: string,
-) => buildDashboardHref(accountId, { section, documentId })
+  workspaceId?: string,
+) => buildDashboardHref(accountId, { section, documentId, workspaceId })
 
 export const parseDashboardRoute = (
   segments: string[] | undefined,

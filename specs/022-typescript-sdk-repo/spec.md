@@ -13,7 +13,7 @@ An external developer can install the Radioso SDK, configure a base URL and API 
 
 **Why this priority**: Lowering the cost of first integration is the core value of the SDK. If developers still need to hand-build requests for the main token-compatible workflows, the SDK does not solve the adoption problem.
 
-**Independent Test**: Can be fully tested by following the SDK quickstart to configure a token, initialize the client, and complete successful document, settings, workspace, and non-streaming chat operations against a Radioso environment.
+**Independent Test**: Can be fully tested by following the SDK quickstart to configure a token, initialize the client, and complete successful document, settings, history, and non-streaming chat operations against a Radioso environment.
 
 **Acceptance Scenarios**:
 

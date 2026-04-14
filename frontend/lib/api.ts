@@ -193,10 +193,13 @@ const requestLongRunning = async <T>(
 export interface RegisterRequest {
   email: string
   password: string
+  organizationName?: string
 }
 
 export interface RegisterResponse {
   userId: string
+  accountId: string
+  organizationName: string
   workspaceId: string
   workspaceName: string
 }
@@ -205,10 +208,13 @@ export interface LoginRequest {
   email: string
   password: string
   preferredWorkspaceId?: string
+  preferredAccountId?: string
 }
 
 export interface LoginResponse {
   userId: string
+  accountId: string
+  organizationName: string
   workspaceId: string
   workspaceName: string
 }
@@ -375,6 +381,8 @@ export interface AnswerSegment {
 
 export interface RetrievalInfo {
   parsedQuery?: ParsedQueryInfo
+  retrievalSubqueries?: RetrievalSubqueryInfo[]
+  responseLanguagePolicy?: 'match_user_question'
   candidateCounts: CandidateCounts
   appliedConstraints?: AppliedConstraintInfo[]
   fallbackApplied: boolean
@@ -395,6 +403,15 @@ export interface ParsedQueryInfo {
   semanticQuery: string
   lexicalQuery: string
   constraintSummary: string[]
+}
+
+export interface RetrievalSubqueryInfo {
+  id: string
+  label: string
+  semanticQuery: string
+  lexicalQuery: string
+  reason?: string
+  responseLanguagePolicy?: 'match_user_question'
 }
 
 export interface CandidateCounts {
@@ -438,7 +455,9 @@ export interface RetrievalTrace {
   totalDurationMs?: number
   stages: RetrievalTraceStage[]
   links: RetrievalTraceLink[]
-  summary?: RetrievalInfo
+  summary?: RetrievalInfo & {
+    retrievalSubqueries?: RetrievalSubqueryInfo[]
+  }
 }
 
 export interface ChatResponse {
@@ -902,6 +921,55 @@ export interface Workspace {
   updatedAt: string
 }
 
+export interface AccountUserSummary {
+  membershipId: string
+  userId: string
+  email: string
+  role: 'owner' | 'member'
+  status: 'active'
+  createdAt: string
+}
+
+export interface AccountInvitationSummary {
+  id: string
+  email: string
+  status: 'pending' | 'accepted' | 'revoked' | 'expired'
+  expiresAt: string
+  acceptedAt: string | null
+  createdAt: string
+}
+
+export interface AccountUsersResponse {
+  accountId: string
+  currentUserId: string
+  users: AccountUserSummary[]
+  invitations: AccountInvitationSummary[]
+}
+
+export interface AccessibleAccountSummary {
+  accountId: string
+  organizationName: string
+  role: 'owner' | 'member'
+  workspaceId: string
+  workspaceName: string
+}
+
+export interface AccessibleAccountsResponse {
+  currentAccountId: string
+  accounts: AccessibleAccountSummary[]
+}
+
+export interface CreateAccountInvitationResponse extends AccountInvitationSummary {
+  acceptanceUrl: string
+}
+
+export interface InvitationDetailsResponse {
+  accountId: string
+  email: string
+  status: 'pending' | 'accepted' | 'revoked' | 'expired'
+  expiresAt: string
+}
+
 // Workspace API
 export const workspaceApi = {
   async list(): Promise<Workspace[]> {
@@ -944,6 +1012,19 @@ export const authApi = {
   async login(data: LoginRequest): Promise<LoginResponse> {
     return request<LoginResponse>("/auth/login", {
       method: "POST",
+      body: JSON.stringify(data),
+    }, { withSession: true })
+  },
+
+  async getInvitation(invitationToken: string): Promise<InvitationDetailsResponse> {
+    return request<InvitationDetailsResponse>(`/auth/invitations/${invitationToken}`, {
+      method: 'GET',
+    }, { withSession: true })
+  },
+
+  async acceptInvitation(invitationToken: string, data: RegisterRequest): Promise<LoginResponse> {
+    return request<LoginResponse>(`/auth/invitations/${invitationToken}/accept`, {
+      method: 'POST',
       body: JSON.stringify(data),
     }, { withSession: true })
   }
@@ -1298,6 +1379,11 @@ export interface WorkspaceTokenResponse {
   token: string
 }
 
+export interface RenameOrganizationResponse {
+  accountId: string
+  organizationName: string
+}
+
 // General Settings API
 export const generalSettingsApi = {
   async getGeneralSettings(): Promise<GeneralSettings> {
@@ -1318,6 +1404,55 @@ export const generalSettingsApi = {
 }
 
 export const accountApi = {
+  async listAccounts(): Promise<AccessibleAccountsResponse> {
+    return request<AccessibleAccountsResponse>('/account/accounts', {
+      method: 'GET',
+    }, { withSession: true })
+  },
+
+  async listUsers(): Promise<AccountUsersResponse> {
+    return request<AccountUsersResponse>('/account/users', {
+      method: 'GET',
+    }, { withSession: true })
+  },
+
+  async createInvitation(email: string): Promise<CreateAccountInvitationResponse> {
+    return request<CreateAccountInvitationResponse>('/account/invitations', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }, { withSession: true })
+  },
+
+  async removeUser(membershipId: string): Promise<void> {
+    await request<void>(`/account/users/${membershipId}`, {
+      method: 'DELETE',
+    }, { withSession: true })
+  },
+
+  async switchAccount(accountId: string, preferredWorkspaceId?: string): Promise<LoginResponse> {
+    return request<LoginResponse>('/account/switch', {
+      method: 'POST',
+      body: JSON.stringify({
+        accountId,
+        ...(preferredWorkspaceId ? { preferredWorkspaceId } : {}),
+      }),
+    }, { withSession: true })
+  },
+
+  async createOrganization(organizationName: string): Promise<LoginResponse> {
+    return request<LoginResponse>('/account/accounts', {
+      method: 'POST',
+      body: JSON.stringify({ organizationName }),
+    }, { withSession: true })
+  },
+
+  async renameOrganization(organizationName: string): Promise<RenameOrganizationResponse> {
+    return request<RenameOrganizationResponse>('/account', {
+      method: 'PATCH',
+      body: JSON.stringify({ organizationName }),
+    }, { withSession: true })
+  },
+
   async getWorkspaceToken(workspaceId: string): Promise<WorkspaceTokenResponse> {
     return request<WorkspaceTokenResponse>(`/account/workspaces/${workspaceId}/token`, {
       method: 'GET',

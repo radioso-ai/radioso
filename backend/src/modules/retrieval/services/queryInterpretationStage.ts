@@ -1,35 +1,27 @@
 import type { ParsedQueryInterpretation } from "../domain/structuredAttributes.js";
-import { parseQueryConstraints } from "./queryConstraintParser.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
+import { SemanticQueryConstraintService } from "./semanticQueryConstraintService.js";
 import type { QueryInterpretationStage as QueryInterpretationStageContract, RetrievalContextStageResult } from "./retrievalPipelineStages.js";
-import { mergeParsedQueries, stripEnabledConstraintLiterals } from "./retrievalPipelineStages.js";
-import { defaultAttributeControls } from "../../settings/domain/retrievalSettings.js";
 
 export class QueryInterpretationStageService implements QueryInterpretationStageContract {
-  constructor(private readonly queryRewriteService: QueryRewriteService) {}
+  constructor(
+    private readonly queryRewriteService: QueryRewriteService,
+    private readonly semanticQueryConstraintService: SemanticQueryConstraintService = new SemanticQueryConstraintService(),
+  ) {}
 
   async execute(input: RetrievalContextStageResult) {
-    const originalParsedQuery = parseQueryConstraints(input.request.query);
-    const signalPolicies =
-      (input.settings as { signalPolicies?: Array<{ signalKey: string; enabled: boolean; mode: "boost_only" | "hard_filter" }> })
-        .signalPolicies ?? defaultAttributeControls();
-    const hardFilterSignalKeys = new Set(
-      signalPolicies.filter((policy) => policy.enabled && policy.mode === "hard_filter").map((policy) => policy.signalKey),
-    );
+    const originalParsedQuery = await this.semanticQueryConstraintService.interpret({
+      query: input.request.query,
+      history: input.contextWindow.selectedMessages,
+    });
     const prepareQueries = (
       parsedQuery: ParsedQueryInterpretation,
       semanticQuery: string,
       lexicalQuery: string,
     ): ParsedQueryInterpretation => ({
       ...parsedQuery,
-      semanticQuery:
-        hardFilterSignalKeys.size > 0
-          ? stripEnabledConstraintLiterals(semanticQuery, parsedQuery, hardFilterSignalKeys)
-          : semanticQuery,
-      lexicalQuery:
-        hardFilterSignalKeys.size > 0
-          ? stripEnabledConstraintLiterals(lexicalQuery, parsedQuery, hardFilterSignalKeys)
-          : lexicalQuery,
+      semanticQuery,
+      lexicalQuery,
     });
     const originalPreparedQuery = prepareQueries(
       originalParsedQuery,
@@ -43,13 +35,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       semanticRewriteInstructions: input.settings.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.settings.lexicalRewriteInstructions,
     });
-    const rewrittenParsedQuery = rewrittenQuery.retrievalEligible
-      ? parseQueryConstraints(rewrittenQuery.effectiveQuery)
-      : originalParsedQuery;
-    const parsedQueryBase =
-      rewrittenQuery.retrievalEligible
-        ? mergeParsedQueries(originalParsedQuery, rewrittenParsedQuery)
-        : rewrittenParsedQuery;
+    const parsedQueryBase = originalParsedQuery;
     const preparedParsedQuery = prepareQueries(
       parsedQueryBase,
       rewrittenQuery.retrievalEligible ? rewrittenQuery.semanticQuery : originalPreparedQuery.semanticQuery,
@@ -77,6 +63,23 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       (rewrittenQuery.structuredResult?.turnKind === "fresh_subject" ||
         rewrittenQuery.structuredResult?.turnKind === "explicit_recenter");
     const promptHistory = shouldResetPromptHistory ? [] : input.contextWindow.selectedMessages;
+    const activeRetrievalSubqueries =
+      rewrittenQuery.retrievalEligible && rewrittenQuery.retrievalSubqueries && rewrittenQuery.retrievalSubqueries.length > 1
+        ? rewrittenQuery.retrievalSubqueries.map((subquery) => ({
+            ...subquery,
+            semanticQuery: subquery.semanticQuery,
+            lexicalQuery: subquery.lexicalQuery,
+            responseLanguagePolicy: subquery.responseLanguagePolicy ?? rewrittenQuery.responseLanguagePolicy,
+          }))
+        : [
+            {
+              id: "primary",
+              label: activeQuery,
+              semanticQuery: activeParsedQuery.semanticQuery || activeQuery,
+              lexicalQuery: activeParsedQuery.lexicalQuery || activeQuery,
+              responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
+            },
+          ];
 
     return {
       ...input,
@@ -86,6 +89,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       activeQuery,
       activeParsedQuery,
       activeSemanticQuery: activeParsedQuery.semanticQuery || activeQuery,
+      activeRetrievalSubqueries,
       promptHistory,
       continuityDecision,
     };

@@ -21,6 +21,9 @@ export const payloadTooLarge = (message = "Request body exceeds maximum size"): 
 export const unauthorized = (message = "Unauthorized"): AppError =>
   new AppError(401, "unauthorized", message);
 
+export const forbidden = (message = "Forbidden"): AppError =>
+  new AppError(403, "forbidden", message);
+
 export const conflict = (message: string): AppError =>
   new AppError(409, "conflict", message);
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildDashboardHref, parseDashboardRoute } from '@/lib/dashboard-routes'
+import { buildAccountRoute, buildDashboardHref, parseDashboardRoute } from '@/lib/dashboard-routes'
 
 describe('dashboard route state', () => {
   it('builds a documents deep link with workspace and page state', () => {
@@ -58,5 +58,22 @@ describe('dashboard route state', () => {
     })
 
     expect(href).toBe('/account/account-2/settings?workspace=workspace-9&tab=connectors&anchor=connectors&connector=whatsapp')
+  })
+
+  it('parses and builds the users route without extra state', () => {
+    expect(parseDashboardRoute(['users'], new URLSearchParams({ workspace: 'workspace-5' }))).toEqual({
+      section: 'users',
+      workspaceId: 'workspace-5',
+    })
+
+    expect(buildDashboardHref('account-7', {
+      section: 'users',
+      workspaceId: 'workspace-5',
+    })).toBe('/account/account-7/users?workspace=workspace-5')
+  })
+
+  it('builds account routes with an explicit workspace selection', () => {
+    expect(buildAccountRoute('account-9', 'chat', undefined, 'workspace-12'))
+      .toBe('/account/account-9/chat?workspace=workspace-12')
   })
 })

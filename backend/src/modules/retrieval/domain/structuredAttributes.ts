@@ -62,10 +62,12 @@ export interface StructuredAttributes {
   locations: NormalizedLocationValue[];
 }
 
-export type QueryConstraintOperator = "gte" | "lte" | "match" | "eq";
+import type { RetrievalConstraintOperator, RetrievalConstraintSignalKey } from "./retrievalConstraintSchema.js";
+
+export type QueryConstraintOperator = RetrievalConstraintOperator;
 
 export interface ParsedQueryConstraint {
-  signalKey: string;
+  signalKey: RetrievalConstraintSignalKey;
   operator: QueryConstraintOperator;
   confidence: number;
   summary: string;

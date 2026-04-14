@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context'
 import { AuthPage } from '@/components/auth/auth-page'
 import { Spinner } from '@/components/ui/spinner'
 import { buildAccountRoute } from '@/lib/dashboard-routes'
+import { getStoredActiveWorkspaceId } from '@/lib/api'
 
 export default function Home() {
   const router = useRouter()
@@ -14,7 +15,9 @@ export default function Home() {
 
   useEffect(() => {
     if (!isBootstrapping && user) {
-      router.replace(buildAccountRoute(user.userId, 'chat'))
+      const workspaceId =
+        typeof window !== 'undefined' ? getStoredActiveWorkspaceId() ?? undefined : undefined
+      router.replace(buildAccountRoute(user.accountId, 'chat', undefined, workspaceId))
     }
   }, [isBootstrapping, router, user])
 

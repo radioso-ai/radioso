@@ -786,6 +786,10 @@
                 }
               ]
             }
+          },
+          "externalDocumentId": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -831,6 +835,12 @@
           "ragStatus": {
             "$ref": "#/components/schemas/RagStatus"
           },
+          "failureReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -861,6 +871,12 @@
               ]
             },
             "default": {}
+          },
+          "externalDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4089,6 +4105,10 @@
                         }
                       ]
                     }
+                  },
+                  "externalDocumentId": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [

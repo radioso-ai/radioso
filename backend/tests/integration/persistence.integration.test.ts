@@ -468,6 +468,63 @@ describeIfDatabase("persistence integration", () => {
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
+  it("enforces workspace-scoped external document identity uniqueness and supports idempotent queueing", async () => {
+    const accountRepository = new AccountRepository(database);
+    const documentRepository = new DocumentRepository(database);
+
+    const accountA = await accountRepository.create({
+      email: `external-id-a-${randomUUID()}@example.com`,
+      passwordHash: "hash-a",
+    });
+    const accountB = await accountRepository.create({
+      email: `external-id-b-${randomUUID()}@example.com`,
+      passwordHash: "hash-b",
+    });
+    const workspaceA = await workspaceRepository.create(accountA.id, "External Workspace A");
+    const workspaceB = await workspaceRepository.create(accountB.id, "External Workspace B");
+
+    const first = await documentRepository.createAndQueue({
+      workspaceId: workspaceA.id,
+      title: "Synced A",
+      sourceContent: "First content",
+      markdownContent: "First content",
+      externalDocumentId: "crm-123",
+      sourceKind: "inline_text",
+    } as any);
+
+    const second = await documentRepository.createAndQueue({
+      workspaceId: workspaceA.id,
+      title: "Synced A",
+      sourceContent: "Second content",
+      markdownContent: "Second content",
+      externalDocumentId: "crm-123",
+      sourceKind: "inline_text",
+    } as any);
+
+    const third = await documentRepository.create({
+      workspaceId: workspaceB.id,
+      title: "Synced B",
+      sourceContent: "Other content",
+      markdownContent: "Other content",
+      status: "ready",
+      externalDocumentId: "crm-123",
+      sourceKind: "inline_text",
+    } as any);
+
+    expect(second.id).toBe(first.id);
+    expect(second.revision).toBe(2);
+    expect(second.externalDocumentId).toBe("crm-123");
+    expect(third.id).not.toBe(first.id);
+
+    await database.query("DELETE FROM document_processing_jobs WHERE workspace_id = $1 OR workspace_id = $2", [
+      workspaceA.id,
+      workspaceB.id,
+    ]);
+    await database.query("DELETE FROM documents WHERE workspace_id = $1 OR workspace_id = $2", [workspaceA.id, workspaceB.id]);
+    await database.query("DELETE FROM workspaces WHERE id = $1 OR id = $2", [workspaceA.id, workspaceB.id]);
+    await database.query("DELETE FROM accounts WHERE id = $1 OR id = $2", [accountA.id, accountB.id]);
+  });
+
   it("records retrieval execution metadata without exposing new response fields", async () => {
     const logger = {
       info: vi.fn(),

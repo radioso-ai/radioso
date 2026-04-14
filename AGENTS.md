@@ -57,6 +57,7 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence for the workspace answer-support policy (034-answer-support-policy)
 - TypeScript 5.7 on Node.js 22 for the frontend application + React 19, Next.js 16 App Router, Radix UI primitives, Lucide icons (033-dashboard-deep-links)
 - Browser URL state plus existing browser local storage for workspace bootstrap (033-dashboard-deep-links)
+- PostgreSQL 16 with `pgvector`; additive `documents.external_document_id` persistence with workspace-scoped uniqueness (037-external-document-id)
 
 
 ## Project Structure
@@ -76,7 +77,6 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 037-external-document-id: Added TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router
 - 034-answer-support-policy: Added TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives
 - 033-dashboard-deep-links: Added TypeScript 5.7 on Node.js 22 for the frontend application + React 19, Next.js 16 App Router, Radix UI primitives, Lucide icons
-- 032-split-rewrite-queries: Added TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives
-- 031-security-remediation: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend) + Express, pg, Zod, OpenAI SDK, Next.js App Router, Radix/shadcn UI, existing local parser package under `/packages`

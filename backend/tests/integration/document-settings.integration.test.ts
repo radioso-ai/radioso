@@ -64,6 +64,35 @@ describe("document and settings integration", () => {
     expect(document.body.status).toBe("queued");
   });
 
+  it("allows different workspaces to reuse the same externalDocumentId", async () => {
+    const { app } = createTestApp();
+
+    const { token: firstToken } = await issueTestToken(app, "external-doc-one@example.com");
+    const { token: secondToken } = await issueTestToken(app, "external-doc-two@example.com");
+
+    const firstResponse = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${firstToken}`)
+      .send({
+        title: "Workspace one doc",
+        content: "Workspace one content",
+        externalDocumentId: "crm-123",
+      });
+
+    const secondResponse = await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", `Bearer ${secondToken}`)
+      .send({
+        title: "Workspace two doc",
+        content: "Workspace two content",
+        externalDocumentId: "crm-123",
+      });
+
+    expect(firstResponse.status).toBe(202);
+    expect(secondResponse.status).toBe(202);
+    expect(secondResponse.body.documentId).not.toBe(firstResponse.body.documentId);
+  });
+
   it("keeps metadata signal policies account scoped", async () => {
     const { app, repositories } = createTestApp();
 

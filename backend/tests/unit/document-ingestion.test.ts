@@ -214,6 +214,70 @@ describe("document ingestion", () => {
     expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
   });
 
+  it("reuses the same document for repeated ingest requests with the same externalDocumentId", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "First content",
+      externalDocumentId: "crm-123",
+    } as any);
+
+    const second = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Second content",
+      externalDocumentId: "crm-123",
+    } as any);
+
+    expect(second.documentId).toBe(first.documentId);
+
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.externalDocumentId).toBe("crm-123");
+    expect(current?.revision).toBe(2);
+    expect(current?.sourceContent).toBe("Second content");
+  });
+
+  it("allows first assignment of externalDocumentId on update and rejects later reassignment", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const created = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Mutable once",
+      content: "Original content",
+    });
+
+    await service.update({
+      workspaceId: "workspace-1",
+      documentId: created.documentId,
+      title: "Mutable once",
+      content: "Assigned content",
+      externalDocumentId: "crm-123",
+    } as any);
+
+    const assigned = await documentRepository.findByIdAndWorkspaceId(created.documentId, "workspace-1");
+    expect(assigned?.externalDocumentId).toBe("crm-123");
+
+    await expect(
+      service.update({
+        workspaceId: "workspace-1",
+        documentId: created.documentId,
+        title: "Mutable once",
+        content: "Reassigned content",
+        externalDocumentId: "crm-456",
+      } as any),
+    ).rejects.toThrow("externalDocumentId cannot be changed once set");
+  });
+
   it("does not publish stale chunks after a newer revision becomes ready", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

@@ -68,7 +68,7 @@ import type {
   EvalRunRecord,
 } from "../../src/modules/evals/domain/evalTypes.js";
 import type { EvalRepositoryPort } from "../../src/modules/evals/services/evalLabService.js";
-import { notFound } from "../../src/shared/domain/errors.js";
+import { conflict, notFound } from "../../src/shared/domain/errors.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
@@ -838,6 +838,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? {},
+      externalDocumentId: input.externalDocumentId ?? null,
       sourceKind: input.sourceKind ?? "inline_text",
       sourceFilename: input.sourceFilename ?? null,
       sourceMimeType: input.sourceMimeType ?? null,
@@ -851,6 +852,38 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+
+    if (record.externalDocumentId) {
+      const existing = [...this.items.values()].find(
+        (item) => item.workspaceId === record.workspaceId && item.externalDocumentId === record.externalDocumentId,
+      );
+
+      if (existing) {
+        if (existing.sourceKind !== record.sourceKind) {
+          throw conflict("Imported documents cannot be updated through the inline document API");
+        }
+
+        const updated: DocumentRecord = {
+          ...existing,
+          title: record.title,
+          sourceContent: record.sourceContent,
+          markdownContent: record.markdownContent,
+          metadata: record.metadata,
+          status: "queued",
+          revision: existing.revision + 1,
+          failureReason: null,
+          updatedAt: new Date(),
+        };
+
+        await this.jobRepository?.enqueue({
+          documentId: updated.id,
+          workspaceId: updated.workspaceId,
+          documentRevision: updated.revision,
+        });
+        this.items.set(updated.id, updated);
+        return updated;
+      }
+    }
 
     await this.jobRepository?.enqueue({
       documentId: record.id,
@@ -869,6 +902,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? {},
+      externalDocumentId: input.externalDocumentId ?? null,
       sourceKind: input.sourceKind ?? "inline_text",
       sourceFilename: input.sourceFilename ?? null,
       sourceMimeType: input.sourceMimeType ?? null,
@@ -924,6 +958,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         metadata: item.metadata,
+        externalDocumentId: item.externalDocumentId ?? null,
         sourceKind: item.sourceKind,
         sourceFilename: item.sourceFilename,
         sourceMimeType: item.sourceMimeType,
@@ -1030,6 +1065,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? existing.metadata ?? {},
+      externalDocumentId: input.externalDocumentId ?? existing.externalDocumentId ?? null,
       sourceKind: input.sourceKind ?? existing.sourceKind,
       sourceFilename: input.sourceFilename ?? existing.sourceFilename ?? null,
       sourceMimeType: input.sourceMimeType ?? existing.sourceMimeType ?? null,
@@ -1052,12 +1088,25 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       throw notFound("Document not found");
     }
 
+    if (input.externalDocumentId && input.externalDocumentId !== existing.externalDocumentId) {
+      const claimedByOther = [...this.items.values()].find(
+        (item) =>
+          item.workspaceId === input.workspaceId &&
+          item.id !== input.documentId &&
+          item.externalDocumentId === input.externalDocumentId,
+      );
+      if (claimedByOther) {
+        throw conflict("externalDocumentId is already used by another document in this workspace");
+      }
+    }
+
     const record: DocumentRecord = {
       ...existing,
       title: input.title,
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? existing.metadata ?? {},
+      externalDocumentId: input.externalDocumentId ?? existing.externalDocumentId ?? null,
       sourceKind: input.sourceKind ?? existing.sourceKind,
       sourceFilename: input.sourceFilename ?? existing.sourceFilename ?? null,
       sourceMimeType: input.sourceMimeType ?? existing.sourceMimeType ?? null,

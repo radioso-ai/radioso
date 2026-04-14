@@ -520,6 +520,9 @@ components:
               - type: boolean
               - type: "null"
               - type: "null"
+        externalDocumentId:
+          type: string
+          minLength: 1
       required:
         - title
         - content
@@ -550,6 +553,10 @@ components:
           $ref: "#/components/schemas/DocumentStatus"
         ragStatus:
           $ref: "#/components/schemas/RagStatus"
+        failureReason:
+          type:
+            - string
+            - "null"
         createdAt:
           type: string
           format: date-time
@@ -566,6 +573,10 @@ components:
               - type: "null"
               - type: "null"
           default: {}
+        externalDocumentId:
+          type:
+            - string
+            - "null"
       required:
         - id
         - title
@@ -2705,6 +2716,9 @@ paths:
                       - type: boolean
                       - type: "null"
                       - type: "null"
+                externalDocumentId:
+                  type: string
+                  minLength: 1
               required:
                 - title
                 - content

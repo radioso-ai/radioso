@@ -17,6 +17,7 @@ export const documentSchema = z.object({
     (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= 16384,
     { message: "Metadata must be 16 KB or less" },
   ),
+  externalDocumentId: z.string().trim().min(1).optional(),
 });
 
 export const documentParamsSchema = z.object({
@@ -140,6 +141,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
         title: req.body.title,
         content: req.body.content,
         metadata: req.body.metadata,
+        externalDocumentId: req.body.externalDocumentId,
       });
       res.status(202).json(result);
     } catch (error) {
@@ -191,6 +193,7 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
         title: req.body.title,
         content: req.body.content,
         metadata: req.body.metadata,
+        externalDocumentId: req.body.externalDocumentId,
       });
       res.status(202).json(result);
     } catch (error) {

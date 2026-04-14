@@ -1,6 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
-import type { AppliedConstraint, ParsedQueryInterpretation } from "./structuredAttributes.js";
+import type { AppliedConstraint, ParsedQueryInterpretation } from "./queryConstraintTypes.js";
 
 export interface ConversationContextWindow {
   selectedMessages: MessageRecord[];

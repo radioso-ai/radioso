@@ -6,11 +6,9 @@ import { CandidatePreparationService } from "./candidatePreparationService.js";
 import { ConversationContextService } from "./conversationContextService.js";
 import { PromptContextSelectorService } from "./promptContextSelectorService.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
-import { SemanticQueryConstraintService } from "./semanticQueryConstraintService.js";
 import { RerankService } from "./rerankService.js";
 import { RetrievalExecutionTelemetryService } from "./retrievalExecutionTelemetryService.js";
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
-import { AttributeMatchScoringService } from "./attributeMatchScoringService.js";
 import type { VectorSearchPort } from "../infra/vectorSearch.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import { PromptBuilder } from "./promptBuilder.js";
@@ -66,21 +64,18 @@ export class RetrievalPipelineService {
     conversationContextService: ConversationContextService,
     queryRewriteService: QueryRewriteService,
     candidatePreparationService: CandidatePreparationService,
-    attributeMatchScoringService: AttributeMatchScoringService,
+    _attributeMatchScoringService: unknown,
     rerankService: RerankService,
     promptContextSelectorService: PromptContextSelectorService,
     promptBuilder: PromptBuilder,
     retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
-    semanticQueryConstraintService: SemanticQueryConstraintService = new SemanticQueryConstraintService(),
+    _semanticQueryConstraintService?: unknown,
   ) {
     this.retrievalContextStage = new RetrievalContextStageService(
       retrievalSettingsService,
       conversationContextService,
     );
-    this.queryInterpretationStage = new QueryInterpretationStageService(
-      queryRewriteService,
-      semanticQueryConstraintService,
-    );
+    this.queryInterpretationStage = new QueryInterpretationStageService(queryRewriteService);
     this.candidateRetrievalStage = new CandidateRetrievalStageService(
       embeddingService,
       vectorSearch,
@@ -88,7 +83,6 @@ export class RetrievalPipelineService {
     );
     this.candidatePreparationStage = new CandidatePreparationStageService(
       candidatePreparationService,
-      attributeMatchScoringService,
       new MetadataRuleScoringService(),
     );
     this.contextSelectionStage = new ContextSelectionStageService(rerankService, promptContextSelectorService);

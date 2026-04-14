@@ -1,5 +1,5 @@
 import type { RetrievedCandidate } from "../domain/retrievalPipelineTypes.js";
-import type { AppliedConstraint } from "../domain/structuredAttributes.js";
+import type { AppliedConstraint } from "../domain/queryConstraintTypes.js";
 import type {
   MetadataRuleOperator,
   MetadataValueType,

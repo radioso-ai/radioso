@@ -1,4 +1,3 @@
-import { emptyStructuredAttributes } from "../domain/structuredAttributes.js";
 import type { Database } from "../../../shared/infra/database.js";
 import type { RetrievedChunk } from "./vectorSearch.js";
 import { hasNonEmptyFilter } from "./vectorSearch.js";
@@ -18,7 +17,6 @@ interface LexicalSearchRow {
   title: string;
   content: string;
   search_text: string | null;
-  structured_attributes: RetrievedChunk["structuredAttributes"] | null;
   chunk_index: number;
   start_offset: number | null;
   end_offset: number | null;
@@ -54,7 +52,6 @@ export class PgLexicalSearch implements LexicalSearchPort {
               d.title,
               c.content,
               c.search_text,
-              c.structured_attributes,
               c.chunk_index,
               c.start_offset,
               c.end_offset,
@@ -82,7 +79,6 @@ export class PgLexicalSearch implements LexicalSearchPort {
       title: row.title,
       content: row.content,
       searchText: row.search_text,
-      structuredAttributes: row.structured_attributes ?? emptyStructuredAttributes(),
       similarity: normalizeLexicalRank(Number(row.rank), maxRank),
       chunkIndex: row.chunk_index,
       startOffset: row.start_offset,

@@ -32,6 +32,7 @@ export interface DocumentRecord extends DocumentSourceRecord {
   title: string;
   sourceContent: string;
   markdownContent: string;
+  externalDocumentId?: string | null;
   status: string;
   revision: number;
   failureReason?: string | null;
@@ -46,6 +47,7 @@ export interface DocumentCreateInput extends DocumentSourceInput {
   sourceContent: string;
   markdownContent: string;
   metadata?: Record<string, unknown>;
+  externalDocumentId?: string | null;
 }
 
 export interface DocumentUpdateInput extends DocumentSourceInput {
@@ -56,6 +58,7 @@ export interface DocumentUpdateInput extends DocumentSourceInput {
   markdownContent: string;
   status: string;
   metadata?: Record<string, unknown>;
+  externalDocumentId?: string | null;
 }
 
 export interface DocumentQueueUpdateInput extends DocumentSourceInput {
@@ -65,6 +68,7 @@ export interface DocumentQueueUpdateInput extends DocumentSourceInput {
   sourceContent: string;
   markdownContent: string;
   metadata?: Record<string, unknown>;
+  externalDocumentId?: string | null;
 }
 
 export interface DocumentDerivedContentUpdateInput {
@@ -140,6 +144,7 @@ export interface DocumentSummary {
   createdAt: Date;
   updatedAt: Date;
   metadata: Record<string, unknown>;
+  externalDocumentId?: string | null;
   sourceKind: DocumentSourceKind;
   sourceFilename?: string | null;
   sourceMimeType?: string | null;
@@ -165,6 +170,7 @@ export interface DocumentSummaryRecord extends DocumentSourceRecord {
   createdAt: Date;
   updatedAt: Date;
   metadata: Record<string, unknown>;
+  externalDocumentId?: string | null;
 }
 
 export class DocumentIngestionService {
@@ -174,10 +180,17 @@ export class DocumentIngestionService {
     private readonly getQueueSnapshot?: () => Promise<DocumentProcessingQueueSnapshot>,
   ) {}
 
-  async ingest(input: { workspaceId: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<{ documentId: string; status: string }> {
+  async ingest(input: {
+    workspaceId: string;
+    title: string;
+    content: string;
+    metadata?: Record<string, unknown>;
+    externalDocumentId?: string | null;
+  }): Promise<{ documentId: string; status: string }> {
     let document:
       | {
           id: string;
+          externalDocumentId?: string | null;
           revision: number;
           status: string;
         }
@@ -190,6 +203,7 @@ export class DocumentIngestionService {
         sourceContent: input.content,
         markdownContent: normalizeMarkdown(input.content),
         metadata: input.metadata,
+        externalDocumentId: input.externalDocumentId,
         sourceKind: "inline_text",
         sourceFilename: null,
         sourceMimeType: "text/plain",
@@ -205,6 +219,7 @@ export class DocumentIngestionService {
         eventType: "document.ingest",
         eventStatus: "failure",
         metadata: {
+          externalDocumentId: input.externalDocumentId ?? null,
           reason: error instanceof Error ? error.message : "Failed to queue document processing",
         },
       });
@@ -217,6 +232,7 @@ export class DocumentIngestionService {
       eventStatus: "success",
       metadata: {
         documentId: document.id,
+        externalDocumentId: document.externalDocumentId ?? null,
         revision: document.revision,
         status: document.status,
         ...(await this.queueSnapshotMetadata()),
@@ -229,10 +245,18 @@ export class DocumentIngestionService {
     };
   }
 
-  async update(input: { workspaceId: string; documentId: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<{ documentId: string; status: string }> {
+  async update(input: {
+    workspaceId: string;
+    documentId: string;
+    title: string;
+    content: string;
+    metadata?: Record<string, unknown>;
+    externalDocumentId?: string | null;
+  }): Promise<{ documentId: string; status: string }> {
     let document:
       | {
           id: string;
+          externalDocumentId?: string | null;
           revision: number;
           status: string;
         }
@@ -243,6 +267,13 @@ export class DocumentIngestionService {
       if (existing.sourceKind === "uploaded_file") {
         throw conflict("Imported documents cannot be updated through the inline document API");
       }
+      if (
+        existing.externalDocumentId &&
+        input.externalDocumentId !== undefined &&
+        input.externalDocumentId !== existing.externalDocumentId
+      ) {
+        throw conflict("externalDocumentId cannot be changed once set");
+      }
 
       document = await this.documentRepository.updateAndQueue({
         documentId: input.documentId,
@@ -251,6 +282,7 @@ export class DocumentIngestionService {
         sourceContent: input.content,
         markdownContent: normalizeMarkdown(input.content),
         metadata: input.metadata,
+        externalDocumentId: input.externalDocumentId,
         sourceKind: "inline_text",
         sourceFilename: null,
         sourceMimeType: "text/plain",
@@ -267,6 +299,7 @@ export class DocumentIngestionService {
         eventStatus: "failure",
         metadata: {
           documentId: input.documentId,
+          externalDocumentId: input.externalDocumentId ?? null,
           reason: error instanceof Error ? error.message : "Failed to queue document processing",
         },
       });
@@ -279,6 +312,7 @@ export class DocumentIngestionService {
       eventStatus: "success",
       metadata: {
         documentId: document.id,
+        externalDocumentId: document.externalDocumentId ?? null,
         revision: document.revision,
         status: document.status,
         ...(await this.queueSnapshotMetadata()),
@@ -370,6 +404,7 @@ export class DocumentIngestionService {
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
       metadata: document.metadata,
+      externalDocumentId: document.externalDocumentId ?? null,
       sourceKind: document.sourceKind,
       sourceFilename: document.sourceFilename ?? null,
       sourceMimeType: document.sourceMimeType ?? null,

@@ -350,6 +350,7 @@ const DocumentSummarySchema = registry.register(
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
+    externalDocumentId: z.string().nullable().optional(),
   }),
 );
 

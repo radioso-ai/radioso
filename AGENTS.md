@@ -59,6 +59,7 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - Browser URL state plus existing browser local storage for workspace bootstrap (033-dashboard-deep-links)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives, Lucide icons (036-account-users)
 - PostgreSQL 16 with additive `users`, `account_memberships`, and `account_invitations` tables; existing `accounts`, `workspaces`, `sessions`, and `workspace_tokens` remain in use (036-account-users)
+- PostgreSQL 16 with `pgvector`; additive `documents.external_document_id` persistence with workspace-scoped uniqueness (037-external-document-id)
 - Node.js 22 ESM scripts for the benchmark harness, plus existing TypeScript 5.x backend and TypeScript 5.7 frontend + existing Node.js toolchain, `pg`, Docker Compose, benchmark-harness dependencies for HTTP load generation and result formatting, existing backend/frontend package scripts (037-performance-benchmarking)
 - PostgreSQL 16 for app state under test; filesystem-backed benchmark definitions in the repo and gitignored run artifacts under `.context/performance-runs/` (037-performance-benchmarking)
 
@@ -85,6 +86,7 @@ tests/
 - Update `readme.md` whenever the feature changes the Docker run flow, authentication or token setup, common API usage, or the most important ingestion or retrieval settings operators are likely to tune.
 
 ## Recent Changes
+- 037-external-document-id: Added TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router
 - 037-performance-benchmarking: Added Node.js 22 ESM scripts for the benchmark harness, plus existing TypeScript 5.x backend and TypeScript 5.7 frontend + existing Node.js toolchain, `pg`, Docker Compose, benchmark-harness dependencies for HTTP load generation and result formatting, existing backend/frontend package scripts
 - 036-account-users: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives, Lucide icons
 - 034-answer-support-policy: Added TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives

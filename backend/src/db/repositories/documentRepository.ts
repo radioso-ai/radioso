@@ -16,7 +16,7 @@ import {
 } from "../../modules/settings/domain/retrievalSettings.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { Database } from "../../shared/infra/database.js";
-import { notFound } from "../../shared/domain/errors.js";
+import { conflict, notFound } from "../../shared/domain/errors.js";
 
 interface DocumentRow {
   id: string;
@@ -24,6 +24,7 @@ interface DocumentRow {
   title: string;
   source_content: string;
   markdown_content: string;
+  external_document_id: string | null;
   status: string;
   revision: number;
   failure_reason: string | null;
@@ -45,6 +46,7 @@ const mapDocument = (row: DocumentRow): DocumentRecord => ({
   title: row.title,
   sourceContent: row.source_content,
   markdownContent: row.markdown_content,
+  externalDocumentId: row.external_document_id,
   status: row.status,
   revision: row.revision,
   failureReason: row.failure_reason,
@@ -66,6 +68,7 @@ const documentSelect = `
   title,
   source_content,
   markdown_content,
+  external_document_id,
   status,
   revision,
   failure_reason,
@@ -90,6 +93,7 @@ const documentSummarySelect = `
   created_at,
   updated_at,
   metadata,
+  external_document_id,
   source_kind,
   source_filename,
   source_mime_type,
@@ -108,6 +112,7 @@ const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => ({
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
   metadata: row.metadata ?? {},
+  externalDocumentId: row.external_document_id,
   sourceKind: row.source_kind,
   sourceFilename: row.source_filename,
   sourceMimeType: row.source_mime_type,
@@ -153,6 +158,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
              title,
              source_content,
              markdown_content,
+             external_document_id,
              status,
              revision,
              metadata,
@@ -164,7 +170,26 @@ export class DocumentRepository implements DocumentRepositoryPort {
              source_storage_generation,
              source_size_bytes
            )
-           VALUES ($1, $2, $3, $4, $5, 'queued', 1, $6::jsonb, $7, $8, $9, $10, $11, $12, $13)
+           VALUES ($1, $2, $3, $4, $5, $6, 'queued', 1, $7::jsonb, $8, $9, $10, $11, $12, $13, $14)
+           ON CONFLICT (workspace_id, external_document_id) WHERE external_document_id IS NOT NULL
+           DO UPDATE
+             SET title = EXCLUDED.title,
+                 source_content = EXCLUDED.source_content,
+                 markdown_content = EXCLUDED.markdown_content,
+                 status = 'queued',
+                 revision = documents.revision + 1,
+                 failed_at = NULL,
+                 failure_reason = NULL,
+                 updated_at = NOW(),
+                 metadata = EXCLUDED.metadata,
+                 source_kind = EXCLUDED.source_kind,
+                 source_filename = EXCLUDED.source_filename,
+                 source_mime_type = EXCLUDED.source_mime_type,
+                 source_storage_bucket = EXCLUDED.source_storage_bucket,
+                 source_storage_object = EXCLUDED.source_storage_object,
+                 source_storage_generation = EXCLUDED.source_storage_generation,
+                 source_size_bytes = EXCLUDED.source_size_bytes
+           WHERE documents.source_kind = EXCLUDED.source_kind
            RETURNING ${documentSelect}`,
           [
             documentId,
@@ -172,6 +197,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
             input.title,
             input.sourceContent,
             input.markdownContent,
+            input.externalDocumentId ?? null,
             JSON.stringify(input.metadata ?? {}),
             input.sourceKind ?? "inline_text",
             input.sourceFilename ?? null,
@@ -184,10 +210,14 @@ export class DocumentRepository implements DocumentRepositoryPort {
         )
       ).rows;
 
+      if (!documentRow) {
+        throw conflict("Imported documents cannot be updated through the inline document API");
+      }
+
       await client.query(
         `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
          VALUES ($1, $2, $3, $4, 'queued')`,
-        [randomUUID(), documentId, input.workspaceId, documentRow.revision],
+        [randomUUID(), documentRow.id, input.workspaceId, documentRow.revision],
       );
 
       return mapDocument(documentRow);
@@ -202,6 +232,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
          title,
          source_content,
          markdown_content,
+         external_document_id,
          status,
          revision,
          metadata,
@@ -213,7 +244,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
          source_storage_generation,
          source_size_bytes
        )
-       VALUES ($1, $2, $3, $4, $5, $6, 1, $7::jsonb, $8, $9, $10, $11, $12, $13, $14)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8::jsonb, $9, $10, $11, $12, $13, $14, $15)
        RETURNING ${documentSelect}`,
       [
         randomUUID(),
@@ -221,6 +252,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         input.title,
         input.sourceContent,
         input.markdownContent,
+        input.externalDocumentId ?? null,
         input.status,
         JSON.stringify(input.metadata ?? {}),
         input.sourceKind ?? "inline_text",
@@ -249,13 +281,14 @@ export class DocumentRepository implements DocumentRepositoryPort {
              failure_reason = NULL,
              updated_at = NOW(),
              metadata = COALESCE($6::jsonb, metadata),
-             source_kind = COALESCE($7, source_kind),
-             source_filename = COALESCE($8, source_filename),
-             source_mime_type = COALESCE($9, source_mime_type),
-             source_storage_bucket = COALESCE($10, source_storage_bucket),
-             source_storage_object = COALESCE($11, source_storage_object),
-             source_storage_generation = COALESCE($12, source_storage_generation),
-             source_size_bytes = COALESCE($13, source_size_bytes)
+             external_document_id = COALESCE($7, external_document_id),
+             source_kind = COALESCE($8, source_kind),
+             source_filename = COALESCE($9, source_filename),
+             source_mime_type = COALESCE($10, source_mime_type),
+             source_storage_bucket = COALESCE($11, source_storage_bucket),
+             source_storage_object = COALESCE($12, source_storage_object),
+             source_storage_generation = COALESCE($13, source_storage_generation),
+             source_size_bytes = COALESCE($14, source_size_bytes)
          WHERE id = $1 AND workspace_id = $2
          RETURNING ${documentSelect}`,
         [
@@ -265,6 +298,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
           input.sourceContent,
           input.markdownContent,
           input.metadata !== undefined ? JSON.stringify(input.metadata) : null,
+          input.externalDocumentId ?? null,
           input.sourceKind ?? null,
           input.sourceFilename ?? null,
           input.sourceMimeType ?? null,
@@ -273,7 +307,9 @@ export class DocumentRepository implements DocumentRepositoryPort {
           input.sourceStorageGeneration ?? null,
           input.sourceSizeBytes ?? null,
         ],
-      );
+      ).catch((error: unknown) => {
+        throw this.mapDocumentConflict(error);
+      });
       const [documentRow] = documentResult.rows;
 
       if (!documentRow) {
@@ -403,13 +439,14 @@ export class DocumentRepository implements DocumentRepositoryPort {
            failure_reason = NULL,
            updated_at = NOW(),
            metadata = COALESCE($7::jsonb, metadata),
-           source_kind = COALESCE($8, source_kind),
-           source_filename = COALESCE($9, source_filename),
-           source_mime_type = COALESCE($10, source_mime_type),
-           source_storage_bucket = COALESCE($11, source_storage_bucket),
-           source_storage_object = COALESCE($12, source_storage_object),
-           source_storage_generation = COALESCE($13, source_storage_generation),
-           source_size_bytes = COALESCE($14, source_size_bytes)
+           external_document_id = COALESCE($8, external_document_id),
+           source_kind = COALESCE($9, source_kind),
+           source_filename = COALESCE($10, source_filename),
+           source_mime_type = COALESCE($11, source_mime_type),
+           source_storage_bucket = COALESCE($12, source_storage_bucket),
+           source_storage_object = COALESCE($13, source_storage_object),
+           source_storage_generation = COALESCE($14, source_storage_generation),
+           source_size_bytes = COALESCE($15, source_size_bytes)
        WHERE id = $1 AND workspace_id = $2
        RETURNING ${documentSelect}`,
       [
@@ -420,6 +457,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         input.markdownContent,
         input.status,
         input.metadata !== undefined ? JSON.stringify(input.metadata) : null,
+        input.externalDocumentId ?? null,
         input.sourceKind ?? null,
         input.sourceFilename ?? null,
         input.sourceMimeType ?? null,
@@ -428,7 +466,9 @@ export class DocumentRepository implements DocumentRepositoryPort {
         input.sourceStorageGeneration ?? null,
         input.sourceSizeBytes ?? null,
       ],
-    );
+    ).catch((error: unknown) => {
+      throw this.mapDocumentConflict(error);
+    });
 
     return mapDocument(row);
   }
@@ -515,7 +555,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
                updated_at = NOW()
            WHERE workspace_id = $1
              AND status NOT IN ('queued', 'processing')
-           RETURNING id, workspace_id, title, source_content, markdown_content, status, revision, failure_reason, created_at, updated_at, metadata`,
+           RETURNING id, workspace_id, title, source_content, markdown_content, external_document_id, status, revision, failure_reason, created_at, updated_at, metadata`,
           [workspaceId],
         )
       ).rows;
@@ -590,6 +630,21 @@ export class DocumentRepository implements DocumentRepositoryPort {
     );
 
     return rows.length > 0;
+  }
+
+  private mapDocumentConflict(error: unknown): unknown {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "23505" &&
+      "constraint" in error &&
+      (error as { constraint?: string }).constraint === "idx_documents_workspace_external_document_id_unique"
+    ) {
+      return conflict("externalDocumentId is already used by another document in this workspace");
+    }
+
+    return error;
   }
 }
 

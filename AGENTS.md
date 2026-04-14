@@ -79,6 +79,11 @@ tests/
 
 : Follow standard conventions
 
+## Documentation
+
+- When delivering a new feature through Speckit, review the root `readme.md` before closing the work.
+- Update `readme.md` whenever the feature changes the Docker run flow, authentication or token setup, common API usage, or the most important ingestion or retrieval settings operators are likely to tune.
+
 ## Recent Changes
 - 037-performance-benchmarking: Added Node.js 22 ESM scripts for the benchmark harness, plus existing TypeScript 5.x backend and TypeScript 5.7 frontend + existing Node.js toolchain, `pg`, Docker Compose, benchmark-harness dependencies for HTTP load generation and result formatting, existing backend/frontend package scripts
 - 036-account-users: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives, Lucide icons

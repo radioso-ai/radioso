@@ -1,5 +1,5 @@
 import type { RerankStatus, RetrievalExecutionDiagnostics, RetrievalTraceSummary } from "../domain/retrievalPipelineTypes.js";
-import type { AppliedConstraint } from "../domain/structuredAttributes.js";
+import type { AppliedConstraint } from "../domain/queryConstraintTypes.js";
 
 export interface RetrievalInfo extends RetrievalTraceSummary {
   rerankStatus: RerankStatus;

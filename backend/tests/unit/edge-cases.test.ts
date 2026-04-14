@@ -10,36 +10,6 @@ import { CandidatePreparationService } from "../../src/modules/retrieval/service
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
-import { SemanticQueryConstraintService } from "../../src/modules/retrieval/services/semanticQueryConstraintService.js";
-import { defaultAttributeControls } from "../../src/modules/settings/domain/retrievalSettings.js";
-
-const estoniaBudgetConstraintService = () =>
-  new SemanticQueryConstraintService({
-    async interpret() {
-      return {
-        semanticQuery: "retreats in Estonia under 300 EUR",
-        lexicalQuery: "retreats in Estonia under 300 EUR",
-        constraints: [
-          {
-            signalKey: "document_location",
-            operator: "match",
-            confidence: 0.95,
-            summary: "in Estonia",
-            sourceText: "in Estonia",
-            value: { matchKey: "estonia", displayName: "Estonia" },
-          },
-          {
-            signalKey: "document_amount",
-            operator: "lte",
-            confidence: 0.95,
-            summary: "under 300 EUR",
-            sourceText: "under 300 EUR",
-            value: { amount: 300, currencyCode: "EUR" },
-          },
-        ],
-      };
-    },
-  });
 
 describe("edge cases", () => {
   it("normalizes short content into a single chunk", () => {
@@ -184,7 +154,6 @@ describe("edge cases", () => {
             similarityThreshold: 0.8,
             rerankTopK: 20,
             citationDisplayEnabled: true,
-            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -225,7 +194,6 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      estoniaBudgetConstraintService(),
     );
 
     const result = await service.run({
@@ -240,333 +208,6 @@ describe("edge cases", () => {
     expect(result.diagnostics.fallbackApplied).toBe(false);
   });
 
-  it("keeps disabled attribute literals in semantic and lexical queries", async () => {
-    const embeddedQueries: string[] = [];
-    const lexicalQueries: string[] = [];
-    const service = new RetrievalPipelineService(
-      {
-        async getForWorkspace() {
-          return {
-            workspaceId: "a1",
-            queryRewriteEnabled: false,
-            rerankEnabled: false,
-            vectorTopK: 20,
-            similarityThreshold: 0.2,
-            rerankTopK: 5,
-            citationDisplayEnabled: true,
-            signalPolicies: defaultAttributeControls().map((control) =>
-              control.signalKey === "document_location" || control.signalKey === "document_amount"
-                ? { ...control, enabled: false }
-                : control,
-            ),
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
-        },
-      } as never,
-      {
-        async embedChunks(chunks: string[]) {
-          embeddedQueries.push(...chunks);
-          return chunks.map(() => [1, 0, 0]);
-        },
-      } as never,
-      {
-        async search() {
-          return [];
-        },
-      },
-      {
-        async search(input) {
-          lexicalQueries.push(input.query);
-          return [];
-        },
-      },
-      new ConversationContextService(),
-      new QueryRewriteService(),
-      new CandidatePreparationService(),
-      new AttributeMatchScoringService(),
-      new RerankService(),
-      new PromptContextSelectorService(),
-      new PromptBuilder(),
-      new RetrievalExecutionTelemetryService(),
-      estoniaBudgetConstraintService(),
-    );
-
-    const result = await service.run({
-      workspaceId: "a1",
-      query: "Find retreats in Estonia under 300 EUR",
-      history: [],
-    });
-
-    expect(embeddedQueries).toEqual(["retreats in Estonia under 300 EUR"]);
-    expect(lexicalQueries).toEqual(["retreats in Estonia under 300 EUR"]);
-    expect(result.diagnostics.parsedQuery?.semanticQuery).toBe("retreats in Estonia under 300 EUR");
-    expect(result.diagnostics.appliedConstraints).toEqual([
-      {
-        signalKey: "document_location",
-        mode: "boost_only",
-        outcome: "skipped",
-        summary: "in Estonia",
-      },
-      {
-        signalKey: "document_amount",
-        mode: "boost_only",
-        outcome: "skipped",
-        summary: "under 300 EUR",
-      },
-    ]);
-  });
-
-  it("keeps boost_only attribute literals before semantic and lexical retrieval", async () => {
-    const embeddedQueries: string[] = [];
-    const lexicalQueries: string[] = [];
-    const service = new RetrievalPipelineService(
-      {
-        async getForWorkspace() {
-          return {
-            workspaceId: "a1",
-            queryRewriteEnabled: false,
-            rerankEnabled: false,
-            vectorTopK: 20,
-            similarityThreshold: 0.2,
-            rerankTopK: 5,
-            citationDisplayEnabled: true,
-            signalPolicies: defaultAttributeControls(),
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
-        },
-      } as never,
-      {
-        async embedChunks(chunks: string[]) {
-          embeddedQueries.push(...chunks);
-          return chunks.map(() => [1, 0, 0]);
-        },
-      } as never,
-      {
-        async search() {
-          return [];
-        },
-      },
-      {
-        async search(input) {
-          lexicalQueries.push(input.query);
-          return [];
-        },
-      },
-      new ConversationContextService(),
-      new QueryRewriteService(),
-      new CandidatePreparationService(),
-      new AttributeMatchScoringService(),
-      new RerankService(),
-      new PromptContextSelectorService(),
-      new PromptBuilder(),
-      new RetrievalExecutionTelemetryService(),
-      estoniaBudgetConstraintService(),
-    );
-
-    const result = await service.run({
-      workspaceId: "a1",
-      query: "Find retreats in Estonia under 300 EUR",
-      history: [],
-    });
-
-    expect(embeddedQueries).toEqual(["retreats in Estonia under 300 EUR"]);
-    expect(lexicalQueries).toEqual(["retreats in Estonia under 300 EUR"]);
-    expect(result.diagnostics.parsedQuery?.semanticQuery).toBe("retreats in Estonia under 300 EUR");
-  });
-
-  it("keeps hard_filter attribute literals in retrieval queries", async () => {
-    const embeddedQueries: string[] = [];
-    const lexicalQueries: string[] = [];
-    const service = new RetrievalPipelineService(
-      {
-        async getForWorkspace() {
-          return {
-            workspaceId: "a1",
-            queryRewriteEnabled: false,
-            rerankEnabled: false,
-            vectorTopK: 20,
-            similarityThreshold: 0.2,
-            rerankTopK: 5,
-            citationDisplayEnabled: true,
-            signalPolicies: defaultAttributeControls().map((control) =>
-              control.signalKey === "document_location" || control.signalKey === "document_amount"
-                ? { ...control, mode: "hard_filter" as const }
-                : control,
-            ),
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
-        },
-      } as never,
-      {
-        async embedChunks(chunks: string[]) {
-          embeddedQueries.push(...chunks);
-          return chunks.map(() => [1, 0, 0]);
-        },
-      } as never,
-      {
-        async search() {
-          return [];
-        },
-      },
-      {
-        async search(input) {
-          lexicalQueries.push(input.query);
-          return [];
-        },
-      },
-      new ConversationContextService(),
-      new QueryRewriteService(),
-      new CandidatePreparationService(),
-      new AttributeMatchScoringService(),
-      new RerankService(),
-      new PromptContextSelectorService(),
-      new PromptBuilder(),
-      new RetrievalExecutionTelemetryService(),
-      estoniaBudgetConstraintService(),
-    );
-
-    const result = await service.run({
-      workspaceId: "a1",
-      query: "Find retreats in Estonia under 300 EUR",
-      history: [],
-    });
-
-    expect(embeddedQueries).toEqual(["retreats in Estonia under 300 EUR"]);
-    expect(lexicalQueries).toEqual(["retreats in Estonia under 300 EUR"]);
-    expect(result.diagnostics.parsedQuery?.semanticQuery).toBe("retreats in Estonia under 300 EUR");
-  });
-
-  it("preserves original constraints when rewrite omits structured literals", async () => {
-    const service = new RetrievalPipelineService(
-      {
-        async getForWorkspace() {
-          return {
-            workspaceId: "a1",
-            queryRewriteEnabled: true,
-            rerankEnabled: false,
-            vectorTopK: 20,
-            similarityThreshold: 0.2,
-            rerankTopK: 5,
-            citationDisplayEnabled: true,
-            signalPolicies: defaultAttributeControls(),
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
-        },
-      } as never,
-      {
-        async embedChunks() {
-          return [[1, 0, 0]];
-        },
-      } as never,
-      {
-        async search() {
-          return [
-            {
-              chunkId: "c1",
-              documentId: "d1",
-              title: "Summer Retreat",
-              content: "Summer retreat in Estonia costs 290 EUR.",
-              similarity: 0.6,
-              structuredAttributes: {
-                datePoints: [],
-                dateRanges: [],
-                moneyValues: [
-                  {
-                    amount: 290,
-                    currencyCode: "EUR",
-                    confidence: 0.95,
-                    sourceText: "290 EUR",
-                  },
-                ],
-                locations: [],
-              },
-            },
-          ];
-        },
-      },
-      {
-        async search() {
-          return [];
-        },
-      },
-      new ConversationContextService(),
-      new QueryRewriteService({
-        async rewrite() {
-          return {
-            rewrittenQuery: "summer retreat pricing",
-            turnKind: "referential_followup",
-            proposedActiveSubject: "summer retreat",
-            relatedEntities: [],
-            unresolved: false,
-            confidence: 0.9,
-          };
-        },
-      }),
-      new CandidatePreparationService(),
-      new AttributeMatchScoringService(),
-      new RerankService(),
-      new PromptContextSelectorService(),
-      new PromptBuilder(),
-      new RetrievalExecutionTelemetryService(),
-      new SemanticQueryConstraintService({
-        async interpret() {
-          return {
-            semanticQuery: "Is it under 300 EUR?",
-            lexicalQuery: "Is it under 300 EUR?",
-            constraints: [
-              {
-                signalKey: "document_amount",
-                operator: "lte",
-                confidence: 0.95,
-                summary: "under 300 EUR",
-                sourceText: "under 300 EUR",
-                value: { amount: 300, currencyCode: "EUR" },
-              },
-            ],
-          };
-        },
-      }),
-    );
-
-    const result = await service.run({
-      workspaceId: "a1",
-      query: "Is it under 300 EUR?",
-      history: [
-        {
-          id: "1",
-          conversationId: "c1",
-          workspaceId: "a1",
-          role: "user",
-          content: "Tell me about the summer retreat",
-          createdAt: new Date(),
-        },
-      ],
-    });
-
-    expect(result.rewrittenQuery).toBe("summer retreat pricing");
-    expect(result.diagnostics.parsedQuery?.semanticQuery).toBe("summer retreat pricing");
-    expect(result.diagnostics.parsedQuery?.constraints).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          signalKey: "document_amount",
-          operator: "lte",
-          summary: "under 300 EUR",
-        }),
-      ]),
-    );
-    expect(result.diagnostics.appliedConstraints).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          signalKey: "document_amount",
-          outcome: "applied",
-        }),
-      ]),
-    );
-  });
 
   it("drops rewritten retrieval candidates when rewrite evidence materially disagrees", async () => {
     const embeddedQueries: string[] = [];
@@ -581,7 +222,6 @@ describe("edge cases", () => {
             similarityThreshold: 0.2,
             rerankTopK: 5,
             citationDisplayEnabled: true,
-            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -678,7 +318,6 @@ describe("edge cases", () => {
             similarityThreshold: 0.2,
             rerankTopK: 5,
             citationDisplayEnabled: true,
-            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -781,7 +420,6 @@ describe("edge cases", () => {
             similarityThreshold: 0.2,
             rerankTopK: 5,
             citationDisplayEnabled: true,
-            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -902,7 +540,6 @@ describe("edge cases", () => {
             similarityThreshold: 0.2,
             rerankTopK: 5,
             citationDisplayEnabled: true,
-            signalPolicies: defaultAttributeControls(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };

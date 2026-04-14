@@ -557,28 +557,9 @@ describeIfDatabase("persistence integration", () => {
           parsedQuery: {
             semanticQuery: "retreats",
             lexicalQuery: "retreats",
-            constraints: [
-              {
-                signalKey: "document_location",
-                operator: "match",
-                confidence: 0.95,
-                summary: "in Estonia",
-                sourceText: "in Estonia",
-                value: {
-                  matchKey: "estonia",
-                  displayName: "Estonia",
-                },
-              },
-            ],
+            constraints: [],
           },
-          appliedConstraints: [
-            {
-              signalKey: "document_location",
-              mode: "hard_filter",
-              outcome: "applied",
-              summary: "in Estonia",
-            },
-          ],
+          appliedConstraints: [],
           candidateFallbackApplied: false,
           fallbackApplied: true,
         },

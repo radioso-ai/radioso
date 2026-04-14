@@ -1,6 +1,5 @@
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
 import { buildRetrievalText } from "./embeddingService.js";
-import { emptyStructuredAttributes } from "../domain/structuredAttributes.js";
 import type { RetrievedCandidate, RetrievalSource } from "../domain/retrievalPipelineTypes.js";
 
 export class CandidatePreparationService {
@@ -52,7 +51,6 @@ export class CandidatePreparationService {
         semanticScore,
         lexicalScore,
         similarity: this.mergeScore(semanticScore, lexicalScore),
-        structuredAttributes: row.structuredAttributes ?? emptyStructuredAttributes(),
         attributeMatchScore: 0,
       });
     }

@@ -16,6 +16,7 @@ RUN chmod +x /usr/local/bin/backend-dev-entrypoint.sh
 
 COPY backend/tsconfig.json ./
 COPY backend/openapi.yaml ./
+COPY backend/prompts ./prompts
 COPY backend/scripts ./scripts
 COPY backend/src ./src
 COPY packages/connector-api ../packages/connector-api

@@ -1,5 +1,6 @@
 import type { ChunkOutput } from "./chunkingStrategy.js";
 import type { StructuralBlock } from "./structuredBlockParser.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 
 export interface BlockMergePlanInput {
   content: string;
@@ -10,17 +11,13 @@ export interface BlockMergePlanInput {
   similarityThreshold?: number;
 }
 
-export const DEFAULT_MIN_CHUNK_TOKENS = 24;
-export const DEFAULT_MAX_CHUNK_TOKENS = 220;
-const DEFAULT_SIMILARITY_THRESHOLD = 0.82;
-
 export const planStructuredChunks = ({
   content,
   blocks,
   adjacentSimilarities,
-  minChunkTokens = DEFAULT_MIN_CHUNK_TOKENS,
-  maxChunkTokens = DEFAULT_MAX_CHUNK_TOKENS,
-  similarityThreshold = DEFAULT_SIMILARITY_THRESHOLD,
+  minChunkTokens = RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeDefault,
+  maxChunkTokens = RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeDefault,
+  similarityThreshold = RETRIEVAL_BEHAVIOR.chunking.blockMergeSimilarityThreshold,
 }: BlockMergePlanInput): ChunkOutput[] => {
   if (blocks.length === 0) {
     return [];

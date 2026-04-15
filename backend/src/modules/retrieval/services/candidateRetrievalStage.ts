@@ -1,7 +1,7 @@
 import type { EmbeddingService } from "./embeddingService.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import type { RetrievedChunk, VectorSearchPort } from "../infra/vectorSearch.js";
-import { HYBRID_RETRIEVAL_DEFAULTS } from "../domain/hybridRetrievalConfig.js";
 import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
 
 export class CandidateRetrievalStageService implements CandidateRetrievalStageContract {
@@ -29,7 +29,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           this.lexicalSearch.search({
             workspaceId: input.request.workspaceId,
             query: subquery.lexicalQuery,
-            topK: HYBRID_RETRIEVAL_DEFAULTS.lexicalTopK,
+            topK: RETRIEVAL_BEHAVIOR.hybrid.lexicalTopK,
             metadataFilter: input.request.metadataFilter,
           }),
         ]);

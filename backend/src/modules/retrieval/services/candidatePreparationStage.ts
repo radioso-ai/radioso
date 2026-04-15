@@ -1,6 +1,6 @@
 import { CandidatePreparationService } from "./candidatePreparationService.js";
 import { MetadataRuleScoringService } from "./metadataRuleScoringService.js";
-import { HYBRID_RETRIEVAL_DEFAULTS } from "../domain/hybridRetrievalConfig.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { CandidatePreparationStage as CandidatePreparationStageContract, CandidateRetrievalStageResult } from "./retrievalPipelineStages.js";
 
 export class CandidatePreparationStageService implements CandidatePreparationStageContract {
@@ -15,7 +15,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       rewritten: input.rewrittenContexts,
       lexical: input.lexicalContexts,
     });
-    const mergedCandidates = normalizedCandidates.slice(0, HYBRID_RETRIEVAL_DEFAULTS.mergedCandidateCap);
+    const mergedCandidates = normalizedCandidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
     const metadataRuleCandidates = this.metadataRuleScoringService.apply({
       candidates: mergedCandidates,
       metadataRules: input.settings.metadataRules ?? [],

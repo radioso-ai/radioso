@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { badRequest } from "../../../shared/domain/errors.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
 export const metadataRuleOperators = [
   "equals",
@@ -103,7 +104,7 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   answerSupportPolicy: DEFAULT_ANSWER_SUPPORT_POLICY,
   rerankEnabled: false,
   vectorTopK: 15,
-  similarityThreshold: 0.2,
+  similarityThreshold: RETRIEVAL_BEHAVIOR.defaultSimilarityThreshold,
   rerankTopK: 5,
   citationDisplayEnabled: true,
   metadataRules: [],

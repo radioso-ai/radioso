@@ -2,6 +2,7 @@ import {
   type LlmCapabilityConfig,
   type TextGenerationClient,
 } from "./providerTypes.js";
+import { LLM_DEFAULTS } from "../../domain/behaviorConfig.js";
 import { parseSseEvents } from "./sse.js";
 
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
@@ -15,7 +16,7 @@ const buildClaudeBody = (config: LlmCapabilityConfig, input: {
   stream?: boolean;
 }) => ({
   model: config.model,
-  max_tokens: input.maxOutputTokens ?? 1024,
+  max_tokens: input.maxOutputTokens ?? LLM_DEFAULTS.textGenerationMaxOutputTokens,
   temperature: input.temperature,
   system: input.systemPrompt,
   stream: input.stream ?? false,

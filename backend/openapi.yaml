@@ -1301,7 +1301,6 @@ components:
           type: boolean
         userExpectedLocale:
           type: string
-          minLength: 2
           maxLength: 35
         metadataFilter:
           type: object
@@ -1324,7 +1323,6 @@ components:
           type: boolean
         userExpectedLocale:
           type: string
-          minLength: 2
           maxLength: 35
     ChatConversationSummary:
       type: object

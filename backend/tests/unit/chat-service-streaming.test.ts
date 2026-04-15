@@ -360,6 +360,71 @@ describe("chat service streaming", () => {
     );
   });
 
+  it("does not treat broader task questions as assistant identity questions", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what can you do with these documents",
+          contexts: [],
+          prompt: "unused retrieval prompt",
+          citations: [],
+          assistantIdentity: {
+            assistantName: "Marta",
+            assistantRole: "Museum guide",
+            greetingInstruction: "Warm and concise",
+          },
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "what can you do with these documents",
+              lexicalQuery: "what can you do with these documents",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        throw new Error("identity prompt should not run");
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "What can you do with these documents?",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.");
+    expect(response.citations).toBeUndefined();
+  });
+
   it("excludes URL-shaped citation titles from carry-forward literals", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

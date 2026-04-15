@@ -1,19 +1,11 @@
 import { badRequest } from "../../../shared/domain/errors.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { chunkingStrategyIds, type ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 
-export const FIXED_WINDOW_CHUNK_SIZE_DEFAULT = 800;
-export const FIXED_WINDOW_CHUNK_OVERLAP_DEFAULT = 120;
-export const STRUCTURED_MIN_CHUNK_SIZE_DEFAULT = 24;
-export const STRUCTURED_MAX_CHUNK_SIZE_DEFAULT = 220;
-
-export const FIXED_WINDOW_CHUNK_SIZE_MIN = 100;
-export const FIXED_WINDOW_CHUNK_SIZE_MAX = 4_000;
-export const FIXED_WINDOW_CHUNK_OVERLAP_MIN = 0;
-export const FIXED_WINDOW_CHUNK_OVERLAP_MAX = 2_000;
-export const STRUCTURED_MIN_CHUNK_SIZE_MIN = 1;
-export const STRUCTURED_MIN_CHUNK_SIZE_MAX = 1_000;
-export const STRUCTURED_MAX_CHUNK_SIZE_MIN = 1;
-export const STRUCTURED_MAX_CHUNK_SIZE_MAX = 2_000;
+export const FIXED_WINDOW_CHUNK_SIZE_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeDefault;
+export const FIXED_WINDOW_CHUNK_OVERLAP_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapDefault;
+export const STRUCTURED_MIN_CHUNK_SIZE_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeDefault;
+export const STRUCTURED_MAX_CHUNK_SIZE_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeDefault;
 
 export interface IngestionSettingsRecord {
   workspaceId: string;
@@ -51,20 +43,20 @@ export const validateIngestionSettings = (input: IngestionSettingsInput): Ingest
   }
   if (
     !Number.isInteger(input.fixedWindowChunkSize) ||
-    input.fixedWindowChunkSize < FIXED_WINDOW_CHUNK_SIZE_MIN ||
-    input.fixedWindowChunkSize > FIXED_WINDOW_CHUNK_SIZE_MAX
+    input.fixedWindowChunkSize < RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeMin ||
+    input.fixedWindowChunkSize > RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeMax
   ) {
     throw badRequest(
-      `fixedWindowChunkSize must be between ${FIXED_WINDOW_CHUNK_SIZE_MIN} and ${FIXED_WINDOW_CHUNK_SIZE_MAX}`,
+      `fixedWindowChunkSize must be between ${RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeMin} and ${RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeMax}`,
     );
   }
   if (
     !Number.isInteger(input.fixedWindowChunkOverlap) ||
-    input.fixedWindowChunkOverlap < FIXED_WINDOW_CHUNK_OVERLAP_MIN ||
-    input.fixedWindowChunkOverlap > FIXED_WINDOW_CHUNK_OVERLAP_MAX
+    input.fixedWindowChunkOverlap < RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapMin ||
+    input.fixedWindowChunkOverlap > RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapMax
   ) {
     throw badRequest(
-      `fixedWindowChunkOverlap must be between ${FIXED_WINDOW_CHUNK_OVERLAP_MIN} and ${FIXED_WINDOW_CHUNK_OVERLAP_MAX}`,
+      `fixedWindowChunkOverlap must be between ${RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapMin} and ${RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapMax}`,
     );
   }
   if (input.fixedWindowChunkOverlap >= input.fixedWindowChunkSize) {
@@ -72,20 +64,20 @@ export const validateIngestionSettings = (input: IngestionSettingsInput): Ingest
   }
   if (
     !Number.isInteger(input.structuredMinChunkSize) ||
-    input.structuredMinChunkSize < STRUCTURED_MIN_CHUNK_SIZE_MIN ||
-    input.structuredMinChunkSize > STRUCTURED_MIN_CHUNK_SIZE_MAX
+    input.structuredMinChunkSize < RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeMin ||
+    input.structuredMinChunkSize > RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeMax
   ) {
     throw badRequest(
-      `structuredMinChunkSize must be between ${STRUCTURED_MIN_CHUNK_SIZE_MIN} and ${STRUCTURED_MIN_CHUNK_SIZE_MAX}`,
+      `structuredMinChunkSize must be between ${RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeMin} and ${RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeMax}`,
     );
   }
   if (
     !Number.isInteger(input.structuredMaxChunkSize) ||
-    input.structuredMaxChunkSize < STRUCTURED_MAX_CHUNK_SIZE_MIN ||
-    input.structuredMaxChunkSize > STRUCTURED_MAX_CHUNK_SIZE_MAX
+    input.structuredMaxChunkSize < RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMin ||
+    input.structuredMaxChunkSize > RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMax
   ) {
     throw badRequest(
-      `structuredMaxChunkSize must be between ${STRUCTURED_MAX_CHUNK_SIZE_MIN} and ${STRUCTURED_MAX_CHUNK_SIZE_MAX}`,
+      `structuredMaxChunkSize must be between ${RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMin} and ${RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMax}`,
     );
   }
   if (input.structuredMinChunkSize > input.structuredMaxChunkSize) {

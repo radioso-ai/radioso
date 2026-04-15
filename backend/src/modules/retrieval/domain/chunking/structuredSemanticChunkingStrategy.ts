@@ -4,6 +4,7 @@ import {
   type ChunkingStrategy,
   normalizeMarkdown,
 } from "./chunkingStrategy.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 import { planStructuredChunks } from "./blockMergePlanner.js";
 import { parseStructuralBlocks, type StructuralBlock } from "./structuredBlockParser.js";
 
@@ -11,7 +12,7 @@ export interface ChunkingSimilarityPort {
   embedTexts(texts: string[]): Promise<number[][]>;
 }
 
-const MAX_FRAGMENT_CHARS = 900;
+const MAX_FRAGMENT_CHARS = RETRIEVAL_BEHAVIOR.chunking.maxFragmentChars;
 
 export class StructuredSemanticChunkingStrategy implements ChunkingStrategy {
   readonly id = "structured_semantic" as const;

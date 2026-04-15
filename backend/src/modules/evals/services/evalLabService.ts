@@ -1,4 +1,5 @@
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { EVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ChatHistoryService } from "../../chat/services/chatHistoryService.js";
 import type {
   EvalCaseComparison,
@@ -36,10 +37,6 @@ export interface EvalRepositoryPort {
   }): Promise<EvalRunRecord>;
   findRunById(workspaceId: string, datasetId: string, runId: string): Promise<EvalRunRecord | null>;
 }
-
-const MAX_CONTEXT_MESSAGES = 12;
-const MAX_MESSAGE_LENGTH = 2_000;
-const MAX_QUERY_LENGTH = 2_000;
 
 const normalizeText = (value: string, maxLength: number): string => value.trim().slice(0, maxLength);
 
@@ -87,14 +84,14 @@ export class EvalLabService {
     workspaceId: string,
     input: { name: string; description?: string; createdByAccountId?: string | null },
   ): Promise<EvalDatasetSummary> {
-    const name = normalizeText(input.name, 120);
+    const name = normalizeText(input.name, EVAL_BEHAVIOR.datasetNameMaxLength);
     if (name.length === 0) {
       throw badRequest("Dataset name is required");
     }
     const dataset = await this.repository.createDataset(workspaceId, {
       ...input,
       name,
-      description: normalizeText(input.description ?? "", 500),
+      description: normalizeText(input.description ?? "", EVAL_BEHAVIOR.datasetDescriptionMaxLength),
     });
     return {
       ...dataset,
@@ -127,7 +124,7 @@ export class EvalLabService {
     input: { conversationId: string; assistantMessageId: string },
   ): Promise<EvalImportDraft> {
     const detail = await this.chatHistoryService.getConversation(workspaceId, input.conversationId, {
-      limit: 200,
+      limit: EVAL_BEHAVIOR.importConversationMessageLimit,
       offset: 0,
     });
     const assistantIndex = detail.messages.findIndex((message) => message.id === input.assistantMessageId && message.role === "assistant");
@@ -145,10 +142,10 @@ export class EvalLabService {
     const selectedUserIndex = assistantIndex - 1 - queryIndex;
     const selectedUser = detail.messages[selectedUserIndex];
     const context = detail.messages
-      .slice(Math.max(0, selectedUserIndex - MAX_CONTEXT_MESSAGES), selectedUserIndex)
+      .slice(Math.max(0, selectedUserIndex - EVAL_BEHAVIOR.maxContextMessages), selectedUserIndex)
       .map((message) => ({
         role: message.role,
-        content: normalizeText(message.content, MAX_MESSAGE_LENGTH),
+        content: normalizeText(message.content, EVAL_BEHAVIOR.maxMessageLength),
       }))
       .filter((message) => message.content.length > 0);
 
@@ -171,8 +168,8 @@ export class EvalLabService {
     }
 
     return {
-      title: normalizeText(selectedUser.content, 120) || "Imported chat case",
-      query: normalizeText(selectedUser.content, MAX_QUERY_LENGTH),
+      title: normalizeText(selectedUser.content, EVAL_BEHAVIOR.caseTitleMaxLength) || "Imported chat case",
+      query: normalizeText(selectedUser.content, EVAL_BEHAVIOR.maxQueryLength),
       conversationContext: context,
       sourceType: "conversation_import",
       provenance: {
@@ -194,17 +191,17 @@ export class EvalLabService {
     if (!dataset) {
       throw notFound("Eval dataset not found");
     }
-    const title = normalizeText(input.title, 120);
-    const query = normalizeText(input.query, MAX_QUERY_LENGTH);
+    const title = normalizeText(input.title, EVAL_BEHAVIOR.caseTitleMaxLength);
+    const query = normalizeText(input.query, EVAL_BEHAVIOR.maxQueryLength);
     if (title.length === 0 || query.length === 0) {
       throw badRequest("Case title and query are required");
     }
 
     const conversationContext = (input.conversationContext ?? [])
-      .slice(-MAX_CONTEXT_MESSAGES)
+      .slice(-EVAL_BEHAVIOR.maxContextMessages)
       .map((message) => ({
         role: message.role,
-        content: normalizeText(message.content, MAX_MESSAGE_LENGTH),
+        content: normalizeText(message.content, EVAL_BEHAVIOR.maxMessageLength),
       }))
       .filter((message) => message.content.length > 0);
 

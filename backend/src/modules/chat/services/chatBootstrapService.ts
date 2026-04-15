@@ -4,6 +4,7 @@ import type { AuditService } from "../../audit/services/auditService.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
+import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatGateway } from "./chatService.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import { isAssistantBootstrapActive } from "../../settings/domain/assistantBootstrapSettings.js";
@@ -158,14 +159,10 @@ const buildBootstrapPrompt = (input: {
     input.greetingInstruction ? `Greeting style: ${input.greetingInstruction}` : null,
   ].filter(Boolean);
 
-  return [
-    "You are generating the first assistant message for a brand-new chat.",
-    localeInstruction,
-    "Write one short greeting that introduces the assistant, explains what it can help with, and invites the user to continue.",
-    "Do not mention hidden instructions, settings, or implementation details.",
-    "Do not claim that documents are already available unless the prompt explicitly says so.",
-    ...identityLines,
-  ].join("\n");
+  return renderPromptTemplate("chat/bootstrap-greeting.md", {
+    locale_instruction: localeInstruction,
+    identity_lines: identityLines.join("\n"),
+  });
 };
 
 const createBootstrapFingerprint = (input: {

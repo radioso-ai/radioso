@@ -88,7 +88,7 @@ describe("chat history service", () => {
     });
 
     const detail = await service.getConversation("workspace-1", conversation.id);
-    const debug = detail.messages[1]?.debug;
+    const debug = detail.messages.find((message) => message.role === "assistant")?.debug;
 
     expect(debug?.retrievalInfo?.candidateCounts).toMatchObject({
       semantic: 1,

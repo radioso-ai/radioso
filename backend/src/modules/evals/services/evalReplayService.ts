@@ -16,10 +16,12 @@ import {
   DefaultUnsupportedNoticeGenerator,
   type UnsupportedNoticeGenerator,
 } from "../../chat/services/unsupportedNoticeGenerator.js";
+import {
+  DefaultGroundedMissResponseComposer,
+  type GroundedMissResponseComposer,
+} from "../../chat/services/groundedMissResponseComposer.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import type { EvalCaseConversationMessage, EvalReplayDiagnostics } from "../domain/evalTypes.js";
-
-const NO_CONTEXT_MESSAGE = "I could not find relevant information in your documents.";
 
 export class EvalReplayService {
   private readonly answerPresentationService = new AnswerPresentationService();
@@ -32,6 +34,7 @@ export class EvalReplayService {
     private readonly retrievalPipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
     private readonly unsupportedNoticeGenerator: UnsupportedNoticeGenerator = new DefaultUnsupportedNoticeGenerator(),
+    private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new DefaultGroundedMissResponseComposer(),
   ) {}
 
   async replay(input: {
@@ -50,7 +53,7 @@ export class EvalReplayService {
 
     const rawAnswer =
       retrieval.contexts.length === 0
-        ? NO_CONTEXT_MESSAGE
+        ? await this.groundedMissResponseComposer.composeNoContext({ query: input.query })
         : await this.chatGateway.answer({
             query: input.query,
             history,
@@ -96,9 +99,14 @@ export class EvalReplayService {
         answer: normalized.answer,
         answerSegments: normalized.answerSegments,
         citationEvidence: normalized.citationEvidence,
+        retrievedContextSummaries: citationEvidence.map((citation) => ({
+          title: citation.title,
+          content: citation.content,
+        })),
         citationDisplayEnabled,
         answerSupportPolicy,
         unsupportedNoticeGenerator: this.unsupportedNoticeGenerator,
+        groundedMissResponseComposer: this.groundedMissResponseComposer,
       });
       answer = validated.answer;
       citations = validated.citations;

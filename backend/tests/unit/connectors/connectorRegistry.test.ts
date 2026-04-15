@@ -109,7 +109,7 @@ describe("ConnectorRegistry", () => {
     expect(events).toContain("init-succeeds");
   });
 
-  it("reads legacy plaintext secrets after encryption is enabled", async () => {
+  it("requires remediation for legacy plaintext secrets after encryption is enabled", async () => {
     const registry = new ConnectorRegistry();
     registry.register(createFakePlugin({
       configSchema: () => [
@@ -122,9 +122,6 @@ describe("ConnectorRegistry", () => {
       query: async <T>() => [{ enabled: true, config_data: { api_key: "legacy-plaintext-token" } } as T],
     };
 
-    await expect(registry.getDecryptedConfig(db as any, "workspace-1", "fake")).resolves.toEqual({
-      enabled: true,
-      config: { api_key: "legacy-plaintext-token" },
-    });
+    await expect(registry.getDecryptedConfig(db as any, "workspace-1", "fake")).resolves.toBeNull();
   });
 });

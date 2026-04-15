@@ -1600,6 +1600,28 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     return claimed;
   }
 
+  async backfillMissingQueuedJobs(limit = 100): Promise<number> {
+    const queuedDocuments = [...(this.documentRepository?.items.values() ?? [])]
+      .filter((document) => document.status === "queued")
+      .filter((document) =>
+        ![...this.items.values()].some(
+          (job) => job.documentId === document.id && job.documentRevision === document.revision,
+        ),
+      )
+      .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime())
+      .slice(0, limit);
+
+    for (const document of queuedDocuments) {
+      await this.enqueue({
+        documentId: document.id,
+        workspaceId: document.workspaceId,
+        documentRevision: document.revision,
+      });
+    }
+
+    return queuedDocuments.length;
+  }
+
   async listProcessingJobs(): Promise<DocumentProcessingJobRecord[]> {
     return [...this.items.values()]
       .filter((item) => item.status === "processing")

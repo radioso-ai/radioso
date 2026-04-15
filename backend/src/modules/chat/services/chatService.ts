@@ -21,6 +21,10 @@ import {
   DefaultUnsupportedNoticeGenerator,
   type UnsupportedNoticeGenerator,
 } from "./unsupportedNoticeGenerator.js";
+import {
+  DefaultGroundedMissResponseComposer,
+  type GroundedMissResponseComposer,
+} from "./groundedMissResponseComposer.js";
 import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSettings.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
@@ -122,6 +126,7 @@ export class ChatService {
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly unsupportedNoticeGenerator: UnsupportedNoticeGenerator = new DefaultUnsupportedNoticeGenerator(),
+    private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new DefaultGroundedMissResponseComposer(),
   ) {}
 
   private getAnswerSupportPolicy(session: PreparedSession): AnswerSupportPolicy {
@@ -271,7 +276,8 @@ export class ChatService {
 
       if (session.retrieval.contexts.length === 0) {
         noContextPresentation = await this.generateIdentityAnswer(session, input.query);
-        rawAnswer = noContextPresentation?.answer ?? "I could not find relevant information in your documents.";
+        rawAnswer = noContextPresentation?.answer
+          ?? await this.groundedMissResponseComposer.composeNoContext({ query: input.query });
         yield {
           type: "chunk",
           text: rawAnswer,
@@ -424,7 +430,7 @@ export class ChatService {
     }
 
     const answer = session.retrieval.contexts.length === 0
-      ? "I could not find relevant information in your documents."
+      ? await this.groundedMissResponseComposer.composeNoContext({ query })
       : await this.chatGateway.answer({
           query,
           history: session.history,
@@ -474,9 +480,14 @@ export class ChatService {
       answer: normalized.answer,
       answerSegments: normalized.answerSegments,
       citationEvidence: normalized.citationEvidence,
+      retrievedContextSummaries: citationEvidence.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
       citationDisplayEnabled,
       answerSupportPolicy: this.getAnswerSupportPolicy(session),
       unsupportedNoticeGenerator: this.unsupportedNoticeGenerator,
+      groundedMissResponseComposer: this.groundedMissResponseComposer,
     });
 
     return {

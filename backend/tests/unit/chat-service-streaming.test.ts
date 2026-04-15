@@ -598,13 +598,17 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts.join("")).toBe(DEFAULT_UNSUPPORTED_NOTICE);
+    expect(chunkTexts.join("")).toBe(
+      `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
+    );
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
-      answer: DEFAULT_UNSUPPORTED_NOTICE,
+      answer: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
       citations: [],
-      answerSegments: [{ text: DEFAULT_UNSUPPORTED_NOTICE }],
+      answerSegments: [
+        { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
+      ],
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -628,7 +632,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: DEFAULT_UNSUPPORTED_NOTICE,
+      content: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
     });
   });
 
@@ -702,13 +706,17 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts).toEqual([DEFAULT_UNSUPPORTED_NOTICE]);
+    expect(chunkTexts).toEqual([
+      `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
+    ]);
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
-      answer: DEFAULT_UNSUPPORTED_NOTICE,
+      answer: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
       citations: [],
-      answerSegments: [{ text: DEFAULT_UNSUPPORTED_NOTICE }],
+      answerSegments: [
+        { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
+      ],
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -732,7 +740,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: DEFAULT_UNSUPPORTED_NOTICE,
+      content: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
     });
   });
 
@@ -796,7 +804,10 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
       { role: "user", content: "What does this page do?" },
-      { role: "assistant", content: "I could not find relevant information in your documents." },
+      {
+        role: "assistant",
+        content: "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+      },
     ]);
   });
 

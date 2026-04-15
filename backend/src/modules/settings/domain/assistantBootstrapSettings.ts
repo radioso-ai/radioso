@@ -17,7 +17,6 @@ export interface AssistantIdentityPromptInput {
   assistantRole: string;
   greetingInstruction: string;
 }
-
 export interface AssistantBootstrapSettingsInput {
   assistantName?: string;
   assistantRole?: string;

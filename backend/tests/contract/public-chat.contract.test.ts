@@ -390,7 +390,7 @@ describe("public chat contract", () => {
     });
   });
 
-  it("applies anonymous rate limiting to bootstrap greetings", async () => {
+  it("counts bootstrap greeting requests against the anonymous rate limit", async () => {
     const { app } = createTestApp({
       chatGateway: {
         async answer(input) {

@@ -83,7 +83,13 @@
     const button = document.createElement('button')
     button.type = 'button'
     button.setAttribute('aria-label', label)
-    button.innerHTML = `${iconMarkup[icon] ?? iconMarkup[DEFAULT_ICON]}<span>${label}</span>`
+    const iconContainer = document.createElement('span')
+    iconContainer.setAttribute('aria-hidden', 'true')
+    iconContainer.innerHTML = iconMarkup[icon] ?? iconMarkup[DEFAULT_ICON]
+    const labelNode = document.createElement('span')
+    labelNode.textContent = label
+    button.appendChild(iconContainer)
+    button.appendChild(labelNode)
     button.style.all = 'unset'
     button.style.boxSizing = 'border-box'
     button.style.display = 'inline-flex'

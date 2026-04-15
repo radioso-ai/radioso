@@ -114,7 +114,7 @@ describe("resolveAnonymousSession", () => {
     expect(res.locals.anonymousSessionId).toBe("existing-session-id");
   });
 
-  it("prefers the anonymous session header when present", async () => {
+  it("ignores caller-supplied anonymous session headers for plain public chat", async () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
 
@@ -128,7 +128,7 @@ describe("resolveAnonymousSession", () => {
 
     await middleware(req, res, next);
 
-    expect(res.locals.anonymousSessionId).toBe(sessionId);
+    expect(res.locals.anonymousSessionId).toBe("existing-session-id");
   });
 
   it("generates a new session id and sets cookie when none exists", async () => {

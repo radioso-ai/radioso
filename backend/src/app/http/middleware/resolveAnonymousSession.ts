@@ -70,13 +70,8 @@ export const resolveAnonymousSession = (
       }
 
       const cookieName = `anon_session_${workspace.id}`;
-      const headerSessionId = req.get(ANONYMOUS_SESSION_HEADER);
-      const parsedHeaderSessionId = headerSessionId && z.string().uuid().safeParse(headerSessionId).success
-        ? headerSessionId
-        : undefined;
       let sessionId =
         (hasValidEmbedSession ? embedSession?.anonymousSessionId : undefined) ??
-        parsedHeaderSessionId ??
         (req.cookies?.[cookieName] as string | undefined);
 
       if (!sessionId) {

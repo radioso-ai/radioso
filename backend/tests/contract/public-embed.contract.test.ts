@@ -125,6 +125,52 @@ describe("public embed contract", () => {
     expect(chatResponse.body.conversationId).toEqual(expect.any(String));
   });
 
+  it("reuses a requested anonymous session id on a later approved bootstrap", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-resume@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const origin = "https://example.com";
+
+    const firstEmbedSession = await request(app)
+      .post(`/api/v1/public/embed/${token}/session`)
+      .set("x-radioso-embed-origin", origin)
+      .set("x-radioso-embed-signature", signEmbedLaunch(token, origin));
+
+    const firstChat = await request(app)
+      .post(`/api/v1/public/chat/${firstEmbedSession.body.publicChatToken}`)
+      .set("x-radioso-embed-session", firstEmbedSession.body.embedSessionToken)
+      .send({
+        query: "What can you do?",
+        stream: false,
+      });
+
+    expect(firstChat.status).toBe(200);
+
+    const resumedEmbedSession = await request(app)
+      .post(`/api/v1/public/embed/${token}/session`)
+      .set("x-radioso-embed-origin", origin)
+      .set("x-radioso-embed-signature", signEmbedLaunch(token, origin))
+      .send({
+        anonymousSessionId: firstChat.headers["x-radioso-anonymous-session"],
+      });
+
+    expect(resumedEmbedSession.status).toBe(200);
+
+    const historyResponse = await request(app)
+      .get(`/api/v1/public/chat/${resumedEmbedSession.body.publicChatToken}`)
+      .set("x-radioso-embed-session", resumedEmbedSession.body.embedSessionToken);
+
+    expect(historyResponse.status).toBe(200);
+    expect(historyResponse.body.conversations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: firstChat.body.conversationId,
+        }),
+      ]),
+    );
+  });
+
   it("records an audit event when launch is denied because embed is disabled", async () => {
     const { app, dependencies } = createTestApp();
     const session = await issueTestSession(app, "public-embed-disabled-audit@example.com");

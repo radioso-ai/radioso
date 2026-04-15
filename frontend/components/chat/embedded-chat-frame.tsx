@@ -6,7 +6,11 @@ import { AlertCircle } from 'lucide-react'
 
 import { Spinner } from '@/components/ui/spinner'
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
-import { readStoredEmbedBootstrapSession, storeEmbedBootstrapSession } from '@/lib/api'
+import {
+  readStoredAnonymousSessionId,
+  readStoredEmbedBootstrapSession,
+  storeEmbedBootstrapSession,
+} from '@/lib/api'
 
 function EmbeddedChatUnavailable({ message }: { message: string }) {
   return (
@@ -49,12 +53,8 @@ export function EmbeddedChatFrame({ token }: { token: string }) {
 
     let isDisposed = false
     const storedSession = readStoredEmbedBootstrapSession(token)
-
-    if (storedSession) {
-      isBootstrappedRef.current = true
-      setState({ status: 'ready', publicChatToken: storedSession.publicChatToken })
-      return
-    }
+    const resumeAnonymousSessionId =
+      storedSession ? readStoredAnonymousSessionId(storedSession.publicChatToken) : null
 
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== window.parent) {
@@ -103,10 +103,16 @@ export function EmbeddedChatFrame({ token }: { token: string }) {
     window.addEventListener('message', handleMessage)
 
     const handshakeInterval = window.setInterval(() => {
-      window.parent.postMessage({ type: READY_MESSAGE }, '*')
+      window.parent.postMessage(
+        { type: READY_MESSAGE, resumeAnonymousSessionId },
+        '*',
+      )
     }, 500)
 
-    window.parent.postMessage({ type: READY_MESSAGE }, '*')
+    window.parent.postMessage(
+      { type: READY_MESSAGE, resumeAnonymousSessionId },
+      '*',
+    )
 
     const handshakeTimeout = window.setTimeout(() => {
       if (!isBootstrappedRef.current && !isDisposed) {

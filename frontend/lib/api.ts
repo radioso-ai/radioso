@@ -60,6 +60,8 @@ const readAnonymousSessionId = (token: string) => {
   return window.sessionStorage.getItem(getAnonymousSessionStorageKey(token))
 }
 
+export const readStoredAnonymousSessionId = (token: string) => readAnonymousSessionId(token)
+
 const readEmbedSessionToken = (token: string) => {
   if (typeof window === 'undefined') {
     return null

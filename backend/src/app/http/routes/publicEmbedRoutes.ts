@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { Router } from "express";
+import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/domain/websiteEmbedSettings.js";
@@ -8,6 +9,9 @@ import { issueWebsiteEmbedSession } from "../../../modules/settings/domain/websi
 
 export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
+  const embedBootstrapBodySchema = z.object({
+    anonymousSessionId: z.string().uuid().optional(),
+  });
 
   router.post("/:token/session", async (req, res, next) => {
     try {
@@ -44,6 +48,17 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
       }
 
       const workspace = await dependencies.workspaceRepository.findByWebsiteEmbedToken(req.params.token);
+      const parsedBody = embedBootstrapBodySchema.safeParse(req.body ?? {});
+
+      if (!parsedBody.success) {
+        res.status(400).json({
+          error: {
+            code: "bad_request",
+            message: "Invalid embed session request",
+          },
+        });
+        return;
+      }
 
       if (!workspace) {
         res.status(404).json({
@@ -105,7 +120,7 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
       const embedSession = issueWebsiteEmbedSession(dependencies.env.SESSION_COOKIE_SECRET, {
         workspaceId: workspace.id,
         publicChatToken: workspace.anonymousChatToken,
-        anonymousSessionId: randomUUID(),
+        anonymousSessionId: parsedBody.data.anonymousSessionId ?? randomUUID(),
         sourceOrigin: origin,
       });
 

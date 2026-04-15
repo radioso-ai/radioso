@@ -41,6 +41,8 @@ describe('embed session storage helpers', () => {
       embedSessionToken: 'grant-token',
       expiresAt: expect.any(String),
     })
+
+    expect(readStoredEmbedBootstrapSession('other-embed-token')).toBeNull()
   })
 
   it('drops expired embed bootstrap sessions', () => {

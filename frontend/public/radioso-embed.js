@@ -58,11 +58,17 @@
     return panel
   }
 
-  const bootstrapEmbeddedSession = async (scriptUrl, token) => {
+  const bootstrapEmbeddedSession = async (scriptUrl, token, options) => {
+    const body =
+      options && typeof options.resumeAnonymousSessionId === 'string'
+        ? JSON.stringify({ anonymousSessionId: options.resumeAnonymousSessionId })
+        : undefined
     const response = await fetch(new URL(`/api/embed/session/${encodeURIComponent(token)}`, scriptUrl).toString(), {
       method: 'POST',
       mode: 'cors',
       cache: 'no-store',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body,
     })
 
     const payload = await response.json().catch(() => null)
@@ -170,8 +176,11 @@
         return
       }
 
+      const resumeAnonymousSessionId =
+        typeof event.data.resumeAnonymousSessionId === 'string' ? event.data.resumeAnonymousSessionId : null
+
       if (!bootstrapPromise) {
-        bootstrapPromise = bootstrapEmbeddedSession(scriptUrl, token)
+        bootstrapPromise = bootstrapEmbeddedSession(scriptUrl, token, { resumeAnonymousSessionId })
       }
 
       bootstrapPromise

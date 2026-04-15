@@ -790,6 +790,12 @@ components:
         - embedSessionToken
         - assistantBootstrapActive
         - expiresAt
+    PublicEmbedSessionRequest:
+      type: object
+      properties:
+        anonymousSessionId:
+          type: string
+          format: uuid
     WorkspaceIngestionReprocessResponse:
       type: object
       properties:
@@ -2394,6 +2400,11 @@ paths:
           required: true
           name: token
           in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicEmbedSessionRequest"
       responses:
         "200":
           description: Embedded chat session bootstrap returned

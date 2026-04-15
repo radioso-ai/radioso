@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto'
+import { z } from 'zod'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,6 +32,10 @@ const resolveOrigin = (value: string | null) => {
   }
 }
 
+const embedBootstrapRequestSchema = z.object({
+  anonymousSessionId: z.string().uuid().optional(),
+})
+
 export async function OPTIONS(request: Request) {
   const origin = resolveOrigin(request.headers.get('origin'))
   return new Response(null, {
@@ -46,6 +51,9 @@ export async function POST(
   const { token } = await context.params
   const requestOrigin = resolveOrigin(request.headers.get('origin'))
   const signatureSecret = process.env.SESSION_COOKIE_SECRET
+  const parsedBody = embedBootstrapRequestSchema.safeParse(
+    await request.json().catch(() => ({})),
+  )
 
   if (!signatureSecret) {
     return Response.json(
@@ -71,6 +79,18 @@ export async function POST(
     )
   }
 
+  if (!parsedBody.success) {
+    return Response.json(
+      {
+        error: {
+          code: 'bad_request',
+          message: 'Invalid embed session request',
+        },
+      },
+      { status: 400, headers: withCorsHeaders(requestOrigin) },
+    )
+  }
+
   const signature = createHmac('sha256', signatureSecret)
     .update(`${token}:${requestOrigin}`)
     .digest('hex')
@@ -84,6 +104,7 @@ export async function POST(
         'x-radioso-embed-origin': requestOrigin,
         'x-radioso-embed-signature': signature,
       },
+      body: JSON.stringify(parsedBody.data),
     })
 
     const contentType = upstream.headers.get('content-type') ?? 'application/json'

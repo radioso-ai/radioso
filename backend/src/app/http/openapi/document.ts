@@ -343,6 +343,13 @@ const PublicEmbedSessionResponseSchema = registry.register(
   }),
 );
 
+const PublicEmbedSessionRequestSchema = registry.register(
+  "PublicEmbedSessionRequest",
+  z.object({
+    anonymousSessionId: z.string().uuid().optional(),
+  }),
+);
+
 const WorkspaceIngestionReprocessResponseSchema = registry.register(
   "WorkspaceIngestionReprocessResponse",
   z.object({
@@ -1053,6 +1060,13 @@ registry.registerPath({
   operationId: "createPublicEmbedSession",
   request: {
     params: tokenPathParamsSchema,
+    body: {
+      content: {
+        "application/json": {
+          schema: PublicEmbedSessionRequestSchema,
+        },
+      },
+    },
   },
   responses: {
     200: {

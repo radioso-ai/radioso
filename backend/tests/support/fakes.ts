@@ -22,6 +22,10 @@ import type {
 } from "../../src/modules/auth/services/authService.js";
 import type { UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
+import type {
+  BootstrapGreetingCacheRecord,
+  BootstrapGreetingCacheRepositoryPort,
+} from "../../src/db/repositories/bootstrapGreetingCacheRepository.js";
 import type { AbuseControlEntry, AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import type {
   ChunkRecord,
@@ -426,6 +430,11 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       id: randomUUID(),
       accountId,
       name,
+      assistantName: "",
+      assistantRole: "",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
       anonymousChatEnabled: false,
       anonymousChatToken: null,
       anonymousRateLimit: 10,
@@ -488,8 +497,98 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     return updated;
   }
 
+  async updateAssistantBootstrapSettings(
+    workspaceId: string,
+    input: {
+      assistantName?: string;
+      assistantRole?: string;
+      greetingInstruction?: string;
+      assistantDefaultLocale?: string | null;
+      proactiveGreetingEnabled?: boolean;
+    },
+  ): Promise<WorkspaceRecord> {
+    const item = this.items.get(workspaceId);
+    if (!item) {
+      throw new Error(`Workspace ${workspaceId} not found`);
+    }
+
+    const updated = {
+      ...item,
+      assistantName: input.assistantName?.trim().replace(/\s+/g, " ") ?? "",
+      assistantRole: input.assistantRole?.trim().replace(/\s+/g, " ") ?? "",
+      greetingInstruction: input.greetingInstruction?.trim().replace(/\s+/g, " ") ?? "",
+      assistantDefaultLocale: input.assistantDefaultLocale?.trim() || null,
+      proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),
+      updatedAt: new Date(),
+    };
+    this.items.set(workspaceId, updated);
+    return updated;
+  }
+
+  async updateGeneralSettings(
+    workspaceId: string,
+    input: {
+      anonymousChatEnabled: boolean;
+      anonymousChatToken: string | null;
+      anonymousRateLimit: number;
+      assistantName: string;
+      assistantRole: string;
+      greetingInstruction: string;
+      assistantDefaultLocale: string | null;
+      proactiveGreetingEnabled: boolean;
+    },
+  ): Promise<WorkspaceRecord> {
+    const item = this.items.get(workspaceId);
+    if (!item) {
+      throw new Error(`Workspace ${workspaceId} not found`);
+    }
+    const updated = {
+      ...item,
+      anonymousChatEnabled: input.anonymousChatEnabled,
+      anonymousChatToken: input.anonymousChatToken,
+      anonymousRateLimit: input.anonymousRateLimit,
+      assistantName: input.assistantName,
+      assistantRole: input.assistantRole,
+      greetingInstruction: input.greetingInstruction,
+      assistantDefaultLocale: input.assistantDefaultLocale,
+      proactiveGreetingEnabled: input.proactiveGreetingEnabled,
+      updatedAt: new Date(),
+    };
+    this.items.set(workspaceId, updated);
+    return updated;
+  }
+
   async deleteById(workspaceId: string): Promise<boolean> {
     return this.items.delete(workspaceId);
+  }
+}
+
+export class InMemoryBootstrapGreetingCacheRepository implements BootstrapGreetingCacheRepositoryPort {
+  readonly items = new Map<string, BootstrapGreetingCacheRecord>();
+
+  async findByWorkspaceAndFingerprint(workspaceId: string, fingerprint: string): Promise<BootstrapGreetingCacheRecord | null> {
+    return this.items.get(`${workspaceId}:${fingerprint}`) ?? null;
+  }
+
+  async save(input: {
+    workspaceId: string;
+    fingerprint: string;
+    localeUsed: string | null;
+    greetingText: string;
+  }): Promise<BootstrapGreetingCacheRecord> {
+    const key = `${input.workspaceId}:${input.fingerprint}`;
+    const existing = this.items.get(key);
+    const record: BootstrapGreetingCacheRecord = {
+      id: existing?.id ?? randomUUID(),
+      workspaceId: input.workspaceId,
+      fingerprint: input.fingerprint,
+      localeUsed: input.localeUsed,
+      greetingText: input.greetingText,
+      createdAt: existing?.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    this.items.set(key, record);
+    return record;
   }
 }
 
@@ -1719,6 +1818,11 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
 
 export class InMemoryConversationRepository implements ConversationRepositoryPort {
   readonly items = new Map<string, ConversationRecord>();
+  private messageRepository: InMemoryMessageRepository | null = null;
+
+  setMessageRepository(messageRepository: InMemoryMessageRepository): void {
+    this.messageRepository = messageRepository;
+  }
 
   async create(workspaceId: string, sourceChannel: string | null = null, anonymousSessionId: string | null = null): Promise<ConversationRecord> {
     const record: ConversationRecord = {
@@ -1731,6 +1835,30 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     };
     this.items.set(record.id, record);
     return record;
+  }
+
+  async createWithInitialAssistantMessage(input: {
+    workspaceId: string;
+    sourceChannel?: string | null;
+    anonymousSessionId?: string | null;
+    content: string;
+  }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
+    const conversation = await this.create(input.workspaceId, input.sourceChannel ?? null, input.anonymousSessionId ?? null);
+    const assistantMessage: MessageRecord = {
+      id: randomUUID(),
+      conversationId: conversation.id,
+      workspaceId: input.workspaceId,
+      role: "assistant",
+      content: input.content,
+      createdAt: new Date(),
+    };
+
+    if (this.messageRepository) {
+      const existing = this.messageRepository.items.get(conversation.id) ?? [];
+      this.messageRepository.items.set(conversation.id, [...existing, assistantMessage]);
+    }
+
+    return { conversation, assistantMessage };
   }
 
   async findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null> {

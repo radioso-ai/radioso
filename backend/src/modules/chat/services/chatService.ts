@@ -29,6 +29,7 @@ import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSetting
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
+import type { ChatResponse } from "../types/chatResponses.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -140,14 +141,7 @@ export class ChatService {
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
-  }): Promise<{
-    conversationId: string;
-    answer: string;
-    citations?: ChatCitation[];
-    answerSegments?: AnswerSegment[];
-    retrievalInfo: RetrievalInfo;
-    retrievalTrace: RetrievalTrace;
-  }> {
+  }): Promise<ChatResponse> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
 

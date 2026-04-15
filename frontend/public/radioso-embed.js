@@ -30,17 +30,7 @@
     }
   }
 
-  const createPanel = (scriptUrl, token) => {
-    const iframe = document.createElement('iframe')
-    iframe.title = 'Radioso embedded chat'
-    iframe.loading = 'lazy'
-    iframe.referrerPolicy = 'no-referrer-when-downgrade'
-    iframe.allow = 'clipboard-read; clipboard-write'
-    iframe.style.border = '0'
-    iframe.style.width = '100%'
-    iframe.style.height = '100%'
-    iframe.src = new URL(`/embed/${encodeURIComponent(token)}`, scriptUrl).toString()
-
+  const createPanel = () => {
     const panel = document.createElement('div')
     panel.setAttribute('aria-hidden', 'true')
     panel.style.position = 'absolute'
@@ -53,9 +43,21 @@
     panel.style.background = 'hsl(0 0% 100%)'
     panel.style.border = '1px solid rgba(148, 163, 184, 0.35)'
     panel.style.display = 'none'
-    panel.appendChild(iframe)
 
     return panel
+  }
+
+  const createIframe = (scriptUrl, token) => {
+    const iframe = document.createElement('iframe')
+    iframe.title = 'Radioso embedded chat'
+    iframe.loading = 'lazy'
+    iframe.referrerPolicy = 'no-referrer-when-downgrade'
+    iframe.allow = 'clipboard-read; clipboard-write'
+    iframe.style.border = '0'
+    iframe.style.width = '100%'
+    iframe.style.height = '100%'
+    iframe.src = new URL(`/embed/${encodeURIComponent(token)}`, scriptUrl).toString()
+    return iframe
   }
 
   const bootstrapEmbeddedSession = async (scriptUrl, token, options) => {
@@ -158,8 +160,7 @@
       host.style.alignItems = 'flex-start'
     }
 
-    const panel = createPanel(scriptUrl, token)
-    const iframe = panel.querySelector('iframe')
+    const panel = createPanel()
     panel.style.bottom = '72px'
     panel.style.right = '0'
     panel.style.left = 'auto'
@@ -172,6 +173,27 @@
     const button = createButton(label, icon)
     let isOpen = false
     let bootstrapPromise = null
+    let iframe = null
+
+    const ensureIframe = () => {
+      if (iframe) {
+        return iframe
+      }
+
+      iframe = createIframe(scriptUrl, token)
+      panel.appendChild(iframe)
+      return iframe
+    }
+
+    const destroyIframe = () => {
+      if (!iframe) {
+        return
+      }
+
+      iframe.remove()
+      iframe = null
+      bootstrapPromise = null
+    }
 
     const handleIframeMessage = (event) => {
       if (event.source !== iframe?.contentWindow) {
@@ -213,6 +235,11 @@
 
     button.addEventListener('click', () => {
       isOpen = !isOpen
+      if (isOpen) {
+        ensureIframe()
+      } else {
+        destroyIframe()
+      }
       updatePanelVisibility()
     })
 

@@ -33,13 +33,11 @@ export const shouldUseSecureAnonymousCookie = (req: Request) => {
   }
 
   const forwardedHost = req.get("x-forwarded-host");
-  const host = req.get("host");
-
-  if (isLoopbackHost(forwardedHost) || isLoopbackHost(host)) {
-    return false;
+  if (forwardedHost) {
+    return !isLoopbackHost(forwardedHost);
   }
 
-  return true;
+  return !isLoopbackHost(req.get("host"));
 };
 
 export const resolveAnonymousSession = (

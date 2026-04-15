@@ -165,6 +165,17 @@ describe("resolveAnonymousSession", () => {
     expect(shouldUseSecureAnonymousCookie(req)).toBe(true);
   });
 
+  it("prefers forwarded host over internal loopback host in production", async () => {
+    process.env.NODE_ENV = "production";
+
+    const { req } = createMockReqRes({}, {}, {
+      host: "localhost:3000",
+      "x-forwarded-host": "app.example.com",
+    });
+
+    expect(shouldUseSecureAnonymousCookie(req)).toBe(true);
+  });
+
   it("sets a non-secure anonymous cookie for localhost-hosted public chat in production", async () => {
     process.env.NODE_ENV = "production";
 

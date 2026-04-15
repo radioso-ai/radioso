@@ -53,6 +53,26 @@ interface HistoryPageSnapshot<T> {
   nextCursor: string | null
 }
 
+const formatConversationSource = (sourceChannel: string | null, sourceOrigin: string | null) => {
+  if (sourceChannel === 'website_embed' && sourceOrigin) {
+    try {
+      return `Embedded from ${new URL(sourceOrigin).host}`
+    } catch {
+      return `Embedded from ${sourceOrigin}`
+    }
+  }
+
+  if (sourceChannel === 'website_embed') {
+    return 'Embedded chat'
+  }
+
+  if (sourceChannel === 'anonymous') {
+    return 'Anonymous public chat'
+  }
+
+  return sourceChannel
+}
+
 export function ChatHistoryView({
   accountId,
   onboarding,
@@ -741,16 +761,23 @@ export function ChatHistoryView({
                   {selectedItem?.kind === 'chat' ? 'Conversation details' : 'Search details'}
                 </DrawerTitle>
                 {selectedItem ? (
-                  <CopyValueField
-                    label={selectedItem.kind === 'chat' ? 'Conversation ID:' : 'Search ID:'}
-                    value={selectedItem.id}
-                    copyValue={selectedItem.id}
-                    ariaLabel={selectedItem.kind === 'chat' ? 'Copy conversation ID' : 'Copy search ID'}
-                    compact
-                    wrap
-                    fitContent
-                    inlineLabel
-                  />
+                  <div className="space-y-1">
+                    <CopyValueField
+                      label={selectedItem.kind === 'chat' ? 'Conversation ID:' : 'Search ID:'}
+                      value={selectedItem.id}
+                      copyValue={selectedItem.id}
+                      ariaLabel={selectedItem.kind === 'chat' ? 'Copy conversation ID' : 'Copy search ID'}
+                      compact
+                      wrap
+                      fitContent
+                      inlineLabel
+                    />
+                    {selectedItem.kind === 'chat' && conversationDetail ? (
+                      <p className="text-xs text-muted-foreground">
+                        {formatConversationSource(conversationDetail.sourceChannel, conversationDetail.sourceOrigin) ?? 'Direct chat'}
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
                 <DrawerDescription className="sr-only">History details panel</DrawerDescription>
               </div>

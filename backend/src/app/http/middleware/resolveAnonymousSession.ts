@@ -95,6 +95,8 @@ export const resolveAnonymousSession = (
       res.locals.workspaceName = workspace.name;
       res.locals.anonymousSessionId = sessionId;
       res.locals.anonymousRateLimit = workspace.anonymousRateLimit;
+      res.locals.sourceChannel = hasValidEmbedSession ? "website_embed" : "anonymous";
+      res.locals.sourceOrigin = hasValidEmbedSession ? embedSession?.sourceOrigin ?? null : null;
       res.locals.assistantBootstrapActive = isAssistantBootstrapActive(workspace);
       next();
     } catch (error) {

@@ -7,6 +7,7 @@ const websiteEmbedSessionPayloadSchema = z.object({
   workspaceId: z.string().uuid(),
   publicChatToken: z.string().min(1),
   anonymousSessionId: z.string().uuid(),
+  sourceOrigin: z.string().min(1),
   expiresAt: z.string().datetime(),
 });
 

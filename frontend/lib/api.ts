@@ -625,6 +625,7 @@ export interface ChatStreamCompletion {
 export interface ChatConversationSummary {
   id: string
   sourceChannel: string | null
+  sourceOrigin: string | null
   anonymousSessionId: string | null
   createdAt: string
   updatedAt: string
@@ -675,6 +676,7 @@ export interface ChatConversationDetail {
   conversationId: string
   workspaceId: string
   sourceChannel: string | null
+  sourceOrigin: string | null
   createdAt: string
   updatedAt: string
   messageCount: number

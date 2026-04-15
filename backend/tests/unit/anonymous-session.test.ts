@@ -231,6 +231,7 @@ describe("resolveAnonymousSession", () => {
       workspaceId: workspace.id,
       publicChatToken: "test-token-1234567890",
       anonymousSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+      sourceOrigin: "https://example.com",
     });
 
     const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);

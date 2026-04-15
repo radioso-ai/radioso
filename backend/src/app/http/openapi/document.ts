@@ -601,6 +601,7 @@ const ChatConversationSummarySchema = registry.register(
   z.object({
     id: z.string().uuid(),
     sourceChannel: z.string().nullable(),
+    sourceOrigin: z.string().nullable(),
     anonymousSessionId: z.string().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -685,6 +686,7 @@ const ChatConversationDetailSchema = registry.register(
     conversationId: z.string().uuid(),
     workspaceId: z.string().uuid(),
     sourceChannel: z.string().nullable(),
+    sourceOrigin: z.string().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     messageCount: z.number().int().min(0),

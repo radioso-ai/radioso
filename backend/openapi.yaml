@@ -1412,6 +1412,10 @@ components:
           type:
             - string
             - "null"
+        sourceOrigin:
+          type:
+            - string
+            - "null"
         anonymousSessionId:
           type:
             - string
@@ -1438,6 +1442,7 @@ components:
       required:
         - id
         - sourceChannel
+        - sourceOrigin
         - anonymousSessionId
         - createdAt
         - updatedAt
@@ -1608,6 +1613,10 @@ components:
           type:
             - string
             - "null"
+        sourceOrigin:
+          type:
+            - string
+            - "null"
         createdAt:
           type: string
           format: date-time
@@ -1646,6 +1655,7 @@ components:
         - conversationId
         - workspaceId
         - sourceChannel
+        - sourceOrigin
         - createdAt
         - updatedAt
         - messageCount

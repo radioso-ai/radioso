@@ -106,6 +106,7 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
         workspaceId: workspace.id,
         publicChatToken: workspace.anonymousChatToken,
         anonymousSessionId: randomUUID(),
+        sourceOrigin: origin,
       });
 
       res.status(200).json({

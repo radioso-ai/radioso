@@ -8,17 +8,24 @@ export interface ConversationRecord {
   id: string;
   workspaceId: string;
   sourceChannel: string | null;
+  sourceOrigin: string | null;
   anonymousSessionId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface ConversationRepositoryPort {
-  create(workspaceId: string, sourceChannel?: string | null, anonymousSessionId?: string | null): Promise<ConversationRecord>;
+  create(
+    workspaceId: string,
+    sourceChannel?: string | null,
+    anonymousSessionId?: string | null,
+    sourceOrigin?: string | null,
+  ): Promise<ConversationRecord>;
   createWithInitialAssistantMessage(input: {
     workspaceId: string;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
+    sourceOrigin?: string | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }>;
   listPageByWorkspaceId(
@@ -43,6 +50,7 @@ interface ConversationRow {
   id: string;
   workspace_id: string;
   source_channel: string | null;
+  source_origin: string | null;
   anonymous_session_id: string | null;
   created_at: Date;
   updated_at: Date;
@@ -61,6 +69,7 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
   sourceChannel: row.source_channel,
+  sourceOrigin: row.source_origin ?? null,
   anonymousSessionId: row.anonymous_session_id ?? null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
@@ -69,12 +78,17 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
 export class ConversationRepository implements ConversationRepositoryPort {
   constructor(private readonly database: Database) {}
 
-  async create(workspaceId: string, sourceChannel: string | null = null, anonymousSessionId: string | null = null): Promise<ConversationRecord> {
+  async create(
+    workspaceId: string,
+    sourceChannel: string | null = null,
+    anonymousSessionId: string | null = null,
+    sourceOrigin: string | null = null,
+  ): Promise<ConversationRecord> {
     const [row] = await this.database.query<ConversationRow>(
-      `INSERT INTO conversations (id, workspace_id, source_channel, anonymous_session_id)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at`,
-      [randomUUID(), workspaceId, sourceChannel, anonymousSessionId],
+      `INSERT INTO conversations (id, workspace_id, source_channel, source_origin, anonymous_session_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, workspace_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at`,
+      [randomUUID(), workspaceId, sourceChannel, sourceOrigin, anonymousSessionId],
     );
 
     return mapConversation(row);
@@ -90,10 +104,10 @@ export class ConversationRepository implements ConversationRepositoryPort {
       const conversationId = randomUUID();
       const messageId = randomUUID();
       const conversationResult = await client.query<ConversationRow>(
-        `INSERT INTO conversations (id, workspace_id, source_channel, anonymous_session_id)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at`,
-        [conversationId, input.workspaceId, input.sourceChannel ?? null, input.anonymousSessionId ?? null],
+        `INSERT INTO conversations (id, workspace_id, source_channel, source_origin, anonymous_session_id)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, workspace_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at`,
+        [conversationId, input.workspaceId, input.sourceChannel ?? null, input.sourceOrigin ?? null, input.anonymousSessionId ?? null],
       );
       const messageResult = await client.query<MessageRow>(
         `INSERT INTO messages (id, conversation_id, workspace_id, role, content)
@@ -157,7 +171,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     }
 
     const rows = await this.database.query<ConversationRow>(
-      `SELECT id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at
+      `SELECT id, workspace_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at
        FROM conversations
        WHERE workspace_id = $1
        ${cursorClause}
@@ -187,7 +201,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
 
   async findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null> {
     const [row] = await this.database.query<ConversationRow>(
-      `SELECT id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at
+      `SELECT id, workspace_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at
        FROM conversations
        WHERE id = $1 AND workspace_id = $2`,
       [conversationId, workspaceId],
@@ -238,7 +252,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     }
 
     const rows = await this.database.query<ConversationRow>(
-      `SELECT id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at
+      `SELECT id, workspace_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at
        FROM conversations
        WHERE workspace_id = $1 AND anonymous_session_id = $2
        ${cursorClause}
@@ -272,7 +286,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     anonymousSessionId: string,
   ): Promise<ConversationRecord | null> {
     const [row] = await this.database.query<ConversationRow>(
-      `SELECT id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at
+      `SELECT id, workspace_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at
        FROM conversations
        WHERE id = $1 AND workspace_id = $2 AND anonymous_session_id = $3`,
       [conversationId, workspaceId, anonymousSessionId],

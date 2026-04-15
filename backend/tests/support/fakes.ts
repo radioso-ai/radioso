@@ -1846,11 +1846,17 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     this.messageRepository = messageRepository;
   }
 
-  async create(workspaceId: string, sourceChannel: string | null = null, anonymousSessionId: string | null = null): Promise<ConversationRecord> {
+  async create(
+    workspaceId: string,
+    sourceChannel: string | null = null,
+    anonymousSessionId: string | null = null,
+    sourceOrigin: string | null = null,
+  ): Promise<ConversationRecord> {
     const record: ConversationRecord = {
       id: randomUUID(),
       workspaceId,
       sourceChannel,
+      sourceOrigin,
       anonymousSessionId,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -1863,9 +1869,15 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     workspaceId: string;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
+    sourceOrigin?: string | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
-    const conversation = await this.create(input.workspaceId, input.sourceChannel ?? null, input.anonymousSessionId ?? null);
+    const conversation = await this.create(
+      input.workspaceId,
+      input.sourceChannel ?? null,
+      input.anonymousSessionId ?? null,
+      input.sourceOrigin ?? null,
+    );
     const assistantMessage: MessageRecord = {
       id: randomUUID(),
       conversationId: conversation.id,

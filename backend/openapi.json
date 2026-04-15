@@ -2068,6 +2068,12 @@
               "null"
             ]
           },
+          "sourceOrigin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "anonymousSessionId": {
             "type": [
               "string",
@@ -2104,6 +2110,7 @@
         "required": [
           "id",
           "sourceChannel",
+          "sourceOrigin",
           "anonymousSessionId",
           "createdAt",
           "updatedAt",
@@ -2348,6 +2355,12 @@
               "null"
             ]
           },
+          "sourceOrigin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -2400,6 +2413,7 @@
           "conversationId",
           "workspaceId",
           "sourceChannel",
+          "sourceOrigin",
           "createdAt",
           "updatedAt",
           "messageCount",

@@ -42,6 +42,7 @@ import {
   anonymousChatSchema,
   publicConversationParamsSchema,
 } from "../routes/publicChatRoutes.js";
+import { websiteEmbedLauncherIcons, websiteEmbedLauncherPositions } from "../../../modules/settings/domain/websiteEmbedSettings.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
   answerSupportPolicies,
@@ -320,6 +321,24 @@ const GeneralSettingsResponseSchema = registry.register(
     assistantDefaultLocale: z.string().nullable(),
     proactiveGreetingEnabled: z.boolean(),
     assistantBootstrapActive: z.boolean(),
+    websiteEmbedEnabled: z.boolean(),
+    websiteEmbedToken: z.string().nullable(),
+    websiteEmbedScriptUrl: z.string().nullable(),
+    websiteEmbedSnippet: z.string().nullable(),
+    websiteEmbedAllowedOrigins: z.array(z.string()),
+    websiteEmbedLauncherLabel: z.string(),
+    websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons),
+    websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions),
+  }),
+);
+
+const PublicEmbedSessionResponseSchema = registry.register(
+  "PublicEmbedSessionResponse",
+  z.object({
+    workspaceName: z.string(),
+    publicChatToken: z.string(),
+    assistantBootstrapActive: z.boolean(),
+    expiresAt: z.string().datetime(),
   }),
 );
 
@@ -1017,6 +1036,51 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: HealthResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/public/embed/{token}/session",
+  tags: ["Public Chat"],
+  summary: "Bootstrap an embedded chat session for an approved website origin",
+  operationId: "createPublicEmbedSession",
+  request: {
+    params: tokenPathParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Embedded chat session bootstrap returned",
+      content: {
+        "application/json": {
+          schema: PublicEmbedSessionResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: "Origin not allowed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Embedded chat not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
         },
       },
     },

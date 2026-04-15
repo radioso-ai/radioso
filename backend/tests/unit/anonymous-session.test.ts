@@ -1,13 +1,33 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Request, Response, NextFunction } from "express";
-import { resolveAnonymousSession } from "../../src/app/http/middleware/resolveAnonymousSession.js";
+import {
+  ANONYMOUS_SESSION_HEADER,
+  resolveAnonymousSession,
+  shouldUseSecureAnonymousCookie,
+} from "../../src/app/http/middleware/resolveAnonymousSession.js";
 import { InMemoryWorkspaceRepository } from "../support/fakes.js";
 
-const createMockReqRes = (params: Record<string, string> = {}, cookies: Record<string, string> = {}) => {
-  const req = { params, cookies } as unknown as Request;
+const originalNodeEnv = process.env.NODE_ENV;
+
+const createMockReqRes = (
+  params: Record<string, string> = {},
+  cookies: Record<string, string> = {},
+  headers: Record<string, string> = {},
+) => {
+  const normalizedHeaders = Object.fromEntries(
+    Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]),
+  );
+  const req = {
+    params,
+    cookies,
+    get(name: string) {
+      return normalizedHeaders[name.toLowerCase()];
+    },
+  } as unknown as Request;
   const res = {
     locals: {} as Record<string, unknown>,
     cookie: (_name: string, _value: string, _options: unknown) => {},
+    setHeader: (_name: string, _value: string) => {},
   } as unknown as Response;
   let nextError: unknown = undefined;
   const next: NextFunction = (err?: unknown) => {
@@ -21,6 +41,11 @@ describe("resolveAnonymousSession", () => {
 
   beforeEach(() => {
     workspaceRepository = new InMemoryWorkspaceRepository();
+    process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
   });
 
   it("returns 404 when token is missing", async () => {
@@ -86,6 +111,23 @@ describe("resolveAnonymousSession", () => {
     expect(res.locals.anonymousSessionId).toBe("existing-session-id");
   });
 
+  it("prefers the anonymous session header when present", async () => {
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
+
+    const middleware = resolveAnonymousSession(workspaceRepository);
+    const sessionId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
+    const { req, res, next } = createMockReqRes(
+      { token: "test-token-1234567890" },
+      { [`anon_session_${workspace.id}`]: "existing-session-id" },
+      { [ANONYMOUS_SESSION_HEADER]: sessionId },
+    );
+
+    await middleware(req, res, next);
+
+    expect(res.locals.anonymousSessionId).toBe(sessionId);
+  });
+
   it("generates a new session id and sets cookie when none exists", async () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
@@ -102,5 +144,64 @@ describe("resolveAnonymousSession", () => {
     expect(setCookieName).toBe(`anon_session_${workspace.id}`);
     expect(res.locals.anonymousSessionId).toBeDefined();
     expect(typeof res.locals.anonymousSessionId).toBe("string");
+  });
+
+  it("does not mark anonymous cookies as secure for localhost hosts in production", async () => {
+    process.env.NODE_ENV = "production";
+
+    const { req } = createMockReqRes({}, {}, { host: "localhost:3000" });
+
+    expect(shouldUseSecureAnonymousCookie(req)).toBe(false);
+  });
+
+  it("marks anonymous cookies as secure for non-local hosts in production", async () => {
+    process.env.NODE_ENV = "production";
+
+    const { req } = createMockReqRes({}, {}, { host: "app.example.com" });
+
+    expect(shouldUseSecureAnonymousCookie(req)).toBe(true);
+  });
+
+  it("sets a non-secure anonymous cookie for localhost-hosted public chat in production", async () => {
+    process.env.NODE_ENV = "production";
+
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
+
+    const middleware = resolveAnonymousSession(workspaceRepository);
+    let cookieOptions: Record<string, unknown> | undefined;
+    const { req, res, next } = createMockReqRes(
+      { token: "test-token-1234567890" },
+      {},
+      { host: "localhost:3000" },
+    );
+    (res as unknown as { cookie: (name: string, value: string, options: Record<string, unknown>) => void }).cookie =
+      (_name, _value, options) => {
+        cookieOptions = options;
+      };
+
+    await middleware(req, res, next);
+
+    expect(cookieOptions?.secure).toBe(false);
+  });
+
+  it("exposes the resolved anonymous session id in a response header", async () => {
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
+
+    const middleware = resolveAnonymousSession(workspaceRepository);
+    let sessionHeaderValue = "";
+    const { req, res, next } = createMockReqRes({ token: "test-token-1234567890" });
+    (res as unknown as { setHeader: (name: string, value: string) => void }).setHeader = (name, value) => {
+      if (name.toLowerCase() === ANONYMOUS_SESSION_HEADER) {
+        sessionHeaderValue = value;
+      }
+    };
+
+    await middleware(req, res, next);
+
+    expect(sessionHeaderValue).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
   });
 });

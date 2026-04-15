@@ -7,9 +7,38 @@ import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspace
 import { isAssistantBootstrapActive } from "../../../modules/settings/domain/assistantBootstrapSettings.js";
 
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
+export const ANONYMOUS_SESSION_HEADER = "x-radioso-anonymous-session";
 const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
 });
+
+const isLoopbackHost = (host: string | undefined) => {
+  if (!host) {
+    return false;
+  }
+
+  const normalizedHost = host.trim().toLowerCase();
+  const withoutPort = normalizedHost.startsWith("[")
+    ? normalizedHost.slice(0, normalizedHost.indexOf("]") + 1)
+    : normalizedHost.split(":")[0];
+
+  return withoutPort === "localhost" || withoutPort === "127.0.0.1" || withoutPort === "[::1]";
+};
+
+export const shouldUseSecureAnonymousCookie = (req: Request) => {
+  if (process.env.NODE_ENV !== "production") {
+    return false;
+  }
+
+  const forwardedHost = req.get("x-forwarded-host");
+  const host = req.get("host");
+
+  if (isLoopbackHost(forwardedHost) || isLoopbackHost(host)) {
+    return false;
+  }
+
+  return true;
+};
 
 export const resolveAnonymousSession = (workspaceRepository: WorkspaceRepositoryPort): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -30,17 +59,23 @@ export const resolveAnonymousSession = (workspaceRepository: WorkspaceRepository
       }
 
       const cookieName = `anon_session_${workspace.id}`;
-      let sessionId = req.cookies?.[cookieName] as string | undefined;
+      const headerSessionId = req.get(ANONYMOUS_SESSION_HEADER);
+      const parsedHeaderSessionId = headerSessionId && z.string().uuid().safeParse(headerSessionId).success
+        ? headerSessionId
+        : undefined;
+      let sessionId = parsedHeaderSessionId ?? (req.cookies?.[cookieName] as string | undefined);
 
       if (!sessionId) {
         sessionId = randomUUID();
-        res.cookie(cookieName, sessionId, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          maxAge: COOKIE_MAX_AGE_SECONDS * 1000,
-        });
       }
+
+      res.cookie(cookieName, sessionId, {
+        httpOnly: true,
+        secure: shouldUseSecureAnonymousCookie(req),
+        sameSite: "lax",
+        maxAge: COOKIE_MAX_AGE_SECONDS * 1000,
+      });
+      res.setHeader(ANONYMOUS_SESSION_HEADER, sessionId);
 
       res.locals.workspaceId = workspace.id;
       res.locals.workspaceName = workspace.name;

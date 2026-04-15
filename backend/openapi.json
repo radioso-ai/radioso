@@ -995,6 +995,36 @@
           },
           "proactiveGreetingEnabled": {
             "type": "boolean"
+          },
+          "websiteEmbedEnabled": {
+            "type": "boolean"
+          },
+          "websiteEmbedAllowedOrigins": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 20
+          },
+          "websiteEmbedLauncherLabel": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "websiteEmbedLauncherIcon": {
+            "type": "string",
+            "enum": [
+              "chat",
+              "sparkles",
+              "message"
+            ]
+          },
+          "websiteEmbedLauncherPosition": {
+            "type": "string",
+            "enum": [
+              "bottom-right",
+              "bottom-left"
+            ]
           }
         }
       },
@@ -1035,6 +1065,51 @@
           },
           "assistantBootstrapActive": {
             "type": "boolean"
+          },
+          "websiteEmbedEnabled": {
+            "type": "boolean"
+          },
+          "websiteEmbedToken": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "websiteEmbedScriptUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "websiteEmbedSnippet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "websiteEmbedAllowedOrigins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "websiteEmbedLauncherLabel": {
+            "type": "string"
+          },
+          "websiteEmbedLauncherIcon": {
+            "type": "string",
+            "enum": [
+              "chat",
+              "sparkles",
+              "message"
+            ]
+          },
+          "websiteEmbedLauncherPosition": {
+            "type": "string",
+            "enum": [
+              "bottom-right",
+              "bottom-left"
+            ]
           }
         },
         "required": [
@@ -1046,7 +1121,39 @@
           "greetingInstruction",
           "assistantDefaultLocale",
           "proactiveGreetingEnabled",
-          "assistantBootstrapActive"
+          "assistantBootstrapActive",
+          "websiteEmbedEnabled",
+          "websiteEmbedToken",
+          "websiteEmbedScriptUrl",
+          "websiteEmbedSnippet",
+          "websiteEmbedAllowedOrigins",
+          "websiteEmbedLauncherLabel",
+          "websiteEmbedLauncherIcon",
+          "websiteEmbedLauncherPosition"
+        ]
+      },
+      "PublicEmbedSessionResponse": {
+        "type": "object",
+        "properties": {
+          "workspaceName": {
+            "type": "string"
+          },
+          "publicChatToken": {
+            "type": "string"
+          },
+          "assistantBootstrapActive": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "workspaceName",
+          "publicChatToken",
+          "assistantBootstrapActive",
+          "expiresAt"
         ]
       },
       "WorkspaceIngestionReprocessResponse": {
@@ -3320,6 +3427,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/embed/{token}/session": {
+      "post": {
+        "tags": [
+          "Public Chat"
+        ],
+        "summary": "Bootstrap an embedded chat session for an approved website origin",
+        "operationId": "createPublicEmbedSession",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Embedded chat session bootstrap returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicEmbedSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Embedded chat not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

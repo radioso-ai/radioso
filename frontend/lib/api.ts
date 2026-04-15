@@ -4,6 +4,8 @@ const API_TOKEN_STORAGE_KEY = "radioso.apiToken";
 const WORKSPACE_TOKENS_STORAGE_KEY = "radioso.workspaceTokens";
 const ACTIVE_WORKSPACE_STORAGE_KEY = "radioso.activeWorkspaceId";
 const WORKSPACE_HEADER = 'X-Workspace-Id'
+const ANONYMOUS_SESSION_HEADER = 'X-Radioso-Anonymous-Session'
+const ANONYMOUS_SESSION_STORAGE_PREFIX = 'radioso.anonymousSession.'
 
 export const activateWorkspaceToken = (workspaceId: string): boolean => {
   if (typeof window !== "undefined") {
@@ -36,6 +38,48 @@ export const removeWorkspaceToken = (workspaceId: string) => {
     window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
   }
 };
+
+const getAnonymousSessionStorageKey = (token: string) => `${ANONYMOUS_SESSION_STORAGE_PREFIX}${token}`
+
+const readAnonymousSessionId = (token: string) => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  return window.sessionStorage.getItem(getAnonymousSessionStorageKey(token))
+}
+
+const writeAnonymousSessionId = (token: string, sessionId: string | null) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const storageKey = getAnonymousSessionStorageKey(token)
+  if (!sessionId) {
+    window.sessionStorage.removeItem(storageKey)
+    return
+  }
+
+  window.sessionStorage.setItem(storageKey, sessionId)
+}
+
+const attachAnonymousSessionHeader = (token: string, headers?: HeadersInit) => {
+  const nextHeaders = new Headers(headers)
+  const sessionId = readAnonymousSessionId(token)
+
+  if (sessionId && !nextHeaders.has(ANONYMOUS_SESSION_HEADER)) {
+    nextHeaders.set(ANONYMOUS_SESSION_HEADER, sessionId)
+  }
+
+  return nextHeaders
+}
+
+const persistAnonymousSessionHeader = (token: string, response: Response) => {
+  const sessionId = response.headers.get(ANONYMOUS_SESSION_HEADER)
+  if (sessionId) {
+    writeAnonymousSessionId(token, sessionId)
+  }
+}
 
 const buildError = async (response: Response): Promise<ErrorResponse> => {
   try {
@@ -1391,6 +1435,21 @@ export interface GeneralSettings {
   assistantDefaultLocale: string | null
   proactiveGreetingEnabled: boolean
   assistantBootstrapActive: boolean
+  websiteEmbedEnabled?: boolean
+  websiteEmbedToken?: string | null
+  websiteEmbedScriptUrl?: string | null
+  websiteEmbedSnippet?: string | null
+  websiteEmbedAllowedOrigins?: string[]
+  websiteEmbedLauncherLabel?: string
+  websiteEmbedLauncherIcon?: 'chat' | 'sparkles' | 'message'
+  websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
+}
+
+export interface PublicEmbedSessionResponse {
+  workspaceName: string
+  publicChatToken: string
+  assistantBootstrapActive: boolean
+  expiresAt: string
 }
 
 export interface WorkspaceTokenResponse {
@@ -1418,6 +1477,14 @@ export const generalSettingsApi = {
     greetingInstruction?: string
     assistantDefaultLocale?: string | null
     proactiveGreetingEnabled?: boolean
+    websiteEmbedEnabled?: boolean
+    websiteEmbedToken?: string | null
+    websiteEmbedScriptUrl?: string | null
+    websiteEmbedSnippet?: string | null
+    websiteEmbedAllowedOrigins?: string[]
+    websiteEmbedLauncherLabel?: string
+    websiteEmbedLauncherIcon?: 'chat' | 'sparkles' | 'message'
+    websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
   }): Promise<GeneralSettings> {
     return request<GeneralSettings>('/settings/general', {
       method: 'PUT',
@@ -1486,10 +1553,23 @@ export const accountApi = {
 // Public Chat API (anonymous, cookie-based auth)
 export const publicChatApi = {
   async sendMessage(token: string, data: { query: string; stream: boolean; conversationId?: string }): Promise<ChatResponse> {
-    return request<ChatResponse>(`/public/chat/${token}`, {
+    const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: attachAnonymousSessionHeader(token, {
+        'Content-Type': 'application/json',
+        'X-Forwarded-Prefix': '/backend',
+      }),
       body: JSON.stringify(data),
     })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    persistAnonymousSessionHeader(token, response)
+    return response.json() as Promise<ChatResponse>
   },
 
   async streamMessage(
@@ -1501,15 +1581,18 @@ export const publicChatApi = {
       method: 'POST',
       cache: 'no-store',
       credentials: 'include',
-      headers: {
+      headers: attachAnonymousSessionHeader(token, {
         'Content-Type': 'application/json',
-      },
+        'X-Forwarded-Prefix': '/backend',
+      }),
       body: JSON.stringify(data),
     })
 
     if (!response.ok) {
       throw await buildError(response)
     }
+
+    persistAnonymousSessionHeader(token, response)
 
     const contentType = response.headers.get('content-type') ?? ''
 
@@ -1537,11 +1620,28 @@ export const publicChatApi = {
     token: string,
     data: Pick<ChatRequest, 'stream' | 'bootstrapGreeting' | 'userExpectedLocale'>,
   ): Promise<ChatResponse | undefined> {
-    return request<ChatResponse>(`/public/chat/${token}`, {
+    const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',
+      cache: 'no-store',
+      headers: attachAnonymousSessionHeader(token, {
+        'Content-Type': 'application/json',
+        'X-Forwarded-Prefix': '/backend',
+      }),
       body: JSON.stringify(data),
       credentials: 'include',
     })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    persistAnonymousSessionHeader(token, response)
+
+    if (response.status === 204) {
+      return undefined
+    }
+
+    return response.json() as Promise<ChatResponse>
   },
 
   async listConversations(
@@ -1560,10 +1660,21 @@ export const publicChatApi = {
     }
 
     const query = searchParams.toString()
-    return request<ChatHistoryListResponse>(`/public/chat/${token}${query ? `?${query}` : ''}`, {
+    const response = await fetch(`${API_BASE}/public/chat/${token}${query ? `?${query}` : ''}`, {
       method: 'GET',
+      cache: 'no-store',
       credentials: 'include',
+      headers: attachAnonymousSessionHeader(token, {
+        'X-Forwarded-Prefix': '/backend',
+      }),
     })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    persistAnonymousSessionHeader(token, response)
+    return response.json() as Promise<ChatHistoryListResponse>
   },
 
   async getConversationDetail(
@@ -1583,8 +1694,29 @@ export const publicChatApi = {
     }
 
     const query = searchParams.toString()
-    return request<ChatConversationDetail>(`/public/chat/${token}/history/${conversationId}${query ? `?${query}` : ''}`, {
+    const response = await fetch(`${API_BASE}/public/chat/${token}/history/${conversationId}${query ? `?${query}` : ''}`, {
       method: 'GET',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: attachAnonymousSessionHeader(token, {
+        'X-Forwarded-Prefix': '/backend',
+      }),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    persistAnonymousSessionHeader(token, response)
+    return response.json() as Promise<ChatConversationDetail>
+  },
+}
+
+export const publicEmbedApi = {
+  async bootstrapSession(token: string, data: { origin: string }): Promise<PublicEmbedSessionResponse> {
+    return request<PublicEmbedSessionResponse>(`/public/embed/${token}/session`, {
+      method: 'POST',
+      body: JSON.stringify(data),
       credentials: 'include',
     })
   },

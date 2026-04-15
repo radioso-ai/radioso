@@ -438,6 +438,12 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       anonymousChatEnabled: false,
       anonymousChatToken: null,
       anonymousRateLimit: 10,
+      websiteEmbedEnabled: false,
+      websiteEmbedToken: null,
+      websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Chat with us",
+      websiteEmbedLauncherIcon: "chat",
+      websiteEmbedLauncherPosition: "bottom-right",
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -456,6 +462,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
 
   async findByAnonymousChatToken(token: string): Promise<WorkspaceRecord | null> {
     return [...this.items.values()].find((w) => w.anonymousChatToken === token) ?? null;
+  }
+
+  async findByWebsiteEmbedToken(token: string): Promise<WorkspaceRecord | null> {
+    return [...this.items.values()].find((w) => w.websiteEmbedToken === token) ?? null;
   }
 
   async listByAccountId(accountId: string): Promise<WorkspaceRecord[]> {
@@ -536,6 +546,12 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       greetingInstruction: string;
       assistantDefaultLocale: string | null;
       proactiveGreetingEnabled: boolean;
+      websiteEmbedEnabled: boolean;
+      websiteEmbedToken: string | null;
+      websiteEmbedAllowedOrigins: string[];
+      websiteEmbedLauncherLabel: string;
+      websiteEmbedLauncherIcon: WorkspaceRecord["websiteEmbedLauncherIcon"];
+      websiteEmbedLauncherPosition: WorkspaceRecord["websiteEmbedLauncherPosition"];
     },
   ): Promise<WorkspaceRecord> {
     const item = this.items.get(workspaceId);
@@ -552,6 +568,12 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       greetingInstruction: input.greetingInstruction,
       assistantDefaultLocale: input.assistantDefaultLocale,
       proactiveGreetingEnabled: input.proactiveGreetingEnabled,
+      websiteEmbedEnabled: input.websiteEmbedEnabled,
+      websiteEmbedToken: input.websiteEmbedToken,
+      websiteEmbedAllowedOrigins: input.websiteEmbedAllowedOrigins,
+      websiteEmbedLauncherLabel: input.websiteEmbedLauncherLabel,
+      websiteEmbedLauncherIcon: input.websiteEmbedLauncherIcon,
+      websiteEmbedLauncherPosition: input.websiteEmbedLauncherPosition,
       updatedAt: new Date(),
     };
     this.items.set(workspaceId, updated);

@@ -3,6 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
+import { badRequest } from "../../../shared/domain/errors.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
@@ -16,6 +17,12 @@ import {
   isAssistantBootstrapActive,
   validateAssistantBootstrapSettings,
 } from "../../../modules/settings/domain/assistantBootstrapSettings.js";
+import {
+  DEFAULT_WEBSITE_EMBED_SCRIPT_PATH,
+  validateWebsiteEmbedSettings,
+  websiteEmbedLauncherIcons,
+  websiteEmbedLauncherPositions,
+} from "../../../modules/settings/domain/websiteEmbedSettings.js";
 import {
   FIXED_WINDOW_CHUNK_OVERLAP_MAX,
   FIXED_WINDOW_CHUNK_OVERLAP_MIN,
@@ -61,6 +68,11 @@ export const updateGeneralSettingsSchema = z.object({
   greetingInstruction: z.string().max(200).optional(),
   assistantDefaultLocale: z.string().max(35).nullable().optional(),
   proactiveGreetingEnabled: z.boolean().optional(),
+  websiteEmbedEnabled: z.boolean().optional(),
+  websiteEmbedAllowedOrigins: z.array(z.string().max(200)).max(20).optional(),
+  websiteEmbedLauncherLabel: z.string().max(80).optional(),
+  websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons).optional(),
+  websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions).optional(),
 });
 
 export const updateIngestionSettingsSchema = z.object({
@@ -151,6 +163,46 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     return `${baseUrl}/${token}`;
   };
 
+  const buildWebsiteEmbedScriptUrl = (): string | null => {
+    const baseUrl = dependencies.env.PUBLIC_CHAT_BASE_URL;
+    if (!baseUrl) return null;
+
+    try {
+      return new URL(DEFAULT_WEBSITE_EMBED_SCRIPT_PATH, new URL(baseUrl).origin).toString();
+    } catch {
+      return null;
+    }
+  };
+
+  const buildWebsiteEmbedSnippet = (
+    workspace: NonNullable<Awaited<ReturnType<typeof dependencies.workspaceRepository.findById>>>,
+  ): string | null => {
+    if (!workspace.websiteEmbedEnabled || !workspace.websiteEmbedToken) {
+      return null;
+    }
+
+    const scriptUrl = buildWebsiteEmbedScriptUrl();
+    if (!scriptUrl) {
+      return null;
+    }
+
+    const originAttribute =
+      workspace.websiteEmbedAllowedOrigins.length > 0
+        ? ` data-radioso-allowed-origins="${workspace.websiteEmbedAllowedOrigins.join(",")}"`
+        : "";
+
+    return [
+      `<script`,
+      `  async`,
+      `  src="${scriptUrl}"`,
+      `  data-radioso-token="${workspace.websiteEmbedToken}"`,
+      `  data-radioso-launcher-label="${workspace.websiteEmbedLauncherLabel}"`,
+      `  data-radioso-launcher-icon="${workspace.websiteEmbedLauncherIcon}"`,
+      `  data-radioso-launcher-position="${workspace.websiteEmbedLauncherPosition}"${originAttribute}`,
+      `></script>`,
+    ].join("\n");
+  };
+
   const buildGeneralSettingsResponse = (workspace: Awaited<ReturnType<typeof dependencies.workspaceRepository.findById>>) => {
     if (!workspace) {
       return null;
@@ -166,6 +218,14 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
       assistantDefaultLocale: workspace.assistantDefaultLocale,
       proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
       assistantBootstrapActive: isAssistantBootstrapActive(workspace),
+      websiteEmbedEnabled: workspace.websiteEmbedEnabled,
+      websiteEmbedToken: workspace.websiteEmbedToken,
+      websiteEmbedScriptUrl: buildWebsiteEmbedScriptUrl(),
+      websiteEmbedSnippet: buildWebsiteEmbedSnippet(workspace),
+      websiteEmbedAllowedOrigins: workspace.websiteEmbedAllowedOrigins,
+      websiteEmbedLauncherLabel: workspace.websiteEmbedLauncherLabel,
+      websiteEmbedLauncherIcon: workspace.websiteEmbedLauncherIcon,
+      websiteEmbedLauncherPosition: workspace.websiteEmbedLauncherPosition,
     };
   };
 
@@ -200,6 +260,29 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
       if (enabled && !token) {
         token = randomBytes(16).toString("base64url");
       }
+      let websiteEmbedToken = workspace.websiteEmbedToken;
+      let normalizedWebsiteEmbed;
+      try {
+        normalizedWebsiteEmbed = validateWebsiteEmbedSettings({
+          websiteEmbedEnabled: req.body.websiteEmbedEnabled ?? workspace.websiteEmbedEnabled,
+          websiteEmbedToken,
+          websiteEmbedAllowedOrigins: req.body.websiteEmbedAllowedOrigins ?? workspace.websiteEmbedAllowedOrigins,
+          websiteEmbedLauncherLabel: req.body.websiteEmbedLauncherLabel ?? workspace.websiteEmbedLauncherLabel,
+          websiteEmbedLauncherIcon: req.body.websiteEmbedLauncherIcon ?? workspace.websiteEmbedLauncherIcon,
+          websiteEmbedLauncherPosition: req.body.websiteEmbedLauncherPosition ?? workspace.websiteEmbedLauncherPosition,
+        });
+      } catch (error) {
+        if (error instanceof Error) {
+          throw badRequest(error.message);
+        }
+        throw error;
+      }
+      if (normalizedWebsiteEmbed.websiteEmbedEnabled && !websiteEmbedToken) {
+        websiteEmbedToken = randomBytes(16).toString("base64url");
+      }
+      if (normalizedWebsiteEmbed.websiteEmbedEnabled && !token) {
+        token = randomBytes(16).toString("base64url");
+      }
 
       const normalizedBootstrap = validateAssistantBootstrapSettings({
         assistantName: req.body.assistantName ?? workspace.assistantName,
@@ -217,6 +300,12 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         anonymousChatToken: token,
         anonymousRateLimit: rateLimit,
         ...normalizedBootstrap,
+        websiteEmbedEnabled: normalizedWebsiteEmbed.websiteEmbedEnabled,
+        websiteEmbedToken,
+        websiteEmbedAllowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
+        websiteEmbedLauncherLabel: normalizedWebsiteEmbed.websiteEmbedLauncherLabel,
+        websiteEmbedLauncherIcon: normalizedWebsiteEmbed.websiteEmbedLauncherIcon,
+        websiteEmbedLauncherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
       });
 
       if (enabled !== workspace.anonymousChatEnabled) {
@@ -227,6 +316,19 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
           eventType: enabled ? "anonymous_chat.enabled" : "anonymous_chat.disabled",
           eventStatus: "success",
           metadata: { anonymousRateLimit: rateLimit },
+        });
+      }
+      if (normalizedWebsiteEmbed.websiteEmbedEnabled !== workspace.websiteEmbedEnabled) {
+        const { accountId } = res.locals as { accountId: string };
+        await dependencies.auditService.record({
+          accountId,
+          workspaceId,
+          eventType: normalizedWebsiteEmbed.websiteEmbedEnabled ? "website_embed.enabled" : "website_embed.disabled",
+          eventStatus: "success",
+          metadata: {
+            allowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
+            launcherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
+          },
         });
       }
 

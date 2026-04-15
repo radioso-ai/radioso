@@ -6,6 +6,7 @@ import {
   type ValidatedAnswer,
   VALIDATION_DISPOSITION,
 } from "./answerSupportValidationTypes.js";
+import type { GroundedMissResponseComposer } from "./groundedMissResponseComposer.js";
 import type { UnsupportedNoticeGenerator } from "./unsupportedNoticeGenerator.js";
 
 const NON_SUBSTANTIVE_PHRASES = new Set([
@@ -57,9 +58,11 @@ export class AnswerSupportValidator {
     answer: string;
     answerSegments: AnswerSegment[];
     citationEvidence: CitationEvidence[];
+    retrievedContextSummaries: Array<{ title: string; content: string }>;
     citationDisplayEnabled: boolean;
     answerSupportPolicy: AnswerSupportPolicy;
     unsupportedNoticeGenerator: UnsupportedNoticeGenerator;
+    groundedMissResponseComposer: GroundedMissResponseComposer;
   }): Promise<ValidatedAnswer> {
     const segmentResults = await Promise.all(input.answerSegments.map(async (segment) => {
       if (isNonSubstantiveText(segment.text)) {
@@ -113,7 +116,13 @@ export class AnswerSupportValidator {
     const nonSubstantiveSegmentCount = segmentResults.filter((segment) => segment.disposition === VALIDATION_DISPOSITION.NON_SUBSTANTIVE).length;
 
     const visibleSegments = supportedSegmentCount === 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)
-      ? [{ text: stripPrefix(segmentResults.find((segment) => segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED)?.text ?? DEFAULT_UNSUPPORTED_NOTICE) }]
+      ? [{
+          text: await input.groundedMissResponseComposer.composeUnsupportedWithContext({
+            query: input.query,
+            unsupportedText: input.answer,
+            contexts: input.retrievedContextSummaries,
+          }),
+        }]
       : this.buildVisibleSegments(segmentResults);
 
     const { citations, answerSegments } = this.compactVisibleArtifacts(visibleSegments, input.citationEvidence);

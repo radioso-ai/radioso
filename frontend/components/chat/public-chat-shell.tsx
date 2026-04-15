@@ -204,8 +204,9 @@ function PublicChatContent() {
 export function PublicChatShell({ token }: { token: string }) {
   return (
     <AnonymousChatProvider token={token}>
-      <PublicChatContent />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <PublicChatContent />
+      </div>
     </AnonymousChatProvider>
   )
 }
-

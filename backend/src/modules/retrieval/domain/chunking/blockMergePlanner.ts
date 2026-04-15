@@ -11,17 +11,13 @@ export interface BlockMergePlanInput {
   similarityThreshold?: number;
 }
 
-export const DEFAULT_MIN_CHUNK_TOKENS = RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeDefault;
-export const DEFAULT_MAX_CHUNK_TOKENS = RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeDefault;
-const DEFAULT_SIMILARITY_THRESHOLD = RETRIEVAL_BEHAVIOR.chunking.blockMergeSimilarityThreshold;
-
 export const planStructuredChunks = ({
   content,
   blocks,
   adjacentSimilarities,
-  minChunkTokens = DEFAULT_MIN_CHUNK_TOKENS,
-  maxChunkTokens = DEFAULT_MAX_CHUNK_TOKENS,
-  similarityThreshold = DEFAULT_SIMILARITY_THRESHOLD,
+  minChunkTokens = RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeDefault,
+  maxChunkTokens = RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeDefault,
+  similarityThreshold = RETRIEVAL_BEHAVIOR.chunking.blockMergeSimilarityThreshold,
 }: BlockMergePlanInput): ChunkOutput[] => {
   if (blocks.length === 0) {
     return [];

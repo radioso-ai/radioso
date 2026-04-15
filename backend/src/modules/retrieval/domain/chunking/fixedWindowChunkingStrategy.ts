@@ -6,15 +6,12 @@ import {
 } from "./chunkingStrategy.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 
-const TARGET_CHUNK_SIZE = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeDefault;
-const CHUNK_OVERLAP = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapDefault;
-
 export const chunkFixedWindowMarkdown = (
   content: string,
   options: { chunkSize?: number; chunkOverlap?: number } = {},
 ): ChunkOutput[] => {
-  const chunkSize = options.chunkSize ?? TARGET_CHUNK_SIZE;
-  const chunkOverlap = options.chunkOverlap ?? CHUNK_OVERLAP;
+  const chunkSize = options.chunkSize ?? RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeDefault;
+  const chunkOverlap = options.chunkOverlap ?? RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapDefault;
   const normalized = normalizeMarkdown(content);
 
   if (normalized.length === 0) {

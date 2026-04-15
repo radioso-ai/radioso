@@ -29,6 +29,13 @@ export const RETRIEVAL_BEHAVIOR = {
   conversationContextMaxMessages: 4,
   candidateMergeSecondaryWeight: 0.25,
   metadataBoostWeight: 0.2,
+  hybrid: {
+    lexicalTopK: 20,
+    mergedCandidateCap: 50,
+    minimumUsefulCandidateCount: 3,
+    hardFilterConfidenceThreshold: 0.85,
+    attributeValueHardFilterConfidenceThreshold: 0.85,
+  },
   rerank: {
     temperature: 0.2,
     modelMaxCompletionTokens: 100,
@@ -64,4 +71,8 @@ export const EVAL_BEHAVIOR = {
   maxContextMessages: 12,
   maxMessageLength: 2_000,
   maxQueryLength: 2_000,
+  importConversationMessageLimit: 200,
+  datasetNameMaxLength: 120,
+  datasetDescriptionMaxLength: 500,
+  caseTitleMaxLength: 120,
 } as const;

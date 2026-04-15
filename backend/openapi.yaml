@@ -777,6 +777,8 @@ components:
           type: string
         publicChatToken:
           type: string
+        embedSessionToken:
+          type: string
         assistantBootstrapActive:
           type: boolean
         expiresAt:
@@ -785,6 +787,7 @@ components:
       required:
         - workspaceName
         - publicChatToken
+        - embedSessionToken
         - assistantBootstrapActive
         - expiresAt
     WorkspaceIngestionReprocessResponse:

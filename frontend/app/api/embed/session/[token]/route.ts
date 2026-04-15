@@ -4,9 +4,23 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const BACKEND_BASE = process.env.BACKEND_INTERNAL_URL ?? 'http://localhost:8080'
+const CORS_HEADERS = {
+  'Access-Control-Allow-Methods': 'OPTIONS, POST',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  Vary: 'Origin',
+}
 
-const resolveOrigin = (value: unknown) => {
-  if (typeof value !== 'string') {
+const withCorsHeaders = (origin: string | null, headers?: HeadersInit) => {
+  const nextHeaders = new Headers(headers)
+  Object.entries(CORS_HEADERS).forEach(([key, value]) => nextHeaders.set(key, value))
+  if (origin) {
+    nextHeaders.set('Access-Control-Allow-Origin', origin)
+  }
+  return nextHeaders
+}
+
+const resolveOrigin = (value: string | null) => {
+  if (!value) {
     return null
   }
 
@@ -17,11 +31,20 @@ const resolveOrigin = (value: unknown) => {
   }
 }
 
+export async function OPTIONS(request: Request) {
+  const origin = resolveOrigin(request.headers.get('origin'))
+  return new Response(null, {
+    status: 204,
+    headers: withCorsHeaders(origin),
+  })
+}
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ token: string }> },
 ) {
   const { token } = await context.params
+  const requestOrigin = resolveOrigin(request.headers.get('origin'))
   const signatureSecret = process.env.SESSION_COOKIE_SECRET
 
   if (!signatureSecret) {
@@ -32,14 +55,11 @@ export async function POST(
           message: 'This embedded chat launch could not be verified.',
         },
       },
-      { status: 503 },
+      { status: 503, headers: withCorsHeaders(requestOrigin) },
     )
   }
 
-  let payload: unknown
-  try {
-    payload = await request.json()
-  } catch {
+  if (!requestOrigin) {
     return Response.json(
       {
         error: {
@@ -47,29 +67,12 @@ export async function POST(
           message: 'Invalid embed session request',
         },
       },
-      { status: 400 },
-    )
-  }
-
-  const origin =
-    payload && typeof payload === 'object' && 'origin' in payload
-      ? resolveOrigin(payload.origin)
-      : null
-
-  if (!origin) {
-    return Response.json(
-      {
-        error: {
-          code: 'bad_request',
-          message: 'Invalid embed session request',
-        },
-      },
-      { status: 400 },
+      { status: 400, headers: withCorsHeaders(requestOrigin) },
     )
   }
 
   const signature = createHmac('sha256', signatureSecret)
-    .update(`${token}:${origin}`)
+    .update(`${token}:${requestOrigin}`)
     .digest('hex')
 
   try {
@@ -78,7 +81,7 @@ export async function POST(
       cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
-        'x-radioso-embed-origin': origin,
+        'x-radioso-embed-origin': requestOrigin,
         'x-radioso-embed-signature': signature,
       },
     })
@@ -87,10 +90,10 @@ export async function POST(
 
     return new Response(upstream.body, {
       status: upstream.status,
-      headers: {
+      headers: withCorsHeaders(requestOrigin, {
         'Content-Type': contentType,
         'Cache-Control': 'no-store',
-      },
+      }),
     })
   } catch (error) {
     const message =
@@ -105,7 +108,7 @@ export async function POST(
           message,
         },
       },
-      { status: 503 },
+      { status: 503, headers: withCorsHeaders(requestOrigin) },
     )
   }
 }

@@ -4,10 +4,13 @@ import {
   ANONYMOUS_SESSION_HEADER,
   resolveAnonymousSession,
   shouldUseSecureAnonymousCookie,
+  WEBSITE_EMBED_SESSION_HEADER,
 } from "../../src/app/http/middleware/resolveAnonymousSession.js";
+import { issueWebsiteEmbedSession } from "../../src/modules/settings/domain/websiteEmbedSession.js";
 import { InMemoryWorkspaceRepository } from "../support/fakes.js";
 
 const originalNodeEnv = process.env.NODE_ENV;
+const SESSION_SECRET = "0123456789abcdef0123456789abcdef";
 
 const createMockReqRes = (
   params: Record<string, string> = {},
@@ -49,7 +52,7 @@ describe("resolveAnonymousSession", () => {
   });
 
   it("returns 404 when token is missing", async () => {
-    const middleware = resolveAnonymousSession(workspaceRepository);
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     const { req, res, next, getError } = createMockReqRes({});
 
     await middleware(req, res, next);
@@ -59,7 +62,7 @@ describe("resolveAnonymousSession", () => {
   });
 
   it("returns 404 when token does not match any workspace", async () => {
-    const middleware = resolveAnonymousSession(workspaceRepository);
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     const { req, res, next, getError } = createMockReqRes({ token: "nonexistent" });
 
     await middleware(req, res, next);
@@ -72,7 +75,7 @@ describe("resolveAnonymousSession", () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, false, "test-token-1234567890", 10);
 
-    const middleware = resolveAnonymousSession(workspaceRepository);
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     const { req, res, next, getError } = createMockReqRes({ token: "test-token-1234567890" });
 
     await middleware(req, res, next);
@@ -85,7 +88,7 @@ describe("resolveAnonymousSession", () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 15);
 
-    const middleware = resolveAnonymousSession(workspaceRepository);
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     const { req, res, next, getError } = createMockReqRes({ token: "test-token-1234567890" });
 
     await middleware(req, res, next);
@@ -100,7 +103,7 @@ describe("resolveAnonymousSession", () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
 
-    const middleware = resolveAnonymousSession(workspaceRepository);
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     const { req, res, next } = createMockReqRes(
       { token: "test-token-1234567890" },
       { [`anon_session_${workspace.id}`]: "existing-session-id" },
@@ -115,7 +118,7 @@ describe("resolveAnonymousSession", () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
 
-    const middleware = resolveAnonymousSession(workspaceRepository);
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     const sessionId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
     const { req, res, next } = createMockReqRes(
       { token: "test-token-1234567890" },
@@ -132,7 +135,7 @@ describe("resolveAnonymousSession", () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
 
-    const middleware = resolveAnonymousSession(workspaceRepository);
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     let setCookieName = "";
     const { req, res, next } = createMockReqRes({ token: "test-token-1234567890" });
     (res as any).cookie = (name: string, _value: string, _options: unknown) => {
@@ -168,7 +171,7 @@ describe("resolveAnonymousSession", () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
 
-    const middleware = resolveAnonymousSession(workspaceRepository);
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     let cookieOptions: Record<string, unknown> | undefined;
     const { req, res, next } = createMockReqRes(
       { token: "test-token-1234567890" },
@@ -189,7 +192,7 @@ describe("resolveAnonymousSession", () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
 
-    const middleware = resolveAnonymousSession(workspaceRepository);
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     let sessionHeaderValue = "";
     const { req, res, next } = createMockReqRes({ token: "test-token-1234567890" });
     (res as unknown as { setHeader: (name: string, value: string) => void }).setHeader = (name, value) => {
@@ -203,5 +206,44 @@ describe("resolveAnonymousSession", () => {
     expect(sessionHeaderValue).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     );
+  });
+
+  it("allows embedded chat sessions even when anonymous chat is disabled", async () => {
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateGeneralSettings(workspace.id, {
+      anonymousChatEnabled: false,
+      anonymousChatToken: "test-token-1234567890",
+      anonymousRateLimit: 10,
+      assistantName: "",
+      assistantRole: "",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      websiteEmbedEnabled: true,
+      websiteEmbedToken: "embed-token-123",
+      websiteEmbedAllowedOrigins: ["https://example.com"],
+      websiteEmbedLauncherLabel: "Chat with us",
+      websiteEmbedLauncherIcon: "chat",
+      websiteEmbedLauncherPosition: "bottom-right",
+    });
+
+    const embedSession = issueWebsiteEmbedSession(SESSION_SECRET, {
+      workspaceId: workspace.id,
+      publicChatToken: "test-token-1234567890",
+      anonymousSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+    });
+
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
+    const { req, res, next, getError } = createMockReqRes(
+      { token: "test-token-1234567890" },
+      {},
+      { [WEBSITE_EMBED_SESSION_HEADER]: embedSession.token },
+    );
+
+    await middleware(req, res, next);
+
+    expect(getError()).toBeUndefined();
+    expect(res.locals.workspaceId).toBe(workspace.id);
+    expect(res.locals.anonymousSessionId).toBe("67acb0c8-caad-4a1b-9fef-70cbca3f7d12");
   });
 });

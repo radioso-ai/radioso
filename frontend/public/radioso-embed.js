@@ -3,6 +3,9 @@
   const DEFAULT_LABEL = 'Chat with us'
   const DEFAULT_POSITION = 'bottom-right'
   const DEFAULT_ICON = 'chat'
+  const READY_MESSAGE = 'radioso:embed:ready'
+  const SESSION_MESSAGE = 'radioso:embed:session'
+  const ERROR_MESSAGE = 'radioso:embed:error'
 
   const iconMarkup = {
     chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 5.5A3.5 3.5 0 0 1 7.5 2h9A3.5 3.5 0 0 1 20 5.5v7A3.5 3.5 0 0 1 16.5 16H10l-4.5 4v-4.2A3.5 3.5 0 0 1 4 12.5z"/></svg>',
@@ -53,6 +56,21 @@
     panel.appendChild(iframe)
 
     return panel
+  }
+
+  const bootstrapEmbeddedSession = async (scriptUrl, token) => {
+    const response = await fetch(new URL(`/api/embed/session/${encodeURIComponent(token)}`, scriptUrl).toString(), {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-store',
+    })
+
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.publicChatToken || !payload?.embedSessionToken) {
+      throw new Error(payload?.error?.message || 'Embedded chat could not be started from this website.')
+    }
+
+    return payload
   }
 
   const createButton = (label, icon) => {
@@ -141,17 +159,34 @@
 
     const button = createButton(label, icon)
     let isOpen = false
+    let bootstrapPromise = null
 
     const handleIframeMessage = (event) => {
       if (event.source !== iframe?.contentWindow) {
         return
       }
 
-      if (!event.data || typeof event.data !== 'object' || event.data.type !== 'radioso:embed:ready') {
+      if (!event.data || typeof event.data !== 'object' || event.data.type !== READY_MESSAGE) {
         return
       }
 
-      iframe.contentWindow?.postMessage({ type: 'radioso:embed:host' }, scriptUrl.origin)
+      if (!bootstrapPromise) {
+        bootstrapPromise = bootstrapEmbeddedSession(scriptUrl, token)
+      }
+
+      bootstrapPromise
+        .then((session) => {
+          iframe.contentWindow?.postMessage({ type: SESSION_MESSAGE, session }, scriptUrl.origin)
+        })
+        .catch((error) => {
+          iframe.contentWindow?.postMessage(
+            {
+              type: ERROR_MESSAGE,
+              message: error instanceof Error ? error.message : 'Embedded chat could not be started from this website.',
+            },
+            scriptUrl.origin,
+          )
+        })
     }
 
     const updatePanelVisibility = () => {

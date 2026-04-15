@@ -5,9 +5,11 @@ import { z } from "zod";
 import { notFound } from "../../../shared/domain/errors.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import { isAssistantBootstrapActive } from "../../../modules/settings/domain/assistantBootstrapSettings.js";
+import { verifyWebsiteEmbedSession } from "../../../modules/settings/domain/websiteEmbedSession.js";
 
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 export const ANONYMOUS_SESSION_HEADER = "x-radioso-anonymous-session";
+export const WEBSITE_EMBED_SESSION_HEADER = "x-radioso-embed-session";
 const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
 });
@@ -40,7 +42,10 @@ export const shouldUseSecureAnonymousCookie = (req: Request) => {
   return true;
 };
 
-export const resolveAnonymousSession = (workspaceRepository: WorkspaceRepositoryPort): RequestHandler => {
+export const resolveAnonymousSession = (
+  workspaceRepository: WorkspaceRepositoryPort,
+  sessionSecret: string,
+): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const parsedParams = anonymousTokenParamsSchema.safeParse(req.params);
@@ -52,8 +57,14 @@ export const resolveAnonymousSession = (workspaceRepository: WorkspaceRepository
 
       const { token } = parsedParams.data;
       const workspace = await workspaceRepository.findByAnonymousChatToken(token);
+      const embedSession = verifyWebsiteEmbedSession(req.get(WEBSITE_EMBED_SESSION_HEADER), sessionSecret);
+      const hasValidEmbedSession =
+        Boolean(workspace?.websiteEmbedEnabled) &&
+        Boolean(embedSession) &&
+        embedSession?.workspaceId === workspace?.id &&
+        embedSession?.publicChatToken === token;
 
-      if (!workspace || !workspace.anonymousChatEnabled) {
+      if (!workspace || (!workspace.anonymousChatEnabled && !hasValidEmbedSession)) {
         next(notFound("Not found"));
         return;
       }
@@ -63,7 +74,10 @@ export const resolveAnonymousSession = (workspaceRepository: WorkspaceRepository
       const parsedHeaderSessionId = headerSessionId && z.string().uuid().safeParse(headerSessionId).success
         ? headerSessionId
         : undefined;
-      let sessionId = parsedHeaderSessionId ?? (req.cookies?.[cookieName] as string | undefined);
+      let sessionId =
+        (hasValidEmbedSession ? embedSession?.anonymousSessionId : undefined) ??
+        parsedHeaderSessionId ??
+        (req.cookies?.[cookieName] as string | undefined);
 
       if (!sessionId) {
         sessionId = randomUUID();

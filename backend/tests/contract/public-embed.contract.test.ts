@@ -37,6 +37,7 @@ describe("public embed contract", () => {
     expect(response.body).toMatchObject({
       workspaceName: expect.any(String),
       publicChatToken: expect.any(String),
+      embedSessionToken: expect.any(String),
       assistantBootstrapActive: false,
     });
     expect(response.body.expiresAt).toEqual(expect.any(String));
@@ -109,6 +110,18 @@ describe("public embed contract", () => {
     expect(response.body.anonymousChatEnabled).toBe(false);
     expect(embedSession.status).toBe(200);
     expect(embedSession.body.publicChatToken).toEqual(expect.any(String));
+    expect(embedSession.body.embedSessionToken).toEqual(expect.any(String));
     expect(embedSession.body.publicChatToken).not.toBe(token);
+
+    const chatResponse = await request(app)
+      .post(`/api/v1/public/chat/${embedSession.body.publicChatToken}`)
+      .set("x-radioso-embed-session", embedSession.body.embedSessionToken)
+      .send({
+        query: "What can you do?",
+        stream: false,
+      });
+
+    expect(chatResponse.status).toBe(200);
+    expect(chatResponse.body.conversationId).toEqual(expect.any(String));
   });
 });

@@ -1,9 +1,10 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/domain/websiteEmbedSettings.js";
 import { isAssistantBootstrapActive } from "../../../modules/settings/domain/assistantBootstrapSettings.js";
+import { issueWebsiteEmbedSession } from "../../../modules/settings/domain/websiteEmbedSession.js";
 
 export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
@@ -80,11 +81,18 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
         metadata: { origin },
       });
 
+      const embedSession = issueWebsiteEmbedSession(dependencies.env.SESSION_COOKIE_SECRET, {
+        workspaceId: workspace.id,
+        publicChatToken: workspace.anonymousChatToken,
+        anonymousSessionId: randomUUID(),
+      });
+
       res.status(200).json({
         workspaceName: workspace.name,
         publicChatToken: workspace.anonymousChatToken,
+        embedSessionToken: embedSession.token,
         assistantBootstrapActive: isAssistantBootstrapActive(workspace),
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        expiresAt: embedSession.expiresAt,
       });
     } catch (error) {
       next(error);

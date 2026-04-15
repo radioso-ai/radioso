@@ -1141,6 +1141,9 @@
           "publicChatToken": {
             "type": "string"
           },
+          "embedSessionToken": {
+            "type": "string"
+          },
           "assistantBootstrapActive": {
             "type": "boolean"
           },
@@ -1152,6 +1155,7 @@
         "required": [
           "workspaceName",
           "publicChatToken",
+          "embedSessionToken",
           "assistantBootstrapActive",
           "expiresAt"
         ]

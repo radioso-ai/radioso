@@ -42,7 +42,10 @@ export const publicConversationParamsSchema = z.object({
 
 export const createPublicChatRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
-  const sessionMiddleware = resolveAnonymousSession(dependencies.workspaceRepository);
+  const sessionMiddleware = resolveAnonymousSession(
+    dependencies.workspaceRepository,
+    dependencies.env.SESSION_COOKIE_SECRET,
+  );
   const rateLimitAnonymousChat = anonymousRateLimiter(dependencies);
 
   // POST /api/v1/public/chat/:token — send a message

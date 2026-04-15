@@ -6,6 +6,7 @@ import { AlertCircle } from 'lucide-react'
 
 import { Spinner } from '@/components/ui/spinner'
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
+import { storeEmbedSessionToken } from '@/lib/api'
 
 function EmbeddedChatUnavailable({ message }: { message: string }) {
   return (
@@ -25,7 +26,8 @@ type BootstrapState =
   | { status: 'ready'; publicChatToken: string }
 
 const READY_MESSAGE = 'radioso:embed:ready'
-const HOST_MESSAGE = 'radioso:embed:host'
+const SESSION_MESSAGE = 'radioso:embed:session'
+const ERROR_MESSAGE = 'radioso:embed:error'
 
 export function EmbeddedChatFrame({ token }: { token: string }) {
   const [state, setState] = useState<BootstrapState>(() => {
@@ -47,62 +49,44 @@ export function EmbeddedChatFrame({ token }: { token: string }) {
 
     let isDisposed = false
 
-    const bootstrapSession = async (origin: string) => {
-      if (isBootstrappedRef.current) {
-        return
-      }
-
-      isBootstrappedRef.current = true
-
-      try {
-        const response = await fetch(`/api/embed/session/${encodeURIComponent(token)}`, {
-          method: 'POST',
-          cache: 'no-store',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ origin }),
-        })
-
-        const payload = (await response.json().catch(() => null)) as
-          | { publicChatToken?: string; error?: { message?: string } }
-          | null
-
-        if (!response.ok || !payload?.publicChatToken) {
-          const message =
-            payload?.error?.message || 'Embedded chat could not be started from this website.'
-
-          if (!isDisposed) {
-            setState({ status: 'error', message })
-          }
-          return
-        }
-
-        if (!isDisposed) {
-          setState({ status: 'ready', publicChatToken: payload.publicChatToken })
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? `Embedded chat could not be started: ${error.message}`
-            : 'Embedded chat could not be started from this website.'
-
-        if (!isDisposed) {
-          setState({ status: 'error', message })
-        }
-      }
-    }
-
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== window.parent) {
         return
       }
 
-      if (!event.data || typeof event.data !== 'object' || event.data.type !== HOST_MESSAGE) {
+      if (!event.data || typeof event.data !== 'object') {
         return
       }
 
-      void bootstrapSession(event.origin)
+      if (event.data.type === SESSION_MESSAGE) {
+        const session =
+          event.data.session &&
+          typeof event.data.session === 'object' &&
+          typeof event.data.session.publicChatToken === 'string' &&
+          typeof event.data.session.embedSessionToken === 'string'
+            ? event.data.session
+            : null
+
+        if (!session || isDisposed) {
+          return
+        }
+
+        isBootstrappedRef.current = true
+        storeEmbedSessionToken(session.publicChatToken, session.embedSessionToken)
+        setState({ status: 'ready', publicChatToken: session.publicChatToken })
+        return
+      }
+
+      if (event.data.type === ERROR_MESSAGE && !isDisposed) {
+        isBootstrappedRef.current = true
+        setState({
+          status: 'error',
+          message:
+            typeof event.data.message === 'string'
+              ? event.data.message
+              : 'Embedded chat could not be started from this website.',
+        })
+      }
     }
 
     window.addEventListener('message', handleMessage)

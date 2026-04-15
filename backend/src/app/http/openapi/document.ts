@@ -337,6 +337,7 @@ const PublicEmbedSessionResponseSchema = registry.register(
   z.object({
     workspaceName: z.string(),
     publicChatToken: z.string(),
+    embedSessionToken: z.string(),
     assistantBootstrapActive: z.boolean(),
     expiresAt: z.string().datetime(),
   }),

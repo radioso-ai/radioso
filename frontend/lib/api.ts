@@ -6,6 +6,8 @@ const ACTIVE_WORKSPACE_STORAGE_KEY = "radioso.activeWorkspaceId";
 const WORKSPACE_HEADER = 'X-Workspace-Id'
 const ANONYMOUS_SESSION_HEADER = 'X-Radioso-Anonymous-Session'
 const ANONYMOUS_SESSION_STORAGE_PREFIX = 'radioso.anonymousSession.'
+const EMBED_SESSION_HEADER = 'X-Radioso-Embed-Session'
+const EMBED_SESSION_STORAGE_PREFIX = 'radioso.embedSession.'
 
 export const activateWorkspaceToken = (workspaceId: string): boolean => {
   if (typeof window !== "undefined") {
@@ -40,6 +42,7 @@ export const removeWorkspaceToken = (workspaceId: string) => {
 };
 
 const getAnonymousSessionStorageKey = (token: string) => `${ANONYMOUS_SESSION_STORAGE_PREFIX}${token}`
+const getEmbedSessionStorageKey = (token: string) => `${EMBED_SESSION_STORAGE_PREFIX}${token}`
 
 const readAnonymousSessionId = (token: string) => {
   if (typeof window === 'undefined') {
@@ -47,6 +50,28 @@ const readAnonymousSessionId = (token: string) => {
   }
 
   return window.sessionStorage.getItem(getAnonymousSessionStorageKey(token))
+}
+
+const readEmbedSessionToken = (token: string) => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  return window.sessionStorage.getItem(getEmbedSessionStorageKey(token))
+}
+
+export const storeEmbedSessionToken = (token: string, sessionToken: string | null) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const storageKey = getEmbedSessionStorageKey(token)
+  if (!sessionToken) {
+    window.sessionStorage.removeItem(storageKey)
+    return
+  }
+
+  window.sessionStorage.setItem(storageKey, sessionToken)
 }
 
 const writeAnonymousSessionId = (token: string, sessionId: string | null) => {
@@ -66,9 +91,14 @@ const writeAnonymousSessionId = (token: string, sessionId: string | null) => {
 const attachAnonymousSessionHeader = (token: string, headers?: HeadersInit) => {
   const nextHeaders = new Headers(headers)
   const sessionId = readAnonymousSessionId(token)
+  const embedSessionToken = readEmbedSessionToken(token)
 
   if (sessionId && !nextHeaders.has(ANONYMOUS_SESSION_HEADER)) {
     nextHeaders.set(ANONYMOUS_SESSION_HEADER, sessionId)
+  }
+
+  if (embedSessionToken && !nextHeaders.has(EMBED_SESSION_HEADER)) {
+    nextHeaders.set(EMBED_SESSION_HEADER, embedSessionToken)
   }
 
   return nextHeaders
@@ -1448,6 +1478,7 @@ export interface GeneralSettings {
 export interface PublicEmbedSessionResponse {
   workspaceName: string
   publicChatToken: string
+  embedSessionToken: string
   assistantBootstrapActive: boolean
   expiresAt: string
 }
@@ -1713,11 +1744,9 @@ export const publicChatApi = {
 }
 
 export const publicEmbedApi = {
-  async bootstrapSession(token: string, data: { origin: string }): Promise<PublicEmbedSessionResponse> {
+  async bootstrapSession(token: string): Promise<PublicEmbedSessionResponse> {
     return request<PublicEmbedSessionResponse>(`/public/embed/${token}/session`, {
       method: 'POST',
-      body: JSON.stringify(data),
-      credentials: 'include',
     })
   },
 }

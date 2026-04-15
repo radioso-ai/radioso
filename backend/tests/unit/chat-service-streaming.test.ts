@@ -599,15 +599,15 @@ describe("chat service streaming", () => {
     }
 
     expect(chunkTexts.join("")).toBe(
-      `I couldn't verify that from your workspace documents, but I did find material about full answer in "Intro" if you'd like to explore that instead.`,
+      `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
     );
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
-      answer: `I couldn't verify that from your workspace documents, but I did find material about full answer in "Intro" if you'd like to explore that instead.`,
+      answer: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
       citations: [],
       answerSegments: [
-        { text: `I couldn't verify that from your workspace documents, but I did find material about full answer in "Intro" if you'd like to explore that instead.` },
+        { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
       ],
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
@@ -632,7 +632,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: `I couldn't verify that from your workspace documents, but I did find material about full answer in "Intro" if you'd like to explore that instead.`,
+      content: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
     });
   });
 
@@ -707,15 +707,15 @@ describe("chat service streaming", () => {
     }
 
     expect(chunkTexts).toEqual([
-      `I couldn't verify that from your workspace documents, but I did find material about full answer in "Intro" if you'd like to explore that instead.`,
+      `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
     ]);
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
-      answer: `I couldn't verify that from your workspace documents, but I did find material about full answer in "Intro" if you'd like to explore that instead.`,
+      answer: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
       citations: [],
       answerSegments: [
-        { text: `I couldn't verify that from your workspace documents, but I did find material about full answer in "Intro" if you'd like to explore that instead.` },
+        { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
       ],
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
@@ -740,7 +740,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: `I couldn't verify that from your workspace documents, but I did find material about full answer in "Intro" if you'd like to explore that instead.`,
+      content: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
     });
   });
 

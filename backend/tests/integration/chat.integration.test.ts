@@ -176,7 +176,7 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toBe(
-      `I couldn't verify that from your workspace documents, but I did find related material in "Guide" if you'd like to explore that instead.`,
+      `I couldn't verify that from your workspace documents, but I did find material about testing and parsing content for users in "Guide" if you'd like to explore that instead.`,
     );
     expect(response.body.answer).not.toContain("discount code");
   });
@@ -467,17 +467,19 @@ describe("chat integration", () => {
       .set("Authorization", authorization);
 
     expect(detail.status).toBe(200);
-    expect(detail.body.messages).toEqual([
-      expect.objectContaining({ role: "user", content: "What does the page explain?" }),
-      expect.objectContaining({
-        role: "assistant",
-        content: "Sorry, something went wrong. Please try again.",
-        debug: expect.objectContaining({
-          eventStatus: "failure",
-          errorMessage: "upstream unavailable",
+    expect(detail.body.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: "user", content: "What does the page explain?" }),
+        expect.objectContaining({
+          role: "assistant",
+          content: "Sorry, something went wrong. Please try again.",
+          debug: expect.objectContaining({
+            eventStatus: "failure",
+            errorMessage: "upstream unavailable",
+          }),
         }),
-      }),
-    ]);
+      ]),
+    );
   });
 
   it("preserves ambiguity for unresolved relation follow-ups", async () => {

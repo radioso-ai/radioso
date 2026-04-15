@@ -27,6 +27,7 @@ const MAX_TITLE_LENGTH = 120;
 const MAX_CONTEXT_LENGTH = 180;
 const MAX_CONTEXTS = 3;
 const MAX_RESPONSE_LENGTH = 320;
+const MAX_TOPIC_LENGTH = 80;
 
 const normalizeWhitespace = (value: string | undefined): string =>
   (value ?? "")
@@ -49,8 +50,44 @@ const normalizeContexts = (contexts: GroundedMissContextSummary[]) =>
 const selectPrimaryTitle = (contexts: GroundedMissContextSummary[]): string | null =>
   normalizeContexts(contexts).find((context) => context.title.length > 0)?.title ?? null;
 
+const extractTopicSnippet = (value: string): string | null => {
+  const normalized = normalizeWhitespace(value)
+    .replace(/^[^a-z0-9]+/i, "")
+    .replace(/\s+([,.;:!?])/g, "$1");
+
+  if (!normalized) {
+    return null;
+  }
+
+  const sentence = normalized.split(/(?<=[.!?])\s+/)[0] ?? normalized;
+  const trimmedSentence = sentence
+    .replace(/^(?:the|this)\s+(?:page|document|guide|source)\s+(?:explains|covers|describes|discusses)\s+/i, "")
+    .replace(/[.!?]+$/g, "")
+    .trim();
+  if (!trimmedSentence) {
+    return null;
+  }
+
+  return limit(trimmedSentence, MAX_TOPIC_LENGTH);
+};
+
+const selectPrimaryTopic = (contexts: GroundedMissContextSummary[]): string | null =>
+  normalizeContexts(contexts)
+    .map((context) => extractTopicSnippet(context.content))
+    .find((topic): topic is string => Boolean(topic)) ?? null;
+
 const defaultUnsupportedResponse = (contexts: GroundedMissContextSummary[]): string => {
   const title = selectPrimaryTitle(contexts);
+  const topic = selectPrimaryTopic(contexts);
+
+  if (topic && title) {
+    return `${DEFAULT_UNSUPPORTED_PREFIX}, but I did find material about ${topic} in "${title}" if you'd like to explore that instead.`;
+  }
+
+  if (topic) {
+    return `${DEFAULT_UNSUPPORTED_PREFIX}, but I did find material about ${topic} if you'd like to explore that instead.`;
+  }
+
   if (!title) {
     return DEFAULT_UNSUPPORTED_WITHOUT_CONTEXT_RESPONSE;
   }

@@ -391,7 +391,7 @@ describe("chat contract", () => {
 
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual(["answer", "conversationId", "retrievalInfo", "retrievalTrace"]);
-    expect(response.body.answer).toContain("could not find relevant information");
+    expect(response.body.answer).toContain("couldn't find supporting material");
     expect(response.body).not.toHaveProperty("citations");
     expect(response.body).not.toHaveProperty("answerSegments");
     expect(response.body.retrievalInfo).toMatchObject({

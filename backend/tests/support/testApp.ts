@@ -10,6 +10,10 @@ import { AccountInvitationService } from "../../src/modules/account/services/acc
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import {
+  DefaultGroundedMissResponseComposer,
+  type GroundedMissResponseComposer,
+} from "../../src/modules/chat/services/groundedMissResponseComposer.js";
+import {
   DefaultUnsupportedNoticeGenerator,
   type UnsupportedNoticeGenerator,
 } from "../../src/modules/chat/services/unsupportedNoticeGenerator.js";
@@ -121,6 +125,7 @@ export const createTestDependencies = (overrides: {
   whatsappFetch?: typeof fetch;
   whatsappDebounceMs?: number;
   unsupportedNoticeGenerator?: UnsupportedNoticeGenerator;
+  groundedMissResponseComposer?: GroundedMissResponseComposer;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
     ...createTestEnv(),
@@ -442,6 +447,7 @@ export const createTestDependencies = (overrides: {
       retrievalPipeline,
       chatGateway,
       overrides.unsupportedNoticeGenerator ?? new DefaultUnsupportedNoticeGenerator(),
+      overrides.groundedMissResponseComposer ?? new DefaultGroundedMissResponseComposer(),
     ),
   );
 
@@ -481,6 +487,7 @@ export const createTestDependencies = (overrides: {
       chatGateway,
       auditService,
       overrides.unsupportedNoticeGenerator ?? new DefaultUnsupportedNoticeGenerator(),
+      overrides.groundedMissResponseComposer ?? new DefaultGroundedMissResponseComposer(),
     ),
     chatHistoryService,
     evalLabService,
@@ -520,6 +527,7 @@ export const createTestApp = (overrides: {
   whatsappFetch?: typeof fetch;
   whatsappDebounceMs?: number;
   unsupportedNoticeGenerator?: UnsupportedNoticeGenerator;
+  groundedMissResponseComposer?: GroundedMissResponseComposer;
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);
   const app = createApp(dependencies);

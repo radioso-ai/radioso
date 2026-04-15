@@ -112,14 +112,18 @@ describe("WhatsApp integration flow", () => {
     expect(history.status).toBe(200);
     expect(history.body.sourceChannel).toBe("whatsapp");
     expect(history.body.messages).toHaveLength(2);
-    expect(history.body.messages[0]).toMatchObject({
-      role: "user",
-      content: "What can you help with?",
-    });
-    expect(history.body.messages[1]).toMatchObject({
-      role: "assistant",
-      content: "I could not find relevant information in your documents.",
-    });
+    expect(history.body.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: "What can you help with?",
+        }),
+        expect.objectContaining({
+          role: "assistant",
+          content: "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+        }),
+      ]),
+    );
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

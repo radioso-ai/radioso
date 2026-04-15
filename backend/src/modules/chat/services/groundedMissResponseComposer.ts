@@ -87,7 +87,7 @@ const normalizeModelResponse = (value: string | undefined): string => {
 };
 
 const NO_CONTEXT_SYSTEM_PROMPT = `You are composing a short response for a document-grounded assistant.
-Respond in the same language as the user's question when possible.
+Respond in the same language as the user's question.
 State that no supporting material was found in the workspace documents.
 You may offer one gentle next step, but do not answer the question.
 Do not imply that you searched beyond the workspace documents.
@@ -95,9 +95,9 @@ Keep the response concise and natural.
 Return plain text only.`;
 
 const UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT = `You are composing a short response for a document-grounded assistant.
-Respond in the same language as the user's question when possible.
+Respond in the same language as the user's question.
 State that the exact request could not be verified from the workspace documents.
-When retrieved contexts are provided, explicitly point the user toward the strongest nearby topic or source from those contexts.
+When retrieved contexts are provided, point the user toward the strongest nearby topic or source from those contexts and ask if they want to talk about those.
 Invite the user to continue with that nearby material instead of stopping at a generic refusal.
 Do not claim that the nearby material answers the original question.
 Do not introduce sources or facts that are not present in the provided contexts.

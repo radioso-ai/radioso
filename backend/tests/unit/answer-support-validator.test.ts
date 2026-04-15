@@ -7,6 +7,10 @@ import {
   DEFAULT_UNSUPPORTED_NOTICE,
 } from "../../src/modules/chat/services/assistantTurnOutcomeClassifier.js";
 import type { CitationEvidence } from "../../src/modules/chat/services/answerPresentationService.js";
+import {
+  DefaultGroundedMissResponseComposer,
+  DEFAULT_UNSUPPORTED_WITHOUT_CONTEXT_RESPONSE,
+} from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 import type { UnsupportedNoticeGenerator } from "../../src/modules/chat/services/unsupportedNoticeGenerator.js";
 
 const citations: CitationEvidence[] = [
@@ -42,6 +46,10 @@ describe("answer support validator", () => {
         { text: "Thanks!" },
       ],
       citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       unsupportedNoticeGenerator: staticNoticeGenerator(),
@@ -91,14 +99,16 @@ describe("answer support validator", () => {
         { text: "." },
       ],
       citationEvidence: [],
+      retrievedContextSummaries: [],
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       unsupportedNoticeGenerator: staticNoticeGenerator(),
+      groundedMissResponseComposer: new DefaultGroundedMissResponseComposer(),
     });
 
-    expect(result.answer).toBe(DEFAULT_UNSUPPORTED_NOTICE);
+    expect(result.answer).toBe(DEFAULT_UNSUPPORTED_WITHOUT_CONTEXT_RESPONSE);
     expect(result.citations).toEqual([]);
-    expect(result.answerSegments).toEqual([{ text: DEFAULT_UNSUPPORTED_NOTICE }]);
+    expect(result.answerSegments).toEqual([{ text: DEFAULT_UNSUPPORTED_WITHOUT_CONTEXT_RESPONSE }]);
     expect(result.validation).toEqual({
       ran: true,
       answerModified: true,
@@ -123,6 +133,10 @@ describe("answer support validator", () => {
         { text: "." },
       ],
       citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
       citationDisplayEnabled: false,
       answerSupportPolicy: "strict",
       unsupportedNoticeGenerator: staticNoticeGenerator(),
@@ -150,6 +164,7 @@ describe("answer support validator", () => {
         { text: "." },
       ],
       citationEvidence: [],
+      retrievedContextSummaries: [],
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       unsupportedNoticeGenerator: staticNoticeGenerator(),
@@ -192,6 +207,10 @@ describe("answer support validator", () => {
         { text: "." },
       ],
       citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       unsupportedNoticeGenerator: staticNoticeGenerator(),
@@ -216,6 +235,7 @@ describe("answer support validator", () => {
       answer: "Narayani is a teacher and author.",
       answerSegments: [{ text: "Narayani is a teacher and author" }, { text: "." }],
       citationEvidence: [],
+      retrievedContextSummaries: [],
       citationDisplayEnabled: true,
       answerSupportPolicy: "warn",
       unsupportedNoticeGenerator: staticNoticeGenerator("No pude verificar esa parte."),

@@ -8,6 +8,13 @@ const ANONYMOUS_SESSION_HEADER = 'X-Radioso-Anonymous-Session'
 const ANONYMOUS_SESSION_STORAGE_PREFIX = 'radioso.anonymousSession.'
 const EMBED_SESSION_HEADER = 'X-Radioso-Embed-Session'
 const EMBED_SESSION_STORAGE_PREFIX = 'radioso.embedSession.'
+const EMBED_BOOTSTRAP_STORAGE_PREFIX = 'radioso.embedBootstrap.'
+
+interface StoredEmbedBootstrapSession {
+  publicChatToken: string
+  embedSessionToken: string
+  expiresAt: string
+}
 
 export const activateWorkspaceToken = (workspaceId: string): boolean => {
   if (typeof window !== "undefined") {
@@ -43,6 +50,7 @@ export const removeWorkspaceToken = (workspaceId: string) => {
 
 const getAnonymousSessionStorageKey = (token: string) => `${ANONYMOUS_SESSION_STORAGE_PREFIX}${token}`
 const getEmbedSessionStorageKey = (token: string) => `${EMBED_SESSION_STORAGE_PREFIX}${token}`
+const getEmbedBootstrapStorageKey = (token: string) => `${EMBED_BOOTSTRAP_STORAGE_PREFIX}${token}`
 
 const readAnonymousSessionId = (token: string) => {
   if (typeof window === 'undefined') {
@@ -60,6 +68,43 @@ const readEmbedSessionToken = (token: string) => {
   return window.sessionStorage.getItem(getEmbedSessionStorageKey(token))
 }
 
+export const readStoredEmbedBootstrapSession = (token: string): StoredEmbedBootstrapSession | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const rawValue = window.sessionStorage.getItem(getEmbedBootstrapStorageKey(token))
+  if (!rawValue) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Partial<StoredEmbedBootstrapSession>
+    if (
+      typeof parsed.publicChatToken !== 'string' ||
+      typeof parsed.embedSessionToken !== 'string' ||
+      typeof parsed.expiresAt !== 'string'
+    ) {
+      window.sessionStorage.removeItem(getEmbedBootstrapStorageKey(token))
+      return null
+    }
+
+    if (Date.parse(parsed.expiresAt) <= Date.now()) {
+      window.sessionStorage.removeItem(getEmbedBootstrapStorageKey(token))
+      return null
+    }
+
+    return {
+      publicChatToken: parsed.publicChatToken,
+      embedSessionToken: parsed.embedSessionToken,
+      expiresAt: parsed.expiresAt,
+    }
+  } catch {
+    window.sessionStorage.removeItem(getEmbedBootstrapStorageKey(token))
+    return null
+  }
+}
+
 export const storeEmbedSessionToken = (token: string, sessionToken: string | null) => {
   if (typeof window === 'undefined') {
     return
@@ -72,6 +117,21 @@ export const storeEmbedSessionToken = (token: string, sessionToken: string | nul
   }
 
   window.sessionStorage.setItem(storageKey, sessionToken)
+}
+
+export const storeEmbedBootstrapSession = (token: string, session: StoredEmbedBootstrapSession | null) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const storageKey = getEmbedBootstrapStorageKey(token)
+  if (!session) {
+    window.sessionStorage.removeItem(storageKey)
+    return
+  }
+
+  window.sessionStorage.setItem(storageKey, JSON.stringify(session))
+  storeEmbedSessionToken(session.publicChatToken, session.embedSessionToken)
 }
 
 const writeAnonymousSessionId = (token: string, sessionId: string | null) => {

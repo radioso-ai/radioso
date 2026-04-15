@@ -45,7 +45,28 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
 
       const workspace = await dependencies.workspaceRepository.findByWebsiteEmbedToken(req.params.token);
 
-      if (!workspace || !workspace.websiteEmbedEnabled || !workspace.anonymousChatToken) {
+      if (!workspace) {
+        res.status(404).json({
+          error: {
+            code: "not_found",
+            message: "Embedded chat not found",
+          },
+        });
+        return;
+      }
+
+      if (!workspace.websiteEmbedEnabled || !workspace.anonymousChatToken) {
+        await dependencies.auditService.record({
+          accountId: workspace.accountId,
+          workspaceId: workspace.id,
+          eventType: "website_embed.launch_denied",
+          eventStatus: "failure",
+          metadata: {
+            origin,
+            reason: !workspace.websiteEmbedEnabled ? "embed_disabled" : "missing_public_chat_token",
+          },
+        });
+
         res.status(404).json({
           error: {
             code: "not_found",

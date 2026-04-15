@@ -124,4 +124,36 @@ describe("public embed contract", () => {
     expect(chatResponse.status).toBe(200);
     expect(chatResponse.body.conversationId).toEqual(expect.any(String));
   });
+
+  it("records an audit event when launch is denied because embed is disabled", async () => {
+    const { app, dependencies } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-disabled-audit@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        websiteEmbedEnabled: false,
+      });
+
+    const origin = "https://example.com";
+    const response = await request(app)
+      .post(`/api/v1/public/embed/${token}/session`)
+      .set("x-radioso-embed-origin", origin)
+      .set("x-radioso-embed-signature", signEmbedLaunch(token, origin));
+
+    expect(response.status).toBe(404);
+
+    const auditEvents = (dependencies.auditService as unknown as { events: Array<{ eventType: string; metadata?: Record<string, unknown> }> }).events;
+    expect(auditEvents).toContainEqual(
+      expect.objectContaining({
+        eventType: "website_embed.launch_denied",
+        metadata: expect.objectContaining({
+          origin,
+          reason: "embed_disabled",
+        }),
+      }),
+    );
+  });
 });

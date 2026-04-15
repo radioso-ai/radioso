@@ -6,7 +6,7 @@ import { AlertCircle } from 'lucide-react'
 
 import { Spinner } from '@/components/ui/spinner'
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
-import { storeEmbedSessionToken } from '@/lib/api'
+import { readStoredEmbedBootstrapSession, storeEmbedBootstrapSession } from '@/lib/api'
 
 function EmbeddedChatUnavailable({ message }: { message: string }) {
   return (
@@ -48,6 +48,13 @@ export function EmbeddedChatFrame({ token }: { token: string }) {
     }
 
     let isDisposed = false
+    const storedSession = readStoredEmbedBootstrapSession(token)
+
+    if (storedSession) {
+      isBootstrappedRef.current = true
+      setState({ status: 'ready', publicChatToken: storedSession.publicChatToken })
+      return
+    }
 
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== window.parent) {
@@ -72,7 +79,11 @@ export function EmbeddedChatFrame({ token }: { token: string }) {
         }
 
         isBootstrappedRef.current = true
-        storeEmbedSessionToken(session.publicChatToken, session.embedSessionToken)
+        storeEmbedBootstrapSession(token, {
+          publicChatToken: session.publicChatToken,
+          embedSessionToken: session.embedSessionToken,
+          expiresAt: typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString(),
+        })
         setState({ status: 'ready', publicChatToken: session.publicChatToken })
         return
       }

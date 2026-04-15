@@ -42,9 +42,7 @@ describe("grounded miss response composer", () => {
     const composer = new DefaultGroundedMissResponseComposer();
 
     await expect(
-      composer.composeNoContext({
-        query: "What is the capital of France?",
-      }),
+      composer.composeNoContext(),
     ).resolves.toBe(DEFAULT_NO_CONTEXT_RESPONSE);
   });
 });

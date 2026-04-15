@@ -1,5 +1,7 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { RetrievalSettingsService } from "../../settings/services/retrievalSettingsService.js";
+import { toAssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import type { EmbeddingService } from "./embeddingService.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 import { CandidatePreparationService } from "./candidatePreparationService.js";
@@ -37,6 +39,7 @@ export interface RetrievalPipelineResult {
   contexts: import("../domain/retrievalPipelineTypes.js").FinalPromptContext[];
   prompt: string;
   citations: PromptBuildResult["citations"];
+  assistantIdentity: import("../../settings/domain/assistantBootstrapSettings.js").AssistantIdentityPromptInput | null;
   responseSettings: {
     citationDisplayEnabled: boolean;
     answerSupportPolicy: import("../../settings/domain/retrievalSettings.js").AnswerSupportPolicy;
@@ -69,6 +72,7 @@ export class RetrievalPipelineService {
     promptContextSelectorService: PromptContextSelectorService,
     promptBuilder: PromptBuilder,
     retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
+    private readonly workspaceRepository: WorkspaceRepositoryPort,
     _semanticQueryConstraintService?: unknown,
   ) {
     this.retrievalContextStage = new RetrievalContextStageService(
@@ -91,6 +95,11 @@ export class RetrievalPipelineService {
   }
 
   async run(input: RetrievalPipelineRequest): Promise<RetrievalPipelineResult> {
+    const workspace = await this.workspaceRepository.findById(input.workspaceId);
+    const request = {
+      ...input,
+      assistantIdentity: input.assistantIdentity ?? (workspace ? toAssistantIdentityPromptInput(workspace) : null),
+    };
     const toIso = (value: number) => new Date(value).toISOString();
     const traceStartedAtMs = Date.now();
     const measure = async <T>(runStage: () => Promise<T> | T) => {
@@ -104,7 +113,7 @@ export class RetrievalPipelineService {
       };
     };
 
-    const context = await measure(() => this.retrievalContextStage.execute(input));
+    const context = await measure(() => this.retrievalContextStage.execute(request));
     const interpretation = await measure(() => this.queryInterpretationStage.execute(context.result));
     const retrieval = await measure(() => this.candidateRetrievalStage.execute(interpretation.result));
     const prepared = await measure(() => this.candidatePreparationStage.execute(retrieval.result));
@@ -161,6 +170,7 @@ export class RetrievalPipelineService {
       contexts: prompt.result.contexts,
       prompt: prompt.result.prompt,
       citations: prompt.result.citations,
+      assistantIdentity: request.assistantIdentity ?? null,
       responseSettings: prompt.result.responseSettings,
       diagnostics: diagnostics.result,
       trace,

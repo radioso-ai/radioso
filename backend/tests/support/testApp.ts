@@ -380,6 +380,7 @@ export const createTestDependencies = (overrides: {
     await drainDocumentProcessingQueue();
     return result;
   };
+  const workspaceRepository = new InMemoryWorkspaceRepository();
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
     embeddingService,
@@ -393,6 +394,7 @@ export const createTestDependencies = (overrides: {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
+    workspaceRepository,
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,
@@ -424,8 +426,6 @@ export const createTestDependencies = (overrides: {
     },
   };
   const chatGateway = overrides.chatGateway ?? defaultChatGateway;
-
-  const workspaceRepository = new InMemoryWorkspaceRepository();
   const workspaceService = new WorkspaceService(workspaceRepository, auditService);
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(

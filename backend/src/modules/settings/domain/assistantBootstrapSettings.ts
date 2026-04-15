@@ -12,6 +12,11 @@ export interface AssistantBootstrapSettingsRecord {
   proactiveGreetingEnabled: boolean;
 }
 
+export interface AssistantIdentityPromptInput {
+  assistantName: string;
+  assistantRole: string;
+  greetingInstruction: string;
+}
 export interface AssistantBootstrapSettingsInput {
   assistantName?: string;
   assistantRole?: string;
@@ -81,3 +86,14 @@ export const isAssistantBootstrapConfigured = (input: AssistantBootstrapSettings
 
 export const isAssistantBootstrapActive = (input: AssistantBootstrapSettingsRecord): boolean =>
   input.proactiveGreetingEnabled && isAssistantBootstrapConfigured(input);
+
+export const toAssistantIdentityPromptInput = (
+  input: AssistantBootstrapSettingsRecord,
+): AssistantIdentityPromptInput | null =>
+  isAssistantBootstrapConfigured(input)
+    ? {
+        assistantName: input.assistantName,
+        assistantRole: input.assistantRole,
+        greetingInstruction: input.greetingInstruction,
+      }
+    : null;

@@ -9,6 +9,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       query: input.request.query,
       history: input.promptHistory,
       settings: {
+        assistantIdentity: input.request.assistantIdentity,
         customInstruction: input.settings.customInstruction,
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
       },

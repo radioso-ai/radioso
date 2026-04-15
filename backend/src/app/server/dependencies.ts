@@ -145,6 +145,10 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   );
   const documentDeletionService = new DocumentDeletionService(documentRepository, documentStorage, auditService);
   const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
+  const conversationRepository = new ConversationRepository(database);
+  const messageRepository = new MessageRepository(database);
+  const workspaceRepository = new WorkspaceRepository(database);
+  const bootstrapGreetingCacheRepository = new BootstrapGreetingCacheRepository(database);
   const retrievalPipeline = new RetrievalPipelineService(
     retrievalSettingsService,
     embeddingService,
@@ -158,6 +162,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(),
+    workspaceRepository,
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,
@@ -168,10 +173,6 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     auditEventRepository,
     documentRepository,
   );
-  const conversationRepository = new ConversationRepository(database);
-  const messageRepository = new MessageRepository(database);
-  const workspaceRepository = new WorkspaceRepository(database);
-  const bootstrapGreetingCacheRepository = new BootstrapGreetingCacheRepository(database);
   const chatService = new ChatService(
     conversationRepository,
     messageRepository,

@@ -49,8 +49,24 @@ const normalizeContexts = (contexts: GroundedMissContextSummary[]) =>
 const selectPrimaryTitle = (contexts: GroundedMissContextSummary[]): string | null =>
   normalizeContexts(contexts).find((context) => context.title.length > 0)?.title ?? null;
 
+const formatContextsForPrompt = (contexts: GroundedMissContextSummary[]): string => {
+  const normalized = normalizeContexts(contexts);
+  if (normalized.length === 0) {
+    return "None";
+  }
+
+  return normalized
+    .map((context, index) => [
+      `Context ${index + 1}:`,
+      context.title ? `Title: ${context.title}` : "Title: (untitled)",
+      context.content ? `Excerpt: ${context.content}` : "Excerpt: (empty)",
+    ].join("\n"))
+    .join("\n\n");
+};
+
 const defaultUnsupportedResponse = (contexts: GroundedMissContextSummary[]): string => {
   const title = selectPrimaryTitle(contexts);
+
   if (!title) {
     return DEFAULT_UNSUPPORTED_WITHOUT_CONTEXT_RESPONSE;
   }
@@ -71,7 +87,7 @@ const normalizeModelResponse = (value: string | undefined): string => {
 };
 
 const NO_CONTEXT_SYSTEM_PROMPT = `You are composing a short response for a document-grounded assistant.
-Respond in the same language as the user's question when possible.
+Respond in the same language as the user's question.
 State that no supporting material was found in the workspace documents.
 You may offer one gentle next step, but do not answer the question.
 Do not imply that you searched beyond the workspace documents.
@@ -79,9 +95,10 @@ Keep the response concise and natural.
 Return plain text only.`;
 
 const UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT = `You are composing a short response for a document-grounded assistant.
-Respond in the same language as the user's question when possible.
+Respond in the same language as the user's question.
 State that the exact request could not be verified from the workspace documents.
-You may point the user toward nearby related material from the provided retrieved contexts.
+When retrieved contexts are provided, point the user toward the strongest nearby topic or source from those contexts and ask if they want to talk about those.
+Invite the user to continue with that nearby material instead of stopping at a generic refusal.
 Do not claim that the nearby material answers the original question.
 Do not introduce sources or facts that are not present in the provided contexts.
 Keep the response concise and natural.
@@ -119,7 +136,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         prompt: [
           `User query:\n${input.query}`,
           `\nUnsupported draft content:\n${normalizeWhitespace(input.unsupportedText)}`,
-          `\nRetrieved contexts:\n${JSON.stringify(normalizeContexts(input.contexts))}`,
+          `\nRetrieved contexts:\n${formatContextsForPrompt(input.contexts)}`,
         ].join("\n"),
         temperature: 0,
         maxOutputTokens: 120,

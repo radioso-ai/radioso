@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { MessageRecord } from "./messageRepository.js";
 
 import type { Database } from "../../shared/infra/database.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
@@ -14,6 +15,12 @@ export interface ConversationRecord {
 
 export interface ConversationRepositoryPort {
   create(workspaceId: string, sourceChannel?: string | null, anonymousSessionId?: string | null): Promise<ConversationRecord>;
+  createWithInitialAssistantMessage(input: {
+    workspaceId: string;
+    sourceChannel?: string | null;
+    anonymousSessionId?: string | null;
+    content: string;
+  }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }>;
   listPageByWorkspaceId(
     workspaceId: string,
     input: { limit: number; offset?: number; cursor?: string },
@@ -41,6 +48,15 @@ interface ConversationRow {
   updated_at: Date;
 }
 
+interface MessageRow {
+  id: string;
+  conversation_id: string;
+  workspace_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  created_at: Date;
+}
+
 const mapConversation = (row: ConversationRow): ConversationRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
@@ -62,6 +78,42 @@ export class ConversationRepository implements ConversationRepositoryPort {
     );
 
     return mapConversation(row);
+  }
+
+  async createWithInitialAssistantMessage(input: {
+    workspaceId: string;
+    sourceChannel?: string | null;
+    anonymousSessionId?: string | null;
+    content: string;
+  }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
+    return this.database.withTransaction(async (client) => {
+      const conversationId = randomUUID();
+      const messageId = randomUUID();
+      const conversationResult = await client.query<ConversationRow>(
+        `INSERT INTO conversations (id, workspace_id, source_channel, anonymous_session_id)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, workspace_id, source_channel, anonymous_session_id, created_at, updated_at`,
+        [conversationId, input.workspaceId, input.sourceChannel ?? null, input.anonymousSessionId ?? null],
+      );
+      const messageResult = await client.query<MessageRow>(
+        `INSERT INTO messages (id, conversation_id, workspace_id, role, content)
+         VALUES ($1, $2, $3, 'assistant', $4)
+         RETURNING id, conversation_id, workspace_id, role, content, created_at`,
+        [messageId, conversationId, input.workspaceId, input.content],
+      );
+
+      return {
+        conversation: mapConversation(conversationResult.rows[0]),
+        assistantMessage: {
+          id: messageResult.rows[0].id,
+          conversationId: messageResult.rows[0].conversation_id,
+          workspaceId: messageResult.rows[0].workspace_id,
+          role: messageResult.rows[0].role,
+          content: messageResult.rows[0].content,
+          createdAt: new Date(messageResult.rows[0].created_at),
+        },
+      };
+    });
   }
 
   async listPageByWorkspaceId(

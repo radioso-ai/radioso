@@ -27,7 +27,7 @@ const createMockReqRes = (locals: Record<string, unknown> = {}) => {
       responseStatus = error.statusCode;
       responseBody = {
         code: error.code,
-        ...error.details,
+        ...(error.details && typeof error.details === "object" ? error.details : {}),
       };
       return;
     }

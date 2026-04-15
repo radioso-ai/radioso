@@ -1,5 +1,6 @@
 import { getEnv, type Env } from "../config/env.js";
 import { ChatService } from "../../modules/chat/services/chatService.js";
+import { ChatBootstrapService } from "../../modules/chat/services/chatBootstrapService.js";
 import { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
 import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
 import { AccountInvitationRepository } from "../../db/repositories/accountInvitationRepository.js";
@@ -7,6 +8,7 @@ import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { UserRepository } from "../../db/repositories/userRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
+import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { ChunkRepository } from "../../db/repositories/chunkRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
@@ -168,6 +170,8 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   );
   const conversationRepository = new ConversationRepository(database);
   const messageRepository = new MessageRepository(database);
+  const workspaceRepository = new WorkspaceRepository(database);
+  const bootstrapGreetingCacheRepository = new BootstrapGreetingCacheRepository(database);
   const chatService = new ChatService(
     conversationRepository,
     messageRepository,
@@ -175,6 +179,13 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     llmRegistry.createChatGateway(),
     auditService,
     llmRegistry.createUnsupportedNoticeGenerator(),
+  );
+  const chatBootstrapService = new ChatBootstrapService(
+    workspaceRepository,
+    bootstrapGreetingCacheRepository,
+    conversationRepository,
+    llmRegistry.createChatGateway(),
+    auditService,
   );
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
@@ -190,7 +201,6 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
       llmRegistry.createUnsupportedNoticeGenerator(),
     ),
   );
-  const workspaceRepository = new WorkspaceRepository(database);
   const workspaceService = new WorkspaceService(workspaceRepository, auditService);
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(database));
@@ -238,9 +248,11 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     documentProcessingWorker,
     documentDeletionService,
     chatService,
+    chatBootstrapService,
     chatHistoryService,
     evalLabService,
     workspaceRepository,
+    bootstrapGreetingCacheRepository,
     conversationRepository,
     messageRepository,
     connectorRegistry,

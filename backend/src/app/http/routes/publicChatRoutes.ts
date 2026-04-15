@@ -9,9 +9,26 @@ import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./chatRoutes.js";
 
 export const anonymousChatSchema = z.object({
-  query: z.string().min(1),
+  query: z.string().min(1).optional(),
   stream: z.boolean().default(false),
   conversationId: z.string().uuid().optional(),
+  bootstrapGreeting: z.boolean().optional(),
+  userExpectedLocale: z.string().min(2).max(35).optional(),
+}).superRefine((value, ctx) => {
+  if (!value.query && !value.bootstrapGreeting) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "query is required unless bootstrapGreeting is true",
+      path: ["query"],
+    });
+  }
+  if (value.bootstrapGreeting && value.conversationId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "bootstrapGreeting may only be used for brand-new conversations",
+      path: ["conversationId"],
+    });
+  }
 });
 
 export const publicConversationParamsSchema = z.object({
@@ -21,12 +38,19 @@ export const publicConversationParamsSchema = z.object({
 export const createPublicChatRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
   const sessionMiddleware = resolveAnonymousSession(dependencies.workspaceRepository);
+  const rateLimitUnlessBootstrap = anonymousRateLimiter(dependencies);
 
   // POST /api/v1/public/chat/:token — send a message
   router.post(
     "/:token",
     sessionMiddleware,
-    anonymousRateLimiter(dependencies),
+    (req, res, next) => {
+      if ((req.body as { bootstrapGreeting?: boolean } | undefined)?.bootstrapGreeting === true) {
+        next();
+        return;
+      }
+      rateLimitUnlessBootstrap(req, res, next);
+    },
     validateBody(anonymousChatSchema),
     async (req, res, next) => {
       try {
@@ -35,9 +59,24 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
           anonymousSessionId: string;
         };
 
+        if (req.body.bootstrapGreeting) {
+          const bootstrap = await dependencies.chatBootstrapService.startConversation({
+            workspaceId,
+            sourceChannel: "anonymous",
+            anonymousSessionId,
+            userExpectedLocale: req.body.userExpectedLocale,
+          });
+          if (!bootstrap) {
+            res.status(204).end();
+            return;
+          }
+          res.status(200).json(bootstrap);
+          return;
+        }
+
         const input = {
           workspaceId,
-          query: req.body.query,
+          query: req.body.query!,
           stream: req.body.stream,
           conversationId: req.body.conversationId,
           sourceChannel: "anonymous",
@@ -82,7 +121,11 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
         parsedQuery.data,
       );
 
-      res.status(200).json({ workspaceName, ...page });
+      res.status(200).json({
+        workspaceName,
+        assistantBootstrapActive: Boolean((res.locals as { assistantBootstrapActive?: boolean }).assistantBootstrapActive),
+        ...page,
+      });
     } catch (error) {
       next(error);
     }

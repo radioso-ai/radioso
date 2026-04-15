@@ -22,6 +22,14 @@ describe("general settings contract", () => {
       assistantDefaultLocale: null,
       proactiveGreetingEnabled: false,
       assistantBootstrapActive: false,
+      websiteEmbedEnabled: false,
+      websiteEmbedToken: null,
+      websiteEmbedScriptUrl: "http://localhost:3000/radioso-embed.js",
+      websiteEmbedSnippet: null,
+      websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Chat with us",
+      websiteEmbedLauncherIcon: "chat",
+      websiteEmbedLauncherPosition: "bottom-right",
     });
   });
 
@@ -53,6 +61,69 @@ describe("general settings contract", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.anonymousRateLimit).toBe(20);
+  });
+
+  it("round-trips website embed settings and generated snippet", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app);
+
+    const response = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: ["https://example.com/help", "https://docs.example.com"],
+        websiteEmbedLauncherLabel: "Talk to Marta",
+        websiteEmbedLauncherIcon: "sparkles",
+        websiteEmbedLauncherPosition: "bottom-left",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      websiteEmbedEnabled: true,
+      websiteEmbedAllowedOrigins: ["https://example.com", "https://docs.example.com"],
+      websiteEmbedLauncherLabel: "Talk to Marta",
+      websiteEmbedLauncherIcon: "sparkles",
+      websiteEmbedLauncherPosition: "bottom-left",
+      websiteEmbedScriptUrl: "http://localhost:3000/radioso-embed.js",
+    });
+    expect(response.body.websiteEmbedToken).toEqual(expect.any(String));
+    expect(response.body.websiteEmbedSnippet).toContain('data-radioso-token="');
+    expect(response.body.websiteEmbedSnippet).toContain('data-radioso-launcher-position="bottom-left"');
+  });
+
+  it("escapes quote-bearing website embed values in the generated snippet", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app);
+
+    const response = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: ["https://example.com"],
+        websiteEmbedLauncherLabel: 'Chat "now"',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.websiteEmbedSnippet).toContain(
+      'data-radioso-launcher-label="Chat &quot;now&quot;"',
+    );
+  });
+
+  it("rejects enabling website embed without approved origins", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app);
+
+    const response = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: [],
+      });
+
+    expect(response.status).toBe(400);
   });
 
   it("toggling off preserves token but returns null URL", async () => {

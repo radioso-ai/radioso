@@ -98,6 +98,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     workspaceId: string;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
+    sourceOrigin?: string | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
     return this.database.withTransaction(async (client) => {

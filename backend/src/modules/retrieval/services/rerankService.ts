@@ -1,4 +1,6 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { RetrievedCandidate, RerankedCandidate, RerankStatus } from "../domain/retrievalPipelineTypes.js";
 
@@ -9,10 +11,13 @@ export interface RerankGateway {
   }): Promise<Array<{ chunkId: string; relevanceScore: number }>>;
 }
 
-export class ModelRerankGateway implements RerankGateway {
-  private static readonly TEMPERATURE = 0.2;
-  private static readonly MAX_COMPLETION_TOKENS = 100;
+const RERANK_SYSTEM_PROMPT = loadPromptTemplate("retrieval/rerank-system.txt");
+const RERANK_RESPONSES_INSTRUCTIONS = loadPromptTemplate("retrieval/rerank-responses-instructions.txt");
 
+const buildRerankPrompt = (input: { query: string; candidates: string }): string =>
+  renderPromptTemplate("retrieval/rerank-user.md", input);
+
+export class ModelRerankGateway implements RerankGateway {
   constructor(
     private readonly client: TextGenerationClient,
     private readonly logger?: AppLogger,
@@ -25,11 +30,10 @@ export class ModelRerankGateway implements RerankGateway {
     const candidates = buildRerankCandidateList(input.contexts);
 
     const content = await this.client.complete({
-      systemPrompt:
-        'Score each candidate chunk for answer relevance to the query. Return only valid JSON as an array of objects with keys "chunkId" and "relevanceScore" where relevanceScore is between 0 and 1.',
-      prompt: `Query:\n${input.query}\n\nCandidates:\n${candidates}`,
-      temperature: ModelRerankGateway.TEMPERATURE,
-      maxOutputTokens: ModelRerankGateway.MAX_COMPLETION_TOKENS,
+      systemPrompt: RERANK_SYSTEM_PROMPT,
+      prompt: buildRerankPrompt({ query: input.query, candidates }),
+      temperature: RETRIEVAL_BEHAVIOR.rerank.temperature,
+      maxOutputTokens: RETRIEVAL_BEHAVIOR.rerank.modelMaxCompletionTokens,
     });
 
     try {
@@ -52,10 +56,6 @@ export class ModelRerankGateway implements RerankGateway {
 }
 
 export class OpenAISemanticRerankGateway implements RerankGateway {
-  private static readonly TEMPERATURE = 0.2;
-  private static readonly MIN_OUTPUT_TOKENS = 200;
-  private static readonly MAX_OUTPUT_TOKENS = 1200;
-  private static readonly OUTPUT_TOKENS_PER_CANDIDATE = 24;
   private static readonly RESPONSE_FORMAT = {
     type: "json_schema" as const,
     name: "rerank_scores",
@@ -111,20 +111,19 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
   }): Promise<Array<{ chunkId: string; relevanceScore: number }>> {
     const candidates = buildRerankCandidateList(input.contexts);
     const maxOutputTokens = Math.min(
-      OpenAISemanticRerankGateway.MAX_OUTPUT_TOKENS,
+      RETRIEVAL_BEHAVIOR.rerank.openAiMaxOutputTokens,
       Math.max(
-        OpenAISemanticRerankGateway.MIN_OUTPUT_TOKENS,
-        input.contexts.length * OpenAISemanticRerankGateway.OUTPUT_TOKENS_PER_CANDIDATE,
+        RETRIEVAL_BEHAVIOR.rerank.openAiMinOutputTokens,
+        input.contexts.length * RETRIEVAL_BEHAVIOR.rerank.openAiOutputTokensPerCandidate,
       ),
     );
 
     const response = await this.client.responses.create({
       model: this.model,
-      temperature: OpenAISemanticRerankGateway.TEMPERATURE,
+      temperature: RETRIEVAL_BEHAVIOR.rerank.temperature,
       max_output_tokens: maxOutputTokens,
-      instructions:
-        'Score each candidate chunk for answer relevance to the query. Return only JSON matching the provided schema. Use candidateIndex values from the numbered list. relevanceScore must be between 0 and 1.',
-      input: `Query:\n${input.query}\n\nCandidates:\n${candidates}`,
+      instructions: RERANK_RESPONSES_INSTRUCTIONS,
+      input: buildRerankPrompt({ query: input.query, candidates }),
       text: {
         format: OpenAISemanticRerankGateway.RESPONSE_FORMAT,
       },
@@ -162,8 +161,6 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
 }
 
 export class RerankService {
-  private static readonly MAX_RERANK_BATCH_SIZE = 20;
-
   constructor(
     private readonly gateway?: RerankGateway,
     private readonly logger?: AppLogger,
@@ -183,7 +180,7 @@ export class RerankService {
     }
 
     try {
-      const rerankBatches = chunkContexts(input.contexts, RerankService.MAX_RERANK_BATCH_SIZE);
+      const rerankBatches = chunkContexts(input.contexts, RETRIEVAL_BEHAVIOR.rerank.maxBatchSize);
       const batchScores = await Promise.all(
         rerankBatches.map((contexts) =>
           this.gateway?.rerank({
@@ -235,7 +232,7 @@ export class RerankService {
           rerankQuery: input.query,
           candidateCount: input.contexts.length,
           rerankCandidateCount: input.contexts.length,
-          rerankBatchCount: Math.ceil(input.contexts.length / RerankService.MAX_RERANK_BATCH_SIZE),
+          rerankBatchCount: Math.ceil(input.contexts.length / RETRIEVAL_BEHAVIOR.rerank.maxBatchSize),
         },
         "Rerank request failed; falling back to similarity ordering",
       );
@@ -258,7 +255,7 @@ export class RerankService {
   }
 }
 
-const MAX_RERANK_RETRIEVAL_TEXT_CHARS = 220;
+const MAX_RERANK_RETRIEVAL_TEXT_CHARS = RETRIEVAL_BEHAVIOR.rerank.maxRetrievalTextChars;
 
 const buildRerankCandidateList = (contexts: RetrievedCandidate[]): string =>
   contexts

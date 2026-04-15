@@ -1,4 +1,5 @@
 import type { RetrievedCandidate } from "../domain/retrievalPipelineTypes.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { AppliedConstraint } from "../domain/queryConstraintTypes.js";
 import type {
   MetadataRuleOperator,
@@ -41,8 +42,12 @@ export class MetadataRuleScoringService {
 
         return {
           ...workingCandidate,
-          attributeMatchScore: workingCandidate.attributeMatchScore + (matched && rule.effect === "boost" ? 0.2 : 0),
-          similarity: workingCandidate.similarity + (matched && rule.effect === "boost" ? 0.2 : 0),
+          attributeMatchScore: workingCandidate.attributeMatchScore + (
+            matched && rule.effect === "boost" ? RETRIEVAL_BEHAVIOR.metadataBoostWeight : 0
+          ),
+          similarity: workingCandidate.similarity + (
+            matched && rule.effect === "boost" ? RETRIEVAL_BEHAVIOR.metadataBoostWeight : 0
+          ),
         };
       });
 

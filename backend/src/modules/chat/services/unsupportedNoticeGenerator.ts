@@ -1,4 +1,6 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { DEFAULT_UNSUPPORTED_NOTICE } from "./answerSupportValidationTypes.js";
 
 export interface UnsupportedNoticeGenerator {
@@ -8,12 +10,7 @@ export interface UnsupportedNoticeGenerator {
   }): Promise<string>;
 }
 
-const UNSUPPORTED_NOTICE_SYSTEM_PROMPT = `Rewrite unsupported answer content as a short non-verification notice.
-Respond in the same language as the user's query when possible.
-Do not add any factual content beyond saying the requested claim could not be verified from the retrieved documents.
-Do not answer the question.
-Keep the notice to one short sentence.
-Return plain text only.`;
+const UNSUPPORTED_NOTICE_SYSTEM_PROMPT = loadPromptTemplate("chat/unsupported-notice-system.md");
 
 export class DefaultUnsupportedNoticeGenerator implements UnsupportedNoticeGenerator {
   async generate(): Promise<string> {
@@ -28,9 +25,12 @@ export class ModelUnsupportedNoticeGenerator implements UnsupportedNoticeGenerat
     try {
       const raw = await this.client.complete({
         systemPrompt: UNSUPPORTED_NOTICE_SYSTEM_PROMPT,
-        prompt: `User query:\n${input.query}\n\nUnsupported answer content:\n${input.unsupportedText}`,
-        temperature: 0,
-        maxOutputTokens: 80,
+        prompt: renderPromptTemplate("chat/unsupported-notice-user.md", {
+          query: input.query,
+          unsupported_text: input.unsupportedText,
+        }),
+        temperature: CHAT_BEHAVIOR.unsupportedNotice.temperature,
+        maxOutputTokens: CHAT_BEHAVIOR.unsupportedNotice.maxOutputTokens,
       });
 
       return normalizeUnsupportedNotice(raw);
@@ -46,7 +46,7 @@ const normalizeUnsupportedNotice = (value: string | undefined): string => {
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/\s+/g, " ");
 
-  if (!normalized || normalized.length > 240) {
+  if (!normalized || normalized.length > CHAT_BEHAVIOR.unsupportedNotice.maxResponseLength) {
     return DEFAULT_UNSUPPORTED_NOTICE;
   }
 

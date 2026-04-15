@@ -217,6 +217,149 @@ describe("chat service streaming", () => {
     expect(capturedInputs[1]?.rewriteCarryForwardLiterals).toEqual(["Narayani"]);
   });
 
+  it("answers assistant identity questions without retrieved document context", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what is your name",
+          contexts: [],
+          prompt: "unused retrieval prompt",
+          citations: [],
+          assistantIdentity: {
+            assistantName: "Marta",
+            assistantRole: "Museum guide",
+            greetingInstruction: "Warm and concise",
+          },
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "what is your name",
+              lexicalQuery: "what is your name",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer(input) {
+        expect(input.prompt).toContain("Assistant name: Marta");
+        expect(input.prompt).toContain("Assistant role: Museum guide");
+        return "My name is Marta. I am your museum guide.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "What is your name and what do you do?",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("My name is Marta. I am your museum guide.");
+    expect(response.citations).toBeUndefined();
+    expect(response.answerSegments).toBeUndefined();
+  });
+
+  it("streams assistant identity answers for no-context follow-ups", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what do you do",
+          contexts: [],
+          prompt: "unused retrieval prompt",
+          citations: [],
+          assistantIdentity: {
+            assistantName: "Marta",
+            assistantRole: "Museum guide",
+            greetingInstruction: "Warm and concise",
+          },
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "what do you do",
+              lexicalQuery: "what do you do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer(input) {
+        expect(input.prompt).toContain("Assistant role: Museum guide");
+        return "I am Marta, and I help visitors navigate the museum.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "What do you do?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events[0]).toEqual({ type: "conversation", conversationId: expect.any(String) });
+    expect(events[1]).toEqual({ type: "chunk", text: "I am Marta, and I help visitors navigate the museum." });
+    expect(events[2]).toEqual(
+      expect.objectContaining({
+        type: "done",
+        answer: "I am Marta, and I help visitors navigate the museum.",
+      }),
+    );
+  });
+
   it("excludes URL-shaped citation titles from carry-forward literals", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
@@ -455,13 +598,17 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts.join("")).toBe(DEFAULT_UNSUPPORTED_NOTICE);
+    expect(chunkTexts.join("")).toBe(
+      `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
+    );
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
-      answer: DEFAULT_UNSUPPORTED_NOTICE,
+      answer: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
       citations: [],
-      answerSegments: [{ text: DEFAULT_UNSUPPORTED_NOTICE }],
+      answerSegments: [
+        { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
+      ],
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -485,7 +632,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: DEFAULT_UNSUPPORTED_NOTICE,
+      content: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
     });
   });
 
@@ -559,13 +706,17 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts).toEqual([DEFAULT_UNSUPPORTED_NOTICE]);
+    expect(chunkTexts).toEqual([
+      `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
+    ]);
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
-      answer: DEFAULT_UNSUPPORTED_NOTICE,
+      answer: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
       citations: [],
-      answerSegments: [{ text: DEFAULT_UNSUPPORTED_NOTICE }],
+      answerSegments: [
+        { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
+      ],
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -589,7 +740,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: DEFAULT_UNSUPPORTED_NOTICE,
+      content: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
     });
   });
 
@@ -653,7 +804,10 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
       { role: "user", content: "What does this page do?" },
-      { role: "assistant", content: "I could not find relevant information in your documents." },
+      {
+        role: "assistant",
+        content: "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+      },
     ]);
   });
 

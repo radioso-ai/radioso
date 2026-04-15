@@ -20,6 +20,7 @@ import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { getApiErrorMessage } from '@/lib/api-error'
 import { accountApi, generalSettingsApi, type GeneralSettings } from '@/lib/api'
 import { buildWebsiteEmbedSnippet, formatWebsiteEmbedOrigins, parseWebsiteEmbedOrigins } from '@/lib/embed-widget'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -44,6 +45,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
   const [websiteEmbedOrigins, setWebsiteEmbedOrigins] = useState('')
+  const [assistantSettingsError, setAssistantSettingsError] = useState<string | null>(null)
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
@@ -93,6 +95,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
         setAnonSettings(data)
         setSavedAnonSettings(data)
         setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(data.websiteEmbedAllowedOrigins ?? []))
+        setAssistantSettingsError(null)
       } catch (error) {
         console.error('Failed to load anonymous chat settings:', error)
       } finally {
@@ -208,6 +211,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
 
   const handleAssistantSettingChange = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
     if (!anonSettings) return
+    setAssistantSettingsError(null)
     setAnonSettings({ ...anonSettings, [key]: value })
   }
 
@@ -236,8 +240,10 @@ export function GeneralTab({ accountId }: { accountId: string }) {
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
       setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
+      setAssistantSettingsError(null)
     } catch (error) {
       console.error('Failed to update assistant bootstrap settings:', error)
+      setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant bootstrap settings.'))
     } finally {
       setIsAnonSaving(false)
     }
@@ -444,6 +450,9 @@ export function GeneralTab({ accountId }: { accountId: string }) {
                     Save
                   </Button>
                 </div>
+                {assistantSettingsError ? (
+                  <p className="text-sm text-destructive" role="alert">{assistantSettingsError}</p>
+                ) : null}
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">

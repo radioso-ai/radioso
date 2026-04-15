@@ -62,7 +62,9 @@ describe("chat integration", () => {
       .send({ query: "What is the capital of France?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toContain("could not find relevant information");
+    expect(response.body.answer).toBe(
+      "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+    );
   });
 
   it("returns an actionable provider setup error when the model provider rejects credentials", async () => {
@@ -148,7 +150,7 @@ describe("chat integration", () => {
     ]);
   });
 
-  it("collapses fully unsupported grounded drafts to only the unsupported notice", async () => {
+  it("turns fully unsupported grounded drafts into a conversational grounded miss", async () => {
     const unsupportedGateway: ChatGateway = {
       async answer() {
         return "It also offers 24/7 phone support and a discount code.";
@@ -173,7 +175,9 @@ describe("chat integration", () => {
       .send({ query: "What does the page explain?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toBe(DEFAULT_UNSUPPORTED_NOTICE);
+    expect(response.body.answer).toBe(
+      `I couldn't verify that from your workspace documents, but I did find related material in "Guide" if you'd like to explore that instead.`,
+    );
     expect(response.body.answer).not.toContain("discount code");
   });
 
@@ -463,17 +467,19 @@ describe("chat integration", () => {
       .set("Authorization", authorization);
 
     expect(detail.status).toBe(200);
-    expect(detail.body.messages).toEqual([
-      expect.objectContaining({ role: "user", content: "What does the page explain?" }),
-      expect.objectContaining({
-        role: "assistant",
-        content: "Sorry, something went wrong. Please try again.",
-        debug: expect.objectContaining({
-          eventStatus: "failure",
-          errorMessage: "upstream unavailable",
+    expect(detail.body.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: "user", content: "What does the page explain?" }),
+        expect.objectContaining({
+          role: "assistant",
+          content: "Sorry, something went wrong. Please try again.",
+          debug: expect.objectContaining({
+            eventStatus: "failure",
+            errorMessage: "upstream unavailable",
+          }),
         }),
-      }),
-    ]);
+      ]),
+    );
   });
 
   it("preserves ambiguity for unresolved relation follow-ups", async () => {

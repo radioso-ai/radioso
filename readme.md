@@ -224,7 +224,7 @@ You usually do not need to change settings on day one. Tune them when retrieval 
 | `vectorTopK` | `20` | relevant evidence is often missing | increases or reduces candidate recall |
 | `similarityThreshold` | `0.2` | weak matches are slipping into answers | filters low-similarity chunks |
 | `rerankTopK` | `20` | you want to rerank more or fewer candidates | changes how many results reach reranking |
-| `answerSupportPolicy` | `strict` | you want safer or looser answer behavior | controls how hard Radioso pushes back on weak support |
+| `answerSupportPolicy` | `strict` | you want safer or looser answer behavior | controls whether unsupported answers are rewritten into safer conversational misses or left closer to the original model text |
 | `citationDisplayEnabled` | `true` | you want cleaner output or easier debugging | shows or hides citations |
 
 ### Ingestion Settings

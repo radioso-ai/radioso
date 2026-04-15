@@ -363,7 +363,34 @@ describe("public chat contract", () => {
     expect(response.headers["set-cookie"]).toBeDefined();
   });
 
-  it("does not consume anonymous rate limit when bootstrap greeting runs first", async () => {
+  it("rejects malformed public bootstrap locale hints with a client error", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-bootstrap-invalid-locale@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+
+    await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+        assistantName: "Marta",
+        assistantRole: "Document assistant",
+        proactiveGreetingEnabled: true,
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "bad_locale_value" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: "bad_request",
+      message: "Invalid request body",
+    });
+  });
+
+  it("counts bootstrap greeting requests against the anonymous rate limit", async () => {
     const { app } = createTestApp({
       chatGateway: {
         async answer(input) {
@@ -406,6 +433,12 @@ describe("public chat contract", () => {
       .send({ query: "What is the answer?", stream: false, conversationId: bootstrap.body.conversationId });
 
     expect(bootstrap.status).toBe(200);
-    expect(firstMessage.status).toBe(200);
+    expect(firstMessage.status).toBe(429);
+    expect(firstMessage.body.error).toMatchObject({
+      code: "rate_limit_exceeded",
+      details: {
+        retryAfterSeconds: expect.any(Number),
+      },
+    });
   });
 });

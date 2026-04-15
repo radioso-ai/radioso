@@ -64,6 +64,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL 16 for app state under test; filesystem-backed benchmark definitions in the repo and gitignored run artifacts under `.context/performance-runs/` (037-performance-benchmarking)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend) + Express, `pg`, Zod, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router (039-assistant-bootstrap)
 - PostgreSQL 16 with additive workspace-scoped columns on `workspaces`; existing conversations/messages tables (039-assistant-bootstrap)
+- TypeScript 5.x on Node.js 22 + Express, Zod, pg, OpenAI SDK, Pino, Vitest, Supertes (039-unsupported-answer-refine)
+- PostgreSQL 16 with `pgvector`; no schema changes planned (039-unsupported-answer-refine)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, Next.js App Router, existing Radix/shadcn UI primitives, existing chat/public-chat frontend utilities (040-website-embed-widget)
 - PostgreSQL 16 with additive workspace columns; existing conversations/messages/audit events reused (040-website-embed-widget)
 
@@ -91,5 +93,6 @@ tests/
 
 ## Recent Changes
 - 040-website-embed-widget: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, Next.js App Router, existing Radix/shadcn UI primitives, existing chat/public-chat frontend utilities
+- 039-unsupported-answer-refine: Added TypeScript 5.x on Node.js 22 + Express, Zod, pg, OpenAI SDK, Pino, Vitest, Supertes
 - 039-assistant-bootstrap: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend) + Express, `pg`, Zod, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router
 - 037-external-document-id: Added TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router

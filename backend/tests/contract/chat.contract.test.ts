@@ -264,6 +264,21 @@ describe("chat contract", () => {
     expect(response.status).toBe(204);
   });
 
+  it("rejects malformed bootstrap locale hints with a client error", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "chat-bootstrap-invalid-locale@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set(adminSessionHeaders(session))
+      .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "bad_locale_value" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: "bad_request",
+      message: "Invalid request body",
+    });
+  });
   it("returns an SSE response when streaming is requested", async () => {
     const delayedGateway: ChatGateway = {
       async answer(input) {
@@ -450,7 +465,7 @@ describe("chat contract", () => {
 
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual(["answer", "conversationId", "retrievalInfo", "retrievalTrace"]);
-    expect(response.body.answer).toContain("could not find relevant information");
+    expect(response.body.answer).toContain("couldn't find supporting material");
     expect(response.body).not.toHaveProperty("citations");
     expect(response.body).not.toHaveProperty("answerSegments");
     expect(response.body.retrievalInfo).toMatchObject({

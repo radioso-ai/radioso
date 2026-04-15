@@ -13,6 +13,10 @@ import {
   metadataValueTypes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 import {
+  isAssistantBootstrapActive,
+  validateAssistantBootstrapSettings,
+} from "../../../modules/settings/domain/assistantBootstrapSettings.js";
+import {
   FIXED_WINDOW_CHUNK_OVERLAP_MAX,
   FIXED_WINDOW_CHUNK_OVERLAP_MIN,
   FIXED_WINDOW_CHUNK_SIZE_MAX,
@@ -52,6 +56,11 @@ export const updateSettingsSchema = z.object({
 export const updateGeneralSettingsSchema = z.object({
   anonymousChatEnabled: z.boolean().optional(),
   anonymousRateLimit: z.number().int().min(1).max(60).optional(),
+  assistantName: z.string().max(200).optional(),
+  assistantRole: z.string().max(200).optional(),
+  greetingInstruction: z.string().max(200).optional(),
+  assistantDefaultLocale: z.string().max(35).nullable().optional(),
+  proactiveGreetingEnabled: z.boolean().optional(),
 });
 
 export const updateIngestionSettingsSchema = z.object({
@@ -142,6 +151,24 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     return `${baseUrl}/${token}`;
   };
 
+  const buildGeneralSettingsResponse = (workspace: Awaited<ReturnType<typeof dependencies.workspaceRepository.findById>>) => {
+    if (!workspace) {
+      return null;
+    }
+
+    return {
+      anonymousChatEnabled: workspace.anonymousChatEnabled,
+      anonymousChatUrl: buildAnonymousChatUrl(workspace.anonymousChatToken, workspace.anonymousChatEnabled),
+      anonymousRateLimit: workspace.anonymousRateLimit,
+      assistantName: workspace.assistantName,
+      assistantRole: workspace.assistantRole,
+      greetingInstruction: workspace.greetingInstruction,
+      assistantDefaultLocale: workspace.assistantDefaultLocale,
+      proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
+      assistantBootstrapActive: isAssistantBootstrapActive(workspace),
+    };
+  };
+
   router.get("/general", workspaceSession, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
@@ -150,11 +177,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         res.status(404).json({ code: "not_found", message: "Workspace not found" });
         return;
       }
-      res.status(200).json({
-        anonymousChatEnabled: workspace.anonymousChatEnabled,
-        anonymousChatUrl: buildAnonymousChatUrl(workspace.anonymousChatToken, workspace.anonymousChatEnabled),
-        anonymousRateLimit: workspace.anonymousRateLimit,
-      });
+      res.status(200).json(buildGeneralSettingsResponse(workspace));
     } catch (error) {
       next(error);
     }
@@ -178,12 +201,23 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         token = randomBytes(16).toString("base64url");
       }
 
-      const updated = await dependencies.workspaceRepository.updateAnonymousChatSettings(
-        workspaceId,
-        enabled,
-        token,
-        rateLimit,
-      );
+      const normalizedBootstrap = validateAssistantBootstrapSettings({
+        assistantName: req.body.assistantName ?? workspace.assistantName,
+        assistantRole: req.body.assistantRole ?? workspace.assistantRole,
+        greetingInstruction: req.body.greetingInstruction ?? workspace.greetingInstruction,
+        assistantDefaultLocale:
+          req.body.assistantDefaultLocale === undefined
+            ? workspace.assistantDefaultLocale
+            : req.body.assistantDefaultLocale,
+        proactiveGreetingEnabled: req.body.proactiveGreetingEnabled ?? workspace.proactiveGreetingEnabled,
+      });
+
+      const updated = await dependencies.workspaceRepository.updateGeneralSettings(workspaceId, {
+        anonymousChatEnabled: enabled,
+        anonymousChatToken: token,
+        anonymousRateLimit: rateLimit,
+        ...normalizedBootstrap,
+      });
 
       if (enabled !== workspace.anonymousChatEnabled) {
         const { accountId } = res.locals as { accountId: string };
@@ -196,11 +230,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         });
       }
 
-      res.status(200).json({
-        anonymousChatEnabled: updated.anonymousChatEnabled,
-        anonymousChatUrl: buildAnonymousChatUrl(updated.anonymousChatToken, updated.anonymousChatEnabled),
-        anonymousRateLimit: updated.anonymousRateLimit,
-      });
+      res.status(200).json(buildGeneralSettingsResponse(updated));
     } catch (error) {
       next(error);
     }

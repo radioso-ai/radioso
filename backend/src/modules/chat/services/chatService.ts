@@ -30,6 +30,7 @@ import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSe
 import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
+import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -132,6 +133,49 @@ export class ChatService {
     return session.retrieval.responseSettings?.answerSupportPolicy ?? DEFAULT_ANSWER_SUPPORT_POLICY;
   }
 
+  private async generateIdentityAnswer(
+    session: PreparedSession,
+    query: string,
+  ): Promise<PresentedAnswer | null> {
+    if (!isAssistantIdentityQuestion(query) || !session.retrieval.assistantIdentity) {
+      return null;
+    }
+
+    const answer = (await this.chatGateway.answer({
+      query,
+      history: session.history,
+      prompt: buildAssistantIdentityAnswerPrompt({
+        assistantIdentity: session.retrieval.assistantIdentity,
+        history: session.history,
+        query,
+      }),
+    })).trim();
+
+    if (!answer) {
+      return null;
+    }
+
+    const presented = this.answerPresentationService.present({
+      answer,
+      citations: [],
+      citationDisplayEnabled: false,
+    });
+
+    return {
+      ...presented,
+      answerOutcome: ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS,
+      validation: {
+        ran: false,
+        answerModified: false,
+        unsupportedSegmentCount: 0,
+        supportedSegmentCount: 0,
+        nonSubstantiveSegmentCount: 0,
+        answerSupportPolicy: this.getAnswerSupportPolicy(session),
+      },
+      segmentResults: [],
+    };
+  }
+
   async answer(input: {
     workspaceId: string;
     accountId?: string;
@@ -224,13 +268,16 @@ export class ChatService {
       };
 
       let rawAnswer = "";
+      let noContextPresentation: PresentedAnswer | null = null;
       const answerStartedAt = Date.now();
       const answerSupportPolicy = this.getAnswerSupportPolicy(session);
       const suppressRawStreaming =
         session.retrieval.contexts.length > 0 && shouldReplaceUnsupportedSegments(answerSupportPolicy);
 
       if (session.retrieval.contexts.length === 0) {
-        rawAnswer = await this.groundedMissResponseComposer.composeNoContext({ query: input.query });
+        noContextPresentation = await this.generateIdentityAnswer(session, input.query);
+        rawAnswer = noContextPresentation?.answer
+          ?? await this.groundedMissResponseComposer.composeNoContext({ query: input.query });
         yield {
           type: "chunk",
           text: rawAnswer,
@@ -265,7 +312,7 @@ export class ChatService {
         }
       }
 
-      const presentation = await this.presentAnswer(session, rawAnswer, input.query);
+      const presentation = noContextPresentation ?? await this.presentAnswer(session, rawAnswer, input.query);
 
       if (suppressRawStreaming && presentation.answer.length > 0) {
         yield {
@@ -375,6 +422,13 @@ export class ChatService {
     session: PreparedSession,
     query: string,
   ): Promise<PresentedAnswer> {
+    if (session.retrieval.contexts.length === 0) {
+      const identityAnswer = await this.generateIdentityAnswer(session, query);
+      if (identityAnswer) {
+        return identityAnswer;
+      }
+    }
+
     const answer = session.retrieval.contexts.length === 0
       ? await this.groundedMissResponseComposer.composeNoContext({ query })
       : await this.chatGateway.answer({
@@ -624,3 +678,42 @@ export class ChatService {
     return /^https?:\/\//i.test(value) || /^www\./i.test(value);
   }
 }
+
+const ASSISTANT_IDENTITY_QUERY_PATTERNS = [
+  /\bwhat(?:'s| is) your name\b/i,
+  /\bwho are you\b/i,
+  /\bwhat do you do\b/i,
+  /\bwhat can you do\b/i,
+  /\byour role\b/i,
+  /\bcome ti chiami\b/i,
+  /\bchi sei\b/i,
+  /\bcosa fai\b/i,
+  /\bqual(?: è|e') il tuo nome\b/i,
+];
+
+const isAssistantIdentityQuestion = (query: string): boolean =>
+  ASSISTANT_IDENTITY_QUERY_PATTERNS.some((pattern) => pattern.test(query));
+
+const buildAssistantIdentityAnswerPrompt = (input: {
+  assistantIdentity: AssistantIdentityPromptInput;
+  history: MessageRecord[];
+  query: string;
+}): string => {
+  const historySection = input.history
+    .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+    .join("\n");
+
+  return [
+    "You are answering a question about the assistant's stable workspace identity.",
+    "Answer only from the identity details below and the conversation history when relevant.",
+    "Do not claim document knowledge or cite documents.",
+    "If a requested identity detail is missing, say so briefly instead of inventing it.",
+    input.assistantIdentity.assistantName ? `Assistant name: ${input.assistantIdentity.assistantName}` : null,
+    input.assistantIdentity.assistantRole ? `Assistant role: ${input.assistantIdentity.assistantRole}` : null,
+    input.assistantIdentity.greetingInstruction ? `Assistant style: ${input.assistantIdentity.greetingInstruction}` : null,
+    "",
+    `Conversation History:\n${historySection || "No prior history"}`,
+    "",
+    `User Question:\n${input.query}`,
+  ].filter((line): line is string => line !== null).join("\n");
+};

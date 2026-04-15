@@ -108,6 +108,7 @@ describe("public chat contract", () => {
       .set("Cookie", anonCookie!);
 
     expect(list.status).toBe(200);
+    expect(list.body.assistantBootstrapActive).toBe(false);
     expect(list.body.conversations).toHaveLength(1);
     expect(list.body.conversations[0].id).toBe(chat.body.conversationId);
     expect(list.body.nextCursor).toBeNull();
@@ -326,5 +327,85 @@ describe("public chat contract", () => {
         retryAfterSeconds: expect.any(Number),
       },
     });
+  });
+
+  it("creates a public bootstrap greeting with request locale for a new session", async () => {
+    const { app } = createTestApp({
+      chatGateway: {
+        async answer() {
+          return "Hello! I'm Marta and I can help with your documents.";
+        },
+        async *streamAnswer() {
+          yield "unused";
+        },
+      },
+    });
+    const session = await issueTestSession(app, "public-chat-bootstrap@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+
+    await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+        assistantName: "Marta",
+        assistantRole: "Document assistant",
+        proactiveGreetingEnabled: true,
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "en" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain("Hello!");
+    expect(response.headers["set-cookie"]).toBeDefined();
+  });
+
+  it("does not consume anonymous rate limit when bootstrap greeting runs first", async () => {
+    const { app } = createTestApp({
+      chatGateway: {
+        async answer(input) {
+          if (input.query.length === 0) {
+            return "Hello! I'm Marta and I can help with your documents.";
+          }
+          return "The answer is 42.";
+        },
+        async *streamAnswer() {
+          yield "unused";
+        },
+      },
+    });
+    const session = await issueTestSession(app, "public-chat-bootstrap-rate-limit@example.com");
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Doc", content: "The answer is 42." });
+
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+        anonymousRateLimit: 1,
+        assistantName: "Marta",
+        assistantRole: "Document assistant",
+        proactiveGreetingEnabled: true,
+      });
+    const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1];
+
+    const bootstrap = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "en-US" });
+    const anonCookie = findAnonymousCookie(bootstrap.headers["set-cookie"]);
+
+    const firstMessage = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("Cookie", anonCookie!)
+      .send({ query: "What is the answer?", stream: false, conversationId: bootstrap.body.conversationId });
+
+    expect(bootstrap.status).toBe(200);
+    expect(firstMessage.status).toBe(200);
   });
 });

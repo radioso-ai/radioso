@@ -113,6 +113,8 @@ const getLatestAssistantMessage = (detail: ChatConversationDetail): ChatMessage 
 }
 
 const MESSAGE_WINDOW_SIZE = 50
+const getPreferredLocale = () =>
+  typeof navigator !== 'undefined' ? navigator.languages?.[0] ?? navigator.language : undefined
 
 export function AnonymousChatProvider({
   token,
@@ -154,6 +156,32 @@ export function AnonymousChatProvider({
         setWorkspaceName(response.workspaceName ?? null)
 
         if (response.conversations.length === 0) {
+          if (response.assistantBootstrapActive) {
+            const bootstrap = await publicChatApi.bootstrapConversation(token, {
+              stream: false,
+              bootstrapGreeting: true,
+              userExpectedLocale: getPreferredLocale(),
+            })
+
+            if (cancelled) return
+
+            if (bootstrap?.answer) {
+              setConversationId(bootstrap.conversationId)
+              setMessages([
+                {
+                  id: crypto.randomUUID(),
+                  role: 'assistant',
+                  content: bootstrap.answer,
+                  createdAt: new Date().toISOString(),
+                  citations: bootstrap.citations,
+                  answerSegments: bootstrap.answerSegments,
+                  retrievalInfo: bootstrap.retrievalInfo,
+                  retrievalTrace: bootstrap.retrievalTrace,
+                  status: 'complete',
+                },
+              ])
+            }
+          }
           setIsHydrating(false)
           return
         }

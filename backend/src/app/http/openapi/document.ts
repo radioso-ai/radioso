@@ -314,6 +314,12 @@ const GeneralSettingsResponseSchema = registry.register(
     anonymousChatEnabled: z.boolean(),
     anonymousChatUrl: z.string().nullable(),
     anonymousRateLimit: z.number().int().min(1).max(60),
+    assistantName: z.string(),
+    assistantRole: z.string(),
+    greetingInstruction: z.string(),
+    assistantDefaultLocale: z.string().nullable(),
+    proactiveGreetingEnabled: z.boolean(),
+    assistantBootstrapActive: z.boolean(),
   }),
 );
 
@@ -879,6 +885,7 @@ const PublicConversationListResponseSchema = registry.register(
   "PublicConversationListResponse",
   z.object({
     workspaceName: z.string(),
+    assistantBootstrapActive: z.boolean(),
     conversations: z.array(PublicConversationSummarySchema),
     total: z.number().int().min(0),
     nextCursor: z.string().nullable(),
@@ -2255,6 +2262,9 @@ registry.registerPath({
         },
       },
     },
+    204: {
+      description: "Bootstrap request completed without creating a greeting",
+    },
     400: {
       description: "Request validation failed",
       content: {
@@ -2891,6 +2901,9 @@ registry.registerPath({
           schema: z.string().openapi("PublicChatSseStream"),
         },
       },
+    },
+    204: {
+      description: "Bootstrap request completed without creating a greeting",
     },
     400: {
       description: "Request validation failed",

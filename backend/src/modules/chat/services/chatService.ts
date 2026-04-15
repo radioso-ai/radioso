@@ -1,6 +1,8 @@
 import { notFound } from "../../../shared/domain/errors.js";
+import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -116,9 +118,6 @@ export class ChatService {
   private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
-  private static readonly MAX_CARRY_FORWARD_LITERALS = 6;
-  private static readonly MAX_CARRY_FORWARD_LITERAL_LENGTH = 120;
-
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
@@ -653,7 +652,7 @@ export class ChatService {
       }
 
       const literal = value.trim();
-      if (literal.length === 0 || literal.length > ChatService.MAX_CARRY_FORWARD_LITERAL_LENGTH) {
+      if (literal.length === 0 || literal.length > CHAT_BEHAVIOR.carryForward.maxLiteralLength) {
         continue;
       }
 
@@ -666,7 +665,7 @@ export class ChatService {
       }
 
       unique.push(literal);
-      if (unique.length >= ChatService.MAX_CARRY_FORWARD_LITERALS) {
+      if (unique.length >= CHAT_BEHAVIOR.carryForward.maxLiterals) {
         break;
       }
     }
@@ -679,20 +678,24 @@ export class ChatService {
   }
 }
 
-const ASSISTANT_IDENTITY_QUERY_PATTERNS = [
+const ASSISTANT_IDENTITY_EXPLICIT_PATTERNS = [
   /\bwhat(?:'s| is) your name\b/i,
   /\bwho are you\b/i,
-  /\bwhat do you do\b/i,
-  /\bwhat can you do\b/i,
   /\byour role\b/i,
   /\bcome ti chiami\b/i,
   /\bchi sei\b/i,
-  /\bcosa fai\b/i,
   /\bqual(?: è|e') il tuo nome\b/i,
 ];
 
+const ASSISTANT_IDENTITY_STANDALONE_PATTERNS = [
+  /^\s*what do you do[?.!\s]*$/i,
+  /^\s*what can you do[?.!\s]*$/i,
+  /^\s*cosa fai[?.!\s]*$/i,
+];
+
 const isAssistantIdentityQuestion = (query: string): boolean =>
-  ASSISTANT_IDENTITY_QUERY_PATTERNS.some((pattern) => pattern.test(query));
+  ASSISTANT_IDENTITY_EXPLICIT_PATTERNS.some((pattern) => pattern.test(query))
+  || ASSISTANT_IDENTITY_STANDALONE_PATTERNS.some((pattern) => pattern.test(query));
 
 const buildAssistantIdentityAnswerPrompt = (input: {
   assistantIdentity: AssistantIdentityPromptInput;
@@ -702,18 +705,15 @@ const buildAssistantIdentityAnswerPrompt = (input: {
   const historySection = input.history
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
     .join("\n");
-
-  return [
-    "You are answering a question about the assistant's stable workspace identity.",
-    "Answer only from the identity details below and the conversation history when relevant.",
-    "Do not claim document knowledge or cite documents.",
-    "If a requested identity detail is missing, say so briefly instead of inventing it.",
+  const identityLines = [
     input.assistantIdentity.assistantName ? `Assistant name: ${input.assistantIdentity.assistantName}` : null,
     input.assistantIdentity.assistantRole ? `Assistant role: ${input.assistantIdentity.assistantRole}` : null,
     input.assistantIdentity.greetingInstruction ? `Assistant style: ${input.assistantIdentity.greetingInstruction}` : null,
-    "",
-    `Conversation History:\n${historySection || "No prior history"}`,
-    "",
-    `User Question:\n${input.query}`,
-  ].filter((line): line is string => line !== null).join("\n");
+  ].filter((line): line is string => line !== null);
+
+  return renderPromptTemplate("chat/assistant-identity-answer.md", {
+    identity_lines: identityLines.join("\n"),
+    history_section: historySection || "No prior history",
+    query: input.query,
+  });
 };

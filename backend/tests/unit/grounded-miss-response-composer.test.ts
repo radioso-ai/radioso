@@ -43,6 +43,11 @@ describe("grounded miss response composer", () => {
   it("lets the model compose the full unsupported response from retrieved contexts", async () => {
     let request: TextGenerationRequest | undefined;
     const composer = new ModelGroundedMissResponseComposer({
+      metadata: {
+        capability: "chat",
+        provider: "openai",
+        model: "test-model",
+      },
       async complete(input) {
         request = input;
         return "I couldn't verify a raspberry cake recipe here, but I did find material about vegetarian cuisine in Ananda Vegetarian Cuisine if you'd like to explore that instead.";

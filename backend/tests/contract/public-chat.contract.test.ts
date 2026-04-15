@@ -363,8 +363,20 @@ describe("public chat contract", () => {
     expect(response.headers["set-cookie"]).toBeDefined();
   });
 
-  it("rejects malformed public bootstrap locale hints with a client error", async () => {
-    const { app } = createTestApp();
+  it("ignores malformed public bootstrap locale hints and falls back safely", async () => {
+    const { app } = createTestApp({
+      chatGateway: {
+        async answer(input) {
+          if (input.query.length === 0) {
+            return "Hello! I'm Marta and I can help with your documents.";
+          }
+          return "unused";
+        },
+        async *streamAnswer() {
+          yield "unused";
+        },
+      },
+    });
     const session = await issueTestSession(app, "public-chat-bootstrap-invalid-locale@example.com");
     const chatToken = await enableAnonymousChat(app, session);
 
@@ -383,11 +395,9 @@ describe("public chat contract", () => {
       .post(`/api/v1/public/chat/${chatToken}`)
       .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "bad_locale_value" });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toMatchObject({
-      code: "bad_request",
-      message: "Invalid request body",
-    });
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain("Hello!");
+    expect(response.body.conversationId).toEqual(expect.any(String));
   });
 
   it("counts bootstrap greeting requests against the anonymous rate limit", async () => {

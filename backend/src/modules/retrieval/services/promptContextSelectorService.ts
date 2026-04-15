@@ -1,6 +1,7 @@
 import type { FinalPromptContext, RerankedCandidate } from "../domain/retrievalPipelineTypes.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
-const DEFAULT_CONTEXT_TOKEN_BUDGET = 1200;
+const DEFAULT_CONTEXT_TOKEN_BUDGET = RETRIEVAL_BEHAVIOR.promptContextTokenBudget;
 
 export class PromptContextSelectorService {
   constructor(private readonly tokenBudget: number = DEFAULT_CONTEXT_TOKEN_BUDGET) {}

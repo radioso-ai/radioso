@@ -38,6 +38,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
   const isLastWorkspace = workspaces.length <= 1
   const deleteConfirmValid = deleteConfirmName === activeWorkspace?.name
   const [anonSettings, setAnonSettings] = useState<GeneralSettings | null>(null)
+  const [savedAnonSettings, setSavedAnonSettings] = useState<GeneralSettings | null>(null)
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
   const [apiToken, setApiToken] = useState<string | null>(null)
@@ -87,6 +88,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
       try {
         const data = await generalSettingsApi.getGeneralSettings()
         setAnonSettings(data)
+        setSavedAnonSettings(data)
       } catch (error) {
         console.error('Failed to load anonymous chat settings:', error)
       } finally {
@@ -104,6 +106,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
         anonymousRateLimit: anonSettings?.anonymousRateLimit ?? 10,
       })
       setAnonSettings(updated)
+      setSavedAnonSettings(updated)
     } catch (error) {
       console.error('Failed to update anonymous chat settings:', error)
     } finally {
@@ -124,6 +127,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
         anonymousRateLimit: value,
       })
       setAnonSettings(updated)
+      setSavedAnonSettings(updated)
     } catch (error) {
       console.error('Failed to update rate limit:', error)
     } finally {
@@ -193,6 +197,41 @@ export function GeneralTab({ accountId }: { accountId: string }) {
       setApiTokenError('Failed to reveal the workspace token')
     } finally {
       setIsApiTokenLoading(false)
+    }
+  }
+
+  const handleAssistantSettingChange = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
+    if (!anonSettings) return
+    setAnonSettings({ ...anonSettings, [key]: value })
+  }
+
+  const hasAssistantChanges =
+    Boolean(anonSettings && savedAnonSettings) &&
+    (
+      anonSettings.assistantName !== savedAnonSettings?.assistantName ||
+      anonSettings.assistantRole !== savedAnonSettings?.assistantRole ||
+      anonSettings.greetingInstruction !== savedAnonSettings?.greetingInstruction ||
+      anonSettings.assistantDefaultLocale !== savedAnonSettings?.assistantDefaultLocale ||
+      anonSettings.proactiveGreetingEnabled !== savedAnonSettings?.proactiveGreetingEnabled
+    )
+
+  const handleAssistantSave = async () => {
+    if (!anonSettings) return
+    setIsAnonSaving(true)
+    try {
+      const updated = await generalSettingsApi.updateGeneralSettings({
+        assistantName: anonSettings.assistantName,
+        assistantRole: anonSettings.assistantRole,
+        greetingInstruction: anonSettings.greetingInstruction,
+        assistantDefaultLocale: anonSettings.assistantDefaultLocale,
+        proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
+      })
+      setAnonSettings(updated)
+      setSavedAnonSettings(updated)
+    } catch (error) {
+      console.error('Failed to update assistant bootstrap settings:', error)
+    } finally {
+      setIsAnonSaving(false)
     }
   }
 
@@ -324,6 +363,100 @@ export function GeneralTab({ accountId }: { accountId: string }) {
                   </div>
                 </div>
               </details>
+          </section>
+
+          <section id="assistant-identity" className="space-y-6 scroll-mt-24">
+            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Assistant Identity</h2>
+            {isAnonLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Spinner className="w-5 h-5" />
+              </div>
+            ) : anonSettings ? (
+              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-base font-medium text-foreground">Assistant bootstrap</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Define the assistant&apos;s stable identity here. The active chat language can still be overridden per session, for example by an embedded website popup.
+                    </p>
+                  </div>
+                  <Button size="sm" onClick={handleAssistantSave} disabled={!hasAssistantChanges || isAnonSaving}>
+                    {isAnonSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                    Save
+                  </Button>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="assistantName" className="text-foreground">Assistant name</Label>
+                    <Input
+                      id="assistantName"
+                      value={anonSettings.assistantName}
+                      maxLength={200}
+                      onChange={(event) => handleAssistantSettingChange('assistantName', event.target.value)}
+                      placeholder="e.g. Marta"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="assistantDefaultLocale" className="text-foreground">Default locale fallback</Label>
+                    <Input
+                      id="assistantDefaultLocale"
+                      value={anonSettings.assistantDefaultLocale ?? ''}
+                      maxLength={35}
+                      onChange={(event) =>
+                        handleAssistantSettingChange(
+                          'assistantDefaultLocale',
+                          event.target.value.trim().length > 0 ? event.target.value : null,
+                        )
+                      }
+                      placeholder="e.g. it-IT"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="assistantRole" className="text-foreground">Assistant role</Label>
+                  <Input
+                    id="assistantRole"
+                    value={anonSettings.assistantRole}
+                    maxLength={200}
+                    onChange={(event) => handleAssistantSettingChange('assistantRole', event.target.value)}
+                    placeholder="e.g. Museum guide"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="greetingInstruction" className="text-foreground">Greeting style</Label>
+                  <Input
+                    id="greetingInstruction"
+                    value={anonSettings.greetingInstruction}
+                    maxLength={200}
+                    onChange={(event) => handleAssistantSettingChange('greetingInstruction', event.target.value)}
+                    placeholder="e.g. Warm and concise"
+                  />
+                </div>
+
+                <div className="flex items-start justify-between gap-4 rounded bg-muted/50 p-3">
+                  <div>
+                    <Label htmlFor="proactiveGreetingEnabled" className="text-foreground">Proactive first greeting</Label>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      When enabled, a brand-new chat can begin with an assistant-first greeting. Leave the identity fields blank if you prefer silent startup.
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Status: {anonSettings.assistantBootstrapActive ? 'active' : 'inactive until enough identity is configured'}
+                    </p>
+                  </div>
+                  <Switch
+                    id="proactiveGreetingEnabled"
+                    checked={anonSettings.proactiveGreetingEnabled}
+                    onCheckedChange={(checked) => handleAssistantSettingChange('proactiveGreetingEnabled', checked)}
+                    disabled={isAnonSaving}
+                  />
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Failed to load assistant bootstrap settings.</p>
+            )}
           </section>
 
           <section id="anonymous-chat" className="space-y-6 scroll-mt-24">

@@ -24,7 +24,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
   const router = useRouter()
   const [input, setInput] = useState('')
   const { activeWorkspaceId } = useWorkspace()
-  const { messages, isLoading, sendMessage } = useChatSession(activeWorkspaceId ?? accountId)
+  const { messages, isLoading, isBootstrapping, initializeSession, sendMessage } = useChatSession(activeWorkspaceId ?? accountId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -35,9 +35,16 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
     scrollToBottom()
   }, [isLoading, messages])
 
+  useEffect(() => {
+    const userExpectedLocale =
+      typeof navigator !== 'undefined' ? navigator.languages?.[0] ?? navigator.language : undefined
+
+    void initializeSession(userExpectedLocale)
+  }, [initializeSession])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isLoading || isBootstrapping) return
 
     const nextInput = input.trim()
     setInput('')
@@ -156,9 +163,9 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
             onKeyDown={handleKeyDown}
             placeholder="Ask a question..."
             className="min-h-[44px] max-h-32 resize-none"
-            disabled={isLoading}
+            disabled={isLoading || isBootstrapping}
           />
-          <Button type="submit" size="icon" className="h-[44px] w-[44px] shrink-0" disabled={isLoading || !input.trim()}>
+          <Button type="submit" size="icon" className="h-[44px] w-[44px] shrink-0" disabled={isLoading || isBootstrapping || !input.trim()}>
             <Send className="w-4 h-4" />
             <span className="sr-only">Send message</span>
           </Button>

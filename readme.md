@@ -219,6 +219,18 @@ You usually do not need to change settings on day one. Tune them when retrieval 
 | `structuredMinChunkSize` | `200` | structure-aware chunks are too fragmented | raises the floor for small chunks |
 | `structuredMaxChunkSize` | `1200` | structure-aware chunks are too broad | caps large chunks |
 
+### General Settings For Chat Bootstrap
+
+Use General Settings for assistant identity and first-turn behavior. Keep retrieval tuning in Retrieval Settings, and keep language request-scoped.
+
+| Setting | Good starting point | Change it when | Typical effect |
+| --- | --- | --- | --- |
+| `assistantName` | empty | you want the bot to introduce itself consistently | gives the greeting a stable name |
+| `assistantRole` | empty | users need a clearer explanation of what the bot does | frames the assistant's purpose |
+| `greetingInstruction` | empty | the greeting tone should be more formal, warmer, shorter, or brand-specific | shapes the opening style without turning settings into a full prompt editor |
+| `assistantDefaultLocale` | empty | dashboard chat should default to one locale when no request hint is present | fallback locale only; request-level locale still wins |
+| `proactiveGreetingEnabled` | `false` | new chats should open with an assistant-first greeting | seeds a first message for fresh authenticated and public conversations |
+
 ### Update Retrieval Settings Via API
 
 These endpoints use the workspace API token you revealed earlier.
@@ -269,6 +281,26 @@ curl -sS \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
   http://localhost:8080/api/v1/settings/ingestion/reprocess
 ```
+
+### Update General Settings Via API
+
+```bash
+curl -sS \
+  -X PUT \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "anonymousChatEnabled": true,
+    "assistantName": "Marta",
+    "assistantRole": "Workspace document assistant",
+    "greetingInstruction": "Warm, concise, and practical",
+    "assistantDefaultLocale": "en",
+    "proactiveGreetingEnabled": true
+  }' \
+  http://localhost:8080/api/v1/settings/general
+```
+
+For website popups or other embedded entry points, pass `userExpectedLocale` on the chat request. That locale hint overrides the workspace default for the new conversation greeting.
 
 ## Troubleshooting And Operations
 

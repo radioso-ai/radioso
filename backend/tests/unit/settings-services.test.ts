@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { defaultAssistantBootstrapSettings, validateAssistantBootstrapSettings } from "../../src/modules/settings/domain/assistantBootstrapSettings.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import { defaultRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
@@ -84,6 +85,34 @@ describe("settings services", () => {
       workspaceId: "workspace-1",
       eventType: "ingestion_settings.update",
       eventStatus: "failure",
+    });
+  });
+
+  it("normalizes assistant bootstrap settings and treats blank locale as null", () => {
+    expect(
+      validateAssistantBootstrapSettings({
+        assistantName: "  Marta  ",
+        assistantRole: " Museum guide ",
+        greetingInstruction: " Warm and concise ",
+        assistantDefaultLocale: " ",
+        proactiveGreetingEnabled: true,
+      }),
+    ).toEqual({
+      assistantName: "Marta",
+      assistantRole: "Museum guide",
+      greetingInstruction: "Warm and concise",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: true,
+    });
+  });
+
+  it("exposes blank assistant bootstrap defaults", () => {
+    expect(defaultAssistantBootstrapSettings()).toEqual({
+      assistantName: "",
+      assistantRole: "",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
     });
   });
 });

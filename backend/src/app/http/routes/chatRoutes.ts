@@ -12,13 +12,30 @@ const DEFAULT_COLLECTION_PAGE_LIMIT = 50;
 const DEFAULT_MESSAGE_WINDOW_LIMIT = 50;
 
 export const chatSchema = z.object({
-  query: z.string().min(1),
+  query: z.string().min(1).optional(),
   stream: z.boolean(),
   conversationId: z.string().uuid().optional(),
+  bootstrapGreeting: z.boolean().optional(),
+  userExpectedLocale: z.string().min(2).max(35).optional(),
   metadataFilter: z.record(z.unknown()).optional().refine(
     (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= 16384,
     { message: "Metadata filter must be 16 KB or less" },
   ),
+}).superRefine((value, ctx) => {
+  if (!value.query && !value.bootstrapGreeting) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "query is required unless bootstrapGreeting is true",
+      path: ["query"],
+    });
+  }
+  if (value.bootstrapGreeting && value.conversationId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "bootstrapGreeting may only be used for brand-new conversations",
+      path: ["conversationId"],
+    });
+  }
 });
 
 export const conversationParamsSchema = z.object({
@@ -84,13 +101,26 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
   router.post("/", workspaceSession, validateBody(chatSchema), async (req, res, next) => {
     try {
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
+      if (req.body.bootstrapGreeting) {
+        const bootstrap = await dependencies.chatBootstrapService.startConversation({
+          workspaceId,
+          accountId,
+          userExpectedLocale: req.body.userExpectedLocale,
+        });
+        if (!bootstrap) {
+          res.status(204).end();
+          return;
+        }
+        sendChatJson(res, bootstrap);
+        return;
+      }
       if (req.body.stream) {
         await sendChatSse(
           res,
           dependencies.chatService.streamAnswer({
             workspaceId,
             accountId,
-            query: req.body.query,
+            query: req.body.query!,
             stream: req.body.stream,
             conversationId: req.body.conversationId,
             metadataFilter: req.body.metadataFilter,
@@ -102,7 +132,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
       const result = await dependencies.chatService.answer({
         workspaceId,
         accountId,
-        query: req.body.query,
+        query: req.body.query!,
         stream: req.body.stream,
         conversationId: req.body.conversationId,
         metadataFilter: req.body.metadataFilter,

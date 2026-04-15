@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
+import type { RetrievedCandidate, RetrievalSource } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
@@ -356,13 +357,13 @@ describe("chat retrieval domain", () => {
       },
     });
 
-    const contexts = Array.from({ length: 25 }, (_, index) => ({
+    const contexts: RetrievedCandidate[] = Array.from({ length: 25 }, (_, index) => ({
       chunkId: `c${index + 1}`,
       documentId: `d${index + 1}`,
       title: `Doc ${index + 1}`,
       content: `content ${index + 1}`,
       similarity: 1 - index / 100,
-      retrievalSources: ["semantic_original"],
+      retrievalSources: ["semantic_original" satisfies RetrievalSource],
       retrievalText: `Doc ${index + 1} content ${index + 1}`,
       semanticScore: 1 - index / 100,
       lexicalScore: 0,

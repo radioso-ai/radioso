@@ -363,9 +363,11 @@ export interface DocumentSearchHistoryListResponse {
 }
 
 export interface ChatRequest {
-  query: string
+  query?: string
   stream: boolean
   conversationId?: string
+  bootstrapGreeting?: boolean
+  userExpectedLocale?: string
 }
 
 export interface Citation {
@@ -554,6 +556,7 @@ export interface ChatConversationDetail {
 
 export interface ChatHistoryListResponse {
   workspaceName?: string
+  assistantBootstrapActive?: boolean
   conversations: ChatConversationSummary[]
   total: number
   nextCursor: string | null
@@ -1259,6 +1262,15 @@ export const chatApi = {
     return streamChatEvents(response, handlers)
   },
 
+  async bootstrapConversation(
+    data: Pick<ChatRequest, 'stream' | 'bootstrapGreeting' | 'userExpectedLocale'>,
+  ): Promise<ChatResponse | undefined> {
+    return request<ChatResponse>('/chat/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
   async listHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<ChatHistoryListResponse> {
     const searchParams = new URLSearchParams()
     if (input?.limit !== undefined) {
@@ -1373,6 +1385,12 @@ export interface GeneralSettings {
   anonymousChatEnabled: boolean
   anonymousChatUrl: string | null
   anonymousRateLimit: number
+  assistantName: string
+  assistantRole: string
+  greetingInstruction: string
+  assistantDefaultLocale: string | null
+  proactiveGreetingEnabled: boolean
+  assistantBootstrapActive: boolean
 }
 
 export interface WorkspaceTokenResponse {
@@ -1393,8 +1411,13 @@ export const generalSettingsApi = {
   },
 
   async updateGeneralSettings(data: {
-    anonymousChatEnabled: boolean
+    anonymousChatEnabled?: boolean
     anonymousRateLimit?: number
+    assistantName?: string
+    assistantRole?: string
+    greetingInstruction?: string
+    assistantDefaultLocale?: string | null
+    proactiveGreetingEnabled?: boolean
   }): Promise<GeneralSettings> {
     return request<GeneralSettings>('/settings/general', {
       method: 'PUT',
@@ -1508,6 +1531,17 @@ export const publicChatApi = {
     }
 
     return streamChatEvents(response, handlers)
+  },
+
+  async bootstrapConversation(
+    token: string,
+    data: Pick<ChatRequest, 'stream' | 'bootstrapGreeting' | 'userExpectedLocale'>,
+  ): Promise<ChatResponse | undefined> {
+    return request<ChatResponse>(`/public/chat/${token}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      credentials: 'include',
+    })
   },
 
   async listConversations(

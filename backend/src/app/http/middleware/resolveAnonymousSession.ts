@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { notFound } from "../../../shared/domain/errors.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import { isAssistantBootstrapActive } from "../../../modules/settings/domain/assistantBootstrapSettings.js";
 
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const anonymousTokenParamsSchema = z.object({
@@ -45,6 +46,7 @@ export const resolveAnonymousSession = (workspaceRepository: WorkspaceRepository
       res.locals.workspaceName = workspace.name;
       res.locals.anonymousSessionId = sessionId;
       res.locals.anonymousRateLimit = workspace.anonymousRateLimit;
+      res.locals.assistantBootstrapActive = isAssistantBootstrapActive(workspace);
       next();
     } catch (error) {
       next(error);

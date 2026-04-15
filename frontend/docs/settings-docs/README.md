@@ -5,6 +5,7 @@ This directory is the source of truth for workspace settings copy used by the fr
 ## Structure
 
 - `ingestion/`: copy for ingestion-stage controls
+- `general/`: copy for workspace identity and startup behavior controls
 - `retrieval/`: copy for retrieval-stage and answer-stage controls
 - one setting per file
 
@@ -26,10 +27,11 @@ The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts
 
 ## UI mapping
 
-The dashboard presents settings in pipeline order:
+The dashboard presents settings in product order:
 
-1. Ingestion: choose chunking strategy -> tune chunk sizing -> reprocess existing documents
-2. Retrieval: rewrite query -> retrieve/filter candidates -> rerank -> shape the final answer
+1. General: workspace identity, public access, and new-chat bootstrap behavior
+2. Ingestion: choose chunking strategy -> tune chunk sizing -> reprocess existing documents
+3. Retrieval: rewrite query -> retrieve/filter candidates -> rerank -> shape the final answer
 
 The connector-style stage separators are rendered in [`frontend/components/dashboard/settings/settings-flow.tsx`](../../frontend/components/dashboard/settings/settings-flow.tsx) and reused by the retrieval trace graph for visual consistency.
 

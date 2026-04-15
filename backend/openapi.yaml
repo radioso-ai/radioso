@@ -661,6 +661,22 @@ components:
           type: integer
           minimum: 1
           maximum: 60
+        assistantName:
+          type: string
+          maxLength: 200
+        assistantRole:
+          type: string
+          maxLength: 200
+        greetingInstruction:
+          type: string
+          maxLength: 200
+        assistantDefaultLocale:
+          type:
+            - string
+            - "null"
+          maxLength: 35
+        proactiveGreetingEnabled:
+          type: boolean
     GeneralSettingsResponse:
       type: object
       properties:
@@ -674,10 +690,30 @@ components:
           type: integer
           minimum: 1
           maximum: 60
+        assistantName:
+          type: string
+        assistantRole:
+          type: string
+        greetingInstruction:
+          type: string
+        assistantDefaultLocale:
+          type:
+            - string
+            - "null"
+        proactiveGreetingEnabled:
+          type: boolean
+        assistantBootstrapActive:
+          type: boolean
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
         - anonymousRateLimit
+        - assistantName
+        - assistantRole
+        - greetingInstruction
+        - assistantDefaultLocale
+        - proactiveGreetingEnabled
+        - assistantBootstrapActive
     WorkspaceIngestionReprocessResponse:
       type: object
       properties:
@@ -1261,11 +1297,16 @@ components:
         conversationId:
           type: string
           format: uuid
+        bootstrapGreeting:
+          type: boolean
+        userExpectedLocale:
+          type: string
+          minLength: 2
+          maxLength: 35
         metadataFilter:
           type: object
           additionalProperties: {}
       required:
-        - query
         - stream
     PublicChatRequest:
       type: object
@@ -1279,8 +1320,12 @@ components:
         conversationId:
           type: string
           format: uuid
-      required:
-        - query
+        bootstrapGreeting:
+          type: boolean
+        userExpectedLocale:
+          type: string
+          minLength: 2
+          maxLength: 35
     ChatConversationSummary:
       type: object
       properties:
@@ -2055,6 +2100,8 @@ components:
       properties:
         workspaceName:
           type: string
+        assistantBootstrapActive:
+          type: boolean
         conversations:
           type: array
           items:
@@ -2070,6 +2117,7 @@ components:
           type: boolean
       required:
         - workspaceName
+        - assistantBootstrapActive
         - conversations
         - total
         - nextCursor
@@ -3285,6 +3333,8 @@ paths:
             text/event-stream:
               schema:
                 $ref: "#/components/schemas/ChatSseStream"
+        "204":
+          description: Bootstrap request completed without creating a greeting
         "400":
           description: Request validation failed
           content:
@@ -3997,6 +4047,8 @@ paths:
             text/event-stream:
               schema:
                 $ref: "#/components/schemas/PublicChatSseStream"
+        "204":
+          description: Bootstrap request completed without creating a greeting
         "400":
           description: Request validation failed
           content:

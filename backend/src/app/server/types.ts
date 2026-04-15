@@ -1,4 +1,5 @@
 import type { ChatService } from "../../modules/chat/services/chatService.js";
+import type { ChatBootstrapService } from "../../modules/chat/services/chatBootstrapService.js";
 import type { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
 import type { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import type { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
@@ -16,6 +17,7 @@ import type { AuditService } from "../../modules/audit/services/auditService.js"
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
+import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
@@ -45,9 +47,11 @@ export interface AppDependencies {
   documentProcessingWorker: DocumentProcessingWorker;
   documentDeletionService: DocumentDeletionService;
   chatService: ChatService;
+  chatBootstrapService: ChatBootstrapService;
   chatHistoryService: ChatHistoryService;
   evalLabService: EvalLabService;
   workspaceRepository: WorkspaceRepositoryPort;
+  bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;

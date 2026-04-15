@@ -973,6 +973,28 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 60
+          },
+          "assistantName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "assistantRole": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "greetingInstruction": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "assistantDefaultLocale": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 35
+          },
+          "proactiveGreetingEnabled": {
+            "type": "boolean"
           }
         }
       },
@@ -992,12 +1014,39 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 60
+          },
+          "assistantName": {
+            "type": "string"
+          },
+          "assistantRole": {
+            "type": "string"
+          },
+          "greetingInstruction": {
+            "type": "string"
+          },
+          "assistantDefaultLocale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proactiveGreetingEnabled": {
+            "type": "boolean"
+          },
+          "assistantBootstrapActive": {
+            "type": "boolean"
           }
         },
         "required": [
           "anonymousChatEnabled",
           "anonymousChatUrl",
-          "anonymousRateLimit"
+          "anonymousRateLimit",
+          "assistantName",
+          "assistantRole",
+          "greetingInstruction",
+          "assistantDefaultLocale",
+          "proactiveGreetingEnabled",
+          "assistantBootstrapActive"
         ]
       },
       "WorkspaceIngestionReprocessResponse": {
@@ -1853,13 +1902,20 @@
             "type": "string",
             "format": "uuid"
           },
+          "bootstrapGreeting": {
+            "type": "boolean"
+          },
+          "userExpectedLocale": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 35
+          },
           "metadataFilter": {
             "type": "object",
             "additionalProperties": {}
           }
         },
         "required": [
-          "query",
           "stream"
         ]
       },
@@ -1877,11 +1933,16 @@
           "conversationId": {
             "type": "string",
             "format": "uuid"
+          },
+          "bootstrapGreeting": {
+            "type": "boolean"
+          },
+          "userExpectedLocale": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 35
           }
-        },
-        "required": [
-          "query"
-        ]
+        }
       },
       "ChatConversationSummary": {
         "type": "object",
@@ -2961,6 +3022,9 @@
           "workspaceName": {
             "type": "string"
           },
+          "assistantBootstrapActive": {
+            "type": "boolean"
+          },
           "conversations": {
             "type": "array",
             "items": {
@@ -2983,6 +3047,7 @@
         },
         "required": [
           "workspaceName",
+          "assistantBootstrapActive",
           "conversations",
           "total",
           "nextCursor",
@@ -4997,6 +5062,9 @@
               }
             }
           },
+          "204": {
+            "description": "Bootstrap request completed without creating a greeting"
+          },
           "400": {
             "description": "Request validation failed",
             "content": {
@@ -6149,6 +6217,9 @@
                 }
               }
             }
+          },
+          "204": {
+            "description": "Bootstrap request completed without creating a greeting"
           },
           "400": {
             "description": "Request validation failed",

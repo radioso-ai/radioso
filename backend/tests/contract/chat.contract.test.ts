@@ -67,7 +67,7 @@ describe("chat contract", () => {
       messageCount: 2,
       userMessageCount: 1,
       assistantMessageCount: 1,
-      messages: [
+      messages: expect.arrayContaining([
         expect.objectContaining({
           role: "user",
           content: "What does this page do?",
@@ -97,7 +97,7 @@ describe("chat contract", () => {
             }),
           }),
         }),
-      ],
+      ]),
     });
     expect(response.body.nextCursor).toBeNull();
     expect(response.body.hasOlderMessages).toBe(false);
@@ -203,6 +203,65 @@ describe("chat contract", () => {
     expect(response.body.retrievalTrace).toMatchObject({
       stages: expect.any(Array),
     });
+  });
+
+  it("creates an assistant-first bootstrap greeting for a new conversation", async () => {
+    const bootstrapGateway: ChatGateway = {
+      async answer() {
+        return "Ciao! Sono Marta e posso aiutarti con i tuoi documenti.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: bootstrapGateway });
+    const session = await issueTestSession(app, "chat-bootstrap@example.com");
+
+    await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        assistantName: "Marta",
+        assistantRole: "Document assistant",
+        greetingInstruction: "Warm and concise",
+        proactiveGreetingEnabled: true,
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set(adminSessionHeaders(session))
+      .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "it-IT" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain("Ciao!");
+
+    const history = await request(app)
+      .get(`/api/v1/chat/history/${response.body.conversationId}`)
+      .set(adminSessionHeaders(session));
+
+    expect(history.status).toBe(200);
+    expect(history.body.messageCount).toBe(1);
+    expect(history.body.userMessageCount).toBe(0);
+    expect(history.body.assistantMessageCount).toBe(1);
+    expect(history.body.messages).toEqual([
+      expect.objectContaining({
+        role: "assistant",
+        content: "Ciao! Sono Marta e posso aiutarti con i tuoi documenti.",
+      }),
+    ]);
+  }, 10000);
+
+  it("returns 204 for bootstrap startup when assistant bootstrap is inactive", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "chat-bootstrap-inactive@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set(adminSessionHeaders(session))
+      .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "it-IT" });
+
+    expect(response.status).toBe(204);
   });
 
   it("returns an SSE response when streaming is requested", async () => {

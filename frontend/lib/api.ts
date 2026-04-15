@@ -16,6 +16,11 @@ interface StoredEmbedBootstrapSession {
   expiresAt: string
 }
 
+interface StoredEmbedSessionToken {
+  token: string
+  expiresAt: string
+}
+
 export const activateWorkspaceToken = (workspaceId: string): boolean => {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
@@ -67,8 +72,31 @@ const readEmbedSessionToken = (token: string) => {
     return null
   }
 
-  return window.sessionStorage.getItem(getEmbedSessionStorageKey(token))
+  const rawValue = window.sessionStorage.getItem(getEmbedSessionStorageKey(token))
+  if (!rawValue) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Partial<StoredEmbedSessionToken>
+    if (typeof parsed.token !== 'string' || typeof parsed.expiresAt !== 'string') {
+      window.sessionStorage.removeItem(getEmbedSessionStorageKey(token))
+      return null
+    }
+
+    if (Date.parse(parsed.expiresAt) <= Date.now()) {
+      window.sessionStorage.removeItem(getEmbedSessionStorageKey(token))
+      return null
+    }
+
+    return parsed.token
+  } catch {
+    window.sessionStorage.removeItem(getEmbedSessionStorageKey(token))
+    return null
+  }
 }
+
+export const readStoredEmbedSessionToken = (token: string) => readEmbedSessionToken(token)
 
 export const readStoredEmbedBootstrapSession = (token: string): StoredEmbedBootstrapSession | null => {
   if (typeof window === 'undefined') {
@@ -107,18 +135,22 @@ export const readStoredEmbedBootstrapSession = (token: string): StoredEmbedBoots
   }
 }
 
-export const storeEmbedSessionToken = (token: string, sessionToken: string | null) => {
+export const storeEmbedSessionToken = (
+  token: string,
+  sessionToken: string | null,
+  expiresAt?: string,
+) => {
   if (typeof window === 'undefined') {
     return
   }
 
   const storageKey = getEmbedSessionStorageKey(token)
-  if (!sessionToken) {
+  if (!sessionToken || !expiresAt) {
     window.sessionStorage.removeItem(storageKey)
     return
   }
 
-  window.sessionStorage.setItem(storageKey, sessionToken)
+  window.sessionStorage.setItem(storageKey, JSON.stringify({ token: sessionToken, expiresAt }))
 }
 
 export const storeEmbedBootstrapSession = (token: string, session: StoredEmbedBootstrapSession | null) => {
@@ -133,7 +165,7 @@ export const storeEmbedBootstrapSession = (token: string, session: StoredEmbedBo
   }
 
   window.sessionStorage.setItem(storageKey, JSON.stringify(session))
-  storeEmbedSessionToken(session.publicChatToken, session.embedSessionToken)
+  storeEmbedSessionToken(session.publicChatToken, session.embedSessionToken, session.expiresAt)
 }
 
 const writeAnonymousSessionId = (token: string, sessionId: string | null) => {

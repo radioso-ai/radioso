@@ -37,6 +37,22 @@ describe('embed widget helpers', () => {
     expect(snippet).toContain('data-radioso-launcher-position="bottom-left"')
   })
 
+  it('escapes quote-bearing values in the generated snippet', () => {
+    const snippet = buildWebsiteEmbedSnippet({
+      websiteEmbedEnabled: true,
+      websiteEmbedToken: 'embed-"token"',
+      websiteEmbedScriptUrl: 'https://app.example.com/radioso-embed.js?x="1"',
+      websiteEmbedAllowedOrigins: ['https://example.com'],
+      websiteEmbedLauncherLabel: 'Chat "now"',
+      websiteEmbedLauncherIcon: 'sparkles',
+      websiteEmbedLauncherPosition: 'bottom-left',
+    })
+
+    expect(snippet).toContain('src="https://app.example.com/radioso-embed.js?x=&quot;1&quot;"')
+    expect(snippet).toContain('data-radioso-token="embed-&quot;token&quot;"')
+    expect(snippet).toContain('data-radioso-launcher-label="Chat &quot;now&quot;"')
+  })
+
   it('resolves the script URL from a provided base URL', () => {
     expect(resolveWebsiteEmbedScriptUrl(null, 'https://app.example.com/chat/token')).toBe(
       'https://app.example.com/radioso-embed.js',

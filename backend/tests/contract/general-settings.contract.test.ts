@@ -92,6 +92,25 @@ describe("general settings contract", () => {
     expect(response.body.websiteEmbedSnippet).toContain('data-radioso-launcher-position="bottom-left"');
   });
 
+  it("escapes quote-bearing website embed values in the generated snippet", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app);
+
+    const response = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: ["https://example.com"],
+        websiteEmbedLauncherLabel: 'Chat "now"',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.websiteEmbedSnippet).toContain(
+      'data-radioso-launcher-label="Chat &quot;now&quot;"',
+    );
+  });
+
   it("rejects enabling website embed without approved origins", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app);

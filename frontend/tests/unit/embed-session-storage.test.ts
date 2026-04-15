@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { readStoredEmbedBootstrapSession, storeEmbedBootstrapSession } from '@/lib/api'
+import {
+  readStoredEmbedBootstrapSession,
+  readStoredEmbedSessionToken,
+  storeEmbedBootstrapSession,
+} from '@/lib/api'
 
 const createSessionStorage = () => {
   const store = new Map<string, string>()
@@ -41,6 +45,7 @@ describe('embed session storage helpers', () => {
       embedSessionToken: 'grant-token',
       expiresAt: expect.any(String),
     })
+    expect(readStoredEmbedSessionToken('public-token')).toBe('grant-token')
 
     expect(readStoredEmbedBootstrapSession('other-embed-token')).toBeNull()
   })
@@ -56,5 +61,6 @@ describe('embed session storage helpers', () => {
     })
 
     expect(readStoredEmbedBootstrapSession('embed-token')).toBeNull()
+    expect(readStoredEmbedSessionToken('public-token')).toBeNull()
   })
 })

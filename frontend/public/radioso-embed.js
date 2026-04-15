@@ -194,6 +194,7 @@
           iframe.contentWindow?.postMessage({ type: SESSION_MESSAGE, session }, scriptUrl.origin)
         })
         .catch((error) => {
+          bootstrapPromise = null
           iframe.contentWindow?.postMessage(
             {
               type: ERROR_MESSAGE,

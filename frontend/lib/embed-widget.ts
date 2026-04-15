@@ -8,6 +8,14 @@ export const DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON: WebsiteEmbedLauncherIcon = 'ch
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION: WebsiteEmbedLauncherPosition = 'bottom-right'
 export const DEFAULT_WEBSITE_EMBED_SCRIPT_PATH = '/radioso-embed.js'
 
+const escapeHtmlAttribute = (value: string) =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+
 const normalizeOrigin = (origin: string) => {
   const trimmed = origin.trim()
   if (!trimmed) {
@@ -68,17 +76,16 @@ export const buildWebsiteEmbedSnippet = (
   const launcherIcon = settings.websiteEmbedLauncherIcon ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON
   const launcherPosition = settings.websiteEmbedLauncherPosition ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION
   const allowedOrigins = (settings.websiteEmbedAllowedOrigins ?? []).map(normalizeOrigin).filter((origin): origin is string => Boolean(origin))
-  const originAttribute = allowedOrigins.length > 0 ? ` data-radioso-allowed-origins="${allowedOrigins.join(',')}"` : ''
+  const originAttribute = allowedOrigins.length > 0 ? ` data-radioso-allowed-origins="${escapeHtmlAttribute(allowedOrigins.join(','))}"` : ''
 
   return [
     `<script`,
     `  async`,
-    `  src="${scriptUrl}"`,
-    `  data-radioso-token="${settings.websiteEmbedToken}"`,
-    `  data-radioso-launcher-label="${launcherLabel}"`,
-    `  data-radioso-launcher-icon="${launcherIcon}"`,
-    `  data-radioso-launcher-position="${launcherPosition}"${originAttribute}`,
+    `  src="${escapeHtmlAttribute(scriptUrl)}"`,
+    `  data-radioso-token="${escapeHtmlAttribute(settings.websiteEmbedToken)}"`,
+    `  data-radioso-launcher-label="${escapeHtmlAttribute(launcherLabel)}"`,
+    `  data-radioso-launcher-icon="${escapeHtmlAttribute(launcherIcon)}"`,
+    `  data-radioso-launcher-position="${escapeHtmlAttribute(launcherPosition)}"${originAttribute}`,
     `></script>`,
   ].join('\n')
 }
-

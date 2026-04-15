@@ -87,6 +87,14 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
 
+  const escapeHtmlAttribute = (value: string) =>
+    value
+      .replaceAll("&", "&amp;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+
   router.get("/retrieval", workspaceSession, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
@@ -188,17 +196,17 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
 
     const originAttribute =
       workspace.websiteEmbedAllowedOrigins.length > 0
-        ? ` data-radioso-allowed-origins="${workspace.websiteEmbedAllowedOrigins.join(",")}"`
+        ? ` data-radioso-allowed-origins="${escapeHtmlAttribute(workspace.websiteEmbedAllowedOrigins.join(","))}"`
         : "";
 
     return [
       `<script`,
       `  async`,
-      `  src="${scriptUrl}"`,
-      `  data-radioso-token="${workspace.websiteEmbedToken}"`,
-      `  data-radioso-launcher-label="${workspace.websiteEmbedLauncherLabel}"`,
-      `  data-radioso-launcher-icon="${workspace.websiteEmbedLauncherIcon}"`,
-      `  data-radioso-launcher-position="${workspace.websiteEmbedLauncherPosition}"${originAttribute}`,
+      `  src="${escapeHtmlAttribute(scriptUrl)}"`,
+      `  data-radioso-token="${escapeHtmlAttribute(workspace.websiteEmbedToken)}"`,
+      `  data-radioso-launcher-label="${escapeHtmlAttribute(workspace.websiteEmbedLauncherLabel)}"`,
+      `  data-radioso-launcher-icon="${escapeHtmlAttribute(workspace.websiteEmbedLauncherIcon)}"`,
+      `  data-radioso-launcher-position="${escapeHtmlAttribute(workspace.websiteEmbedLauncherPosition)}"${originAttribute}`,
       `></script>`,
     ].join("\n");
   };

@@ -25,7 +25,7 @@ import { IngestionSettingsService } from "../../src/modules/settings/services/in
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL ?? process.env.DATABASE_URL;
 
 const noopAuditRepository = {
   async create() {
@@ -481,10 +481,12 @@ describeIfDatabase("persistence integration", () => {
     const documentRepository = new DocumentRepository(database);
 
     const accountA = await accountRepository.create({
+      name: "External Id A Organization",
       email: `external-id-a-${randomUUID()}@example.com`,
       passwordHash: "hash-a",
     });
     const accountB = await accountRepository.create({
+      name: "External Id B Organization",
       email: `external-id-b-${randomUUID()}@example.com`,
       passwordHash: "hash-b",
     });

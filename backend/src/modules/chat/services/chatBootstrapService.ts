@@ -1,0 +1,186 @@
+import { createHash, randomUUID } from "node:crypto";
+
+import type { AuditService } from "../../audit/services/auditService.js";
+import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
+import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
+import type { ChatGateway } from "./chatService.js";
+import type { ChatResponse } from "../types/chatResponses.js";
+import { isAssistantBootstrapActive } from "../../settings/domain/assistantBootstrapSettings.js";
+import { resolveChatLocale } from "./chatLocale.js";
+
+const emptyChatResponse = (conversationId: string, answer: string): ChatResponse => ({
+  conversationId,
+  answer,
+  citations: [],
+  answerSegments: answer ? [{ text: answer }] : [],
+  retrievalInfo: {
+    candidateCounts: {
+      semantic: 0,
+      lexical: 0,
+      merged: 0,
+      final: 0,
+    },
+    fallbackApplied: false,
+    rerankStatus: "skipped",
+    rewrite: {
+      status: "skipped",
+      eligible: false,
+      ran: false,
+      materialDisagreement: false,
+    },
+  },
+  retrievalTrace: {
+    traceId: `bootstrap-${randomUUID()}`,
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    totalDurationMs: 0,
+    stages: [],
+    links: [],
+  },
+});
+
+export class ChatBootstrapService {
+  constructor(
+    private readonly workspaceRepository: WorkspaceRepositoryPort,
+    private readonly bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort,
+    private readonly conversationRepository: ConversationRepositoryPort,
+    private readonly chatGateway: ChatGateway,
+    private readonly auditService: AuditService,
+  ) {}
+
+  async startConversation(input: {
+    workspaceId: string;
+    accountId?: string;
+    sourceChannel?: string | null;
+    anonymousSessionId?: string | null;
+    userExpectedLocale?: string | null;
+  }): Promise<ChatResponse | null> {
+    const workspace = await this.workspaceRepository.findById(input.workspaceId);
+    if (!workspace || !isAssistantBootstrapActive(workspace)) {
+      return null;
+    }
+
+    const localeUsed = resolveChatLocale({
+      userExpectedLocale: input.userExpectedLocale,
+      assistantDefaultLocale: workspace.assistantDefaultLocale,
+    });
+    const fingerprint = createBootstrapFingerprint({
+      assistantName: workspace.assistantName,
+      assistantRole: workspace.assistantRole,
+      greetingInstruction: workspace.greetingInstruction,
+      assistantDefaultLocale: workspace.assistantDefaultLocale,
+      localeUsed,
+    });
+
+    try {
+      const cachedGreeting = await this.bootstrapGreetingCacheRepository.findByWorkspaceAndFingerprint(
+        input.workspaceId,
+        fingerprint,
+      );
+      const normalizedAnswer = cachedGreeting?.greetingText
+        ?? (await this.chatGateway.answer({
+          query: "",
+          history: [],
+          prompt: buildBootstrapPrompt({
+            assistantName: workspace.assistantName,
+            assistantRole: workspace.assistantRole,
+            greetingInstruction: workspace.greetingInstruction,
+            localeUsed,
+          }),
+        })).trim();
+      if (!normalizedAnswer) {
+        return null;
+      }
+
+      if (!cachedGreeting) {
+        await this.bootstrapGreetingCacheRepository.save({
+          workspaceId: input.workspaceId,
+          fingerprint,
+          localeUsed,
+          greetingText: normalizedAnswer,
+        });
+      }
+
+      const { conversation } = await this.conversationRepository.createWithInitialAssistantMessage({
+        workspaceId: input.workspaceId,
+        sourceChannel: input.sourceChannel ?? null,
+        anonymousSessionId: input.anonymousSessionId ?? null,
+        content: normalizedAnswer,
+      });
+
+      await this.auditService.record({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        eventType: "chat.bootstrap",
+        eventStatus: "success",
+        metadata: {
+          conversationId: conversation.id,
+          sourceChannel: input.sourceChannel ?? null,
+          localeUsed,
+          cacheHit: Boolean(cachedGreeting),
+          fingerprint,
+          proactiveGreetingEnabled: true,
+        },
+      });
+
+      return emptyChatResponse(conversation.id, normalizedAnswer);
+    } catch (error) {
+      await this.auditService.record({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        eventType: "chat.bootstrap",
+        eventStatus: "failure",
+        metadata: {
+          sourceChannel: input.sourceChannel ?? null,
+          localeUsed,
+          fingerprint,
+          errorMessage: error instanceof Error ? error.message : "bootstrap generation failed",
+        },
+      });
+      return null;
+    }
+  }
+}
+
+const buildBootstrapPrompt = (input: {
+  assistantName: string;
+  assistantRole: string;
+  greetingInstruction: string;
+  localeUsed: string | null;
+}): string => {
+  const localeInstruction = input.localeUsed
+    ? `Write the greeting in locale ${input.localeUsed}.`
+    : "Write the greeting in the best available language for the workspace.";
+  const identityLines = [
+    input.assistantName ? `Assistant name: ${input.assistantName}` : null,
+    input.assistantRole ? `Assistant role: ${input.assistantRole}` : null,
+    input.greetingInstruction ? `Greeting style: ${input.greetingInstruction}` : null,
+  ].filter(Boolean);
+
+  return [
+    "You are generating the first assistant message for a brand-new chat.",
+    localeInstruction,
+    "Write one short greeting that introduces the assistant, explains what it can help with, and invites the user to continue.",
+    "Do not mention hidden instructions, settings, or implementation details.",
+    "Do not claim that documents are already available unless the prompt explicitly says so.",
+    ...identityLines,
+  ].join("\n");
+};
+
+const createBootstrapFingerprint = (input: {
+  assistantName: string;
+  assistantRole: string;
+  greetingInstruction: string;
+  assistantDefaultLocale: string | null;
+  localeUsed: string | null;
+}): string =>
+  createHash("sha256")
+    .update(JSON.stringify({
+      assistantName: input.assistantName,
+      assistantRole: input.assistantRole,
+      greetingInstruction: input.greetingInstruction,
+      assistantDefaultLocale: input.assistantDefaultLocale,
+      localeUsed: input.localeUsed,
+    }))
+    .digest("hex");

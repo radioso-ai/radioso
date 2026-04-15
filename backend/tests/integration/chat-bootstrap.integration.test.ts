@@ -11,6 +11,9 @@ describe("chat bootstrap integration", () => {
         if (input.query.length === 0) {
           return "Ciao! Sono Marta e posso aiutarti con i tuoi documenti.";
         }
+        if (input.query.toLowerCase().includes("come ti chiami")) {
+          return "Mi chiamo Marta e sono l'assistente dei documenti.";
+        }
         return "Risposta di follow-up con contesto.";
       },
       async *streamAnswer() {
@@ -44,7 +47,7 @@ describe("chat bootstrap integration", () => {
       .set(headers)
       .send({
         conversationId: bootstrap.body.conversationId,
-        query: "Puoi aiutarmi?",
+        query: "Come ti chiami?",
         stream: false,
       });
 
@@ -67,12 +70,11 @@ describe("chat bootstrap integration", () => {
         }),
         expect.objectContaining({
           role: "user",
-          content: "Puoi aiutarmi?",
+          content: "Come ti chiami?",
         }),
         expect.objectContaining({
           role: "assistant",
-          content:
-            "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+          content: "Mi chiamo Marta e sono l'assistente dei documenti.",
         }),
       ]),
     );

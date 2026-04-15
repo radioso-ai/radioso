@@ -28,6 +28,8 @@ const staticNoticeGenerator = (text = DEFAULT_UNSUPPORTED_NOTICE): UnsupportedNo
   },
 });
 
+const groundedMissResponseComposer = new DefaultGroundedMissResponseComposer();
+
 describe("answer support validator", () => {
   it("keeps supported segments, replaces unsupported substantive segments, and preserves non-substantive wrappers", async () => {
     const validator = new AnswerSupportValidator();
@@ -53,6 +55,7 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       unsupportedNoticeGenerator: staticNoticeGenerator(),
+      groundedMissResponseComposer,
     });
 
     expect(result.answer).toBe(
@@ -140,6 +143,7 @@ describe("answer support validator", () => {
       citationDisplayEnabled: false,
       answerSupportPolicy: "strict",
       unsupportedNoticeGenerator: staticNoticeGenerator(),
+      groundedMissResponseComposer,
     });
 
     expect(result.answer).toBe("The page explains testing and parsing content for users.");
@@ -168,6 +172,7 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       unsupportedNoticeGenerator: staticNoticeGenerator(),
+      groundedMissResponseComposer,
     });
 
     expect(result.answer).toBe("Sure. Of course! Glad to help.");
@@ -214,6 +219,7 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       unsupportedNoticeGenerator: staticNoticeGenerator(),
+      groundedMissResponseComposer,
     });
 
     expect(result.answer).toBe(
@@ -239,6 +245,7 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "warn",
       unsupportedNoticeGenerator: staticNoticeGenerator("No pude verificar esa parte."),
+      groundedMissResponseComposer,
     });
 
     expect(result.answer).toBe("Narayani is a teacher and author.");

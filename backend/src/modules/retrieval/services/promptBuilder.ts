@@ -1,4 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 
 export interface PromptBuildResult {
@@ -12,6 +13,7 @@ export class PromptBuilder {
     history: MessageRecord[];
     contexts: FinalPromptContext[];
     settings: {
+      assistantIdentity?: AssistantIdentityPromptInput | null;
       customInstruction?: string;
       responseLanguagePolicy?: ResponseLanguagePolicy;
     };
@@ -30,10 +32,12 @@ export class PromptBuilder {
       })
       .join("\n\n");
     const customInstructionBlock = this.renderCustomInstruction(input.settings.customInstruction);
+    const assistantIdentityBlock = this.renderAssistantIdentity(input.settings.assistantIdentity);
 
     return {
       prompt: [
         "You are a retrieval-grounded assistant.",
+        ...(assistantIdentityBlock ? [assistantIdentityBlock] : []),
         ...(customInstructionBlock ? [customInstructionBlock] : []),
         this.renderResponseLanguageInstruction(input.settings.responseLanguagePolicy ?? "match_user_question"),
         "Answer only from the retrieved context when relevant.",
@@ -68,6 +72,28 @@ export class PromptBuilder {
     const sanitized = customInstruction.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
     if (!sanitized.trim()) return null;
     return `Workspace-specific instructions:\n${sanitized}`;
+  }
+
+  private renderAssistantIdentity(assistantIdentity?: AssistantIdentityPromptInput | null): string | null {
+    if (!assistantIdentity) {
+      return null;
+    }
+
+    const identityLines = [
+      assistantIdentity.assistantName ? `Assistant name: ${assistantIdentity.assistantName}` : null,
+      assistantIdentity.assistantRole ? `Assistant role: ${assistantIdentity.assistantRole}` : null,
+      assistantIdentity.greetingInstruction ? `Assistant style: ${assistantIdentity.greetingInstruction}` : null,
+    ].filter(Boolean);
+
+    if (identityLines.length === 0) {
+      return null;
+    }
+
+    return [
+      "Stable assistant identity:",
+      ...identityLines,
+      "When the user asks about your name, role, or what you do, answer consistently with this identity.",
+    ].join("\n");
   }
 
   private renderResponseLanguageInstruction(responseLanguagePolicy: ResponseLanguagePolicy): string {

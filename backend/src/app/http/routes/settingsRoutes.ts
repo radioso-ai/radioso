@@ -23,16 +23,7 @@ import {
   websiteEmbedLauncherIcons,
   websiteEmbedLauncherPositions,
 } from "../../../modules/settings/domain/websiteEmbedSettings.js";
-import {
-  FIXED_WINDOW_CHUNK_OVERLAP_MAX,
-  FIXED_WINDOW_CHUNK_OVERLAP_MIN,
-  FIXED_WINDOW_CHUNK_SIZE_MAX,
-  FIXED_WINDOW_CHUNK_SIZE_MIN,
-  STRUCTURED_MAX_CHUNK_SIZE_MAX,
-  STRUCTURED_MAX_CHUNK_SIZE_MIN,
-  STRUCTURED_MIN_CHUNK_SIZE_MAX,
-  STRUCTURED_MIN_CHUNK_SIZE_MIN,
-} from "../../../modules/settings/domain/ingestionSettings.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
 export const updateSettingsSchema = z.object({
   queryRewriteEnabled: z.boolean(),
@@ -77,10 +68,18 @@ export const updateGeneralSettingsSchema = z.object({
 
 export const updateIngestionSettingsSchema = z.object({
   chunkingStrategy: z.enum(chunkingStrategyIds),
-  fixedWindowChunkSize: z.number().int().min(FIXED_WINDOW_CHUNK_SIZE_MIN).max(FIXED_WINDOW_CHUNK_SIZE_MAX),
-  fixedWindowChunkOverlap: z.number().int().min(FIXED_WINDOW_CHUNK_OVERLAP_MIN).max(FIXED_WINDOW_CHUNK_OVERLAP_MAX),
-  structuredMinChunkSize: z.number().int().min(STRUCTURED_MIN_CHUNK_SIZE_MIN).max(STRUCTURED_MIN_CHUNK_SIZE_MAX),
-  structuredMaxChunkSize: z.number().int().min(STRUCTURED_MAX_CHUNK_SIZE_MIN).max(STRUCTURED_MAX_CHUNK_SIZE_MAX),
+  fixedWindowChunkSize: z.number().int()
+    .min(RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeMin)
+    .max(RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeMax),
+  fixedWindowChunkOverlap: z.number().int()
+    .min(RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapMin)
+    .max(RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapMax),
+  structuredMinChunkSize: z.number().int()
+    .min(RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeMin)
+    .max(RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeMax),
+  structuredMaxChunkSize: z.number().int()
+    .min(RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMin)
+    .max(RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMax),
 });
 
 export const createSettingsRoutes = (dependencies: AppDependencies): Router => {

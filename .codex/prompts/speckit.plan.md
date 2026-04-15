@@ -31,6 +31,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 0: Generate research.md (resolve all NEEDS CLARIFICATION)
    - Phase 1: Generate data-model.md, contracts/, quickstart.md
    - For backend API work, identify the code-first OpenAPI implementation target at `backend/src/app/http/openapi/document.ts` and treat `backend/openapi.yaml` / `backend/openapi.json` as generated outputs, not planning sources of truth
+   - If backend runtime LLM prompts are in scope, identify `backend/prompts/` as the canonical asset directory and plan any loader, build, Docker, and test updates around that location
    - Phase 1: Update agent context by running the agent script
    - Re-evaluate Constitution Check post-design
 
@@ -83,7 +84,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Add only new technology from current plan
    - Preserve manual additions between markers
 
-**Output**: data-model.md, optional `/contracts/*` design artifacts, quickstart.md, agent-specific file, and explicit OpenAPI ownership notes for backend API changes
+**Output**: data-model.md, optional `/contracts/*` design artifacts, quickstart.md, agent-specific file, explicit OpenAPI ownership notes for backend API changes, and explicit `backend/prompts/` ownership notes when runtime prompt assets are involved
 
 ## Key rules
 

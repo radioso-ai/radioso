@@ -2027,7 +2027,6 @@
           },
           "userExpectedLocale": {
             "type": "string",
-            "minLength": 2,
             "maxLength": 35
           },
           "metadataFilter": {
@@ -2059,7 +2058,6 @@
           },
           "userExpectedLocale": {
             "type": "string",
-            "minLength": 2,
             "maxLength": 35
           }
         }

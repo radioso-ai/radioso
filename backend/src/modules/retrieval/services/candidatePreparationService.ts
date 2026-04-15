@@ -1,4 +1,5 @@
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { buildRetrievalText } from "./embeddingService.js";
 import type { RetrievedCandidate, RetrievalSource } from "../domain/retrievalPipelineTypes.js";
 
@@ -59,6 +60,6 @@ export class CandidatePreparationService {
   private mergeScore(semanticScore: number, lexicalScore: number): number {
     const primary = Math.max(semanticScore, lexicalScore);
     const secondary = Math.min(semanticScore, lexicalScore);
-    return primary + secondary * 0.25;
+    return primary + secondary * RETRIEVAL_BEHAVIOR.candidateMergeSecondaryWeight;
   }
 }

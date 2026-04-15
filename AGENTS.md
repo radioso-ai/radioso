@@ -64,6 +64,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL 16 for app state under test; filesystem-backed benchmark definitions in the repo and gitignored run artifacts under `.context/performance-runs/` (037-performance-benchmarking)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend) + Express, `pg`, Zod, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router (039-assistant-bootstrap)
 - PostgreSQL 16 with additive workspace-scoped columns on `workspaces`; existing conversations/messages tables (039-assistant-bootstrap)
+- TypeScript 5.x on Node.js 22 + Express, Zod, pg, OpenAI SDK, Pino, Vitest, Supertes (039-unsupported-answer-refine)
+- PostgreSQL 16 with `pgvector`; no schema changes planned (039-unsupported-answer-refine)
 
 
 ## Project Structure
@@ -88,6 +90,7 @@ tests/
 - Update `readme.md` whenever the feature changes the Docker run flow, authentication or token setup, common API usage, or the most important ingestion or retrieval settings operators are likely to tune.
 
 ## Recent Changes
+- 039-unsupported-answer-refine: Added TypeScript 5.x on Node.js 22 + Express, Zod, pg, OpenAI SDK, Pino, Vitest, Supertes
 - 039-assistant-bootstrap: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend) + Express, `pg`, Zod, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router
 - 037-external-document-id: Added TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router
 - 037-performance-benchmarking: Added Node.js 22 ESM scripts for the benchmark harness, plus existing TypeScript 5.x backend and TypeScript 5.7 frontend + existing Node.js toolchain, `pg`, Docker Compose, benchmark-harness dependencies for HTTP load generation and result formatting, existing backend/frontend package scripts

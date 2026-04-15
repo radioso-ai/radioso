@@ -363,7 +363,7 @@ describe("public chat contract", () => {
     expect(response.headers["set-cookie"]).toBeDefined();
   });
 
-  it("does not consume anonymous rate limit when bootstrap greeting runs first", async () => {
+  it("counts bootstrap greeting requests against the anonymous rate limit", async () => {
     const { app } = createTestApp({
       chatGateway: {
         async answer(input) {
@@ -406,6 +406,9 @@ describe("public chat contract", () => {
       .send({ query: "What is the answer?", stream: false, conversationId: bootstrap.body.conversationId });
 
     expect(bootstrap.status).toBe(200);
-    expect(firstMessage.status).toBe(200);
+    expect(firstMessage.status).toBe(429);
+    expect(firstMessage.body.error).toMatchObject({
+      code: "rate_limit_exceeded",
+    });
   });
 });

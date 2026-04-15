@@ -1,4 +1,5 @@
 import { ModelChatGateway } from "../../../modules/chat/services/chatService.js";
+import { ModelGroundedMissResponseComposer } from "../../../modules/chat/services/groundedMissResponseComposer.js";
 import { ModelUnsupportedNoticeGenerator } from "../../../modules/chat/services/unsupportedNoticeGenerator.js";
 import { ModelEmbeddingGateway } from "../../../modules/retrieval/services/embeddingService.js";
 import { ModelQueryRewriteGateway } from "../../../modules/retrieval/services/queryRewriteService.js";
@@ -47,6 +48,10 @@ export class LlmProviderRegistry {
 
   createUnsupportedNoticeGenerator() {
     return new ModelUnsupportedNoticeGenerator(this.createTextClient(this.config.chat));
+  }
+
+  createGroundedMissResponseComposer() {
+    return new ModelGroundedMissResponseComposer(this.createTextClient(this.config.chat));
   }
 
   createRewriteGateway() {

@@ -179,6 +179,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     llmRegistry.createChatGateway(),
     auditService,
     llmRegistry.createUnsupportedNoticeGenerator(),
+    llmRegistry.createGroundedMissResponseComposer(),
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -199,6 +200,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
       retrievalPipeline,
       llmRegistry.createChatGateway(),
       llmRegistry.createUnsupportedNoticeGenerator(),
+      llmRegistry.createGroundedMissResponseComposer(),
     ),
   );
   const workspaceService = new WorkspaceService(workspaceRepository, auditService);

@@ -7,13 +7,18 @@ import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.j
 import { anonymousRateLimiter } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./chatRoutes.js";
+import { isValidLocaleHint } from "../../../modules/chat/services/chatLocale.js";
+
+const localeHintSchema = z.string().trim().min(2).max(35).refine(isValidLocaleHint, {
+  message: "userExpectedLocale must be a valid locale tag",
+});
 
 export const anonymousChatSchema = z.object({
   query: z.string().min(1).optional(),
   stream: z.boolean().default(false),
   conversationId: z.string().uuid().optional(),
   bootstrapGreeting: z.boolean().optional(),
-  userExpectedLocale: z.string().min(2).max(35).optional(),
+  userExpectedLocale: localeHintSchema.optional(),
 }).superRefine((value, ctx) => {
   if (!value.query && !value.bootstrapGreeting) {
     ctx.addIssue({
@@ -38,19 +43,12 @@ export const publicConversationParamsSchema = z.object({
 export const createPublicChatRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
   const sessionMiddleware = resolveAnonymousSession(dependencies.workspaceRepository);
-  const rateLimitUnlessBootstrap = anonymousRateLimiter(dependencies);
 
   // POST /api/v1/public/chat/:token — send a message
   router.post(
     "/:token",
     sessionMiddleware,
-    (req, res, next) => {
-      if ((req.body as { bootstrapGreeting?: boolean } | undefined)?.bootstrapGreeting === true) {
-        next();
-        return;
-      }
-      rateLimitUnlessBootstrap(req, res, next);
-    },
+    anonymousRateLimiter(dependencies),
     validateBody(anonymousChatSchema),
     async (req, res, next) => {
       try {

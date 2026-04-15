@@ -6,17 +6,22 @@ import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+import { isValidLocaleHint } from "../../../modules/chat/services/chatLocale.js";
 
 const MAX_COLLECTION_PAGE_LIMIT = 100;
 const DEFAULT_COLLECTION_PAGE_LIMIT = 50;
 const DEFAULT_MESSAGE_WINDOW_LIMIT = 50;
+
+const localeHintSchema = z.string().trim().min(2).max(35).refine(isValidLocaleHint, {
+  message: "userExpectedLocale must be a valid locale tag",
+});
 
 export const chatSchema = z.object({
   query: z.string().min(1).optional(),
   stream: z.boolean(),
   conversationId: z.string().uuid().optional(),
   bootstrapGreeting: z.boolean().optional(),
-  userExpectedLocale: z.string().min(2).max(35).optional(),
+  userExpectedLocale: localeHintSchema.optional(),
   metadataFilter: z.record(z.unknown()).optional().refine(
     (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= 16384,
     { message: "Metadata filter must be 16 KB or less" },

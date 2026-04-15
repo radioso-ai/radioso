@@ -261,13 +261,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       updateSession(accountId, (session) => ({
         ...session,
-        isInitialized: true,
         isBootstrapping: true,
       }))
 
       try {
         const settings = await generalSettingsApi.getGeneralSettings()
         if (!settings.assistantBootstrapActive) {
+          updateSession(accountId, (session) => ({
+            ...session,
+            isInitialized: true,
+          }))
           return
         }
 
@@ -278,12 +281,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         })
 
         if (!bootstrap?.answer) {
+          updateSession(accountId, (session) => ({
+            ...session,
+            isInitialized: true,
+          }))
           return
         }
 
         updateSession(accountId, (session) => ({
           ...(session.messages.length > 0 || session.conversationId
-            ? session
+            ? {
+                ...session,
+                isInitialized: true,
+              }
             : {
                 ...session,
                 conversationId: bootstrap.conversationId,
@@ -300,10 +310,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     status: 'complete' as const,
                   },
                 ],
+                isInitialized: true,
               }),
         }))
       } catch {
         // Silent-start fallback is intentional when bootstrap startup fails.
+        updateSession(accountId, (session) => ({
+          ...session,
+          isInitialized: false,
+        }))
       } finally {
         updateSession(accountId, (session) => ({
           ...session,

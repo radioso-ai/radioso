@@ -22,10 +22,11 @@ services:
     build:
       context: ..
       dockerfile: infra/frontend.dev.Dockerfile
+    env_file:
+      - ../backend/.env
     environment:
       NODE_ENV: development
       BACKEND_INTERNAL_URL: http://backend:8080
-      SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET}
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
     volumes:

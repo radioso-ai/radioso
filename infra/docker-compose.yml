@@ -77,12 +77,13 @@ services:
       dockerfile: Dockerfile
       args:
         BACKEND_INTERNAL_URL: http://backend:8080
+    env_file:
+      - ../backend/.env
     depends_on:
       backend:
         condition: service_healthy
     environment:
       BACKEND_INTERNAL_URL: http://backend:8080
-      SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET}
     ports:
       - "3000:3000"
 

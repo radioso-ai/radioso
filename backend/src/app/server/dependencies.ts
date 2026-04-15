@@ -175,6 +175,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     llmRegistry.createChatGateway(),
     auditService,
     llmRegistry.createUnsupportedNoticeGenerator(),
+    llmRegistry.createGroundedMissResponseComposer(),
   );
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
@@ -188,6 +189,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
       retrievalPipeline,
       llmRegistry.createChatGateway(),
       llmRegistry.createUnsupportedNoticeGenerator(),
+      llmRegistry.createGroundedMissResponseComposer(),
     ),
   );
   const workspaceRepository = new WorkspaceRepository(database);

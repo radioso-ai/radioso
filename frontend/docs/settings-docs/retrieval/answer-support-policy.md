@@ -12,7 +12,13 @@ This setting controls the final safety pass that checks whether each substantive
 
 Use this when you want the shipped answer to stay tightly aligned to what the retrieved documents can support.
 
-If the model says something unsupported, the system replaces that portion with a short non-verification notice instead of presenting the unsupported claim as fact.
+If the model says something unsupported, the system does not present that claim as grounded fact.
+
+When the answer includes both supported and unsupported parts, unsupported parts are replaced with a short non-verification notice.
+
+When the exact requested answer is unsupported but the assistant did retrieve nearby relevant material, the final response may stay conversational and point the user toward that adjacent grounded material instead of ending with a dead-end refusal.
+
+When nothing relevant was retrieved, the assistant stays explicit that it did not find supporting material in the workspace documents and does not switch into a generic answer mode.
 
 ### Warn Only
 

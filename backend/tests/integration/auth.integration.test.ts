@@ -2,6 +2,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { createTestApp } from "../support/testApp.js";
+import type { InMemoryAuditService } from "../support/fakes.js";
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
@@ -603,7 +604,7 @@ describe("auth integration", () => {
       });
 
     expect(accepted.status).toBe(401);
-    expect(dependencies.auditService.events).toContainEqual(
+    expect((dependencies.auditService as InMemoryAuditService).events).toContainEqual(
       expect.objectContaining({
         accountId: owner.body.accountId,
         eventType: "account.invitation.accept",

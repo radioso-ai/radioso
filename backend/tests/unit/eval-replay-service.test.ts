@@ -52,7 +52,8 @@ describe("EvalReplayService", () => {
       });
 
       expect(replay.latencyMs).toBe(2_500);
-      expect(replay.retrievalTrace.stages.at(-1)?.durationMs).toBe(2_500);
+      expect(replay.retrievalTrace).toBeDefined();
+      expect(replay.retrievalTrace!.stages.at(-1)?.durationMs).toBe(2_500);
     } finally {
       nowSpy.mockRestore();
     }

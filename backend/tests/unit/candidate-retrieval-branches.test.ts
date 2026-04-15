@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import { CandidateRetrievalStageService } from "../../src/modules/retrieval/services/candidateRetrievalStage.js";
+import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
 
 describe("candidate retrieval branches", () => {
   it("runs semantic and lexical retrieval separately for each active subquery", async () => {
     const vectorQueries: number[] = [];
     const lexicalQueries: string[] = [];
     const stage = new CandidateRetrievalStageService(
-      {
-        async embedChunks(chunks) {
-          return chunks.map((_, index) => [index + 1]);
+      new EmbeddingService({
+        async embedTexts(texts) {
+          return texts.map((_, index) => [index + 1]);
         },
-      },
+      }),
       {
         async search(input) {
           vectorQueries.push(Number(input.queryEmbedding[0]));

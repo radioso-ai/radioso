@@ -60,6 +60,7 @@ export class DocumentProcessingWorker {
         failureReason: null,
       });
     }));
+    await this.repairQueueGaps();
     await this.logQueueState("Document processing worker started");
     this.scheduleNextTick(0);
   }
@@ -73,7 +74,7 @@ export class DocumentProcessingWorker {
   }
 
   async runOnce(now: Date = new Date()): Promise<boolean> {
-    const job = await this.jobRepository.claimNext(now);
+    const job = await this.claimNextAvailableJob(now);
     if (!job) {
       if (this.lastActivityState !== "idle") {
         await this.logQueueState("Document processing worker idle");
@@ -97,6 +98,20 @@ export class DocumentProcessingWorker {
     }
 
     return true;
+  }
+
+  private async claimNextAvailableJob(now: Date): Promise<DocumentProcessingJobRecord | null> {
+    const nextJob = await this.jobRepository.claimNext(now);
+    if (nextJob) {
+      return nextJob;
+    }
+
+    const repairedJobCount = await this.repairQueueGaps();
+    if (repairedJobCount === 0) {
+      return null;
+    }
+
+    return this.jobRepository.claimNext();
   }
 
   private scheduleNextTick(delayMs = this.pollIntervalMs): void {
@@ -167,6 +182,21 @@ export class DocumentProcessingWorker {
         reason: message,
       },
     });
+  }
+
+  private async repairQueueGaps(): Promise<number> {
+    const repairedJobCount = await this.jobRepository.backfillMissingQueuedJobs();
+    if (repairedJobCount > 0) {
+      this.logger.warn(
+        {
+          role: "worker",
+          repairedJobCount,
+        },
+        "Document processing worker repaired missing queued jobs",
+      );
+    }
+
+    return repairedJobCount;
   }
 
   private async logQueueState(message: string): Promise<void> {

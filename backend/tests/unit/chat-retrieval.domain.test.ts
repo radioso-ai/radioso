@@ -362,7 +362,7 @@ describe("chat retrieval domain", () => {
       title: `Doc ${index + 1}`,
       content: `content ${index + 1}`,
       similarity: 1 - index / 100,
-      retrievalSources: ["semantic_original"] as const,
+      retrievalSources: ["semantic_original"],
       retrievalText: `Doc ${index + 1} content ${index + 1}`,
       semanticScore: 1 - index / 100,
       lexicalScore: 0,

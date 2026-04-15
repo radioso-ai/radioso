@@ -6,6 +6,7 @@ import {
   validateIngestionSettings,
 } from "../../src/modules/settings/domain/ingestionSettings.js";
 import {
+  type RetrievalSettingsInput,
   defaultRetrievalSettings,
   createDefaultMetadataRule,
   validateRetrievalSettings,
@@ -116,7 +117,7 @@ describe("settings and chunking", () => {
       field: "language",
       value: "en",
     };
-    const baseInput = {
+    const baseInput: Omit<RetrievalSettingsInput, "customInstruction"> = {
       queryRewriteEnabled: false,
       semanticRewriteInstructions: "",
       lexicalRewriteInstructions: "",
@@ -170,6 +171,7 @@ describe("settings and chunking", () => {
       }),
     ).toThrow("answerSupportPolicy must be a supported value");
   });
+
   it("uses the current chunking defaults for ingestion settings", () => {
     const defaults = defaultIngestionSettings("workspace-1");
 

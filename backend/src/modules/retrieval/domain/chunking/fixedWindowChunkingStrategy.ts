@@ -4,9 +4,10 @@ import {
   type ChunkingStrategy,
   normalizeMarkdown,
 } from "./chunkingStrategy.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 
-const TARGET_CHUNK_SIZE = 800;
-const CHUNK_OVERLAP = 120;
+const TARGET_CHUNK_SIZE = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeDefault;
+const CHUNK_OVERLAP = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapDefault;
 
 export const chunkFixedWindowMarkdown = (
   content: string,

@@ -1,19 +1,20 @@
 import { badRequest } from "../../../shared/domain/errors.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { chunkingStrategyIds, type ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 
-export const FIXED_WINDOW_CHUNK_SIZE_DEFAULT = 800;
-export const FIXED_WINDOW_CHUNK_OVERLAP_DEFAULT = 120;
-export const STRUCTURED_MIN_CHUNK_SIZE_DEFAULT = 24;
-export const STRUCTURED_MAX_CHUNK_SIZE_DEFAULT = 220;
+export const FIXED_WINDOW_CHUNK_SIZE_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeDefault;
+export const FIXED_WINDOW_CHUNK_OVERLAP_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapDefault;
+export const STRUCTURED_MIN_CHUNK_SIZE_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeDefault;
+export const STRUCTURED_MAX_CHUNK_SIZE_DEFAULT = RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeDefault;
 
-export const FIXED_WINDOW_CHUNK_SIZE_MIN = 100;
-export const FIXED_WINDOW_CHUNK_SIZE_MAX = 4_000;
-export const FIXED_WINDOW_CHUNK_OVERLAP_MIN = 0;
-export const FIXED_WINDOW_CHUNK_OVERLAP_MAX = 2_000;
-export const STRUCTURED_MIN_CHUNK_SIZE_MIN = 1;
-export const STRUCTURED_MIN_CHUNK_SIZE_MAX = 1_000;
-export const STRUCTURED_MAX_CHUNK_SIZE_MIN = 1;
-export const STRUCTURED_MAX_CHUNK_SIZE_MAX = 2_000;
+export const FIXED_WINDOW_CHUNK_SIZE_MIN = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeMin;
+export const FIXED_WINDOW_CHUNK_SIZE_MAX = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkSizeMax;
+export const FIXED_WINDOW_CHUNK_OVERLAP_MIN = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapMin;
+export const FIXED_WINDOW_CHUNK_OVERLAP_MAX = RETRIEVAL_BEHAVIOR.chunking.fixedWindowChunkOverlapMax;
+export const STRUCTURED_MIN_CHUNK_SIZE_MIN = RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeMin;
+export const STRUCTURED_MIN_CHUNK_SIZE_MAX = RETRIEVAL_BEHAVIOR.chunking.structuredMinChunkSizeMax;
+export const STRUCTURED_MAX_CHUNK_SIZE_MIN = RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMin;
+export const STRUCTURED_MAX_CHUNK_SIZE_MAX = RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMax;
 
 export interface IngestionSettingsRecord {
   workspaceId: string;

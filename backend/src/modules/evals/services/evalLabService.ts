@@ -1,4 +1,5 @@
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { EVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ChatHistoryService } from "../../chat/services/chatHistoryService.js";
 import type {
   EvalCaseComparison,
@@ -37,9 +38,9 @@ export interface EvalRepositoryPort {
   findRunById(workspaceId: string, datasetId: string, runId: string): Promise<EvalRunRecord | null>;
 }
 
-const MAX_CONTEXT_MESSAGES = 12;
-const MAX_MESSAGE_LENGTH = 2_000;
-const MAX_QUERY_LENGTH = 2_000;
+const MAX_CONTEXT_MESSAGES = EVAL_BEHAVIOR.maxContextMessages;
+const MAX_MESSAGE_LENGTH = EVAL_BEHAVIOR.maxMessageLength;
+const MAX_QUERY_LENGTH = EVAL_BEHAVIOR.maxQueryLength;
 
 const normalizeText = (value: string, maxLength: number): string => value.trim().slice(0, maxLength);
 

@@ -1,4 +1,5 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 
 export interface GroundedMissContextSummary {
@@ -24,10 +25,10 @@ export const DEFAULT_UNSUPPORTED_WITHOUT_CONTEXT_RESPONSE =
   "I couldn't verify that from your workspace documents, but I did find related material if you'd like to explore that instead.";
 
 const DEFAULT_UNSUPPORTED_PREFIX = "I couldn't verify that from your workspace documents";
-const MAX_TITLE_LENGTH = 120;
-const MAX_CONTEXT_LENGTH = 180;
-const MAX_CONTEXTS = 3;
-const MAX_RESPONSE_LENGTH = 320;
+const MAX_TITLE_LENGTH = CHAT_BEHAVIOR.groundedMiss.maxTitleLength;
+const MAX_CONTEXT_LENGTH = CHAT_BEHAVIOR.groundedMiss.maxContextLength;
+const MAX_CONTEXTS = CHAT_BEHAVIOR.groundedMiss.maxContexts;
+const MAX_RESPONSE_LENGTH = CHAT_BEHAVIOR.groundedMiss.maxResponseLength;
 
 const normalizeWhitespace = (value: string | undefined): string =>
   (value ?? "")
@@ -124,8 +125,8 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
           unsupported_text: normalizeWhitespace(input.unsupportedText),
           contexts_section: formatContextsForPrompt(input.contexts),
         }),
-        temperature: 0,
-        maxOutputTokens: 120,
+        temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
+        maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.unsupportedWithContextMaxOutputTokens,
       });
 
       return normalizeModelResponse(raw) || fallback;
@@ -141,8 +142,8 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         prompt: renderPromptTemplate("chat/no-context-user.md", {
           query: input.query,
         }),
-        temperature: 0,
-        maxOutputTokens: 80,
+        temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
+        maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
       });
 
       return normalizeModelResponse(raw) || DEFAULT_NO_CONTEXT_RESPONSE;

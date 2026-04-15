@@ -98,7 +98,7 @@ Given that feature description, do this:
        Include both quantitative metrics (time, performance, volume) and qualitative measures (user satisfaction, task completion)
        Each criterion must be verifiable without implementation details
     8. Identify Key Entities (if data involved)
-    9. If the feature introduces or changes backend runtime LLM prompts, state in the spec that those prompt assets belong under `backend/prompts/` and not repo-root `/prompts/`
+    9. If the feature introduces or changes backend runtime LLM prompts, state in the spec that those prompt assets belong under `backend/prompts/`
     9. Return: SUCCESS (spec ready for planning)
 
 5. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.

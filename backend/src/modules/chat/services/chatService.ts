@@ -1,4 +1,5 @@
 import { notFound } from "../../../shared/domain/errors.js";
+import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
@@ -117,9 +118,6 @@ export class ChatService {
   private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
-  private static readonly MAX_CARRY_FORWARD_LITERALS = 6;
-  private static readonly MAX_CARRY_FORWARD_LITERAL_LENGTH = 120;
-
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
@@ -654,7 +652,7 @@ export class ChatService {
       }
 
       const literal = value.trim();
-      if (literal.length === 0 || literal.length > ChatService.MAX_CARRY_FORWARD_LITERAL_LENGTH) {
+      if (literal.length === 0 || literal.length > CHAT_BEHAVIOR.carryForward.maxLiteralLength) {
         continue;
       }
 
@@ -667,7 +665,7 @@ export class ChatService {
       }
 
       unique.push(literal);
-      if (unique.length >= ChatService.MAX_CARRY_FORWARD_LITERALS) {
+      if (unique.length >= CHAT_BEHAVIOR.carryForward.maxLiterals) {
         break;
       }
     }

@@ -1,4 +1,5 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { DEFAULT_UNSUPPORTED_NOTICE } from "./answerSupportValidationTypes.js";
 
@@ -28,8 +29,8 @@ export class ModelUnsupportedNoticeGenerator implements UnsupportedNoticeGenerat
           query: input.query,
           unsupported_text: input.unsupportedText,
         }),
-        temperature: 0,
-        maxOutputTokens: 80,
+        temperature: CHAT_BEHAVIOR.unsupportedNotice.temperature,
+        maxOutputTokens: CHAT_BEHAVIOR.unsupportedNotice.maxOutputTokens,
       });
 
       return normalizeUnsupportedNotice(raw);
@@ -45,7 +46,7 @@ const normalizeUnsupportedNotice = (value: string | undefined): string => {
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/\s+/g, " ");
 
-  if (!normalized || normalized.length > 240) {
+  if (!normalized || normalized.length > CHAT_BEHAVIOR.unsupportedNotice.maxResponseLength) {
     return DEFAULT_UNSUPPORTED_NOTICE;
   }
 

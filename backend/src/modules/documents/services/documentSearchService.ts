@@ -145,7 +145,7 @@ const buildEvidence = (content: string): string[] => {
     return [];
   }
 
-  return [normalized.slice(0, 180)];
+  return [normalized.slice(0, DOCUMENT_BEHAVIOR.searchEvidenceMaxChars)];
 };
 
 export const defaultActions = (status: "available" | "unavailable"): DocumentSearchAction[] => [
@@ -154,3 +154,4 @@ export const defaultActions = (status: "available" | "unavailable"): DocumentSea
   { type: "open_history_entry", status: "available" },
   { type: "rerun_search", status: "available" },
 ];
+import { DOCUMENT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";

@@ -77,8 +77,7 @@ contract or functionality changes are in scope.
 Backend runtime LLM prompt templates MUST live under `backend/prompts/`. If a
 feature introduces, extracts, or revises model-facing prompt assets used by the
 backend at runtime, the spec, plan, tasks, and implementation MUST treat
-`backend/prompts/` as the canonical location. Repo-root `/prompts` is not an
-approved destination for backend runtime prompt assets.
+`backend/prompts/` as the canonical location. 
 
 ## Additional Constraints
 

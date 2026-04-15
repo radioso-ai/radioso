@@ -184,6 +184,7 @@ export class ChatService {
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
+    sourceOrigin?: string | null;
   }): Promise<ChatResponse> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
@@ -254,6 +255,7 @@ export class ChatService {
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
+    sourceOrigin?: string | null;
   }): AsyncIterable<ChatStreamEvent> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
@@ -382,6 +384,7 @@ export class ChatService {
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
+    sourceOrigin?: string | null;
   }): Promise<PreparedSession> {
     const conversation = input.conversationId
       ? await this.ensureConversation(input.conversationId, input.workspaceId, input.anonymousSessionId)
@@ -400,7 +403,12 @@ export class ChatService {
       metadataFilter: input.metadataFilter,
     });
     const persistedConversation =
-      conversation ?? await this.conversationRepository.create(input.workspaceId, input.sourceChannel ?? null, input.anonymousSessionId ?? null);
+      conversation ?? await this.conversationRepository.create(
+        input.workspaceId,
+        input.sourceChannel ?? null,
+        input.anonymousSessionId ?? null,
+        input.sourceOrigin ?? null,
+      );
 
     const userMessage = await this.messageRepository.create({
       conversationId: persistedConversation.id,

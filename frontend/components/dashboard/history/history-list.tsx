@@ -61,6 +61,16 @@ function ConversationCard({
   conversation: ChatConversationSummary
   onSelect: (item: SelectedHistoryItem) => void
 }) {
+  const sourceHost = conversation.sourceOrigin
+    ? (() => {
+        try {
+          return new URL(conversation.sourceOrigin).host
+        } catch {
+          return conversation.sourceOrigin
+        }
+      })()
+    : null
+
   return (
     <button
       type="button"
@@ -85,6 +95,12 @@ function ConversationCard({
             Anonymous
           </span>
         ) : null}
+        {conversation.sourceChannel === 'website_embed' ? (
+          <span className="rounded-full bg-sky-500/15 px-2.5 py-1 text-sky-700 dark:text-sky-300">
+            Embedded
+          </span>
+        ) : null}
+        {sourceHost ? <span className="rounded-full bg-muted px-2.5 py-1">{sourceHost}</span> : null}
         <span className="rounded-full bg-muted px-2.5 py-1">{conversation.messageCount} messages</span>
         <span className="rounded-full bg-muted px-2.5 py-1">{conversation.userMessageCount} user</span>
         <span className="rounded-full bg-muted px-2.5 py-1">{conversation.assistantMessageCount} assistant</span>

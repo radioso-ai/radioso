@@ -39,7 +39,10 @@ export const publicConversationParamsSchema = z.object({
 
 export const createPublicChatRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
-  const sessionMiddleware = resolveAnonymousSession(dependencies.workspaceRepository);
+  const sessionMiddleware = resolveAnonymousSession(
+    dependencies.workspaceRepository,
+    dependencies.env.SESSION_COOKIE_SECRET,
+  );
   const rateLimitAnonymousChat = anonymousRateLimiter(dependencies);
 
   // POST /api/v1/public/chat/:token — send a message
@@ -50,16 +53,19 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
     validateBody(anonymousChatSchema),
     async (req, res, next) => {
       try {
-        const { workspaceId, anonymousSessionId } = res.locals as {
+        const { workspaceId, anonymousSessionId, sourceChannel, sourceOrigin } = res.locals as {
           workspaceId: string;
           anonymousSessionId: string;
+          sourceChannel: string | null;
+          sourceOrigin: string | null;
         };
 
         if (req.body.bootstrapGreeting) {
           const bootstrap = await dependencies.chatBootstrapService.startConversation({
             workspaceId,
-            sourceChannel: "anonymous",
+            sourceChannel,
             anonymousSessionId,
+            sourceOrigin,
             userExpectedLocale: req.body.userExpectedLocale,
           });
           if (!bootstrap) {
@@ -75,8 +81,9 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
           query: req.body.query!,
           stream: req.body.stream,
           conversationId: req.body.conversationId,
-          sourceChannel: "anonymous",
+          sourceChannel,
           anonymousSessionId,
+          sourceOrigin,
         };
 
         if (input.stream) {

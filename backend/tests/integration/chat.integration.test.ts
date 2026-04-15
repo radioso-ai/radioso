@@ -114,6 +114,30 @@ describe("chat integration", () => {
     });
   });
 
+  it("returns a normal JSON 500 when streaming fails before the first SSE event", async () => {
+    const { app, dependencies } = createTestApp();
+
+    dependencies.chatService.streamAnswer = async function* () {
+      throw new Error("stream setup failed");
+    };
+
+    const { token } = await issueTestToken(app, "stream-route-error@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ query: "What does the page explain?", stream: true });
+
+    expect(response.status).toBe(500);
+    expect(response.headers["content-type"]).toContain("application/json");
+    expect(response.body).toEqual({
+      error: {
+        code: "internal_error",
+        message: "Internal server error",
+      },
+    });
+  });
+
   it("replaces unsupported substantive content in mixed-support answers before delivery", async () => {
     const mixedGateway: ChatGateway = {
       async answer() {

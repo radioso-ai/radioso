@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import http from "node:http";
 import { readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
@@ -540,6 +541,52 @@ describe("chat contract", () => {
           id: anonChat.body.conversationId,
           sourceChannel: "anonymous",
           messageCount: 2,
+        }),
+      ]),
+    );
+  });
+
+  it("includes embedded source website in history summaries for embedded chats", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "embed-history@example.com");
+
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: ["https://example.com"],
+      });
+
+    const embedToken = settings.body.websiteEmbedToken as string;
+    const launchOrigin = "https://example.com";
+    const launchSignature = createHmac("sha256", "0123456789abcdef0123456789abcdef")
+      .update(`${embedToken}:${launchOrigin}`)
+      .digest("hex");
+
+    const embedSession = await request(app)
+      .post(`/api/v1/public/embed/${embedToken}/session`)
+      .set("x-radioso-embed-origin", launchOrigin)
+      .set("x-radioso-embed-signature", launchSignature);
+
+    const embeddedChat = await request(app)
+      .post(`/api/v1/public/chat/${embedSession.body.publicChatToken}`)
+      .set("x-radioso-embed-session", embedSession.body.embedSessionToken)
+      .send({ query: "What does this page do?", stream: false });
+
+    expect(embeddedChat.status).toBe(200);
+
+    const history = await request(app)
+      .get("/api/v1/chat/history")
+      .set(adminSessionHeaders(session));
+
+    expect(history.status).toBe(200);
+    expect(history.body.conversations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: embeddedChat.body.conversationId,
+          sourceChannel: "website_embed",
+          sourceOrigin: "https://example.com",
         }),
       ]),
     );

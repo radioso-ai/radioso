@@ -10,7 +10,12 @@ const isPayloadTooLargeError = (error: unknown): error is { status?: number; typ
       (("status" in error && error.status === 413) || ("type" in error && error.type === "entity.too.large")),
   );
 
-export const errorHandler = (error: unknown, req: Request, res: Response, _next: NextFunction): void => {
+export const errorHandler = (error: unknown, req: Request, res: Response, next: NextFunction): void => {
+  if (res.headersSent) {
+    next(error);
+    return;
+  }
+
   if (error instanceof AppError && error.code === "payload_too_large") {
     const requestPath = req.originalUrl || req.path;
     const isInlineDocumentMutation =

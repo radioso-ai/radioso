@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Radioso Embed Test Site</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">Radioso Embed Harness</p>
+        <h1>Test the launcher on an approved origin and a blocked origin.</h1>
+        <p class="lede">
+          Serve this page once, then open it as <code>http://127.0.0.1:4321</code> and
+          <code>http://localhost:4321</code>. The page origin changes, so the same widget install can verify both paths.
+        </p>
+      </header>
+
+      <main class="layout">
+        <section class="card controls">
+          <div class="card-header">
+            <h2>Launcher config</h2>
+            <span id="mount-status" class="status-pill">Waiting for config</span>
+          </div>
+
+          <form id="config-form">
+            <label class="field">
+              <span>Radioso app origin</span>
+              <input id="app-origin" name="appOrigin" type="url" value="http://localhost:3000" required />
+            </label>
+
+            <label class="field">
+              <span>Embed token</span>
+              <input
+                id="token"
+                name="token"
+                type="text"
+                placeholder="Paste the workspace website embed token"
+                autocomplete="off"
+                required
+              />
+            </label>
+
+            <div class="field-grid">
+              <label class="field">
+                <span>Script version</span>
+                <input id="script-version" name="scriptVersion" type="text" value="embed-session-fix-3" />
+              </label>
+
+              <label class="field">
+                <span>Launcher label</span>
+                <input id="label" name="label" type="text" value="Chat with us" maxlength="40" />
+              </label>
+
+              <label class="field">
+                <span>Icon</span>
+                <select id="icon" name="icon">
+                  <option value="chat">chat</option>
+                  <option value="sparkles">sparkles</option>
+                  <option value="message">message</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Position</span>
+                <select id="position" name="position">
+                  <option value="bottom-right">bottom-right</option>
+                  <option value="bottom-left">bottom-left</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="actions">
+              <button type="submit" class="primary">Reload with widget</button>
+              <button type="button" id="clear-config" class="secondary">Clear</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card diagnostics">
+          <div class="card-header">
+            <h2>Diagnostics</h2>
+          </div>
+
+          <dl class="diagnostic-list">
+            <div>
+              <dt>Current page origin</dt>
+              <dd id="current-origin"></dd>
+            </div>
+            <div>
+              <dt>Expected allowlist entry</dt>
+              <dd id="allowlist-origin"></dd>
+            </div>
+            <div>
+              <dt>Approved test URL</dt>
+              <dd><a id="approved-link" href="http://127.0.0.1:4321">http://127.0.0.1:4321</a></dd>
+            </div>
+            <div>
+              <dt>Blocked test URL</dt>
+              <dd><a id="blocked-link" href="http://localhost:4321">http://localhost:4321</a></dd>
+            </div>
+          </dl>
+
+          <div class="callout">
+            <strong>Origin check:</strong>
+            <span>
+              A normal local server will not match <code>http://127.0.0.1</code> unless it is actually serving on port
+              <code>80</code>. For this harness, allowlist the exact origin shown above, including <code>:4321</code>.
+            </span>
+          </div>
+
+          <div class="callout">
+            <strong>Cache busting:</strong>
+            <span>
+              The harness appends <code>?v=&lt;script version&gt;</code> to <code>radioso-embed.js</code>. Change that value
+              whenever you want to force the page to fetch a fresh widget build.
+            </span>
+          </div>
+
+          <pre id="snippet-preview" class="snippet" aria-label="Install snippet preview"></pre>
+        </section>
+
+        <section class="card content">
+          <div class="card-header">
+            <h2>Host page</h2>
+          </div>
+          <p>
+            This content is just here to make the embed feel like a real customer-facing page. Open the launcher in the
+            corner, then try the same page under the alternate hostname to verify the denial state.
+          </p>
+          <div class="feature-grid">
+            <article>
+              <h3>Product tours</h3>
+              <p>Use the assistant to answer questions about pricing, onboarding, or uploaded documents.</p>
+            </article>
+            <article>
+              <h3>Lead capture</h3>
+              <p>Check that the assistant appears on content pages without making you rebuild your site’s UI.</p>
+            </article>
+            <article>
+              <h3>Safe embedding</h3>
+              <p>The iframe stays hosted by Radioso, while origin checks decide which sites are allowed to launch it.</p>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./site.js"></script>
+  </body>
+</html>

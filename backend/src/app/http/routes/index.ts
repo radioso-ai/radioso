@@ -10,6 +10,7 @@ import { createSettingsRoutes } from "./settingsRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 import { createConnectorRoutes } from "../../../modules/connectors/http/connectorRoutes.js";
 import { createPublicChatRoutes } from "./publicChatRoutes.js";
+import { createPublicEmbedRoutes } from "./publicEmbedRoutes.js";
 import { createEvalRoutes } from "./evalRoutes.js";
 
 export const createApiRouter = (dependencies: AppDependencies): Router => {
@@ -28,6 +29,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/chat", createChatRoutes(dependencies));
   router.use("/api/v1/evals", createEvalRoutes(dependencies));
   router.use("/api/v1/public/chat", createPublicChatRoutes(dependencies));
+  router.use("/api/v1/public/embed", createPublicEmbedRoutes(dependencies));
   router.use("/api/connectors", dependencies.connectorRegistry.getRouter());
 
   return router;

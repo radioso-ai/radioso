@@ -23,51 +23,66 @@ export const sendChatSse = (
   res: Response,
   events: AsyncIterable<ChatStreamEvent>,
 ): Promise<void> => {
-  res.status(200);
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders();
-
   let closed = false;
   res.on("close", () => {
     closed = true;
   });
 
-  const writeEvent = (event: string, data: Record<string, unknown>) => {
+  const writeEvent = (event: ChatStreamEvent) => {
     if (closed || res.writableEnded) {
       return;
     }
 
-    res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
+    if (!res.headersSent) {
+      res.status(200);
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+    }
+
+    if (event.type === "conversation") {
+      res.write("event: conversation\n");
+      res.write(`data: ${JSON.stringify({ conversationId: event.conversationId })}\n\n`);
+      return;
+    }
+
+    if (event.type === "chunk") {
+      res.write("event: chunk\n");
+      res.write(`data: ${JSON.stringify({ text: event.text })}\n\n`);
+      return;
+    }
+
+    res.write("event: done\n");
+    res.write(`data: ${JSON.stringify({
+      conversationId: event.conversationId,
+      answer: event.answer,
+      citations: event.citations,
+      answerSegments: event.answerSegments,
+      retrievalInfo: event.retrievalInfo,
+      retrievalTrace: event.retrievalTrace,
+    })}\n\n`);
   };
 
   return (async () => {
-    for await (const event of events) {
-      if (event.type === "conversation") {
-        writeEvent("conversation", { conversationId: event.conversationId });
-        continue;
+    const iterator = events[Symbol.asyncIterator]();
+
+    try {
+      let next = await iterator.next();
+
+      while (!next.done) {
+        writeEvent(next.value);
+        next = await iterator.next();
+      }
+    } finally {
+      if (closed && typeof iterator.return === "function") {
+        await iterator.return();
       }
 
-      if (event.type === "chunk") {
-        writeEvent("chunk", { text: event.text });
-        continue;
+      if (res.headersSent && !res.writableEnded) {
+        res.end();
       }
-
-      writeEvent("done", {
-        conversationId: event.conversationId,
-        answer: event.answer,
-        citations: event.citations,
-        answerSegments: event.answerSegments,
-        retrievalInfo: event.retrievalInfo,
-        retrievalTrace: event.retrievalTrace,
-      });
-    }
-
-    if (!res.writableEnded) {
-      res.end();
     }
   })();
 };

@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Building2, ExternalLink, MessageSquare, Save, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Building2, Code2, Globe, ExternalLink, MessageSquare, Save, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
@@ -19,8 +19,10 @@ import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { accountApi, generalSettingsApi, type GeneralSettings } from '@/lib/api'
+import { buildWebsiteEmbedSnippet, formatWebsiteEmbedOrigins, parseWebsiteEmbedOrigins } from '@/lib/embed-widget'
 import { useWorkspace } from '@/lib/workspace-context'
 
 export function GeneralTab({ accountId }: { accountId: string }) {
@@ -42,6 +44,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
   const [savedAnonSettings, setSavedAnonSettings] = useState<GeneralSettings | null>(null)
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
+  const [websiteEmbedOrigins, setWebsiteEmbedOrigins] = useState('')
   const [assistantSettingsError, setAssistantSettingsError] = useState<string | null>(null)
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
@@ -91,6 +94,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
         const data = await generalSettingsApi.getGeneralSettings()
         setAnonSettings(data)
         setSavedAnonSettings(data)
+        setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(data.websiteEmbedAllowedOrigins ?? []))
         setAssistantSettingsError(null)
       } catch (error) {
         console.error('Failed to load anonymous chat settings:', error)
@@ -110,6 +114,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
       })
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
+      setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
     } catch (error) {
       console.error('Failed to update anonymous chat settings:', error)
     } finally {
@@ -131,6 +136,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
       })
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
+      setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
     } catch (error) {
       console.error('Failed to update rate limit:', error)
     } finally {
@@ -210,14 +216,15 @@ export function GeneralTab({ accountId }: { accountId: string }) {
   }
 
   const hasAssistantChanges =
-    Boolean(anonSettings && savedAnonSettings) &&
-    (
-      anonSettings.assistantName !== savedAnonSettings?.assistantName ||
-      anonSettings.assistantRole !== savedAnonSettings?.assistantRole ||
-      anonSettings.greetingInstruction !== savedAnonSettings?.greetingInstruction ||
-      anonSettings.assistantDefaultLocale !== savedAnonSettings?.assistantDefaultLocale ||
-      anonSettings.proactiveGreetingEnabled !== savedAnonSettings?.proactiveGreetingEnabled
-    )
+    anonSettings && savedAnonSettings
+      ? (
+          anonSettings.assistantName !== savedAnonSettings.assistantName ||
+          anonSettings.assistantRole !== savedAnonSettings.assistantRole ||
+          anonSettings.greetingInstruction !== savedAnonSettings.greetingInstruction ||
+          anonSettings.assistantDefaultLocale !== savedAnonSettings.assistantDefaultLocale ||
+          anonSettings.proactiveGreetingEnabled !== savedAnonSettings.proactiveGreetingEnabled
+        )
+      : false
 
   const handleAssistantSave = async () => {
     if (!anonSettings) return
@@ -232,10 +239,62 @@ export function GeneralTab({ accountId }: { accountId: string }) {
       })
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
+      setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
       setAssistantSettingsError(null)
     } catch (error) {
       console.error('Failed to update assistant bootstrap settings:', error)
       setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant bootstrap settings.'))
+    } finally {
+      setIsAnonSaving(false)
+    }
+  }
+
+  const hasWebsiteEmbedChanges =
+    anonSettings && savedAnonSettings
+      ? (
+          anonSettings.websiteEmbedEnabled !== savedAnonSettings.websiteEmbedEnabled ||
+          websiteEmbedOrigins !== formatWebsiteEmbedOrigins(savedAnonSettings.websiteEmbedAllowedOrigins ?? []) ||
+          anonSettings.websiteEmbedLauncherLabel !== savedAnonSettings.websiteEmbedLauncherLabel ||
+          anonSettings.websiteEmbedLauncherIcon !== savedAnonSettings.websiteEmbedLauncherIcon ||
+          anonSettings.websiteEmbedLauncherPosition !== savedAnonSettings.websiteEmbedLauncherPosition
+        )
+      : false
+
+  const websiteEmbedSnippet = useMemo(() => {
+    if (!anonSettings) {
+      return null
+    }
+
+    return (
+      anonSettings.websiteEmbedSnippet ??
+      buildWebsiteEmbedSnippet({
+        websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
+        websiteEmbedToken: anonSettings.websiteEmbedToken ?? null,
+        websiteEmbedScriptUrl: anonSettings.websiteEmbedScriptUrl ?? null,
+        websiteEmbedAllowedOrigins: anonSettings.websiteEmbedAllowedOrigins ?? [],
+        websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
+        websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
+        websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
+      })
+    )
+  }, [anonSettings])
+
+  const handleWebsiteEmbedSave = async () => {
+    if (!anonSettings) return
+    setIsAnonSaving(true)
+    try {
+      const updated = await generalSettingsApi.updateGeneralSettings({
+        websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
+        websiteEmbedAllowedOrigins: parseWebsiteEmbedOrigins(websiteEmbedOrigins),
+        websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
+        websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
+        websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
+      })
+      setAnonSettings(updated)
+      setSavedAnonSettings(updated)
+      setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
+    } catch (error) {
+      console.error('Failed to update website embed settings:', error)
     } finally {
       setIsAnonSaving(false)
     }
@@ -546,6 +605,128 @@ export function GeneralTab({ accountId }: { accountId: string }) {
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load anonymous chat settings.</p>
+            )}
+          </section>
+
+          <section id="website-embed" className="space-y-6 scroll-mt-24">
+            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Website Embed</h2>
+            {isAnonLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Spinner className="w-5 h-5" />
+              </div>
+            ) : anonSettings ? (
+              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <Globe className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <Label htmlFor="websiteEmbedToggle" className="text-base font-medium text-foreground">
+                        Hosted website widget
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        Install a Radioso-owned launcher script that opens a hosted iframe assistant on approved sites.
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    id="websiteEmbedToggle"
+                    checked={anonSettings.websiteEmbedEnabled ?? false}
+                    onCheckedChange={(checked) => handleAssistantSettingChange('websiteEmbedEnabled', checked)}
+                    disabled={isAnonSaving}
+                  />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="websiteEmbedLauncherLabel" className="text-foreground">Launcher label</Label>
+                    <Input
+                      id="websiteEmbedLauncherLabel"
+                      value={anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us'}
+                      maxLength={80}
+                      onChange={(event) => handleAssistantSettingChange('websiteEmbedLauncherLabel', event.target.value)}
+                      placeholder="Chat with us"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="websiteEmbedLauncherPosition" className="text-foreground">Launcher position</Label>
+                    <select
+                      id="websiteEmbedLauncherPosition"
+                      value={anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right'}
+                      onChange={(event) =>
+                        handleAssistantSettingChange('websiteEmbedLauncherPosition', event.target.value as GeneralSettings['websiteEmbedLauncherPosition'])
+                      }
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                    >
+                      <option value="bottom-right">Bottom right</option>
+                      <option value="bottom-left">Bottom left</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-2 md:max-w-xs">
+                  <Label htmlFor="websiteEmbedLauncherIcon" className="text-foreground">Launcher icon</Label>
+                  <select
+                    id="websiteEmbedLauncherIcon"
+                    value={anonSettings.websiteEmbedLauncherIcon ?? 'chat'}
+                    onChange={(event) =>
+                      handleAssistantSettingChange('websiteEmbedLauncherIcon', event.target.value as GeneralSettings['websiteEmbedLauncherIcon'])
+                    }
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                  >
+                    <option value="chat">Chat bubble</option>
+                    <option value="sparkles">Sparkles</option>
+                    <option value="message">Message</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="websiteEmbedAllowedOrigins" className="text-foreground">Approved origins</Label>
+                  <Textarea
+                    id="websiteEmbedAllowedOrigins"
+                    value={websiteEmbedOrigins}
+                    onChange={(event) => setWebsiteEmbedOrigins(event.target.value)}
+                    placeholder={`https://example.com\nhttps://docs.example.com`}
+                    className="min-h-[132px]"
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Enter one website origin per line. Only these sites can launch the embedded assistant.
+                  </p>
+                </div>
+
+                {anonSettings.websiteEmbedEnabled && websiteEmbedSnippet ? (
+                  <div className="rounded bg-muted/50 p-3 space-y-3">
+                    <div className="flex items-center gap-2 text-foreground">
+                      <Code2 className="h-4 w-4" />
+                      <Label className="text-foreground">Install snippet</Label>
+                    </div>
+                    <CopyValueField
+                      value={websiteEmbedSnippet}
+                      ariaLabel="Copy install snippet"
+                      className="w-full"
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Paste this script tag into the target website. The loader opens a Radioso-hosted iframe on approved domains only.
+                    </p>
+                    {anonSettings.websiteEmbedScriptUrl ? (
+                      <p className="text-xs text-muted-foreground">
+                        Loader URL: <span className="font-mono">{anonSettings.websiteEmbedScriptUrl}</span>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="flex justify-end">
+                  <Button onClick={handleWebsiteEmbedSave} disabled={!hasWebsiteEmbedChanges || isAnonSaving}>
+                    {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save embed settings
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Failed to load website embed settings.</p>
             )}
           </section>
 

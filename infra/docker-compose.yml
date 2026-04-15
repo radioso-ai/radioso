@@ -77,6 +77,8 @@ services:
       dockerfile: Dockerfile
       args:
         BACKEND_INTERNAL_URL: http://backend:8080
+    env_file:
+      - ../backend/.env
     depends_on:
       backend:
         condition: service_healthy

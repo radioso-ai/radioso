@@ -29,7 +29,7 @@ The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts
 
 The dashboard presents settings in product order:
 
-1. General: workspace identity, public access, and new-chat bootstrap behavior
+1. General: workspace identity, public access, website embed, and new-chat bootstrap behavior
 2. Ingestion: choose chunking strategy -> tune chunk sizing -> reprocess existing documents
 3. Retrieval: rewrite query -> retrieve/filter candidates -> rerank -> shape the final answer
 

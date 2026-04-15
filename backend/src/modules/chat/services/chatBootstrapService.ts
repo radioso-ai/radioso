@@ -55,6 +55,7 @@ export class ChatBootstrapService {
     accountId?: string;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
+    sourceOrigin?: string | null;
     userExpectedLocale?: string | null;
   }): Promise<ChatResponse | null> {
     const workspace = await this.workspaceRepository.findById(input.workspaceId);
@@ -107,6 +108,7 @@ export class ChatBootstrapService {
         workspaceId: input.workspaceId,
         sourceChannel: input.sourceChannel ?? null,
         anonymousSessionId: input.anonymousSessionId ?? null,
+        sourceOrigin: input.sourceOrigin ?? null,
         content: normalizedAnswer,
       });
 
@@ -118,6 +120,7 @@ export class ChatBootstrapService {
         metadata: {
           conversationId: conversation.id,
           sourceChannel: input.sourceChannel ?? null,
+          sourceOrigin: input.sourceOrigin ?? null,
           localeUsed,
           cacheHit: Boolean(cachedGreeting),
           fingerprint,
@@ -134,6 +137,7 @@ export class ChatBootstrapService {
         eventStatus: "failure",
         metadata: {
           sourceChannel: input.sourceChannel ?? null,
+          sourceOrigin: input.sourceOrigin ?? null,
           localeUsed,
           fingerprint,
           errorMessage: error instanceof Error ? error.message : "bootstrap generation failed",

@@ -18,6 +18,7 @@ import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSetting
 export interface ChatConversationSummary {
   id: string;
   sourceChannel: string | null;
+  sourceOrigin: string | null;
   anonymousSessionId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -68,6 +69,7 @@ export interface ChatConversationDetail {
   conversationId: string;
   workspaceId: string;
   sourceChannel: string | null;
+  sourceOrigin: string | null;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -91,6 +93,7 @@ export interface ChatConversationPage {
 export interface PublicConversationSummary {
   id: string;
   sourceChannel: string | null;
+  sourceOrigin: string | null;
   preview: string | null;
   messageCount: number;
   createdAt: string;
@@ -190,6 +193,7 @@ export class ChatHistoryService {
         return {
           id: conversation.id,
           sourceChannel: conversation.sourceChannel,
+          sourceOrigin: conversation.sourceOrigin,
           preview: summary?.preview ?? null,
           messageCount: summary?.messageCount ?? 0,
           createdAt: toIsoString(conversation.createdAt),
@@ -234,6 +238,7 @@ export class ChatHistoryService {
       conversationId: conversation.id,
       workspaceId: conversation.workspaceId,
       sourceChannel: conversation.sourceChannel,
+      sourceOrigin: conversation.sourceOrigin,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),
       messageCount: messageSummary?.messageCount ?? total,
@@ -263,6 +268,7 @@ export class ChatHistoryService {
     return {
       id: conversation.id,
       sourceChannel: conversation.sourceChannel,
+      sourceOrigin: conversation.sourceOrigin,
       anonymousSessionId: conversation.anonymousSessionId ?? null,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),

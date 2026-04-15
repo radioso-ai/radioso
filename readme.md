@@ -36,6 +36,7 @@ When it finishes successfully, open:
 
 - App: `http://localhost:3000`
 - API: `http://localhost:8080`
+- Embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
 
 ### Success Looks Like This
 
@@ -43,6 +44,23 @@ When it finishes successfully, open:
 - you can register or sign in
 - you can upload a document
 - Radioso returns an answer grounded in that document
+
+## Website Embed Smoke Test
+
+Use the local harness when you want to test the website embed launcher against both an approved and a blocked origin without building a separate site.
+
+Start the harness from the repo root:
+
+```bash
+node scripts/serve-embed-test-site.mjs
+```
+
+Then open:
+
+- Approved-origin test: `http://127.0.0.1:4321`
+- Blocked-origin test: `http://localhost:4321`
+
+Important: the website embed allowlist must include the exact origin, including the port. For this harness that usually means `http://127.0.0.1:4321`, not just `http://127.0.0.1`.
 
 ## Choose Your Path
 
@@ -291,6 +309,10 @@ curl -sS \
   -H 'Content-Type: application/json' \
   -d '{
     "anonymousChatEnabled": true,
+    "websiteEmbedEnabled": true,
+    "websiteEmbedAllowedOrigins": ["https://example.com"],
+    "websiteEmbedLauncherLabel": "Chat with Marta",
+    "websiteEmbedLauncherPosition": "bottom-right",
     "assistantName": "Marta",
     "assistantRole": "Workspace document assistant",
     "greetingInstruction": "Warm, concise, and practical",
@@ -301,6 +323,8 @@ curl -sS \
 ```
 
 For website popups or other embedded entry points, pass `userExpectedLocale` on the chat request. That locale hint overrides the workspace default for the new conversation greeting.
+
+When website embed is enabled, General Settings also returns a copyable script tag that loads `radioso-embed.js`. Install that snippet on an approved origin only. The launcher stays thin; the actual assistant runs in a Radioso-hosted iframe so origin checks and chat runtime stay under Radioso control.
 
 ## Troubleshooting And Operations
 

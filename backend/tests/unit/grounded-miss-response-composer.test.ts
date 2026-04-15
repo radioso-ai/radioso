@@ -43,6 +43,11 @@ describe("grounded miss response composer", () => {
   it("lets the model compose the full unsupported response from retrieved contexts", async () => {
     let request: TextGenerationRequest | undefined;
     const composer = new ModelGroundedMissResponseComposer({
+      metadata: {
+        capability: "chat",
+        provider: "openai",
+        model: "test-model",
+      },
       async complete(input) {
         request = input;
         return "I couldn't verify a raspberry cake recipe here, but I did find material about vegetarian cuisine in Ananda Vegetarian Cuisine if you'd like to explore that instead.";
@@ -67,7 +72,9 @@ describe("grounded miss response composer", () => {
       "I couldn't verify a raspberry cake recipe here, but I did find material about vegetarian cuisine in Ananda Vegetarian Cuisine if you'd like to explore that instead.",
     );
 
-    expect(request?.systemPrompt).toContain("explicitly point the user toward the strongest nearby topic or source");
+    expect(request?.systemPrompt).toContain(
+      "point the user toward the strongest nearby topic or source from those contexts",
+    );
     expect(request?.prompt).toContain("Context 1:");
     expect(request?.prompt).toContain("Title: Ananda Vegetarian Cuisine");
     expect(request?.prompt).toContain("Excerpt: Ananda talks about vegetarian cuisine and mindful cooking.");

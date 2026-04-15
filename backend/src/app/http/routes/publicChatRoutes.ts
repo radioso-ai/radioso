@@ -7,11 +7,8 @@ import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.j
 import { anonymousRateLimiter } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./chatRoutes.js";
-import { isValidLocaleHint } from "../../../modules/chat/services/chatLocale.js";
 
-const localeHintSchema = z.string().trim().min(2).max(35).refine(isValidLocaleHint, {
-  message: "userExpectedLocale must be a valid locale tag",
-});
+const localeHintSchema = z.string().trim().max(35);
 
 export const anonymousChatSchema = z.object({
   query: z.string().min(1).optional(),

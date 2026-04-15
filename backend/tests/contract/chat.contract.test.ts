@@ -264,20 +264,42 @@ describe("chat contract", () => {
     expect(response.status).toBe(204);
   });
 
-  it("rejects malformed bootstrap locale hints with a client error", async () => {
-    const { app } = createTestApp();
+  it("ignores malformed bootstrap locale hints and falls back safely", async () => {
+    const { app } = createTestApp({
+      chatGateway: {
+        async answer(input) {
+          if (input.query.length === 0) {
+            return "Hello! I'm Marta and I can help with your documents.";
+          }
+          return "unused";
+        },
+        async *streamAnswer() {
+          yield "unused";
+        },
+      },
+    });
     const session = await issueTestSession(app, "chat-bootstrap-invalid-locale@example.com");
+
+    await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        assistantName: "Marta",
+        assistantRole: "Document assistant",
+        greetingInstruction: "Warm and concise",
+        assistantDefaultLocale: "en",
+        proactiveGreetingEnabled: true,
+      })
+      .expect(200);
 
     const response = await request(app)
       .post("/api/v1/chat/")
       .set(adminSessionHeaders(session))
       .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "bad_locale_value" });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toMatchObject({
-      code: "bad_request",
-      message: "Invalid request body",
-    });
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain("Hello!");
+    expect(response.body.conversationId).toEqual(expect.any(String));
   });
   it("returns an SSE response when streaming is requested", async () => {
     const delayedGateway: ChatGateway = {

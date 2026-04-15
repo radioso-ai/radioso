@@ -680,20 +680,24 @@ export class ChatService {
   }
 }
 
-const ASSISTANT_IDENTITY_QUERY_PATTERNS = [
+const ASSISTANT_IDENTITY_EXPLICIT_PATTERNS = [
   /\bwhat(?:'s| is) your name\b/i,
   /\bwho are you\b/i,
-  /\bwhat do you do\b/i,
-  /\bwhat can you do\b/i,
   /\byour role\b/i,
   /\bcome ti chiami\b/i,
   /\bchi sei\b/i,
-  /\bcosa fai\b/i,
   /\bqual(?: è|e') il tuo nome\b/i,
 ];
 
+const ASSISTANT_IDENTITY_STANDALONE_PATTERNS = [
+  /^\s*what do you do[?.!\s]*$/i,
+  /^\s*what can you do[?.!\s]*$/i,
+  /^\s*cosa fai[?.!\s]*$/i,
+];
+
 const isAssistantIdentityQuestion = (query: string): boolean =>
-  ASSISTANT_IDENTITY_QUERY_PATTERNS.some((pattern) => pattern.test(query));
+  ASSISTANT_IDENTITY_EXPLICIT_PATTERNS.some((pattern) => pattern.test(query))
+  || ASSISTANT_IDENTITY_STANDALONE_PATTERNS.some((pattern) => pattern.test(query));
 
 const buildAssistantIdentityAnswerPrompt = (input: {
   assistantIdentity: AssistantIdentityPromptInput;

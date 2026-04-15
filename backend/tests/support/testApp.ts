@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
+import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import {
   DefaultUnsupportedNoticeGenerator,
@@ -54,6 +55,7 @@ import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuse
 import {
   createAuditService,
   InMemoryAuditEventRepository,
+  InMemoryBootstrapGreetingCacheRepository,
   InMemoryAccountRepository,
   InMemoryAccountInvitationRepository,
   InMemoryAccountMembershipRepository,
@@ -150,6 +152,8 @@ export const createTestDependencies = (overrides: {
   const documentStorage = new InMemoryDocumentStorage();
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
+  conversationRepository.setMessageRepository(messageRepository);
+  const bootstrapGreetingCacheRepository = new InMemoryBootstrapGreetingCacheRepository();
   const embeddingGateway: EmbeddingGateway = {
     async embedTexts(texts: string[]): Promise<number[][]> {
       return texts.map((text) => [text.length, text.split(" ").length, 1]);
@@ -435,6 +439,21 @@ export const createTestDependencies = (overrides: {
     messageRepository,
     auditEventRepository,
   );
+  const chatService = new ChatService(
+    conversationRepository,
+    messageRepository,
+    retrievalPipeline,
+    chatGateway,
+    auditService,
+    overrides.unsupportedNoticeGenerator ?? new DefaultUnsupportedNoticeGenerator(),
+  );
+  const chatBootstrapService = new ChatBootstrapService(
+    workspaceRepository,
+    bootstrapGreetingCacheRepository,
+    conversationRepository,
+    chatGateway,
+    auditService,
+  );
   const evalLabService = new EvalLabService(
     new InMemoryEvalRepository(),
     chatHistoryService,
@@ -474,17 +493,12 @@ export const createTestDependencies = (overrides: {
     workspaceIngestionReprocessService,
     documentProcessingWorker,
     documentDeletionService,
-    chatService: new ChatService(
-      conversationRepository,
-      messageRepository,
-      retrievalPipeline,
-      chatGateway,
-      auditService,
-      overrides.unsupportedNoticeGenerator ?? new DefaultUnsupportedNoticeGenerator(),
-    ),
+    chatService,
+    chatBootstrapService,
     chatHistoryService,
     evalLabService,
     workspaceRepository,
+    bootstrapGreetingCacheRepository,
     conversationRepository,
     messageRepository,
     connectorRegistry,

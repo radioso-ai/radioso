@@ -16,6 +16,12 @@ describe("general settings contract", () => {
       anonymousChatEnabled: false,
       anonymousChatUrl: null,
       anonymousRateLimit: 10,
+      assistantName: "",
+      assistantRole: "",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      assistantBootstrapActive: false,
     });
   });
 
@@ -33,6 +39,7 @@ describe("general settings contract", () => {
     expect(response.body.anonymousChatUrl).toBeDefined();
     expect(response.body.anonymousChatUrl).toContain("/chat/");
     expect(response.body.anonymousRateLimit).toBe(10);
+    expect(response.body.assistantBootstrapActive).toBe(false);
   });
 
   it("PUT /api/v1/settings/general updates rate limit", async () => {
@@ -96,5 +103,96 @@ describe("general settings contract", () => {
       .send({ anonymousChatEnabled: true, anonymousRateLimit: 100 });
 
     expect(response.status).toBe(400);
+  });
+
+  it("round-trips assistant bootstrap settings in general settings", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app);
+
+    const response = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        assistantName: "Marta",
+        assistantRole: "Museum guide",
+        greetingInstruction: "Warm and concise",
+        assistantDefaultLocale: "it-IT",
+        proactiveGreetingEnabled: true,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      assistantName: "Marta",
+      assistantRole: "Museum guide",
+      greetingInstruction: "Warm and concise",
+      assistantDefaultLocale: "it-IT",
+      proactiveGreetingEnabled: true,
+      assistantBootstrapActive: true,
+    });
+
+    const fetched = await request(app)
+      .get("/api/v1/settings/general")
+      .set(adminSessionHeaders(session));
+
+    expect(fetched.status).toBe(200);
+    expect(fetched.body).toMatchObject({
+      assistantName: "Marta",
+      assistantRole: "Museum guide",
+      greetingInstruction: "Warm and concise",
+      assistantDefaultLocale: "it-IT",
+      proactiveGreetingEnabled: true,
+      assistantBootstrapActive: true,
+    });
+  });
+
+  it("marks bootstrap inactive when proactive greeting is enabled but identity is blank", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app);
+
+    const response = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        assistantName: "   ",
+        assistantRole: "",
+        greetingInstruction: "",
+        proactiveGreetingEnabled: true,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      assistantName: "",
+      assistantRole: "",
+      greetingInstruction: "",
+      proactiveGreetingEnabled: true,
+      assistantBootstrapActive: false,
+    });
+  }, 10000);
+
+  it("does not partially persist general settings when validation fails", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app);
+
+    const response = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+        anonymousRateLimit: 20,
+        assistantDefaultLocale: "not a locale",
+      });
+
+    expect(response.status).toBe(400);
+
+    const fetched = await request(app)
+      .get("/api/v1/settings/general")
+      .set(adminSessionHeaders(session));
+
+    expect(fetched.status).toBe(200);
+    expect(fetched.body).toMatchObject({
+      anonymousChatEnabled: false,
+      anonymousRateLimit: 10,
+      assistantDefaultLocale: null,
+    });
   });
 });

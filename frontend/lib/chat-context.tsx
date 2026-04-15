@@ -11,6 +11,7 @@ import {
 
 import {
   chatApi,
+  generalSettingsApi,
   type AnswerSegment,
   type Citation,
   type ChatStreamCompletion,
@@ -34,16 +35,21 @@ interface ChatSession {
   conversationId?: string
   messages: ChatMessage[]
   isLoading: boolean
+  isInitialized: boolean
+  isBootstrapping: boolean
 }
 
 interface ChatContextValue {
   getSession: (workspaceId: string) => ChatSession
+  initializeSession: (workspaceId: string, userExpectedLocale?: string) => Promise<void>
   sendMessage: (workspaceId: string, content: string) => Promise<boolean>
 }
 
 const EMPTY_SESSION: ChatSession = {
   messages: [],
   isLoading: false,
+  isInitialized: false,
+  isBootstrapping: false,
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null)
@@ -131,7 +137,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       const currentSession = ensureSession(sessions, accountId)
 
-      if (currentSession.isLoading) {
+      if (currentSession.isLoading || currentSession.isBootstrapping) {
         return false
       }
 
@@ -241,12 +247,80 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [applyCompletion, sessions, updateSession],
   )
 
+  const initializeSession = useCallback(
+    async (accountId: string, userExpectedLocale?: string) => {
+      const currentSession = ensureSession(sessions, accountId)
+      if (
+        currentSession.isInitialized ||
+        currentSession.isLoading ||
+        currentSession.isBootstrapping ||
+        currentSession.messages.length > 0
+      ) {
+        return
+      }
+
+      updateSession(accountId, (session) => ({
+        ...session,
+        isInitialized: true,
+        isBootstrapping: true,
+      }))
+
+      try {
+        const settings = await generalSettingsApi.getGeneralSettings()
+        if (!settings.assistantBootstrapActive) {
+          return
+        }
+
+        const bootstrap = await chatApi.bootstrapConversation({
+          stream: false,
+          bootstrapGreeting: true,
+          userExpectedLocale,
+        })
+
+        if (!bootstrap?.answer) {
+          return
+        }
+
+        updateSession(accountId, (session) => ({
+          ...(session.messages.length > 0 || session.conversationId
+            ? session
+            : {
+                ...session,
+                conversationId: bootstrap.conversationId,
+                messages: [
+                  {
+                    id: crypto.randomUUID(),
+                    role: 'assistant',
+                    content: bootstrap.answer,
+                    createdAt: new Date().toISOString(),
+                    citations: bootstrap.citations,
+                    answerSegments: bootstrap.answerSegments,
+                    retrievalInfo: bootstrap.retrievalInfo,
+                    retrievalTrace: bootstrap.retrievalTrace,
+                    status: 'complete' as const,
+                  },
+                ],
+              }),
+        }))
+      } catch {
+        // Silent-start fallback is intentional when bootstrap startup fails.
+      } finally {
+        updateSession(accountId, (session) => ({
+          ...session,
+          isBootstrapping: false,
+        }))
+      }
+    },
+    [sessions, updateSession],
+  )
+
   const value = useMemo<ChatContextValue>(
     () => ({
       getSession,
+      initializeSession,
       sendMessage,
     }),
-    [getSession, sendMessage],
+    [getSession, initializeSession, sendMessage],
   )
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
@@ -261,6 +335,8 @@ export const useChatSession = (workspaceId: string) => {
 
   return {
     ...context.getSession(workspaceId),
+    initializeSession: (userExpectedLocale?: string) =>
+      context.initializeSession(workspaceId, userExpectedLocale),
     sendMessage: (content: string) => context.sendMessage(workspaceId, content),
   }
 }

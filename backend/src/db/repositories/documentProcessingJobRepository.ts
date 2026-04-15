@@ -28,6 +28,7 @@ export interface DocumentProcessingQueueSnapshot {
 export interface DocumentProcessingJobRepositoryPort {
   enqueue(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord>;
   claimNext(now?: Date): Promise<DocumentProcessingJobRecord | null>;
+  backfillMissingQueuedJobs(limit?: number): Promise<number>;
   listProcessingJobs(): Promise<DocumentProcessingJobRecord[]>;
   getQueueSnapshot(now?: Date): Promise<DocumentProcessingQueueSnapshot>;
   markCompleted(jobId: string): Promise<void>;
@@ -133,6 +134,40 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       );
 
       return rows.rows[0] ? mapJob(rows.rows[0]) : null;
+    });
+  }
+
+  async backfillMissingQueuedJobs(limit = 100): Promise<number> {
+    return this.database.withTransaction(async (client) => {
+      const missingRows = await client.query<{
+        id: string;
+        workspace_id: string;
+        revision: number;
+      }>(
+        `SELECT d.id, d.workspace_id, d.revision
+         FROM documents d
+         WHERE d.status = 'queued'
+           AND NOT EXISTS (
+             SELECT 1
+             FROM document_processing_jobs jobs
+             WHERE jobs.document_id = d.id
+               AND jobs.document_revision = d.revision
+           )
+         ORDER BY d.updated_at ASC, d.id ASC
+         LIMIT $1
+         FOR UPDATE OF d SKIP LOCKED`,
+        [limit],
+      );
+
+      for (const row of missingRows.rows) {
+        await client.query(
+          `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
+           VALUES ($1, $2, $3, $4, 'queued')`,
+          [randomUUID(), row.id, row.workspace_id, row.revision],
+        );
+      }
+
+      return missingRows.rows.length;
     });
   }
 

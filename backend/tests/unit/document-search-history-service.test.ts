@@ -25,6 +25,8 @@ describe("document search history service", () => {
 
     const list = await service.listHistory("workspace-1");
     expect(list).toEqual({
+      hasMore: false,
+      nextCursor: null,
       searches: [
         {
           searchId: "search-1",

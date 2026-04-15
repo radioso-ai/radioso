@@ -1,6 +1,7 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -702,18 +703,15 @@ const buildAssistantIdentityAnswerPrompt = (input: {
   const historySection = input.history
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
     .join("\n");
-
-  return [
-    "You are answering a question about the assistant's stable workspace identity.",
-    "Answer only from the identity details below and the conversation history when relevant.",
-    "Do not claim document knowledge or cite documents.",
-    "If a requested identity detail is missing, say so briefly instead of inventing it.",
+  const identityLines = [
     input.assistantIdentity.assistantName ? `Assistant name: ${input.assistantIdentity.assistantName}` : null,
     input.assistantIdentity.assistantRole ? `Assistant role: ${input.assistantIdentity.assistantRole}` : null,
     input.assistantIdentity.greetingInstruction ? `Assistant style: ${input.assistantIdentity.greetingInstruction}` : null,
-    "",
-    `Conversation History:\n${historySection || "No prior history"}`,
-    "",
-    `User Question:\n${input.query}`,
-  ].filter((line): line is string => line !== null).join("\n");
+  ].filter((line): line is string => line !== null);
+
+  return renderPromptTemplate("chat/assistant-identity-answer.md", {
+    identity_lines: identityLines.join("\n"),
+    history_section: historySection || "No prior history",
+    query: input.query,
+  });
 };

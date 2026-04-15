@@ -117,6 +117,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Core development**: Implement models, services, CLI commands, endpoints
    - **Integration work**: Database connections, middleware, logging, external services
    - **Backend API contract rule**: Update `backend/src/app/http/openapi/document.ts` as the source of truth for backend HTTP contract changes and regenerate `backend/openapi.yaml` / `backend/openapi.json`; do not hand-edit generated spec files
+   - **Backend prompt asset rule**: Place backend runtime LLM prompt templates under `backend/prompts/`; do not create repo-root `/prompts/` for backend runtime prompt assets. Keep loaders, Docker/build steps, and tests aligned with `backend/prompts/`
    - **Polish and validation**: Unit tests, performance optimization, documentation
 
 8. Progress tracking and error handling:

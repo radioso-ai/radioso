@@ -15,6 +15,7 @@ FROM deps AS build
 
 COPY backend/tsconfig.json ./
 COPY backend/openapi.yaml ./
+COPY backend/prompts ./prompts
 COPY backend/scripts ./scripts
 COPY backend/src ./src
 COPY packages/connector-api ../packages/connector-api
@@ -37,6 +38,7 @@ RUN npm ci --omit=dev
 
 COPY --from=build /app/backend/dist ./dist
 COPY --from=build /app/backend/openapi.yaml ./openapi.yaml
+COPY --from=build /app/backend/prompts ./prompts
 
 EXPOSE 8080
 

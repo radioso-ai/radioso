@@ -1,10 +1,10 @@
 <!--
 Sync Impact Report
-- Version change: 1.4.0 to 1.5.0
-- Modified principles: none
-- Added sections: IX. Documentation Parity
+- Version change: 1.5.0 to 1.6.0
+- Modified principles: IX. Documentation Parity
+- Added sections: X. Prompt Asset Ownership
 - Removed sections: none
-- Templates requiring updates: `.specify/templates/plan-template.md` ✅ updated
+- Templates requiring updates: `.specify/templates/plan-template.md` ✅ updated; `.codex/prompts/speckit.specify.md` ✅ updated; `.codex/prompts/speckit.plan.md` ✅ updated; `.codex/prompts/speckit.implement.md` ✅ updated
 - Follow-up TODOs: none
 -->
 # Botobot Front Desk AI Constitution
@@ -73,6 +73,13 @@ settings explanations, and any repo-level docs that describe the affected
 behavior. Plans and tasks MUST identify the docs that need updates whenever
 contract or functionality changes are in scope.
 
+### X. Prompt Asset Ownership
+Backend runtime LLM prompt templates MUST live under `backend/prompts/`. If a
+feature introduces, extracts, or revises model-facing prompt assets used by the
+backend at runtime, the spec, plan, tasks, and implementation MUST treat
+`backend/prompts/` as the canonical location. Repo-root `/prompts` is not an
+approved destination for backend runtime prompt assets.
+
 ## Additional Constraints
 
 No additional constraints beyond the Core Principles at this time.
@@ -91,6 +98,8 @@ No additional constraints beyond the Core Principles at this time.
   generated files directly.
 - Contract and functionality changes MUST identify and update the affected docs
   in the same feature work.
+- Backend runtime prompt extraction or creation MUST use `backend/prompts/` and
+  keep code, packaging, and tests aligned with that location.
 - PR review MUST verify compliance with these principles before merge.
 
 ## Governance
@@ -105,4 +114,4 @@ Compliance is enforced during plan/spec/task reviews and PR reviews. The
 constitution version, ratification date, and last amended date MUST be updated
 whenever changes are made.
 
-**Version**: 1.5.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-04-01
+**Version**: 1.6.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-04-16

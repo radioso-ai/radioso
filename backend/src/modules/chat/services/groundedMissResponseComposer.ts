@@ -1,4 +1,5 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 
 export interface GroundedMissContextSummary {
   title: string;
@@ -86,23 +87,8 @@ const normalizeModelResponse = (value: string | undefined): string => {
   return normalized;
 };
 
-const NO_CONTEXT_SYSTEM_PROMPT = `You are composing a short response for a document-grounded assistant.
-Respond in the same language as the user's question.
-State that no supporting material was found in the workspace documents.
-You may offer one gentle next step, but do not answer the question.
-Do not imply that you searched beyond the workspace documents.
-Keep the response concise and natural.
-Return plain text only.`;
-
-const UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT = `You are composing a short response for a document-grounded assistant.
-Respond in the same language as the user's question.
-State that the exact request could not be verified from the workspace documents.
-When retrieved contexts are provided, point the user toward the strongest nearby topic or source from those contexts and ask if they want to talk about those.
-Invite the user to continue with that nearby material instead of stopping at a generic refusal.
-Do not claim that the nearby material answers the original question.
-Do not introduce sources or facts that are not present in the provided contexts.
-Keep the response concise and natural.
-Return plain text only.`;
+const NO_CONTEXT_SYSTEM_PROMPT = loadPromptTemplate("chat/no-context-system.md");
+const UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT = loadPromptTemplate("chat/unsupported-with-context-system.md");
 
 export class DefaultGroundedMissResponseComposer implements GroundedMissResponseComposer {
   async composeUnsupportedWithContext(input: {
@@ -133,11 +119,11 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     try {
       const raw = await this.client.complete({
         systemPrompt: UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT,
-        prompt: [
-          `User query:\n${input.query}`,
-          `\nUnsupported draft content:\n${normalizeWhitespace(input.unsupportedText)}`,
-          `\nRetrieved contexts:\n${formatContextsForPrompt(input.contexts)}`,
-        ].join("\n"),
+        prompt: renderPromptTemplate("chat/unsupported-with-context-user.md", {
+          query: input.query,
+          unsupported_text: normalizeWhitespace(input.unsupportedText),
+          contexts_section: formatContextsForPrompt(input.contexts),
+        }),
         temperature: 0,
         maxOutputTokens: 120,
       });
@@ -152,7 +138,9 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     try {
       const raw = await this.client.complete({
         systemPrompt: NO_CONTEXT_SYSTEM_PROMPT,
-        prompt: `User query:\n${input.query}`,
+        prompt: renderPromptTemplate("chat/no-context-user.md", {
+          query: input.query,
+        }),
         temperature: 0,
         maxOutputTokens: 80,
       });

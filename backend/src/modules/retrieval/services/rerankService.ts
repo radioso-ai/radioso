@@ -1,4 +1,5 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
+import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { RetrievedCandidate, RerankedCandidate, RerankStatus } from "../domain/retrievalPipelineTypes.js";
 
@@ -8,6 +9,12 @@ export interface RerankGateway {
     contexts: RetrievedCandidate[];
   }): Promise<Array<{ chunkId: string; relevanceScore: number }>>;
 }
+
+const RERANK_SYSTEM_PROMPT = loadPromptTemplate("retrieval/rerank-system.txt");
+const RERANK_RESPONSES_INSTRUCTIONS = loadPromptTemplate("retrieval/rerank-responses-instructions.txt");
+
+const buildRerankPrompt = (input: { query: string; candidates: string }): string =>
+  renderPromptTemplate("retrieval/rerank-user.md", input);
 
 export class ModelRerankGateway implements RerankGateway {
   private static readonly TEMPERATURE = 0.2;
@@ -25,9 +32,8 @@ export class ModelRerankGateway implements RerankGateway {
     const candidates = buildRerankCandidateList(input.contexts);
 
     const content = await this.client.complete({
-      systemPrompt:
-        'Score each candidate chunk for answer relevance to the query. Return only valid JSON as an array of objects with keys "chunkId" and "relevanceScore" where relevanceScore is between 0 and 1.',
-      prompt: `Query:\n${input.query}\n\nCandidates:\n${candidates}`,
+      systemPrompt: RERANK_SYSTEM_PROMPT,
+      prompt: buildRerankPrompt({ query: input.query, candidates }),
       temperature: ModelRerankGateway.TEMPERATURE,
       maxOutputTokens: ModelRerankGateway.MAX_COMPLETION_TOKENS,
     });
@@ -122,9 +128,8 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
       model: this.model,
       temperature: OpenAISemanticRerankGateway.TEMPERATURE,
       max_output_tokens: maxOutputTokens,
-      instructions:
-        'Score each candidate chunk for answer relevance to the query. Return only JSON matching the provided schema. Use candidateIndex values from the numbered list. relevanceScore must be between 0 and 1.',
-      input: `Query:\n${input.query}\n\nCandidates:\n${candidates}`,
+      instructions: RERANK_RESPONSES_INSTRUCTIONS,
+      input: buildRerankPrompt({ query: input.query, candidates }),
       text: {
         format: OpenAISemanticRerankGateway.RESPONSE_FORMAT,
       },

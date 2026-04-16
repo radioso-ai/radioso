@@ -380,7 +380,7 @@ For local Docker runs, uploaded source files are stored on a shared filesystem p
 
 For cloud deploys, set `DOCUMENT_STORAGE_DRIVER=gcs` and provide `DOCUMENT_STORAGE_BUCKET`. The current Terraform stack does that automatically for GCP.
 
-Local development keeps the background worker in polling mode. The GCP Terraform deployment now switches the worker service to request-driven dispatch through Cloud Tasks so worker instances can scale up on queued jobs and return toward zero when idle.
+Local development keeps the background worker in polling mode. The GCP Terraform deployment uses Cloud Tasks for request-driven wake-ups, but the worker-task service also runs the durable queue poller as a safety net so queued jobs can still recover if task dispatch fails.
 
 The cloud worker dispatch path uses these settings:
 
@@ -393,7 +393,7 @@ WORKER_TASKS_INVOKER_SERVICE_ACCOUNT=<worker-task-invoker>@<project>.iam.gservic
 DOCUMENT_PROCESSING_JOB_LEASE_MS=300000
 ```
 
-Backend-serving and worker-serving capacity are configured independently in Terraform via `backend_min_instances` / `backend_max_instances` and `worker_min_instances` / `worker_max_instances`.
+Backend-serving and worker-serving capacity are configured independently in Terraform via `backend_min_instances` / `backend_max_instances` and `worker_min_instances` / `worker_max_instances`. Keep `worker_min_instances >= 1`; the worker service relies on one always-on instance so the durable queue can recover enqueue or retry dispatch failures.
 
 If you already know what you need, you can pre-populate `backend/.env` before running the stack.
 

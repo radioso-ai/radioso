@@ -151,7 +151,7 @@ describe("runtime startup", () => {
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
   });
 
-  it("starts the worker task runtime without starting the polling worker loop", async () => {
+  it("starts the worker task runtime with the polling worker loop and internal task server", async () => {
     const env = createEnv();
     const dependencies = createDependencies();
     const ensureNoPendingMigrations = vi.fn().mockResolvedValue(undefined);
@@ -174,8 +174,9 @@ describe("runtime startup", () => {
     });
 
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
-    expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
+    expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
 
     await runtime.shutdown("test");
+    expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
   });
 });

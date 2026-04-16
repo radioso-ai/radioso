@@ -92,6 +92,8 @@ describe("runtime entrypoints", () => {
 
   it("starts the worker task runtime and serves internal task routes", async () => {
     const { dependencies, repositories } = createTestDependencies();
+    const workerStartSpy = vi.spyOn(dependencies.documentProcessingWorker, "start");
+    const workerStopSpy = vi.spyOn(dependencies.documentProcessingWorker, "stop");
     const document = await repositories.documentRepository.create({
       workspaceId: randomUUID(),
       title: "Task queued",
@@ -126,7 +128,12 @@ describe("runtime entrypoints", () => {
       .send({ jobId: job.id });
 
     expect(response.status).toBe(204);
+    expect(workerStartSpy).toHaveBeenCalledOnce();
     expect(repositories.documentProcessingJobRepository.items.get(job.id)?.status).toBe("completed");
+
+    await runtime.shutdown("test");
+    runtimes.pop();
+    expect(workerStopSpy).toHaveBeenCalledOnce();
   });
 
   it("serves session-authenticated admin routes after login bootstrap", async () => {

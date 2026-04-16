@@ -40,9 +40,14 @@ variable "deploy_services" {
 }
 
 variable "worker_min_instances" {
-  description = "Minimum number of worker Cloud Run instances (0 = scale to zero)"
+  description = "Minimum number of worker Cloud Run instances. Must stay at least 1 so the durable document queue always has a live recovery poller."
   type        = number
-  default     = 0
+  default     = 1
+
+  validation {
+    condition     = var.worker_min_instances >= 1
+    error_message = "worker_min_instances must be at least 1 so the worker service can recover queued jobs when Cloud Tasks dispatch fails."
+  }
 }
 
 variable "worker_max_instances" {

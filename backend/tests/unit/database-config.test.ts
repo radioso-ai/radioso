@@ -15,6 +15,8 @@ describe("database configuration", () => {
       DB_STATEMENT_TIMEOUT_MS: "9000",
       DB_QUERY_TIMEOUT_MS: "11000",
       SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+      WORKSPACE_TOKEN_SECRET: "fedcba9876543210fedcba9876543210",
+      WEBSITE_EMBED_SECRET: "00112233445566778899aabbccddeeff",
     });
 
     expect(env.DB_POOL_MAX).toBe(7);
@@ -30,6 +32,8 @@ describe("database configuration", () => {
       PORT: "8080",
       DATABASE_URL: "postgres://test:test@localhost:5432/test",
       SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+      WORKSPACE_TOKEN_SECRET: "fedcba9876543210fedcba9876543210",
+      WEBSITE_EMBED_SECRET: "00112233445566778899aabbccddeeff",
     });
 
     expect(env.DB_POOL_MAX).toBe(10);

@@ -28,7 +28,7 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
         return;
       }
 
-      const expectedSignature = createHmac("sha256", dependencies.env.SESSION_COOKIE_SECRET)
+      const expectedSignature = createHmac("sha256", dependencies.env.WEBSITE_EMBED_SECRET)
         .update(`${req.params.token}:${origin}`)
         .digest("hex");
 
@@ -117,7 +117,7 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
         metadata: { origin },
       });
 
-      const embedSession = issueWebsiteEmbedSession(dependencies.env.SESSION_COOKIE_SECRET, {
+      const embedSession = issueWebsiteEmbedSession(dependencies.env.WEBSITE_EMBED_SECRET, {
         workspaceId: workspace.id,
         publicChatToken: workspace.anonymousChatToken,
         anonymousSessionId: parsedBody.data.anonymousSessionId ?? randomUUID(),

@@ -50,7 +50,7 @@ export async function POST(
 ) {
   const { token } = await context.params
   const requestOrigin = resolveOrigin(request.headers.get('origin'))
-  const signatureSecret = process.env.SESSION_COOKIE_SECRET
+  const signatureSecret = process.env.WEBSITE_EMBED_SECRET
   const parsedBody = embedBootstrapRequestSchema.safeParse(
     await request.json().catch(() => ({})),
   )

@@ -54,12 +54,14 @@ export const updateSettingsSchema = z.object({
 export const updateGeneralSettingsSchema = z.object({
   anonymousChatEnabled: z.boolean().optional(),
   anonymousRateLimit: z.number().int().min(1).max(60).optional(),
+  rotateAnonymousChatToken: z.boolean().optional(),
   assistantName: z.string().max(200).optional(),
   assistantRole: z.string().max(200).optional(),
   greetingInstruction: z.string().max(200).optional(),
   assistantDefaultLocale: z.string().max(35).nullable().optional(),
   proactiveGreetingEnabled: z.boolean().optional(),
   websiteEmbedEnabled: z.boolean().optional(),
+  rotateWebsiteEmbedToken: z.boolean().optional(),
   websiteEmbedAllowedOrigins: z.array(z.string().max(200)).max(20).optional(),
   websiteEmbedLauncherLabel: z.string().max(80).optional(),
   websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons).optional(),
@@ -261,13 +263,20 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
 
       const enabled = req.body.anonymousChatEnabled ?? workspace.anonymousChatEnabled;
       const rateLimit = req.body.anonymousRateLimit ?? workspace.anonymousRateLimit;
+      const rotateAnonymousChatToken = req.body.rotateAnonymousChatToken ?? false;
+      const rotateWebsiteEmbedToken = req.body.rotateWebsiteEmbedToken ?? false;
 
       // Generate token on first enable (preserve across toggles)
       let token = workspace.anonymousChatToken;
-      if (enabled && !token) {
+      if (rotateAnonymousChatToken) {
+        token = randomBytes(16).toString("base64url");
+      } else if (enabled && !token) {
         token = randomBytes(16).toString("base64url");
       }
       let websiteEmbedToken = workspace.websiteEmbedToken;
+      if (rotateWebsiteEmbedToken) {
+        websiteEmbedToken = randomBytes(16).toString("base64url");
+      }
       let normalizedWebsiteEmbed;
       try {
         normalizedWebsiteEmbed = validateWebsiteEmbedSettings({
@@ -325,6 +334,16 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
           metadata: { anonymousRateLimit: rateLimit },
         });
       }
+      if (rotateAnonymousChatToken) {
+        const { accountId } = res.locals as { accountId: string };
+        await dependencies.auditService.record({
+          accountId,
+          workspaceId,
+          eventType: "anonymous_chat.token_rotated",
+          eventStatus: "success",
+          metadata: { enabled },
+        });
+      }
       if (normalizedWebsiteEmbed.websiteEmbedEnabled !== workspace.websiteEmbedEnabled) {
         const { accountId } = res.locals as { accountId: string };
         await dependencies.auditService.record({
@@ -335,6 +354,19 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
           metadata: {
             allowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
             launcherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
+          },
+        });
+      }
+      if (rotateWebsiteEmbedToken) {
+        const { accountId } = res.locals as { accountId: string };
+        await dependencies.auditService.record({
+          accountId,
+          workspaceId,
+          eventType: "website_embed.token_rotated",
+          eventStatus: "success",
+          metadata: {
+            enabled: normalizedWebsiteEmbed.websiteEmbedEnabled,
+            allowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
           },
         });
       }

@@ -58,6 +58,7 @@
     "vitest": "^3.2.4"
   },
   "overrides": {
-    "path-to-regexp": "0.1.13"
+    "path-to-regexp": "0.1.13",
+    "@xmldom/xmldom": "0.8.12"
   }
 }

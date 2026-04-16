@@ -41,7 +41,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
   const router = Router();
   const sessionMiddleware = resolveAnonymousSession(
     dependencies.workspaceRepository,
-    dependencies.env.SESSION_COOKIE_SECRET,
+    dependencies.env.WEBSITE_EMBED_SECRET,
   );
   const rateLimitAnonymousChat = anonymousRateLimiter(dependencies);
 

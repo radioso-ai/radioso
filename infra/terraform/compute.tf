@@ -100,6 +100,24 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       env {
+        name = "WORKSPACE_TOKEN_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["workspace-token-secret"].secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "WEBSITE_EMBED_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["website-embed-secret"].secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
         name = "CONNECTOR_ENCRYPTION_KEY"
         value_source {
           secret_key_ref {
@@ -151,6 +169,15 @@ resource "google_cloud_run_v2_service" "frontend" {
       env {
         name  = "BACKEND_INTERNAL_URL"
         value = google_cloud_run_v2_service.backend[0].uri
+      }
+      env {
+        name = "WEBSITE_EMBED_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["website-embed-secret"].secret_id
+            version = "latest"
+          }
+        }
       }
     }
   }

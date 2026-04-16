@@ -19,7 +19,7 @@ describe("public embed contract", () => {
   };
 
   const signEmbedLaunch = (token: string, origin: string) =>
-    createHmac("sha256", "0123456789abcdef0123456789abcdef").update(`${token}:${origin}`).digest("hex");
+    createHmac("sha256", "00112233445566778899aabbccddeeff").update(`${token}:${origin}`).digest("hex");
 
   it("bootstraps an embedded session for an approved origin", async () => {
     const { app } = createTestApp();

@@ -4,6 +4,8 @@ project_id = "your-gcp-project-id"
 # Secrets — set via TF_VAR_* env vars or a .tfvars file NOT committed to git
 # openai_api_key           = ""
 # session_cookie_secret    = ""
+# workspace_token_secret   = ""
+# website_embed_secret     = ""
 # connector_encryption_key = ""
 
 # Optional overrides (defaults shown)

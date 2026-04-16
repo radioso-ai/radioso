@@ -177,4 +177,40 @@ describe("document import service", () => {
       }),
     );
   });
+
+  it("fails import when dispatching the queued job fails", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const storage = new InMemoryDocumentStorage();
+    const auditService = createAuditService();
+    const service = new DocumentImportService(
+      documentRepository,
+      auditService,
+      storage,
+      undefined,
+      jobRepository,
+      {
+        dispatch: vi.fn().mockRejectedValue(new Error("dispatch unavailable")),
+        dispatchMany: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    await expect(
+      service.importDocument({
+        workspaceId: "workspace-1",
+        filename: "Quarterly Report.xlsx",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        buffer: Buffer.from("fake-xlsx"),
+      }),
+    ).rejects.toThrow("dispatch unavailable");
+
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.dispatch",
+        eventStatus: "failure",
+      }),
+    );
+  });
 });

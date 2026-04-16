@@ -133,6 +133,39 @@ describe("document ingestion", () => {
     expect(await documentRepository.listByWorkspaceId("workspace-1")).toHaveLength(0);
   });
 
+  it("fails ingest when dispatching the queued job fails", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+      {
+        dispatch: vi.fn().mockRejectedValue(new Error("dispatch unavailable")),
+        dispatchMany: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    await expect(
+      service.ingest({
+        workspaceId: "workspace-1",
+        title: "Queued",
+        content: "Queued content",
+      }),
+    ).rejects.toThrow("dispatch unavailable");
+
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.dispatch",
+        eventStatus: "failure",
+      }),
+    );
+  });
+
   it("recovers timed-out claims when the same job is retried by id", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

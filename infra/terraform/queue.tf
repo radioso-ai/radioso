@@ -26,8 +26,20 @@ resource "google_project_iam_member" "backend_cloud_tasks_enqueuer" {
   member  = "serviceAccount:${google_service_account.backend.email}"
 }
 
+resource "google_project_iam_member" "worker_cloud_tasks_enqueuer" {
+  project = var.project_id
+  role    = "roles/cloudtasks.enqueuer"
+  member  = "serviceAccount:${google_service_account.worker.email}"
+}
+
 resource "google_service_account_iam_member" "backend_worker_task_act_as" {
   service_account_id = google_service_account.worker_task_invoker.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.backend.email}"
+}
+
+resource "google_service_account_iam_member" "worker_worker_task_act_as" {
+  service_account_id = google_service_account.worker_task_invoker.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.worker.email}"
 }

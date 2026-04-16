@@ -193,6 +193,7 @@ export class DocumentImportService {
           reason: error instanceof Error ? error.message : "Failed to dispatch document processing job",
         },
       });
+      throw error;
     }
   }
 

@@ -1,14 +1,13 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_UNSUPPORTED_NOTICE } from "../../src/modules/chat/services/assistantTurnOutcomeClassifier.js";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
 
 describe("chat integration", () => {
-  it("makes supported answers meaningfully different across factual, guided, and exploratory modes", async () => {
+  it("does not append backend-seeded continuation text across conversation modes", async () => {
     const deterministicGateway: ChatGateway = {
       async answer() {
         return "The testing guide explains testing and parsing content for users[[1]].";
@@ -62,16 +61,15 @@ describe("chat integration", () => {
     expect(exploratory.status).toBe(200);
 
     expect(factual.body.answer).toBe("The testing guide explains testing and parsing content for users.");
+    expect(guided.body.answer).toBe("The testing guide explains testing and parsing content for users.");
+    expect(exploratory.body.answer).toBe("The testing guide explains testing and parsing content for users.");
     expect(factual.body.answer).not.toContain("Focused next:");
     expect(factual.body.answer).not.toContain("Explore further:");
-
-    expect(guided.body.answer).toContain("Focused next:");
-    expect(guided.body.answer).toMatch(/(Parser Notes|User FAQ):/);
-    expect(guided.body.answer).not.toContain("If helpful, I can compare");
-
-    expect(exploratory.body.answer).toContain("Explore further:");
-    expect(exploratory.body.answer).toMatch(/(Parser Notes|User FAQ):/);
-    expect(exploratory.body.answer).toContain("If helpful, I can");
+    expect(guided.body.answer).not.toContain("Focused next:");
+    expect(guided.body.answer).not.toContain("Explore further:");
+    expect(exploratory.body.answer).not.toContain("Focused next:");
+    expect(exploratory.body.answer).not.toContain("Explore further:");
+    expect(exploratory.body.answer).not.toContain("If helpful, I can");
   });
 
   it("creates a new conversation and reuses it on follow-up questions", async () => {
@@ -314,7 +312,8 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toContain(`I couldn't verify that from your workspace documents`);
-    expect(response.body.answer).toContain("Explore further:");
+    expect(response.body.answer).not.toContain("Explore further:");
+    expect(response.body.answer).not.toContain("Focused next:");
     expect(response.body.answer).not.toContain("discount code");
     expect(response.body.answer).not.toContain("24/7 phone support");
   });
@@ -657,16 +656,9 @@ describe("chat integration", () => {
     expect(detail.body.messages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ role: "user", content: "What does the page explain?" }),
-        expect.objectContaining({
-          role: "assistant",
-          content: "Sorry, something went wrong. Please try again.",
-          debug: expect.objectContaining({
-            eventStatus: "failure",
-            errorMessage: "upstream unavailable",
-          }),
-        }),
       ]),
     );
+    expect(detail.body.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
   });
 
   it("preserves ambiguity for unresolved relation follow-ups", async () => {

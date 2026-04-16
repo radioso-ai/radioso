@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_UNSUPPORTED_NOTICE } from "../../src/modules/chat/services/assistantTurnOutcomeClassifier.js";
 import { ChatService, type ChatGateway, type ChatStreamEvent } from "../../src/modules/chat/services/chatService.js";
+import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 import { createAuditService, InMemoryConversationRepository, InMemoryMessageRepository } from "../support/fakes.js";
+
+const groundedMissResponseComposer: GroundedMissResponseComposer = {
+  async composeUnsupportedWithContext(input) {
+    const title = input.contexts[0]?.title;
+    return title
+      ? `I couldn't verify that from your workspace documents, but I did find related material in "${title}" if you'd like to explore that instead.`
+      : "I couldn't verify that from your workspace documents, but I did find related material if you'd like to explore that instead.";
+  },
+  async composeNoContext() {
+    return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
+  },
+};
 
 describe("chat service streaming", () => {
   it("persists the normalized assistant answer only after the stream completes", async () => {
@@ -62,6 +74,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -210,6 +223,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const first = await service.answer({
@@ -286,6 +300,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const response = await service.answer({
@@ -353,6 +368,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -427,6 +443,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const response = await service.answer({
@@ -510,6 +527,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const first = await service.answer({
@@ -594,6 +612,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     await service.answer({
@@ -658,6 +677,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const chunkTexts: string[] = [];
@@ -775,6 +795,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const chunkTexts: string[] = [];
@@ -889,6 +910,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     await expect(service.answer({
@@ -1006,13 +1028,11 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(response.answer).toBe(
-      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
-    );
+    expect(response.answer).toBe("The page explains testing and parsing content for users.");
     expect(response.answer).not.toContain("24/7 phone support");
     expect(response.answerSegments).toEqual([
       { text: "The page explains testing and parsing content for users", citationIndices: [0] },
-      { text: `. ${DEFAULT_UNSUPPORTED_NOTICE}` },
+      { text: "." },
     ]);
 
     const [conversationId] = conversationRepository.items.keys();
@@ -1102,9 +1122,7 @@ describe("chat service streaming", () => {
       .map((event) => event.text)
       .join("");
 
-    expect(streamedText).toBe(
-      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
-    );
+    expect(streamedText).toBe("The page explains testing and parsing content for users.");
     expect(events.findIndex((event) => event.type === "chunk")).toBeGreaterThanOrEqual(0);
     expect(events.findIndex((event) => event.type === "chunk")).toBeLessThan(
       events.findIndex((event) => event.type === "done"),
@@ -1112,7 +1130,7 @@ describe("chat service streaming", () => {
     expect(events.at(-1)).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
+        answer: "The page explains testing and parsing content for users.",
       }),
     );
   });

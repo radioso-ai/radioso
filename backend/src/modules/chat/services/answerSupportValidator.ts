@@ -2,12 +2,10 @@ import type { AnswerSegment, CitationEvidence } from "./answerPresentationServic
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { shouldPreserveUnsupportedSegments, shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import {
-  DEFAULT_UNSUPPORTED_NOTICE,
   type ValidatedAnswer,
   VALIDATION_DISPOSITION,
 } from "./answerSupportValidationTypes.js";
 import type { GroundedMissResponseComposer } from "./groundedMissResponseComposer.js";
-import type { UnsupportedNoticeGenerator } from "./unsupportedNoticeGenerator.js";
 
 const NON_SUBSTANTIVE_PHRASES = new Set([
   "hello",
@@ -44,7 +42,7 @@ const isNonSubstantiveText = (value: string): boolean => {
 };
 
 const preservePrefix = (value: string): string => value.match(/^[\s,.;:!?()/-]*/)?.[0] ?? "";
-const stripPrefix = (value: string): string => value.replace(/^[\s,.;:!?()/-]*/, "");
+const OMITTED_UNSUPPORTED_SENTINEL = "__omitted_unsupported__";
 
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
@@ -63,7 +61,6 @@ export class AnswerSupportValidator {
     answerSupportPolicy: AnswerSupportPolicy;
     conversationMode: ConversationMode;
     brevityOverrideRequested: boolean;
-    unsupportedNoticeGenerator: UnsupportedNoticeGenerator;
     groundedMissResponseComposer: GroundedMissResponseComposer;
   }): Promise<ValidatedAnswer> {
     const segmentResults = await Promise.all(input.answerSegments.map(async (segment) => {
@@ -99,14 +96,9 @@ export class AnswerSupportValidator {
         } as const;
       }
 
-      const generatedNotice = await input.unsupportedNoticeGenerator.generate({
-        query: input.query,
-        unsupportedText: segment.text,
-      });
-
       return {
         originalText: segment.text,
-        text: `${preservePrefix(segment.text)}${generatedNotice || DEFAULT_UNSUPPORTED_NOTICE}`,
+        text: preservePrefix(segment.text),
         disposition: VALIDATION_DISPOSITION.UNSUPPORTED,
         replacementApplied: true,
         reason: "missing_support_reference",
@@ -165,7 +157,7 @@ export class AnswerSupportValidator {
       if (
         segment.disposition === VALIDATION_DISPOSITION.NON_SUBSTANTIVE &&
         /^[.!?]+\s*$/.test(segment.text) &&
-        latestMeaningfulSegmentText === DEFAULT_UNSUPPORTED_NOTICE
+        latestMeaningfulSegmentText === OMITTED_UNSUPPORTED_SENTINEL
       ) {
         const trailingWhitespace = segment.text.match(/\s+$/)?.[0];
         if (trailingWhitespace) {
@@ -185,8 +177,8 @@ export class AnswerSupportValidator {
 
       if (
         segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED &&
-        latestMeaningfulSegmentText === DEFAULT_UNSUPPORTED_NOTICE &&
-        stripPrefix(segment.text) === DEFAULT_UNSUPPORTED_NOTICE
+        latestMeaningfulSegmentText === OMITTED_UNSUPPORTED_SENTINEL &&
+        segment.text.length === 0
       ) {
         const separatorWhitespace = segment.text.match(/^\s+/)?.[0];
         if (separatorWhitespace) {
@@ -199,7 +191,7 @@ export class AnswerSupportValidator {
 
       if (segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED) {
         latestMeaningfulSegmentText = segment.replacementApplied
-          ? DEFAULT_UNSUPPORTED_NOTICE
+          ? OMITTED_UNSUPPORTED_SENTINEL
           : segment.text.trim();
         continue;
       }

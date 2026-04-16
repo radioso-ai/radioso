@@ -87,6 +87,7 @@ tests/
 ## Code Style
 
 : Follow standard conventions
+- Do not hard-code user-facing assistant or chat response strings in application code. This is a multilingual system, so runtime conversational copy must come from the LLM. If prompt text is extracted from backend code, store it under `backend/prompts/`.
 
 ## Documentation
 

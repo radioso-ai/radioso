@@ -11,13 +11,8 @@ import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import {
-  DefaultGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
 } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
-import {
-  DefaultUnsupportedNoticeGenerator,
-  type UnsupportedNoticeGenerator,
-} from "../../src/modules/chat/services/unsupportedNoticeGenerator.js";
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
@@ -116,6 +111,27 @@ interface TestRepositories {
 
 const appDependencyMap = new WeakMap<object, AppDependencies>();
 
+class TestGroundedMissResponseComposer implements GroundedMissResponseComposer {
+  async composeUnsupportedWithContext(input: {
+    query: string;
+    unsupportedText: string;
+    contexts: Array<{ title: string; content: string }>;
+    conversationMode?: "factual" | "guided" | "exploratory";
+    brevityOverrideRequested?: boolean;
+  }): Promise<string> {
+    const title = input.contexts.find((context) => context.title.trim().length > 0)?.title.trim();
+    if (title) {
+      return `I couldn't verify that from your workspace documents, but I did find related material in "${title}" if you'd like to explore that instead.`;
+    }
+
+    return "I couldn't find supporting material for that in your workspace documents, but I did find related material if you'd like to explore that instead.";
+  }
+
+  async composeNoContext(): Promise<string> {
+    return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
+  }
+}
+
 export const createTestDependencies = (overrides: {
   chatGateway?: ChatGateway;
   chunkingSimilarityPort?: ChunkingSimilarityPort;
@@ -126,7 +142,6 @@ export const createTestDependencies = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   whatsappFetch?: typeof fetch;
   whatsappDebounceMs?: number;
-  unsupportedNoticeGenerator?: UnsupportedNoticeGenerator;
   groundedMissResponseComposer?: GroundedMissResponseComposer;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
@@ -450,8 +465,7 @@ export const createTestDependencies = (overrides: {
     retrievalPipeline,
     chatGateway,
     auditService,
-    overrides.unsupportedNoticeGenerator ?? new DefaultUnsupportedNoticeGenerator(),
-    overrides.groundedMissResponseComposer ?? new DefaultGroundedMissResponseComposer(),
+    overrides.groundedMissResponseComposer ?? new TestGroundedMissResponseComposer(),
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -466,8 +480,7 @@ export const createTestDependencies = (overrides: {
     new EvalReplayService(
       retrievalPipeline,
       chatGateway,
-      overrides.unsupportedNoticeGenerator ?? new DefaultUnsupportedNoticeGenerator(),
-      overrides.groundedMissResponseComposer ?? new DefaultGroundedMissResponseComposer(),
+      overrides.groundedMissResponseComposer ?? new TestGroundedMissResponseComposer(),
     ),
   );
 
@@ -540,7 +553,6 @@ export const createTestApp = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   whatsappFetch?: typeof fetch;
   whatsappDebounceMs?: number;
-  unsupportedNoticeGenerator?: UnsupportedNoticeGenerator;
   groundedMissResponseComposer?: GroundedMissResponseComposer;
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);

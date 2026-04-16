@@ -20,11 +20,7 @@ import {
 import { AssistantTurnOutcomeClassifier } from "./assistantTurnOutcomeClassifier.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import {
-  DefaultUnsupportedNoticeGenerator,
-  type UnsupportedNoticeGenerator,
-} from "./unsupportedNoticeGenerator.js";
-import {
-  DefaultGroundedMissResponseComposer,
+  MissingGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
 } from "./groundedMissResponseComposer.js";
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
@@ -33,8 +29,6 @@ import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTyp
 import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import type { ChatResponse, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
-import { ConversationExpansionPlanner } from "./conversationExpansionPlanner.js";
-import { ConversationExpansionComposer } from "./conversationExpansionComposer.js";
 import { isBrevityOverrideRequested } from "./brevityOverrideDetector.js";
 
 export interface ChatGateway {
@@ -105,7 +99,11 @@ export class ModelChatGateway implements ChatGateway {
       prompt: input.prompt,
     });
 
-    return response || "I could not generate an answer.";
+    if (!response?.trim()) {
+      throw new Error("chat_answer_generation_failed");
+    }
+
+    return response;
   }
 
   async *streamAnswer(input: { query: string; history: MessageRecord[]; prompt: string }): AsyncIterable<string> {
@@ -127,16 +125,13 @@ export class ChatService {
   private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
-  private readonly conversationExpansionPlanner = new ConversationExpansionPlanner();
-  private readonly conversationExpansionComposer = new ConversationExpansionComposer();
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
     private readonly retrievalPipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
-    private readonly unsupportedNoticeGenerator: UnsupportedNoticeGenerator = new DefaultUnsupportedNoticeGenerator(),
-    private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new DefaultGroundedMissResponseComposer(),
+    private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
   ) {}
 
   private getAnswerSupportPolicy(session: PreparedSession): AnswerSupportPolicy {
@@ -542,7 +537,6 @@ export class ChatService {
       answerSupportPolicy: this.getAnswerSupportPolicy(session),
       conversationMode: this.getConversationMode(session),
       brevityOverrideRequested: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
-      unsupportedNoticeGenerator: this.unsupportedNoticeGenerator,
       groundedMissResponseComposer: this.groundedMissResponseComposer,
     });
 
@@ -619,39 +613,9 @@ export class ChatService {
     session: PreparedSession,
     presentation: Omit<PresentedAnswer, "conversationModeMetadata">,
   ): PresentedAnswer {
-    const citationEvidence = session.retrieval.contexts.map((context) => ({
-      documentId: context.documentId,
-      chunkId: context.chunkId,
-      title: context.title,
-      content: context.content,
-    }));
-    const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
-    const plan = this.conversationExpansionPlanner.plan({
-      conversationMode: this.getConversationMode(session),
-      brevityOverrideRequested: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
-      contexts: citationEvidence,
-      usedCitations: presentation.planningCitations ?? presentation.citations,
-    });
-    const expanded = this.conversationExpansionComposer.compose({
-      baseAnswer: presentation.answer,
-      baseAnswerSegments: presentation.answerSegments,
-      visibleCitations: presentation.citations,
-      citationEvidence,
-      citationDisplayEnabled,
-      plan,
-    });
-
     return {
       ...presentation,
-      answer: expanded.answer,
-      citations: expanded.citations,
-      answerSegments: expanded.answerSegments,
-      conversationModeMetadata: this.getConversationModeMetadata(session, {
-        expansionApplied: expanded.expansionApplied,
-        expansionKind: expanded.expansionKind,
-        suggestionCount: expanded.suggestionCount,
-        followUpQuestionApplied: expanded.followUpQuestionApplied,
-      }),
+      conversationModeMetadata: this.getConversationModeMetadata(session),
     };
   }
 
@@ -669,14 +633,7 @@ export class ChatService {
   ) {
     let assistantMessageId = existingAssistantMessageId;
 
-    if (session && !assistantMessageId) {
-      const assistantMessage = await this.messageRepository.create({
-        conversationId: session.conversation.id,
-        workspaceId: input.workspaceId,
-        role: "assistant",
-        content: "Sorry, something went wrong. Please try again.",
-      });
-      assistantMessageId = assistantMessage.id;
+    if (session && assistantMessageId) {
       await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
     }
 
@@ -698,7 +655,7 @@ export class ChatService {
               trace: session.retrieval.trace,
               summary: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),
               outcome: {
-                answer: "Sorry, something went wrong. Please try again.",
+                answer: "",
                 stream: input.stream,
                 hadContexts: session.retrieval.contexts.length > 0,
                 durationMs: 0,

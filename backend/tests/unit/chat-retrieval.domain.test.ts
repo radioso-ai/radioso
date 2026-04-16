@@ -918,7 +918,7 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.prompt).toContain("Conversation mode: guided.");
-    expect(result.prompt).toContain('After the direct answer, you may add a short "Focused next:" block');
+    expect(result.prompt).toContain("After the direct answer, you may optionally suggest one or two grounded adjacent directions.");
   });
 
   it("suppresses optional expansion instructions when the current turn explicitly asks for brevity", () => {
@@ -935,6 +935,6 @@ describe("chat retrieval domain", () => {
 
     expect(result.prompt).toContain("Current turn override: the user explicitly asked for a brief or direct answer.");
     expect(result.prompt).toContain("Do not add any optional focused or expansive continuation");
-    expect(result.prompt).not.toContain('After the direct answer, you may add an "Explore further:" block');
+    expect(result.prompt).not.toContain("After the direct answer, you may optionally mention two or three grounded adjacent directions drawn from the retrieved material.");
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
@@ -25,7 +25,17 @@ describe("document ingestion", () => {
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
     const auditService = createAuditService();
-    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+    const dispatcher = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+      dispatchMany: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+      dispatcher,
+    );
 
     const response = await service.ingest({
       workspaceId: "workspace-1",
@@ -47,6 +57,13 @@ describe("document ingestion", () => {
           queuedJobCount: 1,
           processingJobCount: 0,
         }),
+      }),
+    );
+    expect(dispatcher.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentId: document.id,
+        workspaceId: "workspace-1",
+        revision: 1,
       }),
     );
   });
@@ -114,6 +131,55 @@ describe("document ingestion", () => {
     ).rejects.toThrow("queue unavailable");
 
     expect(await documentRepository.listByWorkspaceId("workspace-1")).toHaveLength(0);
+  });
+
+  it("recovers timed-out claims when the same job is retried by id", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const queuedDocument = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Lease recovery",
+      sourceContent: "Lease recovery",
+      markdownContent: "Lease recovery",
+      status: "queued",
+      sourceKind: "inline_text",
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+    const job = await jobRepository.enqueue({
+      documentId: queuedDocument.id,
+      workspaceId: queuedDocument.workspaceId,
+      documentRevision: queuedDocument.revision,
+    });
+    const claimedAt = new Date();
+    await jobRepository.claimById(job.id, claimedAt);
+
+    const worker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      {
+        process: vi.fn().mockResolvedValue("completed"),
+      } as any,
+      auditService,
+      createLogger("silent"),
+      1_000,
+      {
+        dispatch: vi.fn().mockResolvedValue(undefined),
+        dispatchMany: vi.fn().mockResolvedValue(undefined),
+      },
+      1_000,
+    );
+
+    const result = await worker.runJobById(job.id, new Date(claimedAt.getTime() + 2_000));
+
+    expect(result).toBe("processed");
+    expect(jobRepository.items.get(job.id)?.status).toBe("completed");
   });
 
   it("processes queued jobs and marks the document ready", async () => {

@@ -534,7 +534,11 @@ export class DocumentRepository implements DocumentRepositoryPort {
     });
   }
 
-  async requeueAllEligibleAndQueue(workspaceId: string): Promise<{ queuedDocumentCount: number; skippedDocumentCount: number }> {
+  async requeueAllEligibleAndQueue(workspaceId: string): Promise<{
+    queuedDocumentCount: number;
+    skippedDocumentCount: number;
+    queuedDocuments: Array<{ documentId: string; revision: number }>;
+  }> {
     return this.database.withTransaction(async (client) => {
       const countsResult = await client.query<{ total_count: string; skipped_count: string }>(
         `SELECT COUNT(*)::text AS total_count,
@@ -574,6 +578,10 @@ export class DocumentRepository implements DocumentRepositoryPort {
       return {
         queuedDocumentCount: queuedRows.length,
         skippedDocumentCount: Math.max(skippedByStatus, totalCount - queuedRows.length),
+        queuedDocuments: queuedRows.map((documentRow) => ({
+          documentId: documentRow.id,
+          revision: documentRow.revision,
+        })),
       };
     });
   }

@@ -1,7 +1,12 @@
 import type { AuditService } from "../../audit/services/auditService.js";
-import type { DocumentProcessingQueueSnapshot } from "../../../db/repositories/documentProcessingJobRepository.js";
+import type {
+  DocumentProcessingJobRecord,
+  DocumentProcessingJobRepositoryPort,
+  DocumentProcessingQueueSnapshot,
+} from "../../../db/repositories/documentProcessingJobRepository.js";
 import { normalizeMarkdown } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 import { conflict, notFound } from "../../../shared/domain/errors.js";
+import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 
 export type DocumentSourceKind = "inline_text" | "uploaded_file";
 
@@ -119,7 +124,11 @@ export interface DocumentRepositoryPort {
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
   requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
   requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
-  requeueAllEligibleAndQueue(workspaceId: string): Promise<{ queuedDocumentCount: number; skippedDocumentCount: number }>;
+  requeueAllEligibleAndQueue(workspaceId: string): Promise<{
+    queuedDocumentCount: number;
+    skippedDocumentCount: number;
+    queuedDocuments: Array<{ documentId: string; revision: number }>;
+  }>;
   deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean>;
 }
 
@@ -176,6 +185,8 @@ export class DocumentIngestionService {
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly auditService: AuditService,
     private readonly getQueueSnapshot?: () => Promise<DocumentProcessingQueueSnapshot>,
+    private readonly jobRepository?: Pick<DocumentProcessingJobRepositoryPort, "findByDocumentRevision">,
+    private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
   ) {}
 
   async ingest(input: {
@@ -235,6 +246,11 @@ export class DocumentIngestionService {
         status: document.status,
         ...(await this.queueSnapshotMetadata()),
       },
+    });
+    await this.dispatchQueuedDocumentJob({
+      documentId: document.id,
+      workspaceId: input.workspaceId,
+      revision: document.revision,
     });
 
     return {
@@ -316,6 +332,11 @@ export class DocumentIngestionService {
         ...(await this.queueSnapshotMetadata()),
       },
     });
+    await this.dispatchQueuedDocumentJob({
+      documentId: document.id,
+      workspaceId: input.workspaceId,
+      revision: document.revision,
+    });
 
     return {
       documentId: document.id,
@@ -359,6 +380,11 @@ export class DocumentIngestionService {
         status: document.status,
         ...(await this.queueSnapshotMetadata()),
       },
+    });
+    await this.dispatchQueuedDocumentJob({
+      documentId: document.id,
+      workspaceId: input.workspaceId,
+      revision: document.revision,
     });
 
     return {
@@ -434,5 +460,47 @@ export class DocumentIngestionService {
       // Queue-depth metadata is best-effort observability and must not change request outcomes.
       return {};
     }
+  }
+
+  private async dispatchQueuedDocumentJob(input: {
+    documentId: string;
+    workspaceId: string;
+    revision: number;
+  }): Promise<void> {
+    if (!this.jobRepository) {
+      return;
+    }
+
+    try {
+      const job = await this.jobRepository.findByDocumentRevision({
+        documentId: input.documentId,
+        workspaceId: input.workspaceId,
+        documentRevision: input.revision,
+      });
+      if (!job) {
+        return;
+      }
+      await this.jobDispatcher.dispatch(this.toDispatchRequest(job));
+    } catch (error) {
+      await this.auditService.record({
+        workspaceId: input.workspaceId,
+        eventType: "document.dispatch",
+        eventStatus: "failure",
+        metadata: {
+          documentId: input.documentId,
+          revision: input.revision,
+          reason: error instanceof Error ? error.message : "Failed to dispatch document processing job",
+        },
+      });
+    }
+  }
+
+  private toDispatchRequest(job: DocumentProcessingJobRecord) {
+    return {
+      jobId: job.id,
+      documentId: job.documentId,
+      workspaceId: job.workspaceId,
+      revision: job.documentRevision,
+    };
   }
 }

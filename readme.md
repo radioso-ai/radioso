@@ -380,6 +380,21 @@ For local Docker runs, uploaded source files are stored on a shared filesystem p
 
 For cloud deploys, set `DOCUMENT_STORAGE_DRIVER=gcs` and provide `DOCUMENT_STORAGE_BUCKET`. The current Terraform stack does that automatically for GCP.
 
+Local development keeps the background worker in polling mode. The GCP Terraform deployment now switches the worker service to request-driven dispatch through Cloud Tasks so worker instances can scale up on queued jobs and return toward zero when idle.
+
+The cloud worker dispatch path uses these settings:
+
+```env
+WORKER_DISPATCH_DRIVER=cloud-tasks
+WORKER_TASKS_QUEUE_LOCATION=us-central1
+WORKER_TASKS_QUEUE_NAME=radioso-document-processing
+WORKER_TASKS_SERVICE_URL=https://<worker-service-url>
+WORKER_TASKS_INVOKER_SERVICE_ACCOUNT=<worker-task-invoker>@<project>.iam.gserviceaccount.com
+DOCUMENT_PROCESSING_JOB_LEASE_MS=300000
+```
+
+Backend-serving and worker-serving capacity are configured independently in Terraform via `backend_min_instances` / `backend_max_instances` and `worker_min_instances` / `worker_max_instances`.
+
 If you already know what you need, you can pre-populate `backend/.env` before running the stack.
 
 The bootstrap expects ports `3000`, `5432`, and `8080` to be free unless they are already used by this Radioso stack.

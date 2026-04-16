@@ -11,8 +11,10 @@ describe("runtime configuration", () => {
 
     expect(packageJson.scripts["dev:http"]).toBeTruthy();
     expect(packageJson.scripts["dev:worker"]).toBeTruthy();
+    expect(packageJson.scripts["dev:worker-server"]).toBeTruthy();
     expect(packageJson.scripts["start:http"]).toBeTruthy();
     expect(packageJson.scripts["start:worker"]).toBeTruthy();
+    expect(packageJson.scripts["start:worker-server"]).toBeTruthy();
   });
 
   it("defines a dedicated backend-worker service in local and compose orchestration", async () => {

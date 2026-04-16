@@ -83,6 +83,7 @@ import {
 export const createTestEnv = (): Env => ({
   NODE_ENV: "test",
   PORT: 8080,
+  GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
   DB_POOL_IDLE_TIMEOUT_MS: 30_000,
@@ -107,6 +108,12 @@ export const createTestEnv = (): Env => ({
   DOCUMENT_STORAGE_LOCAL_PATH: "../.context/test-document-storage",
   DOCUMENT_STORAGE_BUCKET: "test-document-imports",
   DOCUMENT_UPLOAD_MAX_BYTES: 10 * 1024 * 1024,
+  WORKER_DISPATCH_DRIVER: "noop",
+  WORKER_TASKS_QUEUE_LOCATION: undefined,
+  WORKER_TASKS_QUEUE_NAME: undefined,
+  WORKER_TASKS_SERVICE_URL: undefined,
+  WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+  DOCUMENT_PROCESSING_JOB_LEASE_MS: 300_000,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
 });
 

@@ -1,14 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
-import { createAuditService, InMemoryDocumentRepository, InMemoryDocumentStorage } from "../support/fakes.js";
+import {
+  createAuditService,
+  InMemoryDocumentProcessingJobRepository,
+  InMemoryDocumentRepository,
+  InMemoryDocumentStorage,
+} from "../support/fakes.js";
 
 describe("document import service", () => {
   it("stores an uploaded file, derives a title, and queues a file-backed document", async () => {
     const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
     const storage = new InMemoryDocumentStorage();
     const auditService = createAuditService();
-    const service = new DocumentImportService(documentRepository, auditService, storage);
+    const dispatcher = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+      dispatchMany: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new DocumentImportService(documentRepository, auditService, storage, undefined, jobRepository, dispatcher);
 
     const response = await service.importDocument({
       workspaceId: "workspace-1",
@@ -30,6 +41,7 @@ describe("document import service", () => {
       markdownContent: "",
     });
     expect(storage.objects.size).toBe(1);
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(1);
   });
 
   it("uses the provided title override when importing a file", async () => {

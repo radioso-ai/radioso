@@ -92,6 +92,7 @@ describe('embed widget helpers', () => {
     expect(normalizeWebsiteEmbedAvatarUrl('https://cdn.example.com/avatar.gif')).toBe(
       'https://cdn.example.com/avatar.gif',
     )
+    expect(normalizeWebsiteEmbedAvatarUrl('/images/support.gif')).toBe('/images/support.gif')
   })
 
   it('drops unsupported override values', () => {

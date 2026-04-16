@@ -219,6 +219,15 @@ export const normalizeWebsiteEmbedAvatarUrl = (value: string | null | undefined)
     return null
   }
 
+  if (
+    trimmed.startsWith('/') ||
+    trimmed.startsWith('./') ||
+    trimmed.startsWith('../') ||
+    trimmed.startsWith('//')
+  ) {
+    return trimmed
+  }
+
   try {
     const url = new URL(trimmed)
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {

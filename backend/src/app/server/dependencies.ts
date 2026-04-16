@@ -33,6 +33,7 @@ import { DocumentProcessingService } from "../../modules/documents/services/docu
 import { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
 import { DocumentSourceContentService } from "../../modules/documents/services/documentSourceContentService.js";
 import { GcsDocumentStorage, type DocumentStoragePort } from "../../modules/documents/infra/gcsDocumentStorage.js";
+import { LocalDocumentStorage } from "../../modules/documents/infra/localDocumentStorage.js";
 import { WorkspaceIngestionReprocessService } from "../../modules/documents/services/workspaceIngestionReprocessService.js";
 import { PgLexicalSearch } from "../../modules/retrieval/infra/lexicalSearch.js";
 import { PgVectorSearch } from "../../modules/retrieval/infra/vectorSearch.js";
@@ -58,7 +59,6 @@ import { EvalReplayService } from "../../modules/evals/services/evalReplayServic
 import { EvalLabService } from "../../modules/evals/services/evalLabService.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { Database } from "../../shared/infra/database.js";
-import { AppError } from "../../shared/domain/errors.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
 import { createLogger } from "../../shared/observability/logger.js";
@@ -95,19 +95,9 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     auditService,
     documentRepository,
   );
-  const documentStorage: DocumentStoragePort = env.DOCUMENT_STORAGE_BUCKET
-    ? new GcsDocumentStorage(env.DOCUMENT_STORAGE_BUCKET)
-    : {
-        async upload() {
-          throw new AppError(503, "service_unavailable", "Document import storage is not configured");
-        },
-        async read() {
-          throw new AppError(503, "service_unavailable", "Document import storage is not configured");
-        },
-        async delete() {
-          throw new AppError(503, "service_unavailable", "Document import storage is not configured");
-        },
-      };
+  const documentStorage: DocumentStoragePort = env.DOCUMENT_STORAGE_DRIVER === "gcs"
+    ? new GcsDocumentStorage(env.DOCUMENT_STORAGE_BUCKET!)
+    : new LocalDocumentStorage(env.DOCUMENT_STORAGE_LOCAL_PATH);
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingJobRepository = new DocumentProcessingJobRepository(database);
   const chunkRepository = new ChunkRepository(database);

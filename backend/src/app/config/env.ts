@@ -40,9 +40,19 @@ const envSchema = z.object({
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(20),
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(30),
+  DOCUMENT_STORAGE_DRIVER: z.enum(["local", "gcs"]).default("local"),
+  DOCUMENT_STORAGE_LOCAL_PATH: z.string().min(1).default("../.context/document-storage"),
   DOCUMENT_STORAGE_BUCKET: emptyStringToUndefined(z.string().min(1)),
   DOCUMENT_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
+}).superRefine((value, ctx) => {
+  if (value.DOCUMENT_STORAGE_DRIVER === "gcs" && !value.DOCUMENT_STORAGE_BUCKET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["DOCUMENT_STORAGE_BUCKET"],
+      message: "DOCUMENT_STORAGE_BUCKET is required when DOCUMENT_STORAGE_DRIVER is gcs",
+    });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;

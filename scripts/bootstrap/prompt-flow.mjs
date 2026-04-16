@@ -5,8 +5,6 @@ import { stdin as input, stdout as output } from "node:process";
 import { formatMessage } from "./terminal-theme.mjs";
 import { getEnvContract, getProviderRequiredKeys } from "./support/env-contract.mjs";
 
-const asBool = (value) => String(value ?? "").trim().toLowerCase().startsWith("y");
-
 export const planQuestions = (existingValues = {}, contract = getEnvContract(), options = {}) => {
   const reconfigure = Boolean(options.reconfigure);
   const questions = [];
@@ -36,19 +34,35 @@ export const planQuestions = (existingValues = {}, contract = getEnvContract(), 
     }
   }
 
-  if (reconfigure || existingValues.DOCUMENT_STORAGE_BUCKET === undefined) {
+  if (reconfigure || !existingValues.DOCUMENT_STORAGE_DRIVER) {
     questions.push({
-      key: "__USE_DOCUMENT_STORAGE__",
-      prompt: "Enable external document storage bucket? (y/N)",
-      defaultValue: existingValues.DOCUMENT_STORAGE_BUCKET ? "y" : "n",
+      key: "DOCUMENT_STORAGE_DRIVER",
+      prompt: "Choose document storage for uploaded files",
+      defaultValue: existingValues.DOCUMENT_STORAGE_DRIVER || contract.defaults.DOCUMENT_STORAGE_DRIVER || "local",
+      kind: "choice",
+      choices: ["local", "gcs"],
     });
   }
 
-  if (reconfigure && existingValues.DOCUMENT_STORAGE_BUCKET) {
+  const storageDriver = reconfigure
+    ? existingValues.DOCUMENT_STORAGE_DRIVER || contract.defaults.DOCUMENT_STORAGE_DRIVER || "local"
+    : existingValues.DOCUMENT_STORAGE_DRIVER || contract.defaults.DOCUMENT_STORAGE_DRIVER || "local";
+
+  if (reconfigure || storageDriver === "local") {
+    questions.push({
+      key: "DOCUMENT_STORAGE_LOCAL_PATH",
+      prompt: "Local document storage path",
+      defaultValue: existingValues.DOCUMENT_STORAGE_LOCAL_PATH || contract.defaults.DOCUMENT_STORAGE_LOCAL_PATH || "../.context/document-storage",
+      dependsOn: { key: "DOCUMENT_STORAGE_DRIVER", value: "local" },
+    });
+  }
+
+  if (reconfigure || storageDriver === "gcs" || existingValues.DOCUMENT_STORAGE_BUCKET) {
     questions.push({
       key: "DOCUMENT_STORAGE_BUCKET",
       prompt: "Document storage bucket name",
       defaultValue: existingValues.DOCUMENT_STORAGE_BUCKET || "",
+      dependsOn: { key: "DOCUMENT_STORAGE_DRIVER", value: "gcs" },
     });
   }
 
@@ -60,6 +74,9 @@ const validateAnswer = (question, value) => {
     return "Enter a full URL starting with http:// or https://";
   }
   if (question.key.includes("KEY") && !value) {
+    return "This value is required.";
+  }
+  if (question.key === "DOCUMENT_STORAGE_BUCKET" && !value) {
     return "This value is required.";
   }
   return null;
@@ -119,22 +136,15 @@ export const collectAnswers = async (questions, ansi, io = {}) => {
         continue;
       }
       answers[question.key] = answer;
-      if (question.key === "__USE_DOCUMENT_STORAGE__" && asBool(answer)) {
-        const bucketAnswer = await ask({
-          key: "DOCUMENT_STORAGE_BUCKET",
-          prompt: "Document storage bucket name",
-          defaultValue: answers.DOCUMENT_STORAGE_BUCKET || "",
-        });
-        answers.DOCUMENT_STORAGE_BUCKET = bucketAnswer.trim();
-      }
       break;
     }
   }
 
-  if ("__USE_DOCUMENT_STORAGE__" in answers && !asBool(answers.__USE_DOCUMENT_STORAGE__)) {
-    delete answers.DOCUMENT_STORAGE_BUCKET;
+  if (answers.DOCUMENT_STORAGE_DRIVER === "local") {
+    answers.DOCUMENT_STORAGE_BUCKET = "";
   }
-
-  delete answers.__USE_DOCUMENT_STORAGE__;
+  if (answers.DOCUMENT_STORAGE_DRIVER === "gcs") {
+    answers.DOCUMENT_STORAGE_LOCAL_PATH = "";
+  }
   return answers;
 };

@@ -39,6 +39,12 @@ variable "deploy_services" {
   default     = true
 }
 
+variable "worker_instance_count" {
+  description = "Fixed instance count for the dedicated document worker Cloud Run service."
+  type        = number
+  default     = 1
+}
+
 # --- Database ---
 
 variable "db_tier" {
@@ -77,6 +83,20 @@ variable "frontend_max_instances" {
   description = "Maximum number of frontend Cloud Run instances"
   type        = number
   default     = 2
+}
+
+# --- Document storage ---
+
+variable "document_storage_bucket_name" {
+  description = "Optional override for the GCS bucket that stores original uploaded document files."
+  type        = string
+  default     = null
+}
+
+variable "document_upload_max_bytes" {
+  description = "Maximum accepted uploaded file size in bytes."
+  type        = number
+  default     = 10485760
 }
 
 # --- Secrets (sensitive) ---

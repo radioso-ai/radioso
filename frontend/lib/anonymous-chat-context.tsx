@@ -14,6 +14,7 @@ import {
   publicChatApi,
   type AnswerSegment,
   type Citation,
+  type ChatSuggestion,
   type ChatConversationDetail,
   type ChatStreamCompletion,
   type ErrorResponse,
@@ -28,6 +29,7 @@ export interface ChatMessage {
   createdAt: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
   status: 'complete' | 'streaming' | 'error'
@@ -102,6 +104,7 @@ const toChatMessages = (detail: ChatConversationDetail): ChatMessage[] =>
       createdAt: message.createdAt,
       citations: message.citations,
       answerSegments: message.answerSegments,
+      suggestions: message.suggestions,
       retrievalInfo: message.debug?.retrievalInfo,
       retrievalTrace: message.debug?.retrievalTrace,
       status: 'complete' as const,
@@ -175,6 +178,7 @@ export function AnonymousChatProvider({
                   createdAt: new Date().toISOString(),
                   citations: bootstrap.citations,
                   answerSegments: bootstrap.answerSegments,
+                  suggestions: bootstrap.suggestions,
                   retrievalInfo: bootstrap.retrievalInfo,
                   retrievalTrace: bootstrap.retrievalTrace,
                   status: 'complete',
@@ -229,6 +233,7 @@ export function AnonymousChatProvider({
                 content: completion.answer ?? message.content,
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
+                suggestions: completion.suggestions,
                 retrievalInfo: completion.retrievalInfo,
                 retrievalTrace: completion.retrievalTrace,
                 status: 'complete' as const,
@@ -265,6 +270,7 @@ export function AnonymousChatProvider({
                 content: assistantMessage.content,
                 citations: assistantMessage.citations,
                 answerSegments: assistantMessage.answerSegments,
+                suggestions: assistantMessage.suggestions,
                 retrievalInfo: assistantMessage.retrievalInfo,
                 retrievalTrace: assistantMessage.retrievalTrace,
                 status: 'complete' as const,
@@ -356,6 +362,7 @@ export function AnonymousChatProvider({
             answer: completion.answer,
             citations: completion.citations,
             answerSegments: completion.answerSegments,
+            suggestions: completion.suggestions,
             retrievalInfo: completion.retrievalInfo,
           })
         }
@@ -379,6 +386,7 @@ export function AnonymousChatProvider({
               status: 'error' as const,
               citations: [] as Citation[],
               answerSegments: undefined,
+              suggestions: undefined,
             }
           }),
         )

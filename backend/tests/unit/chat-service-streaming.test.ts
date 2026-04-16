@@ -1228,7 +1228,7 @@ describe("chat service streaming", () => {
     );
   });
 
-  it("infers expansion metadata from clearly separated exploratory continuations", async () => {
+  it("does not infer expansion metadata from inline answer formatting", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -1271,7 +1271,10 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer() {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return '{"suggestions":[]}';
+        }
         return [
           "The page explains testing and parsing content for users[[1]].",
           "",
@@ -1302,11 +1305,12 @@ describe("chat service streaming", () => {
     expect(response.conversationModeMetadata).toEqual({
       conversationMode: "exploratory",
       brevityOverrideApplied: false,
-      expansionApplied: true,
-      expansionKind: "expansive",
-      suggestionCount: 2,
+      expansionApplied: false,
+      expansionKind: "none",
+      suggestionCount: 0,
       followUpQuestionApplied: false,
     });
+    expect(response.suggestions).toBeUndefined();
   });
 
   it("adds exploratory suggestions from grounded contexts when the direct answer stays terse", async () => {
@@ -1370,7 +1374,16 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer() {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "What does the interview say about her spiritual path?", contextIndex: 1 },
+              { text: "Which books or projects is she associated with?", contextIndex: 2 },
+              { text: "What challenges does she describe in the other interview?", contextIndex: 3 },
+            ],
+          });
+        }
         return "Mahiya is a teacher and author[[1]].";
       },
       async *streamAnswer() {
@@ -1394,9 +1407,33 @@ describe("chat service streaming", () => {
     });
 
     expect(response.answer).toContain("Mahiya is a teacher and author.");
-    expect(response.answer).toContain("- God is our True Home: In Conversation with Mahiya.");
-    expect(response.answer).toContain("- Il gusto della gioia.");
-    expect(response.answer).toContain("- Challenges and blessings go hand in hand - Interview with Mahiya (ENG).");
+    expect(response.answer).not.toContain("\n- ");
+    expect(response.suggestions).toEqual([
+      {
+        text: "What does the interview say about her spiritual path?",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "God is our True Home: In Conversation with Mahiya - Ananda Europe",
+        },
+      },
+      {
+        text: "Which books or projects is she associated with?",
+        citation: {
+          documentId: "doc-3",
+          chunkId: "chunk-3",
+          title: "Il gusto della gioia - Ananda Edizioni - ricette, consigli e ispirazioni salutari",
+        },
+      },
+      {
+        text: "What challenges does she describe in the other interview?",
+        citation: {
+          documentId: "doc-4",
+          chunkId: "chunk-4",
+          title: "Challenges and blessings go hand in hand - Interview with Mahiya (ENG) - Ananda Europe",
+        },
+      },
+    ]);
     expect(response.conversationModeMetadata).toEqual({
       conversationMode: "exploratory",
       brevityOverrideApplied: false,
@@ -1407,13 +1444,10 @@ describe("chat service streaming", () => {
     });
     expect(response.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" },
-      { documentId: "doc-2", chunkId: "chunk-2", title: "God is our True Home: In Conversation with Mahiya - Ananda Europe" },
-      { documentId: "doc-3", chunkId: "chunk-3", title: "Il gusto della gioia - Ananda Edizioni - ricette, consigli e ispirazioni salutari" },
-      { documentId: "doc-4", chunkId: "chunk-4", title: "Challenges and blessings go hand in hand - Interview with Mahiya (ENG) - Ananda Europe" },
     ]);
   });
 
-  it("adds language-agnostic exploratory bullet continuations", async () => {
+  it("returns exploratory suggestions as structured multilingual continuations", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -1462,7 +1496,14 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer() {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "Quale altro libro o progetto viene citato accanto a questo?", contextIndex: 1 },
+            ],
+          });
+        }
         return "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
       },
       async *streamAnswer() {
@@ -1485,8 +1526,16 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(response.answer).toContain("\n\n- Satsang with Narayani (on her upcoming book and more) &mdash; Ananda.");
-    expect(response.answer).not.toContain("Explore further:");
-    expect(response.answer).not.toContain("Puoi esplorare anche:");
+    expect(response.answer).toBe("Narayani ha scritto La mia anima ricorda Swami Kriyananda.");
+    expect(response.suggestions).toEqual([
+      {
+        text: "Quale altro libro o progetto viene citato accanto a questo?",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Satsang with Narayani (on her upcoming book and more) &mdash; Ananda",
+        },
+      },
+    ]);
   });
 });

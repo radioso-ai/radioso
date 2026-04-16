@@ -28,7 +28,7 @@ import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domai
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
-import type { ChatResponse, ConversationModeMetadata } from "../types/chatResponses.js";
+import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import { isBrevityOverrideRequested } from "./brevityOverrideDetector.js";
 
@@ -54,6 +54,7 @@ export type ChatStreamEvent =
       answer: string;
       citations?: ChatCitation[];
       answerSegments?: AnswerSegment[];
+      suggestions?: ChatSuggestion[];
       conversationMode: ConversationMode;
       conversationModeMetadata: ConversationModeMetadata;
       retrievalInfo: RetrievalInfo;
@@ -78,6 +79,7 @@ interface ChatAnswerAuditMetadata {
   carryForwardLiterals?: string[];
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
   retrievalTrace?: RetrievalTrace;
 }
 
@@ -85,6 +87,7 @@ interface PresentedAnswer {
   answer: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
   planningCitations?: ChatCitation[];
   answerOutcome: AssistantTurnOutcome;
   validation: AnswerValidationSummary;
@@ -92,22 +95,11 @@ interface PresentedAnswer {
   conversationModeMetadata: ConversationModeMetadata;
 }
 
-const LIST_ITEM_PATTERN = /^\s*(?:[-*•]|\d+\.)\s+/gm;
-
-const countSentenceLikeClauses = (value: string): number => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 0;
-  }
-
-  const matches = trimmed.match(/[^.!?]+[.!?]+|[^.!?]+$/g);
-  return matches?.map((match) => match.trim()).filter((match) => match.length > 0).length ?? 0;
-};
-
 const inferConversationModeMetadata = (input: {
-  answer: string;
   conversationMode: ConversationMode;
   brevityOverrideApplied: boolean;
+  suggestionCount: number;
+  followUpQuestionApplied?: boolean;
 }): Omit<ConversationModeMetadata, "conversationMode" | "brevityOverrideApplied"> => {
   if (input.brevityOverrideApplied) {
     return {
@@ -118,47 +110,21 @@ const inferConversationModeMetadata = (input: {
     };
   }
 
-  const trimmed = input.answer.trim();
-  if (!trimmed) {
-    return {
-      expansionApplied: false,
-      expansionKind: "none",
-      suggestionCount: 0,
-      followUpQuestionApplied: false,
-    };
-  }
-
-  const paragraphs = trimmed
-    .split(/\r?\n\s*\r?\n/g)
-    .map((paragraph) => paragraph.trim())
-    .filter((paragraph) => paragraph.length > 0);
-  const listItemCount = (trimmed.match(LIST_ITEM_PATTERN) ?? []).length;
-  const followUpQuestionApplied = /(?:\?|？)\s*$/.test(trimmed);
-
-  let suggestionCount = 0;
-  if (paragraphs.length > 1) {
-    suggestionCount = listItemCount > 0
-      ? listItemCount
-      : paragraphs.slice(1).reduce((count, paragraph) => count + Math.max(1, countSentenceLikeClauses(paragraph)), 0);
-  } else if (listItemCount > 0) {
-    suggestionCount = listItemCount;
-  }
-
-  const expansionApplied = suggestionCount > 0;
+  const expansionApplied = input.suggestionCount > 0;
   if (!expansionApplied) {
     return {
       expansionApplied: false,
       expansionKind: "none",
       suggestionCount: 0,
-      followUpQuestionApplied,
+      followUpQuestionApplied: Boolean(input.followUpQuestionApplied),
     };
   }
 
   return {
     expansionApplied: true,
     expansionKind: input.conversationMode === "exploratory" ? "expansive" : "focused",
-    suggestionCount,
-    followUpQuestionApplied,
+    suggestionCount: input.suggestionCount,
+    followUpQuestionApplied: Boolean(input.followUpQuestionApplied),
   };
 };
 
@@ -196,7 +162,7 @@ export class ChatService {
   private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
-  private readonly conversationModeExpansionService = new ConversationModeExpansionService();
+  private readonly conversationModeExpansionService: ConversationModeExpansionService;
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
@@ -204,7 +170,14 @@ export class ChatService {
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
-  ) {}
+  ) {
+    this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, prompt }) =>
+      this.chatGateway.answer({
+        query,
+        history: [],
+        prompt,
+      }));
+  }
 
   private getAnswerSupportPolicy(session: PreparedSession): AnswerSupportPolicy {
     return session.retrieval.responseSettings?.answerSupportPolicy ?? DEFAULT_ANSWER_SUPPORT_POLICY;
@@ -323,6 +296,7 @@ export class ChatService {
         segmentResults: presentation.segmentResults,
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
+        suggestions: presentation.suggestions,
         answerSupportPolicy: presentation.validation.answerSupportPolicy,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
@@ -336,6 +310,7 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
+        suggestions: presentation.suggestions,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
         retrievalInfo,
@@ -460,6 +435,7 @@ export class ChatService {
         segmentResults: presentation.segmentResults,
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
+        suggestions: presentation.suggestions,
         answerSupportPolicy: presentation.validation.answerSupportPolicy,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
@@ -474,6 +450,7 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
+        suggestions: presentation.suggestions,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
         retrievalInfo,
@@ -577,7 +554,7 @@ export class ChatService {
         citations: citationEvidence,
         citationDisplayEnabled,
       });
-      const expanded = this.applyConversationMode(session, {
+      const expanded = await this.applyConversationMode(session, {
         ...presented,
         answerOutcome: ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL,
         validation: {
@@ -614,7 +591,7 @@ export class ChatService {
       groundedMissResponseComposer: this.groundedMissResponseComposer,
     });
 
-    return this.applyConversationMode(session, {
+    return await this.applyConversationMode(session, {
       ...validated,
       planningCitations: normalized.citationEvidence.map((citation) => ({
         documentId: citation.documentId,
@@ -639,6 +616,7 @@ export class ChatService {
     segmentResults: AnswerSegmentValidationResult[];
     citations: ChatCitation[];
     answerSegments?: AnswerSegment[];
+    suggestions?: ChatSuggestion[];
     answerSupportPolicy?: AnswerSupportPolicy;
     conversationMode: ConversationMode;
     conversationModeMetadata: ConversationModeMetadata;
@@ -674,6 +652,7 @@ export class ChatService {
         citationCount: input.citations.length,
         citations: input.citations,
         answerSegments: input.answerSegments,
+        suggestions: input.suggestions,
         carryForwardLiterals: this.buildCarryForwardLiterals({
           diagnostics: input.diagnostics,
         }),
@@ -683,38 +662,35 @@ export class ChatService {
     });
   }
 
-  private applyConversationMode(
+  private async applyConversationMode(
     session: PreparedSession,
     presentation: Omit<PresentedAnswer, "conversationModeMetadata">,
-  ): PresentedAnswer {
+  ): Promise<PresentedAnswer> {
     const conversationMode = this.getConversationMode(session);
     const brevityOverrideApplied = Boolean(session.retrieval.responseSettings?.brevityOverrideRequested);
-    const expanded = this.conversationModeExpansionService.apply({
+    const expanded = await this.conversationModeExpansionService.apply({
       query: session.userMessage.content,
       conversationMode,
       brevityOverrideRequested: brevityOverrideApplied,
       groundedAnswerSupported: presentation.validation.supportedSegmentCount > 0,
       answer: presentation.answer,
       citations: presentation.citations,
-      answerSegments: presentation.answerSegments,
       contexts: session.retrieval.contexts.map((context) => ({
         documentId: context.documentId,
         chunkId: context.chunkId,
         title: context.title,
         content: context.content,
       })),
-      citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
     });
+    const suggestions = expanded.suggestions;
 
     return {
       ...presentation,
-      answer: expanded.answer,
-      citations: expanded.citations,
-      answerSegments: expanded.answerSegments,
+      suggestions,
       conversationModeMetadata: this.getConversationModeMetadata(session, inferConversationModeMetadata({
-        answer: expanded.answer,
         conversationMode,
         brevityOverrideApplied,
+        suggestionCount: suggestions?.length ?? 0,
       })),
     };
   }

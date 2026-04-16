@@ -3,6 +3,11 @@ import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTyp
 import type { RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 
+export interface ChatSuggestion {
+  text: string;
+  citation?: ChatCitation;
+}
+
 export interface ConversationModeMetadata {
   conversationMode: ConversationMode;
   brevityOverrideApplied: boolean;
@@ -17,6 +22,7 @@ export interface ChatResponse {
   answer: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
   conversationMode: ConversationMode;
   conversationModeMetadata: ConversationModeMetadata;
   retrievalInfo: RetrievalInfo;

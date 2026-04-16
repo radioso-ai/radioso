@@ -14,6 +14,7 @@ import {
   generalSettingsApi,
   type AnswerSegment,
   type Citation,
+  type ChatSuggestion,
   type ChatStreamCompletion,
   type RetrievalInfo,
   type RetrievalTrace,
@@ -26,6 +27,7 @@ export interface ChatMessage {
   createdAt: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
   status: 'complete' | 'streaming' | 'error'
@@ -116,6 +118,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 content: completion.answer ?? message.content,
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
+                suggestions: completion.suggestions,
                 retrievalInfo: completion.retrievalInfo,
                 retrievalTrace: completion.retrievalTrace,
                 status: 'complete',
@@ -210,6 +213,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             answer: completion.answer,
             citations: completion.citations,
             answerSegments: completion.answerSegments,
+            suggestions: completion.suggestions,
             retrievalInfo: completion.retrievalInfo,
             retrievalTrace: completion.retrievalTrace,
           })
@@ -231,6 +235,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               status: 'error' as const,
               citations: [] as Citation[],
               answerSegments: undefined,
+              suggestions: undefined,
             }
           })
 
@@ -305,6 +310,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     createdAt: new Date().toISOString(),
                     citations: bootstrap.citations,
                     answerSegments: bootstrap.answerSegments,
+                    suggestions: bootstrap.suggestions,
                     retrievalInfo: bootstrap.retrievalInfo,
                     retrievalTrace: bootstrap.retrievalTrace,
                     status: 'complete' as const,

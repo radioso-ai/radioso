@@ -597,6 +597,10 @@ const ChatResponseSchema = registry.register(
     answer: z.string(),
     citations: z.array(CitationSchema).optional(),
     answerSegments: z.array(AnswerSegmentSchema).optional(),
+    suggestions: z.array(z.object({
+      text: z.string(),
+      citation: CitationSchema.optional(),
+    })).optional(),
     conversationMode: z.enum(conversationModes),
     conversationModeMetadata: z.object({
       conversationMode: z.enum(conversationModes),
@@ -703,6 +707,10 @@ const ChatConversationMessageSchema = registry.register(
     createdAt: z.string().datetime(),
     citations: z.array(CitationSchema).optional(),
     answerSegments: z.array(AnswerSegmentSchema).optional(),
+    suggestions: z.array(z.object({
+      text: z.string(),
+      citation: CitationSchema.optional(),
+    })).optional(),
     debug: ChatConversationMessageDebugSchema.optional(),
   }),
 );

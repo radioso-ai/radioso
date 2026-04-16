@@ -3,7 +3,7 @@ import type { Response } from "express";
 import type { AnswerSegment, ChatCitation } from "../../../modules/chat/services/answerPresentationService.js";
 import type { ChatStreamEvent } from "../../../modules/chat/services/chatService.js";
 import type { ConversationMode } from "../../../modules/settings/domain/retrievalSettings.js";
-import type { ConversationModeMetadata } from "../../../modules/chat/types/chatResponses.js";
+import type { ChatSuggestion, ConversationModeMetadata } from "../../../modules/chat/types/chatResponses.js";
 import type { RetrievalInfo } from "../../../modules/retrieval/services/retrievalInfoPresenter.js";
 import type { RetrievalTrace } from "../../../modules/retrieval/domain/retrievalPipelineTypes.js";
 
@@ -14,6 +14,7 @@ export const sendChatJson = (
     answer: string;
     citations?: ChatCitation[];
     answerSegments?: AnswerSegment[];
+    suggestions?: ChatSuggestion[];
     conversationMode: ConversationMode;
     conversationModeMetadata: ConversationModeMetadata;
     retrievalInfo: RetrievalInfo;
@@ -64,6 +65,7 @@ export const sendChatSse = (
       answer: event.answer,
       citations: event.citations,
       answerSegments: event.answerSegments,
+      suggestions: event.suggestions,
       conversationMode: event.conversationMode,
       conversationModeMetadata: event.conversationModeMetadata,
       retrievalInfo: event.retrievalInfo,

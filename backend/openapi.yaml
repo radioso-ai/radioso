@@ -1369,6 +1369,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AnswerSegment"
+        suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              citation:
+                $ref: "#/components/schemas/Citation"
+            required:
+              - text
         conversationMode:
           type: string
           enum: *a3
@@ -1671,6 +1682,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AnswerSegment"
+        suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              citation:
+                $ref: "#/components/schemas/Citation"
+            required:
+              - text
         debug:
           $ref: "#/components/schemas/ChatConversationMessageDebug"
       required:

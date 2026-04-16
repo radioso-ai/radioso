@@ -1,4 +1,5 @@
-import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
+import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import type { ChatSuggestion } from "../types/chatResponses.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 
 interface ExpansionContext {
@@ -8,167 +9,184 @@ interface ExpansionContext {
   content: string;
 }
 
+type SuggestionTextGenerator = (input: { query: string; prompt: string }) => Promise<string>;
+
 export interface ConversationModeExpansionInput {
   query: string;
   conversationMode: ConversationMode;
   brevityOverrideRequested: boolean;
   groundedAnswerSupported: boolean;
   answer: string;
-  citations?: ChatCitation[];
-  answerSegments?: AnswerSegment[];
   contexts: ExpansionContext[];
-  citationDisplayEnabled: boolean;
+  citations?: Array<{ documentId: string }>;
 }
 
 export interface ConversationModeExpansionResult {
-  answer: string;
-  citations?: ChatCitation[];
-  answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
 }
 
 interface PlannedSuggestion {
-  label: string;
-  citation: ChatCitation;
+  text: string;
+  contextIndex: number;
 }
 
-const splitWords = (value: string): string[] =>
-  value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .map((word) => word.trim())
-    .filter((word) => word.length > 2);
+interface SuggestionPromptContext extends ExpansionContext {
+  contextIndex: number;
+}
 
-const cleanTitle = (title: string): string =>
-  title
-    .replace(/\s+-\s+Ananda\b.*$/i, "")
-    .replace(/\s+-\s+Autrice\b.*$/i, "")
-    .replace(/\s+-\s+Meditazione\b.*$/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
+const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
 
-const isQueryLikeTitle = (title: string, query: string): boolean => {
-  const titleTerms = splitWords(cleanTitle(title));
-  const queryTerms = splitWords(query);
+const normalizeComparableText = (value: string): string =>
+  normalizeWhitespace(
+    value
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[^\p{L}\p{N}\s]/gu, " "),
+  );
 
-  if (titleTerms.length === 0 || queryTerms.length === 0) {
-    return false;
+const clampExcerpt = (value: string, maxLength: number): string => {
+  const normalized = normalizeWhitespace(value);
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+};
+
+const formatContextsJson = (contexts: SuggestionPromptContext[]): string =>
+  JSON.stringify(
+    contexts.map((context) => ({
+      contextIndex: context.contextIndex,
+      title: normalizeWhitespace(context.title),
+      content: clampExcerpt(context.content, 600),
+    })),
+    null,
+    2,
+  );
+
+const parseSuggestionPayload = (value: string): unknown => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
   }
 
-  return titleTerms.length === queryTerms.length && titleTerms.every((term, index) => term === queryTerms[index]);
+  return JSON.parse(trimmed);
 };
 
 export class ConversationModeExpansionService {
-  apply(input: ConversationModeExpansionInput): ConversationModeExpansionResult {
+  constructor(private readonly generateSuggestionText: SuggestionTextGenerator) {}
+
+  async apply(input: ConversationModeExpansionInput): Promise<ConversationModeExpansionResult> {
     if (
       input.brevityOverrideRequested ||
       !input.groundedAnswerSupported ||
       input.conversationMode === "factual" ||
       input.contexts.length === 0
     ) {
-      return {
-        answer: input.answer,
-        citations: input.citations,
-        answerSegments: input.answerSegments,
-      };
+      return {};
     }
 
     const maxSuggestions = input.conversationMode === "exploratory" ? 3 : 2;
     const existingDocumentIds = new Set((input.citations ?? []).map((citation) => citation.documentId));
-    const planned = this.planSuggestions(input.query, input.contexts, existingDocumentIds, maxSuggestions);
+    const candidateContexts = input.contexts
+      .filter((context) => !existingDocumentIds.has(context.documentId))
+      .slice(0, Math.max(maxSuggestions * 2, maxSuggestions));
 
-    if (planned.length === 0) {
-      return {
-        answer: input.answer,
-        citations: input.citations,
-        answerSegments: input.answerSegments,
-      };
+    if (candidateContexts.length === 0) {
+      return {};
     }
 
-    const baseAnswer = input.answer.trimEnd();
-    const expandedAnswer = [
-      baseAnswer,
-      "",
-      ...planned.map((suggestion) => `- ${suggestion.label}.`),
-    ].join("\n");
+    const promptContexts = candidateContexts.map((context, index) => ({
+      ...context,
+      contextIndex: index + 1,
+    }));
 
-    if (!input.citationDisplayEnabled) {
-      return {
-        answer: expandedAnswer,
-      };
-    }
-
-    const citations = [...(input.citations ?? [])];
-    const citationIndexByDocumentId = new Map<string, number>();
-    citations.forEach((citation, index) => {
-      citationIndexByDocumentId.set(citation.documentId, index);
-    });
-
-    const answerSegments = [...(input.answerSegments ?? [{ text: baseAnswer }])];
-    answerSegments.push({ text: "\n\n" });
-
-    for (const suggestion of planned) {
-      let citationIndex = citationIndexByDocumentId.get(suggestion.citation.documentId);
-      if (citationIndex === undefined) {
-        citationIndex = citations.length;
-        citations.push(suggestion.citation);
-        citationIndexByDocumentId.set(suggestion.citation.documentId, citationIndex);
-      }
-
-      answerSegments.push({
-        text: `- ${suggestion.label}.`,
-        citationIndices: [citationIndex],
+    try {
+      const rawResponse = await this.generateSuggestionText({
+        query: input.query,
+        prompt: renderPromptTemplate("chat/conversation-mode-suggestions.md", {
+          conversation_mode: input.conversationMode,
+          max_suggestions: String(maxSuggestions),
+          query: input.query,
+          answer: input.answer,
+          contexts_json: formatContextsJson(promptContexts),
+        }),
       });
-      answerSegments.push({ text: "\n" });
-    }
 
-    const lastSegment = answerSegments[answerSegments.length - 1];
-    if (lastSegment && !lastSegment.citationIndices) {
-      lastSegment.text = "";
-      if (lastSegment.text.length === 0) {
-        answerSegments.pop();
-      }
+      const suggestions = this.planSuggestions(rawResponse, promptContexts, maxSuggestions);
+      return suggestions.length > 0 ? { suggestions } : {};
+    } catch {
+      return {};
     }
-
-    return {
-      answer: expandedAnswer,
-      citations,
-      answerSegments,
-    };
   }
 
   private planSuggestions(
-    query: string,
-    contexts: ExpansionContext[],
-    existingDocumentIds: Set<string>,
+    rawResponse: string,
+    contexts: SuggestionPromptContext[],
     maxSuggestions: number,
-  ): PlannedSuggestion[] {
-    const seenLabels = new Set<string>();
-    const suggestions: PlannedSuggestion[] = [];
-    const adjacentContexts = contexts.filter((context) => !existingDocumentIds.has(context.documentId));
+  ): ChatSuggestion[] {
+    let parsed: unknown;
+    try {
+      parsed = parseSuggestionPayload(rawResponse);
+    } catch {
+      return [];
+    }
 
-    for (const context of adjacentContexts) {
+    const candidates = this.readSuggestions(parsed);
+    const contextByIndex = new Map(contexts.map((context) => [context.contextIndex, context]));
+    const seenTexts = new Set<string>();
+    const suggestions: ChatSuggestion[] = [];
+
+    for (const candidate of candidates) {
       if (suggestions.length >= maxSuggestions) {
         break;
       }
 
-      const label = cleanTitle(context.title);
-      if (!label || seenLabels.has(label.toLowerCase()) || isQueryLikeTitle(label, query)) {
+      const normalizedText = normalizeComparableText(candidate.text);
+      if (!normalizedText || seenTexts.has(normalizedText)) {
+        continue;
+      }
+
+      const context = contextByIndex.get(candidate.contextIndex);
+      if (!context) {
         continue;
       }
 
       suggestions.push({
-        label,
+        text: normalizeWhitespace(candidate.text),
         citation: {
           documentId: context.documentId,
           chunkId: context.chunkId,
           title: context.title,
         },
       });
-      seenLabels.add(label.toLowerCase());
+      seenTexts.add(normalizedText);
     }
 
     return suggestions;
+  }
+
+  private readSuggestions(parsed: unknown): PlannedSuggestion[] {
+    if (!parsed || typeof parsed !== "object" || !("suggestions" in parsed)) {
+      return [];
+    }
+
+    const rawSuggestions = (parsed as { suggestions?: unknown }).suggestions;
+    if (!Array.isArray(rawSuggestions)) {
+      return [];
+    }
+
+    return rawSuggestions.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return [];
+      }
+
+      const text = "text" in entry && typeof entry.text === "string" ? normalizeWhitespace(entry.text) : "";
+      const contextIndex = "contextIndex" in entry && typeof entry.contextIndex === "number"
+        ? Math.trunc(entry.contextIndex)
+        : NaN;
+
+      if (!text || !Number.isInteger(contextIndex) || contextIndex < 1) {
+        return [];
+      }
+
+      return [{ text, contextIndex }];
+    });
   }
 }

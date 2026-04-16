@@ -48,6 +48,16 @@ describe("chat presenter", () => {
         answer: "Answer",
         citations: [],
         answerSegments: [{ text: "Answer" }],
+        suggestions: [
+          {
+            text: "Ask about parser validation rules",
+            citation: {
+              documentId: "doc-1",
+              chunkId: "chunk-1",
+              title: "Parser Notes",
+            },
+          },
+        ],
         conversationMode: "guided",
         conversationModeMetadata: {
           conversationMode: "guided",
@@ -65,6 +75,7 @@ describe("chat presenter", () => {
             status: "skipped",
             eligible: false,
             ran: false,
+            materialDisagreement: false,
           },
         },
         retrievalTrace: {
@@ -84,5 +95,6 @@ describe("chat presenter", () => {
     expect(donePayload).toContain("\"conversationMode\":\"guided\"");
     expect(donePayload).toContain("\"conversationModeMetadata\":");
     expect(donePayload).toContain("\"expansionKind\":\"focused\"");
+    expect(donePayload).toContain("\"suggestions\":[");
   });
 });

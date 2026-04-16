@@ -9,7 +9,24 @@ import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
 describe("chat integration", () => {
   it("adds bounded grounded continuations for guided and exploratory modes", async () => {
     const deterministicGateway: ChatGateway = {
-      async answer() {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          if (prompt.includes("Conversation mode:\nguided")) {
+            return JSON.stringify({
+              suggestions: [
+                { text: "What parser rules do the docs cover?", contextIndex: 1 },
+                { text: "Which onboarding questions are answered?", contextIndex: 2 },
+              ],
+            });
+          }
+
+          return JSON.stringify({
+            suggestions: [
+              { text: "What parser rules do the docs cover?", contextIndex: 1 },
+              { text: "Which onboarding questions are answered?", contextIndex: 2 },
+            ],
+          });
+        }
         return "The testing guide explains testing and parsing content for users[[1]].";
       },
       async *streamAnswer() {
@@ -64,18 +81,19 @@ describe("chat integration", () => {
     expect(guided.body.answer).toContain("The testing guide explains testing and parsing content for users.");
     expect(exploratory.body.answer).toContain("The testing guide explains testing and parsing content for users.");
     expect(factual.body.answer).not.toContain("\n- ");
-    expect(guided.body.answer).toContain("- Parser Notes.");
-    expect(guided.body.answer).toContain("- User FAQ.");
+    expect(guided.body.answer).not.toContain("\n- ");
+    expect(guided.body.suggestions).toEqual([
+      expect.objectContaining({ text: "What parser rules do the docs cover?" }),
+      expect.objectContaining({ text: "Which onboarding questions are answered?" }),
+    ]);
     expect(guided.body.conversationModeMetadata).toMatchObject({
       conversationMode: "guided",
       expansionApplied: true,
       expansionKind: "focused",
       suggestionCount: 2,
     });
-    expect(exploratory.body.answer).toContain("- Parser Notes.");
-    expect(exploratory.body.answer).toContain("- User FAQ.");
-    expect((exploratory.body.answer.match(/^\s*-/gm) ?? []).length).toBeGreaterThanOrEqual(2);
-    expect((exploratory.body.answer.match(/^\s*-/gm) ?? []).length).toBeLessThanOrEqual(3);
+    expect(exploratory.body.answer).not.toContain("\n- ");
+    expect(exploratory.body.suggestions).toHaveLength(2);
     expect(exploratory.body.conversationModeMetadata).toMatchObject({
       conversationMode: "exploratory",
       expansionApplied: true,

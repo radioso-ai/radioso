@@ -39,4 +39,28 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('aria-label="Open source 1: Source 1"')
     expect(html).not.toContain('</button><button')
   })
+
+  it('renders structured suggestions outside the assistant message body', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            suggestions: [
+              { text: 'What parser rules do the docs cover?' },
+              { text: 'Which onboarding questions are answered?' },
+            ],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Answer text')
+    expect(html).toContain('What parser rules do the docs cover?')
+    expect(html).toContain('Which onboarding questions are answered?')
+  })
 })

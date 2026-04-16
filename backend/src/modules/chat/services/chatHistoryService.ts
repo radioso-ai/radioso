@@ -14,7 +14,7 @@ import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import type { AssistantTurnOutcome, ValidationDisposition } from "./answerSupportValidationTypes.js";
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
-import type { ConversationModeMetadata } from "../types/chatResponses.js";
+import type { ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 
 export interface ChatConversationSummary {
   id: string;
@@ -65,6 +65,7 @@ export interface ChatConversationTurn {
   createdAt: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
   debug?: ChatConversationTurnDebug;
 }
 
@@ -120,6 +121,7 @@ interface ChatAuditMetadata {
   citationCount?: number;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
   validation?: {
     ran?: boolean;
     answerModified?: boolean;
@@ -143,6 +145,7 @@ interface ChatAuditMetadata {
 interface AssistantTurnArtifacts {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
 }
 
 const toIsoString = (value: Date): string => value.toISOString();
@@ -261,6 +264,7 @@ export class ChatHistoryService {
         createdAt: toIsoString(message.createdAt),
         citations: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.citations : undefined,
         answerSegments: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.answerSegments : undefined,
+        suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
       })),
     };
@@ -385,6 +389,7 @@ export class ChatHistoryService {
       index.set(metadata.assistantMessageId, {
         citations: metadata.citations,
         answerSegments: metadata.answerSegments,
+        suggestions: metadata.suggestions,
       });
     }
 

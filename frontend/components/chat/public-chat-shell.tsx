@@ -7,8 +7,7 @@ import { AlertCircle, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { AssistantMessageContent, linkifyText } from '@/components/dashboard/chat-citations'
+import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 
 function ChatUnavailable() {
@@ -101,6 +100,11 @@ function PublicChatContent() {
     }
   }
 
+  const handleSuggestionSelect = (text: string) => {
+    if (isLoading) return
+    void sendMessage(text)
+  }
+
   if (isHydrating) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -141,31 +145,11 @@ function PublicChatContent() {
                 </Button>
               </div>
             ) : null}
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                {message.role === 'user' ? (
-                  <div className="max-w-[80%] rounded-lg bg-primary px-4 py-3 text-primary-foreground">
-                    <p className="whitespace-pre-wrap text-sm">{linkifyText(message.content)}</p>
-                  </div>
-                ) : (
-                  <div className="max-w-[80%] rounded-lg border border-border bg-card px-4 py-3 text-foreground">
-                    {message.status === 'streaming' && !message.content ? (
-                      <TypingIndicator />
-                    ) : (
-                      <AssistantMessageContent
-                        content={message.content}
-                        citations={message.citations}
-                        answerSegments={message.answerSegments}
-                        onOpenDocument={async () => 'unavailable'}
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+            <ChatMessageThread
+              messages={messages}
+              onOpenDocument={async () => 'unavailable'}
+              onSuggestionSelect={handleSuggestionSelect}
+            />
             <div ref={messagesEndRef} />
           </div>
         )}

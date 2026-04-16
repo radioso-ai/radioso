@@ -80,6 +80,14 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
     }
   }
 
+  const handleSuggestionSelect = (text: string) => {
+    if (isLoading || isBootstrapping) {
+      return
+    }
+
+    void sendMessage(text)
+  }
+
   const emptyState = onboarding.hasPendingDocuments
     ? {
         title: 'Documents are still processing',
@@ -149,7 +157,11 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
           </div>
         ) : (
           <div>
-            <ChatMessageThread messages={messages} onOpenDocument={handleOpenCitation} />
+            <ChatMessageThread
+              messages={messages}
+              onOpenDocument={handleOpenCitation}
+              onSuggestionSelect={handleSuggestionSelect}
+            />
             <div ref={messagesEndRef} />
           </div>
         )}

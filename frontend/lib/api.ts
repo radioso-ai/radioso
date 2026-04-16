@@ -550,6 +550,11 @@ export interface AnswerSegment {
   citationIndices?: number[]
 }
 
+export interface ChatSuggestion {
+  text: string
+  citation?: Citation
+}
+
 export interface RetrievalInfo {
   parsedQuery?: ParsedQueryInfo
   retrievalSubqueries?: RetrievalSubqueryInfo[]
@@ -636,6 +641,7 @@ export interface ChatResponse {
   answer: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
   conversationMode: 'factual' | 'guided' | 'exploratory'
   conversationModeMetadata: {
     conversationMode: 'factual' | 'guided' | 'exploratory'
@@ -662,6 +668,7 @@ export interface ChatStreamCompletion {
   answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
   conversationMode?: 'factual' | 'guided' | 'exploratory'
   conversationModeMetadata?: {
     conversationMode: 'factual' | 'guided' | 'exploratory'
@@ -731,6 +738,7 @@ export interface ChatConversationTurn {
   createdAt: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
   debug?: ChatConversationTurnDebug
 }
 
@@ -1025,6 +1033,7 @@ const streamChatEvents = async (
   let conversationId = ''
   let citations: Citation[] | undefined
   let answerSegments: AnswerSegment[] | undefined
+  let suggestions: ChatSuggestion[] | undefined
   let conversationMode: ChatResponse['conversationMode'] | undefined
   let conversationModeMetadata: ChatResponse['conversationModeMetadata'] | undefined
   let retrievalInfo: RetrievalInfo | undefined
@@ -1071,6 +1080,7 @@ const streamChatEvents = async (
       answer = completionPayload.answer ?? answer
       citations = completionPayload.citations
       answerSegments = completionPayload.answerSegments
+      suggestions = completionPayload.suggestions
       conversationMode = completionPayload.conversationMode
       conversationModeMetadata = completionPayload.conversationModeMetadata
       retrievalInfo = completionPayload.retrievalInfo
@@ -1080,6 +1090,7 @@ const streamChatEvents = async (
         answer,
         citations,
         answerSegments,
+        suggestions,
         conversationMode,
         conversationModeMetadata,
         retrievalInfo,
@@ -1114,6 +1125,7 @@ const streamChatEvents = async (
     answer,
     citations,
     answerSegments,
+    suggestions,
     conversationMode: conversationMode!,
     conversationModeMetadata: conversationModeMetadata!,
     retrievalInfo: retrievalInfo!,
@@ -1459,6 +1471,7 @@ export const chatApi = {
         answer: payload.answer,
         citations: payload.citations,
         answerSegments: payload.answerSegments,
+        suggestions: payload.suggestions,
         conversationMode: payload.conversationMode,
         conversationModeMetadata: payload.conversationModeMetadata,
         retrievalInfo: payload.retrievalInfo,
@@ -1772,6 +1785,7 @@ export const publicChatApi = {
         answer: payload.answer,
         citations: payload.citations,
         answerSegments: payload.answerSegments,
+        suggestions: payload.suggestions,
         conversationMode: payload.conversationMode,
         conversationModeMetadata: payload.conversationModeMetadata,
         retrievalInfo: payload.retrievalInfo,

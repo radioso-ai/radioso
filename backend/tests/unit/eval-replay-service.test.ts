@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { EvalReplayService } from "../../src/modules/evals/services/evalReplayService.js";
+import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
+
+const groundedMissResponseComposer: GroundedMissResponseComposer = {
+  async composeUnsupportedWithContext() {
+    return "I couldn't verify that from the retrieved material.";
+  },
+  async composeNoContext() {
+    return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
+  },
+};
 
 describe("EvalReplayService", () => {
   it("uses the conversational no-context response during replay", async () => {
@@ -36,7 +46,7 @@ describe("EvalReplayService", () => {
       },
     } as any;
 
-    const service = new EvalReplayService(retrievalPipeline, chatGateway);
+    const service = new EvalReplayService(retrievalPipeline, chatGateway, groundedMissResponseComposer);
     const replay = await service.replay({
       workspaceId: "workspace-1",
       query: "What is the capital of France?",
@@ -81,7 +91,7 @@ describe("EvalReplayService", () => {
       },
     } as any;
 
-    const service = new EvalReplayService(retrievalPipeline, chatGateway);
+    const service = new EvalReplayService(retrievalPipeline, chatGateway, groundedMissResponseComposer);
 
     const nowSpy = vi
       .spyOn(Date, "now")
@@ -164,8 +174,6 @@ describe("EvalReplayService", () => {
       query: "What does the guide say?",
     });
 
-    expect(replay.answer).toContain("Focused next:");
-    expect(replay.answer).toContain("Adjacent Notes:");
-    expect(replay.answer).toContain("FAQ:");
+    expect(replay.answer).toBe("The primary guide explains the direct answer.");
   });
 });

@@ -6,8 +6,6 @@ import type { ChatGateway } from "../../chat/services/chatService.js";
 import { AnswerPresentationService } from "../../chat/services/answerPresentationService.js";
 import { AnswerSupportValidator } from "../../chat/services/answerSupportValidator.js";
 import { AssistantTurnOutcomeClassifier } from "../../chat/services/assistantTurnOutcomeClassifier.js";
-import { ConversationExpansionComposer } from "../../chat/services/conversationExpansionComposer.js";
-import { ConversationExpansionPlanner } from "../../chat/services/conversationExpansionPlanner.js";
 import { RetrievalInfoPresenter } from "../../retrieval/services/retrievalInfoPresenter.js";
 import { RetrievalTracePresenter } from "../../retrieval/services/retrievalTracePresenter.js";
 import {
@@ -15,11 +13,7 @@ import {
   type AssistantTurnOutcome,
 } from "../../chat/services/answerSupportValidationTypes.js";
 import {
-  DefaultUnsupportedNoticeGenerator,
-  type UnsupportedNoticeGenerator,
-} from "../../chat/services/unsupportedNoticeGenerator.js";
-import {
-  DefaultGroundedMissResponseComposer,
+  MissingGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
 } from "../../chat/services/groundedMissResponseComposer.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
@@ -30,16 +24,13 @@ export class EvalReplayService {
   private readonly answerPresentationService = new AnswerPresentationService();
   private readonly answerSupportValidator = new AnswerSupportValidator();
   private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
-  private readonly conversationExpansionPlanner = new ConversationExpansionPlanner();
-  private readonly conversationExpansionComposer = new ConversationExpansionComposer();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
 
   constructor(
     private readonly retrievalPipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
-    private readonly unsupportedNoticeGenerator: UnsupportedNoticeGenerator = new DefaultUnsupportedNoticeGenerator(),
-    private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new DefaultGroundedMissResponseComposer(),
+    private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
   ) {}
 
   async replay(input: {
@@ -119,7 +110,6 @@ export class EvalReplayService {
         answerSupportPolicy,
         conversationMode,
         brevityOverrideRequested,
-        unsupportedNoticeGenerator: this.unsupportedNoticeGenerator,
         groundedMissResponseComposer: this.groundedMissResponseComposer,
       });
       answer = validated.answer;
@@ -137,27 +127,6 @@ export class EvalReplayService {
         nonSubstantiveSegmentCount: validated.validation.nonSubstantiveSegmentCount,
       };
 
-      const expansionPlan = this.conversationExpansionPlanner.plan({
-        conversationMode,
-        brevityOverrideRequested,
-        contexts: citationEvidence,
-        usedCitations: normalized.citationEvidence.map((citation) => ({
-          documentId: citation.documentId,
-          chunkId: citation.chunkId,
-          title: citation.title,
-        })),
-      });
-      const expanded = this.conversationExpansionComposer.compose({
-        baseAnswer: answer,
-        baseAnswerSegments: answerSegments,
-        visibleCitations: citations,
-        citationEvidence,
-        citationDisplayEnabled,
-        plan: expansionPlan,
-      });
-      answer = expanded.answer;
-      citations = expanded.citations;
-      answerSegments = expanded.answerSegments;
     }
 
     const retrievalInfo = this.retrievalInfoPresenter.present(retrieval.diagnostics);

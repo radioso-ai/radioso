@@ -1599,12 +1599,14 @@ export const generalSettingsApi = {
   async updateGeneralSettings(data: {
     anonymousChatEnabled?: boolean
     anonymousRateLimit?: number
+    rotateAnonymousChatToken?: boolean
     assistantName?: string
     assistantRole?: string
     greetingInstruction?: string
     assistantDefaultLocale?: string | null
     proactiveGreetingEnabled?: boolean
     websiteEmbedEnabled?: boolean
+    rotateWebsiteEmbedToken?: boolean
     websiteEmbedToken?: string | null
     websiteEmbedScriptUrl?: string | null
     websiteEmbedSnippet?: string | null

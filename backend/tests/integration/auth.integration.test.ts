@@ -185,6 +185,81 @@ describe("auth integration", () => {
     );
   });
 
+  it("keeps workspace tokens readable when the session cookie secret changes", async () => {
+    const auditService = createAuditService();
+    const accountRepository = new InMemoryAccountRepository();
+    const userRepository = new InMemoryUserRepository();
+    const accountMembershipRepository = new InMemoryAccountMembershipRepository();
+    accountMembershipRepository.setUserRepository(userRepository);
+    const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
+    const accountInvitationService = new AccountInvitationService(
+      new InMemoryAccountInvitationRepository(),
+      userRepository,
+      accountAccessService,
+      auditService,
+    );
+    const sessionRepository = new InMemorySessionRepository();
+    const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
+    const workspaceRepository = new InMemoryWorkspaceRepository();
+    const workspaceService = new WorkspaceService(workspaceRepository, auditService);
+    const baseEnv = createTestEnv();
+
+    const initialAuthService = new AuthService({
+      env: {
+        ...baseEnv,
+        SESSION_COOKIE_SECRET: "session-secret-before-rotation",
+        WORKSPACE_TOKEN_SECRET: "workspace-token-secret-stable",
+      },
+      auditService,
+      accountRepository,
+      userRepository,
+      sessionRepository,
+      workspaceTokenRepository,
+      workspaceService,
+      accountAccessService,
+      accountInvitationService,
+    });
+
+    const account = await accountRepository.create({
+      name: "Stable Token Organization",
+      email: "stable-token@example.com",
+      passwordHash: "hash",
+    });
+    await userRepository.create({
+      id: account.id,
+      email: account.email,
+      passwordHash: account.passwordHash,
+    });
+    await accountAccessService.ensureMembership({
+      accountId: account.id,
+      userId: account.id,
+      role: "owner",
+    });
+    const workspace = await workspaceService.createDefault(account.id);
+
+    const issued = await initialAuthService.getTokenForWorkspace(workspace.id, account.id);
+
+    const rotatedSessionSecretAuthService = new AuthService({
+      env: {
+        ...baseEnv,
+        SESSION_COOKIE_SECRET: "session-secret-after-rotation",
+        WORKSPACE_TOKEN_SECRET: "workspace-token-secret-stable",
+      },
+      auditService,
+      accountRepository,
+      userRepository,
+      sessionRepository,
+      workspaceTokenRepository,
+      workspaceService,
+      accountAccessService,
+      accountInvitationService,
+    });
+
+    const revealed = await rotatedSessionSecretAuthService.getTokenForWorkspace(workspace.id, account.id);
+
+    expect(revealed.token).toBe(issued.token);
+  });
+
   it("does not create a second default workspace for the same account", async () => {
     const auditService = createAuditService();
     const workspaceRepository = new InMemoryWorkspaceRepository();

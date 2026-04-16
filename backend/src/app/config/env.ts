@@ -31,6 +31,8 @@ const envSchema = z.object({
   LLM_EMBEDDING_MODEL: emptyStringToUndefined(z.string().min(1)),
   SESSION_COOKIE_NAME: z.string().min(1).default("radioso_session"),
   SESSION_COOKIE_SECRET: z.string().min(16),
+  WORKSPACE_TOKEN_SECRET: z.string().min(16),
+  WEBSITE_EMBED_SECRET: z.string().min(16),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
   CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(z.string().min(1)),
   CONNECTOR_PUBLIC_BASE_URL: emptyStringToUndefined(z.string().url()),

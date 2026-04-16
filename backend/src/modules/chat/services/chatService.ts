@@ -90,6 +90,7 @@ interface PresentedAnswer {
   answer: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  planningCitations?: ChatCitation[];
   answerOutcome: AssistantTurnOutcome;
   validation: AnswerValidationSummary;
   segmentResults: AnswerSegmentValidationResult[];
@@ -188,6 +189,7 @@ export class ChatService {
 
     return {
       ...presented,
+      planningCitations: [],
       answerOutcome: ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS,
       validation: {
         ran: false,
@@ -546,6 +548,11 @@ export class ChatService {
 
     return this.applyConversationMode(session, {
       ...validated,
+      planningCitations: normalized.citationEvidence.map((citation) => ({
+        documentId: citation.documentId,
+        chunkId: citation.chunkId,
+        title: citation.title,
+      })),
       answerOutcome: this.assistantTurnOutcomeClassifier.classify({
         hadRetrievedContext: true,
         validation: validated.validation,
@@ -623,7 +630,7 @@ export class ChatService {
       conversationMode: this.getConversationMode(session),
       brevityOverrideRequested: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
       contexts: citationEvidence,
-      visibleCitations: presentation.citations,
+      usedCitations: presentation.planningCitations ?? presentation.citations,
     });
     const expanded = this.conversationExpansionComposer.compose({
       baseAnswer: presentation.answer,

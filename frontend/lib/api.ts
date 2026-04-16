@@ -1025,6 +1025,8 @@ const streamChatEvents = async (
   let conversationId = ''
   let citations: Citation[] | undefined
   let answerSegments: AnswerSegment[] | undefined
+  let conversationMode: ChatResponse['conversationMode'] | undefined
+  let conversationModeMetadata: ChatResponse['conversationModeMetadata'] | undefined
   let retrievalInfo: RetrievalInfo | undefined
   let retrievalTrace: RetrievalTrace | undefined
 
@@ -1069,6 +1071,8 @@ const streamChatEvents = async (
       answer = completionPayload.answer ?? answer
       citations = completionPayload.citations
       answerSegments = completionPayload.answerSegments
+      conversationMode = completionPayload.conversationMode
+      conversationModeMetadata = completionPayload.conversationModeMetadata
       retrievalInfo = completionPayload.retrievalInfo
       retrievalTrace = completionPayload.retrievalTrace
       handlers.onDone?.({
@@ -1076,6 +1080,8 @@ const streamChatEvents = async (
         answer,
         citations,
         answerSegments,
+        conversationMode,
+        conversationModeMetadata,
         retrievalInfo,
         retrievalTrace,
       })
@@ -1108,6 +1114,8 @@ const streamChatEvents = async (
     answer,
     citations,
     answerSegments,
+    conversationMode: conversationMode!,
+    conversationModeMetadata: conversationModeMetadata!,
     retrievalInfo: retrievalInfo!,
     retrievalTrace: retrievalTrace!,
   }

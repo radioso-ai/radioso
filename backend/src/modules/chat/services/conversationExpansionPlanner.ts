@@ -56,7 +56,7 @@ export class ConversationExpansionPlanner {
     conversationMode: ConversationMode;
     brevityOverrideRequested: boolean;
     contexts: ConversationExpansionContext[];
-    visibleCitations?: ChatCitation[];
+    usedCitations?: ChatCitation[];
   }): ConversationExpansionPlan {
     if (input.brevityOverrideRequested || input.conversationMode === "factual") {
       return {
@@ -67,7 +67,7 @@ export class ConversationExpansionPlanner {
       };
     }
 
-    const visibleDocumentIds = new Set((input.visibleCitations ?? []).map((citation) => citation.documentId));
+    const usedDocumentIds = new Set((input.usedCitations ?? []).map((citation) => citation.documentId));
     const uniqueContexts = uniqueByDocument(input.contexts);
     if (uniqueContexts.length <= 1) {
       return {
@@ -77,7 +77,7 @@ export class ConversationExpansionPlanner {
         suggestions: [],
       };
     }
-    const preferred = uniqueContexts.filter((context) => !visibleDocumentIds.has(context.documentId));
+    const preferred = uniqueContexts.filter((context) => !usedDocumentIds.has(context.documentId));
     const candidates = preferred;
     const maxSuggestions = input.conversationMode === "guided" ? 2 : 3;
     const selected = candidates.slice(0, maxSuggestions).map((context) => ({

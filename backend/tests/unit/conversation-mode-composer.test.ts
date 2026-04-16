@@ -32,7 +32,7 @@ describe("conversation mode composer", () => {
       conversationMode: "guided",
       brevityOverrideRequested: false,
       contexts,
-      visibleCitations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Testing Guide" }],
+      usedCitations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Testing Guide" }],
     });
 
     expect(plan.applied).toBe(true);
@@ -49,7 +49,7 @@ describe("conversation mode composer", () => {
       conversationMode: "exploratory",
       brevityOverrideRequested: true,
       contexts,
-      visibleCitations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Testing Guide" }],
+      usedCitations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Testing Guide" }],
     });
 
     expect(plan.applied).toBe(false);
@@ -64,7 +64,7 @@ describe("conversation mode composer", () => {
       conversationMode: "exploratory",
       brevityOverrideRequested: false,
       contexts,
-      visibleCitations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Testing Guide" }],
+      usedCitations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Testing Guide" }],
     });
 
     const composed = composer.compose({
@@ -93,5 +93,18 @@ describe("conversation mode composer", () => {
         }),
       ]),
     );
+  });
+
+  it("excludes already used documents even when citations are hidden from the final answer", () => {
+    const planner = new ConversationExpansionPlanner();
+
+    const plan = planner.plan({
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
+      contexts,
+      usedCitations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Testing Guide" }],
+    });
+
+    expect(plan.suggestions.map((suggestion) => suggestion.documentId)).toEqual(["doc-2", "doc-3"]);
   });
 });

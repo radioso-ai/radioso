@@ -178,7 +178,7 @@ describe("document import service", () => {
     );
   });
 
-  it("fails import when dispatching the queued job fails", async () => {
+  it("keeps import successful when dispatching the queued job fails after durable queueing", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
@@ -196,14 +196,16 @@ describe("document import service", () => {
       },
     );
 
-    await expect(
-      service.importDocument({
-        workspaceId: "workspace-1",
-        filename: "Quarterly Report.xlsx",
-        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        buffer: Buffer.from("fake-xlsx"),
-      }),
-    ).rejects.toThrow("dispatch unavailable");
+    const response = await service.importDocument({
+      workspaceId: "workspace-1",
+      filename: "Quarterly Report.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: Buffer.from("fake-xlsx"),
+    });
+
+    expect(response.status).toBe("queued");
+    expect(storage.objects.size).toBe(1);
+    expect(await documentRepository.findByIdAndWorkspaceId(response.documentId, "workspace-1")).toBeTruthy();
 
     expect(auditService.events).toContainEqual(
       expect.objectContaining({

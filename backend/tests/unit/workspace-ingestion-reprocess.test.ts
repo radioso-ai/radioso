@@ -102,7 +102,7 @@ describe("workspace ingestion reprocess", () => {
     });
   });
 
-  it("fails reprocess when dispatching a queued job fails", async () => {
+  it("keeps workspace reprocess successful when dispatching a queued job fails", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
@@ -125,7 +125,12 @@ describe("workspace ingestion reprocess", () => {
       status: "ready",
     });
 
-    await expect(service.reprocessWorkspace("workspace-1")).rejects.toThrow("dispatch unavailable");
+    await expect(service.reprocessWorkspace("workspace-1")).resolves.toEqual({
+      workspaceId: "workspace-1",
+      queuedDocumentCount: 1,
+      skippedDocumentCount: 0,
+      status: "queued",
+    });
     expect(auditService.events).toContainEqual(
       expect.objectContaining({
         workspaceId: "workspace-1",

@@ -133,7 +133,7 @@ describe("document ingestion", () => {
     expect(await documentRepository.listByWorkspaceId("workspace-1")).toHaveLength(0);
   });
 
-  it("fails ingest when dispatching the queued job fails", async () => {
+  it("keeps ingest successful when dispatching the queued job fails after durable queueing", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
@@ -149,13 +149,14 @@ describe("document ingestion", () => {
       },
     );
 
-    await expect(
-      service.ingest({
-        workspaceId: "workspace-1",
-        title: "Queued",
-        content: "Queued content",
-      }),
-    ).rejects.toThrow("dispatch unavailable");
+    const response = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Queued",
+      content: "Queued content",
+    });
+
+    expect(response.status).toBe("queued");
+    expect([...jobRepository.items.values()]).toHaveLength(1);
 
     expect(auditService.events).toContainEqual(
       expect.objectContaining({
@@ -560,6 +561,52 @@ describe("document ingestion", () => {
     });
   });
 
+  it("keeps update successful when dispatching the queued revision fails after durable queueing", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+      {
+        dispatch: vi.fn().mockRejectedValue(new Error("dispatch unavailable")),
+        dispatchMany: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    const created = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Queued",
+      content: "Queued content",
+    });
+
+    const updated = await service.update({
+      workspaceId: "workspace-1",
+      documentId: created.documentId,
+      title: "Queued",
+      content: "Updated content",
+    });
+
+    expect(updated.status).toBe("queued");
+    const persisted = await documentRepository.findByIdAndWorkspaceId(created.documentId, "workspace-1");
+    expect(persisted?.revision).toBe(2);
+    expect([...jobRepository.items.values()]).toHaveLength(2);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.dispatch",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          documentId: created.documentId,
+          revision: 2,
+        }),
+      }),
+    );
+  });
+
   it("returns not_found when reprocess loses a delete race", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const service = new DocumentIngestionService(documentRepository, createAuditService());
@@ -585,6 +632,50 @@ describe("document ingestion", () => {
       statusCode: 404,
       message: "Document not found",
     });
+  });
+
+  it("keeps reprocess successful when dispatching the queued revision fails after durable queueing", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+      {
+        dispatch: vi.fn().mockRejectedValue(new Error("dispatch unavailable")),
+        dispatchMany: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    const created = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Queued",
+      content: "Queued content",
+    });
+
+    const reprocessed = await service.reprocess({
+      workspaceId: "workspace-1",
+      documentId: created.documentId,
+    });
+
+    expect(reprocessed.status).toBe("queued");
+    const persisted = await documentRepository.findByIdAndWorkspaceId(created.documentId, "workspace-1");
+    expect(persisted?.revision).toBe(2);
+    expect([...jobRepository.items.values()]).toHaveLength(2);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.dispatch",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          documentId: created.documentId,
+          revision: 2,
+        }),
+      }),
+    );
   });
 
   it("marks a document failed after exhausting retries", async () => {

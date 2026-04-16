@@ -19,6 +19,7 @@ describe("retrieval trace assembler", () => {
           semanticRewriteInstructions: "",
           lexicalRewriteInstructions: "",
           answerSupportPolicy: "strict",
+          conversationMode: "guided",
           rerankEnabled: true,
           vectorTopK: 20,
           similarityThreshold: 0.2,
@@ -180,6 +181,8 @@ describe("retrieval trace assembler", () => {
         responseSettings: {
           citationDisplayEnabled: true,
           answerSupportPolicy: "strict",
+          conversationMode: "guided",
+          brevityOverrideRequested: false,
           responseLanguagePolicy: "match_user_question",
         },
       },

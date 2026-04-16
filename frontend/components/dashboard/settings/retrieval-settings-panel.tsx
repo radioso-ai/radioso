@@ -118,6 +118,24 @@ const answerSupportPolicyLabels: Record<
   },
 }
 
+const conversationModeLabels: Record<
+  RetrievalSettings['conversationMode'],
+  { label: string; description: string }
+> = {
+  factual: {
+    label: 'Factual',
+    description: 'Answer the current question directly and stop unless clarification is required.',
+  },
+  guided: {
+    label: 'Guided',
+    description: 'Answer directly, then suggest one or two grounded nearby directions when useful.',
+  },
+  exploratory: {
+    label: 'Exploratory',
+    description: 'Answer directly, then surface more of what the workspace covers and invite grounded follow-up.',
+  },
+}
+
 const operatorOptionsForValueType = (
   valueType: RetrievalSettings['metadataRules'][number]['valueType']
 ): RetrievalSettings['metadataRules'][number]['operator'][] => {
@@ -706,6 +724,35 @@ export function RetrievalSettingsPanel() {
                   checked={settings.citationDisplayEnabled}
                   onCheckedChange={(checked) => updateSetting('citationDisplayEnabled', checked)}
                 />
+              </div>
+
+              <div className="space-y-2 rounded-md border border-border bg-muted/20 p-4">
+                <SettingFieldHeader
+                  htmlFor="conversationMode"
+                  label={retrievalSettingDocs.conversationMode.label}
+                  description={retrievalSettingDocs.conversationMode.summary}
+                  tooltip={retrievalSettingDocs.conversationMode.details}
+                />
+                <Select
+                  value={settings.conversationMode}
+                  onValueChange={(value) =>
+                    updateSetting('conversationMode', value as RetrievalSettings['conversationMode'])
+                  }
+                >
+                  <SelectTrigger id="conversationMode" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(conversationModeLabels).map(([value, meta]) => (
+                      <SelectItem key={value} value={value}>
+                        {meta.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  {conversationModeLabels[settings.conversationMode].description}
+                </p>
               </div>
 
               <div className="space-y-2 rounded-md border border-border bg-muted/20 p-4">

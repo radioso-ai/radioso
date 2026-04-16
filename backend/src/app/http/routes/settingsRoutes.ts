@@ -9,6 +9,7 @@ import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
   answerSupportPolicies,
+  conversationModes,
   metadataRuleEffects,
   metadataRuleOperators,
   metadataValueTypes,
@@ -30,6 +31,7 @@ export const updateSettingsSchema = z.object({
   semanticRewriteInstructions: z.string().max(2000).optional(),
   lexicalRewriteInstructions: z.string().max(2000).optional(),
   answerSupportPolicy: z.enum(answerSupportPolicies).optional(),
+  conversationMode: z.enum(conversationModes).optional(),
   rerankEnabled: z.boolean(),
   vectorTopK: z.number().int(),
   similarityThreshold: z.number(),
@@ -119,6 +121,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         semanticRewriteInstructions: req.body.semanticRewriteInstructions ?? existing.semanticRewriteInstructions,
         lexicalRewriteInstructions: req.body.lexicalRewriteInstructions ?? existing.lexicalRewriteInstructions,
         answerSupportPolicy: req.body.answerSupportPolicy ?? existing.answerSupportPolicy,
+        conversationMode: req.body.conversationMode ?? existing.conversationMode,
         metadataRules: req.body.metadataRules ?? existing.metadataRules,
         customInstruction: req.body.customInstruction ?? existing.customInstruction,
       });

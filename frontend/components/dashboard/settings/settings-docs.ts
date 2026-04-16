@@ -6,6 +6,7 @@ import structuredMaxChunkSizeSource from '../../../docs/settings-docs/ingestion/
 import structuredMinChunkSizeSource from '../../../docs/settings-docs/ingestion/structured-min-chunk-size.md'
 import answerSupportPolicySource from '../../../docs/settings-docs/retrieval/answer-support-policy.md'
 import citationDisplayEnabledSource from '../../../docs/settings-docs/retrieval/citation-display-enabled.md'
+import conversationModeSource from '../../../docs/settings-docs/retrieval/conversation-mode.md'
 import customInstructionSource from '../../../docs/settings-docs/retrieval/custom-instruction.md'
 import lexicalRewriteInstructionsSource from '../../../docs/settings-docs/retrieval/lexical-rewrite-instructions.md'
 import metadataEffectSource from '../../../docs/settings-docs/retrieval/metadata-effect.md'
@@ -82,6 +83,7 @@ export const retrievalSettingDocs = {
   metadataRules: parseSettingDoc(metadataRulesSource),
   rerankEnabled: parseSettingDoc(rerankEnabledSource),
   rerankTopK: parseSettingDoc(rerankTopKSource),
+  conversationMode: parseSettingDoc(conversationModeSource),
   answerSupportPolicy: parseSettingDoc(answerSupportPolicySource),
   citationDisplayEnabled: parseSettingDoc(citationDisplayEnabledSource),
   customInstruction: parseSettingDoc(customInstructionSource),

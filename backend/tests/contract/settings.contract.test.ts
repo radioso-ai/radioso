@@ -18,6 +18,7 @@ describe("settings contract", () => {
     expect(Object.keys(response.body).sort()).toEqual([
       "answerSupportPolicy",
       "citationDisplayEnabled",
+      "conversationMode",
       "createdAt",
       "customInstruction",
       "lexicalRewriteInstructions",
@@ -38,6 +39,7 @@ describe("settings contract", () => {
     expect(response.body.semanticRewriteInstructions).toEqual(expect.any(String));
     expect(response.body.lexicalRewriteInstructions).toEqual(expect.any(String));
     expect(response.body.answerSupportPolicy).toBe("strict");
+    expect(response.body.conversationMode).toBe("guided");
     expect(response.body.metadataFieldSuggestions).toEqual([]);
     expect(response.body.metadataRules).toEqual([]);
   });
@@ -65,6 +67,7 @@ describe("settings contract", () => {
         semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
         lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
         answerSupportPolicy: "warn",
+        conversationMode: "exploratory",
         rerankEnabled: true,
         vectorTopK: 12,
         similarityThreshold: 0.4,
@@ -90,6 +93,7 @@ describe("settings contract", () => {
       semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
       lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
       answerSupportPolicy: "warn",
+      conversationMode: "exploratory",
       rerankEnabled: true,
       vectorTopK: 12,
       similarityThreshold: 0.4,
@@ -133,6 +137,7 @@ describe("settings contract", () => {
         semanticRewriteInstructions: "Keep the meaning.",
         lexicalRewriteInstructions: "Prefer exact notation.",
         answerSupportPolicy: "off",
+        conversationMode: "factual",
         rerankEnabled: true,
         vectorTopK: 12,
         similarityThreshold: 0.4,
@@ -171,6 +176,7 @@ describe("settings contract", () => {
     expect(secondUpdate.body.semanticRewriteInstructions).toBe("Keep the meaning.");
     expect(secondUpdate.body.lexicalRewriteInstructions).toBe("Prefer exact notation.");
     expect(secondUpdate.body.answerSupportPolicy).toBe("off");
+    expect(secondUpdate.body.conversationMode).toBe("factual");
   });
 
   it("returns default ingestion settings for a valid session workspace context", async () => {
@@ -249,10 +255,12 @@ describe("settings contract", () => {
     expect(retrievalSettingsSchema).toContain("semanticRewriteInstructions:");
     expect(retrievalSettingsSchema).toContain("lexicalRewriteInstructions:");
     expect(retrievalSettingsSchema).toContain("answerSupportPolicy:");
+    expect(retrievalSettingsSchema).toContain("conversationMode:");
     expect(retrievalUpdateSchema).toContain("metadataRules:");
     expect(retrievalUpdateSchema).toContain("semanticRewriteInstructions:");
     expect(retrievalUpdateSchema).toContain("lexicalRewriteInstructions:");
     expect(retrievalUpdateSchema).toContain("answerSupportPolicy:");
+    expect(retrievalUpdateSchema).toContain("conversationMode:");
     expect(retrievalUpdateSchema).not.toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");

@@ -1,6 +1,7 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 
 export interface GroundedMissContextSummary {
   title: string;
@@ -12,9 +13,13 @@ export interface GroundedMissResponseComposer {
     query: string;
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
   }): Promise<string>;
   composeNoContext(input: {
     query: string;
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
   }): Promise<string>;
 }
 
@@ -96,14 +101,30 @@ export class DefaultGroundedMissResponseComposer implements GroundedMissResponse
     query: string;
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
   }): Promise<string> {
     void input.query;
     void input.unsupportedText;
     return defaultUnsupportedResponse(input.contexts);
   }
 
-  async composeNoContext(): Promise<string> {
-    return DEFAULT_NO_CONTEXT_RESPONSE;
+  async composeNoContext(input: {
+    query: string;
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
+  }): Promise<string> {
+    void input.query;
+    if (
+      input.brevityOverrideRequested ||
+      input.conversationMode === "factual" ||
+      input.conversationMode === "guided" ||
+      !input.conversationMode
+    ) {
+      return DEFAULT_NO_CONTEXT_RESPONSE;
+    }
+
+    return `${DEFAULT_NO_CONTEXT_RESPONSE} If you want, ask about a document title, section name, or exact phrase and I can search for that.`;
   }
 }
 
@@ -114,6 +135,8 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     query: string;
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
   }): Promise<string> {
     const fallback = defaultUnsupportedResponse(input.contexts);
 
@@ -135,7 +158,11 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     }
   }
 
-  async composeNoContext(input: { query: string }): Promise<string> {
+  async composeNoContext(input: {
+    query: string;
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
+  }): Promise<string> {
     try {
       const raw = await this.client.complete({
         systemPrompt: NO_CONTEXT_SYSTEM_PROMPT,
@@ -146,9 +173,9 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
       });
 
-      return normalizeModelResponse(raw) || DEFAULT_NO_CONTEXT_RESPONSE;
+      return normalizeModelResponse(raw) || new DefaultGroundedMissResponseComposer().composeNoContext(input);
     } catch {
-      return DEFAULT_NO_CONTEXT_RESPONSE;
+      return new DefaultGroundedMissResponseComposer().composeNoContext(input);
     }
   }
 }

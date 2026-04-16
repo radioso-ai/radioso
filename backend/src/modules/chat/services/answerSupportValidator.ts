@@ -1,5 +1,5 @@
 import type { AnswerSegment, CitationEvidence } from "./answerPresentationService.js";
-import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSettings.js";
+import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { shouldPreserveUnsupportedSegments, shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import {
   DEFAULT_UNSUPPORTED_NOTICE,
@@ -61,6 +61,8 @@ export class AnswerSupportValidator {
     retrievedContextSummaries: Array<{ title: string; content: string }>;
     citationDisplayEnabled: boolean;
     answerSupportPolicy: AnswerSupportPolicy;
+    conversationMode: ConversationMode;
+    brevityOverrideRequested: boolean;
     unsupportedNoticeGenerator: UnsupportedNoticeGenerator;
     groundedMissResponseComposer: GroundedMissResponseComposer;
   }): Promise<ValidatedAnswer> {
@@ -121,6 +123,8 @@ export class AnswerSupportValidator {
             query: input.query,
             unsupportedText: input.answer,
             contexts: input.retrievedContextSummaries,
+            conversationMode: input.conversationMode,
+            brevityOverrideRequested: input.brevityOverrideRequested,
           }),
         }]
       : this.buildVisibleSegments(segmentResults);

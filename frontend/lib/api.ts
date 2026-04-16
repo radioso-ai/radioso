@@ -392,6 +392,7 @@ export interface RetrievalSettings {
   semanticRewriteInstructions: string
   lexicalRewriteInstructions: string
   answerSupportPolicy: 'strict' | 'warn' | 'off'
+  conversationMode: 'factual' | 'guided' | 'exploratory'
   rerankEnabled: boolean
   vectorTopK: number
   similarityThreshold: number
@@ -635,6 +636,15 @@ export interface ChatResponse {
   answer: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  conversationMode: 'factual' | 'guided' | 'exploratory'
+  conversationModeMetadata: {
+    conversationMode: 'factual' | 'guided' | 'exploratory'
+    brevityOverrideApplied: boolean
+    expansionApplied: boolean
+    expansionKind: 'none' | 'focused' | 'expansive'
+    suggestionCount: number
+    followUpQuestionApplied: boolean
+  }
   retrievalInfo: RetrievalInfo
   retrievalTrace: RetrievalTrace
 }
@@ -652,6 +662,15 @@ export interface ChatStreamCompletion {
   answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  conversationMode?: 'factual' | 'guided' | 'exploratory'
+  conversationModeMetadata?: {
+    conversationMode: 'factual' | 'guided' | 'exploratory'
+    brevityOverrideApplied: boolean
+    expansionApplied: boolean
+    expansionKind: 'none' | 'focused' | 'expansive'
+    suggestionCount: number
+    followUpQuestionApplied: boolean
+  }
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
 }
@@ -676,6 +695,15 @@ export interface ChatConversationTurnDebug {
   citationCount: number
   answerOutcome?: 'grounded_success' | 'grounded_degraded_unsupported_segments' | 'no_context_refusal'
   answerSupportPolicy?: 'strict' | 'warn' | 'off'
+  conversationMode?: 'factual' | 'guided' | 'exploratory'
+  conversationModeMetadata?: {
+    conversationMode: 'factual' | 'guided' | 'exploratory'
+    brevityOverrideApplied: boolean
+    expansionApplied: boolean
+    expansionKind: 'none' | 'focused' | 'expansive'
+    suggestionCount: number
+    followUpQuestionApplied: boolean
+  }
   validation?: {
     ran: boolean
     answerModified: boolean

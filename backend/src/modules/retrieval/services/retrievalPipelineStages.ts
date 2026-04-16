@@ -16,6 +16,7 @@ export interface RetrievalPipelineRequest {
   query: string;
   history: MessageRecord[];
   assistantIdentity?: AssistantIdentityPromptInput | null;
+  brevityOverrideRequested?: boolean;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   rewriteCarryForwardLiterals?: string[];
   metadataFilter?: Record<string, unknown>;
@@ -81,6 +82,8 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
   responseSettings: {
     citationDisplayEnabled: boolean;
     answerSupportPolicy: RetrievalSettingsRecord["answerSupportPolicy"];
+    conversationMode: RetrievalSettingsRecord["conversationMode"];
+    brevityOverrideRequested: boolean;
     responseLanguagePolicy?: ResponseLanguagePolicy;
   };
 }

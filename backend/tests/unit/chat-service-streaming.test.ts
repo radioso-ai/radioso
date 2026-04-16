@@ -39,6 +39,11 @@ describe("chat service streaming", () => {
               constraints: [],
             },
           },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "guided",
+          },
         };
       },
     } as const;
@@ -84,6 +89,15 @@ describe("chat service streaming", () => {
       answer: "full answer",
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer", citationIndices: [0] }],
+      conversationMode: "guided",
+      conversationModeMetadata: {
+        conversationMode: "guided",
+        brevityOverrideApplied: false,
+        expansionApplied: false,
+        expansionKind: "none",
+        suggestionCount: 0,
+        followUpQuestionApplied: false,
+      },
       retrievalInfo: expect.objectContaining({
         parsedQuery: expect.objectContaining({
           originalQuery: "page do",
@@ -674,6 +688,15 @@ describe("chat service streaming", () => {
       answerSegments: [
         { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
       ],
+      conversationMode: "guided",
+      conversationModeMetadata: {
+        conversationMode: "guided",
+        brevityOverrideApplied: false,
+        expansionApplied: false,
+        expansionKind: "none",
+        suggestionCount: 0,
+        followUpQuestionApplied: false,
+      },
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -782,6 +805,15 @@ describe("chat service streaming", () => {
       answerSegments: [
         { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
       ],
+      conversationMode: "guided",
+      conversationModeMetadata: {
+        conversationMode: "guided",
+        brevityOverrideApplied: false,
+        expansionApplied: false,
+        expansionKind: "none",
+        suggestionCount: 0,
+        followUpQuestionApplied: false,
+      },
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,

@@ -27,12 +27,15 @@ import {
   DefaultGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
 } from "./groundedMissResponseComposer.js";
-import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSettings.js";
+import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
-import type { ChatResponse } from "../types/chatResponses.js";
+import type { ChatResponse, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
+import { ConversationExpansionPlanner } from "./conversationExpansionPlanner.js";
+import { ConversationExpansionComposer } from "./conversationExpansionComposer.js";
+import { isBrevityOverrideRequested } from "./brevityOverrideDetector.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -56,6 +59,8 @@ export type ChatStreamEvent =
       answer: string;
       citations?: ChatCitation[];
       answerSegments?: AnswerSegment[];
+      conversationMode: ConversationMode;
+      conversationModeMetadata: ConversationModeMetadata;
       retrievalInfo: RetrievalInfo;
       retrievalTrace: RetrievalTrace;
     };
@@ -70,6 +75,8 @@ interface PreparedSession {
 interface ChatAnswerAuditMetadata {
   answerOutcome?: AssistantTurnOutcome;
   answerSupportPolicy?: AnswerSupportPolicy;
+  conversationMode?: ConversationMode;
+  conversationModeMetadata?: ConversationModeMetadata;
   validation?: AnswerValidationSummary & {
     segmentResults?: Array<Pick<AnswerSegmentValidationResult, "text" | "disposition" | "replacementApplied" | "reason" | "citationIndices">>;
   };
@@ -86,6 +93,7 @@ interface PresentedAnswer {
   answerOutcome: AssistantTurnOutcome;
   validation: AnswerValidationSummary;
   segmentResults: AnswerSegmentValidationResult[];
+  conversationModeMetadata: ConversationModeMetadata;
 }
 
 export class ModelChatGateway implements ChatGateway {
@@ -118,6 +126,8 @@ export class ChatService {
   private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
+  private readonly conversationExpansionPlanner = new ConversationExpansionPlanner();
+  private readonly conversationExpansionComposer = new ConversationExpansionComposer();
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
@@ -130,6 +140,22 @@ export class ChatService {
 
   private getAnswerSupportPolicy(session: PreparedSession): AnswerSupportPolicy {
     return session.retrieval.responseSettings?.answerSupportPolicy ?? DEFAULT_ANSWER_SUPPORT_POLICY;
+  }
+
+  private getConversationMode(session: PreparedSession): ConversationMode {
+    return session.retrieval.responseSettings?.conversationMode ?? "guided";
+  }
+
+  private getConversationModeMetadata(session: PreparedSession, input?: Partial<ConversationModeMetadata>): ConversationModeMetadata {
+    return {
+      conversationMode: this.getConversationMode(session),
+      brevityOverrideApplied: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
+      expansionApplied: false,
+      expansionKind: "none",
+      suggestionCount: 0,
+      followUpQuestionApplied: false,
+      ...input,
+    };
   }
 
   private async generateIdentityAnswer(
@@ -172,6 +198,7 @@ export class ChatService {
         answerSupportPolicy: this.getAnswerSupportPolicy(session),
       },
       segmentResults: [],
+      conversationModeMetadata: this.getConversationModeMetadata(session),
     };
   }
 
@@ -226,6 +253,8 @@ export class ChatService {
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
         answerSupportPolicy: presentation.validation.answerSupportPolicy,
+        conversationMode: presentation.conversationModeMetadata.conversationMode,
+        conversationModeMetadata: presentation.conversationModeMetadata,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
         stream: input.stream,
@@ -236,6 +265,8 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
+        conversationMode: presentation.conversationModeMetadata.conversationMode,
+        conversationModeMetadata: presentation.conversationModeMetadata,
         retrievalInfo,
         retrievalTrace,
       };
@@ -278,7 +309,11 @@ export class ChatService {
       if (session.retrieval.contexts.length === 0) {
         noContextPresentation = await this.generateIdentityAnswer(session, input.query);
         rawAnswer = noContextPresentation?.answer
-          ?? await this.groundedMissResponseComposer.composeNoContext({ query: input.query });
+          ?? await this.groundedMissResponseComposer.composeNoContext({
+            query: input.query,
+            conversationMode: this.getConversationMode(session),
+            brevityOverrideRequested: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
+          });
         yield {
           type: "chunk",
           text: rawAnswer,
@@ -355,6 +390,8 @@ export class ChatService {
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
         answerSupportPolicy: presentation.validation.answerSupportPolicy,
+        conversationMode: presentation.conversationModeMetadata.conversationMode,
+        conversationModeMetadata: presentation.conversationModeMetadata,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
         stream: input.stream,
@@ -366,6 +403,8 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
+        conversationMode: presentation.conversationModeMetadata.conversationMode,
+        conversationModeMetadata: presentation.conversationModeMetadata,
         retrievalInfo,
         retrievalTrace,
       };
@@ -399,6 +438,7 @@ export class ChatService {
       workspaceId: input.workspaceId,
       query: input.query,
       history,
+      brevityOverrideRequested: isBrevityOverrideRequested(input.query),
       rewriteCarryForwardLiterals: carryForwardLiterals,
       metadataFilter: input.metadataFilter,
     });
@@ -437,7 +477,11 @@ export class ChatService {
     }
 
     const answer = session.retrieval.contexts.length === 0
-      ? await this.groundedMissResponseComposer.composeNoContext({ query })
+      ? await this.groundedMissResponseComposer.composeNoContext({
+          query,
+          conversationMode: this.getConversationMode(session),
+          brevityOverrideRequested: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
+        })
       : await this.chatGateway.answer({
           query,
           history: session.history,
@@ -462,7 +506,7 @@ export class ChatService {
         citations: citationEvidence,
         citationDisplayEnabled,
       });
-      return {
+      const expanded = this.applyConversationMode(session, {
         ...presented,
         answerOutcome: ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL,
         validation: {
@@ -474,7 +518,8 @@ export class ChatService {
           answerSupportPolicy: this.getAnswerSupportPolicy(session),
         },
         segmentResults: [],
-      };
+      });
+      return expanded;
     }
 
     const normalized = this.answerPresentationService.normalize({
@@ -493,17 +538,19 @@ export class ChatService {
       })),
       citationDisplayEnabled,
       answerSupportPolicy: this.getAnswerSupportPolicy(session),
+      conversationMode: this.getConversationMode(session),
+      brevityOverrideRequested: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
       unsupportedNoticeGenerator: this.unsupportedNoticeGenerator,
       groundedMissResponseComposer: this.groundedMissResponseComposer,
     });
 
-    return {
+    return this.applyConversationMode(session, {
       ...validated,
       answerOutcome: this.assistantTurnOutcomeClassifier.classify({
         hadRetrievedContext: true,
         validation: validated.validation,
       }),
-    };
+    });
   }
 
   private async finalizeAssistantTurn(input: {
@@ -518,6 +565,8 @@ export class ChatService {
     citations: ChatCitation[];
     answerSegments?: AnswerSegment[];
     answerSupportPolicy?: AnswerSupportPolicy;
+    conversationMode: ConversationMode;
+    conversationModeMetadata: ConversationModeMetadata;
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
     retrievalTrace: RetrievalTrace;
     stream: boolean;
@@ -535,6 +584,8 @@ export class ChatService {
         stream: input.stream,
         answerOutcome: input.answerOutcome,
         answerSupportPolicy: input.answerSupportPolicy,
+        conversationMode: input.conversationMode,
+        conversationModeMetadata: input.conversationModeMetadata,
         validation: {
           ...input.validation,
           segmentResults: input.segmentResults.map((segment) => ({
@@ -555,6 +606,46 @@ export class ChatService {
         retrievalTrace: input.retrievalTrace,
       },
     });
+  }
+
+  private applyConversationMode(
+    session: PreparedSession,
+    presentation: Omit<PresentedAnswer, "conversationModeMetadata">,
+  ): PresentedAnswer {
+    const citationEvidence = session.retrieval.contexts.map((context) => ({
+      documentId: context.documentId,
+      chunkId: context.chunkId,
+      title: context.title,
+      content: context.content,
+    }));
+    const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
+    const plan = this.conversationExpansionPlanner.plan({
+      conversationMode: this.getConversationMode(session),
+      brevityOverrideRequested: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
+      contexts: citationEvidence,
+      visibleCitations: presentation.citations,
+    });
+    const expanded = this.conversationExpansionComposer.compose({
+      baseAnswer: presentation.answer,
+      baseAnswerSegments: presentation.answerSegments,
+      visibleCitations: presentation.citations,
+      citationEvidence,
+      citationDisplayEnabled,
+      plan,
+    });
+
+    return {
+      ...presentation,
+      answer: expanded.answer,
+      citations: expanded.citations,
+      answerSegments: expanded.answerSegments,
+      conversationModeMetadata: this.getConversationModeMetadata(session, {
+        expansionApplied: expanded.expansionApplied,
+        expansionKind: expanded.expansionKind,
+        suggestionCount: expanded.suggestionCount,
+        followUpQuestionApplied: expanded.followUpQuestionApplied,
+      }),
+    };
   }
 
   private async recordFailure(

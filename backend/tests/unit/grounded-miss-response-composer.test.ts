@@ -84,7 +84,15 @@ describe("grounded miss response composer", () => {
     const composer = new DefaultGroundedMissResponseComposer();
 
     await expect(
-      composer.composeNoContext(),
+      composer.composeNoContext({ query: "What is the capital of France?" }),
     ).resolves.toBe(DEFAULT_NO_CONTEXT_RESPONSE);
+  });
+
+  it("adds a narrower next-step hint for exploratory no-context responses", async () => {
+    const composer = new DefaultGroundedMissResponseComposer();
+
+    await expect(
+      composer.composeNoContext({ query: "What is the capital of France?", conversationMode: "exploratory" }),
+    ).resolves.toBe(`${DEFAULT_NO_CONTEXT_RESPONSE} If you want, ask about a document title, section name, or exact phrase and I can search for that.`);
   });
 });

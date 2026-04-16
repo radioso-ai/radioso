@@ -579,6 +579,14 @@
               "off"
             ]
           },
+          "conversationMode": {
+            "type": "string",
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
+            ]
+          },
           "rerankEnabled": {
             "type": "boolean"
           },
@@ -702,6 +710,7 @@
           "semanticRewriteInstructions",
           "lexicalRewriteInstructions",
           "answerSupportPolicy",
+          "conversationMode",
           "rerankEnabled",
           "vectorTopK",
           "similarityThreshold",
@@ -732,6 +741,14 @@
               "strict",
               "warn",
               "off"
+            ]
+          },
+          "conversationMode": {
+            "type": "string",
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
             ]
           },
           "rerankEnabled": {
@@ -1994,6 +2011,56 @@
               "$ref": "#/components/schemas/AnswerSegment"
             }
           },
+          "conversationMode": {
+            "type": "string",
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
+            ]
+          },
+          "conversationModeMetadata": {
+            "type": "object",
+            "properties": {
+              "conversationMode": {
+                "type": "string",
+                "enum": [
+                  "factual",
+                  "guided",
+                  "exploratory"
+                ]
+              },
+              "brevityOverrideApplied": {
+                "type": "boolean"
+              },
+              "expansionApplied": {
+                "type": "boolean"
+              },
+              "expansionKind": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "focused",
+                  "expansive"
+                ]
+              },
+              "suggestionCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "followUpQuestionApplied": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "conversationMode",
+              "brevityOverrideApplied",
+              "expansionApplied",
+              "expansionKind",
+              "suggestionCount",
+              "followUpQuestionApplied"
+            ]
+          },
           "retrievalInfo": {
             "$ref": "#/components/schemas/RetrievalInfo"
           },
@@ -2004,6 +2071,8 @@
         "required": [
           "conversationId",
           "answer",
+          "conversationMode",
+          "conversationModeMetadata",
           "retrievalInfo",
           "retrievalTrace"
         ]
@@ -2275,6 +2344,56 @@
               "strict",
               "warn",
               "off"
+            ]
+          },
+          "conversationMode": {
+            "type": "string",
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
+            ]
+          },
+          "conversationModeMetadata": {
+            "type": "object",
+            "properties": {
+              "conversationMode": {
+                "type": "string",
+                "enum": [
+                  "factual",
+                  "guided",
+                  "exploratory"
+                ]
+              },
+              "brevityOverrideApplied": {
+                "type": "boolean"
+              },
+              "expansionApplied": {
+                "type": "boolean"
+              },
+              "expansionKind": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "focused",
+                  "expansive"
+                ]
+              },
+              "suggestionCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "followUpQuestionApplied": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "conversationMode",
+              "brevityOverrideApplied",
+              "expansionApplied",
+              "expansionKind",
+              "suggestionCount",
+              "followUpQuestionApplied"
             ]
           },
           "validation": {

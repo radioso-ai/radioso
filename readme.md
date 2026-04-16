@@ -224,6 +224,7 @@ You usually do not need to change settings on day one. Tune them when retrieval 
 | `vectorTopK` | `20` | relevant evidence is often missing | increases or reduces candidate recall |
 | `similarityThreshold` | `0.2` | weak matches are slipping into answers | filters low-similarity chunks |
 | `rerankTopK` | `20` | you want to rerank more or fewer candidates | changes how many results reach reranking |
+| `conversationMode` | `guided` | answers feel too terse or too exploratory | controls whether the assistant stays direct, adds a small focused continuation, or expands into broader grounded discovery |
 | `answerSupportPolicy` | `strict` | you want safer or looser answer behavior | controls whether unsupported answers are rewritten into safer conversational misses or left closer to the original model text |
 | `citationDisplayEnabled` | `true` | you want cleaner output or easier debugging | shows or hides citations |
 

@@ -54,6 +54,8 @@ describe("answer support validator", () => {
       })),
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
       unsupportedNoticeGenerator: staticNoticeGenerator(),
       groundedMissResponseComposer,
     });
@@ -105,6 +107,8 @@ describe("answer support validator", () => {
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
       unsupportedNoticeGenerator: staticNoticeGenerator(),
       groundedMissResponseComposer: new DefaultGroundedMissResponseComposer(),
     });
@@ -142,6 +146,8 @@ describe("answer support validator", () => {
       })),
       citationDisplayEnabled: false,
       answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
       unsupportedNoticeGenerator: staticNoticeGenerator(),
       groundedMissResponseComposer,
     });
@@ -171,6 +177,8 @@ describe("answer support validator", () => {
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
       unsupportedNoticeGenerator: staticNoticeGenerator(),
       groundedMissResponseComposer,
     });
@@ -218,6 +226,8 @@ describe("answer support validator", () => {
       })),
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
       unsupportedNoticeGenerator: staticNoticeGenerator(),
       groundedMissResponseComposer,
     });
@@ -244,6 +254,8 @@ describe("answer support validator", () => {
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
       answerSupportPolicy: "warn",
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
       unsupportedNoticeGenerator: staticNoticeGenerator("No pude verificar esa parte."),
       groundedMissResponseComposer,
     });

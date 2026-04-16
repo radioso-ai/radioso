@@ -20,6 +20,7 @@ describe("settings and chunking", () => {
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
         answerSupportPolicy: "strict",
+        conversationMode: "guided",
         rerankEnabled: false,
         vectorTopK: 0,
         similarityThreshold: 0.2,
@@ -55,6 +56,7 @@ describe("settings and chunking", () => {
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
         answerSupportPolicy: "strict",
+        conversationMode: "guided",
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: 0.2,
@@ -85,6 +87,7 @@ describe("settings and chunking", () => {
     expect(defaults.semanticRewriteInstructions).not.toBe("");
     expect(defaults.lexicalRewriteInstructions).not.toBe("");
     expect(defaults.answerSupportPolicy).toBe("strict");
+    expect(defaults.conversationMode).toBe("guided");
   });
 
   it("rejects customInstruction exceeding 2000 characters", () => {
@@ -100,6 +103,7 @@ describe("settings and chunking", () => {
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
         answerSupportPolicy: "strict",
+        conversationMode: "guided",
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: 0.2,
@@ -122,6 +126,7 @@ describe("settings and chunking", () => {
       semanticRewriteInstructions: "",
       lexicalRewriteInstructions: "",
       answerSupportPolicy: "strict",
+      conversationMode: "guided",
       rerankEnabled: false,
       vectorTopK: 15,
       similarityThreshold: 0.2,
@@ -141,6 +146,7 @@ describe("settings and chunking", () => {
       semanticRewriteInstructions: "   ",
       lexicalRewriteInstructions: "",
       answerSupportPolicy: "strict",
+      conversationMode: "guided",
       rerankEnabled: false,
       vectorTopK: 15,
       similarityThreshold: 0.2,
@@ -161,6 +167,7 @@ describe("settings and chunking", () => {
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
         answerSupportPolicy: "invalid" as never,
+        conversationMode: "guided",
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: 0.2,
@@ -170,6 +177,25 @@ describe("settings and chunking", () => {
         customInstruction: "",
       }),
     ).toThrow("answerSupportPolicy must be a supported value");
+  });
+
+  it("rejects unsupported conversationMode values", () => {
+    expect(() =>
+      validateRetrievalSettings({
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        answerSupportPolicy: "strict",
+        conversationMode: "invalid" as never,
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        metadataRules: [],
+        customInstruction: "",
+      }),
+    ).toThrow("conversationMode must be a supported value");
   });
 
   it("uses the current chunking defaults for ingestion settings", () => {

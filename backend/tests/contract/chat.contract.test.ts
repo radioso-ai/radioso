@@ -184,8 +184,23 @@ describe("chat contract", () => {
       .send({ query: "What does this page do?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo", "retrievalTrace"]);
+    expect(Object.keys(response.body).sort()).toEqual([
+      "answer",
+      "answerSegments",
+      "citations",
+      "conversationId",
+      "conversationMode",
+      "conversationModeMetadata",
+      "retrievalInfo",
+      "retrievalTrace",
+    ]);
     expect(response.body.conversationId).toBeDefined();
+    expect(response.body.conversationMode).toBe("guided");
+    expect(response.body.conversationModeMetadata).toMatchObject({
+      conversationMode: "guided",
+      brevityOverrideApplied: false,
+      expansionApplied: false,
+    });
     expect(response.body.answer).toContain("This page parses content");
     expect(Array.isArray(response.body.citations)).toBe(true);
     expect(Array.isArray(response.body.answerSegments)).toBe(true);
@@ -455,7 +470,16 @@ describe("chat contract", () => {
       });
 
     expect(second.status).toBe(200);
-    expect(Object.keys(second.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo", "retrievalTrace"]);
+    expect(Object.keys(second.body).sort()).toEqual([
+      "answer",
+      "answerSegments",
+      "citations",
+      "conversationId",
+      "conversationMode",
+      "conversationModeMetadata",
+      "retrievalInfo",
+      "retrievalTrace",
+    ]);
     expect(second.body.conversationId).toBe(first.body.conversationId);
   });
 
@@ -487,8 +511,16 @@ describe("chat contract", () => {
       .send({ query: "Can you cook Flan?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "conversationId", "retrievalInfo", "retrievalTrace"]);
+    expect(Object.keys(response.body).sort()).toEqual([
+      "answer",
+      "conversationId",
+      "conversationMode",
+      "conversationModeMetadata",
+      "retrievalInfo",
+      "retrievalTrace",
+    ]);
     expect(response.body.answer).toContain("couldn't find supporting material");
+    expect(response.body.conversationMode).toBe("guided");
     expect(response.body).not.toHaveProperty("citations");
     expect(response.body).not.toHaveProperty("answerSegments");
     expect(response.body.retrievalInfo).toMatchObject({

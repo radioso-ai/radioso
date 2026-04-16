@@ -62,6 +62,15 @@ describe("chat history service", () => {
         },
         answerOutcome: "grounded_degraded_unsupported_segments",
         answerSupportPolicy: "strict",
+        conversationMode: "exploratory",
+        conversationModeMetadata: {
+          conversationMode: "exploratory",
+          brevityOverrideApplied: false,
+          expansionApplied: true,
+          expansionKind: "expansive",
+          suggestionCount: 2,
+          followUpQuestionApplied: true,
+        },
         validation: {
           ran: true,
           answerModified: true,
@@ -102,6 +111,15 @@ describe("chat history service", () => {
     });
     expect(debug?.answerOutcome).toBe("grounded_degraded_unsupported_segments");
     expect(debug?.answerSupportPolicy).toBe("strict");
+    expect(debug?.conversationMode).toBe("exploratory");
+    expect(debug?.conversationModeMetadata).toEqual({
+      conversationMode: "exploratory",
+      brevityOverrideApplied: false,
+      expansionApplied: true,
+      expansionKind: "expansive",
+      suggestionCount: 2,
+      followUpQuestionApplied: true,
+    });
     expect(debug?.validation).toEqual({
       ran: true,
       answerModified: true,

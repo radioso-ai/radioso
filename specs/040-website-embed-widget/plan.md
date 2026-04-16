@@ -1,23 +1,23 @@
 # Implementation Plan: Website Embed Widget
 
-**Branch**: `040-website-embed-widget` | **Date**: 2026-04-15 | **Spec**: [spec.md](/Users/dm/conductor/workspaces/radioso/rio-de-janeiro/specs/040-website-embed-widget/spec.md)
+**Branch**: `040-website-embed-widget` | **Date**: 2026-04-16 | **Spec**: [spec.md](/Users/dm/conductor/workspaces/radioso/mogadishu/specs/040-website-embed-widget/spec.md)
 **Input**: Feature specification from `/specs/040-website-embed-widget/spec.md`
 
 ## Summary
 
-Add a website-embed channel that lets operators copy a one-line install snippet and launch a Radioso-hosted iframe assistant on approved sites. The implementation should reuse the existing public-chat path and General Settings surface, adding only the minimum new seams required for domain allowlisting, short-lived embed session grants, a hosted iframe entry point, and a thin launcher script.
+Deliver the approved website-embed follow-up scope for script-level overrides only: support a locale override for common widget copy plus assistant bootstrap locale hint, an initial open/collapsed state override, and a custom collapsed avatar image or GIF URL. The implementation must stay inside the existing website-embed/public-chat/settings seams, avoid new persisted settings, and preserve the existing hosted iframe trust boundary.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
 **Primary Dependencies**: Express, Zod, `pg`, Pino, Next.js App Router, existing Radix/shadcn UI primitives, existing chat/public-chat frontend utilities  
-**Storage**: PostgreSQL 16 with additive workspace columns; existing conversations/messages/audit events reused  
-**Testing**: Vitest, Supertest, existing backend contract/integration/unit suites, frontend unit tests  
+**Storage**: PostgreSQL 16 unchanged for this scope; existing conversations/messages/audit events reused with no new persisted override fields  
+**Testing**: Vitest, existing backend/frontend focused unit or contract suites as applicable  
 **Target Platform**: Web application with browser-installed script and hosted iframe surface  
 **Project Type**: Web application (`backend/` + `frontend/`)  
-**Performance Goals**: Launcher appears quickly after script load and first message remains within the same practical latency envelope as current public chat  
-**Constraints**: Preserve transport/orchestration boundaries; introduce as few new seams and imports as possible; no privileged browser credentials; hosted iframe remains the trust boundary  
-**Scale/Scope**: One new public channel built on the existing public-chat foundation, one new hosted embed surface, additive workspace settings only
+**Performance Goals**: Preserve current launcher and bootstrap latency characteristics while adding only lightweight script parsing and avatar fallback behavior  
+**Constraints**: Preserve transport/orchestration boundaries; introduce no new persisted override settings unless strictly necessary; no privileged browser credentials; hosted iframe remains the trust boundary  
+**Scale/Scope**: Incremental enhancement to the existing website-embed channel and public-chat bootstrap path only
 
 ## Constitution Check
 
@@ -36,73 +36,43 @@ Add a website-embed channel that lets operators copy a one-line install snippet 
 - If backend HTTP contracts change, the plan identifies updates required in `backend/src/app/http/openapi/document.ts` and treats `backend/openapi.yaml` / `backend/openapi.json` as generated outputs, never hand-authored sources.
 - If contracts, workflows, settings behavior, or user-visible functionality change, the plan identifies which docs must be updated in the same feature work.
 
-**Gate result**: Pass. The approved spec exists, the feature fits the current stack, and the plan intentionally minimizes new seams by extending existing public-chat and settings flows with focused sibling files instead of speculative shared abstractions.
+**Gate result**: Pass. The approved spec exists, the scope is intentionally narrow, and the change can remain within existing website-embed/public-chat/settings ownership seams without new persistence or architecture expansion.
 
 ## Project Structure
-
-### Documentation (this feature)
-
-```text
-specs/040-website-embed-widget/
-├── plan.md
-├── research.md
-├── data-model.md
-├── quickstart.md
-├── contracts/
-│   └── embed-http-contract.md
-└── tasks.md
-```
 
 ### Source Code (repository root)
 
 ```text
 backend/
 ├── src/
-│   ├── app/http/
-│   │   ├── middleware/
-│   │   ├── openapi/
-│   │   │   └── document.ts
-│   │   └── routes/
-│   │       ├── index.ts
-│   │       ├── publicChatRoutes.ts
-│   │       └── settingsRoutes.ts
-│   ├── db/
-│   │   ├── migrations/
-│   │   └── repositories/
-│   │       └── workspaceRepository.ts
-│   └── modules/
-│       ├── chat/services/
-│       └── settings/domain/
-├── openapi.yaml
-├── openapi.json
-└── tests/
-    ├── contract/
-    ├── integration/
-    └── unit/
+│   ├── app/http/routes/
+│   │   └── settingsRoutes.ts
+│   └── modules/chat/services/
+│       └── chatLocale.ts
 
 frontend/
-├── app/
-│   ├── chat/[token]/
-│   └── embed/[token]/
+├── app/embed/[token]/
+├── components/chat/
 ├── components/dashboard/settings/
 ├── lib/
 │   ├── anonymous-chat-context.tsx
-│   └── api.ts
-└── tests/
-    └── unit/
+│   ├── api.ts
+│   └── embed-widget.ts
+├── public/
+│   └── radioso-embed.js
+└── tests/unit/
 ```
 
-**Structure Decision**: Reuse the current backend settings and public-chat entry points, plus the current frontend public chat page and anonymous chat context, while adding only focused website-embed siblings where necessary. Transport stays in `backend/src/app/http/routes/*`; persistence stays in `backend/src/db/repositories/workspaceRepository.ts`; public-chat orchestration remains in existing chat services; operator UI remains in `frontend/components/dashboard/settings/general-tab.tsx`; the hosted embed surface lives under `frontend/app/embed/[token]/`; the launcher script should live in the frontend static/app layer rather than a new package.
+**Structure Decision**: Reuse the existing embed script, hosted iframe shell, anonymous chat context, and settings copy surface. Any new behavior should be implemented as script-parsed attributes and request-scoped locale propagation rather than new workspace fields or broader embed abstractions.
 
 ## Module Ownership & Seams
 
-- **Transport Layer**: `backend/src/app/http/routes/settingsRoutes.ts`, `backend/src/app/http/routes/publicChatRoutes.ts`, route mounting in `backend/src/app/http/routes/index.ts`, and the new embed bootstrap route file or focused extension alongside existing public-chat routes.
-- **Orchestration Layer**: Existing `chatService`, `chatBootstrapService`, and a minimal embed-access service or helper responsible only for approved-origin validation plus short-lived grant issuance.
-- **Domain Layer**: Existing assistant bootstrap and public-chat rules remain in current domain/services; website-embed configuration validation should live in a focused settings-domain file if current settings validation becomes too dense.
-- **Persistence/Integration Layer**: `backend/src/db/repositories/workspaceRepository.ts` owns additive workspace embed fields; existing `auditService` and `audit_events` persistence own embed enable/deny event logging.
-- **Files Kept Small**: `backend/src/app/http/routes/publicChatRoutes.ts`, `backend/src/app/http/routes/settingsRoutes.ts`, `backend/src/app/http/openapi/document.ts`, `frontend/components/dashboard/settings/general-tab.tsx`, and `frontend/lib/api.ts` must remain readable and transport/UI-focused.
-- **Planned Extractions**: Prefer one focused embed-access helper/service and one focused embed route/middleware sibling rather than a generic public-access framework. Add one hosted embed page and one launcher script entry point. Avoid new shared abstractions unless implementation proves they are necessary.
-- **Required Refactor Stories**: None required before implementation. The current structure already exposes a reusable public-chat foundation and settings surface. If implementation discovers `settingsRoutes.ts` or `general-tab.tsx` becoming unwieldy, extraction should remain local to website-embed concerns rather than broad platform refactors.
+- **Transport Layer**: `frontend/public/radioso-embed.js` owns script attribute parsing and launcher rendering only; `frontend/app/embed/[token]/page.tsx` and `frontend/components/chat/embedded-chat-frame.tsx` own iframe bootstrap UX only.
+- **Orchestration Layer**: `frontend/lib/anonymous-chat-context.tsx` remains the single public-chat bootstrap client path and should absorb request-scoped locale override support without forking chat behavior.
+- **Settings/UI Layer**: `frontend/components/dashboard/settings/general-tab.tsx` and `frontend/lib/embed-widget.ts` own snippet generation and operator-facing documentation for optional attributes only; they must not add persisted per-site settings.
+- **Backend Layer**: `backend/src/app/http/routes/settingsRoutes.ts` may continue generating the default snippet, but should not gain new persisted fields for script-level overrides. Existing locale validation in `backend/src/modules/chat/services/chatLocale.ts` remains the canonical backend gate for request-scoped locale hints.
+- **Files Kept Small**: `frontend/public/radioso-embed.js`, `frontend/lib/anonymous-chat-context.tsx`, `frontend/lib/embed-widget.ts`, and `frontend/components/dashboard/settings/general-tab.tsx` must remain responsibility-limited.
+- **Required Refactor Stories**: None. The scope fits existing seams directly.
 
 ## Complexity Tracking
 

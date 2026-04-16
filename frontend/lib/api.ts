@@ -135,6 +135,20 @@ export const readStoredEmbedBootstrapSession = (token: string): StoredEmbedBoots
   }
 }
 
+export const clearStoredAnonymousSession = (token: string) => {
+  writeAnonymousSessionId(token, null)
+  storeEmbedSessionToken(token, null)
+}
+
+export const clearStoredEmbedBootstrapSession = (token: string) => {
+  const currentSession = readStoredEmbedBootstrapSession(token)
+  if (currentSession) {
+    clearStoredAnonymousSession(currentSession.publicChatToken)
+  }
+
+  storeEmbedBootstrapSession(token, null)
+}
+
 export const storeEmbedSessionToken = (
   token: string,
   sessionToken: string | null,

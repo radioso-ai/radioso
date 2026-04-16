@@ -43,6 +43,7 @@ interface ChatContextValue {
   getSession: (workspaceId: string) => ChatSession
   initializeSession: (workspaceId: string, userExpectedLocale?: string) => Promise<void>
   sendMessage: (workspaceId: string, content: string) => Promise<boolean>
+  startNewChat: (workspaceId: string, userExpectedLocale?: string) => Promise<void>
 }
 
 const EMPTY_SESSION: ChatSession = {
@@ -329,13 +330,83 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [sessions, updateSession],
   )
 
+  const startNewChat = useCallback(
+    async (accountId: string, userExpectedLocale?: string) => {
+      const currentSession = ensureSession(sessions, accountId)
+      if (currentSession.isLoading || currentSession.isBootstrapping) {
+        return
+      }
+
+      updateSession(accountId, () => ({
+        ...EMPTY_SESSION,
+        isBootstrapping: true,
+      }))
+
+      try {
+        const settings = await generalSettingsApi.getGeneralSettings()
+        if (!settings.assistantBootstrapActive) {
+          updateSession(accountId, () => ({
+            ...EMPTY_SESSION,
+            isInitialized: true,
+          }))
+          return
+        }
+
+        const bootstrap = await chatApi.bootstrapConversation({
+          stream: false,
+          bootstrapGreeting: true,
+          userExpectedLocale,
+        })
+
+        if (!bootstrap?.answer) {
+          updateSession(accountId, () => ({
+            ...EMPTY_SESSION,
+            isInitialized: true,
+          }))
+          return
+        }
+
+        updateSession(accountId, () => ({
+          conversationId: bootstrap.conversationId,
+          messages: [
+            {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: bootstrap.answer,
+              createdAt: new Date().toISOString(),
+              citations: bootstrap.citations,
+              answerSegments: bootstrap.answerSegments,
+              retrievalInfo: bootstrap.retrievalInfo,
+              retrievalTrace: bootstrap.retrievalTrace,
+              status: 'complete',
+            },
+          ],
+          isLoading: false,
+          isInitialized: true,
+          isBootstrapping: false,
+        }))
+      } catch {
+        updateSession(accountId, () => ({
+          ...EMPTY_SESSION,
+        }))
+      } finally {
+        updateSession(accountId, (session) => ({
+          ...session,
+          isBootstrapping: false,
+        }))
+      }
+    },
+    [sessions, updateSession],
+  )
+
   const value = useMemo<ChatContextValue>(
     () => ({
       getSession,
       initializeSession,
       sendMessage,
+      startNewChat,
     }),
-    [getSession, initializeSession, sendMessage],
+    [getSession, initializeSession, sendMessage, startNewChat],
   )
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
@@ -353,5 +424,7 @@ export const useChatSession = (workspaceId: string) => {
     initializeSession: (userExpectedLocale?: string) =>
       context.initializeSession(workspaceId, userExpectedLocale),
     sendMessage: (content: string) => context.sendMessage(workspaceId, content),
+    startNewChat: (userExpectedLocale?: string) =>
+      context.startNewChat(workspaceId, userExpectedLocale),
   }
 }

@@ -6,19 +6,30 @@ import { AlertCircle } from 'lucide-react'
 
 import { Spinner } from '@/components/ui/spinner'
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
+import { getWebsiteEmbedCopy } from '@/lib/embed-widget'
 import {
+  clearStoredAnonymousSession,
+  clearStoredEmbedBootstrapSession,
   readStoredAnonymousSessionId,
   readStoredEmbedBootstrapSession,
   storeEmbedBootstrapSession,
 } from '@/lib/api'
 
-function EmbeddedChatUnavailable({ message }: { message: string }) {
+function EmbeddedChatUnavailable({
+  localeOverride,
+  message,
+}: {
+  localeOverride?: string | null
+  message: string
+}) {
+  const copy = getWebsiteEmbedCopy(localeOverride)
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
       <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
         <AlertCircle className="h-5 w-5 text-muted-foreground" />
       </div>
-      <h1 className="text-lg font-medium text-foreground">Embedded Chat Unavailable</h1>
+      <h1 className="text-lg font-medium text-foreground">{copy.embeddedChatUnavailableTitle}</h1>
       <p className="mt-1 max-w-sm text-sm text-muted-foreground">{message}</p>
     </div>
   )
@@ -33,12 +44,20 @@ const READY_MESSAGE = 'radioso:embed:ready'
 const SESSION_MESSAGE = 'radioso:embed:session'
 const ERROR_MESSAGE = 'radioso:embed:error'
 
-export function EmbeddedChatFrame({ token }: { token: string }) {
+export function EmbeddedChatFrame({
+  token,
+  localeOverride,
+}: {
+  token: string
+  localeOverride?: string | null
+}) {
+  const copy = getWebsiteEmbedCopy(localeOverride)
+  const [resetNonce, setResetNonce] = useState(0)
   const [state, setState] = useState<BootstrapState>(() => {
     if (typeof window !== 'undefined' && window.parent === window) {
       return {
         status: 'error',
-        message: 'This embedded chat must be opened from the launcher script.',
+        message: copy.embeddedChatLauncherRequiredMessage,
       }
     }
 
@@ -129,20 +148,34 @@ export function EmbeddedChatFrame({ token }: { token: string }) {
       window.clearInterval(handshakeInterval)
       window.clearTimeout(handshakeTimeout)
     }
-  }, [token])
+  }, [copy.embeddedChatLauncherRequiredMessage, resetNonce, token])
 
   if (state.status === 'bootstrapping') {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
         <Spinner className="h-6 w-6" />
-        <p className="max-w-sm text-sm text-muted-foreground">Starting embedded chat…</p>
+        <p className="max-w-sm text-sm text-muted-foreground">{copy.embeddedChatStartingMessage}</p>
       </div>
     )
   }
 
   if (state.status === 'error') {
-    return <EmbeddedChatUnavailable message={state.message} />
+    return <EmbeddedChatUnavailable localeOverride={localeOverride} message={state.message} />
   }
 
-  return <PublicChatShell token={state.publicChatToken} />
+  const handleStartNewChat = async () => {
+    clearStoredAnonymousSession(state.publicChatToken)
+    clearStoredEmbedBootstrapSession(token)
+    isBootstrappedRef.current = false
+    setState({ status: 'bootstrapping' })
+    setResetNonce((current) => current + 1)
+  }
+
+  return (
+    <PublicChatShell
+      token={state.publicChatToken}
+      localeOverride={localeOverride}
+      onStartNewChat={handleStartNewChat}
+    />
+  )
 }

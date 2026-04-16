@@ -3,9 +3,38 @@
   const DEFAULT_LABEL = 'Chat with us'
   const DEFAULT_POSITION = 'bottom-right'
   const DEFAULT_ICON = 'chat'
+  const DEFAULT_INITIAL_STATE = 'collapsed'
   const READY_MESSAGE = 'radioso:embed:ready'
   const SESSION_MESSAGE = 'radioso:embed:session'
   const ERROR_MESSAGE = 'radioso:embed:error'
+  const LOCALE_PATTERN = /^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$/
+
+  const copyByLocale = {
+    de: {
+      launcherDefaultLabel: 'Chatte mit uns',
+      iframeTitle: 'Eingebetteter Radioso-Chat',
+    },
+    en: {
+      launcherDefaultLabel: 'Chat with us',
+      iframeTitle: 'Radioso embedded chat',
+    },
+    es: {
+      launcherDefaultLabel: 'Chatea con nosotros',
+      iframeTitle: 'Chat incrustado de Radioso',
+    },
+    fr: {
+      launcherDefaultLabel: 'Discutez avec nous',
+      iframeTitle: 'Chat integre Radioso',
+    },
+    it: {
+      launcherDefaultLabel: 'Chatta con noi',
+      iframeTitle: 'Chat incorporata Radioso',
+    },
+    pt: {
+      launcherDefaultLabel: 'Converse conosco',
+      iframeTitle: 'Chat incorporado do Radioso',
+    },
+  }
 
   const iconMarkup = {
     chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 5.5A3.5 3.5 0 0 1 7.5 2h9A3.5 3.5 0 0 1 20 5.5v7A3.5 3.5 0 0 1 16.5 16H10l-4.5 4v-4.2A3.5 3.5 0 0 1 4 12.5z"/></svg>',
@@ -30,6 +59,49 @@
     }
   }
 
+  const normalizeLocale = (value) => {
+    if (!value) {
+      return null
+    }
+
+    const trimmed = value.trim()
+    if (!trimmed || trimmed.length > 35 || !LOCALE_PATTERN.test(trimmed)) {
+      return null
+    }
+
+    const language = trimmed.split('-')[0].toLowerCase()
+    return Object.prototype.hasOwnProperty.call(copyByLocale, language) ? language : null
+  }
+
+  const getCopy = (locale) => copyByLocale[locale] ?? copyByLocale.en
+
+  const normalizeInitialState = (value) => {
+    if (!value) {
+      return null
+    }
+
+    const normalized = value.trim().toLowerCase()
+    return normalized === 'open' || normalized === 'collapsed' ? normalized : null
+  }
+
+  const resolveAvatarUrl = (value) => {
+    if (!value) {
+      return null
+    }
+
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return null
+    }
+
+    try {
+      const url = new URL(trimmed, window.location.href)
+      return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
+    } catch {
+      return null
+    }
+  }
+
   const createPanel = () => {
     const panel = document.createElement('div')
     panel.setAttribute('aria-hidden', 'true')
@@ -47,16 +119,20 @@
     return panel
   }
 
-  const createIframe = (scriptUrl, token) => {
+  const createIframe = (scriptUrl, token, locale) => {
     const iframe = document.createElement('iframe')
-    iframe.title = 'Radioso embedded chat'
+    iframe.title = getCopy(locale).iframeTitle
     iframe.loading = 'lazy'
     iframe.referrerPolicy = 'no-referrer-when-downgrade'
     iframe.allow = 'clipboard-read; clipboard-write'
     iframe.style.border = '0'
     iframe.style.width = '100%'
     iframe.style.height = '100%'
-    iframe.src = new URL(`/embed/${encodeURIComponent(token)}`, scriptUrl).toString()
+    const iframeUrl = new URL(`/embed/${encodeURIComponent(token)}`, scriptUrl)
+    if (locale) {
+      iframeUrl.searchParams.set('locale', locale)
+    }
+    iframe.src = iframeUrl.toString()
     return iframe
   }
 
@@ -81,13 +157,54 @@
     return payload
   }
 
-  const createButton = (label, icon) => {
+  const setIconMarkup = (container, icon) => {
+    container.innerHTML = iconMarkup[icon] ?? iconMarkup[DEFAULT_ICON]
+    const svg = container.querySelector('svg')
+    if (svg) {
+      svg.setAttribute('width', '18')
+      svg.setAttribute('height', '18')
+    }
+  }
+
+  const createButton = (label, icon, avatarUrl) => {
     const button = document.createElement('button')
     button.type = 'button'
     button.setAttribute('aria-label', label)
+
     const iconContainer = document.createElement('span')
     iconContainer.setAttribute('aria-hidden', 'true')
-    iconContainer.innerHTML = iconMarkup[icon] ?? iconMarkup[DEFAULT_ICON]
+    iconContainer.style.display = 'inline-flex'
+    iconContainer.style.alignItems = 'center'
+    iconContainer.style.justifyContent = 'center'
+    iconContainer.style.width = '1.75rem'
+    iconContainer.style.height = '1.75rem'
+    iconContainer.style.overflow = 'hidden'
+    iconContainer.style.borderRadius = '9999px'
+    iconContainer.style.flexShrink = '0'
+    iconContainer.style.background = 'rgba(248, 250, 252, 0.14)'
+
+    if (avatarUrl) {
+      const image = document.createElement('img')
+      image.alt = ''
+      image.src = avatarUrl
+      image.referrerPolicy = 'no-referrer'
+      image.style.width = '100%'
+      image.style.height = '100%'
+      image.style.objectFit = 'cover'
+      image.style.display = 'block'
+      image.addEventListener(
+        'error',
+        () => {
+          iconContainer.innerHTML = ''
+          setIconMarkup(iconContainer, icon)
+        },
+        { once: true },
+      )
+      iconContainer.appendChild(image)
+    } else {
+      setIconMarkup(iconContainer, icon)
+    }
+
     const labelNode = document.createElement('span')
     labelNode.textContent = label
     button.appendChild(iconContainer)
@@ -117,8 +234,6 @@
       button.style.transform = 'translateY(0)'
       button.style.boxShadow = '0 12px 30px rgba(15, 23, 42, 0.25)'
     })
-    button.querySelector('svg')?.setAttribute('width', '18')
-    button.querySelector('svg')?.setAttribute('height', '18')
     return button
   }
 
@@ -139,9 +254,15 @@
     window.__radiosoEmbedMounted = true
 
     const scriptUrl = getScriptUrl(script)
-    const label = script.dataset.radiosoLauncherLabel || DEFAULT_LABEL
+    const locale = normalizeLocale(script.dataset.radiosoLocale)
+    const copy = getCopy(locale)
+    const rawLabel = script.dataset.radiosoLauncherLabel
+    const label =
+      rawLabel && rawLabel.trim() && rawLabel.trim() !== DEFAULT_LABEL ? rawLabel.trim() : copy.launcherDefaultLabel
     const icon = script.dataset.radiosoLauncherIcon || DEFAULT_ICON
     const position = script.dataset.radiosoLauncherPosition || DEFAULT_POSITION
+    const initialState = normalizeInitialState(script.dataset.radiosoInitialState) || DEFAULT_INITIAL_STATE
+    const avatarUrl = resolveAvatarUrl(script.dataset.radiosoCollapsedAvatarUrl)
 
     const host = document.createElement('div')
     host.style.position = 'fixed'
@@ -170,8 +291,8 @@
       panel.style.right = 'auto'
     }
 
-    const button = createButton(label, icon)
-    let isOpen = false
+    const button = createButton(label, icon, avatarUrl)
+    let isOpen = initialState === 'open'
     let bootstrapPromise = null
     let iframe = null
 
@@ -180,7 +301,7 @@
         return iframe
       }
 
-      iframe = createIframe(scriptUrl, token)
+      iframe = createIframe(scriptUrl, token, locale)
       panel.appendChild(iframe)
       return iframe
     }
@@ -196,7 +317,7 @@
     }
 
     const handleIframeMessage = (event) => {
-      if (event.source !== iframe?.contentWindow) {
+      if (event.source !== (iframe && iframe.contentWindow)) {
         return
       }
 
@@ -213,17 +334,18 @@
 
       bootstrapPromise
         .then((session) => {
-          iframe.contentWindow?.postMessage({ type: SESSION_MESSAGE, session }, scriptUrl.origin)
+          iframe.contentWindow && iframe.contentWindow.postMessage({ type: SESSION_MESSAGE, session }, scriptUrl.origin)
         })
         .catch((error) => {
           bootstrapPromise = null
-          iframe.contentWindow?.postMessage(
-            {
-              type: ERROR_MESSAGE,
-              message: error instanceof Error ? error.message : 'Embedded chat could not be started from this website.',
-            },
-            scriptUrl.origin,
-          )
+          iframe.contentWindow &&
+            iframe.contentWindow.postMessage(
+              {
+                type: ERROR_MESSAGE,
+                message: error instanceof Error ? error.message : 'Embedded chat could not be started from this website.',
+              },
+              scriptUrl.origin,
+            )
         })
     }
 
@@ -242,6 +364,10 @@
       }
       updatePanelVisibility()
     })
+
+    if (isOpen) {
+      ensureIframe()
+    }
 
     host.appendChild(panel)
     host.appendChild(button)

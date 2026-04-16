@@ -10,7 +10,9 @@ import {
   type ReactNode,
 } from 'react'
 
+import { normalizeWebsiteEmbedLocale } from '@/lib/embed-widget'
 import {
+  clearStoredAnonymousSession,
   publicChatApi,
   type AnswerSegment,
   type Citation,
@@ -45,6 +47,7 @@ interface AnonymousChatContextValue {
   retryAfterSeconds: number | null
   loadOlderMessages: () => Promise<void>
   sendMessage: (content: string) => Promise<void>
+  startNewChat: () => Promise<void>
 }
 
 const AnonymousChatContext = createContext<AnonymousChatContextValue | null>(null)
@@ -113,14 +116,42 @@ const getLatestAssistantMessage = (detail: ChatConversationDetail): ChatMessage 
 }
 
 const MESSAGE_WINDOW_SIZE = 50
-const getPreferredLocale = () =>
-  typeof navigator !== 'undefined' ? navigator.languages?.[0] ?? navigator.language : undefined
+const isValidLocaleHint = (value: string | null | undefined): value is string => {
+  if (!value) {
+    return false
+  }
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 && trimmed.length <= 35 && normalizeWebsiteEmbedLocale(trimmed) !== null
+}
+
+export const resolveAnonymousChatBootstrapLocale = ({
+  localeOverride,
+  browserLocales,
+}: {
+  localeOverride?: string | null
+  browserLocales?: readonly string[]
+}) => {
+  if (isValidLocaleHint(localeOverride)) {
+    return localeOverride.trim()
+  }
+
+  for (const locale of browserLocales ?? []) {
+    if (isValidLocaleHint(locale)) {
+      return locale.trim()
+    }
+  }
+
+  return undefined
+}
 
 export function AnonymousChatProvider({
   token,
+  localeOverride,
   children,
 }: {
   token: string
+  localeOverride?: string | null
   children: ReactNode
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -135,85 +166,86 @@ export function AnonymousChatProvider({
   const [rateLimitError, setRateLimitError] = useState<string | null>(null)
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null)
 
+  const hydrateConversation = useCallback(async () => {
+    setIsHydrating(true)
+    setIsUnavailable(false)
+    setMessages([])
+    setWorkspaceName(null)
+    setConversationId(undefined)
+    setHasOlderMessages(false)
+    setNextMessageCursor(null)
+    setRateLimitError(null)
+    setRetryAfterSeconds(null)
+
+    try {
+      const response = await publicChatApi.listConversations(token, { limit: 1 })
+      setWorkspaceName(response.workspaceName ?? null)
+
+      if (response.conversations.length === 0) {
+        if (response.assistantBootstrapActive) {
+          const bootstrap = await publicChatApi.bootstrapConversation(token, {
+            stream: false,
+            bootstrapGreeting: true,
+            userExpectedLocale: resolveAnonymousChatBootstrapLocale({
+              localeOverride,
+              browserLocales:
+                typeof navigator !== 'undefined'
+                  ? [navigator.languages?.[0] ?? navigator.language].filter((value): value is string => Boolean(value))
+                  : [],
+            }),
+          })
+
+          if (bootstrap?.answer) {
+            setConversationId(bootstrap.conversationId)
+            setMessages([
+              {
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: bootstrap.answer,
+                createdAt: new Date().toISOString(),
+                citations: bootstrap.citations,
+                answerSegments: bootstrap.answerSegments,
+                retrievalInfo: bootstrap.retrievalInfo,
+                retrievalTrace: bootstrap.retrievalTrace,
+                status: 'complete',
+              },
+            ])
+          }
+        }
+        return
+      }
+
+      const detail = await publicChatApi.getConversationDetail(token, response.conversations[0].id, {
+        limit: MESSAGE_WINDOW_SIZE,
+      })
+
+      setConversationId(detail.conversationId)
+      setMessages(toChatMessages(detail))
+      setHasOlderMessages(detail.hasOlderMessages)
+      setNextMessageCursor(detail.nextCursor)
+    } catch (error) {
+      const structuredError = getErrorResponse(error)
+      if (structuredError?.code === 'not_found') {
+        setIsUnavailable(true)
+      }
+    } finally {
+      setIsHydrating(false)
+    }
+  }, [localeOverride, token])
+
   useEffect(() => {
     let cancelled = false
 
-    const hydrateConversation = async () => {
-      setIsHydrating(true)
-      setIsUnavailable(false)
-      setMessages([])
-      setWorkspaceName(null)
-      setConversationId(undefined)
-      setHasOlderMessages(false)
-      setNextMessageCursor(null)
-      setRateLimitError(null)
-      setRetryAfterSeconds(null)
-
-      try {
-        const response = await publicChatApi.listConversations(token, { limit: 1 })
-        if (cancelled) return
-
-        setWorkspaceName(response.workspaceName ?? null)
-
-        if (response.conversations.length === 0) {
-          if (response.assistantBootstrapActive) {
-            const bootstrap = await publicChatApi.bootstrapConversation(token, {
-              stream: false,
-              bootstrapGreeting: true,
-              userExpectedLocale: getPreferredLocale(),
-            })
-
-            if (cancelled) return
-
-            if (bootstrap?.answer) {
-              setConversationId(bootstrap.conversationId)
-              setMessages([
-                {
-                  id: crypto.randomUUID(),
-                  role: 'assistant',
-                  content: bootstrap.answer,
-                  createdAt: new Date().toISOString(),
-                  citations: bootstrap.citations,
-                  answerSegments: bootstrap.answerSegments,
-                  retrievalInfo: bootstrap.retrievalInfo,
-                  retrievalTrace: bootstrap.retrievalTrace,
-                  status: 'complete',
-                },
-              ])
-            }
-          }
-          setIsHydrating(false)
-          return
-        }
-
-        const detail = await publicChatApi.getConversationDetail(token, response.conversations[0].id, {
-          limit: MESSAGE_WINDOW_SIZE,
-        })
-        if (cancelled) return
-
-        setConversationId(detail.conversationId)
-        setMessages(toChatMessages(detail))
-        setHasOlderMessages(detail.hasOlderMessages)
-        setNextMessageCursor(detail.nextCursor)
-      } catch (error) {
-        if (cancelled) return
-        const structuredError = getErrorResponse(error)
-        if (structuredError?.code === 'not_found') {
-          setIsUnavailable(true)
-        }
-      } finally {
-        if (!cancelled) {
-          setIsHydrating(false)
-        }
+    void hydrateConversation().then(() => {
+      if (cancelled) {
+        return
       }
-    }
-
-    void hydrateConversation()
+    })
 
     return () => {
       cancelled = true
     }
-  }, [token])
+  }, [hydrateConversation])
 
   const applyCompletion = useCallback(
     (assistantMessageId: string, completion: ChatStreamCompletion) => {
@@ -413,6 +445,15 @@ export function AnonymousChatProvider({
     }
   }, [conversationId, hasOlderMessages, isLoadingOlderMessages, nextMessageCursor, token])
 
+  const startNewChat = useCallback(async () => {
+    if (isLoading || isHydrating || isLoadingOlderMessages) {
+      return
+    }
+
+    clearStoredAnonymousSession(token)
+    await hydrateConversation()
+  }, [hydrateConversation, isHydrating, isLoading, isLoadingOlderMessages, token])
+
   const value = useMemo<AnonymousChatContextValue>(
     () => ({
       messages,
@@ -426,6 +467,7 @@ export function AnonymousChatProvider({
       retryAfterSeconds,
       loadOlderMessages,
       sendMessage,
+      startNewChat,
     }),
     [
       messages,
@@ -439,6 +481,7 @@ export function AnonymousChatProvider({
       retryAfterSeconds,
       loadOlderMessages,
       sendMessage,
+      startNewChat,
     ],
   )
 

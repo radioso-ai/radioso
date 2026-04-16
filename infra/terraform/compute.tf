@@ -199,6 +199,11 @@ resource "google_cloud_run_v2_service" "frontend" {
       }
     }
   }
+
+  depends_on = [
+    google_secret_manager_secret_version.secrets,
+    google_secret_manager_secret_iam_member.frontend_website_embed_access,
+  ]
 }
 
 # Public access for frontend

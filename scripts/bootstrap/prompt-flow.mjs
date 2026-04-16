@@ -9,6 +9,8 @@ export const planQuestions = (existingValues = {}, contract = getEnvContract(), 
   const reconfigure = Boolean(options.reconfigure);
   const questions = [];
   const provider = existingValues.LLM_PROVIDER || contract.defaults.LLM_PROVIDER || "openai";
+  const defaultStorageDriver = existingValues.DOCUMENT_STORAGE_DRIVER
+    || (existingValues.DOCUMENT_STORAGE_BUCKET ? "gcs" : contract.defaults.DOCUMENT_STORAGE_DRIVER || "local");
 
   if (reconfigure || !existingValues.LLM_PROVIDER) {
     questions.push({
@@ -38,15 +40,15 @@ export const planQuestions = (existingValues = {}, contract = getEnvContract(), 
     questions.push({
       key: "DOCUMENT_STORAGE_DRIVER",
       prompt: "Choose document storage for uploaded files",
-      defaultValue: existingValues.DOCUMENT_STORAGE_DRIVER || contract.defaults.DOCUMENT_STORAGE_DRIVER || "local",
+      defaultValue: defaultStorageDriver,
       kind: "choice",
       choices: ["local", "gcs"],
     });
   }
 
   const storageDriver = reconfigure
-    ? existingValues.DOCUMENT_STORAGE_DRIVER || contract.defaults.DOCUMENT_STORAGE_DRIVER || "local"
-    : existingValues.DOCUMENT_STORAGE_DRIVER || contract.defaults.DOCUMENT_STORAGE_DRIVER || "local";
+    ? defaultStorageDriver
+    : defaultStorageDriver;
 
   if (reconfigure || (storageDriver === "local" && !existingValues.DOCUMENT_STORAGE_LOCAL_PATH)) {
     questions.push({

@@ -18,6 +18,17 @@ test("planQuestions asks for the selected provider requirements", () => {
   assert.ok(compatibleQuestions.some((question) => question.key === "OPENAI_COMPATIBLE_BASE_URL"));
 });
 
+test("planQuestions defaults legacy bucket-only storage config to gcs", () => {
+  const questions = planQuestions({
+    LLM_PROVIDER: "openai",
+    OPENAI_API_KEY: "sk-test",
+    DOCUMENT_STORAGE_BUCKET: "legacy-bucket",
+  });
+
+  const driverQuestion = questions.find((question) => question.key === "DOCUMENT_STORAGE_DRIVER");
+  assert.equal(driverQuestion?.defaultValue, "gcs");
+});
+
 test("planQuestions skips prompts for valid existing config", () => {
   const questions = planQuestions({
     LLM_PROVIDER: "openai",

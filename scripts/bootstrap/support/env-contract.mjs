@@ -110,10 +110,14 @@ export const getAlwaysRequiredKeys = () => [
 
 export const listRequiredKeys = (values, contract = getEnvContract()) => {
   const provider = values.LLM_PROVIDER || contract.defaults.LLM_PROVIDER || "openai";
-  const storageDriver = values.DOCUMENT_STORAGE_DRIVER || contract.defaults.DOCUMENT_STORAGE_DRIVER || "local";
+  const storageDriver = values.DOCUMENT_STORAGE_DRIVER
+    || (values.DOCUMENT_STORAGE_BUCKET ? "gcs" : contract.defaults.DOCUMENT_STORAGE_DRIVER || "local");
   const required = new Set(getAlwaysRequiredKeys());
   for (const key of getProviderRequiredKeys(provider)) {
     required.add(key);
+  }
+  if (!values.DOCUMENT_STORAGE_DRIVER) {
+    required.add("DOCUMENT_STORAGE_DRIVER");
   }
   if (storageDriver === "gcs") {
     required.add("DOCUMENT_STORAGE_BUCKET");

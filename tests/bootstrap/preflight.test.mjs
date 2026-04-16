@@ -14,6 +14,31 @@ test("classifyEnvState marks missing required provider key as partial", () => {
   assert.equal(state, "partial");
 });
 
+test("classifyEnvState marks legacy gcs storage config without a driver as partial", () => {
+  const state = classifyEnvState({
+    PORT: "8080",
+    NODE_ENV: "development",
+    DATABASE_URL: "postgres://db",
+    INTEGRATION_DATABASE_URL: "postgres://db",
+    OPENAI_API_KEY: "sk-test",
+    OPENAI_CHAT_MODEL: "gpt-test",
+    OPENAI_RERANK_MODEL: "gpt-rerank",
+    OPENAI_VECTOR_MODEL: "text-embedding-test",
+    LLM_PROVIDER: "openai",
+    SESSION_COOKIE_NAME: "radioso_session",
+    SESSION_COOKIE_SECRET: "secret-secret-secret",
+    WORKSPACE_TOKEN_SECRET: "workspace-secret-secret",
+    WEBSITE_EMBED_SECRET: "embed-secret-secret",
+    SESSION_TTL_HOURS: "168",
+    CONNECTOR_ENCRYPTION_KEY: "secret-secret-secret",
+    DOCUMENT_STORAGE_BUCKET: "legacy-bucket",
+    DOCUMENT_UPLOAD_MAX_BYTES: "10485760",
+    PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
+  });
+
+  assert.equal(state, "partial");
+});
+
 test("classifyEnvState marks gcs storage without a bucket as partial", () => {
   const state = classifyEnvState({
     PORT: "8080",

@@ -15,11 +15,18 @@ test("parseEnvFile ignores comments and reads values", () => {
 test("buildEnvValues preserves existing values unless overridden", () => {
   const values = buildEnvValues(
     { OPENAI_API_KEY: "existing", LLM_PROVIDER: "openai" },
-    { SESSION_COOKIE_SECRET: "generated", CONNECTOR_ENCRYPTION_KEY: "connector" },
+    {
+      SESSION_COOKIE_SECRET: "generated",
+      WORKSPACE_TOKEN_SECRET: "workspace-secret",
+      WEBSITE_EMBED_SECRET: "embed-secret",
+      CONNECTOR_ENCRYPTION_KEY: "connector",
+    },
   );
 
   assert.equal(values.OPENAI_API_KEY, "existing");
   assert.equal(values.SESSION_COOKIE_SECRET, "generated");
+  assert.equal(values.WORKSPACE_TOKEN_SECRET, "workspace-secret");
+  assert.equal(values.WEBSITE_EMBED_SECRET, "embed-secret");
 });
 
 test("writeEnvFileAtomic writes rendered env content", async () => {
@@ -37,6 +44,8 @@ test("writeEnvFileAtomic writes rendered env content", async () => {
     LLM_PROVIDER: "openai",
     SESSION_COOKIE_NAME: "radioso_session",
     SESSION_COOKIE_SECRET: "secret",
+    WORKSPACE_TOKEN_SECRET: "workspace-secret",
+    WEBSITE_EMBED_SECRET: "embed-secret",
     SESSION_TTL_HOURS: "168",
     CONNECTOR_ENCRYPTION_KEY: "connector",
     DOCUMENT_UPLOAD_MAX_BYTES: "10485760",
@@ -60,6 +69,8 @@ test("renderEnvFile omits blank optional values", () => {
     LLM_PROVIDER: "openai",
     SESSION_COOKIE_NAME: "radioso_session",
     SESSION_COOKIE_SECRET: "secret",
+    WORKSPACE_TOKEN_SECRET: "workspace-secret",
+    WEBSITE_EMBED_SECRET: "embed-secret",
     SESSION_TTL_HOURS: "168",
     CONNECTOR_ENCRYPTION_KEY: "connector",
     DOCUMENT_UPLOAD_MAX_BYTES: "10485760",

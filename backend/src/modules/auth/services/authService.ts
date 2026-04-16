@@ -451,7 +451,7 @@ export class AuthService {
 
     if (existing) {
       try {
-        const token = decryptSecret(existing.encryptedToken, this.dependencies.env.SESSION_COOKIE_SECRET);
+        const token = decryptSecret(existing.encryptedToken, this.dependencies.env.WORKSPACE_TOKEN_SECRET);
         await this.dependencies.workspaceTokenRepository.touch(workspaceId, new Date());
         await this.dependencies.auditService.record({
           accountId,
@@ -493,7 +493,7 @@ export class AuthService {
       accountId,
       tokenPrefix: tokenPrefix(),
       tokenHash: sha256(token),
-      encryptedToken: encryptSecret(token, this.dependencies.env.SESSION_COOKIE_SECRET),
+      encryptedToken: encryptSecret(token, this.dependencies.env.WORKSPACE_TOKEN_SECRET),
     });
 
     await this.dependencies.auditService.record({

@@ -661,6 +661,8 @@ components:
           type: integer
           minimum: 1
           maximum: 60
+        rotateAnonymousChatToken:
+          type: boolean
         assistantName:
           type: string
           maxLength: 200
@@ -678,6 +680,8 @@ components:
         proactiveGreetingEnabled:
           type: boolean
         websiteEmbedEnabled:
+          type: boolean
+        rotateWebsiteEmbedToken:
           type: boolean
         websiteEmbedAllowedOrigins:
           type: array

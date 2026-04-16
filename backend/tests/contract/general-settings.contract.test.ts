@@ -156,6 +156,42 @@ describe("general settings contract", () => {
     expect(reEnabled.body.anonymousChatUrl).toBeDefined();
   });
 
+  it("rotates anonymous chat and website embed tokens on demand", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app);
+
+    const initial = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: ["https://example.com"],
+      });
+
+    expect(initial.status).toBe(200);
+
+    const initialAnonymousUrl = initial.body.anonymousChatUrl as string;
+    const initialEmbedToken = initial.body.websiteEmbedToken as string;
+
+    const rotated = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        rotateAnonymousChatToken: true,
+        rotateWebsiteEmbedToken: true,
+      });
+
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.anonymousChatEnabled).toBe(true);
+    expect(rotated.body.websiteEmbedEnabled).toBe(true);
+    expect(rotated.body.anonymousChatUrl).toEqual(expect.any(String));
+    expect(rotated.body.websiteEmbedToken).toEqual(expect.any(String));
+    expect(rotated.body.anonymousChatUrl).not.toBe(initialAnonymousUrl);
+    expect(rotated.body.websiteEmbedToken).not.toBe(initialEmbedToken);
+    expect(rotated.body.websiteEmbedSnippet).toContain(rotated.body.websiteEmbedToken);
+  });
+
   it("rejects unauthenticated access", async () => {
     const { app } = createTestApp();
 

@@ -93,6 +93,18 @@ variable "session_cookie_secret" {
   sensitive   = true
 }
 
+variable "workspace_token_secret" {
+  description = "Workspace API token encryption secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "website_embed_secret" {
+  description = "Website embed request/session signing secret"
+  type        = string
+  sensitive   = true
+}
+
 variable "connector_encryption_key" {
   description = "Connector secret encryption key (32 bytes, base64-encoded)"
   type        = string

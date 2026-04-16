@@ -14,6 +14,31 @@ test("classifyEnvState marks missing required provider key as partial", () => {
   assert.equal(state, "partial");
 });
 
+test("classifyEnvState marks gcs storage without a bucket as partial", () => {
+  const state = classifyEnvState({
+    PORT: "8080",
+    NODE_ENV: "development",
+    DATABASE_URL: "postgres://example",
+    INTEGRATION_DATABASE_URL: "postgres://example",
+    LLM_PROVIDER: "openai",
+    OPENAI_API_KEY: "sk-test",
+    OPENAI_CHAT_MODEL: "gpt-5.2",
+    OPENAI_RERANK_MODEL: "gpt-5.2",
+    OPENAI_VECTOR_MODEL: "text-embedding-3-small",
+    SESSION_COOKIE_NAME: "radioso_session",
+    SESSION_COOKIE_SECRET: "secret-secret-secret",
+    WORKSPACE_TOKEN_SECRET: "workspace-secret-secret",
+    WEBSITE_EMBED_SECRET: "embed-secret-secret",
+    SESSION_TTL_HOURS: "168",
+    CONNECTOR_ENCRYPTION_KEY: "connector-secret",
+    DOCUMENT_STORAGE_DRIVER: "gcs",
+    DOCUMENT_UPLOAD_MAX_BYTES: "10485760",
+    PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
+  });
+
+  assert.equal(state, "partial");
+});
+
 test("runPreflightChecks fails when docker is missing", async () => {
   const results = await runPreflightChecks({
     run: async () => ({ ok: false, stdout: "", stderr: "" }),

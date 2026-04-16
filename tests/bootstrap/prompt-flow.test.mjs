@@ -22,7 +22,8 @@ test("planQuestions skips prompts for valid existing config", () => {
   const questions = planQuestions({
     LLM_PROVIDER: "openai",
     OPENAI_API_KEY: "sk-test",
-    DOCUMENT_STORAGE_BUCKET: "",
+    DOCUMENT_STORAGE_DRIVER: "local",
+    DOCUMENT_STORAGE_LOCAL_PATH: "../.context/document-storage",
   });
 
   assert.equal(questions.length, 0);
@@ -32,35 +33,60 @@ test("planQuestions skips storage prompts for configured bucket on normal startu
   const questions = planQuestions({
     LLM_PROVIDER: "openai",
     OPENAI_API_KEY: "sk-test",
+    DOCUMENT_STORAGE_DRIVER: "gcs",
     DOCUMENT_STORAGE_BUCKET: "bucket-name",
   });
 
   assert.equal(questions.length, 0);
 });
 
-test("collectAnswers omits storage bucket when disabled", async () => {
+test("collectAnswers clears gcs-only settings when local storage is selected", async () => {
   const answers = await collectAnswers(
     [
-      { key: "__USE_DOCUMENT_STORAGE__", prompt: "Enable storage", defaultValue: "n" },
-      { key: "DOCUMENT_STORAGE_BUCKET", prompt: "Bucket", defaultValue: "" },
+      { key: "DOCUMENT_STORAGE_DRIVER", prompt: "Driver", defaultValue: "local", choices: ["local", "gcs"] },
+      { key: "DOCUMENT_STORAGE_LOCAL_PATH", prompt: "Path", defaultValue: "../.context/document-storage", dependsOn: { key: "DOCUMENT_STORAGE_DRIVER", value: "local" } },
     ],
-    { enabled: false },
+    false,
     {
-      ask: async (question) => (question.key === "__USE_DOCUMENT_STORAGE__" ? "n" : "unused"),
+      ask: async (question) => (question.key === "DOCUMENT_STORAGE_DRIVER" ? "local" : "../.context/document-storage"),
     },
   );
 
-  assert.deepEqual(answers, {});
+  assert.equal(answers.DOCUMENT_STORAGE_DRIVER, "local");
+  assert.equal(answers.DOCUMENT_STORAGE_LOCAL_PATH, "../.context/document-storage");
+  assert.equal(answers.DOCUMENT_STORAGE_BUCKET, "");
 });
 
-test("collectAnswers requests storage bucket only after enabling storage", async () => {
+test("collectAnswers requests storage bucket after switching fresh setup to gcs", async () => {
   const answers = await collectAnswers(
-    [{ key: "__USE_DOCUMENT_STORAGE__", prompt: "Enable storage", defaultValue: "n" }],
-    { enabled: false },
+    [
+      { key: "DOCUMENT_STORAGE_DRIVER", prompt: "Driver", defaultValue: "local", choices: ["local", "gcs"] },
+      { key: "DOCUMENT_STORAGE_LOCAL_PATH", prompt: "Path", defaultValue: "../.context/document-storage", dependsOn: { key: "DOCUMENT_STORAGE_DRIVER", value: "local" } },
+    ],
+    false,
     {
-      ask: async (question) => (question.key === "__USE_DOCUMENT_STORAGE__" ? "y" : "bucket-name"),
+      ask: async (question) => (question.key === "DOCUMENT_STORAGE_DRIVER" ? "gcs" : "bucket-name"),
     },
   );
 
+  assert.equal(answers.DOCUMENT_STORAGE_DRIVER, "gcs");
   assert.equal(answers.DOCUMENT_STORAGE_BUCKET, "bucket-name");
+  assert.equal(answers.DOCUMENT_STORAGE_LOCAL_PATH, "");
+});
+
+test("collectAnswers requests local path after switching reconfigure from gcs to local", async () => {
+  const answers = await collectAnswers(
+    [
+      { key: "DOCUMENT_STORAGE_DRIVER", prompt: "Driver", defaultValue: "gcs", choices: ["local", "gcs"] },
+      { key: "DOCUMENT_STORAGE_BUCKET", prompt: "Bucket", defaultValue: "bucket-name", dependsOn: { key: "DOCUMENT_STORAGE_DRIVER", value: "gcs" } },
+    ],
+    false,
+    {
+      ask: async (question) => (question.key === "DOCUMENT_STORAGE_DRIVER" ? "local" : "../.context/alt-storage"),
+    },
+  );
+
+  assert.equal(answers.DOCUMENT_STORAGE_DRIVER, "local");
+  assert.equal(answers.DOCUMENT_STORAGE_LOCAL_PATH, "../.context/alt-storage");
+  assert.equal(answers.DOCUMENT_STORAGE_BUCKET, "");
 });

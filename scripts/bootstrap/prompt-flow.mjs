@@ -48,7 +48,7 @@ export const planQuestions = (existingValues = {}, contract = getEnvContract(), 
     ? existingValues.DOCUMENT_STORAGE_DRIVER || contract.defaults.DOCUMENT_STORAGE_DRIVER || "local"
     : existingValues.DOCUMENT_STORAGE_DRIVER || contract.defaults.DOCUMENT_STORAGE_DRIVER || "local";
 
-  if (reconfigure || storageDriver === "local") {
+  if (reconfigure || (storageDriver === "local" && !existingValues.DOCUMENT_STORAGE_LOCAL_PATH)) {
     questions.push({
       key: "DOCUMENT_STORAGE_LOCAL_PATH",
       prompt: "Local document storage path",
@@ -57,7 +57,7 @@ export const planQuestions = (existingValues = {}, contract = getEnvContract(), 
     });
   }
 
-  if (reconfigure || storageDriver === "gcs" || existingValues.DOCUMENT_STORAGE_BUCKET) {
+  if (reconfigure || (storageDriver === "gcs" && !existingValues.DOCUMENT_STORAGE_BUCKET)) {
     questions.push({
       key: "DOCUMENT_STORAGE_BUCKET",
       prompt: "Document storage bucket name",
@@ -105,6 +105,7 @@ const askHidden = async (promptText) => {
 
 export const collectAnswers = async (questions, ansi, io = {}) => {
   const answers = {};
+  const plannedKeys = new Set(questions.map((question) => question.key));
   const ask = io.ask ?? (async ({ prompt, defaultValue, secret, choices }) => {
     const label = choices
       ? `${prompt} [${choices.join("/")}] (${defaultValue}): `
@@ -123,6 +124,19 @@ export const collectAnswers = async (questions, ansi, io = {}) => {
     }
   });
 
+  const askFollowUp = async (question) => {
+    while (true) {
+      const answer = (await ask(question)) || question.defaultValue || "";
+      const validationError = validateAnswer(question, answer);
+      if (validationError) {
+        output.write(`${formatMessage("warning", `${validationError}\n`, ansi)}`);
+        continue;
+      }
+      answers[question.key] = answer;
+      return;
+    }
+  };
+
   for (const question of questions) {
     if (question.dependsOn && answers[question.dependsOn.key] !== question.dependsOn.value) {
       continue;
@@ -136,6 +150,22 @@ export const collectAnswers = async (questions, ansi, io = {}) => {
         continue;
       }
       answers[question.key] = answer;
+      if (question.key === "DOCUMENT_STORAGE_DRIVER") {
+        if (answer === "gcs" && !plannedKeys.has("DOCUMENT_STORAGE_BUCKET")) {
+          await askFollowUp({
+            key: "DOCUMENT_STORAGE_BUCKET",
+            prompt: "Document storage bucket name",
+            defaultValue: answers.DOCUMENT_STORAGE_BUCKET || "",
+          });
+        }
+        if (answer === "local" && !plannedKeys.has("DOCUMENT_STORAGE_LOCAL_PATH")) {
+          await askFollowUp({
+            key: "DOCUMENT_STORAGE_LOCAL_PATH",
+            prompt: "Local document storage path",
+            defaultValue: answers.DOCUMENT_STORAGE_LOCAL_PATH || "../.context/document-storage",
+          });
+        }
+      }
       break;
     }
   }

@@ -28,7 +28,7 @@ This is the intended local run path. It:
 - checks local prerequisites
 - creates or reuses `backend/.env`
 - prompts for the AI provider and required credentials
-- generates missing secrets such as `SESSION_COOKIE_SECRET`
+- generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `WEBSITE_EMBED_SECRET`
 - builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose
 - waits until the frontend and backend are reachable
 
@@ -116,6 +116,8 @@ The token response looks like:
 ```json
 {"token":"sk_proj_..."}
 ```
+
+If a workspace token or public embed link is ever exposed, rotate it from the settings screen instead of relying on disable/re-enable toggles.
 
 A valid provider key is required for both document processing and chat responses.
 

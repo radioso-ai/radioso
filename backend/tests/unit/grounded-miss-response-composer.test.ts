@@ -44,6 +44,7 @@ describe("grounded miss response composer", () => {
       composer.composeUnsupportedWithContext({
         query: "I need a raspberry cake recipe",
         unsupportedText: "Here is a raspberry cake recipe.",
+        conversationMode: "exploratory",
         contexts: [
           {
             title: "Ananda Vegetarian Cuisine",
@@ -61,6 +62,8 @@ describe("grounded miss response composer", () => {
     expect(request?.prompt).toContain("Context 1:");
     expect(request?.prompt).toContain("Title: Ananda Vegetarian Cuisine");
     expect(request?.prompt).toContain("Excerpt: Ananda talks about vegetarian cuisine and mindful cooking.");
+    expect(request?.prompt).toContain("Conversation mode: exploratory.");
+    expect(request?.prompt).toContain("two or three grounded adjacent directions");
   });
 
   it("lets the model compose the full no-context response", async () => {
@@ -81,9 +84,14 @@ describe("grounded miss response composer", () => {
     });
 
     await expect(
-      composer.composeNoContext({ query: "What is the capital of France?" }),
+      composer.composeNoContext({
+        query: "What is the capital of France?",
+        conversationMode: "guided",
+      }),
     ).resolves.toBe("I couldn't find relevant material in the workspace for that question.");
 
     expect(request?.prompt).toContain("What is the capital of France?");
+    expect(request?.prompt).toContain("Conversation mode: guided.");
+    expect(request?.prompt).toContain("one concise next-step hint");
   });
 });

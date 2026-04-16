@@ -23,6 +23,7 @@ import {
   MissingGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
 } from "./groundedMissResponseComposer.js";
+import { ConversationModeExpansionService } from "./conversationModeExpansionService.js";
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
@@ -91,6 +92,76 @@ interface PresentedAnswer {
   conversationModeMetadata: ConversationModeMetadata;
 }
 
+const LIST_ITEM_PATTERN = /^\s*(?:[-*•]|\d+\.)\s+/gm;
+
+const countSentenceLikeClauses = (value: string): number => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return 0;
+  }
+
+  const matches = trimmed.match(/[^.!?]+[.!?]+|[^.!?]+$/g);
+  return matches?.map((match) => match.trim()).filter((match) => match.length > 0).length ?? 0;
+};
+
+const inferConversationModeMetadata = (input: {
+  answer: string;
+  conversationMode: ConversationMode;
+  brevityOverrideApplied: boolean;
+}): Omit<ConversationModeMetadata, "conversationMode" | "brevityOverrideApplied"> => {
+  if (input.brevityOverrideApplied) {
+    return {
+      expansionApplied: false,
+      expansionKind: "none",
+      suggestionCount: 0,
+      followUpQuestionApplied: false,
+    };
+  }
+
+  const trimmed = input.answer.trim();
+  if (!trimmed) {
+    return {
+      expansionApplied: false,
+      expansionKind: "none",
+      suggestionCount: 0,
+      followUpQuestionApplied: false,
+    };
+  }
+
+  const paragraphs = trimmed
+    .split(/\r?\n\s*\r?\n/g)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0);
+  const listItemCount = (trimmed.match(LIST_ITEM_PATTERN) ?? []).length;
+  const followUpQuestionApplied = /(?:\?|？)\s*$/.test(trimmed);
+
+  let suggestionCount = 0;
+  if (paragraphs.length > 1) {
+    suggestionCount = listItemCount > 0
+      ? listItemCount
+      : paragraphs.slice(1).reduce((count, paragraph) => count + Math.max(1, countSentenceLikeClauses(paragraph)), 0);
+  } else if (listItemCount > 0) {
+    suggestionCount = listItemCount;
+  }
+
+  const expansionApplied = suggestionCount > 0;
+  if (!expansionApplied) {
+    return {
+      expansionApplied: false,
+      expansionKind: "none",
+      suggestionCount: 0,
+      followUpQuestionApplied,
+    };
+  }
+
+  return {
+    expansionApplied: true,
+    expansionKind: input.conversationMode === "exploratory" ? "expansive" : "focused",
+    suggestionCount,
+    followUpQuestionApplied,
+  };
+};
+
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly client: TextGenerationClient) {}
 
@@ -125,6 +196,7 @@ export class ChatService {
   private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
+  private readonly conversationModeExpansionService = new ConversationModeExpansionService();
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
@@ -143,9 +215,11 @@ export class ChatService {
   }
 
   private getConversationModeMetadata(session: PreparedSession, input?: Partial<ConversationModeMetadata>): ConversationModeMetadata {
+    const brevityOverrideApplied = Boolean(session.retrieval.responseSettings?.brevityOverrideRequested);
+
     return {
       conversationMode: this.getConversationMode(session),
-      brevityOverrideApplied: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
+      brevityOverrideApplied,
       expansionApplied: false,
       expansionKind: "none",
       suggestionCount: 0,
@@ -613,9 +687,35 @@ export class ChatService {
     session: PreparedSession,
     presentation: Omit<PresentedAnswer, "conversationModeMetadata">,
   ): PresentedAnswer {
+    const conversationMode = this.getConversationMode(session);
+    const brevityOverrideApplied = Boolean(session.retrieval.responseSettings?.brevityOverrideRequested);
+    const expanded = this.conversationModeExpansionService.apply({
+      query: session.userMessage.content,
+      conversationMode,
+      brevityOverrideRequested: brevityOverrideApplied,
+      groundedAnswerSupported: presentation.validation.supportedSegmentCount > 0,
+      answer: presentation.answer,
+      citations: presentation.citations,
+      answerSegments: presentation.answerSegments,
+      contexts: session.retrieval.contexts.map((context) => ({
+        documentId: context.documentId,
+        chunkId: context.chunkId,
+        title: context.title,
+        content: context.content,
+      })),
+      citationDisplayEnabled: session.retrieval.responseSettings?.citationDisplayEnabled ?? true,
+    });
+
     return {
       ...presentation,
-      conversationModeMetadata: this.getConversationModeMetadata(session),
+      answer: expanded.answer,
+      citations: expanded.citations,
+      answerSegments: expanded.answerSegments,
+      conversationModeMetadata: this.getConversationModeMetadata(session, inferConversationModeMetadata({
+        answer: expanded.answer,
+        conversationMode,
+        brevityOverrideApplied,
+      })),
     };
   }
 

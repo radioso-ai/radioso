@@ -1227,4 +1227,266 @@ describe("chat service streaming", () => {
       }),
     );
   });
+
+  it("infers expansion metadata from clearly separated exploratory continuations", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The page explains testing and parsing content for users. The FAQ covers onboarding. The notes cover examples.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "warn",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return [
+          "The page explains testing and parsing content for users[[1]].",
+          "",
+          "- You can also inspect the onboarding FAQ[[1]].",
+          "- The notes include worked examples[[1]].",
+        ].join("\n");
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does this page do?",
+      stream: false,
+    });
+
+    expect(response.conversationModeMetadata).toEqual({
+      conversationMode: "exploratory",
+      brevityOverrideApplied: false,
+      expansionApplied: true,
+      expansionKind: "expansive",
+      suggestionCount: 2,
+      followUpQuestionApplied: false,
+    });
+  });
+
+  it("adds exploratory suggestions from grounded contexts when the direct answer stays terse", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "who is mahiya",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Mahiya",
+              content: "Mahiya is a teacher and author.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "God is our True Home: In Conversation with Mahiya - Ananda Europe",
+              content: "An interview about Mahiya's path and spiritual life.",
+            },
+            {
+              chunkId: "chunk-3",
+              documentId: "doc-3",
+              title: "Il gusto della gioia - Ananda Edizioni - ricette, consigli e ispirazioni salutari",
+              content: "Her cooking book and related work.",
+            },
+            {
+              chunkId: "chunk-4",
+              documentId: "doc-4",
+              title: "Challenges and blessings go hand in hand - Interview with Mahiya (ENG) - Ananda Europe",
+              content: "Another interview with adjacent material.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 4,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 4,
+            normalizedCandidateCount: 4,
+            finalContextCount: 4,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "who is mahiya",
+              lexicalQuery: "mahiya",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Mahiya is a teacher and author[[1]].";
+      },
+      async *streamAnswer() {
+        yield "Mahiya is a teacher and author[[1]].";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Who is Mahiya?",
+      stream: false,
+    });
+
+    expect(response.answer).toContain("Mahiya is a teacher and author.");
+    expect(response.answer).toContain("- God is our True Home: In Conversation with Mahiya.");
+    expect(response.answer).toContain("- Il gusto della gioia.");
+    expect(response.answer).toContain("- Challenges and blessings go hand in hand - Interview with Mahiya (ENG).");
+    expect(response.conversationModeMetadata).toEqual({
+      conversationMode: "exploratory",
+      brevityOverrideApplied: false,
+      expansionApplied: true,
+      expansionKind: "expansive",
+      suggestionCount: 3,
+      followUpQuestionApplied: false,
+    });
+    expect(response.citations).toEqual([
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" },
+      { documentId: "doc-2", chunkId: "chunk-2", title: "God is our True Home: In Conversation with Mahiya - Ananda Europe" },
+      { documentId: "doc-3", chunkId: "chunk-3", title: "Il gusto della gioia - Ananda Edizioni - ricette, consigli e ispirazioni salutari" },
+      { documentId: "doc-4", chunkId: "chunk-4", title: "Challenges and blessings go hand in hand - Interview with Mahiya (ENG) - Ananda Europe" },
+    ]);
+  });
+
+  it("adds language-agnostic exploratory bullet continuations", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "quali libri ha scritto narayani",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Narayani Anaya Archivi - Ananda Edizioni",
+              content: "Narayani wrote La mia anima ricorda Swami Kriyananda.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Satsang with Narayani (on her upcoming book and more) &mdash; Ananda",
+              content: "An event about her upcoming book and more.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Narayani Anaya Archivi - Ananda Edizioni" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "quali libri ha scritto narayani",
+              lexicalQuery: "narayani libri",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
+      },
+      async *streamAnswer() {
+        yield "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "quali libri ha scritto Narayani",
+      stream: false,
+    });
+
+    expect(response.answer).toContain("\n\n- Satsang with Narayani (on her upcoming book and more) &mdash; Ananda.");
+    expect(response.answer).not.toContain("Explore further:");
+    expect(response.answer).not.toContain("Puoi esplorare anche:");
+  });
 });

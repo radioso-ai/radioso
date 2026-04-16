@@ -7,7 +7,7 @@ import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
 
 describe("chat integration", () => {
-  it("does not append backend-seeded continuation text across conversation modes", async () => {
+  it("adds bounded grounded continuations for guided and exploratory modes", async () => {
     const deterministicGateway: ChatGateway = {
       async answer() {
         return "The testing guide explains testing and parsing content for users[[1]].";
@@ -61,15 +61,26 @@ describe("chat integration", () => {
     expect(exploratory.status).toBe(200);
 
     expect(factual.body.answer).toBe("The testing guide explains testing and parsing content for users.");
-    expect(guided.body.answer).toBe("The testing guide explains testing and parsing content for users.");
-    expect(exploratory.body.answer).toBe("The testing guide explains testing and parsing content for users.");
-    expect(factual.body.answer).not.toContain("Focused next:");
-    expect(factual.body.answer).not.toContain("Explore further:");
-    expect(guided.body.answer).not.toContain("Focused next:");
-    expect(guided.body.answer).not.toContain("Explore further:");
-    expect(exploratory.body.answer).not.toContain("Focused next:");
-    expect(exploratory.body.answer).not.toContain("Explore further:");
-    expect(exploratory.body.answer).not.toContain("If helpful, I can");
+    expect(guided.body.answer).toContain("The testing guide explains testing and parsing content for users.");
+    expect(exploratory.body.answer).toContain("The testing guide explains testing and parsing content for users.");
+    expect(factual.body.answer).not.toContain("\n- ");
+    expect(guided.body.answer).toContain("- Parser Notes.");
+    expect(guided.body.answer).toContain("- User FAQ.");
+    expect(guided.body.conversationModeMetadata).toMatchObject({
+      conversationMode: "guided",
+      expansionApplied: true,
+      expansionKind: "focused",
+      suggestionCount: 2,
+    });
+    expect(exploratory.body.answer).toContain("- Parser Notes.");
+    expect(exploratory.body.answer).toContain("- User FAQ.");
+    expect((exploratory.body.answer.match(/^\s*-/gm) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect((exploratory.body.answer.match(/^\s*-/gm) ?? []).length).toBeLessThanOrEqual(3);
+    expect(exploratory.body.conversationModeMetadata).toMatchObject({
+      conversationMode: "exploratory",
+      expansionApplied: true,
+      expansionKind: "expansive",
+    });
   });
 
   it("creates a new conversation and reuses it on follow-up questions", async () => {
@@ -312,8 +323,7 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toContain(`I couldn't verify that from your workspace documents`);
-    expect(response.body.answer).not.toContain("Explore further:");
-    expect(response.body.answer).not.toContain("Focused next:");
+    expect(response.body.answer).not.toContain("\n- ");
     expect(response.body.answer).not.toContain("discount code");
     expect(response.body.answer).not.toContain("24/7 phone support");
   });
@@ -363,8 +373,7 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toBe("The testing guide explains testing and parsing content for users.");
-    expect(response.body.answer).not.toContain("Explore further:");
-    expect(response.body.answer).not.toContain("Focused next:");
+    expect(response.body.answer).not.toContain("\n- ");
   });
 
   it("keeps conversations account scoped", async () => {

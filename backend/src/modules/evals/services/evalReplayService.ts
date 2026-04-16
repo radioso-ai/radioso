@@ -6,6 +6,8 @@ import type { ChatGateway } from "../../chat/services/chatService.js";
 import { AnswerPresentationService } from "../../chat/services/answerPresentationService.js";
 import { AnswerSupportValidator } from "../../chat/services/answerSupportValidator.js";
 import { AssistantTurnOutcomeClassifier } from "../../chat/services/assistantTurnOutcomeClassifier.js";
+import { ConversationExpansionComposer } from "../../chat/services/conversationExpansionComposer.js";
+import { ConversationExpansionPlanner } from "../../chat/services/conversationExpansionPlanner.js";
 import { RetrievalInfoPresenter } from "../../retrieval/services/retrievalInfoPresenter.js";
 import { RetrievalTracePresenter } from "../../retrieval/services/retrievalTracePresenter.js";
 import {
@@ -28,6 +30,8 @@ export class EvalReplayService {
   private readonly answerPresentationService = new AnswerPresentationService();
   private readonly answerSupportValidator = new AnswerSupportValidator();
   private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
+  private readonly conversationExpansionPlanner = new ConversationExpansionPlanner();
+  private readonly conversationExpansionComposer = new ConversationExpansionComposer();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
 
@@ -132,6 +136,28 @@ export class EvalReplayService {
         supportedSegmentCount: validated.validation.supportedSegmentCount,
         nonSubstantiveSegmentCount: validated.validation.nonSubstantiveSegmentCount,
       };
+
+      const expansionPlan = this.conversationExpansionPlanner.plan({
+        conversationMode,
+        brevityOverrideRequested,
+        contexts: citationEvidence,
+        usedCitations: normalized.citationEvidence.map((citation) => ({
+          documentId: citation.documentId,
+          chunkId: citation.chunkId,
+          title: citation.title,
+        })),
+      });
+      const expanded = this.conversationExpansionComposer.compose({
+        baseAnswer: answer,
+        baseAnswerSegments: answerSegments,
+        visibleCitations: citations,
+        citationEvidence,
+        citationDisplayEnabled,
+        plan: expansionPlan,
+      });
+      answer = expanded.answer;
+      citations = expanded.citations;
+      answerSegments = expanded.answerSegments;
     }
 
     const retrievalInfo = this.retrievalInfoPresenter.present(retrieval.diagnostics);

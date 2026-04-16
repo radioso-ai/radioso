@@ -31,7 +31,7 @@ const staticNoticeGenerator = (text = DEFAULT_UNSUPPORTED_NOTICE): UnsupportedNo
 const groundedMissResponseComposer = new DefaultGroundedMissResponseComposer();
 
 describe("answer support validator", () => {
-  it("keeps supported segments, replaces unsupported substantive segments, and preserves non-substantive wrappers", async () => {
+  it("keeps supported segments, omits unsupported substantive segments, and preserves non-substantive wrappers", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -60,9 +60,7 @@ describe("answer support validator", () => {
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe(
-      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE} Thanks!`,
-    );
+    expect(result.answer).toBe("The page explains testing and parsing content for users. Thanks!");
     expect(result.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
     ]);
@@ -72,8 +70,6 @@ describe("answer support validator", () => {
         citationIndices: [0],
       },
       { text: ". " },
-      { text: DEFAULT_UNSUPPORTED_NOTICE },
-      { text: " " },
       { text: "Thanks!" },
     ]);
     expect(result.validation).toEqual({
@@ -202,7 +198,7 @@ describe("answer support validator", () => {
     });
   });
 
-  it("deduplicates consecutive unsupported notices within mixed answers", async () => {
+  it("omits consecutive unsupported claims within mixed answers", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -232,13 +228,10 @@ describe("answer support validator", () => {
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe(
-      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
-    );
+    expect(result.answer).toBe("The page explains testing and parsing content for users.");
     expect(result.answerSegments).toEqual([
       { text: "The page explains testing and parsing content for users", citationIndices: [0] },
-      { text: ". " },
-      { text: DEFAULT_UNSUPPORTED_NOTICE },
+      { text: "." },
     ]);
     expect(result.validation.unsupportedSegmentCount).toBe(2);
   });

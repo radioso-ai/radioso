@@ -84,12 +84,50 @@ describe("conversation mode composer", () => {
     expect(composed.answerSegments).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          text: "The guide explains testing and parsing content for users",
+          citationIndices: [0],
+        }),
+        expect.objectContaining({
           text: expect.stringContaining("Parser Notes: Parser notes cover validation rules and supported input formats."),
           citationIndices: [1],
         }),
         expect.objectContaining({
           text: expect.stringContaining("User FAQ: The FAQ lists common user questions and onboarding tips."),
           citationIndices: [2],
+        }),
+      ]),
+    );
+  });
+
+  it("preserves uncited degraded text boundaries when adding exploratory suggestions", () => {
+    const planner = new ConversationExpansionPlanner();
+    const composer = new ConversationExpansionComposer();
+    const plan = planner.plan({
+      conversationMode: "exploratory",
+      brevityOverrideRequested: false,
+      contexts,
+      usedCitations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Testing Guide" }],
+    });
+
+    const composed = composer.compose({
+      baseAnswer: "The guide explains testing and parsing content for users.\n\nI couldn't verify the rest.",
+      baseAnswerSegments: [
+        { text: "The guide explains testing and parsing content for users", citationIndices: [0] },
+        { text: ".\n\n" },
+        { text: "I couldn't verify the rest." },
+      ],
+      visibleCitations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Testing Guide" }],
+      citationEvidence: contexts,
+      citationDisplayEnabled: true,
+      plan,
+    });
+
+    expect(composed.answerSegments?.[2]).toEqual({ text: "I couldn't verify the rest." });
+    expect(composed.answerSegments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: expect.stringContaining("Parser Notes: Parser notes cover validation rules and supported input formats."),
+          citationIndices: [1],
         }),
       ]),
     );

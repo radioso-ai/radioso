@@ -1459,6 +1459,8 @@ export const chatApi = {
         answer: payload.answer,
         citations: payload.citations,
         answerSegments: payload.answerSegments,
+        conversationMode: payload.conversationMode,
+        conversationModeMetadata: payload.conversationModeMetadata,
         retrievalInfo: payload.retrievalInfo,
         retrievalTrace: payload.retrievalTrace,
       })
@@ -1770,6 +1772,8 @@ export const publicChatApi = {
         answer: payload.answer,
         citations: payload.citations,
         answerSegments: payload.answerSegments,
+        conversationMode: payload.conversationMode,
+        conversationModeMetadata: payload.conversationModeMetadata,
         retrievalInfo: payload.retrievalInfo,
         retrievalTrace: payload.retrievalTrace,
       })

@@ -1,45 +1,7 @@
-import {
-  AnswerPresentationService,
-  type AnswerSegment,
-  type ChatCitation,
-  type CitationEvidence,
-  type PresentedAnswer,
-} from "./answerPresentationService.js";
+import type { AnswerSegment, ChatCitation, CitationEvidence, PresentedAnswer } from "./answerPresentationService.js";
 import type { ConversationExpansionPlan } from "./conversationExpansionPlanner.js";
 
-const resolveResultNumber = (
-  citation: ChatCitation,
-  citationEvidence: CitationEvidence[],
-): number | null => {
-  const index = citationEvidence.findIndex((candidate) => candidate.chunkId === citation.chunkId);
-  return index >= 0 ? index + 1 : null;
-};
-
-const renderAnchoredBaseAnswer = (
-  baseAnswer: string,
-  baseAnswerSegments: AnswerSegment[] | undefined,
-  visibleCitations: ChatCitation[],
-  citationEvidence: CitationEvidence[],
-): string => {
-  if (!baseAnswerSegments || baseAnswerSegments.length === 0) {
-    return baseAnswer;
-  }
-
-  return baseAnswerSegments.map((segment) => {
-    const anchors = (segment.citationIndices ?? [])
-      .map((index) => visibleCitations[index])
-      .map((citation) => (citation ? resolveResultNumber(citation, citationEvidence) : null))
-      .filter((resultNumber): resultNumber is number => typeof resultNumber === "number")
-      .map((resultNumber) => `[[${resultNumber}]]`)
-      .join("");
-
-    return `${segment.text}${anchors}`;
-  }).join("");
-};
-
 export class ConversationExpansionComposer {
-  private readonly answerPresentationService = new AnswerPresentationService();
-
   compose(input: {
     baseAnswer: string;
     baseAnswerSegments?: AnswerSegment[];
@@ -65,27 +27,51 @@ export class ConversationExpansionComposer {
       };
     }
 
-    const baseAnswer = renderAnchoredBaseAnswer(
-      input.baseAnswer,
-      input.baseAnswerSegments,
-      input.visibleCitations ?? [],
-      input.citationEvidence,
-    );
-
     const heading = input.plan.style === "focused" ? "Focused next:" : "Explore further:";
-    const suggestionLines = input.plan.suggestions.map((suggestion) =>
-      `- ${suggestion.title}: ${suggestion.excerpt}[[${suggestion.resultNumber}]]`,
-    );
-    const followUpLine = input.plan.followUpQuestion ? `\n${input.plan.followUpQuestion}` : "";
-    const combinedAnswer = `${baseAnswer}\n\n${heading}\n${suggestionLines.join("\n")}${followUpLine}`;
-    const presented = this.answerPresentationService.present({
-      answer: combinedAnswer,
-      citations: input.citationEvidence,
-      citationDisplayEnabled: input.citationDisplayEnabled,
-    });
+    const baseSegments = input.baseAnswerSegments && input.baseAnswerSegments.length > 0
+      ? [...input.baseAnswerSegments]
+      : [{ text: input.baseAnswer }];
+    const citations = [...(input.visibleCitations ?? [])];
+    const combinedSegments: AnswerSegment[] = [...baseSegments, { text: `\n\n${heading}\n` }];
+
+    for (let index = 0; index < input.plan.suggestions.length; index += 1) {
+      const suggestion = input.plan.suggestions[index]!;
+      const citationEvidence = input.citationEvidence[suggestion.resultNumber - 1];
+      const trailingNewline = index < input.plan.suggestions.length - 1 || input.plan.followUpQuestion ? "\n" : "";
+
+      if (!citationEvidence) {
+        combinedSegments.push({
+          text: `- ${suggestion.title}: ${suggestion.excerpt}${trailingNewline}`,
+        });
+        continue;
+      }
+
+      let citationIndex = citations.findIndex((citation) => citation.documentId === citationEvidence.documentId);
+      if (citationIndex < 0) {
+        citations.push({
+          documentId: citationEvidence.documentId,
+          chunkId: citationEvidence.chunkId,
+          title: citationEvidence.title,
+        });
+        citationIndex = citations.length - 1;
+      }
+
+      combinedSegments.push({
+        text: `- ${suggestion.title}: ${suggestion.excerpt}${trailingNewline}`,
+        citationIndices: [citationIndex],
+      });
+    }
+
+    if (input.plan.followUpQuestion) {
+      combinedSegments.push({ text: input.plan.followUpQuestion });
+    }
+
+    const combinedAnswer = combinedSegments.map((segment) => segment.text).join("");
 
     return {
-      ...presented,
+      answer: combinedAnswer,
+      citations: input.citationDisplayEnabled ? citations : undefined,
+      answerSegments: input.citationDisplayEnabled ? combinedSegments : undefined,
       expansionApplied: true,
       expansionKind: input.plan.style,
       suggestionCount: input.plan.suggestions.length,

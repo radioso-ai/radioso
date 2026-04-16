@@ -127,7 +127,9 @@ export class AnswerSupportValidator {
             brevityOverrideRequested: input.brevityOverrideRequested,
           }),
         }]
-      : this.buildVisibleSegments(segmentResults);
+      : supportedSegmentCount > 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)
+        ? this.buildVisibleSegmentsWithoutUnsupported(segmentResults)
+        : this.buildVisibleSegments(segmentResults);
 
     const { citations, answerSegments } = this.compactVisibleArtifacts(visibleSegments, input.citationEvidence);
     const answer = visibleSegments.map((segment) => segment.text).join("");
@@ -212,6 +214,73 @@ export class AnswerSupportValidator {
 
     while (visibleSegments.length > 0 && /^\s+$/.test(visibleSegments[visibleSegments.length - 1].text)) {
       visibleSegments.pop();
+    }
+
+    const lastSegment = visibleSegments[visibleSegments.length - 1];
+    if (lastSegment) {
+      lastSegment.text = lastSegment.text.replace(/\s+$/g, "");
+      if (lastSegment.text.length === 0) {
+        visibleSegments.pop();
+      }
+    }
+
+    return visibleSegments;
+  }
+
+  private buildVisibleSegmentsWithoutUnsupported(
+    segmentResults: Array<{
+      text: string;
+      disposition: string;
+      citationIndices?: number[];
+      replacementApplied: boolean;
+    }>,
+  ): AnswerSegment[] {
+    const visibleSegments: AnswerSegment[] = [];
+    let omittedUnsupported = false;
+
+    for (const segment of segmentResults) {
+      if (segment.disposition === VALIDATION_DISPOSITION.SUPPORTED && segment.citationIndices) {
+        visibleSegments.push({
+          text: segment.text,
+          citationIndices: segment.citationIndices,
+        });
+        omittedUnsupported = false;
+        continue;
+      }
+
+      if (segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED) {
+        const prefix = preservePrefix(segment.text);
+        if (visibleSegments.length > 0 && /[.,;:!?()/-]/.test(prefix)) {
+          visibleSegments.push({ text: prefix });
+        }
+        omittedUnsupported = true;
+        continue;
+      }
+
+      const punctuationOnly = /^[\s,.;:!?()/-]*$/.test(segment.text);
+      if (omittedUnsupported && punctuationOnly) {
+        omittedUnsupported = false;
+        continue;
+      }
+
+      if (visibleSegments.length === 0 && punctuationOnly) {
+        continue;
+      }
+
+      visibleSegments.push({ text: segment.text });
+      omittedUnsupported = false;
+    }
+
+    while (visibleSegments.length > 0 && /^\s+$/.test(visibleSegments[visibleSegments.length - 1].text)) {
+      visibleSegments.pop();
+    }
+
+    const lastSegment = visibleSegments[visibleSegments.length - 1];
+    if (lastSegment) {
+      lastSegment.text = lastSegment.text.replace(/\s+$/g, "");
+      if (lastSegment.text.length === 0) {
+        visibleSegments.pop();
+      }
     }
 
     return visibleSegments;

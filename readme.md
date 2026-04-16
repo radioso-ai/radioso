@@ -29,6 +29,7 @@ This is the intended local run path. It:
 - creates or reuses `backend/.env`
 - prompts for the AI provider and required credentials
 - generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `WEBSITE_EMBED_SECRET`
+- configures uploaded document storage to use the local filesystem by default
 - builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose
 - waits until the frontend and backend are reachable
 
@@ -358,6 +359,7 @@ The default local stack started by the bootstrap includes:
 - Backend API on port `8080`
 - Background document worker
 - Frontend on port `3000`
+- Shared local document storage mounted for both backend runtimes
 
 ### Configuration
 
@@ -369,8 +371,14 @@ Common values:
 PORT=8080
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/radioso
 LLM_PROVIDER=openai
+DOCUMENT_STORAGE_DRIVER=local
+DOCUMENT_STORAGE_LOCAL_PATH=../.context/document-storage
 PUBLIC_CHAT_BASE_URL=http://localhost:3000/chat
 ```
+
+For local Docker runs, uploaded source files are stored on a shared filesystem path so the API and worker containers see the same files. The default path is `../.context/document-storage` relative to `backend/`.
+
+For cloud deploys, set `DOCUMENT_STORAGE_DRIVER=gcs` and provide `DOCUMENT_STORAGE_BUCKET`. The current Terraform stack does that automatically for GCP.
 
 If you already know what you need, you can pre-populate `backend/.env` before running the stack.
 

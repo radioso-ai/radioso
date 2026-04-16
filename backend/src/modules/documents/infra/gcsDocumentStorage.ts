@@ -29,7 +29,7 @@ export interface DocumentStoragePort {
   delete(input: DocumentStorageDeleteInput): Promise<void>;
 }
 
-const sanitizePathSegment = (value: string): string =>
+export const sanitizePathSegment = (value: string): string =>
   value
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .replace(/-+/g, "-")

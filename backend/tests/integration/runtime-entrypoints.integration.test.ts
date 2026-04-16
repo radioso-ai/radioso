@@ -30,6 +30,8 @@ const createEnv = (port: number): Env => ({
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 30,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
+  DOCUMENT_STORAGE_DRIVER: "local",
+  DOCUMENT_STORAGE_LOCAL_PATH: "../.context/test-document-storage",
   DOCUMENT_STORAGE_BUCKET: "test-document-imports",
   DOCUMENT_UPLOAD_MAX_BYTES: 10 * 1024 * 1024,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",

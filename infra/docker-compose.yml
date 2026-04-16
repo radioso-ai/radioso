@@ -36,6 +36,8 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
       SESSION_TTL_HOURS: 168
+    volumes:
+      - radioso_document_storage:/app/.context/document-storage
     command: ["npm", "run", "start:http"]
     ports:
       - "8080:8080"
@@ -68,6 +70,8 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
       SESSION_TTL_HOURS: 168
+    volumes:
+      - radioso_document_storage:/app/.context/document-storage
     command: ["npm", "run", "start:worker"]
 
   frontend:
@@ -89,3 +93,4 @@ services:
 
 volumes:
   radioso_postgres_data:
+  radioso_document_storage:

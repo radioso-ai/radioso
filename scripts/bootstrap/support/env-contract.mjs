@@ -55,6 +55,8 @@ const keyOrder = [
   "WEBSITE_EMBED_SECRET",
   "SESSION_TTL_HOURS",
   "CONNECTOR_ENCRYPTION_KEY",
+  "DOCUMENT_STORAGE_DRIVER",
+  "DOCUMENT_STORAGE_LOCAL_PATH",
   "DOCUMENT_STORAGE_BUCKET",
   "DOCUMENT_UPLOAD_MAX_BYTES",
   "PUBLIC_CHAT_BASE_URL",
@@ -108,9 +110,17 @@ export const getAlwaysRequiredKeys = () => [
 
 export const listRequiredKeys = (values, contract = getEnvContract()) => {
   const provider = values.LLM_PROVIDER || contract.defaults.LLM_PROVIDER || "openai";
+  const storageDriver = values.DOCUMENT_STORAGE_DRIVER
+    || (values.DOCUMENT_STORAGE_BUCKET ? "gcs" : contract.defaults.DOCUMENT_STORAGE_DRIVER || "local");
   const required = new Set(getAlwaysRequiredKeys());
   for (const key of getProviderRequiredKeys(provider)) {
     required.add(key);
+  }
+  if (!values.DOCUMENT_STORAGE_DRIVER) {
+    required.add("DOCUMENT_STORAGE_DRIVER");
+  }
+  if (storageDriver === "gcs") {
+    required.add("DOCUMENT_STORAGE_BUCKET");
   }
   return [...required];
 };

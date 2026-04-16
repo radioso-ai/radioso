@@ -9,5 +9,6 @@ provider "google-beta" {
 }
 
 locals {
-  service_name = "radioso"
+  service_name                 = "radioso"
+  document_storage_bucket_name = coalesce(var.document_storage_bucket_name, "${var.project_id}-${local.service_name}-documents")
 }

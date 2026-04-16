@@ -67,7 +67,9 @@ const printConfigurationSummary = (values, ansi) => {
   process.stdout.write(
     `${formatMessage(
       "helper",
-      `- External document storage: ${values.DOCUMENT_STORAGE_BUCKET ? "enabled" : "disabled"}\n`,
+      values.DOCUMENT_STORAGE_DRIVER === "gcs"
+        ? `- Document storage: GCS bucket ${values.DOCUMENT_STORAGE_BUCKET}\n`
+        : `- Document storage: local filesystem at ${values.DOCUMENT_STORAGE_LOCAL_PATH}\n`,
       ansi,
     )}`,
   );

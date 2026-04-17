@@ -15,17 +15,17 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       rewritten: input.rewrittenContexts,
       lexical: input.lexicalContexts,
     });
-    const mergedCandidates = normalizedCandidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
     const metadataRuleCandidates = this.metadataRuleScoringService.apply({
-      candidates: mergedCandidates,
+      candidates: normalizedCandidates,
       metadataRules: input.settings.metadataRules ?? [],
     });
+    const mergedCandidates = metadataRuleCandidates.candidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
 
     return {
       ...input,
       normalizedCandidates,
       mergedCandidates,
-      scoredCandidates: metadataRuleCandidates.candidates,
+      scoredCandidates: mergedCandidates,
       appliedConstraints: metadataRuleCandidates.appliedRules,
       candidateFallbackApplied: input.vectorFallbackApplied,
     };

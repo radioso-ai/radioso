@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_UNSUPPORTED_NOTICE } from "../../src/modules/chat/services/assistantTurnOutcomeClassifier.js";
 import { ChatService, type ChatGateway, type ChatStreamEvent } from "../../src/modules/chat/services/chatService.js";
+import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 import { createAuditService, InMemoryConversationRepository, InMemoryMessageRepository } from "../support/fakes.js";
+
+const groundedMissResponseComposer: GroundedMissResponseComposer = {
+  async composeUnsupportedWithContext(input) {
+    const title = input.contexts[0]?.title;
+    return title
+      ? `I couldn't verify that from your workspace documents, but I did find related material in "${title}" if you'd like to explore that instead.`
+      : "I couldn't verify that from your workspace documents, but I did find related material if you'd like to explore that instead.";
+  },
+  async composeNoContext() {
+    return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
+  },
+};
 
 describe("chat service streaming", () => {
   it("persists the normalized assistant answer only after the stream completes", async () => {
@@ -39,6 +51,11 @@ describe("chat service streaming", () => {
               constraints: [],
             },
           },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "guided",
+          },
         };
       },
     } as const;
@@ -57,6 +74,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -84,6 +102,15 @@ describe("chat service streaming", () => {
       answer: "full answer",
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer", citationIndices: [0] }],
+      conversationMode: "guided",
+      conversationModeMetadata: {
+        conversationMode: "guided",
+        brevityOverrideApplied: false,
+        expansionApplied: false,
+        expansionKind: "none",
+        suggestionCount: 0,
+        followUpQuestionApplied: false,
+      },
       retrievalInfo: expect.objectContaining({
         parsedQuery: expect.objectContaining({
           originalQuery: "page do",
@@ -196,6 +223,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const first = await service.answer({
@@ -272,6 +300,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const response = await service.answer({
@@ -339,6 +368,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -413,6 +443,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const response = await service.answer({
@@ -496,6 +527,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const first = await service.answer({
@@ -580,6 +612,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     await service.answer({
@@ -644,6 +677,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const chunkTexts: string[] = [];
@@ -674,6 +708,15 @@ describe("chat service streaming", () => {
       answerSegments: [
         { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
       ],
+      conversationMode: "guided",
+      conversationModeMetadata: {
+        conversationMode: "guided",
+        brevityOverrideApplied: false,
+        expansionApplied: false,
+        expansionKind: "none",
+        suggestionCount: 0,
+        followUpQuestionApplied: false,
+      },
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -752,6 +795,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     const chunkTexts: string[] = [];
@@ -782,6 +826,15 @@ describe("chat service streaming", () => {
       answerSegments: [
         { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
       ],
+      conversationMode: "guided",
+      conversationModeMetadata: {
+        conversationMode: "guided",
+        brevityOverrideApplied: false,
+        expansionApplied: false,
+        expansionKind: "none",
+        suggestionCount: 0,
+        followUpQuestionApplied: false,
+      },
       retrievalInfo: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -857,6 +910,7 @@ describe("chat service streaming", () => {
       retrievalPipeline as never,
       chatGateway,
       auditService,
+      groundedMissResponseComposer,
     );
 
     await expect(service.answer({
@@ -974,13 +1028,11 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(response.answer).toBe(
-      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
-    );
+    expect(response.answer).toBe("The page explains testing and parsing content for users.");
     expect(response.answer).not.toContain("24/7 phone support");
     expect(response.answerSegments).toEqual([
       { text: "The page explains testing and parsing content for users", citationIndices: [0] },
-      { text: `. ${DEFAULT_UNSUPPORTED_NOTICE}` },
+      { text: "." },
     ]);
 
     const [conversationId] = conversationRepository.items.keys();
@@ -1070,9 +1122,7 @@ describe("chat service streaming", () => {
       .map((event) => event.text)
       .join("");
 
-    expect(streamedText).toBe(
-      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
-    );
+    expect(streamedText).toBe("The page explains testing and parsing content for users.");
     expect(events.findIndex((event) => event.type === "chunk")).toBeGreaterThanOrEqual(0);
     expect(events.findIndex((event) => event.type === "chunk")).toBeLessThan(
       events.findIndex((event) => event.type === "done"),
@@ -1080,7 +1130,7 @@ describe("chat service streaming", () => {
     expect(events.at(-1)).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
+        answer: "The page explains testing and parsing content for users.",
       }),
     );
   });
@@ -1176,5 +1226,409 @@ describe("chat service streaming", () => {
         }),
       }),
     );
+  });
+
+  it("does not infer expansion metadata from inline answer formatting", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The page explains testing and parsing content for users. The FAQ covers onboarding. The notes cover examples.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "warn",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return '{"suggestions":[]}';
+        }
+        return [
+          "The page explains testing and parsing content for users[[1]].",
+          "",
+          "- You can also inspect the onboarding FAQ[[1]].",
+          "- The notes include worked examples[[1]].",
+        ].join("\n");
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does this page do?",
+      stream: false,
+    });
+
+    expect(response.conversationModeMetadata).toEqual({
+      conversationMode: "exploratory",
+      brevityOverrideApplied: false,
+      expansionApplied: false,
+      expansionKind: "none",
+      suggestionCount: 0,
+      followUpQuestionApplied: false,
+    });
+    expect(response.suggestions).toBeUndefined();
+  });
+
+  it("adds exploratory suggestions from grounded contexts when the direct answer stays terse", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "who is nadia",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Nadia",
+              content: "Nadia is a teacher and author.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "God is our True Home: In Conversation with Nadia - Valmora Europe",
+              content: "An interview about Nadia's path and spiritual life.",
+            },
+            {
+              chunkId: "chunk-3",
+              documentId: "doc-3",
+              title: "Il gusto della sola - Valmora Books - ricette, consigli e ispirazioni salutari",
+              content: "Her cooking book and related work.",
+            },
+            {
+              chunkId: "chunk-4",
+              documentId: "doc-4",
+              title: "Challenges and blessings go hand in hand - Interview with Nadia (ENG) - Valmora Europe",
+              content: "Another interview with adjacent material.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Nadia" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 4,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 4,
+            normalizedCandidateCount: 4,
+            finalContextCount: 4,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "who is nadia",
+              lexicalQuery: "nadia",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "What does the interview say about her spiritual path?", contextIndex: 1 },
+              { text: "Which books or projects is she associated with?", contextIndex: 2 },
+              { text: "What challenges does she describe in the other interview?", contextIndex: 3 },
+            ],
+          });
+        }
+        return "Nadia is a teacher and author[[1]].";
+      },
+      async *streamAnswer() {
+        yield "Nadia is a teacher and author[[1]].";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Who is Nadia?",
+      stream: false,
+    });
+
+    expect(response.answer).toContain("Nadia is a teacher and author.");
+    expect(response.answer).not.toContain("\n- ");
+    expect(response.suggestions).toEqual([
+      {
+        text: "What does the interview say about her spiritual path?",
+        citation: {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Nadia",
+        },
+      },
+      {
+        text: "Which books or projects is she associated with?",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "God is our True Home: In Conversation with Nadia - Valmora Europe",
+        },
+      },
+      {
+        text: "What challenges does she describe in the other interview?",
+        citation: {
+          documentId: "doc-3",
+          chunkId: "chunk-3",
+          title: "Il gusto della sola - Valmora Books - ricette, consigli e ispirazioni salutari",
+        },
+      },
+    ]);
+    expect(response.conversationModeMetadata).toEqual({
+      conversationMode: "exploratory",
+      brevityOverrideApplied: false,
+      expansionApplied: true,
+      expansionKind: "expansive",
+      suggestionCount: 3,
+      followUpQuestionApplied: false,
+    });
+    expect(response.citations).toEqual([
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Nadia" },
+    ]);
+  });
+
+  it("returns exploratory suggestions as structured multilingual continuations", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "quali libri ha scritto freya",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Freya Rennick Archivi - Valmora Books",
+              content: "Freya wrote La mia anima ricorda Swami Selan.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Satsang with Freya (on her upcoming book and more) &mdash; Valmora",
+              content: "An event about her upcoming book and more.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Freya Rennick Archivi - Valmora Books" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "quali libri ha scritto freya",
+              lexicalQuery: "freya libri",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "Quale altro libro o progetto viene citato accanto a questo?", contextIndex: 1 },
+            ],
+          });
+        }
+        return "Freya ha scritto La mia anima ricorda Swami Selan[[1]].";
+      },
+      async *streamAnswer() {
+        yield "Freya ha scritto La mia anima ricorda Swami Selan[[1]].";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "quali libri ha scritto Freya",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Freya ha scritto La mia anima ricorda Swami Selan.");
+    expect(response.suggestions).toEqual([
+      {
+        text: "Quale altro libro o progetto viene citato accanto a questo?",
+        citation: {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Freya Rennick Archivi - Valmora Books",
+        },
+      },
+    ]);
+  });
+
+  it("filters suggestions that mostly restate the current query or answer", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "want links to the next page of montelago videos",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Montelago Archives - Page 2 of 14 - Valmora Europe",
+              content: "Page 2 links to the next page in the archive.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Montelago Archives - Page 3 of 14 - Valmora Europe",
+              content: "Page 3 is part of a 14-page archive.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Montelago Archives - Page 2 of 14 - Valmora Europe" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "montelago videos next page",
+              lexicalQuery: "montelago videos page 3",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "What videos are on page 3?", contextIndex: 2 },
+              { text: "How many Montelago archive pages are there?", contextIndex: 2 },
+            ],
+          });
+        }
+
+        return "Yes — here's the next page of the Montelago videos archive: https://valmora-europe.example/category/video-from-montelago/page/3/[[1]]";
+      },
+      async *streamAnswer() {
+        yield "Yes — here's the next page of the Montelago videos archive: https://valmora-europe.example/category/video-from-montelago/page/3/[[1]]";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Want links to the next page of Montelago videos?",
+      stream: false,
+    });
+
+    expect(response.suggestions).toEqual([
+      {
+        text: "How many Montelago archive pages are there?",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Montelago Archives - Page 3 of 14 - Valmora Europe",
+        },
+      },
+    ]);
   });
 });

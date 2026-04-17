@@ -1,13 +1,11 @@
 import type { AnswerSegment, CitationEvidence } from "./answerPresentationService.js";
-import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSettings.js";
+import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { shouldPreserveUnsupportedSegments, shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import {
-  DEFAULT_UNSUPPORTED_NOTICE,
   type ValidatedAnswer,
   VALIDATION_DISPOSITION,
 } from "./answerSupportValidationTypes.js";
 import type { GroundedMissResponseComposer } from "./groundedMissResponseComposer.js";
-import type { UnsupportedNoticeGenerator } from "./unsupportedNoticeGenerator.js";
 
 const NON_SUBSTANTIVE_PHRASES = new Set([
   "hello",
@@ -44,7 +42,7 @@ const isNonSubstantiveText = (value: string): boolean => {
 };
 
 const preservePrefix = (value: string): string => value.match(/^[\s,.;:!?()/-]*/)?.[0] ?? "";
-const stripPrefix = (value: string): string => value.replace(/^[\s,.;:!?()/-]*/, "");
+const OMITTED_UNSUPPORTED_SENTINEL = "__omitted_unsupported__";
 
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
@@ -61,7 +59,8 @@ export class AnswerSupportValidator {
     retrievedContextSummaries: Array<{ title: string; content: string }>;
     citationDisplayEnabled: boolean;
     answerSupportPolicy: AnswerSupportPolicy;
-    unsupportedNoticeGenerator: UnsupportedNoticeGenerator;
+    conversationMode: ConversationMode;
+    brevityOverrideRequested: boolean;
     groundedMissResponseComposer: GroundedMissResponseComposer;
   }): Promise<ValidatedAnswer> {
     const segmentResults = await Promise.all(input.answerSegments.map(async (segment) => {
@@ -97,14 +96,9 @@ export class AnswerSupportValidator {
         } as const;
       }
 
-      const generatedNotice = await input.unsupportedNoticeGenerator.generate({
-        query: input.query,
-        unsupportedText: segment.text,
-      });
-
       return {
         originalText: segment.text,
-        text: `${preservePrefix(segment.text)}${generatedNotice || DEFAULT_UNSUPPORTED_NOTICE}`,
+        text: preservePrefix(segment.text),
         disposition: VALIDATION_DISPOSITION.UNSUPPORTED,
         replacementApplied: true,
         reason: "missing_support_reference",
@@ -121,9 +115,13 @@ export class AnswerSupportValidator {
             query: input.query,
             unsupportedText: input.answer,
             contexts: input.retrievedContextSummaries,
+            conversationMode: input.conversationMode,
+            brevityOverrideRequested: input.brevityOverrideRequested,
           }),
         }]
-      : this.buildVisibleSegments(segmentResults);
+      : supportedSegmentCount > 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)
+        ? this.buildVisibleSegmentsWithoutUnsupported(segmentResults)
+        : this.buildVisibleSegments(segmentResults);
 
     const { citations, answerSegments } = this.compactVisibleArtifacts(visibleSegments, input.citationEvidence);
     const answer = visibleSegments.map((segment) => segment.text).join("");
@@ -159,7 +157,7 @@ export class AnswerSupportValidator {
       if (
         segment.disposition === VALIDATION_DISPOSITION.NON_SUBSTANTIVE &&
         /^[.!?]+\s*$/.test(segment.text) &&
-        latestMeaningfulSegmentText === DEFAULT_UNSUPPORTED_NOTICE
+        latestMeaningfulSegmentText === OMITTED_UNSUPPORTED_SENTINEL
       ) {
         const trailingWhitespace = segment.text.match(/\s+$/)?.[0];
         if (trailingWhitespace) {
@@ -179,8 +177,8 @@ export class AnswerSupportValidator {
 
       if (
         segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED &&
-        latestMeaningfulSegmentText === DEFAULT_UNSUPPORTED_NOTICE &&
-        stripPrefix(segment.text) === DEFAULT_UNSUPPORTED_NOTICE
+        latestMeaningfulSegmentText === OMITTED_UNSUPPORTED_SENTINEL &&
+        segment.text.length === 0
       ) {
         const separatorWhitespace = segment.text.match(/^\s+/)?.[0];
         if (separatorWhitespace) {
@@ -193,7 +191,7 @@ export class AnswerSupportValidator {
 
       if (segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED) {
         latestMeaningfulSegmentText = segment.replacementApplied
-          ? DEFAULT_UNSUPPORTED_NOTICE
+          ? OMITTED_UNSUPPORTED_SENTINEL
           : segment.text.trim();
         continue;
       }
@@ -208,6 +206,73 @@ export class AnswerSupportValidator {
 
     while (visibleSegments.length > 0 && /^\s+$/.test(visibleSegments[visibleSegments.length - 1].text)) {
       visibleSegments.pop();
+    }
+
+    const lastSegment = visibleSegments[visibleSegments.length - 1];
+    if (lastSegment) {
+      lastSegment.text = lastSegment.text.replace(/\s+$/g, "");
+      if (lastSegment.text.length === 0) {
+        visibleSegments.pop();
+      }
+    }
+
+    return visibleSegments;
+  }
+
+  private buildVisibleSegmentsWithoutUnsupported(
+    segmentResults: Array<{
+      text: string;
+      disposition: string;
+      citationIndices?: number[];
+      replacementApplied: boolean;
+    }>,
+  ): AnswerSegment[] {
+    const visibleSegments: AnswerSegment[] = [];
+    let omittedUnsupported = false;
+
+    for (const segment of segmentResults) {
+      if (segment.disposition === VALIDATION_DISPOSITION.SUPPORTED && segment.citationIndices) {
+        visibleSegments.push({
+          text: segment.text,
+          citationIndices: segment.citationIndices,
+        });
+        omittedUnsupported = false;
+        continue;
+      }
+
+      if (segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED) {
+        const prefix = preservePrefix(segment.text);
+        if (visibleSegments.length > 0 && /[.,;:!?()/-]/.test(prefix)) {
+          visibleSegments.push({ text: prefix });
+        }
+        omittedUnsupported = true;
+        continue;
+      }
+
+      const punctuationOnly = /^[\s,.;:!?()/-]*$/.test(segment.text);
+      if (omittedUnsupported && punctuationOnly) {
+        omittedUnsupported = false;
+        continue;
+      }
+
+      if (visibleSegments.length === 0 && punctuationOnly) {
+        continue;
+      }
+
+      visibleSegments.push({ text: segment.text });
+      omittedUnsupported = false;
+    }
+
+    while (visibleSegments.length > 0 && /^\s+$/.test(visibleSegments[visibleSegments.length - 1].text)) {
+      visibleSegments.pop();
+    }
+
+    const lastSegment = visibleSegments[visibleSegments.length - 1];
+    if (lastSegment) {
+      lastSegment.text = lastSegment.text.replace(/\s+$/g, "");
+      if (lastSegment.text.length === 0) {
+        visibleSegments.pop();
+      }
     }
 
     return visibleSegments;

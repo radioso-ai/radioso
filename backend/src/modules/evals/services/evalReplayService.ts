@@ -13,14 +13,11 @@ import {
   type AssistantTurnOutcome,
 } from "../../chat/services/answerSupportValidationTypes.js";
 import {
-  DefaultUnsupportedNoticeGenerator,
-  type UnsupportedNoticeGenerator,
-} from "../../chat/services/unsupportedNoticeGenerator.js";
-import {
-  DefaultGroundedMissResponseComposer,
+  MissingGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
 } from "../../chat/services/groundedMissResponseComposer.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
+import { isBrevityOverrideRequested } from "../../chat/services/brevityOverrideDetector.js";
 import type { EvalCaseConversationMessage, EvalReplayDiagnostics } from "../domain/evalTypes.js";
 
 export class EvalReplayService {
@@ -33,8 +30,7 @@ export class EvalReplayService {
   constructor(
     private readonly retrievalPipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
-    private readonly unsupportedNoticeGenerator: UnsupportedNoticeGenerator = new DefaultUnsupportedNoticeGenerator(),
-    private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new DefaultGroundedMissResponseComposer(),
+    private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
   ) {}
 
   async replay(input: {
@@ -48,12 +44,19 @@ export class EvalReplayService {
       workspaceId: input.workspaceId,
       query: input.query,
       history,
+      brevityOverrideRequested: isBrevityOverrideRequested(input.query),
     });
     const answerSupportPolicy = retrieval.responseSettings?.answerSupportPolicy ?? DEFAULT_ANSWER_SUPPORT_POLICY;
+    const conversationMode = retrieval.responseSettings?.conversationMode ?? "guided";
+    const brevityOverrideRequested = Boolean(retrieval.responseSettings?.brevityOverrideRequested);
 
     const rawAnswer =
       retrieval.contexts.length === 0
-        ? await this.groundedMissResponseComposer.composeNoContext({ query: input.query })
+        ? await this.groundedMissResponseComposer.composeNoContext({
+            query: input.query,
+            conversationMode,
+            brevityOverrideRequested,
+          })
         : await this.chatGateway.answer({
             query: input.query,
             history,
@@ -105,7 +108,8 @@ export class EvalReplayService {
         })),
         citationDisplayEnabled,
         answerSupportPolicy,
-        unsupportedNoticeGenerator: this.unsupportedNoticeGenerator,
+        conversationMode,
+        brevityOverrideRequested,
         groundedMissResponseComposer: this.groundedMissResponseComposer,
       });
       answer = validated.answer;
@@ -122,6 +126,7 @@ export class EvalReplayService {
         supportedSegmentCount: validated.validation.supportedSegmentCount,
         nonSubstantiveSegmentCount: validated.validation.nonSubstantiveSegmentCount,
       };
+
     }
 
     const retrievalInfo = this.retrievalInfoPresenter.present(retrieval.diagnostics);

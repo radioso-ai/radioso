@@ -17,8 +17,6 @@ export const ASSISTANT_TURN_OUTCOME = {
 
 export type AssistantTurnOutcome = (typeof ASSISTANT_TURN_OUTCOME)[keyof typeof ASSISTANT_TURN_OUTCOME];
 
-export const DEFAULT_UNSUPPORTED_NOTICE = "I couldn't verify that from the retrieved documents.";
-
 export interface AnswerValidationSummary {
   ran: boolean;
   answerModified: boolean;

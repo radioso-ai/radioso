@@ -1,0 +1,33 @@
+# Conversation Mode
+
+## Summary
+Choose how broadly the assistant responds after it finds grounded material for the current turn.
+
+## Details
+### Overview
+
+Conversation mode controls the shape of the final grounded answer.
+
+It does not relax grounding. The separate unsupported-answer policy still decides what happens when the model writes something the retrieved material does not support.
+
+### Factual
+
+Use this when you want the assistant to answer the current question and stop.
+
+Factual mode keeps responses direct and avoids proactively suggesting adjacent topics unless clarification is required for honesty.
+
+### Guided
+
+Use this when you want the assistant to answer directly and then occasionally point to one or two nearby grounded directions.
+
+Guided mode is the default because it adds a small amount of discovery without turning every answer into an exploration flow.
+
+### Exploratory
+
+Use this when discovery matters as much as the direct answer.
+
+Exploratory mode answers the question, then surfaces more of what the workspace covers nearby and may add one grounded follow-up prompt when the retrieved material supports it honestly.
+
+### Per-Turn Override
+
+If a user explicitly asks for brevity, directness, or "just the answer," the assistant suppresses optional exploration for that turn even if the workspace mode is guided or exploratory.

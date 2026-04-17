@@ -70,6 +70,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL 16 with additive workspace columns; existing conversations/messages/audit events reused (040-website-embed-widget)
 - TypeScript 5.x on Node.js 22 + Express, `pg`, Zod, Pino, Vitest, Supertest, `@google-cloud/tasks`, existing local connector/document packages (042-autoscale-workers)
 - PostgreSQL 16 with `pgvector`; existing `document_processing_jobs`, `documents`, `chunks`, and audit events; Google Cloud Tasks for delivery only (042-autoscale-workers)
+- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives (041-conversation-modes)
+- PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence inside existing `attribute_controls` JSON plus additive assistant-turn audit metadata (041-conversation-modes)
 
 
 ## Project Structure
@@ -87,6 +89,7 @@ tests/
 ## Code Style
 
 : Follow standard conventions
+- Do not hard-code user-facing assistant or chat response strings in application code. This is a multilingual system, so runtime conversational copy must come from the LLM. If prompt text is extracted from backend code, store it under `backend/prompts/`.
 
 ## Documentation
 
@@ -96,5 +99,6 @@ tests/
 
 ## Recent Changes
 - 042-autoscale-workers: Added TypeScript 5.x on Node.js 22 + Express, `pg`, Zod, Pino, Vitest, Supertest, `@google-cloud/tasks`, existing local connector/document packages
+- 041-conversation-modes: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives
 - 040-website-embed-widget: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, Next.js App Router, existing Radix/shadcn UI primitives, existing chat/public-chat frontend utilities
 - 039-unsupported-answer-refine: Added TypeScript 5.x on Node.js 22 + Express, Zod, pg, OpenAI SDK, Pino, Vitest, Supertes

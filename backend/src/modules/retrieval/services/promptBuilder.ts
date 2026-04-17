@@ -1,7 +1,9 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
+import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
+import { ConversationModeInstructionBuilder } from "./conversationModeInstructionBuilder.js";
 
 export interface PromptBuildResult {
   prompt: string;
@@ -9,6 +11,8 @@ export interface PromptBuildResult {
 }
 
 export class PromptBuilder {
+  private readonly conversationModeInstructionBuilder = new ConversationModeInstructionBuilder();
+
   build(input: {
     query: string;
     history: MessageRecord[];
@@ -16,6 +20,8 @@ export class PromptBuilder {
     settings: {
       assistantIdentity?: AssistantIdentityPromptInput | null;
       customInstruction?: string;
+      conversationMode?: ConversationMode;
+      brevityOverrideRequested?: boolean;
       responseLanguagePolicy?: ResponseLanguagePolicy;
     };
   }): PromptBuildResult {
@@ -34,11 +40,16 @@ export class PromptBuilder {
       .join("\n\n");
     const customInstructionBlock = this.renderCustomInstruction(input.settings.customInstruction);
     const assistantIdentityBlock = this.renderAssistantIdentity(input.settings.assistantIdentity);
+    const conversationModeInstructionBlock = this.conversationModeInstructionBuilder.build({
+      conversationMode: input.settings.conversationMode ?? "guided",
+      brevityOverrideRequested: input.settings.brevityOverrideRequested,
+    });
 
     return {
       prompt: renderPromptTemplate("retrieval/answer.md", {
         assistant_identity_block: assistantIdentityBlock ? `${assistantIdentityBlock}\n` : "",
         custom_instruction_block: customInstructionBlock ? `${customInstructionBlock}\n` : "",
+        conversation_mode_instruction_block: `${conversationModeInstructionBlock}\n`,
         response_language_instruction: this.renderResponseLanguageInstruction(
           input.settings.responseLanguagePolicy ?? "match_user_question",
         ),

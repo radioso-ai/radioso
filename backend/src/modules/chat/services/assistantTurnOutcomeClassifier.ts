@@ -1,13 +1,11 @@
 import {
   ASSISTANT_TURN_OUTCOME,
-  DEFAULT_UNSUPPORTED_NOTICE,
   type AnswerValidationSummary,
   type AssistantTurnOutcome,
 } from "./answerSupportValidationTypes.js";
 
 export {
   ASSISTANT_TURN_OUTCOME,
-  DEFAULT_UNSUPPORTED_NOTICE,
 } from "./answerSupportValidationTypes.js";
 
 export class AssistantTurnOutcomeClassifier {

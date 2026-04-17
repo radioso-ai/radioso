@@ -4,14 +4,9 @@ import { AnswerSupportValidator } from "../../src/modules/chat/services/answerSu
 import {
   ASSISTANT_TURN_OUTCOME,
   AssistantTurnOutcomeClassifier,
-  DEFAULT_UNSUPPORTED_NOTICE,
 } from "../../src/modules/chat/services/assistantTurnOutcomeClassifier.js";
 import type { CitationEvidence } from "../../src/modules/chat/services/answerPresentationService.js";
-import {
-  DefaultGroundedMissResponseComposer,
-  DEFAULT_UNSUPPORTED_WITHOUT_CONTEXT_RESPONSE,
-} from "../../src/modules/chat/services/groundedMissResponseComposer.js";
-import type { UnsupportedNoticeGenerator } from "../../src/modules/chat/services/unsupportedNoticeGenerator.js";
+import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 
 const citations: CitationEvidence[] = [
   {
@@ -22,16 +17,17 @@ const citations: CitationEvidence[] = [
   },
 ];
 
-const staticNoticeGenerator = (text = DEFAULT_UNSUPPORTED_NOTICE): UnsupportedNoticeGenerator => ({
-  async generate() {
-    return text;
+const groundedMissResponseComposer: GroundedMissResponseComposer = {
+  async composeUnsupportedWithContext() {
+    return "No se pudo verificar esa respuesta con los documentos recuperados.";
   },
-});
-
-const groundedMissResponseComposer = new DefaultGroundedMissResponseComposer();
+  async composeNoContext() {
+    return "No se encontró material relevante en el espacio de trabajo.";
+  },
+};
 
 describe("answer support validator", () => {
-  it("keeps supported segments, replaces unsupported substantive segments, and preserves non-substantive wrappers", async () => {
+  it("keeps supported segments, omits unsupported substantive segments, and preserves non-substantive wrappers", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -54,13 +50,12 @@ describe("answer support validator", () => {
       })),
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
-      unsupportedNoticeGenerator: staticNoticeGenerator(),
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe(
-      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE} Thanks!`,
-    );
+    expect(result.answer).toBe("The page explains testing and parsing content for users. Thanks!");
     expect(result.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
     ]);
@@ -70,8 +65,6 @@ describe("answer support validator", () => {
         citationIndices: [0],
       },
       { text: ". " },
-      { text: DEFAULT_UNSUPPORTED_NOTICE },
-      { text: " " },
       { text: "Thanks!" },
     ]);
     expect(result.validation).toEqual({
@@ -91,7 +84,7 @@ describe("answer support validator", () => {
     ]);
   });
 
-  it("collapses fully unsupported substantive answers to only the unsupported notice", async () => {
+  it("collapses fully unsupported substantive answers to the grounded-miss response", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -105,13 +98,14 @@ describe("answer support validator", () => {
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
-      unsupportedNoticeGenerator: staticNoticeGenerator(),
-      groundedMissResponseComposer: new DefaultGroundedMissResponseComposer(),
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
+      groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe(DEFAULT_UNSUPPORTED_WITHOUT_CONTEXT_RESPONSE);
+    expect(result.answer).toBe("No se pudo verificar esa respuesta con los documentos recuperados.");
     expect(result.citations).toEqual([]);
-    expect(result.answerSegments).toEqual([{ text: DEFAULT_UNSUPPORTED_WITHOUT_CONTEXT_RESPONSE }]);
+    expect(result.answerSegments).toEqual([{ text: "No se pudo verificar esa respuesta con los documentos recuperados." }]);
     expect(result.validation).toEqual({
       ran: true,
       answerModified: true,
@@ -142,7 +136,8 @@ describe("answer support validator", () => {
       })),
       citationDisplayEnabled: false,
       answerSupportPolicy: "strict",
-      unsupportedNoticeGenerator: staticNoticeGenerator(),
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -171,7 +166,8 @@ describe("answer support validator", () => {
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
-      unsupportedNoticeGenerator: staticNoticeGenerator(),
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -194,7 +190,7 @@ describe("answer support validator", () => {
     });
   });
 
-  it("deduplicates consecutive unsupported notices within mixed answers", async () => {
+  it("omits consecutive unsupported claims within mixed answers", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -218,17 +214,15 @@ describe("answer support validator", () => {
       })),
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
-      unsupportedNoticeGenerator: staticNoticeGenerator(),
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe(
-      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
-    );
+    expect(result.answer).toBe("The page explains testing and parsing content for users.");
     expect(result.answerSegments).toEqual([
       { text: "The page explains testing and parsing content for users", citationIndices: [0] },
-      { text: ". " },
-      { text: DEFAULT_UNSUPPORTED_NOTICE },
+      { text: "." },
     ]);
     expect(result.validation.unsupportedSegmentCount).toBe(2);
   });
@@ -244,7 +238,8 @@ describe("answer support validator", () => {
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
       answerSupportPolicy: "warn",
-      unsupportedNoticeGenerator: staticNoticeGenerator("No pude verificar esa parte."),
+      conversationMode: "guided",
+      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 

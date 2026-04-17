@@ -48,7 +48,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
 
     const nextInput = input.trim()
     setInput('')
-    await sendMessage(nextInput)
+    await sendMessage(nextInput, { method: 'typed' })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -86,6 +86,17 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
 
       return 'error'
     }
+  }
+
+  const handleSuggestionSelect = (text: string, messageId: string) => {
+    if (isLoading || isBootstrapping) {
+      return
+    }
+
+    void sendMessage(text, {
+      method: 'suggestion_click',
+      suggestionSourceMessageId: messageId,
+    })
   }
 
   const emptyState = onboarding.hasPendingDocuments
@@ -171,7 +182,11 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
           </div>
         ) : (
           <div>
-            <ChatMessageThread messages={messages} onOpenDocument={handleOpenCitation} />
+            <ChatMessageThread
+              messages={messages}
+              onOpenDocument={handleOpenCitation}
+              onSuggestionSelect={handleSuggestionSelect}
+            />
             <div ref={messagesEndRef} />
           </div>
         )}

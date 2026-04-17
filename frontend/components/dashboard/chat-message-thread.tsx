@@ -2,9 +2,10 @@
 
 import type { KeyboardEvent } from 'react'
 
+import { Button } from '@/components/ui/button'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
-import type { AnswerSegment, Citation } from '@/lib/api'
+import type { AnswerSegment, ChatSuggestion, ChatUserInputMetadata, Citation } from '@/lib/api'
 
 const dayFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -20,19 +21,23 @@ export interface ChatThreadMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   createdAt: string
+  inputMetadata?: ChatUserInputMetadata
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
   status?: 'streaming' | 'done' | 'complete' | 'error'
 }
 
 export function ChatMessageThread({
   messages,
   onOpenDocument,
+  onSuggestionSelect,
   onMessageSelect,
   selectedMessageId,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
+  onSuggestionSelect?: (text: string, messageId: string) => void
   onMessageSelect?: (messageId: string) => void
   selectedMessageId?: string
 }) {
@@ -123,6 +128,34 @@ export function ChatMessageThread({
                     )}
                   </div>
                 )}
+                {message.role === 'assistant' && message.suggestions && message.suggestions.length > 0 ? (
+                  <div className="flex max-w-full flex-wrap gap-2 px-1">
+                    {message.suggestions.map((suggestion, suggestionIndex) =>
+                      onSuggestionSelect ? (
+                        <Button
+                          key={`${message.id}-suggestion-${suggestionIndex}`}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-auto max-w-full whitespace-normal px-3 py-2 text-left"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onSuggestionSelect(suggestion.text, message.id)
+                          }}
+                        >
+                          {suggestion.text}
+                        </Button>
+                      ) : (
+                        <div
+                          key={`${message.id}-suggestion-${suggestionIndex}`}
+                          className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground"
+                        >
+                          {suggestion.text}
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ) : null}
                 <p className="px-1 text-xs text-muted-foreground">
                   {timeFormatter.format(new Date(message.createdAt))}
                 </p>

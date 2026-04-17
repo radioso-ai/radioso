@@ -437,6 +437,9 @@ export interface RetrievalSettings {
   semanticRewriteInstructions: string
   lexicalRewriteInstructions: string
   answerSupportPolicy: 'strict' | 'warn' | 'off'
+  conversationMode: 'factual' | 'guided' | 'exploratory'
+  suggestedQuestionsEnabled: boolean
+  suggestedQuestionsCount: number
   rerankEnabled: boolean
   vectorTopK: number
   similarityThreshold: number
@@ -581,6 +584,12 @@ export interface ChatRequest {
   conversationId?: string
   bootstrapGreeting?: boolean
   userExpectedLocale?: string
+  inputMetadata?: ChatUserInputMetadata
+}
+
+export interface ChatUserInputMetadata {
+  method: 'typed' | 'suggestion_click'
+  suggestionSourceMessageId?: string
 }
 
 export interface Citation {
@@ -592,6 +601,11 @@ export interface Citation {
 export interface AnswerSegment {
   text: string
   citationIndices?: number[]
+}
+
+export interface ChatSuggestion {
+  text: string
+  citation?: Citation
 }
 
 export interface RetrievalInfo {
@@ -680,6 +694,16 @@ export interface ChatResponse {
   answer: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
+  conversationMode: 'factual' | 'guided' | 'exploratory'
+  conversationModeMetadata: {
+    conversationMode: 'factual' | 'guided' | 'exploratory'
+    brevityOverrideApplied: boolean
+    expansionApplied: boolean
+    expansionKind: 'none' | 'focused' | 'expansive'
+    suggestionCount: number
+    followUpQuestionApplied: boolean
+  }
   retrievalInfo: RetrievalInfo
   retrievalTrace: RetrievalTrace
 }
@@ -697,6 +721,16 @@ export interface ChatStreamCompletion {
   answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
+  conversationMode?: 'factual' | 'guided' | 'exploratory'
+  conversationModeMetadata?: {
+    conversationMode: 'factual' | 'guided' | 'exploratory'
+    brevityOverrideApplied: boolean
+    expansionApplied: boolean
+    expansionKind: 'none' | 'focused' | 'expansive'
+    suggestionCount: number
+    followUpQuestionApplied: boolean
+  }
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
 }
@@ -721,6 +755,15 @@ export interface ChatConversationTurnDebug {
   citationCount: number
   answerOutcome?: 'grounded_success' | 'grounded_degraded_unsupported_segments' | 'no_context_refusal'
   answerSupportPolicy?: 'strict' | 'warn' | 'off'
+  conversationMode?: 'factual' | 'guided' | 'exploratory'
+  conversationModeMetadata?: {
+    conversationMode: 'factual' | 'guided' | 'exploratory'
+    brevityOverrideApplied: boolean
+    expansionApplied: boolean
+    expansionKind: 'none' | 'focused' | 'expansive'
+    suggestionCount: number
+    followUpQuestionApplied: boolean
+  }
   validation?: {
     ran: boolean
     answerModified: boolean
@@ -746,8 +789,10 @@ export interface ChatConversationTurn {
   role: 'user' | 'assistant' | 'system'
   content: string
   createdAt: string
+  inputMetadata?: ChatUserInputMetadata
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
   debug?: ChatConversationTurnDebug
 }
 
@@ -1042,6 +1087,9 @@ const streamChatEvents = async (
   let conversationId = ''
   let citations: Citation[] | undefined
   let answerSegments: AnswerSegment[] | undefined
+  let suggestions: ChatSuggestion[] | undefined
+  let conversationMode: ChatResponse['conversationMode'] | undefined
+  let conversationModeMetadata: ChatResponse['conversationModeMetadata'] | undefined
   let retrievalInfo: RetrievalInfo | undefined
   let retrievalTrace: RetrievalTrace | undefined
 
@@ -1086,6 +1134,9 @@ const streamChatEvents = async (
       answer = completionPayload.answer ?? answer
       citations = completionPayload.citations
       answerSegments = completionPayload.answerSegments
+      suggestions = completionPayload.suggestions
+      conversationMode = completionPayload.conversationMode
+      conversationModeMetadata = completionPayload.conversationModeMetadata
       retrievalInfo = completionPayload.retrievalInfo
       retrievalTrace = completionPayload.retrievalTrace
       handlers.onDone?.({
@@ -1093,6 +1144,9 @@ const streamChatEvents = async (
         answer,
         citations,
         answerSegments,
+        suggestions,
+        conversationMode,
+        conversationModeMetadata,
         retrievalInfo,
         retrievalTrace,
       })
@@ -1125,6 +1179,9 @@ const streamChatEvents = async (
     answer,
     citations,
     answerSegments,
+    suggestions,
+    conversationMode: conversationMode!,
+    conversationModeMetadata: conversationModeMetadata!,
     retrievalInfo: retrievalInfo!,
     retrievalTrace: retrievalTrace!,
   }
@@ -1468,6 +1525,9 @@ export const chatApi = {
         answer: payload.answer,
         citations: payload.citations,
         answerSegments: payload.answerSegments,
+        suggestions: payload.suggestions,
+        conversationMode: payload.conversationMode,
+        conversationModeMetadata: payload.conversationModeMetadata,
         retrievalInfo: payload.retrievalInfo,
         retrievalTrace: payload.retrievalTrace,
       })
@@ -1726,7 +1786,7 @@ export const accountApi = {
 
 // Public Chat API (anonymous, cookie-based auth)
 export const publicChatApi = {
-  async sendMessage(token: string, data: { query: string; stream: boolean; conversationId?: string }): Promise<ChatResponse> {
+  async sendMessage(token: string, data: { query: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata }): Promise<ChatResponse> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',
       cache: 'no-store',
@@ -1748,7 +1808,7 @@ export const publicChatApi = {
 
   async streamMessage(
     token: string,
-    data: { query: string; stream: boolean; conversationId?: string },
+    data: { query: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata },
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
@@ -1781,6 +1841,9 @@ export const publicChatApi = {
         answer: payload.answer,
         citations: payload.citations,
         answerSegments: payload.answerSegments,
+        suggestions: payload.suggestions,
+        conversationMode: payload.conversationMode,
+        conversationModeMetadata: payload.conversationModeMetadata,
         retrievalInfo: payload.retrievalInfo,
         retrievalTrace: payload.retrievalTrace,
       })

@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const siteRoot = path.resolve(__dirname, '../tests/embed-site')
 const port = Number.parseInt(process.env.EMBED_TEST_PORT ?? '4321', 10)
-const host = process.env.EMBED_TEST_HOST ?? '0.0.0.0'
+const host = process.env.EMBED_TEST_HOST ?? '127.0.0.1'
 
 const contentTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],

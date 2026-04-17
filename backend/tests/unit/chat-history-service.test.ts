@@ -62,6 +62,25 @@ describe("chat history service", () => {
         },
         answerOutcome: "grounded_degraded_unsupported_segments",
         answerSupportPolicy: "strict",
+        conversationMode: "exploratory",
+        conversationModeMetadata: {
+          conversationMode: "exploratory",
+          brevityOverrideApplied: false,
+          expansionApplied: true,
+          expansionKind: "expansive",
+          suggestionCount: 2,
+          followUpQuestionApplied: true,
+        },
+        suggestions: [
+          {
+            text: "What examples does it include?",
+            citation: {
+              documentId: "doc-2",
+              chunkId: "chunk-2",
+              title: "Examples",
+            },
+          },
+        ],
         validation: {
           ran: true,
           answerModified: true,
@@ -88,7 +107,8 @@ describe("chat history service", () => {
     });
 
     const detail = await service.getConversation("workspace-1", conversation.id);
-    const debug = detail.messages.find((message) => message.role === "assistant")?.debug;
+    const assistantMessage = detail.messages.find((message) => message.role === "assistant");
+    const debug = assistantMessage?.debug;
 
     expect(debug?.retrievalInfo?.candidateCounts).toMatchObject({
       semantic: 1,
@@ -102,6 +122,25 @@ describe("chat history service", () => {
     });
     expect(debug?.answerOutcome).toBe("grounded_degraded_unsupported_segments");
     expect(debug?.answerSupportPolicy).toBe("strict");
+    expect(debug?.conversationMode).toBe("exploratory");
+    expect(debug?.conversationModeMetadata).toEqual({
+      conversationMode: "exploratory",
+      brevityOverrideApplied: false,
+      expansionApplied: true,
+      expansionKind: "expansive",
+      suggestionCount: 2,
+      followUpQuestionApplied: true,
+    });
+    expect(assistantMessage?.suggestions).toEqual([
+      {
+        text: "What examples does it include?",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Examples",
+        },
+      },
+    ]);
     expect(debug?.validation).toEqual({
       ran: true,
       answerModified: true,

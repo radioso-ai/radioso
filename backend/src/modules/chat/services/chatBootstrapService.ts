@@ -8,6 +8,7 @@ import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader
 import type { ChatGateway } from "./chatService.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import { isAssistantBootstrapActive } from "../../settings/domain/assistantBootstrapSettings.js";
+import { DEFAULT_CONVERSATION_MODE } from "../../settings/domain/retrievalSettings.js";
 import { resolveChatLocale } from "./chatLocale.js";
 
 const emptyChatResponse = (conversationId: string, answer: string): ChatResponse => ({
@@ -15,6 +16,15 @@ const emptyChatResponse = (conversationId: string, answer: string): ChatResponse
   answer,
   citations: [],
   answerSegments: answer ? [{ text: answer }] : [],
+  conversationMode: DEFAULT_CONVERSATION_MODE,
+  conversationModeMetadata: {
+    conversationMode: DEFAULT_CONVERSATION_MODE,
+    brevityOverrideApplied: false,
+    expansionApplied: false,
+    expansionKind: "none",
+    suggestionCount: 0,
+    followUpQuestionApplied: false,
+  },
   retrievalInfo: {
     candidateCounts: {
       semantic: 0,

@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/embed/{token}/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bootstrap an embedded chat session for an approved website origin */
+        post: operations["createPublicEmbedSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/register": {
         parameters: {
             query?: never;
@@ -869,6 +886,10 @@ export interface components {
             lexicalRewriteInstructions: string;
             /** @enum {string} */
             answerSupportPolicy: "strict" | "warn" | "off";
+            /** @enum {string} */
+            conversationMode: "factual" | "guided" | "exploratory";
+            suggestedQuestionsEnabled: boolean;
+            suggestedQuestionsCount: number;
             rerankEnabled: boolean;
             vectorTopK: number;
             similarityThreshold: number;
@@ -905,6 +926,10 @@ export interface components {
             lexicalRewriteInstructions?: string;
             /** @enum {string} */
             answerSupportPolicy?: "strict" | "warn" | "off";
+            /** @enum {string} */
+            conversationMode?: "factual" | "guided" | "exploratory";
+            suggestedQuestionsEnabled?: boolean;
+            suggestedQuestionsCount?: number;
             rerankEnabled: boolean;
             vectorTopK: number;
             similarityThreshold: number;
@@ -961,11 +986,51 @@ export interface components {
         UpdateGeneralSettingsRequest: {
             anonymousChatEnabled?: boolean;
             anonymousRateLimit?: number;
+            assistantName?: string;
+            assistantRole?: string;
+            greetingInstruction?: string;
+            assistantDefaultLocale?: string | null;
+            proactiveGreetingEnabled?: boolean;
+            websiteEmbedEnabled?: boolean;
+            websiteEmbedAllowedOrigins?: string[];
+            websiteEmbedLauncherLabel?: string;
+            /** @enum {string} */
+            websiteEmbedLauncherIcon?: "chat" | "sparkles" | "message";
+            /** @enum {string} */
+            websiteEmbedLauncherPosition?: "bottom-right" | "bottom-left";
         };
         GeneralSettingsResponse: {
             anonymousChatEnabled: boolean;
             anonymousChatUrl: string | null;
             anonymousRateLimit: number;
+            assistantName: string;
+            assistantRole: string;
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            assistantBootstrapActive: boolean;
+            websiteEmbedEnabled: boolean;
+            websiteEmbedToken: string | null;
+            websiteEmbedScriptUrl: string | null;
+            websiteEmbedSnippet: string | null;
+            websiteEmbedAllowedOrigins: string[];
+            websiteEmbedLauncherLabel: string;
+            /** @enum {string} */
+            websiteEmbedLauncherIcon: "chat" | "sparkles" | "message";
+            /** @enum {string} */
+            websiteEmbedLauncherPosition: "bottom-right" | "bottom-left";
+        };
+        PublicEmbedSessionResponse: {
+            workspaceName: string;
+            publicChatToken: string;
+            embedSessionToken: string;
+            assistantBootstrapActive: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        PublicEmbedSessionRequest: {
+            /** Format: uuid */
+            anonymousSessionId?: string;
         };
         WorkspaceIngestionReprocessResponse: {
             /** Format: uuid */
@@ -981,6 +1046,7 @@ export interface components {
             metadata?: {
                 [key: string]: string | number | boolean | null;
             };
+            externalDocumentId?: string;
         };
         DocumentStatus: string;
         DocumentOperationResponse: {
@@ -1004,6 +1070,7 @@ export interface components {
             metadata: {
                 [key: string]: string | number | boolean | null;
             };
+            externalDocumentId?: string | null;
         };
         DocumentDetails: components["schemas"]["DocumentSummary"] & {
             content: string;
@@ -1175,29 +1242,62 @@ export interface components {
             answer: string;
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
+            suggestions?: {
+                text: string;
+                citation?: components["schemas"]["Citation"];
+            }[];
+            /** @enum {string} */
+            conversationMode: "factual" | "guided" | "exploratory";
+            conversationModeMetadata: {
+                /** @enum {string} */
+                conversationMode: "factual" | "guided" | "exploratory";
+                brevityOverrideApplied: boolean;
+                expansionApplied: boolean;
+                /** @enum {string} */
+                expansionKind: "none" | "focused" | "expansive";
+                suggestionCount: number;
+                followUpQuestionApplied: boolean;
+            };
             retrievalInfo: components["schemas"]["RetrievalInfo"];
             retrievalTrace: components["schemas"]["RetrievalTrace"];
         };
         ChatRequest: {
-            query: string;
+            query?: string;
             stream: boolean;
             /** Format: uuid */
             conversationId?: string;
+            bootstrapGreeting?: boolean;
+            userExpectedLocale?: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+            };
             metadataFilter?: {
                 [key: string]: unknown;
             };
         };
         PublicChatRequest: {
-            query: string;
+            query?: string;
             /** @default false */
             stream: boolean;
             /** Format: uuid */
             conversationId?: string;
+            bootstrapGreeting?: boolean;
+            userExpectedLocale?: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+            };
         };
         ChatConversationSummary: {
             /** Format: uuid */
             id: string;
             sourceChannel: string | null;
+            sourceOrigin: string | null;
             anonymousSessionId: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -1244,6 +1344,18 @@ export interface components {
             answerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal";
             /** @enum {string} */
             answerSupportPolicy?: "strict" | "warn" | "off";
+            /** @enum {string} */
+            conversationMode?: "factual" | "guided" | "exploratory";
+            conversationModeMetadata?: {
+                /** @enum {string} */
+                conversationMode: "factual" | "guided" | "exploratory";
+                brevityOverrideApplied: boolean;
+                expansionApplied: boolean;
+                /** @enum {string} */
+                expansionKind: "none" | "focused" | "expansive";
+                suggestionCount: number;
+                followUpQuestionApplied: boolean;
+            };
             validation?: components["schemas"]["ValidationDebug"];
             retrievalInfo?: components["schemas"]["RetrievalInfo"];
             retrievalTrace?: components["schemas"]["RetrievalTrace"];
@@ -1257,8 +1369,18 @@ export interface components {
             content: string;
             /** Format: date-time */
             createdAt: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+            };
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
+            suggestions?: {
+                text: string;
+                citation?: components["schemas"]["Citation"];
+            }[];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
         };
         ChatConversationDetail: {
@@ -1267,6 +1389,7 @@ export interface components {
             /** Format: uuid */
             workspaceId: string;
             sourceChannel: string | null;
+            sourceOrigin: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1466,6 +1589,7 @@ export interface components {
         };
         PublicConversationListResponse: {
             workspaceName: string;
+            assistantBootstrapActive: boolean;
             conversations: components["schemas"]["PublicConversationSummary"][];
             total: number;
             nextCursor: string | null;
@@ -1558,6 +1682,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    createPublicEmbedSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PublicEmbedSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Embedded chat session bootstrap returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicEmbedSessionResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Origin not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Embedded chat not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -2678,6 +2855,7 @@ export interface operations {
                     metadata?: {
                         [key: string]: string | number | boolean | null;
                     };
+                    externalDocumentId?: string;
                 };
             };
         };
@@ -2820,6 +2998,13 @@ export interface operations {
                     "application/json": components["schemas"]["ChatResponse"];
                     "text/event-stream": components["schemas"]["ChatSseStream"];
                 };
+            };
+            /** @description Bootstrap request completed without creating a greeting */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Request validation failed */
             400: {
@@ -3545,6 +3730,13 @@ export interface operations {
                     "application/json": components["schemas"]["ChatResponse"];
                     "text/event-stream": components["schemas"]["PublicChatSseStream"];
                 };
+            };
+            /** @description Bootstrap request completed without creating a greeting */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Request validation failed */
             400: {

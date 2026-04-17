@@ -233,7 +233,6 @@ function PublicChatContent({
             onKeyDown={handleKeyDown}
             placeholder={copy.startPrompt}
             className="min-h-[44px] max-h-32 resize-none"
-            disabled={isLoading}
           />
           <Button type="submit" size="icon" className="h-[44px] w-[44px] shrink-0" disabled={isLoading || !input.trim()}>
             <Send className="h-4 w-4" />

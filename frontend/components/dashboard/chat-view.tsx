@@ -185,7 +185,6 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
             onKeyDown={handleKeyDown}
             placeholder="Ask a question..."
             className="min-h-[44px] max-h-32 resize-none"
-            disabled={isLoading || isBootstrapping}
           />
           <Button type="submit" size="icon" className="h-[44px] w-[44px] shrink-0" disabled={isLoading || isBootstrapping || !input.trim()}>
             <Send className="w-4 h-4" />

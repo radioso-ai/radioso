@@ -329,24 +329,31 @@
         typeof event.data.resumeAnonymousSessionId === 'string' ? event.data.resumeAnonymousSessionId : null
 
       if (!bootstrapPromise) {
-        bootstrapPromise = bootstrapEmbeddedSession(scriptUrl, token, { resumeAnonymousSessionId })
-      }
+        const activeIframe = iframe
+        const activeContentWindow = activeIframe && activeIframe.contentWindow
 
-      bootstrapPromise
-        .then((session) => {
-          iframe.contentWindow && iframe.contentWindow.postMessage({ type: SESSION_MESSAGE, session }, scriptUrl.origin)
-        })
-        .catch((error) => {
-          bootstrapPromise = null
-          iframe.contentWindow &&
-            iframe.contentWindow.postMessage(
+        bootstrapPromise = bootstrapEmbeddedSession(scriptUrl, token, { resumeAnonymousSessionId })
+          .then((session) => {
+            if (!activeContentWindow || iframe !== activeIframe) {
+              return
+            }
+
+            activeContentWindow.postMessage({ type: SESSION_MESSAGE, session }, scriptUrl.origin)
+          })
+          .catch((error) => {
+            if (!activeContentWindow || iframe !== activeIframe) {
+              return
+            }
+
+            activeContentWindow.postMessage(
               {
                 type: ERROR_MESSAGE,
                 message: error instanceof Error ? error.message : 'Embedded chat could not be started from this website.',
               },
               scriptUrl.origin,
             )
-        })
+          })
+      }
     }
 
     const updatePanelVisibility = () => {

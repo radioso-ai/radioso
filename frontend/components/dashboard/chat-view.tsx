@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { FileText, Send } from 'lucide-react'
+import { FileText, RotateCcw, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { type CitationOpenResult } from './chat-citations'
@@ -24,7 +24,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
   const router = useRouter()
   const [input, setInput] = useState('')
   const { activeWorkspaceId } = useWorkspace()
-  const { messages, isLoading, isBootstrapping, initializeSession, sendMessage } = useChatSession(activeWorkspaceId ?? accountId)
+  const { messages, isLoading, isBootstrapping, initializeSession, sendMessage, startNewChat } = useChatSession(activeWorkspaceId ?? accountId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -56,6 +56,14 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
       e.preventDefault()
       handleSubmit(e)
     }
+  }
+
+  const handleStartNewChat = async () => {
+    const userExpectedLocale =
+      typeof navigator !== 'undefined' ? navigator.languages?.[0] ?? navigator.language : undefined
+
+    setInput('')
+    await startNewChat(userExpectedLocale)
   }
 
   const handleOpenCitation = async (documentId: string): Promise<CitationOpenResult> => {
@@ -129,8 +137,22 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 border-b border-border px-6 py-4">
-        <h1 className="text-lg font-medium text-foreground">Chat</h1>
-        <p className="text-sm text-muted-foreground">Ask questions about your documents</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-lg font-medium text-foreground">Chat</h1>
+            <p className="text-sm text-muted-foreground">Ask questions about your documents</p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => void handleStartNewChat()}
+            disabled={isLoading || isBootstrapping}
+          >
+            <RotateCcw className="mr-2 h-4 w-4" />
+            New chat
+          </Button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
@@ -163,7 +185,6 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
             onKeyDown={handleKeyDown}
             placeholder="Ask a question..."
             className="min-h-[44px] max-h-32 resize-none"
-            disabled={isLoading || isBootstrapping}
           />
           <Button type="submit" size="icon" className="h-[44px] w-[44px] shrink-0" disabled={isLoading || isBootstrapping || !input.trim()}>
             <Send className="w-4 h-4" />

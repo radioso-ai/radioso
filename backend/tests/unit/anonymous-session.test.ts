@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Request, Response, NextFunction } from "express";
 import {
   ANONYMOUS_SESSION_HEADER,
+  ANONYMOUS_SESSION_RESET_HEADER,
   resolveAnonymousSession,
   shouldUseSecureAnonymousCookie,
   WEBSITE_EMBED_SESSION_HEADER,
@@ -129,6 +130,23 @@ describe("resolveAnonymousSession", () => {
     await middleware(req, res, next);
 
     expect(res.locals.anonymousSessionId).toBe("existing-session-id");
+  });
+
+  it("creates a fresh anonymous session when reset is requested for plain public chat", async () => {
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
+
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
+    const { req, res, next } = createMockReqRes(
+      { token: "test-token-1234567890" },
+      { [`anon_session_${workspace.id}`]: "existing-session-id" },
+      { [ANONYMOUS_SESSION_RESET_HEADER]: "1" },
+    );
+
+    await middleware(req, res, next);
+
+    expect(res.locals.anonymousSessionId).toBeDefined();
+    expect(res.locals.anonymousSessionId).not.toBe("existing-session-id");
   });
 
   it("generates a new session id and sets cookie when none exists", async () => {

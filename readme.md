@@ -329,6 +329,14 @@ For website popups or other embedded entry points, pass `userExpectedLocale` on 
 
 When website embed is enabled, General Settings also returns a copyable script tag that loads `radioso-embed.js`. Install that snippet on an approved origin only. The launcher stays thin; the actual assistant runs in a Radioso-hosted iframe so origin checks and chat runtime stay under Radioso control.
 
+The host page can add optional static script attributes for per-site behavior:
+
+- `data-radioso-locale="it-IT"` localizes common widget copy and the initial assistant bootstrap greeting for a brand-new conversation.
+- `data-radioso-initial-state="open"` starts the widget expanded instead of collapsed.
+- `data-radioso-collapsed-avatar-url="https://cdn.example.com/avatar.gif"` uses a custom image or GIF for the collapsed launcher icon.
+
+Authenticated chat, anonymous public chat, and the website widget all expose a `New chat` action so visitors can clear the current thread and start over without leaving the surface.
+
 ## Troubleshooting And Operations
 
 ### Useful Commands

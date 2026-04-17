@@ -9,6 +9,7 @@ import { verifyWebsiteEmbedSession } from "../../../modules/settings/domain/webs
 
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 export const ANONYMOUS_SESSION_HEADER = "x-radioso-anonymous-session";
+export const ANONYMOUS_SESSION_RESET_HEADER = "x-radioso-reset-anonymous-session";
 export const WEBSITE_EMBED_SESSION_HEADER = "x-radioso-embed-session";
 const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
@@ -68,9 +69,10 @@ export const resolveAnonymousSession = (
       }
 
       const cookieName = `anon_session_${workspace.id}`;
+      const shouldResetAnonymousSession = !hasValidEmbedSession && req.get(ANONYMOUS_SESSION_RESET_HEADER) === "1";
       let sessionId =
         (hasValidEmbedSession ? embedSession?.anonymousSessionId : undefined) ??
-        (req.cookies?.[cookieName] as string | undefined);
+        (shouldResetAnonymousSession ? undefined : (req.cookies?.[cookieName] as string | undefined));
 
       if (!sessionId) {
         sessionId = randomUUID();

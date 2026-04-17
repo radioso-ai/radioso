@@ -3,7 +3,7 @@
 **Feature Branch**: `040-website-embed-widget`  
 **Created**: 2026-04-15  
 **Status**: Draft  
-**Input**: User description: "Explore an embeddable website widget for Radioso using a hosted public chat surface, thin loader script, iframe shell, domain allowlists, and short-lived embed session tokens rather than connector plugins or a separate repo."
+**Input**: User description: "Explore an embeddable website widget for Radioso using a hosted public chat surface, thin loader script, iframe shell, domain allowlists, and short-lived embed session tokens rather than connector plugins or a separate repo." Updated 2026-04-16 to add script-defined locale overrides, default open/collapsed state, and custom collapsed-avatar support.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -69,6 +69,24 @@ A workspace operator can understand whether website embed is enabled, where it i
 1. **Given** website embed is enabled, **When** the operator views settings, **Then** they can see the install snippet, approved domains, and current launcher configuration in one place.
 2. **Given** an embed launch is rejected because the origin is unapproved or the feature is disabled, **When** the rejection occurs, **Then** the system records enough operator-visible diagnostics or audit information to explain the rejection without exposing visitor secrets.
 
+---
+
+### User Story 5 - Tune Widget Launch Behavior In The Install Snippet (Priority: P2)
+
+A website operator can adjust the embed snippet itself so the launcher opens in the preferred initial state, uses a custom avatar image or GIF when collapsed, and renders common widget text in the desired locale without changing workspace-wide settings.
+
+**Why this priority**: These controls improve installation quality on multilingual or highly branded websites, but they matter only after the core embed path works.
+
+**Independent Test**: Can be fully tested by installing the widget with custom script attributes, loading the page, and confirming the launcher starts in the requested state, renders the requested collapsed avatar, and shows the supported widget copy in the requested locale while assistant bootstrap uses the same locale hint for a new conversation.
+
+**Acceptance Scenarios**:
+
+1. **Given** a website includes the embed snippet with a supported locale override, **When** the launcher and hosted embed surface load, **Then** the common widget copy uses that locale instead of the browser default.
+2. **Given** a website includes the embed snippet with an initial-state override, **When** the page loads, **Then** the launcher starts open or collapsed exactly as requested without requiring a click to reach the chosen default state.
+3. **Given** a website includes the embed snippet with a custom avatar image or GIF URL, **When** the launcher is collapsed, **Then** the launcher displays that asset in place of the default icon while preserving an accessible control label.
+4. **Given** the snippet omits these optional attributes or provides unusable values, **When** the widget loads, **Then** the widget falls back safely to the current default locale, collapsed state, and built-in icon behavior.
+5. **Given** a visitor wants to discard the current thread, **When** they choose the new-chat action from the widget, anonymous chat page, or authenticated chat view, **Then** the current conversation is cleared and a fresh conversation starts without leaving the active surface.
+
 ### Edge Cases
 
 - What happens when a website includes the snippet before the workspace has approved that domain? The launcher must fail safely and avoid issuing a usable embedded session.
@@ -77,6 +95,10 @@ A workspace operator can understand whether website embed is enabled, where it i
 - What happens when a visitor opens multiple tabs of the same approved site? Each tab must preserve safe session isolation rules without leaking conversation state across workspaces.
 - What happens when an embed session token expires while the chat is open? The system must fail predictably, allowing a safe refresh or re-establishment flow instead of exposing privileged credentials.
 - What happens when a workspace removes a domain from the allowlist while visitors are active? New embedded sessions must be blocked immediately; in-flight behavior must degrade predictably without cross-origin leakage.
+- What happens when the snippet specifies a locale that the widget does not recognize? The widget should ignore the unsupported value and fall back to the existing browser-driven or workspace-default behavior.
+- What happens when the snippet specifies an avatar asset that fails to load? The launcher should fall back to the built-in icon without breaking the control or leaving an empty surface.
+- What happens when the snippet requests the widget to start open on a very small viewport? The widget should still respect layout bounds and remain dismissible without trapping the page.
+- What happens when a user starts a new chat while a response is still streaming? The UI should prevent overlapping resets and only allow a fresh start from a stable state.
 
 ## Constitution Constraints *(mandatory)*
 
@@ -123,6 +145,11 @@ A workspace operator can understand whether website embed is enabled, where it i
 - **FR-015**: Operators MUST be able to review the current website-embed configuration, including enabled state, approved origins, and install snippet, from settings.
 - **FR-016**: The system MUST allow future extension of the website embed channel without requiring a separate repository or a rewrite of the public-chat foundation.
 - **FR-017**: The implementation MUST prefer extending existing public-chat and settings flows over introducing new shared abstractions, imports, or modules unless those additions are necessary for security boundaries, operator clarity, or long-term maintainability.
+- **FR-018**: The install snippet MUST support an optional locale override that controls common launcher and embedded-surface copy and supplies the same locale hint to assistant bootstrap for brand-new conversations.
+- **FR-019**: The install snippet MUST support an optional initial-state override so the widget can start open or collapsed on first render.
+- **FR-020**: The install snippet MUST support an optional image or GIF URL for the collapsed launcher avatar while preserving an accessible text label and a safe built-in icon fallback.
+- **FR-021**: Unsupported or malformed script-level overrides for locale, initial state, or avatar asset MUST fail safely without blocking the widget from loading.
+- **FR-022**: The authenticated chat view, anonymous public chat view, and embedded widget MUST expose a user-triggered new-chat action that clears the active conversation state and starts a fresh thread without requiring navigation away from the current surface.
 
 ### UI Tasks
 
@@ -132,6 +159,8 @@ A workspace operator can understand whether website embed is enabled, where it i
 - Provide compact launcher controls for position, visible label, and basic visual choice without turning the settings screen into a full theme builder.
 - Show clear unavailable and misconfiguration states for operators previewing the embedded experience.
 - Keep the embedded chat window visually aligned with existing chat components rather than inventing a disconnected UI language.
+- Document the optional script attributes for locale override, initial state, and custom collapsed avatar directly where operators copy the embed snippet.
+- Keep the new-chat affordance visually consistent across authenticated, anonymous, and embedded chat surfaces.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -156,5 +185,6 @@ A workspace operator can understand whether website embed is enabled, where it i
 - Website embed will build on the same public-chat foundation already planned for unauthenticated access rather than introducing a separate answer-generation pipeline.
 - A hosted iframe surface is the preferred v1 trust boundary because it keeps Radioso in control of UX, rollout, and browser security posture.
 - Basic launcher customization is sufficient for the first release; deep theme APIs and custom host-page component embedding are deferred.
+- Script-level installation overrides are appropriate for per-site presentation and locale concerns that should not mutate shared workspace settings.
 - Operators are responsible for adding the install snippet to websites they control and for maintaining any host-page browser policy changes needed to allow the embed.
 - The planning and implementation phases should default to the smallest safe change set, adding new seams only when an existing path cannot absorb the feature without violating transport, orchestration, or security boundaries.

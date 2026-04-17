@@ -1519,10 +1519,15 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async requeueAllEligibleAndQueue(workspaceId: string): Promise<{ queuedDocumentCount: number; skippedDocumentCount: number }> {
+  async requeueAllEligibleAndQueue(workspaceId: string): Promise<{
+    queuedDocumentCount: number;
+    skippedDocumentCount: number;
+    queuedDocuments: Array<{ documentId: string; revision: number }>;
+  }> {
     const documents = [...this.items.values()].filter((item) => item.workspaceId === workspaceId);
     let queuedDocumentCount = 0;
     let skippedDocumentCount = 0;
+    const queuedDocuments: Array<{ documentId: string; revision: number }> = [];
 
     for (const document of documents) {
       if (document.status === "queued" || document.status === "processing") {
@@ -1546,11 +1551,16 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       });
       this.items.set(record.id, record);
       queuedDocumentCount += 1;
+      queuedDocuments.push({
+        documentId: record.id,
+        revision: record.revision,
+      });
     }
 
     return {
       queuedDocumentCount,
       skippedDocumentCount,
+      queuedDocuments,
     };
   }
 
@@ -1701,6 +1711,23 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     return record;
   }
 
+  async findById(jobId: string): Promise<DocumentProcessingJobRecord | null> {
+    return this.items.get(jobId) ?? null;
+  }
+
+  async findByDocumentRevision(input: {
+    documentId: string;
+    workspaceId: string;
+    documentRevision: number;
+  }): Promise<DocumentProcessingJobRecord | null> {
+    return [...this.items.values()]
+      .filter((item) =>
+        item.documentId === input.documentId
+        && item.workspaceId === input.workspaceId
+        && item.documentRevision === input.documentRevision)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
+  }
+
   async claimNext(now: Date = new Date()): Promise<DocumentProcessingJobRecord | null> {
     const next = [...this.items.values()]
       .filter((item) => item.status === "queued" && item.availableAt <= now)
@@ -1714,6 +1741,23 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
       ...next,
       status: "processing",
       attemptCount: next.attemptCount + 1,
+      claimedAt: now,
+      updatedAt: now,
+    };
+    this.items.set(claimed.id, claimed);
+    return claimed;
+  }
+
+  async claimById(jobId: string, now: Date = new Date()): Promise<DocumentProcessingJobRecord | null> {
+    const existing = this.items.get(jobId);
+    if (!existing || existing.status !== "queued" || existing.availableAt > now) {
+      return null;
+    }
+
+    const claimed: DocumentProcessingJobRecord = {
+      ...existing,
+      status: "processing",
+      attemptCount: existing.attemptCount + 1,
       claimedAt: now,
       updatedAt: now,
     };
@@ -1822,6 +1866,22 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
       availableAt: nextAttemptAt,
       claimedAt: null,
     });
+  }
+
+  async releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean> {
+    const existing = this.items.get(jobId);
+    if (!existing || existing.status !== "processing" || !existing.claimedAt || existing.claimedAt > claimedAtOrBefore) {
+      return false;
+    }
+
+    this.update(jobId, {
+      status: "queued",
+      lastError: errorMessage,
+      availableAt: new Date(),
+      claimedAt: null,
+    });
+
+    return true;
   }
 
   private update(jobId: string, partial: Partial<DocumentProcessingJobRecord>): void {

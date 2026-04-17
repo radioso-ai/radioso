@@ -353,6 +353,11 @@
               scriptUrl.origin,
             )
           })
+          .finally(() => {
+            if (iframe === activeIframe) {
+              bootstrapPromise = null
+            }
+          })
       }
     }
 

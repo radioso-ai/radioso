@@ -71,9 +71,23 @@ export function EmbeddedChatFrame({
     }
 
     let isDisposed = false
+    let handshakeInterval: number | null = null
+    let handshakeTimeout: number | null = null
     const storedSession = readStoredEmbedBootstrapSession(token)
     const resumeAnonymousSessionId =
       storedSession ? readStoredAnonymousSessionId(storedSession.publicChatToken) : null
+
+    const stopHandshake = () => {
+      if (handshakeInterval !== null) {
+        window.clearInterval(handshakeInterval)
+        handshakeInterval = null
+      }
+
+      if (handshakeTimeout !== null) {
+        window.clearTimeout(handshakeTimeout)
+        handshakeTimeout = null
+      }
+    }
 
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== window.parent) {
@@ -98,6 +112,7 @@ export function EmbeddedChatFrame({
         }
 
         isBootstrappedRef.current = true
+        stopHandshake()
         storeEmbedBootstrapSession(token, {
           publicChatToken: session.publicChatToken,
           embedSessionToken: session.embedSessionToken,
@@ -109,6 +124,7 @@ export function EmbeddedChatFrame({
 
       if (event.data.type === ERROR_MESSAGE && !isDisposed) {
         isBootstrappedRef.current = true
+        stopHandshake()
         setState({
           status: 'error',
           message:
@@ -121,7 +137,7 @@ export function EmbeddedChatFrame({
 
     window.addEventListener('message', handleMessage)
 
-    const handshakeInterval = window.setInterval(() => {
+    handshakeInterval = window.setInterval(() => {
       window.parent.postMessage(
         { type: READY_MESSAGE, resumeAnonymousSessionId },
         '*',
@@ -133,7 +149,7 @@ export function EmbeddedChatFrame({
       '*',
     )
 
-    const handshakeTimeout = window.setTimeout(() => {
+    handshakeTimeout = window.setTimeout(() => {
       if (!isBootstrappedRef.current && !isDisposed) {
         setState({
           status: 'error',
@@ -144,9 +160,8 @@ export function EmbeddedChatFrame({
 
     return () => {
       isDisposed = true
+      stopHandshake()
       window.removeEventListener('message', handleMessage)
-      window.clearInterval(handshakeInterval)
-      window.clearTimeout(handshakeTimeout)
     }
   }, [copy.embeddedChatLauncherRequiredMessage, resetNonce, token])
 

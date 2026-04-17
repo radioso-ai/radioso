@@ -39,6 +39,23 @@ variable "deploy_services" {
   default     = true
 }
 
+variable "worker_min_instances" {
+  description = "Minimum number of worker Cloud Run instances. Must stay at least 1 so the durable document queue always has a live recovery poller."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.worker_min_instances >= 1
+    error_message = "worker_min_instances must be at least 1 so the worker service can recover queued jobs when Cloud Tasks dispatch fails."
+  }
+}
+
+variable "worker_max_instances" {
+  description = "Maximum number of worker Cloud Run instances"
+  type        = number
+  default     = 5
+}
+
 # --- Database ---
 
 variable "db_tier" {
@@ -79,6 +96,44 @@ variable "frontend_max_instances" {
   default     = 2
 }
 
+variable "worker_task_queue_name" {
+  description = "Cloud Tasks queue name used to dispatch document processing jobs."
+  type        = string
+  default     = "radioso-document-processing"
+}
+
+variable "worker_task_max_dispatches_per_second" {
+  description = "Cloud Tasks dispatch rate for document worker jobs."
+  type        = number
+  default     = 10
+}
+
+variable "worker_task_max_concurrent_dispatches" {
+  description = "Maximum concurrent Cloud Tasks dispatches for document worker jobs."
+  type        = number
+  default     = 20
+}
+
+variable "document_processing_job_lease_ms" {
+  description = "Lease duration for an in-flight document-processing job before a later delivery may reclaim it."
+  type        = number
+  default     = 300000
+}
+
+# --- Document storage ---
+
+variable "document_storage_bucket_name" {
+  description = "Optional override for the GCS bucket that stores original uploaded document files."
+  type        = string
+  default     = null
+}
+
+variable "document_upload_max_bytes" {
+  description = "Maximum accepted uploaded file size in bytes."
+  type        = number
+  default     = 10485760
+}
+
 # --- Secrets (sensitive) ---
 
 variable "openai_api_key" {
@@ -89,6 +144,18 @@ variable "openai_api_key" {
 
 variable "session_cookie_secret" {
   description = "Session cookie signing secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "workspace_token_secret" {
+  description = "Workspace API token encryption secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "website_embed_secret" {
+  description = "Website embed request/session signing secret"
   type        = string
   sensitive   = true
 }

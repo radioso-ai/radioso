@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Building2, Code2, Globe, ExternalLink, MessageSquare, Save, Trash2 } from 'lucide-react'
+import { Building2, Code2, Globe, ExternalLink, MessageSquare, RefreshCw, Save, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
@@ -300,6 +300,40 @@ export function GeneralTab({ accountId }: { accountId: string }) {
     }
   }
 
+  const handleAnonymousChatTokenRotate = async () => {
+    if (!anonSettings) return
+    setIsAnonSaving(true)
+    try {
+      const updated = await generalSettingsApi.updateGeneralSettings({
+        rotateAnonymousChatToken: true,
+      })
+      setAnonSettings(updated)
+      setSavedAnonSettings(updated)
+      setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
+    } catch (error) {
+      console.error('Failed to rotate anonymous chat token:', error)
+    } finally {
+      setIsAnonSaving(false)
+    }
+  }
+
+  const handleWebsiteEmbedTokenRotate = async () => {
+    if (!anonSettings) return
+    setIsAnonSaving(true)
+    try {
+      const updated = await generalSettingsApi.updateGeneralSettings({
+        rotateWebsiteEmbedToken: true,
+      })
+      setAnonSettings(updated)
+      setSavedAnonSettings(updated)
+      setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
+    } catch (error) {
+      console.error('Failed to rotate website embed token:', error)
+    } finally {
+      setIsAnonSaving(false)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto p-6">
@@ -577,6 +611,12 @@ export function GeneralTab({ accountId }: { accountId: string }) {
                       <p className="text-sm text-muted-foreground">
                         Share this link with anyone you want to give chat access to.
                       </p>
+                      <div className="flex justify-end">
+                        <Button variant="outline" onClick={handleAnonymousChatTokenRotate} disabled={isAnonSaving}>
+                          {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                          Rotate public link
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="rounded bg-muted/50 p-3 space-y-3">
@@ -710,11 +750,20 @@ export function GeneralTab({ accountId }: { accountId: string }) {
                     <p className="text-sm text-muted-foreground">
                       Paste this script tag into the target website. The loader opens a Radioso-hosted iframe on approved domains only.
                     </p>
+                    <p className="text-sm text-muted-foreground">
+                      Optional script attributes can override locale, start the widget open, or use a custom collapsed avatar image or GIF.
+                    </p>
                     {anonSettings.websiteEmbedScriptUrl ? (
                       <p className="text-xs text-muted-foreground">
                         Loader URL: <span className="font-mono">{anonSettings.websiteEmbedScriptUrl}</span>
                       </p>
                     ) : null}
+                    <div className="flex justify-end">
+                      <Button variant="outline" onClick={handleWebsiteEmbedTokenRotate} disabled={isAnonSaving}>
+                        {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                        Rotate embed token
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
 

@@ -18,11 +18,15 @@ const envPath = path.join(repoRoot, "backend/.env");
 
 const generatedValues = () => ({
   SESSION_COOKIE_SECRET: crypto.randomBytes(24).toString("base64"),
+  WORKSPACE_TOKEN_SECRET: crypto.randomBytes(24).toString("base64"),
+  WEBSITE_EMBED_SECRET: crypto.randomBytes(24).toString("base64"),
   CONNECTOR_ENCRYPTION_KEY: crypto.randomBytes(32).toString("base64"),
 });
 
 const resolveGeneratedValues = (existingValues) => ({
   SESSION_COOKIE_SECRET: existingValues.SESSION_COOKIE_SECRET || crypto.randomBytes(24).toString("base64"),
+  WORKSPACE_TOKEN_SECRET: existingValues.WORKSPACE_TOKEN_SECRET || crypto.randomBytes(24).toString("base64"),
+  WEBSITE_EMBED_SECRET: existingValues.WEBSITE_EMBED_SECRET || crypto.randomBytes(24).toString("base64"),
   CONNECTOR_ENCRYPTION_KEY: existingValues.CONNECTOR_ENCRYPTION_KEY || crypto.randomBytes(32).toString("base64"),
 });
 
@@ -63,7 +67,9 @@ const printConfigurationSummary = (values, ansi) => {
   process.stdout.write(
     `${formatMessage(
       "helper",
-      `- External document storage: ${values.DOCUMENT_STORAGE_BUCKET ? "enabled" : "disabled"}\n`,
+      values.DOCUMENT_STORAGE_DRIVER === "gcs"
+        ? `- Document storage: GCS bucket ${values.DOCUMENT_STORAGE_BUCKET}\n`
+        : `- Document storage: local filesystem at ${values.DOCUMENT_STORAGE_LOCAL_PATH}\n`,
       ansi,
     )}`,
   );

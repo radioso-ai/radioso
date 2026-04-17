@@ -658,7 +658,7 @@ describe("chat contract", () => {
 
     const embedToken = settings.body.websiteEmbedToken as string;
     const launchOrigin = "https://example.com";
-    const launchSignature = createHmac("sha256", "0123456789abcdef0123456789abcdef")
+    const launchSignature = createHmac("sha256", "00112233445566778899aabbccddeeff")
       .update(`${embedToken}:${launchOrigin}`)
       .digest("hex");
 

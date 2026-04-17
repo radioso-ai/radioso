@@ -31,9 +31,12 @@ import { DocumentSearchHistoryService } from "../../modules/documents/services/d
 import { DocumentSearchService } from "../../modules/documents/services/documentSearchService.js";
 import { DocumentProcessingService } from "../../modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
+import { CloudTasksDocumentJobDispatcher } from "../../modules/documents/infra/cloudTasksDocumentJobDispatcher.js";
 import { DocumentSourceContentService } from "../../modules/documents/services/documentSourceContentService.js";
 import { GcsDocumentStorage, type DocumentStoragePort } from "../../modules/documents/infra/gcsDocumentStorage.js";
+import { LocalDocumentStorage } from "../../modules/documents/infra/localDocumentStorage.js";
 import { WorkspaceIngestionReprocessService } from "../../modules/documents/services/workspaceIngestionReprocessService.js";
+import { NoopDocumentJobDispatcher } from "../../modules/documents/services/documentJobDispatcher.js";
 import { PgLexicalSearch } from "../../modules/retrieval/infra/lexicalSearch.js";
 import { PgVectorSearch } from "../../modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../modules/retrieval/services/candidatePreparationService.js";
@@ -58,7 +61,6 @@ import { EvalReplayService } from "../../modules/evals/services/evalReplayServic
 import { EvalLabService } from "../../modules/evals/services/evalLabService.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { Database } from "../../shared/infra/database.js";
-import { AppError } from "../../shared/domain/errors.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
 import { createLogger } from "../../shared/observability/logger.js";
@@ -95,21 +97,21 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     auditService,
     documentRepository,
   );
-  const documentStorage: DocumentStoragePort = env.DOCUMENT_STORAGE_BUCKET
-    ? new GcsDocumentStorage(env.DOCUMENT_STORAGE_BUCKET)
-    : {
-        async upload() {
-          throw new AppError(503, "service_unavailable", "Document import storage is not configured");
-        },
-        async read() {
-          throw new AppError(503, "service_unavailable", "Document import storage is not configured");
-        },
-        async delete() {
-          throw new AppError(503, "service_unavailable", "Document import storage is not configured");
-        },
-      };
+  const documentStorage: DocumentStoragePort = env.DOCUMENT_STORAGE_DRIVER === "gcs"
+    ? new GcsDocumentStorage(env.DOCUMENT_STORAGE_BUCKET!)
+    : new LocalDocumentStorage(env.DOCUMENT_STORAGE_LOCAL_PATH);
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingJobRepository = new DocumentProcessingJobRepository(database);
+  const documentJobDispatcher = env.WORKER_DISPATCH_DRIVER === "cloud-tasks"
+    ? new CloudTasksDocumentJobDispatcher({
+        projectId: env.GOOGLE_CLOUD_PROJECT!,
+        location: env.WORKER_TASKS_QUEUE_LOCATION!,
+        queueName: env.WORKER_TASKS_QUEUE_NAME!,
+        workerServiceUrl: env.WORKER_TASKS_SERVICE_URL!,
+        invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
+        logger,
+      })
+    : new NoopDocumentJobDispatcher();
   const chunkRepository = new ChunkRepository(database);
   const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
     new FixedWindowChunkingStrategy(),
@@ -129,12 +131,16 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     documentRepository,
     auditService,
     () => documentProcessingJobRepository.getQueueSnapshot(),
+    documentProcessingJobRepository,
+    documentJobDispatcher,
   );
   const documentImportService = new DocumentImportService(
     documentRepository,
     auditService,
     documentStorage,
     () => documentProcessingJobRepository.getQueueSnapshot(),
+    documentProcessingJobRepository,
+    documentJobDispatcher,
   );
   const documentProcessingWorker = new DocumentProcessingWorker(
     documentRepository,
@@ -142,9 +148,17 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     documentProcessingService,
     auditService,
     logger,
+    undefined,
+    documentJobDispatcher,
+    env.DOCUMENT_PROCESSING_JOB_LEASE_MS,
   );
   const documentDeletionService = new DocumentDeletionService(documentRepository, documentStorage, auditService);
-  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
+  const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(
+    documentRepository,
+    auditService,
+    documentProcessingJobRepository,
+    documentJobDispatcher,
+  );
   const conversationRepository = new ConversationRepository(database);
   const messageRepository = new MessageRepository(database);
   const workspaceRepository = new WorkspaceRepository(database);

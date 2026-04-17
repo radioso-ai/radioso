@@ -28,7 +28,8 @@ This is the intended local run path. It:
 - checks local prerequisites
 - creates or reuses `backend/.env`
 - prompts for the AI provider and required credentials
-- generates missing secrets such as `SESSION_COOKIE_SECRET`
+- generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `WEBSITE_EMBED_SECRET`
+- configures uploaded document storage to use the local filesystem by default
 - builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose
 - waits until the frontend and backend are reachable
 
@@ -116,6 +117,8 @@ The token response looks like:
 ```json
 {"token":"sk_proj_..."}
 ```
+
+If a workspace token or public embed link is ever exposed, rotate it from the settings screen instead of relying on disable/re-enable toggles.
 
 A valid provider key is required for both document processing and chat responses.
 
@@ -327,6 +330,14 @@ For website popups or other embedded entry points, pass `userExpectedLocale` on 
 
 When website embed is enabled, General Settings also returns a copyable script tag that loads `radioso-embed.js`. Install that snippet on an approved origin only. The launcher stays thin; the actual assistant runs in a Radioso-hosted iframe so origin checks and chat runtime stay under Radioso control.
 
+The host page can add optional static script attributes for per-site behavior:
+
+- `data-radioso-locale="it-IT"` localizes common widget copy and the initial assistant bootstrap greeting for a brand-new conversation.
+- `data-radioso-initial-state="open"` starts the widget expanded instead of collapsed.
+- `data-radioso-collapsed-avatar-url="https://cdn.example.com/avatar.gif"` uses a custom image or GIF for the collapsed launcher icon.
+
+Authenticated chat, anonymous public chat, and the website widget all expose a `New chat` action so visitors can clear the current thread and start over without leaving the surface.
+
 ## Troubleshooting And Operations
 
 ### Useful Commands
@@ -357,6 +368,7 @@ The default local stack started by the bootstrap includes:
 - Backend API on port `8080`
 - Background document worker
 - Frontend on port `3000`
+- Shared local document storage mounted for both backend runtimes
 
 ### Configuration
 
@@ -368,8 +380,29 @@ Common values:
 PORT=8080
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/radioso
 LLM_PROVIDER=openai
+DOCUMENT_STORAGE_DRIVER=local
+DOCUMENT_STORAGE_LOCAL_PATH=../.context/document-storage
 PUBLIC_CHAT_BASE_URL=http://localhost:3000/chat
 ```
+
+For local Docker runs, uploaded source files are stored on a shared filesystem path so the API and worker containers see the same files. The default path is `../.context/document-storage` relative to `backend/`.
+
+For cloud deploys, set `DOCUMENT_STORAGE_DRIVER=gcs` and provide `DOCUMENT_STORAGE_BUCKET`. The current Terraform stack does that automatically for GCP.
+
+Local development keeps the background worker in polling mode. The GCP Terraform deployment uses Cloud Tasks for request-driven wake-ups, but the worker-task service also runs the durable queue poller as a safety net so queued jobs can still recover if task dispatch fails.
+
+The cloud worker dispatch path uses these settings:
+
+```env
+WORKER_DISPATCH_DRIVER=cloud-tasks
+WORKER_TASKS_QUEUE_LOCATION=us-central1
+WORKER_TASKS_QUEUE_NAME=radioso-document-processing
+WORKER_TASKS_SERVICE_URL=https://<worker-service-url>
+WORKER_TASKS_INVOKER_SERVICE_ACCOUNT=<worker-task-invoker>@<project>.iam.gserviceaccount.com
+DOCUMENT_PROCESSING_JOB_LEASE_MS=300000
+```
+
+Backend-serving and worker-serving capacity are configured independently in Terraform via `backend_min_instances` / `backend_max_instances` and `worker_min_instances` / `worker_max_instances`. Keep `worker_min_instances >= 1`; the worker service relies on one always-on instance so the durable queue can recover enqueue or retry dispatch failures.
 
 If you already know what you need, you can pre-populate `backend/.env` before running the stack.
 

@@ -30,6 +30,7 @@ const providerOptions = ["openai", "openai-compatible", "gemini", "claude"];
 const keyOrder = [
   "PORT",
   "NODE_ENV",
+  "GOOGLE_CLOUD_PROJECT",
   "DATABASE_URL",
   "INTEGRATION_DATABASE_URL",
   "OPENAI_API_KEY",
@@ -51,10 +52,20 @@ const keyOrder = [
   "LLM_EMBEDDING_MODEL",
   "SESSION_COOKIE_NAME",
   "SESSION_COOKIE_SECRET",
+  "WORKSPACE_TOKEN_SECRET",
+  "WEBSITE_EMBED_SECRET",
   "SESSION_TTL_HOURS",
   "CONNECTOR_ENCRYPTION_KEY",
+  "DOCUMENT_STORAGE_DRIVER",
+  "DOCUMENT_STORAGE_LOCAL_PATH",
   "DOCUMENT_STORAGE_BUCKET",
   "DOCUMENT_UPLOAD_MAX_BYTES",
+  "WORKER_DISPATCH_DRIVER",
+  "WORKER_TASKS_QUEUE_LOCATION",
+  "WORKER_TASKS_QUEUE_NAME",
+  "WORKER_TASKS_SERVICE_URL",
+  "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT",
+  "DOCUMENT_PROCESSING_JOB_LEASE_MS",
   "PUBLIC_CHAT_BASE_URL",
 ];
 
@@ -64,6 +75,8 @@ export const getEnvContract = () => ({
   defaults: {
     ...exampleValues,
     SESSION_COOKIE_SECRET: "",
+    WORKSPACE_TOKEN_SECRET: "",
+    WEBSITE_EMBED_SECRET: "",
     CONNECTOR_ENCRYPTION_KEY: "",
   },
   providerOptions,
@@ -94,17 +107,37 @@ export const getAlwaysRequiredKeys = () => [
   "LLM_PROVIDER",
   "SESSION_COOKIE_NAME",
   "SESSION_COOKIE_SECRET",
+  "WORKSPACE_TOKEN_SECRET",
+  "WEBSITE_EMBED_SECRET",
   "SESSION_TTL_HOURS",
   "CONNECTOR_ENCRYPTION_KEY",
   "DOCUMENT_UPLOAD_MAX_BYTES",
+  "WORKER_DISPATCH_DRIVER",
+  "DOCUMENT_PROCESSING_JOB_LEASE_MS",
   "PUBLIC_CHAT_BASE_URL",
 ];
 
 export const listRequiredKeys = (values, contract = getEnvContract()) => {
   const provider = values.LLM_PROVIDER || contract.defaults.LLM_PROVIDER || "openai";
+  const storageDriver = values.DOCUMENT_STORAGE_DRIVER
+    || (values.DOCUMENT_STORAGE_BUCKET ? "gcs" : contract.defaults.DOCUMENT_STORAGE_DRIVER || "local");
   const required = new Set(getAlwaysRequiredKeys());
   for (const key of getProviderRequiredKeys(provider)) {
     required.add(key);
+  }
+  if (!values.DOCUMENT_STORAGE_DRIVER) {
+    required.add("DOCUMENT_STORAGE_DRIVER");
+  }
+  if (storageDriver === "gcs") {
+    required.add("DOCUMENT_STORAGE_BUCKET");
+  }
+  const workerDispatchDriver = values.WORKER_DISPATCH_DRIVER || contract.defaults.WORKER_DISPATCH_DRIVER || "noop";
+  if (workerDispatchDriver === "cloud-tasks") {
+    required.add("GOOGLE_CLOUD_PROJECT");
+    required.add("WORKER_TASKS_QUEUE_LOCATION");
+    required.add("WORKER_TASKS_QUEUE_NAME");
+    required.add("WORKER_TASKS_SERVICE_URL");
+    required.add("WORKER_TASKS_INVOKER_SERVICE_ACCOUNT");
   }
   return [...required];
 };

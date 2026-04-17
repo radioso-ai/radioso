@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../../src/app/config/env.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import { startApiRuntime } from "../../src/runtime/startApiRuntime.js";
+import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
 import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
 
 const createEnv = (): Env => ({
   NODE_ENV: "test",
   PORT: 8088,
+  GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
   DB_POOL_IDLE_TIMEOUT_MS: 30_000,
@@ -20,14 +22,24 @@ const createEnv = (): Env => ({
   LLM_PROVIDER: "openai",
   SESSION_COOKIE_NAME: "radioso_session",
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+  WORKSPACE_TOKEN_SECRET: "fedcba9876543210fedcba9876543210",
+  WEBSITE_EMBED_SECRET: "00112233445566778899aabbccddeeff",
   SESSION_TTL_HOURS: 168,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 30,
   CONNECTOR_ENCRYPTION_KEY: "test",
+  DOCUMENT_STORAGE_DRIVER: "local",
+  DOCUMENT_STORAGE_LOCAL_PATH: "../.context/test-document-storage",
   DOCUMENT_STORAGE_BUCKET: "bucket",
   DOCUMENT_UPLOAD_MAX_BYTES: 10 * 1024 * 1024,
+  WORKER_DISPATCH_DRIVER: "noop",
+  WORKER_TASKS_QUEUE_LOCATION: undefined,
+  WORKER_TASKS_QUEUE_NAME: undefined,
+  WORKER_TASKS_SERVICE_URL: undefined,
+  WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+  DOCUMENT_PROCESSING_JOB_LEASE_MS: 300_000,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
 });
 
@@ -134,6 +146,35 @@ describe("runtime startup", () => {
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
+
+    await runtime.shutdown("test");
+    expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
+  });
+
+  it("starts the worker task runtime with the polling worker loop and internal task server", async () => {
+    const env = createEnv();
+    const dependencies = createDependencies();
+    const ensureNoPendingMigrations = vi.fn().mockResolvedValue(undefined);
+    const listen = vi.fn((_app: unknown, _port: number, onListening: () => void) => {
+      onListening();
+      return {
+        close(callback?: () => void) {
+          callback?.();
+        },
+      };
+    });
+
+    const runtime = await startWorkerTaskRuntime({
+      env,
+      logger: createLogger().logger as any,
+      ensureNoPendingMigrations,
+      buildDependencies: () => dependencies,
+      createApp: () => ({}) as any,
+      listen,
+    });
+
+    expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
+    expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
 
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();

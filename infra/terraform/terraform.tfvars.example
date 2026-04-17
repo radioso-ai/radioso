@@ -4,6 +4,8 @@ project_id = "your-gcp-project-id"
 # Secrets — set via TF_VAR_* env vars or a .tfvars file NOT committed to git
 # openai_api_key           = ""
 # session_cookie_secret    = ""
+# workspace_token_secret   = ""
+# website_embed_secret     = ""
 # connector_encryption_key = ""
 
 # Optional overrides (defaults shown)
@@ -11,12 +13,20 @@ project_id = "your-gcp-project-id"
 # deploy_services         = false
 # backend_image           = "us-central1-docker.pkg.dev/your-project/radioso/backend:latest"
 # frontend_image          = "us-central1-docker.pkg.dev/your-project/radioso/frontend:latest"
+# worker_min_instances   = 1
+# worker_max_instances   = 5
 # db_tier                 = "db-f1-micro"
 # db_deletion_protection  = false
 # backend_min_instances   = 0
 # backend_max_instances   = 2
 # frontend_min_instances  = 0
 # frontend_max_instances  = 2
+# worker_task_queue_name  = "radioso-document-processing"
+# worker_task_max_dispatches_per_second = 10
+# worker_task_max_concurrent_dispatches = 20
+# document_processing_job_lease_ms = 300000
+# document_storage_bucket_name = "your-project-radioso-documents"
+# document_upload_max_bytes = 10485760
 # openai_chat_model       = "gpt-5-mini"
 # openai_rerank_model     = "gpt-4.1-mini"
 # openai_vector_model     = "text-embedding-3-small"

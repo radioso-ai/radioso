@@ -64,30 +64,26 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('Which onboarding questions are answered?')
   })
 
-  it('renders user input method badges when present', () => {
+  it('renders inline pseudo-lists as markdown lists for assistant messages', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread
         messages={[
           {
-            id: 'user-1',
-            role: 'user',
-            content: 'Typed by hand',
+            id: 'assistant-1',
+            role: 'assistant',
+            content:
+              'If you want, I can help with: - a simple yoga or meditation routine - what gear is useful for practice - Ananda Yoga topics and recordings',
             createdAt: '2026-04-02T10:00:00.000Z',
-            inputMetadata: { method: 'typed' },
-          },
-          {
-            id: 'user-2',
-            role: 'user',
-            content: 'Clicked chip',
-            createdAt: '2026-04-02T10:01:00.000Z',
-            inputMetadata: { method: 'suggestion_click', suggestionSourceMessageId: 'assistant-1' },
           },
         ]}
         onOpenDocument={async () => 'opened'}
       />,
     )
 
-    expect(html).toContain('Typed')
-    expect(html).toContain('Suggested')
+    expect(html).toContain('<ul')
+    expect(html).toContain('<li')
+    expect(html).toContain('a simple yoga or meditation routine')
+    expect(html).toContain('what gear is useful for practice')
+    expect(html).toContain('Ananda Yoga topics and recordings')
   })
 })

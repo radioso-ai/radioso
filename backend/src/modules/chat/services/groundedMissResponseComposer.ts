@@ -1,5 +1,6 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { serviceUnavailable } from "../../../shared/domain/errors.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
@@ -82,18 +83,6 @@ const formatContextsForPrompt = (contexts: GroundedMissContextSummary[]): string
     .join("\n\n");
 };
 
-const buildUnsupportedWithContextFallback = (input: {
-  contexts: GroundedMissContextSummary[];
-}): string => {
-  const firstTitle = normalizeContexts(input.contexts).find((context) => context.title.length > 0)?.title;
-  return renderPromptTemplate("chat/unsupported-with-context-fallback.md", {
-    related_title_clause: firstTitle ? ` in "${firstTitle}"` : "",
-  });
-};
-
-const buildNoContextFallback = (): string =>
-  loadPromptTemplate("chat/no-context-fallback.md");
-
 const normalizeModelResponse = (value: string | undefined): string => {
   const normalized = normalizeWhitespace(value)
     .replace(/\[\[[^\]]*\]\]/g, "")
@@ -105,6 +94,11 @@ const normalizeModelResponse = (value: string | undefined): string => {
 
   return normalized;
 };
+
+const groundedMissGenerationFailed = (reason: string) =>
+  serviceUnavailable("Grounded miss response generation failed.", {
+    reason,
+  });
 
 const buildConversationModeGuidance = (input: {
   conversationMode?: ConversationMode;
@@ -177,16 +171,17 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
       if (normalized) {
         return normalized;
       }
+
+      throw groundedMissGenerationFailed("empty_grounded_miss_response");
     } catch (error) {
       if (isProviderCredentialError(error)) {
         throw error;
       }
-      // Fall back to the deterministic refusal below.
-    }
 
-    return buildUnsupportedWithContextFallback({
-      contexts: input.contexts,
-    });
+      throw groundedMissGenerationFailed(
+        error instanceof Error ? error.message : "grounded_miss_generation_failed",
+      );
+    }
   }
 
   async composeNoContext(input: {
@@ -213,13 +208,16 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
       if (normalized) {
         return normalized;
       }
+
+      throw groundedMissGenerationFailed("empty_grounded_miss_response");
     } catch (error) {
       if (isProviderCredentialError(error)) {
         throw error;
       }
-      // Fall back to the deterministic refusal below.
-    }
 
-    return buildNoContextFallback();
+      throw groundedMissGenerationFailed(
+        error instanceof Error ? error.message : "grounded_miss_generation_failed",
+      );
+    }
   }
 }

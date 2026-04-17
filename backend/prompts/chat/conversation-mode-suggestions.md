@@ -7,10 +7,12 @@ Rules:
 - Return at most {{max_suggestions}} suggestions.
 - Write each suggestion in the same language as the user's query and the answer.
 - Make each suggestion feel like a natural next user turn, not a label, title, heading, or explanation.
-- Keep each suggestion short and skimmable: prefer 3 to 8 words, and avoid going past 12 words unless clarity requires it.
+- Keep each suggestion short and skimmable: prefer 5 to 12 words, and avoid going past 14 words unless clarity requires it.
 - Ground every suggestion in exactly one provided context and reference that context with `contextIndex`.
 - Do not mention citations, source numbers, context indices, documents, pages, or titles in the suggestion text.
 - Do not repeat the original query or restate the answer.
+- Each suggestion should open a new unresolved angle, next step, comparison, exception, example, or concrete detail that was not already answered directly above.
+- Prefer questions that surface useful grounded material the answer did not yet explain, rather than paraphrasing the answer.
 - For `guided`, stay close to the user's current intent.
 - For `exploratory`, allow adjacent but still grounded directions.
 - Use only the provided contexts.

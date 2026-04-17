@@ -1412,25 +1412,25 @@ describe("chat service streaming", () => {
       {
         text: "What does the interview say about her spiritual path?",
         citation: {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Mahiya",
+        },
+      },
+      {
+        text: "Which books or projects is she associated with?",
+        citation: {
           documentId: "doc-2",
           chunkId: "chunk-2",
           title: "God is our True Home: In Conversation with Mahiya - Ananda Europe",
         },
       },
       {
-        text: "Which books or projects is she associated with?",
+        text: "What challenges does she describe in the other interview?",
         citation: {
           documentId: "doc-3",
           chunkId: "chunk-3",
           title: "Il gusto della gioia - Ananda Edizioni - ricette, consigli e ispirazioni salutari",
-        },
-      },
-      {
-        text: "What challenges does she describe in the other interview?",
-        citation: {
-          documentId: "doc-4",
-          chunkId: "chunk-4",
-          title: "Challenges and blessings go hand in hand - Interview with Mahiya (ENG) - Ananda Europe",
         },
       },
     ]);
@@ -1531,9 +1531,102 @@ describe("chat service streaming", () => {
       {
         text: "Quale altro libro o progetto viene citato accanto a questo?",
         citation: {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Narayani Anaya Archivi - Ananda Edizioni",
+        },
+      },
+    ]);
+  });
+
+  it("filters suggestions that mostly restate the current query or answer", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "want links to the next page of assisi videos",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Assisi Archives - Page 2 of 14 - Ananda Europe",
+              content: "Page 2 links to the next page in the archive.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Assisi Archives - Page 3 of 14 - Ananda Europe",
+              content: "Page 3 is part of a 14-page archive.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Assisi Archives - Page 2 of 14 - Ananda Europe" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "assisi videos next page",
+              lexicalQuery: "assisi videos page 3",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "What videos are on page 3?", contextIndex: 2 },
+              { text: "How many Assisi archive pages are there?", contextIndex: 2 },
+            ],
+          });
+        }
+
+        return "Yes — here's the next page of the Assisi videos archive: https://anandaeurope.org/category/video-from-assisi/page/3/[[1]]";
+      },
+      async *streamAnswer() {
+        yield "Yes — here's the next page of the Assisi videos archive: https://anandaeurope.org/category/video-from-assisi/page/3/[[1]]";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Want links to the next page of Assisi videos?",
+      stream: false,
+    });
+
+    expect(response.suggestions).toEqual([
+      {
+        text: "How many Assisi archive pages are there?",
+        citation: {
           documentId: "doc-2",
           chunkId: "chunk-2",
-          title: "Satsang with Narayani (on her upcoming book and more) &mdash; Ananda",
+          title: "Assisi Archives - Page 3 of 14 - Ananda Europe",
         },
       },
     ]);

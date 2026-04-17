@@ -46,6 +46,106 @@ const normalizeComparableText = (value: string): string =>
       .replace(/[^\p{L}\p{N}\s]/gu, " "),
   );
 
+const extractComparableTerms = (value: string): Set<string> =>
+  new Set(
+    normalizeComparableText(value)
+      .split(" ")
+      .filter((token) => token.length > 0)
+      .filter((token) => /^\d+$/.test(token) || token.length >= 4),
+  );
+
+const buildCharacterNgrams = (
+  value: string,
+  size: number,
+): Set<string> => {
+  const normalized = normalizeComparableText(value).replace(/\s+/g, "");
+
+  if (normalized.length === 0) {
+    return new Set();
+  }
+
+  if (normalized.length <= size) {
+    return new Set([normalized]);
+  }
+
+  const grams = new Set<string>();
+  for (let index = 0; index <= normalized.length - size; index += 1) {
+    grams.add(normalized.slice(index, index + size));
+  }
+
+  return grams;
+};
+
+const calculateSetSimilarity = (
+  left: Set<string>,
+  right: Set<string>,
+): number => {
+  if (left.size === 0 || right.size === 0) {
+    return 0;
+  }
+
+  let intersectionCount = 0;
+
+  for (const item of left) {
+    if (right.has(item)) {
+      intersectionCount += 1;
+    }
+  }
+
+  return intersectionCount / (left.size + right.size - intersectionCount);
+};
+
+const calculateCoverage = (
+  candidate: Set<string>,
+  reference: Set<string>,
+): number => {
+  if (candidate.size === 0 || reference.size === 0) {
+    return 0;
+  }
+
+  let overlapCount = 0;
+  for (const item of candidate) {
+    if (reference.has(item)) {
+      overlapCount += 1;
+    }
+  }
+
+  return overlapCount / candidate.size;
+};
+
+const isNearDuplicateSuggestion = (
+  suggestionText: string,
+  query: string,
+  answer: string,
+): boolean => {
+  const normalizedSuggestion = normalizeComparableText(suggestionText);
+  if (!normalizedSuggestion) {
+    return true;
+  }
+
+  const normalizedQuery = normalizeComparableText(query);
+  const normalizedAnswer = normalizeComparableText(answer);
+  if (
+    normalizedSuggestion === normalizedQuery ||
+    normalizedSuggestion === normalizedAnswer ||
+    normalizedQuery.includes(normalizedSuggestion) ||
+    normalizedAnswer.includes(normalizedSuggestion)
+  ) {
+    return true;
+  }
+
+  const suggestionTrigrams = buildCharacterNgrams(suggestionText, 3);
+  const suggestionTerms = extractComparableTerms(suggestionText);
+  const queryTerms = extractComparableTerms(query);
+  const answerTerms = extractComparableTerms(answer);
+  const queryTermCoverage = calculateCoverage(suggestionTerms, queryTerms);
+  const answerTermCoverage = calculateCoverage(suggestionTerms, answerTerms);
+  const querySimilarity = calculateSetSimilarity(suggestionTrigrams, buildCharacterNgrams(query, 3));
+  const answerSimilarity = calculateSetSimilarity(suggestionTrigrams, buildCharacterNgrams(answer, 3));
+
+  return Math.max(queryTermCoverage, answerTermCoverage) >= 0.6 || Math.max(querySimilarity, answerSimilarity) >= 0.45;
+};
+
 const clampExcerpt = (value: string, maxLength: number): string => {
   const normalized = normalizeWhitespace(value);
   return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
@@ -86,10 +186,7 @@ export class ConversationModeExpansionService {
     }
 
     const maxSuggestions = input.suggestedQuestionsCount;
-    const existingDocumentIds = new Set((input.citations ?? []).map((citation) => citation.documentId));
-    const candidateContexts = input.contexts
-      .filter((context) => !existingDocumentIds.has(context.documentId))
-      .slice(0, Math.max(maxSuggestions * 2, maxSuggestions));
+    const candidateContexts = input.contexts.slice(0, Math.max(maxSuggestions * 2, maxSuggestions));
 
     if (candidateContexts.length === 0) {
       return {};
@@ -112,7 +209,7 @@ export class ConversationModeExpansionService {
         }),
       });
 
-      const suggestions = this.planSuggestions(rawResponse, promptContexts, maxSuggestions);
+      const suggestions = this.planSuggestions(rawResponse, promptContexts, maxSuggestions, input.query, input.answer);
       return suggestions.length > 0 ? { suggestions } : {};
     } catch {
       return {};
@@ -123,6 +220,8 @@ export class ConversationModeExpansionService {
     rawResponse: string,
     contexts: SuggestionPromptContext[],
     maxSuggestions: number,
+    query: string,
+    answer: string,
   ): ChatSuggestion[] {
     let parsed: unknown;
     try {
@@ -142,7 +241,11 @@ export class ConversationModeExpansionService {
       }
 
       const normalizedText = normalizeComparableText(candidate.text);
-      if (!normalizedText || seenTexts.has(normalizedText)) {
+      if (
+        !normalizedText ||
+        seenTexts.has(normalizedText) ||
+        isNearDuplicateSuggestion(candidate.text, query, answer)
+      ) {
         continue;
       }
 

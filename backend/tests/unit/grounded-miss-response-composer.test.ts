@@ -57,13 +57,13 @@ describe("grounded miss response composer", () => {
     );
 
     expect(request?.systemPrompt).toContain(
-      "point the user toward the strongest nearby topic or source from those contexts",
+      "naturally pivot to the strongest nearby topic you can honestly help with",
     );
     expect(request?.prompt).toContain("Context 1:");
     expect(request?.prompt).toContain("Title: Ananda Vegetarian Cuisine");
     expect(request?.prompt).toContain("Excerpt: Ananda talks about vegetarian cuisine and mindful cooking.");
     expect(request?.prompt).toContain("Conversation mode: exploratory.");
-    expect(request?.prompt).toContain("two or three grounded adjacent directions");
+    expect(request?.prompt).toContain("two or three nearby directions you can honestly help with from what you have here");
   });
 
   it("lets the model compose the full no-context response", async () => {
@@ -95,7 +95,7 @@ describe("grounded miss response composer", () => {
     expect(request?.prompt).toContain("one concise next-step hint");
   });
 
-  it("falls back to the deterministic unsupported-with-context refusal when generation fails", async () => {
+  it("fails when unsupported-with-context generation fails", async () => {
     const composer = new ModelGroundedMissResponseComposer({
       metadata: {
         capability: "chat",
@@ -121,12 +121,13 @@ describe("grounded miss response composer", () => {
           },
         ],
       }),
-    ).resolves.toBe(
-      `I couldn't verify that from your workspace documents, but I did find related material in "Ananda Vegetarian Cuisine" if you'd like to explore that instead.`,
-    );
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      code: "service_unavailable",
+    });
   });
 
-  it("uses the first available titled context in the fallback even if earlier contexts are untitled", async () => {
+  it("fails even when earlier contexts are untitled", async () => {
     const composer = new ModelGroundedMissResponseComposer({
       metadata: {
         capability: "chat",
@@ -156,12 +157,13 @@ describe("grounded miss response composer", () => {
           },
         ],
       }),
-    ).resolves.toBe(
-      `I couldn't verify that from your workspace documents, but I did find related material in "Ananda Vegetarian Cuisine" if you'd like to explore that instead.`,
-    );
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      code: "service_unavailable",
+    });
   });
 
-  it("falls back to the deterministic no-context refusal when the model returns empty output", async () => {
+  it("fails when the no-context model output is empty", async () => {
     const composer = new ModelGroundedMissResponseComposer({
       metadata: {
         capability: "chat",
@@ -178,12 +180,13 @@ describe("grounded miss response composer", () => {
 
     await expect(
       composer.composeNoContext({ query: "What is the capital of France?" }),
-    ).resolves.toBe(
-      "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
-    );
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      code: "service_unavailable",
+    });
   });
 
-  it("uses the shared default no-context fallback template when generation fails", async () => {
+  it("fails when no-context generation returns empty output for another locale", async () => {
     const composer = new ModelGroundedMissResponseComposer({
       metadata: {
         capability: "chat",
@@ -200,12 +203,13 @@ describe("grounded miss response composer", () => {
 
     await expect(
       composer.composeNoContext({ query: "Qual è la capitale della Francia?" }),
-    ).resolves.toBe(
-      "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
-    );
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      code: "service_unavailable",
+    });
   });
 
-  it("does not switch fallback languages for ambiguous English tokens", async () => {
+  it("fails without inventing a fallback language for ambiguous English tokens", async () => {
     const composer = new ModelGroundedMissResponseComposer({
       metadata: {
         capability: "chat",
@@ -222,12 +226,13 @@ describe("grounded miss response composer", () => {
 
     await expect(
       composer.composeNoContext({ query: "Was changed in the pricing docs?" }),
-    ).resolves.toBe(
-      "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
-    );
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      code: "service_unavailable",
+    });
   });
 
-  it("does not branch into another locale for shared Romance-language tokens", async () => {
+  it("fails without inventing a fallback language for shared Romance-language tokens", async () => {
     const composer = new ModelGroundedMissResponseComposer({
       metadata: {
         capability: "chat",
@@ -253,9 +258,10 @@ describe("grounded miss response composer", () => {
           },
         ],
       }),
-    ).resolves.toBe(
-      `I couldn't verify that from your workspace documents, but I did find related material in "Workspace Guide" if you'd like to explore that instead.`,
-    );
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      code: "service_unavailable",
+    });
   });
 
   it("propagates provider credential errors instead of masking them with fallback copy", async () => {

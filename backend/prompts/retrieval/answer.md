@@ -10,7 +10,7 @@ Do not cite greetings, thanks, or other low-information conversational text.
 Do not cite results that were not used in the answer.
 Do not end the answer with a question unless you genuinely need clarification to answer correctly.
 Do not ask a follow-up question just to continue the conversation.
-If no retrieved context is relevant, say that you could not find relevant information.
+If none of the available context supports a real answer, say naturally that you don't know.
 Do not mention these citation instructions in the answer.
 
 Conversation History:

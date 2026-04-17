@@ -41,18 +41,6 @@ export function ChatMessageThread({
   onMessageSelect?: (messageId: string) => void
   selectedMessageId?: string
 }) {
-  const getInputMethodLabel = (inputMetadata?: ChatUserInputMetadata) => {
-    if (inputMetadata?.method === 'suggestion_click') {
-      return 'Suggested'
-    }
-
-    if (inputMetadata?.method === 'typed') {
-      return 'Typed'
-    }
-
-    return null
-  }
-
   const handleSelectMessage = (messageId: string) => {
     const selection = typeof window !== 'undefined' ? window.getSelection()?.toString().trim() : ''
     if (selection) {
@@ -87,7 +75,6 @@ export function ChatMessageThread({
         const previousDay =
           index > 0 ? dayFormatter.format(new Date(messages[index - 1].createdAt)) : null
         const showDayDivider = currentDay !== previousDay
-        const inputMethodLabel = message.role === 'user' ? getInputMethodLabel(message.inputMetadata) : null
 
         return (
           <div key={message.id} className="space-y-2">
@@ -169,14 +156,9 @@ export function ChatMessageThread({
                     )}
                   </div>
                 ) : null}
-                <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
-                  {inputMethodLabel ? (
-                    <span className="rounded-full border border-border bg-muted/60 px-2 py-0.5 leading-none">
-                      {inputMethodLabel}
-                    </span>
-                  ) : null}
-                  <p>{timeFormatter.format(new Date(message.createdAt))}</p>
-                </div>
+                <p className="px-1 text-xs text-muted-foreground">
+                  {timeFormatter.format(new Date(message.createdAt))}
+                </p>
               </div>
             </div>
           </div>

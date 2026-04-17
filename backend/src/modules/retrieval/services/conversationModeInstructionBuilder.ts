@@ -25,8 +25,8 @@ export class ConversationModeInstructionBuilder {
       case "exploratory":
         return [
           "Conversation mode: exploratory.",
-          "After the direct answer, you may optionally mention two or three grounded adjacent directions drawn from the retrieved material.",
-          "Any optional continuation must stay grounded in the retrieved material and remain in the same language as the user's question.",
+          "After the direct answer, you may optionally mention two or three grounded adjacent directions you can honestly help with from what you know here.",
+          "Any optional continuation must stay grounded and remain in the same language as the user's question.",
         ].join("\n");
       case "guided":
       default:

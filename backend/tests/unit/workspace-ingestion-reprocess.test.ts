@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { WorkspaceIngestionReprocessService } from "../../src/modules/documents/services/workspaceIngestionReprocessService.js";
-import { createAuditService, InMemoryDocumentRepository } from "../support/fakes.js";
+import {
+  createAuditService,
+  InMemoryDocumentProcessingJobRepository,
+  InMemoryDocumentRepository,
+} from "../support/fakes.js";
 
 describe("workspace ingestion reprocess", () => {
   it("queues eligible workspace documents and skips in-flight ones", async () => {
@@ -96,5 +100,43 @@ describe("workspace ingestion reprocess", () => {
       skippedDocumentCount: 2,
       status: "noop",
     });
+  });
+
+  it("keeps workspace reprocess successful when dispatching a queued job fails", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new WorkspaceIngestionReprocessService(
+      documentRepository,
+      auditService,
+      jobRepository,
+      {
+        dispatch: vi.fn().mockRejectedValue(new Error("dispatch unavailable")),
+        dispatchMany: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Ready",
+      sourceContent: "ready",
+      markdownContent: "ready",
+      status: "ready",
+    });
+
+    await expect(service.reprocessWorkspace("workspace-1")).resolves.toEqual({
+      workspaceId: "workspace-1",
+      queuedDocumentCount: 1,
+      skippedDocumentCount: 0,
+      status: "queued",
+    });
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.dispatch",
+        eventStatus: "failure",
+      }),
+    );
   });
 });

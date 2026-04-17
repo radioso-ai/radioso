@@ -27,7 +27,10 @@ export interface DocumentProcessingQueueSnapshot {
 
 export interface DocumentProcessingJobRepositoryPort {
   enqueue(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord>;
+  findById(jobId: string): Promise<DocumentProcessingJobRecord | null>;
+  findByDocumentRevision(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord | null>;
   claimNext(now?: Date): Promise<DocumentProcessingJobRecord | null>;
+  claimById(jobId: string, now?: Date): Promise<DocumentProcessingJobRecord | null>;
   backfillMissingQueuedJobs(limit?: number): Promise<number>;
   listProcessingJobs(): Promise<DocumentProcessingJobRecord[]>;
   getQueueSnapshot(now?: Date): Promise<DocumentProcessingQueueSnapshot>;
@@ -42,6 +45,7 @@ export interface DocumentProcessingJobRepositoryPort {
     errorMessage: string;
   }): Promise<boolean>;
   reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void>;
+  releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
 }
 
 interface DocumentProcessingJobRow {
@@ -99,6 +103,58 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     return mapJob(row);
   }
 
+  async findById(jobId: string): Promise<DocumentProcessingJobRecord | null> {
+    const [row] = await this.database.query<DocumentProcessingJobRow>(
+      `SELECT id,
+              document_id,
+              workspace_id,
+              document_revision,
+              status,
+              attempt_count,
+              last_error,
+              available_at,
+              claimed_at,
+              completed_at,
+              created_at,
+              updated_at
+       FROM document_processing_jobs
+       WHERE id = $1`,
+      [jobId],
+    );
+
+    return row ? mapJob(row) : null;
+  }
+
+  async findByDocumentRevision(input: {
+    documentId: string;
+    workspaceId: string;
+    documentRevision: number;
+  }): Promise<DocumentProcessingJobRecord | null> {
+    const [row] = await this.database.query<DocumentProcessingJobRow>(
+      `SELECT id,
+              document_id,
+              workspace_id,
+              document_revision,
+              status,
+              attempt_count,
+              last_error,
+              available_at,
+              claimed_at,
+              completed_at,
+              created_at,
+              updated_at
+       FROM document_processing_jobs
+       WHERE document_id = $1
+         AND workspace_id = $2
+         AND document_revision = $3
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [input.documentId, input.workspaceId, input.documentRevision],
+    );
+
+    return row ? mapJob(row) : null;
+  }
+
   async claimNext(now: Date = new Date()): Promise<DocumentProcessingJobRecord | null> {
     return this.database.withTransaction(async (client) => {
       const rows = await client.query<DocumentProcessingJobRow>(
@@ -131,6 +187,36 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
                    jobs.created_at,
                    jobs.updated_at`,
         [now],
+      );
+
+      return rows.rows[0] ? mapJob(rows.rows[0]) : null;
+    });
+  }
+
+  async claimById(jobId: string, now: Date = new Date()): Promise<DocumentProcessingJobRecord | null> {
+    return this.database.withTransaction(async (client) => {
+      const rows = await client.query<DocumentProcessingJobRow>(
+        `UPDATE document_processing_jobs
+         SET status = 'processing',
+             attempt_count = attempt_count + 1,
+             claimed_at = $2,
+             updated_at = $2
+         WHERE id = $1
+           AND status = 'queued'
+           AND available_at <= $2
+         RETURNING id,
+                   document_id,
+                   workspace_id,
+                   document_revision,
+                   status,
+                   attempt_count,
+                   last_error,
+                   available_at,
+                   claimed_at,
+                   completed_at,
+                   created_at,
+                   updated_at`,
+        [jobId, now],
       );
 
       return rows.rows[0] ? mapJob(rows.rows[0]) : null;
@@ -299,5 +385,24 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
        WHERE id = $1`,
       [jobId, errorMessage, nextAttemptAt],
     );
+  }
+
+  async releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean> {
+    const rows = await this.database.query<{ id: string }>(
+      `UPDATE document_processing_jobs
+       SET status = 'queued',
+           last_error = $3,
+           available_at = NOW(),
+           claimed_at = NULL,
+           updated_at = NOW()
+       WHERE id = $1
+         AND status = 'processing'
+         AND claimed_at IS NOT NULL
+         AND claimed_at <= $2
+       RETURNING id`,
+      [jobId, claimedAtOrBefore, errorMessage],
+    );
+
+    return rows.length > 0;
   }
 }

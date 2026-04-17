@@ -47,6 +47,10 @@ resource "google_cloud_run_v2_service" "backend" {
         value = "production"
       }
       env {
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = var.project_id
+      }
+      env {
         name  = "DATABASE_URL"
         value = "postgres://${google_sql_user.radioso.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.radioso.name}"
       }
@@ -81,6 +85,30 @@ resource "google_cloud_run_v2_service" "backend" {
       env {
         name  = "DOCUMENT_UPLOAD_MAX_BYTES"
         value = tostring(var.document_upload_max_bytes)
+      }
+      env {
+        name  = "WORKER_DISPATCH_DRIVER"
+        value = "cloud-tasks"
+      }
+      env {
+        name  = "WORKER_TASKS_QUEUE_LOCATION"
+        value = var.region
+      }
+      env {
+        name  = "WORKER_TASKS_QUEUE_NAME"
+        value = google_cloud_tasks_queue.document_processing[0].name
+      }
+      env {
+        name  = "WORKER_TASKS_SERVICE_URL"
+        value = google_cloud_run_v2_service.document_worker[0].uri
+      }
+      env {
+        name  = "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
+        value = google_service_account.worker_task_invoker.email
+      }
+      env {
+        name  = "DOCUMENT_PROCESSING_JOB_LEASE_MS"
+        value = tostring(var.document_processing_job_lease_ms)
       }
       dynamic "env" {
         for_each = var.connector_public_base_url == null ? [] : [var.connector_public_base_url]
@@ -224,8 +252,8 @@ resource "google_cloud_run_v2_service" "document_worker" {
     service_account = google_service_account.worker.email
 
     scaling {
-      min_instance_count = var.worker_instance_count
-      max_instance_count = var.worker_instance_count
+      min_instance_count = var.worker_min_instances
+      max_instance_count = var.worker_max_instances
     }
 
     vpc_access {
@@ -234,15 +262,17 @@ resource "google_cloud_run_v2_service" "document_worker" {
     }
 
     containers {
-      image   = var.backend_image
-      command = ["sh", "-c"]
-      args = [
-        "node ./dist/src/documentWorker.js & worker=$!; node -e \"require('node:http').createServer((_, res) => { res.statusCode = 204; res.end(); }).listen(process.env.PORT || 8080, '0.0.0.0')\" & server=$!; trap 'kill $worker $server 2>/dev/null || true' TERM INT; wait $worker; code=$?; kill $server 2>/dev/null || true; wait $server 2>/dev/null || true; exit $code",
-      ]
+      image = var.backend_image
+
+      command = ["npm", "run", "start:worker-server"]
 
       env {
         name  = "NODE_ENV"
         value = "production"
+      }
+      env {
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = var.project_id
       }
       env {
         name  = "PORT"
@@ -283,6 +313,30 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "DOCUMENT_UPLOAD_MAX_BYTES"
         value = tostring(var.document_upload_max_bytes)
+      }
+      env {
+        name  = "WORKER_DISPATCH_DRIVER"
+        value = "cloud-tasks"
+      }
+      env {
+        name  = "WORKER_TASKS_QUEUE_LOCATION"
+        value = var.region
+      }
+      env {
+        name  = "WORKER_TASKS_QUEUE_NAME"
+        value = google_cloud_tasks_queue.document_processing[0].name
+      }
+      env {
+        name  = "WORKER_TASKS_SERVICE_URL"
+        value = google_cloud_run_v2_service.document_worker[0].uri
+      }
+      env {
+        name  = "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
+        value = google_service_account.worker_task_invoker.email
+      }
+      env {
+        name  = "DOCUMENT_PROCESSING_JOB_LEASE_MS"
+        value = tostring(var.document_processing_job_lease_ms)
       }
 
       resources {
@@ -342,4 +396,12 @@ resource "google_cloud_run_v2_service" "document_worker" {
     google_secret_manager_secret_iam_member.worker_access,
     google_storage_bucket_iam_member.worker_documents_access,
   ]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "document_worker_invoker" {
+  count    = var.deploy_services ? 1 : 0
+  name     = google_cloud_run_v2_service.document_worker[0].name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.worker_task_invoker.email}"
 }

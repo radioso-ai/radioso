@@ -8,8 +8,10 @@ import type {
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { DocumentProcessingService } from "./documentProcessingService.js";
 import { getProviderFailureReason } from "../../../shared/infra/llm/providerErrors.js";
+import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
+const DEFAULT_JOB_LEASE_MS = 300_000;
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 
@@ -25,6 +27,8 @@ export class DocumentProcessingWorker {
     private readonly auditService: AuditService,
     private readonly logger: AppLogger,
     private readonly pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+    private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
+    private readonly jobLeaseMs = DEFAULT_JOB_LEASE_MS,
   ) {}
 
   async start(): Promise<void> {
@@ -85,19 +89,44 @@ export class DocumentProcessingWorker {
 
     this.lastActivityState = "processing";
     await this.logQueueState("Document processing worker processing");
-
-    try {
-      const outcome = await this.processingService.process(job);
-      if (outcome === "completed") {
-        await this.jobRepository.markCompleted(job.id);
-      } else {
-        await this.jobRepository.markSkipped(job.id, outcome === "stale" ? "stale_revision" : "document_deleted");
-      }
-    } catch (error) {
-      await this.handleFailure(job, error);
-    }
+    await this.processClaimedJob(job);
 
     return true;
+  }
+
+  async runJobById(jobId: string, now: Date = new Date()): Promise<"processed" | "noop" | "busy"> {
+    const existing = await this.jobRepository.findById(jobId);
+    if (!existing) {
+      return "noop";
+    }
+
+    if (existing.status === "completed" || existing.status === "failed" || existing.status === "skipped") {
+      return "noop";
+    }
+
+    if (existing.status === "processing") {
+      const claimedBefore = new Date(now.getTime() - this.jobLeaseMs);
+      const released = await this.jobRepository.releaseTimedOutClaim(jobId, claimedBefore, "claim_expired");
+      if (!released) {
+        return "busy";
+      }
+    }
+
+    const claimed = await this.jobRepository.claimById(jobId, now);
+    if (!claimed) {
+      const current = await this.jobRepository.findById(jobId);
+      if (
+        current?.status === "processing"
+        && current.claimedAt
+        && current.claimedAt.getTime() > now.getTime() - this.jobLeaseMs
+      ) {
+        return "busy";
+      }
+      return "noop";
+    }
+
+    await this.processClaimedJob(claimed);
+    return "processed";
   }
 
   private async claimNextAvailableJob(now: Date): Promise<DocumentProcessingJobRecord | null> {
@@ -130,19 +159,40 @@ export class DocumentProcessingWorker {
     }, delayMs);
   }
 
+  private async processClaimedJob(job: DocumentProcessingJobRecord): Promise<void> {
+    try {
+      const outcome = await this.processingService.process(job);
+      if (outcome === "completed") {
+        await this.jobRepository.markCompleted(job.id);
+      } else {
+        await this.jobRepository.markSkipped(job.id, outcome === "stale" ? "stale_revision" : "document_deleted");
+      }
+    } catch (error) {
+      await this.handleFailure(job, error);
+    }
+  }
+
   private async handleFailure(job: DocumentProcessingJobRecord, error: unknown): Promise<void> {
     const message = getProviderFailureReason(error);
     const hasRetriesRemaining = job.attemptCount < MAX_ATTEMPTS;
 
     if (hasRetriesRemaining) {
       const delayMs = RETRY_DELAYS_MS[Math.min(job.attemptCount - 1, RETRY_DELAYS_MS.length - 1)] ?? this.pollIntervalMs;
-      await this.jobRepository.reschedule(job.id, new Date(Date.now() + delayMs), message);
+      const nextAttemptAt = new Date(Date.now() + delayMs);
+      await this.jobRepository.reschedule(job.id, nextAttemptAt, message);
       await this.documentRepository.setStatusIfRevisionMatches({
         documentId: job.documentId,
         workspaceId: job.workspaceId,
         revision: job.documentRevision,
         status: "queued",
         failureReason: null,
+      });
+      await this.jobDispatcher.dispatch({
+        jobId: job.id,
+        documentId: job.documentId,
+        workspaceId: job.workspaceId,
+        revision: job.documentRevision,
+        scheduleAt: nextAttemptAt,
       });
       await this.auditService.record({
         workspaceId: job.workspaceId,

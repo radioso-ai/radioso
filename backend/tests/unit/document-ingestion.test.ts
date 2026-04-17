@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
@@ -25,7 +25,17 @@ describe("document ingestion", () => {
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
     const auditService = createAuditService();
-    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+    const dispatcher = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+      dispatchMany: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+      dispatcher,
+    );
 
     const response = await service.ingest({
       workspaceId: "workspace-1",
@@ -47,6 +57,13 @@ describe("document ingestion", () => {
           queuedJobCount: 1,
           processingJobCount: 0,
         }),
+      }),
+    );
+    expect(dispatcher.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentId: document.id,
+        workspaceId: "workspace-1",
+        revision: 1,
       }),
     );
   });
@@ -114,6 +131,89 @@ describe("document ingestion", () => {
     ).rejects.toThrow("queue unavailable");
 
     expect(await documentRepository.listByWorkspaceId("workspace-1")).toHaveLength(0);
+  });
+
+  it("keeps ingest successful when dispatching the queued job fails after durable queueing", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+      {
+        dispatch: vi.fn().mockRejectedValue(new Error("dispatch unavailable")),
+        dispatchMany: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    const response = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Queued",
+      content: "Queued content",
+    });
+
+    expect(response.status).toBe("queued");
+    expect([...jobRepository.items.values()]).toHaveLength(1);
+
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.dispatch",
+        eventStatus: "failure",
+      }),
+    );
+  });
+
+  it("recovers timed-out claims when the same job is retried by id", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const queuedDocument = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Lease recovery",
+      sourceContent: "Lease recovery",
+      markdownContent: "Lease recovery",
+      status: "queued",
+      sourceKind: "inline_text",
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+    const job = await jobRepository.enqueue({
+      documentId: queuedDocument.id,
+      workspaceId: queuedDocument.workspaceId,
+      documentRevision: queuedDocument.revision,
+    });
+    const claimedAt = new Date();
+    await jobRepository.claimById(job.id, claimedAt);
+
+    const worker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      {
+        process: vi.fn().mockResolvedValue("completed"),
+      } as any,
+      auditService,
+      createLogger("silent"),
+      1_000,
+      {
+        dispatch: vi.fn().mockResolvedValue(undefined),
+        dispatchMany: vi.fn().mockResolvedValue(undefined),
+      },
+      1_000,
+    );
+
+    const result = await worker.runJobById(job.id, new Date(claimedAt.getTime() + 2_000));
+
+    expect(result).toBe("processed");
+    expect(jobRepository.items.get(job.id)?.status).toBe("completed");
   });
 
   it("processes queued jobs and marks the document ready", async () => {
@@ -461,6 +561,52 @@ describe("document ingestion", () => {
     });
   });
 
+  it("keeps update successful when dispatching the queued revision fails after durable queueing", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+      {
+        dispatch: vi.fn().mockRejectedValue(new Error("dispatch unavailable")),
+        dispatchMany: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    const created = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Queued",
+      content: "Queued content",
+    });
+
+    const updated = await service.update({
+      workspaceId: "workspace-1",
+      documentId: created.documentId,
+      title: "Queued",
+      content: "Updated content",
+    });
+
+    expect(updated.status).toBe("queued");
+    const persisted = await documentRepository.findByIdAndWorkspaceId(created.documentId, "workspace-1");
+    expect(persisted?.revision).toBe(2);
+    expect([...jobRepository.items.values()]).toHaveLength(2);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.dispatch",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          documentId: created.documentId,
+          revision: 2,
+        }),
+      }),
+    );
+  });
+
   it("returns not_found when reprocess loses a delete race", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const service = new DocumentIngestionService(documentRepository, createAuditService());
@@ -486,6 +632,50 @@ describe("document ingestion", () => {
       statusCode: 404,
       message: "Document not found",
     });
+  });
+
+  it("keeps reprocess successful when dispatching the queued revision fails after durable queueing", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+      {
+        dispatch: vi.fn().mockRejectedValue(new Error("dispatch unavailable")),
+        dispatchMany: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    const created = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Queued",
+      content: "Queued content",
+    });
+
+    const reprocessed = await service.reprocess({
+      workspaceId: "workspace-1",
+      documentId: created.documentId,
+    });
+
+    expect(reprocessed.status).toBe("queued");
+    const persisted = await documentRepository.findByIdAndWorkspaceId(created.documentId, "workspace-1");
+    expect(persisted?.revision).toBe(2);
+    expect([...jobRepository.items.values()]).toHaveLength(2);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        eventType: "document.dispatch",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          documentId: created.documentId,
+          revision: 2,
+        }),
+      }),
+    );
   });
 
   it("marks a document failed after exhausting retries", async () => {

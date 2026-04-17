@@ -3,10 +3,15 @@ import { randomUUID } from "node:crypto";
 import { detectDocumentType, DocumentParserError } from "@radioso/document-parser";
 
 import type { AuditService } from "../../audit/services/auditService.js";
-import type { DocumentProcessingQueueSnapshot } from "../../../db/repositories/documentProcessingJobRepository.js";
+import type {
+  DocumentProcessingJobRecord,
+  DocumentProcessingJobRepositoryPort,
+  DocumentProcessingQueueSnapshot,
+} from "../../../db/repositories/documentProcessingJobRepository.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../infra/gcsDocumentStorage.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 
 export interface DocumentImportInput {
   workspaceId: string;
@@ -29,6 +34,8 @@ export class DocumentImportService {
     private readonly auditService: AuditService,
     private readonly storage: DocumentStoragePort,
     private readonly getQueueSnapshot?: () => Promise<DocumentProcessingQueueSnapshot>,
+    private readonly jobRepository?: Pick<DocumentProcessingJobRepositoryPort, "findByDocumentRevision">,
+    private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
   ) {}
 
   async importDocument(input: DocumentImportInput): Promise<{ documentId: string; status: string }> {
@@ -124,6 +131,11 @@ export class DocumentImportService {
         ...(await this.queueSnapshotMetadata()),
       },
     });
+    await this.dispatchQueuedDocumentJob({
+      documentId: document.id,
+      workspaceId: input.workspaceId,
+      revision: document.revision,
+    });
 
     return {
       documentId: document.id,
@@ -149,5 +161,47 @@ export class DocumentImportService {
       // Queue-depth metadata is best-effort observability and must not change import outcomes.
       return {};
     }
+  }
+
+  private async dispatchQueuedDocumentJob(input: {
+    documentId: string;
+    workspaceId: string;
+    revision: number;
+  }): Promise<void> {
+    if (!this.jobRepository) {
+      return;
+    }
+
+    try {
+      const job = await this.jobRepository.findByDocumentRevision({
+        documentId: input.documentId,
+        workspaceId: input.workspaceId,
+        documentRevision: input.revision,
+      });
+      if (!job) {
+        return;
+      }
+      await this.jobDispatcher.dispatch(this.toDispatchRequest(job));
+    } catch (error) {
+      await this.auditService.record({
+        workspaceId: input.workspaceId,
+        eventType: "document.dispatch",
+        eventStatus: "failure",
+        metadata: {
+          documentId: input.documentId,
+          revision: input.revision,
+          reason: error instanceof Error ? error.message : "Failed to dispatch document processing job",
+        },
+      });
+    }
+  }
+
+  private toDispatchRequest(job: DocumentProcessingJobRecord) {
+    return {
+      jobId: job.id,
+      documentId: job.documentId,
+      workspaceId: job.workspaceId,
+      revision: job.documentRevision,
+    };
   }
 }

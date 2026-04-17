@@ -11,10 +11,12 @@
     "dev": "npm run dev:http",
     "dev:http": "tsx watch ./src/httpServer.ts",
     "dev:worker": "tsx watch ./src/documentWorker.ts",
+    "dev:worker-server": "tsx watch ./src/documentWorkerServer.ts",
     "generate:openapi": "tsx ./scripts/generateOpenApi.ts",
     "start": "npm run start:http",
     "start:http": "node ./dist/src/httpServer.js",
     "start:worker": "node ./dist/src/documentWorker.js",
+    "start:worker-server": "node ./dist/src/documentWorkerServer.js",
     "smoke:connectors:whatsapp": "node --import tsx ./scripts/whatsappConnectorSmoke.ts",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
@@ -23,6 +25,7 @@
     "test:persistence": "vitest run tests/integration/persistence.integration.test.ts"
   },
   "dependencies": {
+    "@google-cloud/tasks": "^5.5.0",
     "@google-cloud/storage": "^7.17.2",
     "@radioso/document-parser": "file:../packages/document-parser",
     "@radioso/connector-api": "file:../packages/connector-api",

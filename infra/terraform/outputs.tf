@@ -27,3 +27,13 @@ output "worker_service_name" {
   description = "Dedicated Cloud Run service that processes queued document jobs"
   value       = try(google_cloud_run_v2_service.document_worker[0].name, null)
 }
+
+output "worker_service_url" {
+  description = "Dedicated Cloud Run service URL for internal document-processing tasks"
+  value       = try(google_cloud_run_v2_service.document_worker[0].uri, null)
+}
+
+output "worker_task_queue_name" {
+  description = "Cloud Tasks queue name used for document processing dispatch"
+  value       = try(google_cloud_tasks_queue.document_processing[0].name, null)
+}

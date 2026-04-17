@@ -39,10 +39,21 @@ variable "deploy_services" {
   default     = true
 }
 
-variable "worker_instance_count" {
-  description = "Fixed instance count for the dedicated document worker Cloud Run service."
+variable "worker_min_instances" {
+  description = "Minimum number of worker Cloud Run instances. Must stay at least 1 so the durable document queue always has a live recovery poller."
   type        = number
   default     = 1
+
+  validation {
+    condition     = var.worker_min_instances >= 1
+    error_message = "worker_min_instances must be at least 1 so the worker service can recover queued jobs when Cloud Tasks dispatch fails."
+  }
+}
+
+variable "worker_max_instances" {
+  description = "Maximum number of worker Cloud Run instances"
+  type        = number
+  default     = 5
 }
 
 # --- Database ---
@@ -83,6 +94,30 @@ variable "frontend_max_instances" {
   description = "Maximum number of frontend Cloud Run instances"
   type        = number
   default     = 2
+}
+
+variable "worker_task_queue_name" {
+  description = "Cloud Tasks queue name used to dispatch document processing jobs."
+  type        = string
+  default     = "radioso-document-processing"
+}
+
+variable "worker_task_max_dispatches_per_second" {
+  description = "Cloud Tasks dispatch rate for document worker jobs."
+  type        = number
+  default     = 10
+}
+
+variable "worker_task_max_concurrent_dispatches" {
+  description = "Maximum concurrent Cloud Tasks dispatches for document worker jobs."
+  type        = number
+  default     = 20
+}
+
+variable "document_processing_job_lease_ms" {
+  description = "Lease duration for an in-flight document-processing job before a later delivery may reclaim it."
+  type        = number
+  default     = 300000
 }
 
 # --- Document storage ---

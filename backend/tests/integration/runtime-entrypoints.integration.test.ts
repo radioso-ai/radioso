@@ -1,15 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
 import request from "supertest";
 
 import { createApp } from "../../src/app/server/createApp.js";
+import { createWorkerTaskApp } from "../../src/app/worker/createWorkerTaskApp.js";
 import type { Env } from "../../src/app/config/env.js";
 import { startApiRuntime } from "../../src/runtime/startApiRuntime.js";
+import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
 import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
 import { createTestDependencies } from "../support/testApp.js";
 
 const createEnv = (port: number): Env => ({
   NODE_ENV: "test",
   PORT: port,
+  GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
   DB_POOL_IDLE_TIMEOUT_MS: 30_000,
@@ -34,6 +38,12 @@ const createEnv = (port: number): Env => ({
   DOCUMENT_STORAGE_LOCAL_PATH: "../.context/test-document-storage",
   DOCUMENT_STORAGE_BUCKET: "test-document-imports",
   DOCUMENT_UPLOAD_MAX_BYTES: 10 * 1024 * 1024,
+  WORKER_DISPATCH_DRIVER: "noop",
+  WORKER_TASKS_QUEUE_LOCATION: undefined,
+  WORKER_TASKS_QUEUE_NAME: undefined,
+  WORKER_TASKS_SERVICE_URL: undefined,
+  WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+  DOCUMENT_PROCESSING_JOB_LEASE_MS: 300_000,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
 });
 
@@ -78,6 +88,52 @@ describe("runtime entrypoints", () => {
 
     expect(workerStartSpy).toHaveBeenCalledOnce();
     expect(runtime.server).toBeUndefined();
+  });
+
+  it("starts the worker task runtime and serves internal task routes", async () => {
+    const { dependencies, repositories } = createTestDependencies();
+    const workerStartSpy = vi.spyOn(dependencies.documentProcessingWorker, "start");
+    const workerStopSpy = vi.spyOn(dependencies.documentProcessingWorker, "stop");
+    const document = await repositories.documentRepository.create({
+      workspaceId: randomUUID(),
+      title: "Task queued",
+      sourceContent: "Task queued",
+      markdownContent: "Task queued",
+      status: "queued",
+      sourceKind: "inline_text",
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+    const job = await repositories.documentProcessingJobRepository.enqueue({
+      documentId: document.id,
+      workspaceId: document.workspaceId,
+      documentRevision: document.revision,
+    });
+
+    const runtime = await startWorkerTaskRuntime({
+      env: createEnv(8094),
+      logger: dependencies.logger,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+      createApp: createWorkerTaskApp,
+    });
+    runtimes.push(runtime);
+
+    const response = await request(runtime.server!)
+      .post("/internal/tasks/document-processing")
+      .send({ jobId: job.id });
+
+    expect(response.status).toBe(204);
+    expect(workerStartSpy).toHaveBeenCalledOnce();
+    expect(repositories.documentProcessingJobRepository.items.get(job.id)?.status).toBe("completed");
+
+    await runtime.shutdown("test");
+    runtimes.pop();
+    expect(workerStopSpy).toHaveBeenCalledOnce();
   });
 
   it("serves session-authenticated admin routes after login bootstrap", async () => {

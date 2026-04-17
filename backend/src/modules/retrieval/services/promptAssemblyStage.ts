@@ -11,6 +11,8 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       settings: {
         assistantIdentity: input.request.assistantIdentity,
         customInstruction: input.settings.customInstruction,
+        conversationMode: input.settings.conversationMode,
+        brevityOverrideRequested: input.request.brevityOverrideRequested,
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
       },
       contexts: input.contexts,
@@ -23,6 +25,10 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       responseSettings: {
         citationDisplayEnabled: input.settings.citationDisplayEnabled,
         answerSupportPolicy: input.settings.answerSupportPolicy,
+        conversationMode: input.settings.conversationMode,
+        suggestedQuestionsEnabled: input.settings.suggestedQuestionsEnabled,
+        suggestedQuestionsCount: input.settings.suggestedQuestionsCount,
+        brevityOverrideRequested: Boolean(input.request.brevityOverrideRequested),
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
       },
     };

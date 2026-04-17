@@ -579,6 +579,22 @@
               "off"
             ]
           },
+          "conversationMode": {
+            "type": "string",
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
+            ]
+          },
+          "suggestedQuestionsEnabled": {
+            "type": "boolean"
+          },
+          "suggestedQuestionsCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
           "rerankEnabled": {
             "type": "boolean"
           },
@@ -702,6 +718,9 @@
           "semanticRewriteInstructions",
           "lexicalRewriteInstructions",
           "answerSupportPolicy",
+          "conversationMode",
+          "suggestedQuestionsEnabled",
+          "suggestedQuestionsCount",
           "rerankEnabled",
           "vectorTopK",
           "similarityThreshold",
@@ -733,6 +752,22 @@
               "warn",
               "off"
             ]
+          },
+          "conversationMode": {
+            "type": "string",
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
+            ]
+          },
+          "suggestedQuestionsEnabled": {
+            "type": "boolean"
+          },
+          "suggestedQuestionsCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
           },
           "rerankEnabled": {
             "type": "boolean"
@@ -1994,6 +2029,73 @@
               "$ref": "#/components/schemas/AnswerSegment"
             }
           },
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "citation": {
+                  "$ref": "#/components/schemas/Citation"
+                }
+              },
+              "required": [
+                "text"
+              ]
+            }
+          },
+          "conversationMode": {
+            "type": "string",
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
+            ]
+          },
+          "conversationModeMetadata": {
+            "type": "object",
+            "properties": {
+              "conversationMode": {
+                "type": "string",
+                "enum": [
+                  "factual",
+                  "guided",
+                  "exploratory"
+                ]
+              },
+              "brevityOverrideApplied": {
+                "type": "boolean"
+              },
+              "expansionApplied": {
+                "type": "boolean"
+              },
+              "expansionKind": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "focused",
+                  "expansive"
+                ]
+              },
+              "suggestionCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "followUpQuestionApplied": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "conversationMode",
+              "brevityOverrideApplied",
+              "expansionApplied",
+              "expansionKind",
+              "suggestionCount",
+              "followUpQuestionApplied"
+            ]
+          },
           "retrievalInfo": {
             "$ref": "#/components/schemas/RetrievalInfo"
           },
@@ -2004,6 +2106,8 @@
         "required": [
           "conversationId",
           "answer",
+          "conversationMode",
+          "conversationModeMetadata",
           "retrievalInfo",
           "retrievalTrace"
         ]
@@ -2027,8 +2131,26 @@
           },
           "userExpectedLocale": {
             "type": "string",
-            "minLength": 2,
             "maxLength": 35
+          },
+          "inputMetadata": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "typed",
+                  "suggestion_click"
+                ]
+              },
+              "suggestionSourceMessageId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "method"
+            ]
           },
           "metadataFilter": {
             "type": "object",
@@ -2059,8 +2181,26 @@
           },
           "userExpectedLocale": {
             "type": "string",
-            "minLength": 2,
             "maxLength": 35
+          },
+          "inputMetadata": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "typed",
+                  "suggestion_click"
+                ]
+              },
+              "suggestionSourceMessageId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "method"
+            ]
           }
         }
       },
@@ -2279,6 +2419,56 @@
               "off"
             ]
           },
+          "conversationMode": {
+            "type": "string",
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
+            ]
+          },
+          "conversationModeMetadata": {
+            "type": "object",
+            "properties": {
+              "conversationMode": {
+                "type": "string",
+                "enum": [
+                  "factual",
+                  "guided",
+                  "exploratory"
+                ]
+              },
+              "brevityOverrideApplied": {
+                "type": "boolean"
+              },
+              "expansionApplied": {
+                "type": "boolean"
+              },
+              "expansionKind": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "focused",
+                  "expansive"
+                ]
+              },
+              "suggestionCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "followUpQuestionApplied": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "conversationMode",
+              "brevityOverrideApplied",
+              "expansionApplied",
+              "expansionKind",
+              "suggestionCount",
+              "followUpQuestionApplied"
+            ]
+          },
           "validation": {
             "$ref": "#/components/schemas/ValidationDebug"
           },
@@ -2324,6 +2514,25 @@
             "type": "string",
             "format": "date-time"
           },
+          "inputMetadata": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "typed",
+                  "suggestion_click"
+                ]
+              },
+              "suggestionSourceMessageId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
           "citations": {
             "type": "array",
             "items": {
@@ -2334,6 +2543,23 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AnswerSegment"
+            }
+          },
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "citation": {
+                  "$ref": "#/components/schemas/Citation"
+                }
+              },
+              "required": [
+                "text"
+              ]
             }
           },
           "debug": {

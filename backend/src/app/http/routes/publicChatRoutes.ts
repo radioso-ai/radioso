@@ -16,6 +16,18 @@ export const anonymousChatSchema = z.object({
   conversationId: z.string().uuid().optional(),
   bootstrapGreeting: z.boolean().optional(),
   userExpectedLocale: localeHintSchema.optional(),
+  inputMetadata: z.object({
+    method: z.enum(["typed", "suggestion_click"]),
+    suggestionSourceMessageId: z.string().uuid().optional(),
+  }).superRefine((value, ctx) => {
+    if (value.method === "suggestion_click" && !value.suggestionSourceMessageId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "suggestionSourceMessageId is required for suggestion_click",
+        path: ["suggestionSourceMessageId"],
+      });
+    }
+  }).optional(),
 }).superRefine((value, ctx) => {
   if (!value.query && !value.bootstrapGreeting) {
     ctx.addIssue({
@@ -81,6 +93,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
           query: req.body.query!,
           stream: req.body.stream,
           conversationId: req.body.conversationId,
+          inputMetadata: req.body.inputMetadata,
           sourceChannel,
           anonymousSessionId,
           sourceOrigin,

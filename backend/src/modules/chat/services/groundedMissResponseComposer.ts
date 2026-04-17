@@ -1,6 +1,9 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { serviceUnavailable } from "../../../shared/domain/errors.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
+import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 
 export interface GroundedMissContextSummary {
   title: string;
@@ -12,19 +15,36 @@ export interface GroundedMissResponseComposer {
     query: string;
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
   }): Promise<string>;
   composeNoContext(input: {
     query: string;
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
   }): Promise<string>;
 }
 
-export const DEFAULT_NO_CONTEXT_RESPONSE =
-  "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
+export class MissingGroundedMissResponseComposer implements GroundedMissResponseComposer {
+  async composeUnsupportedWithContext(_input: {
+    query: string;
+    unsupportedText: string;
+    contexts: GroundedMissContextSummary[];
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
+  }): Promise<string> {
+    throw new Error("grounded_miss_response_composer_not_configured");
+  }
 
-export const DEFAULT_UNSUPPORTED_WITHOUT_CONTEXT_RESPONSE =
-  "I couldn't verify that from your workspace documents, but I did find related material if you'd like to explore that instead.";
+  async composeNoContext(_input: {
+    query: string;
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
+  }): Promise<string> {
+    throw new Error("grounded_miss_response_composer_not_configured");
+  }
+}
 
-const DEFAULT_UNSUPPORTED_PREFIX = "I couldn't verify that from your workspace documents";
 const MAX_TITLE_LENGTH = CHAT_BEHAVIOR.groundedMiss.maxTitleLength;
 const MAX_CONTEXT_LENGTH = CHAT_BEHAVIOR.groundedMiss.maxContextLength;
 const MAX_CONTEXTS = CHAT_BEHAVIOR.groundedMiss.maxContexts;
@@ -48,9 +68,6 @@ const normalizeContexts = (contexts: GroundedMissContextSummary[]) =>
     }))
     .filter((context) => context.title.length > 0 || context.content.length > 0);
 
-const selectPrimaryTitle = (contexts: GroundedMissContextSummary[]): string | null =>
-  normalizeContexts(contexts).find((context) => context.title.length > 0)?.title ?? null;
-
 const formatContextsForPrompt = (contexts: GroundedMissContextSummary[]): string => {
   const normalized = normalizeContexts(contexts);
   if (normalized.length === 0) {
@@ -66,16 +83,6 @@ const formatContextsForPrompt = (contexts: GroundedMissContextSummary[]): string
     .join("\n\n");
 };
 
-const defaultUnsupportedResponse = (contexts: GroundedMissContextSummary[]): string => {
-  const title = selectPrimaryTitle(contexts);
-
-  if (!title) {
-    return DEFAULT_UNSUPPORTED_WITHOUT_CONTEXT_RESPONSE;
-  }
-
-  return `${DEFAULT_UNSUPPORTED_PREFIX}, but I did find related material in "${title}" if you'd like to explore that instead.`;
-};
-
 const normalizeModelResponse = (value: string | undefined): string => {
   const normalized = normalizeWhitespace(value)
     .replace(/\[\[[^\]]*\]\]/g, "")
@@ -88,67 +95,129 @@ const normalizeModelResponse = (value: string | undefined): string => {
   return normalized;
 };
 
+const groundedMissGenerationFailed = (reason: string) =>
+  serviceUnavailable("Grounded miss response generation failed.", {
+    reason,
+  });
+
+const buildConversationModeGuidance = (input: {
+  conversationMode?: ConversationMode;
+  brevityOverrideRequested?: boolean;
+  hasRetrievedContexts: boolean;
+}): string => {
+  const promptName = input.brevityOverrideRequested
+    ? input.hasRetrievedContexts
+      ? "chat/grounded-miss/guidance-brief-with-context.md"
+      : "chat/grounded-miss/guidance-brief-no-context.md"
+    : input.conversationMode === "factual"
+      ? input.hasRetrievedContexts
+        ? "chat/grounded-miss/guidance-factual-with-context.md"
+        : "chat/grounded-miss/guidance-factual-no-context.md"
+      : input.conversationMode === "exploratory"
+        ? input.hasRetrievedContexts
+          ? "chat/grounded-miss/guidance-exploratory-with-context.md"
+          : "chat/grounded-miss/guidance-exploratory-no-context.md"
+        : input.hasRetrievedContexts
+          ? "chat/grounded-miss/guidance-guided-with-context.md"
+          : "chat/grounded-miss/guidance-guided-no-context.md";
+
+  return loadPromptTemplate(promptName);
+};
+
 const NO_CONTEXT_SYSTEM_PROMPT = loadPromptTemplate("chat/no-context-system.md");
 const UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT = loadPromptTemplate("chat/unsupported-with-context-system.md");
-
-export class DefaultGroundedMissResponseComposer implements GroundedMissResponseComposer {
-  async composeUnsupportedWithContext(input: {
-    query: string;
-    unsupportedText: string;
-    contexts: GroundedMissContextSummary[];
-  }): Promise<string> {
-    void input.query;
-    void input.unsupportedText;
-    return defaultUnsupportedResponse(input.contexts);
-  }
-
-  async composeNoContext(): Promise<string> {
-    return DEFAULT_NO_CONTEXT_RESPONSE;
-  }
-}
 
 export class ModelGroundedMissResponseComposer implements GroundedMissResponseComposer {
   constructor(private readonly client: TextGenerationClient) {}
 
+  private async completeWithRetry(request: {
+    systemPrompt: string;
+    prompt: string;
+    temperature: number;
+    maxOutputTokens: number;
+  }): Promise<string | undefined> {
+    try {
+      return await this.client.complete(request);
+    } catch {
+      return this.client.complete(request);
+    }
+  }
+
   async composeUnsupportedWithContext(input: {
     query: string;
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
   }): Promise<string> {
-    const fallback = defaultUnsupportedResponse(input.contexts);
-
     try {
-      const raw = await this.client.complete({
+      const raw = await this.completeWithRetry({
         systemPrompt: UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT,
         prompt: renderPromptTemplate("chat/unsupported-with-context-user.md", {
           query: input.query,
           unsupported_text: normalizeWhitespace(input.unsupportedText),
           contexts_section: formatContextsForPrompt(input.contexts),
+          conversation_mode_guidance: buildConversationModeGuidance({
+            conversationMode: input.conversationMode,
+            brevityOverrideRequested: input.brevityOverrideRequested,
+            hasRetrievedContexts: true,
+          }),
         }),
         temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.unsupportedWithContextMaxOutputTokens,
       });
 
-      return normalizeModelResponse(raw) || fallback;
-    } catch {
-      return fallback;
+      const normalized = normalizeModelResponse(raw);
+      if (normalized) {
+        return normalized;
+      }
+
+      throw groundedMissGenerationFailed("empty_grounded_miss_response");
+    } catch (error) {
+      if (isProviderCredentialError(error)) {
+        throw error;
+      }
+
+      throw groundedMissGenerationFailed(
+        error instanceof Error ? error.message : "grounded_miss_generation_failed",
+      );
     }
   }
 
-  async composeNoContext(input: { query: string }): Promise<string> {
+  async composeNoContext(input: {
+    query: string;
+    conversationMode?: ConversationMode;
+    brevityOverrideRequested?: boolean;
+  }): Promise<string> {
     try {
-      const raw = await this.client.complete({
+      const raw = await this.completeWithRetry({
         systemPrompt: NO_CONTEXT_SYSTEM_PROMPT,
         prompt: renderPromptTemplate("chat/no-context-user.md", {
           query: input.query,
+          conversation_mode_guidance: buildConversationModeGuidance({
+            conversationMode: input.conversationMode,
+            brevityOverrideRequested: input.brevityOverrideRequested,
+            hasRetrievedContexts: false,
+          }),
         }),
         temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
       });
 
-      return normalizeModelResponse(raw) || DEFAULT_NO_CONTEXT_RESPONSE;
-    } catch {
-      return DEFAULT_NO_CONTEXT_RESPONSE;
+      const normalized = normalizeModelResponse(raw);
+      if (normalized) {
+        return normalized;
+      }
+
+      throw groundedMissGenerationFailed("empty_grounded_miss_response");
+    } catch (error) {
+      if (isProviderCredentialError(error)) {
+        throw error;
+      }
+
+      throw groundedMissGenerationFailed(
+        error instanceof Error ? error.message : "grounded_miss_generation_failed",
+      );
     }
   }
 }

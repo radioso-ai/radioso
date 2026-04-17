@@ -193,7 +193,6 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     retrievalPipeline,
     llmRegistry.createChatGateway(),
     auditService,
-    llmRegistry.createUnsupportedNoticeGenerator(),
     llmRegistry.createGroundedMissResponseComposer(),
   );
   const chatBootstrapService = new ChatBootstrapService(
@@ -214,7 +213,6 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new EvalReplayService(
       retrievalPipeline,
       llmRegistry.createChatGateway(),
-      llmRegistry.createUnsupportedNoticeGenerator(),
       llmRegistry.createGroundedMissResponseComposer(),
     ),
   );

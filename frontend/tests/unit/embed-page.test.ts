@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveEmbedLocaleSearchParam } from '@/app/embed/[token]/page'
+import { resolveEmbedLocaleSearchParam } from '@/lib/embed-locale'
 
 describe('resolveEmbedLocaleSearchParam', () => {
   it('returns the locale string when only one locale is provided', () => {

@@ -25,6 +25,42 @@ const isSafeHref = (href?: string) => {
   }
 }
 
+const INLINE_LIST_PATTERN = /:\s+-\s+/
+
+const normalizeInlineMarkdownLists = (content: string) =>
+  content
+    .split('\n')
+    .map((line) => {
+      if (!INLINE_LIST_PATTERN.test(line)) {
+        return line
+      }
+
+      const separatorIndex = line.indexOf(':')
+      if (separatorIndex < 0) {
+        return line
+      }
+
+      const prefix = line.slice(0, separatorIndex + 1)
+      const remainder = line.slice(separatorIndex + 1)
+
+      if (!remainder.startsWith(' - ')) {
+        return line
+      }
+
+      const items = remainder
+        .trim()
+        .split(/\s+-\s+/)
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+
+      if (items.length === 0) {
+        return line
+      }
+
+      return `${prefix}\n${items.map((item) => `- ${item}`).join('\n')}`
+    })
+    .join('\n')
+
 const MarkdownLink = ({
   href,
   children,
@@ -144,12 +180,14 @@ export function AssistantMarkdownContent({
   content: string
   inline?: boolean
 }) {
+  const normalizedContent = normalizeInlineMarkdownLists(content)
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={createMarkdownComponents(inline)}
     >
-      {content}
+      {normalizedContent}
     </ReactMarkdown>
   )
 }

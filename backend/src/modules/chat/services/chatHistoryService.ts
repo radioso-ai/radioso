@@ -13,7 +13,8 @@ import type { RetrievalExecutionDiagnostics, RetrievalTrace } from "../../retrie
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import type { AssistantTurnOutcome, ValidationDisposition } from "./answerSupportValidationTypes.js";
-import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSettings.js";
+import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 
 export interface ChatConversationSummary {
   id: string;
@@ -35,6 +36,8 @@ export interface ChatConversationTurnDebug {
   citationCount: number;
   answerOutcome?: AssistantTurnOutcome;
   answerSupportPolicy?: AnswerSupportPolicy;
+  conversationMode?: ConversationMode;
+  conversationModeMetadata?: ConversationModeMetadata;
   validation?: {
     ran: boolean;
     answerModified: boolean;
@@ -60,8 +63,10 @@ export interface ChatConversationTurn {
   role: MessageRecord["role"];
   content: string;
   createdAt: string;
+  inputMetadata?: MessageRecord["inputMetadata"];
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
   debug?: ChatConversationTurnDebug;
 }
 
@@ -110,11 +115,14 @@ export interface PublicConversationPage {
 interface ChatAuditMetadata {
   answerOutcome?: AssistantTurnOutcome;
   answerSupportPolicy?: AnswerSupportPolicy;
+  conversationMode?: ConversationMode;
+  conversationModeMetadata?: ConversationModeMetadata;
   assistantMessageId?: string;
   stream?: boolean;
   citationCount?: number;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
   validation?: {
     ran?: boolean;
     answerModified?: boolean;
@@ -138,6 +146,7 @@ interface ChatAuditMetadata {
 interface AssistantTurnArtifacts {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
 }
 
 const toIsoString = (value: Date): string => value.toISOString();
@@ -254,8 +263,10 @@ export class ChatHistoryService {
         role: message.role,
         content: message.content,
         createdAt: toIsoString(message.createdAt),
+        inputMetadata: message.inputMetadata,
         citations: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.citations : undefined,
         answerSegments: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.answerSegments : undefined,
+        suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
       })),
     };
@@ -300,6 +311,34 @@ export class ChatHistoryService {
           metadata.answerSupportPolicy === "strict" || metadata.answerSupportPolicy === "warn" || metadata.answerSupportPolicy === "off"
             ? metadata.answerSupportPolicy
             : undefined,
+        conversationMode:
+          metadata.conversationMode === "factual" ||
+          metadata.conversationMode === "guided" ||
+          metadata.conversationMode === "exploratory"
+            ? metadata.conversationMode
+            : undefined,
+        conversationModeMetadata: metadata.conversationModeMetadata
+          ? {
+              conversationMode:
+                metadata.conversationModeMetadata.conversationMode === "factual" ||
+                metadata.conversationModeMetadata.conversationMode === "guided" ||
+                metadata.conversationModeMetadata.conversationMode === "exploratory"
+                  ? metadata.conversationModeMetadata.conversationMode
+                  : "guided",
+              brevityOverrideApplied: Boolean(metadata.conversationModeMetadata.brevityOverrideApplied),
+              expansionApplied: Boolean(metadata.conversationModeMetadata.expansionApplied),
+              expansionKind:
+                metadata.conversationModeMetadata.expansionKind === "focused" ||
+                metadata.conversationModeMetadata.expansionKind === "expansive"
+                  ? metadata.conversationModeMetadata.expansionKind
+                  : "none",
+              suggestionCount:
+                typeof metadata.conversationModeMetadata.suggestionCount === "number"
+                  ? metadata.conversationModeMetadata.suggestionCount
+                  : 0,
+              followUpQuestionApplied: Boolean(metadata.conversationModeMetadata.followUpQuestionApplied),
+            }
+          : undefined,
         validation: metadata.validation
           ? {
               ran: Boolean(metadata.validation.ran),
@@ -352,6 +391,7 @@ export class ChatHistoryService {
       index.set(metadata.assistantMessageId, {
         citations: metadata.citations,
         answerSegments: metadata.answerSegments,
+        suggestions: metadata.suggestions,
       });
     }
 

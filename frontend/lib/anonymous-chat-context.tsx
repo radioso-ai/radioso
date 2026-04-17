@@ -16,8 +16,10 @@ import {
   publicChatApi,
   type AnswerSegment,
   type Citation,
+  type ChatSuggestion,
   type ChatConversationDetail,
   type ChatStreamCompletion,
+  type ChatUserInputMetadata,
   type ErrorResponse,
   type RetrievalInfo,
   type RetrievalTrace,
@@ -28,8 +30,10 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
+  inputMetadata?: ChatUserInputMetadata
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
   status: 'complete' | 'streaming' | 'error'
@@ -46,7 +50,7 @@ interface AnonymousChatContextValue {
   rateLimitError: string | null
   retryAfterSeconds: number | null
   loadOlderMessages: () => Promise<void>
-  sendMessage: (content: string) => Promise<void>
+  sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => Promise<void>
   startNewChat: () => Promise<void>
 }
 
@@ -103,12 +107,44 @@ const toChatMessages = (detail: ChatConversationDetail): ChatMessage[] =>
       role: message.role,
       content: message.content,
       createdAt: message.createdAt,
+      inputMetadata: message.inputMetadata,
       citations: message.citations,
       answerSegments: message.answerSegments,
+      suggestions: message.suggestions,
       retrievalInfo: message.debug?.retrievalInfo,
       retrievalTrace: message.debug?.retrievalTrace,
       status: 'complete' as const,
     }))
+
+const clearMessageSuggestions = (messages: ChatMessage[]): ChatMessage[] =>
+  messages.map((message) =>
+    message.suggestions && message.suggestions.length > 0
+      ? {
+          ...message,
+          suggestions: undefined,
+        }
+      : message,
+  )
+
+const restoreMessageSuggestions = (
+  messages: ChatMessage[],
+  previousMessages: ChatMessage[],
+): ChatMessage[] => {
+  const suggestionsByMessageId = new Map(
+    previousMessages
+      .filter((message) => message.suggestions && message.suggestions.length > 0)
+      .map((message) => [message.id, message.suggestions]),
+  )
+
+  return messages.map((message) =>
+    suggestionsByMessageId.has(message.id)
+      ? {
+          ...message,
+          suggestions: suggestionsByMessageId.get(message.id),
+        }
+      : message,
+  )
+}
 
 const getLatestAssistantMessage = (detail: ChatConversationDetail): ChatMessage | null => {
   const assistantMessages = toChatMessages(detail).filter((message) => message.role === 'assistant')
@@ -261,6 +297,7 @@ export function AnonymousChatProvider({
                 content: completion.answer ?? message.content,
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
+                suggestions: completion.suggestions,
                 retrievalInfo: completion.retrievalInfo,
                 retrievalTrace: completion.retrievalTrace,
                 status: 'complete' as const,
@@ -297,6 +334,7 @@ export function AnonymousChatProvider({
                 content: assistantMessage.content,
                 citations: assistantMessage.citations,
                 answerSegments: assistantMessage.answerSegments,
+                suggestions: assistantMessage.suggestions,
                 retrievalInfo: assistantMessage.retrievalInfo,
                 retrievalTrace: assistantMessage.retrievalTrace,
                 status: 'complete' as const,
@@ -311,9 +349,10 @@ export function AnonymousChatProvider({
   )
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, inputMetadata?: ChatUserInputMetadata) => {
       const query = content.trim()
       if (!query || isLoading || isHydrating || isUnavailable) return
+      const previousMessages = messages
 
       setRateLimitError(null)
       setRetryAfterSeconds(null)
@@ -323,6 +362,7 @@ export function AnonymousChatProvider({
         role: 'user',
         content: query,
         createdAt: new Date().toISOString(),
+        inputMetadata,
         status: 'complete',
       }
 
@@ -331,7 +371,7 @@ export function AnonymousChatProvider({
 
       setIsLoading(true)
       setMessages((prev) => [
-        ...prev,
+        ...clearMessageSuggestions(prev),
         userMessage,
         {
           id: assistantMessageId,
@@ -351,6 +391,7 @@ export function AnonymousChatProvider({
             query,
             stream: true,
             conversationId,
+            inputMetadata,
           },
           {
             onConversation: ({ conversationId: newId }) => {
@@ -388,6 +429,7 @@ export function AnonymousChatProvider({
             answer: completion.answer,
             citations: completion.citations,
             answerSegments: completion.answerSegments,
+            suggestions: completion.suggestions,
             retrievalInfo: completion.retrievalInfo,
           })
         }
@@ -396,28 +438,37 @@ export function AnonymousChatProvider({
         if (rateLimit) {
           setRateLimitError(rateLimit.message)
           setRetryAfterSeconds(rateLimit.retryAfterSeconds)
-          setMessages((prev) => prev.filter((message) => message.id !== assistantMessageId && message.id !== userMessage.id))
+          setMessages((prev) =>
+            restoreMessageSuggestions(
+              prev.filter((message) => message.id !== assistantMessageId && message.id !== userMessage.id),
+              previousMessages,
+            ),
+          )
           setIsLoading(false)
           return
         }
 
         const errorMessage = getErrorMessage(error)
         setMessages((prev) =>
-          prev.map((message) => {
-            if (message.id !== assistantMessageId) return message
-            return {
-              ...message,
-              content: message.content || errorMessage,
-              status: 'error' as const,
-              citations: [] as Citation[],
-              answerSegments: undefined,
-            }
-          }),
+          restoreMessageSuggestions(
+            prev.map((message) => {
+              if (message.id !== assistantMessageId) return message
+              return {
+                ...message,
+                content: message.content || errorMessage,
+                status: 'error' as const,
+                citations: [] as Citation[],
+                answerSegments: undefined,
+                suggestions: undefined,
+              }
+            }),
+            previousMessages,
+          ),
         )
         setIsLoading(false)
       }
     },
-    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, recoverAssistantMessage, token],
+    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, messages, recoverAssistantMessage, token],
   )
 
   const loadOlderMessages = useCallback(async () => {

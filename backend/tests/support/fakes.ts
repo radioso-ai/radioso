@@ -671,6 +671,9 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       semanticRewriteInstructions: input.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.lexicalRewriteInstructions,
       answerSupportPolicy: input.answerSupportPolicy,
+      conversationMode: input.conversationMode,
+      suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
+      suggestedQuestionsCount: input.suggestedQuestionsCount,
       rerankEnabled: input.rerankEnabled,
       vectorTopK: input.vectorTopK,
       similarityThreshold: input.similarityThreshold,
@@ -2126,6 +2129,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     workspaceId: string;
     role: "user" | "assistant" | "system";
     content: string;
+    inputMetadata?: MessageRecord["inputMetadata"];
   }): Promise<MessageRecord> {
     const record: MessageRecord = {
       id: randomUUID(),
@@ -2133,6 +2137,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       workspaceId: input.workspaceId,
       role: input.role,
       content: input.content,
+      inputMetadata: input.inputMetadata,
       createdAt: new Date(),
     };
     const items = this.items.get(input.conversationId) ?? [];

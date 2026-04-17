@@ -20,6 +20,9 @@ describe("settings and chunking", () => {
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
         answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
         rerankEnabled: false,
         vectorTopK: 0,
         similarityThreshold: 0.2,
@@ -55,6 +58,9 @@ describe("settings and chunking", () => {
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
         answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: 0.2,
@@ -85,6 +91,9 @@ describe("settings and chunking", () => {
     expect(defaults.semanticRewriteInstructions).not.toBe("");
     expect(defaults.lexicalRewriteInstructions).not.toBe("");
     expect(defaults.answerSupportPolicy).toBe("strict");
+    expect(defaults.conversationMode).toBe("guided");
+    expect(defaults.suggestedQuestionsEnabled).toBe(true);
+    expect(defaults.suggestedQuestionsCount).toBe(3);
   });
 
   it("rejects customInstruction exceeding 2000 characters", () => {
@@ -100,6 +109,9 @@ describe("settings and chunking", () => {
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
         answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: 0.2,
@@ -122,6 +134,9 @@ describe("settings and chunking", () => {
       semanticRewriteInstructions: "",
       lexicalRewriteInstructions: "",
       answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
       rerankEnabled: false,
       vectorTopK: 15,
       similarityThreshold: 0.2,
@@ -141,6 +156,9 @@ describe("settings and chunking", () => {
       semanticRewriteInstructions: "   ",
       lexicalRewriteInstructions: "",
       answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
       rerankEnabled: false,
       vectorTopK: 15,
       similarityThreshold: 0.2,
@@ -161,6 +179,9 @@ describe("settings and chunking", () => {
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
         answerSupportPolicy: "invalid" as never,
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: 0.2,
@@ -170,6 +191,27 @@ describe("settings and chunking", () => {
         customInstruction: "",
       }),
     ).toThrow("answerSupportPolicy must be a supported value");
+  });
+
+  it("rejects unsupported conversationMode values", () => {
+    expect(() =>
+      validateRetrievalSettings({
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        answerSupportPolicy: "strict",
+        conversationMode: "invalid" as never,
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        metadataRules: [],
+        customInstruction: "",
+      }),
+    ).toThrow("conversationMode must be a supported value");
   });
 
   it("uses the current chunking defaults for ingestion settings", () => {
@@ -220,5 +262,26 @@ describe("settings and chunking", () => {
   it("adds discovered metadata signals as disabled policies by default", () => {
     const defaults = defaultRetrievalSettings("workspace-1");
     expect(defaults.metadataRules).toEqual([]);
+  });
+
+  it("rejects suggested question counts outside the supported range", () => {
+    expect(() =>
+      validateRetrievalSettings({
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 5,
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        metadataRules: [],
+        customInstruction: "",
+      }),
+    ).toThrow("suggestedQuestionsCount must be between 1 and 4");
   });
 });

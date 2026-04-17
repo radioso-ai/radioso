@@ -22,7 +22,13 @@ describe("chat contract", () => {
     const chat = await request(app)
       .post("/api/v1/chat/")
       .set(adminSessionHeaders(session))
-      .send({ query: "What does this page do?", stream: false });
+      .send({
+        query: "What does this page do?",
+        stream: false,
+        inputMetadata: {
+          method: "typed",
+        },
+      });
 
     const response = await request(app)
       .get("/api/v1/chat/history")
@@ -55,7 +61,13 @@ describe("chat contract", () => {
     const chat = await request(app)
       .post("/api/v1/chat/")
       .set(adminSessionHeaders(session))
-      .send({ query: "What does this page do?", stream: false });
+      .send({
+        query: "What does this page do?",
+        stream: false,
+        inputMetadata: {
+          method: "typed",
+        },
+      });
 
     const response = await request(app)
       .get(`/api/v1/chat/history/${chat.body.conversationId}`)
@@ -72,6 +84,9 @@ describe("chat contract", () => {
         expect.objectContaining({
           role: "user",
           content: "What does this page do?",
+          inputMetadata: {
+            method: "typed",
+          },
         }),
         expect.objectContaining({
           role: "assistant",
@@ -102,6 +117,57 @@ describe("chat contract", () => {
     });
     expect(response.body.nextCursor).toBeNull();
     expect(response.body.hasOlderMessages).toBe(false);
+  });
+
+  it("records suggestion-click provenance in conversation history", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "chat-suggestion-history@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+
+    const first = await request(app)
+      .post("/api/v1/chat/")
+      .set(adminSessionHeaders(session))
+      .send({ query: "What does this page do?", stream: false });
+
+    const detailAfterFirst = await request(app)
+      .get(`/api/v1/chat/history/${first.body.conversationId}`)
+      .set(adminSessionHeaders(session));
+    const sourceAssistantMessageId = detailAfterFirst.body.messages.find((message: { role: string }) => message.role === "assistant")?.id;
+
+    const second = await request(app)
+      .post("/api/v1/chat/")
+      .set(adminSessionHeaders(session))
+      .send({
+        query: "Which questions are answered?",
+        stream: false,
+        conversationId: first.body.conversationId,
+        inputMetadata: {
+          method: "suggestion_click",
+          suggestionSourceMessageId: sourceAssistantMessageId,
+        },
+      });
+
+    const detail = await request(app)
+      .get(`/api/v1/chat/history/${second.body.conversationId}`)
+      .set(adminSessionHeaders(session));
+
+    expect(detail.status).toBe(200);
+    expect(detail.body.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: "Which questions are answered?",
+          inputMetadata: {
+            method: "suggestion_click",
+            suggestionSourceMessageId: sourceAssistantMessageId,
+          },
+        }),
+      ]),
+    );
   });
 
   it("supports cursor pagination for chat history lists", async () => {
@@ -184,8 +250,23 @@ describe("chat contract", () => {
       .send({ query: "What does this page do?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo", "retrievalTrace"]);
+    expect(Object.keys(response.body).sort()).toEqual([
+      "answer",
+      "answerSegments",
+      "citations",
+      "conversationId",
+      "conversationMode",
+      "conversationModeMetadata",
+      "retrievalInfo",
+      "retrievalTrace",
+    ]);
     expect(response.body.conversationId).toBeDefined();
+    expect(response.body.conversationMode).toBe("guided");
+    expect(response.body.conversationModeMetadata).toMatchObject({
+      conversationMode: "guided",
+      brevityOverrideApplied: false,
+      expansionApplied: false,
+    });
     expect(response.body.answer).toContain("This page parses content");
     expect(Array.isArray(response.body.citations)).toBe(true);
     expect(Array.isArray(response.body.answerSegments)).toBe(true);
@@ -455,7 +536,16 @@ describe("chat contract", () => {
       });
 
     expect(second.status).toBe(200);
-    expect(Object.keys(second.body).sort()).toEqual(["answer", "answerSegments", "citations", "conversationId", "retrievalInfo", "retrievalTrace"]);
+    expect(Object.keys(second.body).sort()).toEqual([
+      "answer",
+      "answerSegments",
+      "citations",
+      "conversationId",
+      "conversationMode",
+      "conversationModeMetadata",
+      "retrievalInfo",
+      "retrievalTrace",
+    ]);
     expect(second.body.conversationId).toBe(first.body.conversationId);
   });
 
@@ -487,8 +577,16 @@ describe("chat contract", () => {
       .send({ query: "Can you cook Flan?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["answer", "conversationId", "retrievalInfo", "retrievalTrace"]);
+    expect(Object.keys(response.body).sort()).toEqual([
+      "answer",
+      "conversationId",
+      "conversationMode",
+      "conversationModeMetadata",
+      "retrievalInfo",
+      "retrievalTrace",
+    ]);
     expect(response.body.answer).toContain("couldn't find supporting material");
+    expect(response.body.conversationMode).toBe("guided");
     expect(response.body).not.toHaveProperty("citations");
     expect(response.body).not.toHaveProperty("answerSegments");
     expect(response.body.retrievalInfo).toMatchObject({

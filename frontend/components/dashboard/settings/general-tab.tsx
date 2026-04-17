@@ -750,6 +750,9 @@ export function GeneralTab({ accountId }: { accountId: string }) {
                     <p className="text-sm text-muted-foreground">
                       Paste this script tag into the target website. The loader opens a Radioso-hosted iframe on approved domains only.
                     </p>
+                    <p className="text-sm text-muted-foreground">
+                      Optional script attributes can override locale, start the widget open, or use a custom collapsed avatar image or GIF.
+                    </p>
                     {anonSettings.websiteEmbedScriptUrl ? (
                       <p className="text-xs text-muted-foreground">
                         Loader URL: <span className="font-mono">{anonSettings.websiteEmbedScriptUrl}</span>

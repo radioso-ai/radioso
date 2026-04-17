@@ -1,8 +1,8 @@
 # Specification Quality Checklist: Website Embed Widget
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
-**Created**: 2026-04-15  
-**Feature**: [spec.md](/Users/dm/conductor/workspaces/radioso/rio-de-janeiro/specs/040-website-embed-widget/spec.md)
+**Created**: 2026-04-16  
+**Feature**: [spec.md](/Users/dm/conductor/workspaces/radioso/mogadishu/specs/040-website-embed-widget/spec.md)
 
 ## Content Quality
 
@@ -32,5 +32,5 @@
 
 ## Notes
 
-- Validation pass completed on 2026-04-15.
+- Validation pass refreshed on 2026-04-16 after adding script-level locale override, initial-state, and collapsed-avatar requirements.
 - The spec intentionally frames website embed as a hosted public-chat surface with a thin launcher and explicit trust boundary, rather than as a connector plugin or separate repo.

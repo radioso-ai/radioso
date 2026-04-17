@@ -63,4 +63,31 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('What parser rules do the docs cover?')
     expect(html).toContain('Which onboarding questions are answered?')
   })
+
+  it('renders user input method badges when present', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'user-1',
+            role: 'user',
+            content: 'Typed by hand',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            inputMetadata: { method: 'typed' },
+          },
+          {
+            id: 'user-2',
+            role: 'user',
+            content: 'Clicked chip',
+            createdAt: '2026-04-02T10:01:00.000Z',
+            inputMetadata: { method: 'suggestion_click', suggestionSourceMessageId: 'assistant-1' },
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Typed')
+    expect(html).toContain('Suggested')
+  })
 })

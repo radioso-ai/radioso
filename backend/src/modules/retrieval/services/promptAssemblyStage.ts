@@ -26,6 +26,8 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
         citationDisplayEnabled: input.settings.citationDisplayEnabled,
         answerSupportPolicy: input.settings.answerSupportPolicy,
         conversationMode: input.settings.conversationMode,
+        suggestedQuestionsEnabled: input.settings.suggestedQuestionsEnabled,
+        suggestedQuestionsCount: input.settings.suggestedQuestionsCount,
         brevityOverrideRequested: Boolean(input.request.brevityOverrideRequested),
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
       },

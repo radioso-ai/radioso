@@ -20,6 +20,8 @@ import queryRewriteEnabledSource from '../../../docs/settings-docs/retrieval/que
 import rerankEnabledSource from '../../../docs/settings-docs/retrieval/rerank-enabled.md'
 import rerankTopKSource from '../../../docs/settings-docs/retrieval/rerank-top-k.md'
 import semanticRewriteInstructionsSource from '../../../docs/settings-docs/retrieval/semantic-rewrite-instructions.md'
+import suggestedQuestionsCountSource from '../../../docs/settings-docs/retrieval/suggested-questions-count.md'
+import suggestedQuestionsEnabledSource from '../../../docs/settings-docs/retrieval/suggested-questions-enabled.md'
 import similarityThresholdSource from '../../../docs/settings-docs/retrieval/similarity-threshold.md'
 import vectorTopKSource from '../../../docs/settings-docs/retrieval/vector-top-k.md'
 
@@ -84,6 +86,8 @@ export const retrievalSettingDocs = {
   rerankEnabled: parseSettingDoc(rerankEnabledSource),
   rerankTopK: parseSettingDoc(rerankTopKSource),
   conversationMode: parseSettingDoc(conversationModeSource),
+  suggestedQuestionsEnabled: parseSettingDoc(suggestedQuestionsEnabledSource),
+  suggestedQuestionsCount: parseSettingDoc(suggestedQuestionsCountSource),
   answerSupportPolicy: parseSettingDoc(answerSupportPolicySource),
   citationDisplayEnabled: parseSettingDoc(citationDisplayEnabledSource),
   customInstruction: parseSettingDoc(customInstructionSource),

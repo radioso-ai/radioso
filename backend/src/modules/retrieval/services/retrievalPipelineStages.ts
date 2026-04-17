@@ -83,6 +83,8 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
     citationDisplayEnabled: boolean;
     answerSupportPolicy: RetrievalSettingsRecord["answerSupportPolicy"];
     conversationMode: RetrievalSettingsRecord["conversationMode"];
+    suggestedQuestionsEnabled: RetrievalSettingsRecord["suggestedQuestionsEnabled"];
+    suggestedQuestionsCount: RetrievalSettingsRecord["suggestedQuestionsCount"];
     brevityOverrideRequested: boolean;
     responseLanguagePolicy?: ResponseLanguagePolicy;
   };

@@ -63,6 +63,7 @@ export interface ChatConversationTurn {
   role: MessageRecord["role"];
   content: string;
   createdAt: string;
+  inputMetadata?: MessageRecord["inputMetadata"];
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
@@ -262,6 +263,7 @@ export class ChatHistoryService {
         role: message.role,
         content: message.content,
         createdAt: toIsoString(message.createdAt),
+        inputMetadata: message.inputMetadata,
         citations: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.citations : undefined,
         answerSegments: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.answerSegments : undefined,
         suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,

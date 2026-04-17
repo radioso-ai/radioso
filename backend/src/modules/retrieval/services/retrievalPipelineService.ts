@@ -44,6 +44,8 @@ export interface RetrievalPipelineResult {
     citationDisplayEnabled: boolean;
     answerSupportPolicy: import("../../settings/domain/retrievalSettings.js").AnswerSupportPolicy;
     conversationMode: import("../../settings/domain/retrievalSettings.js").ConversationMode;
+    suggestedQuestionsEnabled: boolean;
+    suggestedQuestionsCount: number;
     brevityOverrideRequested: boolean;
     responseLanguagePolicy?: import("../domain/retrievalPipelineTypes.js").ResponseLanguagePolicy;
   };

@@ -1,6 +1,7 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 
 export interface GroundedMissContextSummary {
@@ -81,6 +82,18 @@ const formatContextsForPrompt = (contexts: GroundedMissContextSummary[]): string
     .join("\n\n");
 };
 
+const buildUnsupportedWithContextFallback = (input: {
+  contexts: GroundedMissContextSummary[];
+}): string => {
+  const firstTitle = normalizeContexts(input.contexts).find((context) => context.title.length > 0)?.title;
+  return renderPromptTemplate("chat/unsupported-with-context-fallback.md", {
+    related_title_clause: firstTitle ? ` in "${firstTitle}"` : "",
+  });
+};
+
+const buildNoContextFallback = (): string =>
+  loadPromptTemplate("chat/no-context-fallback.md");
+
 const normalizeModelResponse = (value: string | undefined): string => {
   const normalized = normalizeWhitespace(value)
     .replace(/\[\[[^\]]*\]\]/g, "")
@@ -98,55 +111,23 @@ const buildConversationModeGuidance = (input: {
   brevityOverrideRequested?: boolean;
   hasRetrievedContexts: boolean;
 }): string => {
-  if (input.brevityOverrideRequested) {
-    return [
-      "The user explicitly requested a brief answer.",
-      "Keep the response direct and concise.",
-      input.hasRetrievedContexts
-        ? "Do not add optional adjacent directions unless they are necessary to honestly orient the user."
-        : "At most, offer one concise next-step hint for how the user could search more narrowly.",
-    ].join("\n");
-  }
+  const promptName = input.brevityOverrideRequested
+    ? input.hasRetrievedContexts
+      ? "chat/grounded-miss/guidance-brief-with-context.md"
+      : "chat/grounded-miss/guidance-brief-no-context.md"
+    : input.conversationMode === "factual"
+      ? input.hasRetrievedContexts
+        ? "chat/grounded-miss/guidance-factual-with-context.md"
+        : "chat/grounded-miss/guidance-factual-no-context.md"
+      : input.conversationMode === "exploratory"
+        ? input.hasRetrievedContexts
+          ? "chat/grounded-miss/guidance-exploratory-with-context.md"
+          : "chat/grounded-miss/guidance-exploratory-no-context.md"
+        : input.hasRetrievedContexts
+          ? "chat/grounded-miss/guidance-guided-with-context.md"
+          : "chat/grounded-miss/guidance-guided-no-context.md";
 
-  switch (input.conversationMode ?? "guided") {
-    case "factual":
-      return input.hasRetrievedContexts
-        ? [
-            "Conversation mode: factual.",
-            "State the grounded limitation directly.",
-            "Do not add optional adjacent directions beyond the minimum honest orientation.",
-          ].join("\n")
-        : [
-            "Conversation mode: factual.",
-            "State that relevant material was not found.",
-            "Do not add optional exploration beyond a minimal direct next step if needed.",
-          ].join("\n");
-    case "exploratory":
-      return input.hasRetrievedContexts
-        ? [
-            "Conversation mode: exploratory.",
-            "After the direct limitation, you may mention two or three grounded adjacent directions supported by the retrieved contexts.",
-            "Keep any optional continuation clearly separated from the direct limitation.",
-          ].join("\n")
-        : [
-            "Conversation mode: exploratory.",
-            "After the direct limitation, you may suggest two or three concise ways to search more narrowly within the workspace.",
-            "Keep any optional continuation clearly separated from the direct limitation.",
-          ].join("\n");
-    case "guided":
-    default:
-      return input.hasRetrievedContexts
-        ? [
-            "Conversation mode: guided.",
-            "After the direct limitation, you may mention one or two grounded adjacent directions supported by the retrieved contexts.",
-            "Keep any optional continuation concise and clearly separated from the direct limitation.",
-          ].join("\n")
-        : [
-            "Conversation mode: guided.",
-            "After the direct limitation, you may offer one concise next-step hint for searching within the workspace.",
-            "Keep any optional continuation concise and clearly separated from the direct limitation.",
-          ].join("\n");
-  }
+  return loadPromptTemplate(promptName);
 };
 
 const NO_CONTEXT_SYSTEM_PROMPT = loadPromptTemplate("chat/no-context-system.md");
@@ -175,28 +156,37 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     conversationMode?: ConversationMode;
     brevityOverrideRequested?: boolean;
   }): Promise<string> {
-    const raw = await this.completeWithRetry({
-      systemPrompt: UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT,
-      prompt: renderPromptTemplate("chat/unsupported-with-context-user.md", {
-        query: input.query,
-        unsupported_text: normalizeWhitespace(input.unsupportedText),
-        contexts_section: formatContextsForPrompt(input.contexts),
-        conversation_mode_guidance: buildConversationModeGuidance({
-          conversationMode: input.conversationMode,
-          brevityOverrideRequested: input.brevityOverrideRequested,
-          hasRetrievedContexts: true,
+    try {
+      const raw = await this.completeWithRetry({
+        systemPrompt: UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT,
+        prompt: renderPromptTemplate("chat/unsupported-with-context-user.md", {
+          query: input.query,
+          unsupported_text: normalizeWhitespace(input.unsupportedText),
+          contexts_section: formatContextsForPrompt(input.contexts),
+          conversation_mode_guidance: buildConversationModeGuidance({
+            conversationMode: input.conversationMode,
+            brevityOverrideRequested: input.brevityOverrideRequested,
+            hasRetrievedContexts: true,
+          }),
         }),
-      }),
-      temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
-      maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.unsupportedWithContextMaxOutputTokens,
-    });
+        temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
+        maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.unsupportedWithContextMaxOutputTokens,
+      });
 
-    const normalized = normalizeModelResponse(raw);
-    if (!normalized) {
-      throw new Error("grounded_miss_with_context_generation_failed");
+      const normalized = normalizeModelResponse(raw);
+      if (normalized) {
+        return normalized;
+      }
+    } catch (error) {
+      if (isProviderCredentialError(error)) {
+        throw error;
+      }
+      // Fall back to the deterministic refusal below.
     }
 
-    return normalized;
+    return buildUnsupportedWithContextFallback({
+      contexts: input.contexts,
+    });
   }
 
   async composeNoContext(input: {
@@ -204,25 +194,32 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     conversationMode?: ConversationMode;
     brevityOverrideRequested?: boolean;
   }): Promise<string> {
-    const raw = await this.completeWithRetry({
-      systemPrompt: NO_CONTEXT_SYSTEM_PROMPT,
-      prompt: renderPromptTemplate("chat/no-context-user.md", {
-        query: input.query,
-        conversation_mode_guidance: buildConversationModeGuidance({
-          conversationMode: input.conversationMode,
-          brevityOverrideRequested: input.brevityOverrideRequested,
-          hasRetrievedContexts: false,
+    try {
+      const raw = await this.completeWithRetry({
+        systemPrompt: NO_CONTEXT_SYSTEM_PROMPT,
+        prompt: renderPromptTemplate("chat/no-context-user.md", {
+          query: input.query,
+          conversation_mode_guidance: buildConversationModeGuidance({
+            conversationMode: input.conversationMode,
+            brevityOverrideRequested: input.brevityOverrideRequested,
+            hasRetrievedContexts: false,
+          }),
         }),
-      }),
-      temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
-      maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
-    });
+        temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
+        maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
+      });
 
-    const normalized = normalizeModelResponse(raw);
-    if (!normalized) {
-      throw new Error("no_context_generation_failed");
+      const normalized = normalizeModelResponse(raw);
+      if (normalized) {
+        return normalized;
+      }
+    } catch (error) {
+      if (isProviderCredentialError(error)) {
+        throw error;
+      }
+      // Fall back to the deterministic refusal below.
     }
 
-    return normalized;
+    return buildNoContextFallback();
   }
 }

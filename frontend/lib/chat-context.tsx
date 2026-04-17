@@ -16,6 +16,7 @@ import {
   type Citation,
   type ChatSuggestion,
   type ChatStreamCompletion,
+  type ChatUserInputMetadata,
   type RetrievalInfo,
   type RetrievalTrace,
 } from '@/lib/api'
@@ -25,6 +26,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
+  inputMetadata?: ChatUserInputMetadata
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
@@ -44,7 +46,7 @@ interface ChatSession {
 interface ChatContextValue {
   getSession: (workspaceId: string) => ChatSession
   initializeSession: (workspaceId: string, userExpectedLocale?: string) => Promise<void>
-  sendMessage: (workspaceId: string, content: string) => Promise<boolean>
+  sendMessage: (workspaceId: string, content: string, inputMetadata?: ChatUserInputMetadata) => Promise<boolean>
 }
 
 const EMPTY_SESSION: ChatSession = {
@@ -80,6 +82,36 @@ const ensureSession = (
   sessions: Record<string, ChatSession>,
   accountId: string,
 ): ChatSession => sessions[accountId] ?? EMPTY_SESSION
+
+const clearMessageSuggestions = (messages: ChatMessage[]): ChatMessage[] =>
+  messages.map((message) =>
+    message.suggestions && message.suggestions.length > 0
+      ? {
+          ...message,
+          suggestions: undefined,
+        }
+      : message,
+  )
+
+const restoreMessageSuggestions = (
+  messages: ChatMessage[],
+  previousMessages: ChatMessage[],
+): ChatMessage[] => {
+  const suggestionsByMessageId = new Map(
+    previousMessages
+      .filter((message) => message.suggestions && message.suggestions.length > 0)
+      .map((message) => [message.id, message.suggestions]),
+  )
+
+  return messages.map((message) =>
+    suggestionsByMessageId.has(message.id)
+      ? {
+          ...message,
+          suggestions: suggestionsByMessageId.get(message.id),
+        }
+      : message,
+  )
+}
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<Record<string, ChatSession>>({})
@@ -131,7 +163,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   )
 
   const sendMessage = useCallback(
-    async (accountId: string, content: string) => {
+    async (accountId: string, content: string, inputMetadata?: ChatUserInputMetadata) => {
       const query = content.trim()
 
       if (!query) {
@@ -139,6 +171,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
 
       const currentSession = ensureSession(sessions, accountId)
+      const previousMessages = currentSession.messages
 
       if (currentSession.isLoading || currentSession.isBootstrapping) {
         return false
@@ -149,6 +182,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         role: 'user',
         content: query,
         createdAt: new Date().toISOString(),
+        inputMetadata,
         status: 'complete',
       }
 
@@ -159,7 +193,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         ...session,
         isLoading: true,
         messages: [
-          ...session.messages,
+          ...clearMessageSuggestions(session.messages),
           userMessage,
           {
             id: assistantMessageId,
@@ -179,6 +213,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             query,
             stream: true,
             conversationId: currentSession.conversationId,
+            inputMetadata,
           },
           {
             onConversation: ({ conversationId }) => {
@@ -224,20 +259,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const errorMessage = getErrorMessage(error)
 
         updateSession(accountId, (session) => {
-          const nextMessages = session.messages.map((message) => {
-            if (message.id !== assistantMessageId) {
-              return message
-            }
+          const nextMessages = restoreMessageSuggestions(
+            session.messages.map((message) => {
+              if (message.id !== assistantMessageId) {
+                return message
+              }
 
-            return {
-              ...message,
-              content: message.content || errorMessage,
-              status: 'error' as const,
-              citations: [] as Citation[],
-              answerSegments: undefined,
-              suggestions: undefined,
-            }
-          })
+              return {
+                ...message,
+                content: message.content || errorMessage,
+                status: 'error' as const,
+                citations: [] as Citation[],
+                answerSegments: undefined,
+                suggestions: undefined,
+              }
+            }),
+            previousMessages,
+          )
 
           return {
             ...session,
@@ -358,6 +396,6 @@ export const useChatSession = (workspaceId: string) => {
     ...context.getSession(workspaceId),
     initializeSession: (userExpectedLocale?: string) =>
       context.initializeSession(workspaceId, userExpectedLocale),
-    sendMessage: (content: string) => context.sendMessage(workspaceId, content),
+    sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => context.sendMessage(workspaceId, content, inputMetadata),
   }
 }

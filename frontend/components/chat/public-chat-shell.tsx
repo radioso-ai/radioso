@@ -90,7 +90,7 @@ function PublicChatContent() {
 
     const nextInput = input.trim()
     setInput('')
-    await sendMessage(nextInput)
+    await sendMessage(nextInput, { method: 'typed' })
   }
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -100,9 +100,12 @@ function PublicChatContent() {
     }
   }
 
-  const handleSuggestionSelect = (text: string) => {
+  const handleSuggestionSelect = (text: string, messageId: string) => {
     if (isLoading) return
-    void sendMessage(text)
+    void sendMessage(text, {
+      method: 'suggestion_click',
+      suggestionSourceMessageId: messageId,
+    })
   }
 
   if (isHydrating) {

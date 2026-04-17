@@ -149,6 +149,9 @@ const operatorOptionsForValueType = (
   return ['equals', 'not_equals', 'lt', 'lte', 'gt', 'gte']
 }
 
+const suggestedQuestionCountLabel = (count: number) =>
+  `${count} suggested question${count === 1 ? '' : 's'}`
+
 export function RetrievalSettingsPanel() {
   const [settings, setSettings] = useState<RetrievalSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -753,6 +756,50 @@ export function RetrievalSettingsPanel() {
                 <p className="text-sm text-muted-foreground">
                   {conversationModeLabels[settings.conversationMode].description}
                 </p>
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="suggestedQuestionsEnabled" className="text-foreground">
+                      {retrievalSettingDocs.suggestedQuestionsEnabled.label}
+                    </Label>
+                    <SettingTooltip
+                      label={retrievalSettingDocs.suggestedQuestionsEnabled.label}
+                      content={retrievalSettingDocs.suggestedQuestionsEnabled.details}
+                    />
+                  </div>
+                  <div className="mt-0.5 text-sm text-muted-foreground">
+                    <AssistantMarkdownContent content={retrievalSettingDocs.suggestedQuestionsEnabled.summary} inline />
+                  </div>
+                </div>
+                <Switch
+                  id="suggestedQuestionsEnabled"
+                  checked={settings.suggestedQuestionsEnabled}
+                  onCheckedChange={(checked) => updateSetting('suggestedQuestionsEnabled', checked)}
+                />
+              </div>
+
+              <div className="space-y-3 rounded-md border border-border bg-muted/20 p-4">
+                <SettingFieldHeader
+                  htmlFor="suggestedQuestionsCount"
+                  label={retrievalSettingDocs.suggestedQuestionsCount.label}
+                  description={retrievalSettingDocs.suggestedQuestionsCount.summary}
+                  tooltip={retrievalSettingDocs.suggestedQuestionsCount.details}
+                />
+                <Slider
+                  id="suggestedQuestionsCount"
+                  min={1}
+                  max={4}
+                  step={1}
+                  value={[settings.suggestedQuestionsCount]}
+                  disabled={!settings.suggestedQuestionsEnabled}
+                  onValueChange={(value) => updateSetting('suggestedQuestionsCount', value[0] ?? 1)}
+                />
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>{suggestedQuestionCountLabel(settings.suggestedQuestionsCount)}</span>
+                  <span>{settings.suggestedQuestionsEnabled ? 'Shown when grounded suggestions are available.' : 'Enable suggested questions to use this setting.'}</span>
+                </div>
               </div>
 
               <div className="space-y-2 rounded-md border border-border bg-muted/20 p-4">

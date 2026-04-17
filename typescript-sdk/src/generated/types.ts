@@ -888,6 +888,8 @@ export interface components {
             answerSupportPolicy: "strict" | "warn" | "off";
             /** @enum {string} */
             conversationMode: "factual" | "guided" | "exploratory";
+            suggestedQuestionsEnabled: boolean;
+            suggestedQuestionsCount: number;
             rerankEnabled: boolean;
             vectorTopK: number;
             similarityThreshold: number;
@@ -926,6 +928,8 @@ export interface components {
             answerSupportPolicy?: "strict" | "warn" | "off";
             /** @enum {string} */
             conversationMode?: "factual" | "guided" | "exploratory";
+            suggestedQuestionsEnabled?: boolean;
+            suggestedQuestionsCount?: number;
             rerankEnabled: boolean;
             vectorTopK: number;
             similarityThreshold: number;
@@ -1238,6 +1242,10 @@ export interface components {
             answer: string;
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
+            suggestions?: {
+                text: string;
+                citation?: components["schemas"]["Citation"];
+            }[];
             /** @enum {string} */
             conversationMode: "factual" | "guided" | "exploratory";
             conversationModeMetadata: {
@@ -1260,6 +1268,12 @@ export interface components {
             conversationId?: string;
             bootstrapGreeting?: boolean;
             userExpectedLocale?: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+            };
             metadataFilter?: {
                 [key: string]: unknown;
             };
@@ -1272,6 +1286,12 @@ export interface components {
             conversationId?: string;
             bootstrapGreeting?: boolean;
             userExpectedLocale?: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+            };
         };
         ChatConversationSummary: {
             /** Format: uuid */
@@ -1349,8 +1369,18 @@ export interface components {
             content: string;
             /** Format: date-time */
             createdAt: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+            };
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
+            suggestions?: {
+                text: string;
+                citation?: components["schemas"]["Citation"];
+            }[];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
         };
         ChatConversationDetail: {

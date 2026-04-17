@@ -8,6 +8,8 @@ import type {
 import {
   DEFAULT_ANSWER_SUPPORT_POLICY,
   DEFAULT_CONVERSATION_MODE,
+  DEFAULT_SUGGESTED_QUESTIONS_COUNT,
+  DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
   normalizeMetadataRules,
 } from "../../modules/settings/domain/retrievalSettings.js";
 import type { RetrievalSettingsRepositoryPort } from "../../modules/settings/services/retrievalSettingsService.js";
@@ -18,6 +20,8 @@ interface RetrievalSettingsPayload {
   lexicalRewriteInstructions?: unknown;
   answerSupportPolicy?: unknown;
   conversationMode?: unknown;
+  suggestedQuestionsEnabled?: unknown;
+  suggestedQuestionsCount?: unknown;
 }
 
 interface RetrievalSettingsRow {
@@ -55,6 +59,14 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => {
       typeof payload.conversationMode === "string"
         ? (payload.conversationMode as ConversationMode)
         : DEFAULT_CONVERSATION_MODE,
+    suggestedQuestionsEnabled:
+      typeof payload.suggestedQuestionsEnabled === "boolean"
+        ? payload.suggestedQuestionsEnabled
+        : DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
+    suggestedQuestionsCount:
+      typeof payload.suggestedQuestionsCount === "number" && Number.isInteger(payload.suggestedQuestionsCount)
+        ? payload.suggestedQuestionsCount
+        : DEFAULT_SUGGESTED_QUESTIONS_COUNT,
     rerankEnabled: row.rerank_enabled,
     vectorTopK: row.vector_top_k,
     similarityThreshold: row.similarity_threshold,
@@ -123,6 +135,8 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
           lexicalRewriteInstructions: input.lexicalRewriteInstructions,
           answerSupportPolicy: input.answerSupportPolicy,
           conversationMode: input.conversationMode,
+          suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
+          suggestedQuestionsCount: input.suggestedQuestionsCount,
         }),
         input.customInstruction,
       ],

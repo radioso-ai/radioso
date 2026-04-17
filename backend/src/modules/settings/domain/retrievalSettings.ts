@@ -42,12 +42,19 @@ export type AnswerSupportPolicy = (typeof answerSupportPolicies)[number];
 export const conversationModes = ["factual", "guided", "exploratory"] as const;
 export type ConversationMode = (typeof conversationModes)[number];
 
+export const MIN_SUGGESTED_QUESTIONS_COUNT = 1;
+export const MAX_SUGGESTED_QUESTIONS_COUNT = 4;
+export const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
+export const DEFAULT_SUGGESTED_QUESTIONS_COUNT = 3;
+
 interface RetrievalSettingsPayload {
   metadataRules?: unknown;
   semanticRewriteInstructions?: unknown;
   lexicalRewriteInstructions?: unknown;
   answerSupportPolicy?: unknown;
   conversationMode?: unknown;
+  suggestedQuestionsEnabled?: unknown;
+  suggestedQuestionsCount?: unknown;
 }
 
 interface LegacyMetadataRule {
@@ -67,6 +74,8 @@ export interface RetrievalSettingsRecord {
   lexicalRewriteInstructions: string;
   answerSupportPolicy: AnswerSupportPolicy;
   conversationMode: ConversationMode;
+  suggestedQuestionsEnabled: boolean;
+  suggestedQuestionsCount: number;
   rerankEnabled: boolean;
   vectorTopK: number;
   similarityThreshold: number;
@@ -84,6 +93,8 @@ export interface RetrievalSettingsInput {
   lexicalRewriteInstructions: string;
   answerSupportPolicy: AnswerSupportPolicy;
   conversationMode: ConversationMode;
+  suggestedQuestionsEnabled: boolean;
+  suggestedQuestionsCount: number;
   rerankEnabled: boolean;
   vectorTopK: number;
   similarityThreshold: number;
@@ -110,6 +121,8 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   lexicalRewriteInstructions: DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
   answerSupportPolicy: DEFAULT_ANSWER_SUPPORT_POLICY,
   conversationMode: DEFAULT_CONVERSATION_MODE,
+  suggestedQuestionsEnabled: DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
+  suggestedQuestionsCount: DEFAULT_SUGGESTED_QUESTIONS_COUNT,
   rerankEnabled: false,
   vectorTopK: 15,
   similarityThreshold: RETRIEVAL_BEHAVIOR.defaultSimilarityThreshold,
@@ -231,6 +244,20 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   if (!conversationModes.includes(input.conversationMode)) {
     throw badRequest("conversationMode must be a supported value");
   }
+  if (typeof input.suggestedQuestionsEnabled !== "boolean") {
+    throw badRequest("suggestedQuestionsEnabled must be a boolean");
+  }
+  if (!Number.isInteger(input.suggestedQuestionsCount)) {
+    throw badRequest("suggestedQuestionsCount must be an integer");
+  }
+  if (
+    input.suggestedQuestionsCount < MIN_SUGGESTED_QUESTIONS_COUNT ||
+    input.suggestedQuestionsCount > MAX_SUGGESTED_QUESTIONS_COUNT
+  ) {
+    throw badRequest(
+      `suggestedQuestionsCount must be between ${MIN_SUGGESTED_QUESTIONS_COUNT} and ${MAX_SUGGESTED_QUESTIONS_COUNT}`,
+    );
+  }
   if (input.semanticRewriteInstructions.length > 2000) {
     throw badRequest("semanticRewriteInstructions must not exceed 2000 characters");
   }
@@ -313,6 +340,10 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
       DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
     ),
     answerSupportPolicy: input.answerSupportPolicy,
+    suggestedQuestionsCount: Math.max(
+      MIN_SUGGESTED_QUESTIONS_COUNT,
+      Math.min(MAX_SUGGESTED_QUESTIONS_COUNT, input.suggestedQuestionsCount),
+    ),
     metadataRules: input.metadataRules.map((rule) => ({
       ...rule,
       field: normalizeMetadataField(rule.field),

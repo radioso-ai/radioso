@@ -31,6 +31,7 @@ import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import { isBrevityOverrideRequested } from "./brevityOverrideDetector.js";
+import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -187,6 +188,14 @@ export class ChatService {
     return session.retrieval.responseSettings?.conversationMode ?? "guided";
   }
 
+  private getSuggestedQuestionsEnabled(session: PreparedSession): boolean {
+    return session.retrieval.responseSettings?.suggestedQuestionsEnabled ?? true;
+  }
+
+  private getSuggestedQuestionsCount(session: PreparedSession): number {
+    return session.retrieval.responseSettings?.suggestedQuestionsCount ?? 3;
+  }
+
   private getConversationModeMetadata(session: PreparedSession, input?: Partial<ConversationModeMetadata>): ConversationModeMetadata {
     const brevityOverrideApplied = Boolean(session.retrieval.responseSettings?.brevityOverrideRequested);
 
@@ -252,6 +261,7 @@ export class ChatService {
     conversationId?: string;
     query: string;
     stream: boolean;
+    inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
@@ -329,6 +339,7 @@ export class ChatService {
     conversationId?: string;
     query: string;
     stream: boolean;
+    inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
@@ -468,6 +479,7 @@ export class ChatService {
     accountId?: string;
     conversationId?: string;
     query: string;
+    inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
@@ -503,6 +515,7 @@ export class ChatService {
       workspaceId: input.workspaceId,
       role: "user",
       content: input.query,
+      inputMetadata: input.inputMetadata,
     });
 
     return {
@@ -671,6 +684,8 @@ export class ChatService {
     const expanded = await this.conversationModeExpansionService.apply({
       query: session.userMessage.content,
       conversationMode,
+      suggestedQuestionsEnabled: this.getSuggestedQuestionsEnabled(session),
+      suggestedQuestionsCount: this.getSuggestedQuestionsCount(session),
       brevityOverrideRequested: brevityOverrideApplied,
       groundedAnswerSupported: presentation.validation.supportedSegmentCount > 0,
       answer: presentation.answer,

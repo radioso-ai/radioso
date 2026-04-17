@@ -405,6 +405,12 @@ components:
             - factual
             - guided
             - exploratory
+        suggestedQuestionsEnabled:
+          type: boolean
+        suggestedQuestionsCount:
+          type: integer
+          minimum: 1
+          maximum: 4
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -495,6 +501,8 @@ components:
         - lexicalRewriteInstructions
         - answerSupportPolicy
         - conversationMode
+        - suggestedQuestionsEnabled
+        - suggestedQuestionsCount
         - rerankEnabled
         - vectorTopK
         - similarityThreshold
@@ -520,6 +528,12 @@ components:
         conversationMode:
           type: string
           enum: *a3
+        suggestedQuestionsEnabled:
+          type: boolean
+        suggestedQuestionsCount:
+          type: integer
+          minimum: 1
+          maximum: 4
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -1369,6 +1383,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AnswerSegment"
+        suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              citation:
+                $ref: "#/components/schemas/Citation"
+            required:
+              - text
         conversationMode:
           type: string
           enum: *a3
@@ -1427,6 +1452,19 @@ components:
         userExpectedLocale:
           type: string
           maxLength: 35
+        inputMetadata:
+          type: object
+          properties:
+            method:
+              type: string
+              enum:
+                - typed
+                - suggestion_click
+            suggestionSourceMessageId:
+              type: string
+              format: uuid
+          required:
+            - method
         metadataFilter:
           type: object
           additionalProperties: {}
@@ -1449,6 +1487,19 @@ components:
         userExpectedLocale:
           type: string
           maxLength: 35
+        inputMetadata:
+          type: object
+          properties:
+            method:
+              type: string
+              enum:
+                - typed
+                - suggestion_click
+            suggestionSourceMessageId:
+              type: string
+              format: uuid
+          required:
+            - method
     ChatConversationSummary:
       type: object
       properties:
@@ -1663,6 +1714,19 @@ components:
         createdAt:
           type: string
           format: date-time
+        inputMetadata:
+          type: object
+          properties:
+            method:
+              type: string
+              enum:
+                - typed
+                - suggestion_click
+            suggestionSourceMessageId:
+              type: string
+              format: uuid
+          required:
+            - method
         citations:
           type: array
           items:
@@ -1671,6 +1735,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AnswerSegment"
+        suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              citation:
+                $ref: "#/components/schemas/Citation"
+            required:
+              - text
         debug:
           $ref: "#/components/schemas/ChatConversationMessageDebug"
       required:

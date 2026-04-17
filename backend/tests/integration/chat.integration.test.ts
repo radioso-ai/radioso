@@ -55,6 +55,8 @@ describe("chat integration", () => {
         .set("Authorization", authorization)
         .send({
           queryRewriteEnabled: false,
+          suggestedQuestionsEnabled: true,
+          suggestedQuestionsCount: 4,
           rerankEnabled: false,
           vectorTopK: 20,
           similarityThreshold: 0.1,
@@ -98,6 +100,62 @@ describe("chat integration", () => {
       conversationMode: "exploratory",
       expansionApplied: true,
       expansionKind: "expansive",
+    });
+  });
+
+  it("suppresses suggested questions when the setting is disabled", async () => {
+    const deterministicGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [{ text: "What parser rules apply?", contextIndex: 1 }],
+          });
+        }
+        return "The testing guide explains testing and parsing content for users[[1]].";
+      },
+      async *streamAnswer() {
+        yield "The testing guide explains testing and parsing content for users[[1]].";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: deterministicGateway });
+
+    const { token } = await issueTestToken(app, "conversation-modes-disabled@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Testing Guide",
+        content: "The testing docs cover testing and parsing content for users.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        conversationMode: "exploratory",
+        suggestedQuestionsEnabled: false,
+        suggestedQuestionsCount: 4,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What do the testing docs cover?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.suggestions).toBeUndefined();
+    expect(response.body.conversationModeMetadata).toMatchObject({
+      conversationMode: "exploratory",
+      expansionApplied: false,
+      suggestionCount: 0,
     });
   });
 

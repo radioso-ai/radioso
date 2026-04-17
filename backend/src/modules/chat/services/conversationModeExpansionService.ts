@@ -14,6 +14,8 @@ type SuggestionTextGenerator = (input: { query: string; prompt: string }) => Pro
 export interface ConversationModeExpansionInput {
   query: string;
   conversationMode: ConversationMode;
+  suggestedQuestionsEnabled: boolean;
+  suggestedQuestionsCount: number;
   brevityOverrideRequested: boolean;
   groundedAnswerSupported: boolean;
   answer: string;
@@ -77,12 +79,13 @@ export class ConversationModeExpansionService {
       input.brevityOverrideRequested ||
       !input.groundedAnswerSupported ||
       input.conversationMode === "factual" ||
+      !input.suggestedQuestionsEnabled ||
       input.contexts.length === 0
     ) {
       return {};
     }
 
-    const maxSuggestions = input.conversationMode === "exploratory" ? 3 : 2;
+    const maxSuggestions = input.suggestedQuestionsCount;
     const existingDocumentIds = new Set((input.citations ?? []).map((citation) => citation.documentId));
     const candidateContexts = input.contexts
       .filter((context) => !existingDocumentIds.has(context.documentId))

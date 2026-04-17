@@ -5,7 +5,7 @@ import type { KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
-import type { AnswerSegment, ChatSuggestion, Citation } from '@/lib/api'
+import type { AnswerSegment, ChatSuggestion, ChatUserInputMetadata, Citation } from '@/lib/api'
 
 const dayFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -21,6 +21,7 @@ export interface ChatThreadMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   createdAt: string
+  inputMetadata?: ChatUserInputMetadata
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
@@ -36,10 +37,22 @@ export function ChatMessageThread({
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
-  onSuggestionSelect?: (text: string) => void
+  onSuggestionSelect?: (text: string, messageId: string) => void
   onMessageSelect?: (messageId: string) => void
   selectedMessageId?: string
 }) {
+  const getInputMethodLabel = (inputMetadata?: ChatUserInputMetadata) => {
+    if (inputMetadata?.method === 'suggestion_click') {
+      return 'Suggested'
+    }
+
+    if (inputMetadata?.method === 'typed') {
+      return 'Typed'
+    }
+
+    return null
+  }
+
   const handleSelectMessage = (messageId: string) => {
     const selection = typeof window !== 'undefined' ? window.getSelection()?.toString().trim() : ''
     if (selection) {
@@ -74,6 +87,7 @@ export function ChatMessageThread({
         const previousDay =
           index > 0 ? dayFormatter.format(new Date(messages[index - 1].createdAt)) : null
         const showDayDivider = currentDay !== previousDay
+        const inputMethodLabel = message.role === 'user' ? getInputMethodLabel(message.inputMetadata) : null
 
         return (
           <div key={message.id} className="space-y-2">
@@ -139,7 +153,7 @@ export function ChatMessageThread({
                           className="h-auto max-w-full whitespace-normal px-3 py-2 text-left"
                           onClick={(event) => {
                             event.stopPropagation()
-                            onSuggestionSelect(suggestion.text)
+                            onSuggestionSelect(suggestion.text, message.id)
                           }}
                         >
                           {suggestion.text}
@@ -155,9 +169,14 @@ export function ChatMessageThread({
                     )}
                   </div>
                 ) : null}
-                <p className="px-1 text-xs text-muted-foreground">
-                  {timeFormatter.format(new Date(message.createdAt))}
-                </p>
+                <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+                  {inputMethodLabel ? (
+                    <span className="rounded-full border border-border bg-muted/60 px-2 py-0.5 leading-none">
+                      {inputMethodLabel}
+                    </span>
+                  ) : null}
+                  <p>{timeFormatter.format(new Date(message.createdAt))}</p>
+                </div>
               </div>
             </div>
           </div>

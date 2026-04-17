@@ -996,6 +996,13 @@ function ChatDiagnosticsPanel({
   selectedStageId?: string
   graphPane: ReactNode
 }) {
+  const inputMethodLabel =
+    selectedMessage?.inputMetadata?.method === 'suggestion_click'
+      ? 'Suggested question'
+      : selectedMessage?.inputMetadata?.method === 'typed'
+        ? 'Typed'
+        : null
+
   if (!selectedMessage) {
     return (
       <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
@@ -1037,6 +1044,13 @@ function ChatDiagnosticsPanel({
           </div>
         ) : null}
       </div>
+
+      {selectedMessage.role === 'user' && inputMethodLabel ? (
+        <div className="rounded-lg border border-border/70 bg-background/70 p-4">
+          <p className="text-sm font-medium text-foreground">Input method</p>
+          <p className="mt-1 text-sm text-muted-foreground">{inputMethodLabel}</p>
+        </div>
+      ) : null}
 
       {!hasDiagnostics ? (
         <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">

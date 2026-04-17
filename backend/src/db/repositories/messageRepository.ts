@@ -9,7 +9,15 @@ export interface MessageRecord {
   workspaceId: string;
   role: "user" | "assistant" | "system";
   content: string;
+  inputMetadata?: UserMessageInputMetadata;
   createdAt: Date;
+}
+
+export type UserMessageInputMethod = "typed" | "suggestion_click";
+
+export interface UserMessageInputMetadata {
+  method: UserMessageInputMethod;
+  suggestionSourceMessageId?: string;
 }
 
 export interface ConversationMessageSummary {
@@ -35,6 +43,7 @@ export interface MessageRepositoryPort {
     workspaceId: string;
     role: "user" | "assistant" | "system";
     content: string;
+    inputMetadata?: UserMessageInputMetadata;
   }): Promise<MessageRecord>;
 }
 
@@ -44,8 +53,28 @@ interface MessageRow {
   workspace_id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  metadata_json: unknown;
   created_at: Date;
 }
+
+const mapInputMetadata = (value: unknown): UserMessageInputMetadata | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const candidate = value as { method?: unknown; suggestionSourceMessageId?: unknown };
+  if (candidate.method !== "typed" && candidate.method !== "suggestion_click") {
+    return undefined;
+  }
+
+  return {
+    method: candidate.method,
+    suggestionSourceMessageId:
+      typeof candidate.suggestionSourceMessageId === "string" && candidate.suggestionSourceMessageId.length > 0
+        ? candidate.suggestionSourceMessageId
+        : undefined,
+  };
+};
 
 const mapMessage = (row: MessageRow): MessageRecord => ({
   id: row.id,
@@ -53,6 +82,7 @@ const mapMessage = (row: MessageRow): MessageRecord => ({
   workspaceId: row.workspace_id,
   role: row.role,
   content: row.content,
+  inputMetadata: row.role === "user" ? mapInputMetadata(row.metadata_json) : undefined,
   createdAt: new Date(row.created_at),
 });
 
@@ -61,7 +91,7 @@ export class MessageRepository implements MessageRepositoryPort {
 
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     const rows = await this.database.query<MessageRow>(
-      `SELECT id, conversation_id, workspace_id, role, content, created_at
+      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, created_at
        FROM messages
        WHERE workspace_id = $1
          AND conversation_id = $2
@@ -109,7 +139,7 @@ export class MessageRepository implements MessageRepositoryPort {
     }
 
     const rows = await this.database.query<MessageRow>(
-      `SELECT id, conversation_id, workspace_id, role, content, created_at
+      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, created_at
        FROM messages
        WHERE workspace_id = $1
          AND conversation_id = $2
@@ -197,12 +227,20 @@ export class MessageRepository implements MessageRepositoryPort {
     workspaceId: string;
     role: "user" | "assistant" | "system";
     content: string;
+    inputMetadata?: UserMessageInputMetadata;
   }): Promise<MessageRecord> {
     const [row] = await this.database.query<MessageRow>(
-      `INSERT INTO messages (id, conversation_id, workspace_id, role, content)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, conversation_id, workspace_id, role, content, created_at`,
-      [randomUUID(), input.conversationId, input.workspaceId, input.role, input.content],
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+       RETURNING id, conversation_id, workspace_id, role, content, metadata_json, created_at`,
+      [
+        randomUUID(),
+        input.conversationId,
+        input.workspaceId,
+        input.role,
+        input.content,
+        JSON.stringify(input.inputMetadata ?? {}),
+      ],
     );
 
     return mapMessage(row);

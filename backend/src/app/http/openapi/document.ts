@@ -45,7 +45,10 @@ import {
 import { websiteEmbedLauncherIcons, websiteEmbedLauncherPositions } from "../../../modules/settings/domain/websiteEmbedSettings.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
+  MAX_SUGGESTED_QUESTIONS_COUNT,
+  MIN_SUGGESTED_QUESTIONS_COUNT,
   answerSupportPolicies,
+  conversationModes,
   metadataRuleEffects,
   metadataRuleOperators,
   metadataValueTypes,
@@ -239,6 +242,9 @@ const RetrievalSettingsSchema = registry.register(
     semanticRewriteInstructions: z.string().max(2000),
     lexicalRewriteInstructions: z.string().max(2000),
     answerSupportPolicy: z.enum(answerSupportPolicies),
+    conversationMode: z.enum(conversationModes),
+    suggestedQuestionsEnabled: z.boolean(),
+    suggestedQuestionsCount: z.number().int().min(MIN_SUGGESTED_QUESTIONS_COUNT).max(MAX_SUGGESTED_QUESTIONS_COUNT),
     rerankEnabled: z.boolean(),
     vectorTopK: z.number().int().min(1).max(300),
     similarityThreshold: z.number().min(0).max(1),
@@ -595,6 +601,19 @@ const ChatResponseSchema = registry.register(
     answer: z.string(),
     citations: z.array(CitationSchema).optional(),
     answerSegments: z.array(AnswerSegmentSchema).optional(),
+    suggestions: z.array(z.object({
+      text: z.string(),
+      citation: CitationSchema.optional(),
+    })).optional(),
+    conversationMode: z.enum(conversationModes),
+    conversationModeMetadata: z.object({
+      conversationMode: z.enum(conversationModes),
+      brevityOverrideApplied: z.boolean(),
+      expansionApplied: z.boolean(),
+      expansionKind: z.enum(["none", "focused", "expansive"]),
+      suggestionCount: z.number().int().min(0),
+      followUpQuestionApplied: z.boolean(),
+    }),
     retrievalInfo: RetrievalInfoSchema,
     retrievalTrace: RetrievalTraceSchema,
   }),
@@ -667,6 +686,15 @@ const ChatConversationMessageDebugSchema = registry.register(
     citationCount: z.number().int().min(0),
     answerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal"]).optional(),
     answerSupportPolicy: z.enum(answerSupportPolicies).optional(),
+    conversationMode: z.enum(conversationModes).optional(),
+    conversationModeMetadata: z.object({
+      conversationMode: z.enum(conversationModes),
+      brevityOverrideApplied: z.boolean(),
+      expansionApplied: z.boolean(),
+      expansionKind: z.enum(["none", "focused", "expansive"]),
+      suggestionCount: z.number().int().min(0),
+      followUpQuestionApplied: z.boolean(),
+    }).optional(),
     validation: ValidationDebugSchema.optional(),
     retrievalInfo: RetrievalInfoSchema.optional(),
     retrievalTrace: RetrievalTraceSchema.optional(),
@@ -681,8 +709,16 @@ const ChatConversationMessageSchema = registry.register(
     role: z.enum(["user", "assistant", "system"]),
     content: z.string(),
     createdAt: z.string().datetime(),
+    inputMetadata: z.object({
+      method: z.enum(["typed", "suggestion_click"]),
+      suggestionSourceMessageId: z.string().uuid().optional(),
+    }).optional(),
     citations: z.array(CitationSchema).optional(),
     answerSegments: z.array(AnswerSegmentSchema).optional(),
+    suggestions: z.array(z.object({
+      text: z.string(),
+      citation: CitationSchema.optional(),
+    })).optional(),
     debug: ChatConversationMessageDebugSchema.optional(),
   }),
 );

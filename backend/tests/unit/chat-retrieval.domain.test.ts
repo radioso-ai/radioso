@@ -905,4 +905,36 @@ describe("chat retrieval domain", () => {
     expect(result.prompt).not.toContain("\x00");
     expect(result.prompt).not.toContain("\x01");
   });
+
+  it("includes guided conversation-mode instructions in the prompt", () => {
+    const builder = new PromptBuilder();
+    const result = builder.build({
+      query: "What does the page explain?",
+      history: [],
+      settings: {
+        conversationMode: "guided",
+      },
+      contexts: [],
+    });
+
+    expect(result.prompt).toContain("Conversation mode: guided.");
+    expect(result.prompt).toContain("After the direct answer, you may optionally suggest one or two grounded adjacent directions.");
+  });
+
+  it("suppresses optional expansion instructions when the current turn explicitly asks for brevity", () => {
+    const builder = new PromptBuilder();
+    const result = builder.build({
+      query: "Just the answer: what does the page explain?",
+      history: [],
+      settings: {
+        conversationMode: "exploratory",
+        brevityOverrideRequested: true,
+      },
+      contexts: [],
+    });
+
+    expect(result.prompt).toContain("Current turn override: the user explicitly asked for a brief or direct answer.");
+    expect(result.prompt).toContain("Do not add any optional focused or expansive continuation");
+    expect(result.prompt).not.toContain("After the direct answer, you may optionally mention two or three grounded adjacent directions drawn from the retrieved material.");
+  });
 });

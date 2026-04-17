@@ -1,7 +1,5 @@
 import { EmbeddedChatFrame } from '@/components/chat/embedded-chat-frame'
-
-export const resolveEmbedLocaleSearchParam = (locale?: string | string[]) =>
-  Array.isArray(locale) ? locale[0] : locale
+import { resolveEmbedLocaleSearchParam } from '@/lib/embed-locale'
 
 export default async function EmbeddedChatPage({
   params,

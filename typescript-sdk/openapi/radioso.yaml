@@ -399,6 +399,18 @@ components:
             - strict
             - warn
             - off
+        conversationMode:
+          type: string
+          enum: &a3
+            - factual
+            - guided
+            - exploratory
+        suggestedQuestionsEnabled:
+          type: boolean
+        suggestedQuestionsCount:
+          type: integer
+          minimum: 1
+          maximum: 4
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -446,7 +458,7 @@ components:
                 enum: *a1
               operator:
                 type: string
-                enum: &a3
+                enum: &a4
                   - equals
                   - not_equals
                   - contains
@@ -459,7 +471,7 @@ components:
                 type: string
               effect:
                 type: string
-                enum: &a4
+                enum: &a5
                   - boost
                   - filter
               enabled:
@@ -488,6 +500,9 @@ components:
         - semanticRewriteInstructions
         - lexicalRewriteInstructions
         - answerSupportPolicy
+        - conversationMode
+        - suggestedQuestionsEnabled
+        - suggestedQuestionsCount
         - rerankEnabled
         - vectorTopK
         - similarityThreshold
@@ -510,6 +525,15 @@ components:
         answerSupportPolicy:
           type: string
           enum: *a2
+        conversationMode:
+          type: string
+          enum: *a3
+        suggestedQuestionsEnabled:
+          type: boolean
+        suggestedQuestionsCount:
+          type: integer
+          minimum: 1
+          maximum: 4
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -536,12 +560,12 @@ components:
                 enum: *a1
               operator:
                 type: string
-                enum: *a3
+                enum: *a4
               value:
                 type: string
               effect:
                 type: string
-                enum: *a4
+                enum: *a5
               enabled:
                 type: boolean
             required:
@@ -570,7 +594,7 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a5
+          enum: &a6
             - fixed_window
             - structured_semantic
         fixedWindowChunkSize:
@@ -601,7 +625,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a5
+          enum: *a6
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -636,12 +660,12 @@ components:
           enum: *a1
         operator:
           type: string
-          enum: *a3
+          enum: *a4
         value:
           type: string
         effect:
           type: string
-          enum: *a4
+          enum: *a5
         enabled:
           type: boolean
       required:
@@ -690,13 +714,13 @@ components:
           maxLength: 80
         websiteEmbedLauncherIcon:
           type: string
-          enum: &a6
+          enum: &a7
             - chat
             - sparkles
             - message
         websiteEmbedLauncherPosition:
           type: string
-          enum: &a7
+          enum: &a8
             - bottom-right
             - bottom-left
     GeneralSettingsResponse:
@@ -748,10 +772,10 @@ components:
           type: string
         websiteEmbedLauncherIcon:
           type: string
-          enum: *a6
+          enum: *a7
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a7
+          enum: *a8
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
@@ -1359,6 +1383,48 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AnswerSegment"
+        suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              citation:
+                $ref: "#/components/schemas/Citation"
+            required:
+              - text
+        conversationMode:
+          type: string
+          enum: *a3
+        conversationModeMetadata:
+          type: object
+          properties:
+            conversationMode:
+              type: string
+              enum: *a3
+            brevityOverrideApplied:
+              type: boolean
+            expansionApplied:
+              type: boolean
+            expansionKind:
+              type: string
+              enum:
+                - none
+                - focused
+                - expansive
+            suggestionCount:
+              type: integer
+              minimum: 0
+            followUpQuestionApplied:
+              type: boolean
+          required:
+            - conversationMode
+            - brevityOverrideApplied
+            - expansionApplied
+            - expansionKind
+            - suggestionCount
+            - followUpQuestionApplied
         retrievalInfo:
           $ref: "#/components/schemas/RetrievalInfo"
         retrievalTrace:
@@ -1366,6 +1432,8 @@ components:
       required:
         - conversationId
         - answer
+        - conversationMode
+        - conversationModeMetadata
         - retrievalInfo
         - retrievalTrace
     ChatRequest:
@@ -1383,8 +1451,20 @@ components:
           type: boolean
         userExpectedLocale:
           type: string
-          minLength: 2
           maxLength: 35
+        inputMetadata:
+          type: object
+          properties:
+            method:
+              type: string
+              enum:
+                - typed
+                - suggestion_click
+            suggestionSourceMessageId:
+              type: string
+              format: uuid
+          required:
+            - method
         metadataFilter:
           type: object
           additionalProperties: {}
@@ -1406,8 +1486,20 @@ components:
           type: boolean
         userExpectedLocale:
           type: string
-          minLength: 2
           maxLength: 35
+        inputMetadata:
+          type: object
+          properties:
+            method:
+              type: string
+              enum:
+                - typed
+                - suggestion_click
+            suggestionSourceMessageId:
+              type: string
+              format: uuid
+          required:
+            - method
     ChatConversationSummary:
       type: object
       properties:
@@ -1559,6 +1651,37 @@ components:
         answerSupportPolicy:
           type: string
           enum: *a2
+        conversationMode:
+          type: string
+          enum: *a3
+        conversationModeMetadata:
+          type: object
+          properties:
+            conversationMode:
+              type: string
+              enum: *a3
+            brevityOverrideApplied:
+              type: boolean
+            expansionApplied:
+              type: boolean
+            expansionKind:
+              type: string
+              enum:
+                - none
+                - focused
+                - expansive
+            suggestionCount:
+              type: integer
+              minimum: 0
+            followUpQuestionApplied:
+              type: boolean
+          required:
+            - conversationMode
+            - brevityOverrideApplied
+            - expansionApplied
+            - expansionKind
+            - suggestionCount
+            - followUpQuestionApplied
         validation:
           $ref: "#/components/schemas/ValidationDebug"
         retrievalInfo:
@@ -1591,6 +1714,19 @@ components:
         createdAt:
           type: string
           format: date-time
+        inputMetadata:
+          type: object
+          properties:
+            method:
+              type: string
+              enum:
+                - typed
+                - suggestion_click
+            suggestionSourceMessageId:
+              type: string
+              format: uuid
+          required:
+            - method
         citations:
           type: array
           items:
@@ -1599,6 +1735,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AnswerSegment"
+        suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              citation:
+                $ref: "#/components/schemas/Citation"
+            required:
+              - text
         debug:
           $ref: "#/components/schemas/ChatConversationMessageDebug"
       required:

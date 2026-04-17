@@ -12,6 +12,18 @@ const DEFAULT_COLLECTION_PAGE_LIMIT = 50;
 const DEFAULT_MESSAGE_WINDOW_LIMIT = 50;
 
 const localeHintSchema = z.string().trim().max(35);
+const userInputMetadataSchema = z.object({
+  method: z.enum(["typed", "suggestion_click"]),
+  suggestionSourceMessageId: z.string().uuid().optional(),
+}).superRefine((value, ctx) => {
+  if (value.method === "suggestion_click" && !value.suggestionSourceMessageId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "suggestionSourceMessageId is required for suggestion_click",
+      path: ["suggestionSourceMessageId"],
+    });
+  }
+});
 
 export const chatSchema = z.object({
   query: z.string().min(1).optional(),
@@ -19,6 +31,7 @@ export const chatSchema = z.object({
   conversationId: z.string().uuid().optional(),
   bootstrapGreeting: z.boolean().optional(),
   userExpectedLocale: localeHintSchema.optional(),
+  inputMetadata: userInputMetadataSchema.optional(),
   metadataFilter: z.record(z.unknown()).optional().refine(
     (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= 16384,
     { message: "Metadata filter must be 16 KB or less" },
@@ -125,6 +138,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
             query: req.body.query!,
             stream: req.body.stream,
             conversationId: req.body.conversationId,
+            inputMetadata: req.body.inputMetadata,
             metadataFilter: req.body.metadataFilter,
           }),
         );
@@ -137,6 +151,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
         query: req.body.query!,
         stream: req.body.stream,
         conversationId: req.body.conversationId,
+        inputMetadata: req.body.inputMetadata,
         metadataFilter: req.body.metadataFilter,
       });
       sendChatJson(res, result);

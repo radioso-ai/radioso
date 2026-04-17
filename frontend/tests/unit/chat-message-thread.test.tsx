@@ -39,4 +39,51 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('aria-label="Open source 1: Source 1"')
     expect(html).not.toContain('</button><button')
   })
+
+  it('renders structured suggestions outside the assistant message body', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            suggestions: [
+              { text: 'What parser rules do the docs cover?' },
+              { text: 'Which onboarding questions are answered?' },
+            ],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Answer text')
+    expect(html).toContain('What parser rules do the docs cover?')
+    expect(html).toContain('Which onboarding questions are answered?')
+  })
+
+  it('renders inline pseudo-lists as markdown lists for assistant messages', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content:
+              'If you want, I can help with: - a simple yoga or meditation routine - what gear is useful for practice - Ananda Yoga topics and recordings',
+            createdAt: '2026-04-02T10:00:00.000Z',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('<ul')
+    expect(html).toContain('<li')
+    expect(html).toContain('a simple yoga or meditation routine')
+    expect(html).toContain('what gear is useful for practice')
+    expect(html).toContain('Ananda Yoga topics and recordings')
+  })
 })

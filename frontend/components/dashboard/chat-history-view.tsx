@@ -996,6 +996,13 @@ function ChatDiagnosticsPanel({
   selectedStageId?: string
   graphPane: ReactNode
 }) {
+  const inputMethodLabel =
+    selectedMessage?.inputMetadata?.method === 'suggestion_click'
+      ? 'Suggested question'
+      : selectedMessage?.inputMetadata?.method === 'typed'
+        ? 'Typed'
+        : null
+
   if (!selectedMessage) {
     return (
       <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
@@ -1038,6 +1045,13 @@ function ChatDiagnosticsPanel({
         ) : null}
       </div>
 
+      {selectedMessage.role === 'user' && inputMethodLabel ? (
+        <div className="rounded-lg border border-border/70 bg-background/70 p-4">
+          <p className="text-sm font-medium text-foreground">Input method</p>
+          <p className="mt-1 text-sm text-muted-foreground">{inputMethodLabel}</p>
+        </div>
+      ) : null}
+
       {!hasDiagnostics ? (
         <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
           No diagnostics are available for this message yet.
@@ -1047,6 +1061,33 @@ function ChatDiagnosticsPanel({
       {diagnosticsDebug?.errorMessage ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
           {diagnosticsDebug?.errorMessage}
+        </div>
+      ) : null}
+
+      {diagnosticsDebug?.conversationMode ? (
+        <div className="rounded-lg border border-border/70 bg-background/70 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-foreground">Conversation mode</p>
+            <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              {diagnosticsDebug.conversationMode}
+            </span>
+            {diagnosticsDebug.conversationModeMetadata?.expansionApplied ? (
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                {diagnosticsDebug.conversationModeMetadata.expansionKind === 'focused' ? 'Focused expansion' : 'Expansive expansion'}
+              </span>
+            ) : (
+              <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                Direct answer only
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {diagnosticsDebug.conversationModeMetadata?.brevityOverrideApplied
+              ? 'This turn honored an explicit user request for brevity, so optional exploration was suppressed.'
+              : diagnosticsDebug.conversationModeMetadata?.expansionApplied
+                ? `The assistant added ${diagnosticsDebug.conversationModeMetadata.suggestionCount} grounded continuation${diagnosticsDebug.conversationModeMetadata.suggestionCount === 1 ? '' : 's'}${diagnosticsDebug.conversationModeMetadata.followUpQuestionApplied ? ' and a grounded follow-up prompt.' : '.'}`
+                : 'No optional grounded continuation was added for this turn.'}
+          </p>
         </div>
       ) : null}
 

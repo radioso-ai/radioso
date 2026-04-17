@@ -150,7 +150,13 @@ describe("public chat contract", () => {
 
     const chat = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ query: "What does this page do?", stream: false });
+      .send({
+        query: "What does this page do?",
+        stream: false,
+        inputMetadata: {
+          method: "typed",
+        },
+      });
 
     const cookies = chat.headers["set-cookie"];
     const anonCookie = findAnonymousCookie(cookies);
@@ -164,6 +170,12 @@ describe("public chat contract", () => {
     expect(detail.body.messages.length).toBeGreaterThanOrEqual(2); // user + assistant
     expect(detail.body.messages).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          inputMetadata: {
+            method: "typed",
+          },
+        }),
         expect.objectContaining({
           role: "assistant",
           citations: expect.any(Array),

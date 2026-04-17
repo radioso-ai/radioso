@@ -1,13 +1,164 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_UNSUPPORTED_NOTICE } from "../../src/modules/chat/services/assistantTurnOutcomeClassifier.js";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
 
 describe("chat integration", () => {
+  it("adds bounded grounded continuations for guided and exploratory modes", async () => {
+    const deterministicGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          if (prompt.includes("Conversation mode:\nguided")) {
+            return JSON.stringify({
+              suggestions: [
+                { text: "What parser rules do the docs cover?", contextIndex: 1 },
+                { text: "Which onboarding questions are answered?", contextIndex: 2 },
+              ],
+            });
+          }
+
+          return JSON.stringify({
+            suggestions: [
+              { text: "What parser rules do the docs cover?", contextIndex: 1 },
+              { text: "Which onboarding questions are answered?", contextIndex: 2 },
+            ],
+          });
+        }
+        return "The testing guide explains testing and parsing content for users[[1]].";
+      },
+      async *streamAnswer() {
+        yield "The testing guide explains testing and parsing content for users[[1]].";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: deterministicGateway });
+
+    const { token } = await issueTestToken(app, "conversation-modes@example.com");
+    const authorization = `Bearer ${token}`;
+
+    for (const document of [
+      { title: "Testing Guide", content: "The testing docs cover testing and parsing content for users." },
+      { title: "Parser Notes", content: "The testing docs cover parser validation rules and supported input formats." },
+      { title: "User FAQ", content: "The testing docs cover common user questions and onboarding tips." },
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", authorization)
+        .send(document);
+    }
+
+    const ask = async (conversationMode: "factual" | "guided" | "exploratory") => {
+      await request(app)
+        .put("/api/v1/settings/retrieval")
+        .set("Authorization", authorization)
+        .send({
+          queryRewriteEnabled: false,
+          suggestedQuestionsEnabled: true,
+          suggestedQuestionsCount: 4,
+          rerankEnabled: false,
+          vectorTopK: 20,
+          similarityThreshold: 0.1,
+          rerankTopK: 5,
+          citationDisplayEnabled: true,
+          conversationMode,
+        });
+
+      return request(app)
+        .post("/api/v1/chat/")
+        .set("Authorization", authorization)
+        .send({ query: "What do the testing docs cover?", stream: false });
+    };
+
+    const factual = await ask("factual");
+    const guided = await ask("guided");
+    const exploratory = await ask("exploratory");
+
+    expect(factual.status).toBe(200);
+    expect(guided.status).toBe(200);
+    expect(exploratory.status).toBe(200);
+
+    expect(factual.body.answer).toBe("The testing guide explains testing and parsing content for users.");
+    expect(guided.body.answer).toContain("The testing guide explains testing and parsing content for users.");
+    expect(exploratory.body.answer).toContain("The testing guide explains testing and parsing content for users.");
+    expect(factual.body.answer).not.toContain("\n- ");
+    expect(guided.body.answer).not.toContain("\n- ");
+    expect(guided.body.suggestions).toEqual([
+      expect.objectContaining({ text: "What parser rules do the docs cover?" }),
+      expect.objectContaining({ text: "Which onboarding questions are answered?" }),
+    ]);
+    expect(guided.body.conversationModeMetadata).toMatchObject({
+      conversationMode: "guided",
+      expansionApplied: true,
+      expansionKind: "focused",
+      suggestionCount: 2,
+    });
+    expect(exploratory.body.answer).not.toContain("\n- ");
+    expect(exploratory.body.suggestions).toHaveLength(2);
+    expect(exploratory.body.conversationModeMetadata).toMatchObject({
+      conversationMode: "exploratory",
+      expansionApplied: true,
+      expansionKind: "expansive",
+    });
+  });
+
+  it("suppresses suggested questions when the setting is disabled", async () => {
+    const deterministicGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [{ text: "What parser rules apply?", contextIndex: 1 }],
+          });
+        }
+        return "The testing guide explains testing and parsing content for users[[1]].";
+      },
+      async *streamAnswer() {
+        yield "The testing guide explains testing and parsing content for users[[1]].";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: deterministicGateway });
+
+    const { token } = await issueTestToken(app, "conversation-modes-disabled@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Testing Guide",
+        content: "The testing docs cover testing and parsing content for users.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        conversationMode: "exploratory",
+        suggestedQuestionsEnabled: false,
+        suggestedQuestionsCount: 4,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What do the testing docs cover?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.suggestions).toBeUndefined();
+    expect(response.body.conversationModeMetadata).toMatchObject({
+      conversationMode: "exploratory",
+      expansionApplied: false,
+      suggestionCount: 0,
+    });
+  });
+
   it("creates a new conversation and reuses it on follow-up questions", async () => {
     const { app } = createTestApp();
 
@@ -138,7 +289,7 @@ describe("chat integration", () => {
     });
   });
 
-  it("replaces unsupported substantive content in mixed-support answers before delivery", async () => {
+  it("omits unsupported substantive content from mixed-support answers before delivery", async () => {
     const mixedGateway: ChatGateway = {
       async answer() {
         return "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support.";
@@ -164,13 +315,11 @@ describe("chat integration", () => {
       .send({ query: "What does the page explain?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toBe(
-      `The page explains testing and parsing content for users. ${DEFAULT_UNSUPPORTED_NOTICE}`,
-    );
+    expect(response.body.answer).toBe("The page explains testing and parsing content for users.");
     expect(response.body.answer).not.toContain("24/7 phone support");
     expect(response.body.answerSegments).toEqual([
       { text: "The page explains testing and parsing content for users", citationIndices: [0] },
-      { text: `. ${DEFAULT_UNSUPPORTED_NOTICE}` },
+      { text: "." },
     ]);
   });
 
@@ -203,6 +352,104 @@ describe("chat integration", () => {
       `I couldn't verify that from your workspace documents, but I did find related material in "Guide" if you'd like to explore that instead.`,
     );
     expect(response.body.answer).not.toContain("discount code");
+  });
+
+  it("uses exploratory recovery without leaking unsupported claims", async () => {
+    const unsupportedGateway: ChatGateway = {
+      async answer() {
+        return "It also offers 24/7 phone support and a discount code.";
+      },
+      async *streamAnswer() {
+        yield "It also offers 24/7 phone support and a discount code.";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: unsupportedGateway });
+
+    const { token } = await issueTestToken(app, "unsupported-exploratory@example.com");
+    const authorization = `Bearer ${token}`;
+
+    for (const document of [
+      { title: "Guide", content: "The testing docs cover testing and parsing content for users." },
+      { title: "Parser Notes", content: "The testing docs cover parser validation rules and supported input formats." },
+      { title: "User FAQ", content: "The testing docs cover common user questions and onboarding tips." },
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", authorization)
+        .send(document);
+    }
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        conversationMode: "exploratory",
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What do the testing docs cover?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain(`I couldn't verify that from your workspace documents`);
+    expect(response.body.answer).not.toContain("\n- ");
+    expect(response.body.answer).not.toContain("discount code");
+    expect(response.body.answer).not.toContain("24/7 phone support");
+  });
+
+  it("honors explicit per-turn brevity requests even in exploratory mode", async () => {
+    const deterministicGateway: ChatGateway = {
+      async answer() {
+        return "The testing guide explains testing and parsing content for users[[1]].";
+      },
+      async *streamAnswer() {
+        yield "The testing guide explains testing and parsing content for users[[1]].";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: deterministicGateway });
+
+    const { token } = await issueTestToken(app, "conversation-modes-brief@example.com");
+    const authorization = `Bearer ${token}`;
+
+    for (const document of [
+      { title: "Testing Guide", content: "The testing docs cover testing and parsing content for users." },
+      { title: "Parser Notes", content: "The testing docs cover parser validation rules and supported input formats." },
+      { title: "User FAQ", content: "The testing docs cover common user questions and onboarding tips." },
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", authorization)
+        .send(document);
+    }
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        conversationMode: "exploratory",
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Just the answer: what does the testing guide explain?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toBe("The testing guide explains testing and parsing content for users.");
+    expect(response.body.answer).not.toContain("\n- ");
   });
 
   it("keeps conversations account scoped", async () => {
@@ -494,16 +741,9 @@ describe("chat integration", () => {
     expect(detail.body.messages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ role: "user", content: "What does the page explain?" }),
-        expect.objectContaining({
-          role: "assistant",
-          content: "Sorry, something went wrong. Please try again.",
-          debug: expect.objectContaining({
-            eventStatus: "failure",
-            errorMessage: "upstream unavailable",
-          }),
-        }),
       ]),
     );
+    expect(detail.body.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
   });
 
   it("preserves ambiguity for unresolved relation follow-ups", async () => {

@@ -39,12 +39,12 @@ const installStdoutGuard = () => {
   });
 };
 
-const printPreflightResults = (results, ansi) => {
+const printPreflightResults = (results, ansi, out = process.stdout) => {
   for (const result of results) {
     const kind = result.status === "fail" ? "error" : "helper";
-    process.stdout.write(`${formatMessage(kind, `- ${result.summary}\n`, ansi)}`);
+    out.write(`${formatMessage(kind, `- ${result.summary}\n`, ansi)}`);
     if (result.recoveryAction) {
-      process.stdout.write(`${formatMessage("helper", `  ${result.recoveryAction}\n`, ansi)}`);
+      out.write(`${formatMessage("helper", `  ${result.recoveryAction}\n`, ansi)}`);
     }
   }
 };
@@ -61,10 +61,12 @@ const validateProviderConfig = (values, contract = getEnvContract()) => {
   }
 };
 
-const printConfigurationSummary = (values, ansi) => {
-  process.stdout.write(`${formatMessage("helper", "\nConfiguration summary:\n", ansi)}`);
-  process.stdout.write(`${formatMessage("helper", `- AI provider: ${values.LLM_PROVIDER}\n`, ansi)}`);
-  process.stdout.write(
+const isInteractiveTerminal = () => Boolean(process.stdin.isTTY && process.stdout.isTTY);
+
+const printConfigurationSummary = (values, ansi, out = process.stdout) => {
+  out.write(`${formatMessage("helper", "\nConfiguration summary:\n", ansi)}`);
+  out.write(`${formatMessage("helper", `- AI provider: ${values.LLM_PROVIDER}\n`, ansi)}`);
+  out.write(
     `${formatMessage(
       "helper",
       values.DOCUMENT_STORAGE_DRIVER === "gcs"
@@ -73,73 +75,91 @@ const printConfigurationSummary = (values, ansi) => {
       ansi,
     )}`,
   );
-  process.stdout.write(
+  out.write(
     `${formatMessage("helper", "- Document processing and chat will use the configured provider credentials.\n", ansi)}`,
   );
 };
 
-const renderPostStartGuide = (report, ansi) => {
+const renderPostStartGuide = (report, ansi, out = process.stdout) => {
   const [frontendUrl = "http://127.0.0.1:3000", backendUrl = "http://127.0.0.1:8080"] = report.applicationUrls;
 
-  process.stdout.write(`${formatMessage("helper", `\nFrontend: ${frontendUrl}\n`, ansi)}`);
-  process.stdout.write(`${formatMessage("helper", `Backend:  ${backendUrl}\n`, ansi)}`);
+  out.write(`${formatMessage("helper", `\nFrontend: ${frontendUrl}\n`, ansi)}`);
+  out.write(`${formatMessage("helper", `Backend:  ${backendUrl}\n`, ansi)}`);
 };
 
 const summarizeStartup = (report, ansi, options = {}) => {
+  const out = options.stdout ?? process.stdout;
   if (report.ok) {
-    process.stdout.write(`${formatMessage("success", "\nRadioso is ready.\n", ansi)}`);
-    renderPostStartGuide(report, ansi);
+    out.write(`${formatMessage("success", "\nRadioso is ready.\n", ansi)}`);
+    renderPostStartGuide(report, ansi, out);
     return null;
   }
 
-  process.stdout.write(`${formatMessage("error", "\nStartup did not complete.\n", ansi)}`);
+  out.write(`${formatMessage("error", "\nStartup did not complete.\n", ansi)}`);
   for (const failed of report.failedServices) {
-    process.stdout.write(`${formatMessage("helper", `- Failing service: ${failed}\n`, ansi)}`);
+    out.write(`${formatMessage("helper", `- Failing service: ${failed}\n`, ansi)}`);
   }
   if (report.logHint) {
-    process.stdout.write(`${formatMessage("helper", `- ${report.logHint}\n`, ansi)}`);
+    out.write(`${formatMessage("helper", `- ${report.logHint}\n`, ansi)}`);
   }
   return 1;
 };
 
-export const main = async (argv = process.argv.slice(2)) => {
+export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
   const ansi = detectAnsiSupport();
   const contract = getEnvContract();
   const attach = argv.includes("--attach");
   const reconfigure = argv.includes("--reconfigure");
+  const interactive = isInteractiveTerminal();
+  const out = dependencies.stdout ?? process.stdout;
+  const detectEnv = dependencies.detectEnvState ?? detectEnvState;
+  const preflight = dependencies.runPreflightChecks ?? runPreflightChecks;
+  const writeEnv = dependencies.writeEnvFileAtomic ?? writeEnvFileAtomic;
+  const startCompose = dependencies.startComposeStack ?? startComposeStack;
+  const attachCompose = dependencies.attachComposeStack ?? attachComposeStack;
+  const targetEnvPath = dependencies.envPath ?? envPath;
 
-  process.stdout.write(`${renderHeader(ansi)}\n\n`);
-  process.stdout.write(`${formatMessage("helper", "Checking local prerequisites...\n", ansi)}`);
+  out.write(`${renderHeader(ansi)}\n\n`);
+  out.write(`${formatMessage("helper", "Checking local prerequisites...\n", ansi)}`);
 
-  const preflightResults = await runPreflightChecks();
-  printPreflightResults(preflightResults, ansi);
+  const preflightResults = await preflight();
+  printPreflightResults(preflightResults, ansi, out);
   if (preflightResults.some((result) => result.isBlocking)) {
     return 1;
   }
 
-  const envState = await detectEnvState(envPath, contract);
+  const envState = await detectEnv(targetEnvPath, contract);
   let values = envState.values ?? {};
 
   if (reconfigure || envState.state !== "valid") {
-    process.stdout.write(`\n${formatMessage("helper", "Collecting local configuration...\n", ansi)}`);
-    const questions = planQuestions(values, contract, { reconfigure });
-    const answers = await collectAnswers(questions, ansi);
-    values = buildEnvValues(values, {
-      ...resolveGeneratedValues(values),
-      ...answers,
-    }, contract);
-    await writeEnvFileAtomic(envPath, renderEnvFile(values, contract));
-    process.stdout.write(`${formatMessage("success", "Updated backend/.env\n", ansi)}`);
+    const generated = resolveGeneratedValues(values);
+
+    if (!reconfigure && !interactive) {
+      values = buildEnvValues(values, generated, contract);
+      validateProviderConfig(values, contract);
+      await writeEnv(targetEnvPath, renderEnvFile(values, contract));
+      out.write(`${formatMessage("helper", "Auto-completed backend/.env for non-interactive startup\n", ansi)}`);
+    } else {
+      out.write(`\n${formatMessage("helper", "Collecting local configuration...\n", ansi)}`);
+      const questions = planQuestions(values, contract, { reconfigure });
+      const answers = await collectAnswers(questions, ansi);
+      values = buildEnvValues(values, {
+        ...generated,
+        ...answers,
+      }, contract);
+      await writeEnv(targetEnvPath, renderEnvFile(values, contract));
+      out.write(`${formatMessage("success", "Updated backend/.env\n", ansi)}`);
+    }
   } else {
-    process.stdout.write(`${formatMessage("helper", "Using existing backend/.env\n", ansi)}`);
+    out.write(`${formatMessage("helper", "Using existing backend/.env\n", ansi)}`);
   }
 
   validateProviderConfig(values, contract);
-  printConfigurationSummary(values, ansi);
+  printConfigurationSummary(values, ansi, out);
 
-  process.stdout.write(`\n${formatMessage("helper", attach ? "Starting Docker services in attached mode...\n" : "Starting Docker services...\n", ansi)}`);
+  out.write(`\n${formatMessage("helper", attach ? "Starting Docker services in attached mode...\n" : "Starting Docker services...\n", ansi)}`);
   if (attach) {
-    const result = await attachComposeStack();
+    const result = await attachCompose();
     if (result.signal === "SIGINT" || result.signal === "SIGTERM") {
       return 0;
     }
@@ -147,8 +167,8 @@ export const main = async (argv = process.argv.slice(2)) => {
     return result.code ?? 1;
   }
 
-  const report = await startComposeStack();
-  const result = summarizeStartup(report, ansi);
+  const report = await startCompose();
+  const result = summarizeStartup(report, ansi, { stdout: out });
   if (typeof result === "number") {
     return result;
   }

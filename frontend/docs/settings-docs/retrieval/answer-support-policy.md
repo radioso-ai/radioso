@@ -8,6 +8,8 @@ Decide what happens when the assistant writes a claim that the retrieved documen
 
 This setting controls the final safety pass that checks whether each substantive part of the answer is backed by retrieved evidence.
 
+Use **Conversation Mode** to control how broad or discovery-oriented the assistant feels. Use this setting to control what happens when the answer contains unsupported content.
+
 ### Strict Grounding
 
 Use this when you want the shipped answer to stay tightly aligned to what the retrieved documents can support.

@@ -16,12 +16,10 @@ export interface GroundedMissResponseComposer {
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string>;
   composeNoContext(input: {
     query: string;
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string>;
 }
 
@@ -31,7 +29,6 @@ export class MissingGroundedMissResponseComposer implements GroundedMissResponse
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string> {
     throw new Error("grounded_miss_response_composer_not_configured");
   }
@@ -39,7 +36,6 @@ export class MissingGroundedMissResponseComposer implements GroundedMissResponse
   async composeNoContext(_input: {
     query: string;
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string> {
     throw new Error("grounded_miss_response_composer_not_configured");
   }
@@ -102,24 +98,19 @@ const groundedMissGenerationFailed = (reason: string) =>
 
 const buildConversationModeGuidance = (input: {
   conversationMode?: ConversationMode;
-  brevityOverrideRequested?: boolean;
   hasRetrievedContexts: boolean;
 }): string => {
-  const promptName = input.brevityOverrideRequested
+  const promptName = input.conversationMode === "factual"
     ? input.hasRetrievedContexts
-      ? "chat/grounded-miss/guidance-brief-with-context.md"
-      : "chat/grounded-miss/guidance-brief-no-context.md"
-    : input.conversationMode === "factual"
+      ? "chat/grounded-miss/guidance-factual-with-context.md"
+      : "chat/grounded-miss/guidance-factual-no-context.md"
+    : input.conversationMode === "exploratory"
       ? input.hasRetrievedContexts
-        ? "chat/grounded-miss/guidance-factual-with-context.md"
-        : "chat/grounded-miss/guidance-factual-no-context.md"
-      : input.conversationMode === "exploratory"
-        ? input.hasRetrievedContexts
-          ? "chat/grounded-miss/guidance-exploratory-with-context.md"
-          : "chat/grounded-miss/guidance-exploratory-no-context.md"
-        : input.hasRetrievedContexts
-          ? "chat/grounded-miss/guidance-guided-with-context.md"
-          : "chat/grounded-miss/guidance-guided-no-context.md";
+        ? "chat/grounded-miss/guidance-exploratory-with-context.md"
+        : "chat/grounded-miss/guidance-exploratory-no-context.md"
+      : input.hasRetrievedContexts
+        ? "chat/grounded-miss/guidance-guided-with-context.md"
+        : "chat/grounded-miss/guidance-guided-no-context.md";
 
   return loadPromptTemplate(promptName);
 };
@@ -148,7 +139,6 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string> {
     try {
       const raw = await this.completeWithRetry({
@@ -159,7 +149,6 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
           contexts_section: formatContextsForPrompt(input.contexts),
           conversation_mode_guidance: buildConversationModeGuidance({
             conversationMode: input.conversationMode,
-            brevityOverrideRequested: input.brevityOverrideRequested,
             hasRetrievedContexts: true,
           }),
         }),
@@ -187,7 +176,6 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
   async composeNoContext(input: {
     query: string;
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string> {
     try {
       const raw = await this.completeWithRetry({
@@ -196,7 +184,6 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
           query: input.query,
           conversation_mode_guidance: buildConversationModeGuidance({
             conversationMode: input.conversationMode,
-            brevityOverrideRequested: input.brevityOverrideRequested,
             hasRetrievedContexts: false,
           }),
         }),

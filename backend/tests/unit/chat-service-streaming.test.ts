@@ -1373,14 +1373,16 @@ describe("chat service streaming", () => {
         };
       },
     } as const;
+    let suggestionPrompt: string | undefined;
     const chatGateway: ChatGateway = {
       async answer({ prompt }) {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
+          suggestionPrompt = prompt;
           return JSON.stringify({
             suggestions: [
-              { text: "What does the interview say about her spiritual path?", contextIndex: 1 },
-              { text: "Which books or projects is she associated with?", contextIndex: 2 },
-              { text: "What challenges does she describe in the other interview?", contextIndex: 3 },
+              { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
+              { text: "Which books or projects is Mahiya associated with?", contextIndex: 2 },
+              { text: "What challenges does Mahiya describe in the other interview?", contextIndex: 3 },
             ],
           });
         }
@@ -1408,9 +1410,11 @@ describe("chat service streaming", () => {
 
     expect(response.answer).toContain("Mahiya is a teacher and author.");
     expect(response.answer).not.toContain("\n- ");
+    expect(suggestionPrompt).toContain("Prefer explicit nouns over pronouns.");
+    expect(suggestionPrompt).toContain('prefer "What books did Narayani write?" over "What books did she write?"');
     expect(response.suggestions).toEqual([
       {
-        text: "What does the interview say about her spiritual path?",
+        text: "What does the interview say about Mahiya's spiritual path?",
         citation: {
           documentId: "doc-1",
           chunkId: "chunk-1",
@@ -1418,7 +1422,7 @@ describe("chat service streaming", () => {
         },
       },
       {
-        text: "Which books or projects is she associated with?",
+        text: "Which books or projects is Mahiya associated with?",
         citation: {
           documentId: "doc-2",
           chunkId: "chunk-2",
@@ -1426,7 +1430,7 @@ describe("chat service streaming", () => {
         },
       },
       {
-        text: "What challenges does she describe in the other interview?",
+        text: "What challenges does Mahiya describe in the other interview?",
         citation: {
           documentId: "doc-3",
           chunkId: "chunk-3",
@@ -1500,7 +1504,7 @@ describe("chat service streaming", () => {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
           return JSON.stringify({
             suggestions: [
-              { text: "Quale altro libro o progetto viene citato accanto a questo?", contextIndex: 1 },
+              { text: "Quale altro libro o progetto è collegato a Narayani?", contextIndex: 1 },
             ],
           });
         }
@@ -1529,7 +1533,7 @@ describe("chat service streaming", () => {
     expect(response.answer).toBe("Narayani ha scritto La mia anima ricorda Swami Kriyananda.");
     expect(response.suggestions).toEqual([
       {
-        text: "Quale altro libro o progetto viene citato accanto a questo?",
+        text: "Quale altro libro o progetto è collegato a Narayani?",
         citation: {
           documentId: "doc-1",
           chunkId: "chunk-1",
@@ -1631,4 +1635,5 @@ describe("chat service streaming", () => {
       },
     ]);
   });
+
 });

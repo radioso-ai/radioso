@@ -16,7 +16,6 @@ export interface RetrievalPipelineRequest {
   query: string;
   history: MessageRecord[];
   assistantIdentity?: AssistantIdentityPromptInput | null;
-  brevityOverrideRequested?: boolean;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   rewriteCarryForwardLiterals?: string[];
   metadataFilter?: Record<string, unknown>;
@@ -85,7 +84,6 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
     conversationMode: RetrievalSettingsRecord["conversationMode"];
     suggestedQuestionsEnabled: RetrievalSettingsRecord["suggestedQuestionsEnabled"];
     suggestedQuestionsCount: RetrievalSettingsRecord["suggestedQuestionsCount"];
-    brevityOverrideRequested: boolean;
     responseLanguagePolicy?: ResponseLanguagePolicy;
   };
 }

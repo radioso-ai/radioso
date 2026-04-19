@@ -16,7 +16,6 @@ export interface ConversationModeExpansionInput {
   conversationMode: ConversationMode;
   suggestedQuestionsEnabled: boolean;
   suggestedQuestionsCount: number;
-  brevityOverrideRequested: boolean;
   groundedAnswerSupported: boolean;
   answer: string;
   contexts: ExpansionContext[];
@@ -176,7 +175,6 @@ export class ConversationModeExpansionService {
 
   async apply(input: ConversationModeExpansionInput): Promise<ConversationModeExpansionResult> {
     if (
-      input.brevityOverrideRequested ||
       !input.groundedAnswerSupported ||
       input.conversationMode === "factual" ||
       !input.suggestedQuestionsEnabled ||

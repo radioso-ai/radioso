@@ -25,39 +25,39 @@ const isSafeHref = (href?: string) => {
   }
 }
 
-const INLINE_LIST_PATTERN = /:\s+-\s+/
+const UNORDERED_LIST_MARKER_PATTERN = /(^|\s)([-+*•])\s+/g
 
-const normalizeInlineMarkdownLists = (content: string) =>
+const INLINE_LIST_ITEM_LETTER_PATTERN = /[\p{L}]/u
+
+const looksLikeInlineListItems = (items: string[]) =>
+  items.length >= 2 &&
+  items.every((item) => INLINE_LIST_ITEM_LETTER_PATTERN.test(item)) &&
+  items.filter((item) => item.trim().split(/\s+/).length >= 2).length >= 2
+
+const expandInlineUnorderedLists = (content: string) =>
   content
     .split('\n')
     .map((line) => {
-      if (!INLINE_LIST_PATTERN.test(line)) {
+      const matches = Array.from(line.matchAll(UNORDERED_LIST_MARKER_PATTERN))
+      if (matches.length < 2) {
         return line
       }
 
-      const separatorIndex = line.indexOf(':')
-      if (separatorIndex < 0) {
-        return line
-      }
-
-      const prefix = line.slice(0, separatorIndex + 1)
-      const remainder = line.slice(separatorIndex + 1)
-
-      if (!remainder.startsWith(' - ')) {
-        return line
-      }
-
-      const items = remainder
-        .trim()
-        .split(/\s+-\s+/)
-        .map((item) => item.trim())
+      const prefix = line.slice(0, matches[0]?.index ?? 0).trimEnd()
+      const items = matches
+        .map((match, index) => {
+          const itemStart = (match.index ?? 0) + match[0].length
+          const nextMatch = matches[index + 1]
+          const itemEnd = nextMatch?.index ?? line.length
+          return line.slice(itemStart, itemEnd).trim()
+        })
         .filter((item) => item.length > 0)
 
-      if (items.length === 0) {
+      if (!looksLikeInlineListItems(items)) {
         return line
       }
 
-      return `${prefix}\n${items.map((item) => `- ${item}`).join('\n')}`
+      return [prefix, ...items.map((item) => `- ${item}`)].filter((part) => part.length > 0).join('\n')
     })
     .join('\n')
 
@@ -180,7 +180,7 @@ export function AssistantMarkdownContent({
   content: string
   inline?: boolean
 }) {
-  const normalizedContent = normalizeInlineMarkdownLists(content)
+  const normalizedContent = expandInlineUnorderedLists(content)
 
   return (
     <ReactMarkdown

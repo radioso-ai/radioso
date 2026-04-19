@@ -2,19 +2,10 @@ import type { ConversationMode } from "../../settings/domain/retrievalSettings.j
 
 export interface ConversationModeInstructionInput {
   conversationMode: ConversationMode;
-  brevityOverrideRequested?: boolean;
 }
 
 export class ConversationModeInstructionBuilder {
   build(input: ConversationModeInstructionInput): string {
-    if (input.brevityOverrideRequested) {
-      return [
-        "Current turn override: the user explicitly asked for a brief or direct answer.",
-        "Answer the question directly.",
-        "Do not add any optional focused or expansive continuation unless clarification is required for honesty.",
-      ].join("\n");
-    }
-
     switch (input.conversationMode) {
       case "factual":
         return [

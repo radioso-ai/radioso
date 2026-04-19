@@ -30,7 +30,6 @@ import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTyp
 import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
-import { isBrevityOverrideRequested } from "./brevityOverrideDetector.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 
 export interface ChatGateway {
@@ -197,11 +196,9 @@ export class ChatService {
   }
 
   private getConversationModeMetadata(session: PreparedSession, input?: Partial<ConversationModeMetadata>): ConversationModeMetadata {
-    const brevityOverrideApplied = Boolean(session.retrieval.responseSettings?.brevityOverrideRequested);
-
     return {
       conversationMode: this.getConversationMode(session),
-      brevityOverrideApplied,
+      brevityOverrideApplied: false,
       expansionApplied: false,
       expansionKind: "none",
       suggestionCount: 0,
@@ -369,7 +366,6 @@ export class ChatService {
           ?? await this.groundedMissResponseComposer.composeNoContext({
             query: input.query,
             conversationMode: this.getConversationMode(session),
-            brevityOverrideRequested: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
           });
         yield {
           type: "chunk",
@@ -498,7 +494,6 @@ export class ChatService {
       workspaceId: input.workspaceId,
       query: input.query,
       history,
-      brevityOverrideRequested: isBrevityOverrideRequested(input.query),
       rewriteCarryForwardLiterals: carryForwardLiterals,
       metadataFilter: input.metadataFilter,
     });
@@ -541,7 +536,6 @@ export class ChatService {
       ? await this.groundedMissResponseComposer.composeNoContext({
           query,
           conversationMode: this.getConversationMode(session),
-          brevityOverrideRequested: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
         })
       : await this.chatGateway.answer({
           query,
@@ -600,7 +594,6 @@ export class ChatService {
       citationDisplayEnabled,
       answerSupportPolicy: this.getAnswerSupportPolicy(session),
       conversationMode: this.getConversationMode(session),
-      brevityOverrideRequested: Boolean(session.retrieval.responseSettings?.brevityOverrideRequested),
       groundedMissResponseComposer: this.groundedMissResponseComposer,
     });
 
@@ -680,13 +673,11 @@ export class ChatService {
     presentation: Omit<PresentedAnswer, "conversationModeMetadata">,
   ): Promise<PresentedAnswer> {
     const conversationMode = this.getConversationMode(session);
-    const brevityOverrideApplied = Boolean(session.retrieval.responseSettings?.brevityOverrideRequested);
     const expanded = await this.conversationModeExpansionService.apply({
       query: session.userMessage.content,
       conversationMode,
       suggestedQuestionsEnabled: this.getSuggestedQuestionsEnabled(session),
       suggestedQuestionsCount: this.getSuggestedQuestionsCount(session),
-      brevityOverrideRequested: brevityOverrideApplied,
       groundedAnswerSupported: presentation.validation.supportedSegmentCount > 0,
       answer: presentation.answer,
       citations: presentation.citations,
@@ -704,7 +695,7 @@ export class ChatService {
       suggestions,
       conversationModeMetadata: this.getConversationModeMetadata(session, inferConversationModeMetadata({
         conversationMode,
-        brevityOverrideApplied,
+        brevityOverrideApplied: false,
         suggestionCount: suggestions?.length ?? 0,
       })),
     };

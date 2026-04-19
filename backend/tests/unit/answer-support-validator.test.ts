@@ -51,7 +51,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -99,7 +98,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -137,7 +135,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: false,
       answerSupportPolicy: "strict",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -167,7 +164,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -215,7 +211,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -239,7 +234,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "warn",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 

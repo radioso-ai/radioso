@@ -60,7 +60,6 @@ export class AnswerSupportValidator {
     citationDisplayEnabled: boolean;
     answerSupportPolicy: AnswerSupportPolicy;
     conversationMode: ConversationMode;
-    brevityOverrideRequested: boolean;
     groundedMissResponseComposer: GroundedMissResponseComposer;
   }): Promise<ValidatedAnswer> {
     const segmentResults = await Promise.all(input.answerSegments.map(async (segment) => {
@@ -116,7 +115,6 @@ export class AnswerSupportValidator {
             unsupportedText: input.answer,
             contexts: input.retrievedContextSummaries,
             conversationMode: input.conversationMode,
-            brevityOverrideRequested: input.brevityOverrideRequested,
           }),
         }]
       : supportedSegmentCount > 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)

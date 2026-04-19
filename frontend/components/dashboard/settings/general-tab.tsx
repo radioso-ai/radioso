@@ -1,8 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Building2, Code2, Globe, ExternalLink, MessageSquare, RefreshCw, Save, Trash2 } from 'lucide-react'
 
+import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
+import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
@@ -21,11 +24,20 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { accountApi, generalSettingsApi, type GeneralSettings } from '@/lib/api'
 import { buildWebsiteEmbedSnippet, formatWebsiteEmbedOrigins, parseWebsiteEmbedOrigins } from '@/lib/embed-widget'
 import { useWorkspace } from '@/lib/workspace-context'
 
-export function GeneralTab({ accountId }: { accountId: string }) {
+export function GeneralTab({
+  accountId,
+  routeState,
+}: {
+  accountId: string
+  routeState: DashboardRouteState
+}) {
+  const router = useRouter()
+  const descriptor = getSettingsTabDescriptor('general')
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace } = useWorkspace()
   const [workspaceName, setWorkspaceName] = useState(activeWorkspace?.name ?? '')
   const [organizationName, setOrganizationName] = useState('')
@@ -335,11 +347,21 @@ export function GeneralTab({ accountId }: { accountId: string }) {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-xl space-y-8">
-          <section id="organization" className="space-y-6 scroll-mt-24">
-            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Organization</h2>
+    <SettingsTabShell
+      accountId={accountId}
+      routeState={routeState}
+      descriptor={descriptor}
+      onNavigate={(href) => router.push(href)}
+    >
+      <div className="mx-auto max-w-4xl space-y-8">
+          <section id="workspace-access" className="space-y-6 scroll-mt-24">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-foreground">Workspace and access</h2>
+              <p className="text-sm text-muted-foreground">
+                Core operator controls for naming, admin API access, and workspace lifecycle.
+              </p>
+            </div>
+
             {isOrganizationLoading ? (
               <div className="flex items-center justify-center py-4">
                 <Spinner className="w-5 h-5" />
@@ -377,12 +399,14 @@ export function GeneralTab({ accountId }: { accountId: string }) {
                 </div>
               </div>
             )}
-          </section>
 
-          <section id="workspace" className="space-y-6 scroll-mt-24">
-            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Workspace</h2>
-            <div className="space-y-3">
-              <Label htmlFor="workspaceName" className="text-foreground">Workspace Name</Label>
+            <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Workspace name</p>
+                <p className="text-sm text-muted-foreground">
+                  Rename the active workspace without changing any of its data or settings.
+                </p>
+              </div>
               <div className="flex gap-2">
                 <Input
                   id="workspaceName"
@@ -401,10 +425,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
               </div>
               {renameError ? <p className="text-sm text-destructive">{renameError}</p> : null}
             </div>
-          </section>
 
-          <section id="developer-api" className="space-y-6 scroll-mt-24">
-            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Developer API</h2>
             <details className="rounded-lg border border-border bg-card p-4">
                 <summary className="cursor-pointer list-none">
                   <div className="flex items-center gap-3">
@@ -462,6 +483,80 @@ export function GeneralTab({ accountId }: { accountId: string }) {
                   </div>
                 </div>
               </details>
+
+            <section id="danger-zone" className="space-y-4 rounded-md border border-destructive/50 p-4 scroll-mt-24">
+              <h2 className="text-sm font-medium text-destructive uppercase tracking-wide">Danger Zone</h2>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Delete this workspace</p>
+                  <p className="text-sm text-muted-foreground">
+                    Permanently delete this workspace and all its documents, chats, and settings. This action cannot be undone.
+                  </p>
+                </div>
+
+                <Dialog
+                  open={deleteDialogOpen}
+                  onOpenChange={(open) => {
+                    setDeleteDialogOpen(open)
+                    if (!open) {
+                      setDeleteConfirmName('')
+                      setIsDeleting(false)
+                    }
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={isLastWorkspace}
+                      title={isLastWorkspace ? 'Cannot delete the last workspace' : undefined}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Delete workspace</DialogTitle>
+                      <DialogDescription>
+                        This will permanently delete the workspace <strong>{activeWorkspace?.name}</strong> and
+                        all its documents, conversations, and settings. This action cannot be undone.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2 py-2">
+                      <Label htmlFor="deleteConfirm" className="text-foreground">
+                        Type <strong>{activeWorkspace?.name}</strong> to confirm
+                      </Label>
+                      <Input
+                        id="deleteConfirm"
+                        value={deleteConfirmName}
+                        onChange={(event) => setDeleteConfirmName(event.target.value)}
+                        placeholder={activeWorkspace?.name}
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={handleDelete}
+                        disabled={!deleteConfirmValid || isDeleting}
+                      >
+                        {isDeleting ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                        Delete workspace
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              {isLastWorkspace ? (
+                <p className="text-sm text-muted-foreground">
+                  You cannot delete your only workspace. Create another workspace first.
+                </p>
+              ) : null}
+            </section>
           </section>
 
           <section id="assistant-identity" className="space-y-6 scroll-mt-24">
@@ -779,81 +874,7 @@ export function GeneralTab({ accountId }: { accountId: string }) {
             )}
           </section>
 
-          <section id="danger-zone" className="space-y-4 rounded-md border border-destructive/50 p-4 scroll-mt-24">
-            <h2 className="text-sm font-medium text-destructive uppercase tracking-wide">Danger Zone</h2>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-foreground">Delete this workspace</p>
-                <p className="text-sm text-muted-foreground">
-                  Permanently delete this workspace and all its documents, chats, and settings. This action cannot be undone.
-                </p>
-              </div>
-
-              <Dialog
-                open={deleteDialogOpen}
-                onOpenChange={(open) => {
-                  setDeleteDialogOpen(open)
-                  if (!open) {
-                    setDeleteConfirmName('')
-                    setIsDeleting(false)
-                  }
-                }}
-              >
-                <DialogTrigger asChild>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={isLastWorkspace}
-                    title={isLastWorkspace ? 'Cannot delete the last workspace' : undefined}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Delete workspace</DialogTitle>
-                    <DialogDescription>
-                      This will permanently delete the workspace <strong>{activeWorkspace?.name}</strong> and
-                      all its documents, conversations, and settings. This action cannot be undone.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-2 py-2">
-                    <Label htmlFor="deleteConfirm" className="text-foreground">
-                      Type <strong>{activeWorkspace?.name}</strong> to confirm
-                    </Label>
-                    <Input
-                      id="deleteConfirm"
-                      value={deleteConfirmName}
-                      onChange={(event) => setDeleteConfirmName(event.target.value)}
-                      placeholder={activeWorkspace?.name}
-                    />
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      onClick={handleDelete}
-                      disabled={!deleteConfirmValid || isDeleting}
-                    >
-                      {isDeleting ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
-                      Delete workspace
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            {isLastWorkspace ? (
-              <p className="text-sm text-muted-foreground">
-                You cannot delete your only workspace. Create another workspace first.
-              </p>
-            ) : null}
-          </section>
-        </div>
       </div>
-    </div>
+    </SettingsTabShell>
   )
 }

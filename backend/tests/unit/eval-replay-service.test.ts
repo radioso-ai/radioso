@@ -156,7 +156,6 @@ describe("EvalReplayService", () => {
             answerSupportPolicy: "strict",
             citationDisplayEnabled: true,
             conversationMode: "guided",
-            brevityOverrideRequested: false,
           },
         };
       },

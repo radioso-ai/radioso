@@ -17,7 +17,6 @@ import {
   type GroundedMissResponseComposer,
 } from "../../chat/services/groundedMissResponseComposer.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
-import { isBrevityOverrideRequested } from "../../chat/services/brevityOverrideDetector.js";
 import type { EvalCaseConversationMessage, EvalReplayDiagnostics } from "../domain/evalTypes.js";
 
 export class EvalReplayService {
@@ -44,18 +43,15 @@ export class EvalReplayService {
       workspaceId: input.workspaceId,
       query: input.query,
       history,
-      brevityOverrideRequested: isBrevityOverrideRequested(input.query),
     });
     const answerSupportPolicy = retrieval.responseSettings?.answerSupportPolicy ?? DEFAULT_ANSWER_SUPPORT_POLICY;
     const conversationMode = retrieval.responseSettings?.conversationMode ?? "guided";
-    const brevityOverrideRequested = Boolean(retrieval.responseSettings?.brevityOverrideRequested);
 
     const rawAnswer =
       retrieval.contexts.length === 0
         ? await this.groundedMissResponseComposer.composeNoContext({
             query: input.query,
             conversationMode,
-            brevityOverrideRequested,
           })
         : await this.chatGateway.answer({
             query: input.query,
@@ -109,7 +105,6 @@ export class EvalReplayService {
         citationDisplayEnabled,
         answerSupportPolicy,
         conversationMode,
-        brevityOverrideRequested,
         groundedMissResponseComposer: this.groundedMissResponseComposer,
       });
       answer = validated.answer;

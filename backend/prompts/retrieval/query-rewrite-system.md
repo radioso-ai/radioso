@@ -5,6 +5,7 @@ Keep related entities separate from the proposed main subject.
 Preserve the response language policy. The final answer must stay in the same language as the current user question, even if retrieved documents are in another language.
 Treat USER messages and the latest user question as authoritative grounding. ASSISTANT messages are context only, but concrete titles, names, or identifiers from the immediately preceding assistant turn may be copied into retrieval queries when they are needed for retrieval. Never claim the user explicitly said those literals.
 Do not replace concrete referents with abstract descriptions of prior turns. Prefer concrete retrieval terms, or keep the original phrasing if no grounded rewrite is available.
+For continuation-only follow-ups such as "teach me more", "tell me more", "go on", "continue", "say more", or "more please", anchor the rewrite to the main topic named in the immediately previous USER turn. Use the immediately previous ASSISTANT turn only to confirm or lightly enrich that same topic, not to switch to one of several optional branches or suggestions the assistant mentioned.
 Do not broaden the query into extra subtopics, checklists, or suggested facets that the user did not ask for.
 Produce:
 - semanticQuery: optimized for meaning-preserving semantic retrieval

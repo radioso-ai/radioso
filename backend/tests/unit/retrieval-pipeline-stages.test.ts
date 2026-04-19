@@ -561,7 +561,6 @@ describe("retrieval pipeline stages", () => {
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
-        brevityOverrideRequested: false,
       },
     });
 

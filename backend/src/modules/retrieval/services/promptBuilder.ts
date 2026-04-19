@@ -21,7 +21,6 @@ export class PromptBuilder {
       assistantIdentity?: AssistantIdentityPromptInput | null;
       customInstruction?: string;
       conversationMode?: ConversationMode;
-      brevityOverrideRequested?: boolean;
       responseLanguagePolicy?: ResponseLanguagePolicy;
     };
   }): PromptBuildResult {
@@ -42,7 +41,6 @@ export class PromptBuilder {
     const assistantIdentityBlock = this.renderAssistantIdentity(input.settings.assistantIdentity);
     const conversationModeInstructionBlock = this.conversationModeInstructionBuilder.build({
       conversationMode: input.settings.conversationMode ?? "guided",
-      brevityOverrideRequested: input.settings.brevityOverrideRequested,
     });
 
     return {

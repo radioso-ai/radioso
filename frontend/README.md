@@ -26,7 +26,7 @@ If you only need the standalone frontend development server, run:
 npm run dev
 ```
 
-That starts the standalone Next.js app on [http://localhost:3001](http://localhost:3001).
+That starts the standalone Next.js app on [http://localhost:3000](http://localhost:3000).
 
 Workspace settings copy is sourced from repo-level markdown files under [`/docs/settings-docs`](../docs/settings-docs). Each setting owns a separate `.md` file that provides the label, inline summary, and tooltip copy rendered by the dashboard settings UI.
 

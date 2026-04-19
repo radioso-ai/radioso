@@ -128,7 +128,6 @@ class TestGroundedMissResponseComposer implements GroundedMissResponseComposer {
     unsupportedText: string;
     contexts: Array<{ title: string; content: string }>;
     conversationMode?: "factual" | "guided" | "exploratory";
-    brevityOverrideRequested?: boolean;
   }): Promise<string> {
     const title = input.contexts.find((context) => context.title.trim().length > 0)?.title.trim();
     if (title) {

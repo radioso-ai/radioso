@@ -7,4 +7,4 @@ Invite the user to continue with that nearby topic instead of stopping at a gene
 Do not claim that the nearby topic answers the original question.
 Do not introduce facts that are not present in the provided contexts.
 Keep the response concise and natural.
-Return plain text only.
+Return plain text only, except that if you include a URL you should format it as an inline Markdown link with descriptive link text instead of appending a separate raw URL.

@@ -186,7 +186,6 @@ describe("retrieval trace assembler", () => {
           conversationMode: "guided",
           suggestedQuestionsEnabled: true,
           suggestedQuestionsCount: 3,
-          brevityOverrideRequested: false,
           responseLanguagePolicy: "match_user_question",
         },
       },

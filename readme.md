@@ -122,6 +122,28 @@ If a workspace token or public embed link is ever exposed, rotate it from the se
 
 A valid provider key is required for both document processing and chat responses.
 
+### Use The MCP Server
+
+If you want Radioso to act as a context layer for MCP-capable clients, use the standalone package in `packages/radioso-mcp-server/`.
+
+Install and build it from the repo:
+
+```bash
+cd packages/radioso-mcp-server
+npm install
+npm run build
+```
+
+Start it over stdio against a running Radioso instance:
+
+```bash
+RADIOSO_BASE_URL=http://localhost:8080 \
+RADIOSO_API_TOKEN=sk_proj_example \
+node dist/src/cli/stdio.js
+```
+
+The first release exposes grounded-answer, document read, document write, and retrieval-settings tools through MCP while keeping the server separate from backend application modules.
+
 ## TypeScript SDK
 
 The repo includes a TypeScript SDK with the package name `@radioso/typescript-sdk`.
@@ -200,6 +222,7 @@ backend/         Express API and background document worker
 frontend/        Next.js application
 typescript-sdk/  First-party SDK for the public API
 packages/        Shared local packages
+packages/radioso-mcp-server/  Standalone MCP server package for workspace-scoped context access
 infra/           Docker Compose and Terraform
 docs/            Product and SDK guides
 ```

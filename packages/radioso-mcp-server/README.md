@@ -18,6 +18,7 @@ The package does not import backend domain modules and does not access the datab
 - `RADIOSO_BASE_URL`
 - `RADIOSO_API_TOKEN`
 - `RADIOSO_SERVER_NAME` (optional)
+- `RADIOSO_REQUEST_TIMEOUT_MS` (optional, defaults to `30000`)
 
 ## Install And Build
 

@@ -40,6 +40,11 @@ export interface RadiosoApiAdapter {
 }
 
 type FetchLike = typeof fetch;
+type CapabilityErrorCode = "resource_not_found" | "unsupported_capability";
+
+interface RequestOptions {
+  notFoundCode?: CapabilityErrorCode;
+}
 
 const readBody = async (response: Response): Promise<unknown> => {
   if (response.status === 204) {
@@ -59,25 +64,45 @@ export const createRadiosoApiAdapter = (
   config: RadiosoMcpConfig,
   fetchImpl: FetchLike = fetch,
 ): RadiosoApiAdapter => {
-  const request = async <TResult>(path: string, init: RequestInit = {}): Promise<TResult> => {
-    const response = await fetchImpl(`${config.baseUrl}${path}`, {
-      ...init,
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${config.apiToken}`,
-        ...(init.body ? { "content-type": "application/json" } : {}),
-        ...(init.headers ?? {}),
-      },
-    });
+  const request = async <TResult>(path: string, init: RequestInit = {}, options: RequestOptions = {}): Promise<TResult> => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+    let response: Response;
+
+    try {
+      response = await fetchImpl(`${config.baseUrl}${path}`, {
+        ...init,
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${config.apiToken}`,
+          ...(init.body ? { "content-type": "application/json" } : {}),
+          ...(init.headers ?? {}),
+        },
+        signal: init.signal ?? controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new RadiosoApiError(
+          `Radioso request timed out after ${config.requestTimeoutMs}ms`,
+          504,
+          "upstream_timeout",
+        );
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const data = await readBody(response);
 
     if (!response.ok) {
       const errorPayload = data as { error?: { code?: string; message?: string; details?: unknown } } | undefined;
+      const code = response.status === 404 ? options.notFoundCode ?? "resource_not_found" : errorPayload?.error?.code;
       throw new RadiosoApiError(
         errorPayload?.error?.message ?? `Radioso request failed with status ${response.status}`,
         response.status,
-        errorPayload?.error?.code,
+        code,
         errorPayload?.error?.details,
       );
     }
@@ -90,7 +115,7 @@ export const createRadiosoApiAdapter = (
       request("/api/v1/chat", {
         body: JSON.stringify({ ...body, stream: false }),
         method: "POST",
-      }),
+      }, { notFoundCode: "unsupported_capability" }),
     createDocument: (body) =>
       request("/api/v1/document", {
         body: JSON.stringify(body),
@@ -101,7 +126,7 @@ export const createRadiosoApiAdapter = (
         method: "DELETE",
       }),
     getDocument: (documentId) => request(`/api/v1/document/${documentId}`),
-    getRetrievalSettings: () => request("/api/v1/settings/retrieval"),
+    getRetrievalSettings: () => request("/api/v1/settings/retrieval", {}, { notFoundCode: "unsupported_capability" }),
     listDocuments: (query) => {
       const searchParams = new URLSearchParams();
       if (query?.limit !== undefined) searchParams.set("limit", String(query.limit));
@@ -119,7 +144,7 @@ export const createRadiosoApiAdapter = (
       request("/api/v1/document/search", {
         body: JSON.stringify(body),
         method: "POST",
-      }),
+      }, { notFoundCode: "unsupported_capability" }),
     updateDocument: (documentId, body) =>
       request(`/api/v1/document/${documentId}`, {
         body: JSON.stringify(body),
@@ -129,6 +154,6 @@ export const createRadiosoApiAdapter = (
       request("/api/v1/settings/retrieval", {
         body: JSON.stringify(body),
         method: "PUT",
-      }),
+      }, { notFoundCode: "unsupported_capability" }),
   };
 };

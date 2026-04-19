@@ -13,6 +13,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       apiToken: "sk_proj_test",
       baseUrl: "http://localhost:8080",
+      requestTimeoutMs: 30000,
       serverName: "radioso-test",
     });
   });

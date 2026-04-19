@@ -28,7 +28,7 @@ export const toStructuredToolError = (error: unknown): StructuredToolError => {
 
     if (error.status === 404) {
       return {
-        code: "resource_not_found",
+        code: error.code ?? "resource_not_found",
         details: error.details,
         message: error.message,
       };

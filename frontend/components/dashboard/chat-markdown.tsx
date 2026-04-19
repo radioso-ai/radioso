@@ -27,6 +27,13 @@ const isSafeHref = (href?: string) => {
 
 const UNORDERED_LIST_MARKER_PATTERN = /(^|\s)([-+*•])\s+/g
 
+const INLINE_LIST_ITEM_LETTER_PATTERN = /[\p{L}]/u
+
+const looksLikeInlineListItems = (items: string[]) =>
+  items.length >= 2 &&
+  items.every((item) => INLINE_LIST_ITEM_LETTER_PATTERN.test(item)) &&
+  items.filter((item) => item.trim().split(/\s+/).length >= 2).length >= 2
+
 const expandInlineUnorderedLists = (content: string) =>
   content
     .split('\n')
@@ -46,7 +53,7 @@ const expandInlineUnorderedLists = (content: string) =>
         })
         .filter((item) => item.length > 0)
 
-      if (items.length < 2) {
+      if (!looksLikeInlineListItems(items)) {
         return line
       }
 

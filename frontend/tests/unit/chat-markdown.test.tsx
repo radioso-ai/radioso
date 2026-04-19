@@ -81,4 +81,13 @@ const value = 1
     expect(html).toContain('finding a friendly next step')
     expect(html).toContain('If you want, I can help with')
   })
+
+  it('does not expand dash-separated prose into a list', () => {
+    const html = renderToStaticMarkup(
+      <AssistantMarkdownContent content={'Hours: 9 - 5 - weekdays only'} />,
+    )
+
+    expect(html).not.toContain('<ul')
+    expect(html).toContain('Hours: 9 - 5 - weekdays only')
+  })
 })

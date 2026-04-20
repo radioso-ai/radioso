@@ -43,6 +43,28 @@ describe("public embed contract", () => {
     expect(response.body.expiresAt).toEqual(expect.any(String));
   });
 
+  it("returns 503 when website embed secret is unset", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        WEBSITE_EMBED_SECRET: undefined,
+      },
+    });
+    const session = await issueTestSession(app, "public-embed-missing-secret@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const origin = "https://example.com";
+    const response = await request(app)
+      .post(`/api/v1/public/embed/${token}/session`)
+      .set("x-radioso-embed-origin", origin)
+      .set("x-radioso-embed-signature", signEmbedLaunch(token, origin));
+
+    expect(response.status).toBe(503);
+    expect(response.body.error).toMatchObject({
+      code: "service_unavailable",
+      message: "Website embed sessions are not configured.",
+    });
+  });
+
   it("rejects an unapproved origin", async () => {
     const { app, dependencies } = createTestApp();
     const session = await issueTestSession(app, "public-embed-denied@example.com");

@@ -1,5 +1,5 @@
 import type { Env } from "../../../app/config/env.js";
-import { conflict, unauthorized } from "../../../shared/domain/errors.js";
+import { conflict, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService } from "../../account/services/accountAccessService.js";
 import type { AccountInvitationService } from "../../account/services/accountInvitationService.js";
 import type { AuditService } from "../../audit/services/auditService.js";
@@ -446,12 +446,13 @@ export class AuthService {
 
   async getTokenForWorkspace(workspaceId: string, accountId: string): Promise<{ token: string }> {
     await this.dependencies.workspaceService.validateOwnership(workspaceId, accountId);
+    const workspaceTokenSecret = this.getWorkspaceTokenSecret();
 
     const existing = await this.dependencies.workspaceTokenRepository.findByWorkspaceId(workspaceId);
 
     if (existing) {
       try {
-        const token = decryptSecret(existing.encryptedToken, this.dependencies.env.WORKSPACE_TOKEN_SECRET);
+        const token = decryptSecret(existing.encryptedToken, workspaceTokenSecret);
         await this.dependencies.workspaceTokenRepository.touch(workspaceId, new Date());
         await this.dependencies.auditService.record({
           accountId,
@@ -487,13 +488,14 @@ export class AuthService {
   }
 
   private async issueWorkspaceToken(workspaceId: string, accountId: string): Promise<{ token: string }> {
+    const workspaceTokenSecret = this.getWorkspaceTokenSecret();
     const token = generateApiToken();
     await this.dependencies.workspaceTokenRepository.save({
       workspaceId,
       accountId,
       tokenPrefix: tokenPrefix(),
       tokenHash: sha256(token),
-      encryptedToken: encryptSecret(token, this.dependencies.env.WORKSPACE_TOKEN_SECRET),
+      encryptedToken: encryptSecret(token, workspaceTokenSecret),
     });
 
     await this.dependencies.auditService.record({
@@ -518,6 +520,17 @@ export class AuthService {
     });
 
     return serializeSessionCookie(sessionToken, this.dependencies.env);
+  }
+
+  private getWorkspaceTokenSecret(): string {
+    const secret = this.dependencies.env.WORKSPACE_TOKEN_SECRET;
+    if (!secret) {
+      throw serviceUnavailable("Workspace token operations are not configured.", {
+        missingEnv: "WORKSPACE_TOKEN_SECRET",
+      });
+    }
+
+    return secret;
   }
 
   private async rollbackCreatedAccount(accountId: string, createdUserId?: string): Promise<void> {

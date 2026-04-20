@@ -43,7 +43,7 @@ export const shouldUseSecureAnonymousCookie = (req: Request) => {
 
 export const resolveAnonymousSession = (
   workspaceRepository: WorkspaceRepositoryPort,
-  sessionSecret: string,
+  sessionSecret: string | undefined,
 ): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {

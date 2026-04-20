@@ -1,6 +1,5 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { serviceUnavailable } from "../../../shared/domain/errors.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
@@ -30,14 +29,14 @@ export class MissingGroundedMissResponseComposer implements GroundedMissResponse
     contexts: GroundedMissContextSummary[];
     conversationMode?: ConversationMode;
   }): Promise<string> {
-    throw new Error("grounded_miss_response_composer_not_configured");
+    return buildUnsupportedWithContextFallback(_input.contexts);
   }
 
   async composeNoContext(_input: {
     query: string;
     conversationMode?: ConversationMode;
   }): Promise<string> {
-    throw new Error("grounded_miss_response_composer_not_configured");
+    return buildNoContextFallback();
   }
 }
 
@@ -91,11 +90,6 @@ const normalizeModelResponse = (value: string | undefined): string => {
   return normalized;
 };
 
-const groundedMissGenerationFailed = (reason: string) =>
-  serviceUnavailable("Grounded miss response generation failed.", {
-    reason,
-  });
-
 const buildConversationModeGuidance = (input: {
   conversationMode?: ConversationMode;
   hasRetrievedContexts: boolean;
@@ -117,6 +111,21 @@ const buildConversationModeGuidance = (input: {
 
 const NO_CONTEXT_SYSTEM_PROMPT = loadPromptTemplate("chat/no-context-system.md");
 const UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT = loadPromptTemplate("chat/unsupported-with-context-system.md");
+const NO_CONTEXT_FALLBACK_PROMPT = loadPromptTemplate("chat/grounded-miss/fallback-no-context.md");
+
+const buildNoContextFallback = (): string => NO_CONTEXT_FALLBACK_PROMPT;
+
+const buildUnsupportedWithContextFallback = (contexts: GroundedMissContextSummary[]): string => {
+  const titledContext = normalizeContexts(contexts).find((context) => context.title.length > 0);
+
+  if (!titledContext) {
+    return loadPromptTemplate("chat/grounded-miss/fallback-unsupported-with-context-untitled.md");
+  }
+
+  return renderPromptTemplate("chat/grounded-miss/fallback-unsupported-with-context.md", {
+    title: titledContext.title,
+  });
+};
 
 export class ModelGroundedMissResponseComposer implements GroundedMissResponseComposer {
   constructor(private readonly client: TextGenerationClient) {}
@@ -161,15 +170,13 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         return normalized;
       }
 
-      throw groundedMissGenerationFailed("empty_grounded_miss_response");
+      return buildUnsupportedWithContextFallback(input.contexts);
     } catch (error) {
       if (isProviderCredentialError(error)) {
         throw error;
       }
 
-      throw groundedMissGenerationFailed(
-        error instanceof Error ? error.message : "grounded_miss_generation_failed",
-      );
+      return buildUnsupportedWithContextFallback(input.contexts);
     }
   }
 
@@ -196,15 +203,13 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         return normalized;
       }
 
-      throw groundedMissGenerationFailed("empty_grounded_miss_response");
+      return buildNoContextFallback();
     } catch (error) {
       if (isProviderCredentialError(error)) {
         throw error;
       }
 
-      throw groundedMissGenerationFailed(
-        error instanceof Error ? error.message : "grounded_miss_generation_failed",
-      );
+      return buildNoContextFallback();
     }
   }
 }

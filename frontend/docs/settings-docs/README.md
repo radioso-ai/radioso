@@ -29,11 +29,12 @@ The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts
 
 The dashboard presents settings in product order:
 
-1. General: workspace identity, public access, website embed, and new-chat bootstrap behavior
-2. Ingestion: choose chunking strategy -> tune chunk sizing -> reprocess existing documents
-3. Retrieval: rewrite query -> retrieve/filter candidates -> rerank -> shape the final answer
+1. General: Workspace and access -> Assistant Identity -> Anonymous Chat Access -> Website Embed -> Danger Zone
+2. Ingestion: Choose a chunking strategy -> Tune active chunking -> Apply changes to existing documents
+3. Retrieval: Rewrite the incoming question -> Tune search and reranking -> Prioritize by metadata -> Shape the final answer
+4. Chat connectors: connector list and configuration, without a per-page side menu
 
-The connector-style stage separators are rendered in [`frontend/components/dashboard/settings/settings-flow.tsx`](../../frontend/components/dashboard/settings/settings-flow.tsx) and reused by the retrieval trace graph for visual consistency.
+The settings navigation shell and per-tab section metadata now live in [`frontend/components/dashboard/settings/settings-tab-shell.tsx`](../../frontend/components/dashboard/settings/settings-tab-shell.tsx) and [`frontend/components/dashboard/settings/settings-tab-metadata.ts`](../../frontend/components/dashboard/settings/settings-tab-metadata.ts).
 
 ## Editing guidance
 

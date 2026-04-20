@@ -39,7 +39,7 @@ describe("chat retrieval domain", () => {
     expect(result.selectedMessages[0]?.content).toBe("second");
   });
 
-  it("passes literal-only carry-forward values through the context window", () => {
+  it("passes rewrite continuity state through the context window", () => {
     const service = new ConversationContextService();
 
     const result = service.select({
@@ -47,14 +47,18 @@ describe("chat retrieval domain", () => {
       history: [
         message("who is Narayani?"),
       ],
-      rewriteCarryForwardLiterals: ["Narayani", "La mia anima ricorda Swami Kriyananda", "Ananda Edizioni"],
+      rewriteContinuityState: {
+        activeSubject: "Narayani",
+        relatedEntities: ["La mia anima ricorda Swami Kriyananda"],
+        groundedTitles: ["Ananda Edizioni"],
+      },
     });
 
-    expect(result.rewriteCarryForwardLiterals).toEqual([
-      "Narayani",
-      "La mia anima ricorda Swami Kriyananda",
-      "Ananda Edizioni",
-    ]);
+    expect(result.rewriteContinuityState).toEqual({
+      activeSubject: "Narayani",
+      relatedEntities: ["La mia anima ricorda Swami Kriyananda"],
+      groundedTitles: ["Ananda Edizioni"],
+    });
   });
 
   it("keeps prior history when history fits inside the context window", () => {
@@ -68,12 +72,44 @@ describe("chat retrieval domain", () => {
     const result = service.select({
       query: "What about her later work?",
       history,
-      rewriteCarryForwardLiterals: ["Narayani"],
+      rewriteContinuityState: {
+        activeSubject: "Narayani",
+        relatedEntities: [],
+        groundedTitles: [],
+      },
     });
 
     expect(result.selectedMessages).toEqual(history);
     expect(result.selectionReason).toBe("full-history");
-    expect(result.rewriteCarryForwardLiterals).toEqual(["Narayani"]);
+    expect(result.rewriteContinuityState).toEqual({
+      activeSubject: "Narayani",
+      relatedEntities: [],
+      groundedTitles: [],
+    });
+  });
+
+  it("expands the history window when continuity tracks multiple grounded entities", () => {
+    const service = new ConversationContextService();
+
+    const result = service.select({
+      query: "Which one is cheaper?",
+      history: [
+        message("turn-1"),
+        message("turn-2"),
+        message("turn-3"),
+        message("turn-4"),
+        message("turn-5"),
+        message("turn-6"),
+      ],
+      rewriteContinuityState: {
+        activeSubject: "Summer Retreat Estonia",
+        relatedEntities: ["Summer Retreat Latvia"],
+        groundedTitles: ["Summer Retreat Estonia", "Summer Retreat Latvia"],
+      },
+    });
+
+    expect(result.truncated).toBe(false);
+    expect(result.selectionReason).toBe("full-history");
   });
 
   it("rewrites referential queries when enabled and context exists", async () => {
@@ -154,7 +190,7 @@ describe("chat retrieval domain", () => {
       },
     });
 
-    expect(result.status).toBe("fallback");
+    expect(result.status).toBe("skipped");
     expect(result.semanticQuery).toBe("Who is Narayani?");
     expect(result.lexicalQuery).toBe("Who is Narayani?");
     expect(result.rewriteApplied).toBe(false);
@@ -537,7 +573,11 @@ describe("chat retrieval domain", () => {
         message("who is Narayani?"),
         message("Narayani wrote La mia anima ricorda Swami Kriyananda", "assistant"),
       ],
-      carryForwardLiterals: ["Narayani", "La mia anima ricorda Swami Kriyananda"],
+      continuityState: {
+        activeSubject: "Narayani",
+        relatedEntities: ["La mia anima ricorda Swami Kriyananda"],
+        groundedTitles: [],
+      },
     });
 
     expect(createInput?.model).toBe("gpt-5-mini");
@@ -552,9 +592,9 @@ describe("chat retrieval domain", () => {
       'For continuation-only follow-ups such as "teach me more", "tell me more", "go on", "continue", "say more", or "more please"',
     );
     expect(createInput?.messages[1]?.content).toContain(
-      "Grounded carry-forward literals from the immediately previous assistant answer",
+      "Grounded retrieval continuity state from the most recent successful assistant turn",
     );
-    expect(createInput?.messages[1]?.content).toContain("[\"Narayani\",\"La mia anima ricorda Swami Kriyananda\"]");
+    expect(createInput?.messages[1]?.content).toContain("\"activeSubject\":\"Narayani\"");
   });
 
   it("accepts continuation rewrites that stay anchored to the previous user topic", async () => {
@@ -976,6 +1016,6 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.prompt).toContain("Conversation mode: exploratory.");
-    expect(result.prompt).toContain("After the direct answer, you may optionally mention two or three grounded adjacent directions.");
+    expect(result.prompt).toContain("After the direct answer, you may optionally mention two or three grounded adjacent directions");
   });
 });

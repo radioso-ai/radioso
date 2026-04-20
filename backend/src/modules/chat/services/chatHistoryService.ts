@@ -42,6 +42,7 @@ export interface ChatConversationTurnDebug {
     ran: boolean;
     answerModified: boolean;
     unsupportedSegmentCount: number;
+    substantiveUnsupportedSegmentCount: number;
     supportedSegmentCount: number;
     nonSubstantiveSegmentCount: number;
     answerSupportPolicy?: AnswerSupportPolicy;
@@ -345,6 +346,10 @@ export class ChatHistoryService {
               answerModified: Boolean(metadata.validation.answerModified),
               unsupportedSegmentCount:
                 typeof metadata.validation.unsupportedSegmentCount === "number" ? metadata.validation.unsupportedSegmentCount : 0,
+              substantiveUnsupportedSegmentCount:
+                typeof metadata.validation.substantiveUnsupportedSegmentCount === "number"
+                  ? metadata.validation.substantiveUnsupportedSegmentCount
+                  : 0,
               supportedSegmentCount:
                 typeof metadata.validation.supportedSegmentCount === "number" ? metadata.validation.supportedSegmentCount : 0,
               nonSubstantiveSegmentCount:

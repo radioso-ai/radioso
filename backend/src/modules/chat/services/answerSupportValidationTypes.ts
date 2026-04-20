@@ -21,6 +21,7 @@ export interface AnswerValidationSummary {
   ran: boolean;
   answerModified: boolean;
   unsupportedSegmentCount: number;
+  substantiveUnsupportedSegmentCount: number;
   supportedSegmentCount: number;
   nonSubstantiveSegmentCount: number;
   answerSupportPolicy?: AnswerSupportPolicy;

@@ -70,6 +70,7 @@ describe("answer support validator", () => {
       ran: true,
       answerModified: true,
       unsupportedSegmentCount: 1,
+      substantiveUnsupportedSegmentCount: 1,
       supportedSegmentCount: 1,
       nonSubstantiveSegmentCount: 3,
       answerSupportPolicy: "strict",
@@ -108,6 +109,7 @@ describe("answer support validator", () => {
       ran: true,
       answerModified: true,
       unsupportedSegmentCount: 1,
+      substantiveUnsupportedSegmentCount: 1,
       supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 1,
       answerSupportPolicy: "strict",
@@ -180,6 +182,7 @@ describe("answer support validator", () => {
       ran: true,
       answerModified: false,
       unsupportedSegmentCount: 0,
+      substantiveUnsupportedSegmentCount: 0,
       supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 6,
       answerSupportPolicy: "strict",
@@ -259,6 +262,7 @@ describe("assistant turn outcome classifier", () => {
           ran: true,
           answerModified: false,
           unsupportedSegmentCount: 0,
+          substantiveUnsupportedSegmentCount: 0,
           supportedSegmentCount: 2,
           nonSubstantiveSegmentCount: 1,
         },
@@ -276,6 +280,7 @@ describe("assistant turn outcome classifier", () => {
           ran: true,
           answerModified: true,
           unsupportedSegmentCount: 1,
+          substantiveUnsupportedSegmentCount: 1,
           supportedSegmentCount: 1,
           nonSubstantiveSegmentCount: 0,
         },
@@ -293,6 +298,7 @@ describe("assistant turn outcome classifier", () => {
           ran: true,
           answerModified: false,
           unsupportedSegmentCount: 1,
+          substantiveUnsupportedSegmentCount: 1,
           supportedSegmentCount: 0,
           nonSubstantiveSegmentCount: 0,
           answerSupportPolicy: "warn",
@@ -311,10 +317,29 @@ describe("assistant turn outcome classifier", () => {
           ran: false,
           answerModified: false,
           unsupportedSegmentCount: 0,
+          substantiveUnsupportedSegmentCount: 0,
           supportedSegmentCount: 0,
           nonSubstantiveSegmentCount: 0,
         },
       }),
     ).toBe(ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL);
+  });
+
+  it("treats whitespace-only unsupported tails as non-substantive for outcome classification", () => {
+    const classifier = new AssistantTurnOutcomeClassifier();
+
+    expect(
+      classifier.classify({
+        hadRetrievedContext: true,
+        validation: {
+          ran: true,
+          answerModified: true,
+          unsupportedSegmentCount: 1,
+          substantiveUnsupportedSegmentCount: 0,
+          supportedSegmentCount: 1,
+          nonSubstantiveSegmentCount: 1,
+        },
+      }),
+    ).toBe(ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS);
   });
 });

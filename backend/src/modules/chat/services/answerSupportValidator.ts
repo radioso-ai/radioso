@@ -106,6 +106,11 @@ export class AnswerSupportValidator {
 
     const supportedSegmentCount = segmentResults.filter((segment) => segment.disposition === VALIDATION_DISPOSITION.SUPPORTED).length;
     const unsupportedSegmentCount = segmentResults.filter((segment) => segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED).length;
+    const substantiveUnsupportedSegmentCount = segmentResults.filter(
+      (segment) =>
+        segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED
+        && normalizeForMeaningCheck(segment.originalText).length > 0,
+    ).length;
     const nonSubstantiveSegmentCount = segmentResults.filter((segment) => segment.disposition === VALIDATION_DISPOSITION.NON_SUBSTANTIVE).length;
 
     const visibleSegments = supportedSegmentCount === 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)
@@ -132,6 +137,7 @@ export class AnswerSupportValidator {
         ran: true,
         answerModified: segmentResults.some((segment) => segment.replacementApplied),
         unsupportedSegmentCount,
+        substantiveUnsupportedSegmentCount,
         supportedSegmentCount,
         nonSubstantiveSegmentCount,
         answerSupportPolicy: input.answerSupportPolicy,

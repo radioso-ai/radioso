@@ -249,13 +249,13 @@ describe("retrieval pipeline stages", () => {
       },
     });
 
-    expect(result.rewrittenQuery.status).toBe("fallback");
+    expect(result.rewrittenQuery.status).toBe("skipped");
     expect(result.activeSemanticQuery).toBe("tulumaksuseadus paragrahv 4 osa 5");
     expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus paragrahv 4 osa 5");
     expect(result.promptHistory).toEqual([]);
   });
 
-  it("decomposes retrieval into multiple subqueries when rewrite provides them", async () => {
+  it("keeps a primary retrieval branch when rewrite is skipped for history-free turns", async () => {
     const interpretationStage = new QueryInterpretationStageService(
       new QueryRewriteService({
         async rewrite() {
@@ -319,8 +319,8 @@ describe("retrieval pipeline stages", () => {
       },
     });
 
-    expect(interpreted.activeRetrievalSubqueries).toHaveLength(2);
-    expect(interpreted.activeRetrievalSubqueries.map((subquery) => subquery.label)).toEqual(["Narayani", "Arudra"]);
+    expect(interpreted.activeRetrievalSubqueries).toHaveLength(1);
+    expect(interpreted.activeRetrievalSubqueries[0]?.label).toBe("who is narayani and arudra?");
 
     const vectorQueries: string[] = [];
     const lexicalQueries: string[] = [];
@@ -362,12 +362,13 @@ describe("retrieval pipeline stages", () => {
 
     const retrieved = await retrievalStage.execute(interpreted);
 
-    expect(vectorQueries).toEqual(["1", "2"]);
-    expect(lexicalQueries).toEqual(["narayani", "arudra"]);
-    expect(retrieved.retrievalBranches).toHaveLength(2);
-    expect(retrieved.retrievalBranches.map((branch) => branch.label)).toEqual(["Narayani", "Arudra"]);
-    expect(retrieved.rewrittenContexts).toHaveLength(2);
-    expect(retrieved.lexicalContexts).toHaveLength(2);
+    expect(vectorQueries).toEqual(["1"]);
+    expect(lexicalQueries).toEqual(["who is narayani and arudra?"]);
+    expect(retrieved.retrievalBranches).toHaveLength(1);
+    expect(retrieved.retrievalBranches.map((branch) => branch.label)).toEqual(["who is narayani and arudra?"]);
+    expect(retrieved.originalContexts).toHaveLength(1);
+    expect(retrieved.rewrittenContexts).toHaveLength(0);
+    expect(retrieved.lexicalContexts).toHaveLength(1);
   });
 
   it("splits vector results between original and rewritten contexts", async () => {

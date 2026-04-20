@@ -149,17 +149,21 @@ describe("chat service streaming", () => {
       { role: "user", content: "What does this page do?" },
       { role: "assistant", content: "full answer" },
     ]);
-    expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual([]);
+    expect(auditService.events[0]?.metadata?.rewriteContinuityState).toEqual({
+      activeSubject: undefined,
+      relatedEntities: [],
+      groundedTitles: ["Intro"],
+    });
   });
 
-  it("loads literal-only carry-forward from the previous successful answer", async () => {
+  it("loads rewrite continuity state from the previous successful answer", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const capturedInputs: Array<{ rewriteCarryForwardLiterals?: string[] }> = [];
+    const capturedInputs: Array<{ rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }> = [];
     const retrievalPipeline = {
-      async run(input: { query: string; rewriteCarryForwardLiterals?: string[] }) {
-        capturedInputs.push({ rewriteCarryForwardLiterals: input.rewriteCarryForwardLiterals });
+      async run(input: { query: string; rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }) {
+        capturedInputs.push({ rewriteContinuityState: input.rewriteContinuityState });
         return {
           rewrittenQuery: input.query,
           contexts: [
@@ -241,8 +245,12 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(capturedInputs[0]?.rewriteCarryForwardLiterals).toBeUndefined();
-    expect(capturedInputs[1]?.rewriteCarryForwardLiterals).toEqual(["Narayani"]);
+    expect(capturedInputs[0]?.rewriteContinuityState).toBeUndefined();
+    expect(capturedInputs[1]?.rewriteContinuityState).toEqual({
+      activeSubject: "Narayani",
+      relatedEntities: [],
+      groundedTitles: ["La mia anima ricorda Swami Kriyananda"],
+    });
   });
 
   it("answers assistant identity questions without retrieved document context", async () => {
@@ -460,10 +468,10 @@ describe("chat service streaming", () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const capturedInputs: Array<{ rewriteCarryForwardLiterals?: string[] }> = [];
+    const capturedInputs: Array<{ rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }> = [];
     const retrievalPipeline = {
-      async run(input: { query: string; rewriteCarryForwardLiterals?: string[] }) {
-        capturedInputs.push({ rewriteCarryForwardLiterals: input.rewriteCarryForwardLiterals });
+      async run(input: { query: string; rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }) {
+        capturedInputs.push({ rewriteContinuityState: input.rewriteContinuityState });
         return {
           rewrittenQuery: input.query,
           contexts: [
@@ -545,11 +553,19 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual(["kaibemaksumaar Eestis"]);
-    expect(capturedInputs[1]?.rewriteCarryForwardLiterals).toEqual(["kaibemaksumaar Eestis"]);
+    expect(auditService.events[0]?.metadata?.rewriteContinuityState).toEqual({
+      activeSubject: "kaibemaksumaar Eestis",
+      relatedEntities: [],
+      groundedTitles: [],
+    });
+    expect(capturedInputs[1]?.rewriteContinuityState).toEqual({
+      activeSubject: "kaibemaksumaar Eestis",
+      relatedEntities: [],
+      groundedTitles: [],
+    });
   });
 
-  it("does not persist related entities as carry-forward literals", async () => {
+  it("persists related entities in rewrite continuity state", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -622,7 +638,11 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual(["Narayani"]);
+    expect(auditService.events[0]?.metadata?.rewriteContinuityState).toEqual({
+      activeSubject: "Narayani",
+      relatedEntities: ["Arudra"],
+      groundedTitles: ["Narayani"],
+    });
   });
 
   it("includes the normalized final answer in the done event when a malformed anchor is truncated during streaming", async () => {

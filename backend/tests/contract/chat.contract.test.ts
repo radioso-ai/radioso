@@ -101,6 +101,7 @@ describe("chat contract", () => {
               ran: expect.any(Boolean),
               answerModified: expect.any(Boolean),
               unsupportedSegmentCount: expect.any(Number),
+              substantiveUnsupportedSegmentCount: expect.any(Number),
               supportedSegmentCount: expect.any(Number),
               nonSubstantiveSegmentCount: expect.any(Number),
               segmentResults: expect.any(Array),

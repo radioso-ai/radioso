@@ -26,7 +26,7 @@ import {
 import { ConversationModeExpansionService } from "./conversationModeExpansionService.js";
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
-import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
+import type { RetrievalTrace, RewriteContinuityState } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
@@ -66,6 +66,7 @@ interface PreparedSession {
   history: MessageRecord[];
   retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
   userMessage: MessageRecord;
+  priorRewriteContinuityState?: RewriteContinuityState;
 }
 
 interface ChatAnswerAuditMetadata {
@@ -76,7 +77,7 @@ interface ChatAnswerAuditMetadata {
   validation?: AnswerValidationSummary & {
     segmentResults?: Array<Pick<AnswerSegmentValidationResult, "text" | "disposition" | "replacementApplied" | "reason" | "citationIndices">>;
   };
-  carryForwardLiterals?: string[];
+  rewriteContinuityState?: RewriteContinuityState;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
@@ -243,6 +244,7 @@ export class ChatService {
         ran: false,
         answerModified: false,
         unsupportedSegmentCount: 0,
+        substantiveUnsupportedSegmentCount: 0,
         supportedSegmentCount: 0,
         nonSubstantiveSegmentCount: 0,
         answerSupportPolicy: this.getAnswerSupportPolicy(session),
@@ -307,6 +309,7 @@ export class ChatService {
         answerSupportPolicy: presentation.validation.answerSupportPolicy,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
+        priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
         stream: input.stream,
@@ -446,6 +449,7 @@ export class ChatService {
         answerSupportPolicy: presentation.validation.answerSupportPolicy,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
+        priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
         stream: input.stream,
@@ -487,14 +491,14 @@ export class ChatService {
     const history = conversation
       ? await this.messageRepository.listByConversationId(input.workspaceId, conversation.id)
       : [];
-    const carryForwardLiterals = conversation
-      ? await this.loadRewriteCarryForwardLiterals(input.workspaceId, conversation.id)
+    const rewriteContinuityState = conversation
+      ? await this.loadRewriteContinuityState(input.workspaceId, conversation.id)
       : undefined;
     const retrieval = await this.retrievalPipeline.run({
       workspaceId: input.workspaceId,
       query: input.query,
       history,
-      rewriteCarryForwardLiterals: carryForwardLiterals,
+      rewriteContinuityState,
       metadataFilter: input.metadataFilter,
     });
     const persistedConversation =
@@ -518,6 +522,7 @@ export class ChatService {
       history,
       retrieval,
       userMessage,
+      priorRewriteContinuityState: rewriteContinuityState,
     };
   }
 
@@ -568,6 +573,7 @@ export class ChatService {
           ran: false,
           answerModified: false,
           unsupportedSegmentCount: 0,
+          substantiveUnsupportedSegmentCount: 0,
           supportedSegmentCount: 0,
           nonSubstantiveSegmentCount: 0,
           answerSupportPolicy: this.getAnswerSupportPolicy(session),
@@ -626,6 +632,7 @@ export class ChatService {
     answerSupportPolicy?: AnswerSupportPolicy;
     conversationMode: ConversationMode;
     conversationModeMetadata: ConversationModeMetadata;
+    priorRewriteContinuityState?: RewriteContinuityState;
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
     retrievalTrace: RetrievalTrace;
     stream: boolean;
@@ -659,8 +666,10 @@ export class ChatService {
         citations: input.citations,
         answerSegments: input.answerSegments,
         suggestions: input.suggestions,
-        carryForwardLiterals: this.buildCarryForwardLiterals({
+        rewriteContinuityState: this.buildRewriteContinuityState({
+          previousState: input.priorRewriteContinuityState,
           diagnostics: input.diagnostics,
+          citations: input.citations,
         }),
         retrieval: input.diagnostics,
         retrievalTrace: input.retrievalTrace,
@@ -772,54 +781,81 @@ export class ChatService {
     return conversation;
   }
 
-  private async loadRewriteCarryForwardLiterals(
+  private async loadRewriteContinuityState(
     workspaceId: string,
     conversationId: string,
-  ): Promise<string[] | undefined> {
+  ): Promise<RewriteContinuityState | undefined> {
     const metadata = await this.auditService.getLatestSuccessfulChatAnswerMetadata({
       workspaceId,
       conversationId,
     }) as ChatAnswerAuditMetadata | null;
 
-    const literals = metadata?.carryForwardLiterals?.filter((value): value is string => typeof value === "string");
-    return literals && literals.length > 0 ? literals : undefined;
+    return metadata?.rewriteContinuityState;
   }
 
-  private buildCarryForwardLiterals(input: {
+  private buildRewriteContinuityState(input: {
+    previousState?: RewriteContinuityState;
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
-  }): string[] {
-    const candidates = [input.diagnostics.rewriteProposal?.proposedActiveSubject];
+    citations: ChatCitation[];
+  }): RewriteContinuityState | undefined {
+    const activeSubject = this.normalizeContinuityValue(input.diagnostics.rewriteProposal?.proposedActiveSubject)
+      ?? input.previousState?.activeSubject;
+    const relatedEntities = this.collectContinuityValues([
+      ...(input.previousState?.relatedEntities ?? []),
+      ...(input.diagnostics.rewriteProposal?.relatedEntities ?? []),
+    ]);
+    const groundedTitles = this.collectContinuityValues([
+      ...(input.previousState?.groundedTitles ?? []),
+      ...input.citations.map((citation) => citation.title),
+      ...(input.diagnostics.retrievalSubqueries?.map((subquery) => subquery.label) ?? []),
+    ]);
 
+    if (!activeSubject && relatedEntities.length === 0 && groundedTitles.length === 0) {
+      return undefined;
+    }
+
+    return {
+      activeSubject,
+      relatedEntities,
+      groundedTitles,
+    };
+  }
+
+  private collectContinuityValues(values: Array<string | undefined>): string[] {
     const unique: string[] = [];
-    for (const value of candidates) {
-      if (typeof value !== "string") {
+    for (const value of values) {
+      const normalized = this.normalizeContinuityValue(value);
+      if (!normalized || unique.includes(normalized)) {
         continue;
       }
-
-      const literal = value.trim();
-      if (literal.length === 0 || literal.length > CHAT_BEHAVIOR.carryForward.maxLiteralLength) {
-        continue;
-      }
-
-      if (this.isUrlLikeLiteral(literal)) {
-        continue;
-      }
-
-      if (unique.includes(literal)) {
-        continue;
-      }
-
-      unique.push(literal);
+      unique.push(normalized);
       if (unique.length >= CHAT_BEHAVIOR.carryForward.maxLiterals) {
         break;
       }
     }
-
     return unique;
   }
 
-  private isUrlLikeLiteral(value: string): boolean {
-    return /^https?:\/\//i.test(value) || /^www\./i.test(value);
+  private normalizeContinuityValue(value?: string): string | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    if (normalized.length === 0 || normalized.length > CHAT_BEHAVIOR.carryForward.maxLiteralLength) {
+      return undefined;
+    }
+
+    try {
+      const url = new URL(normalized);
+      if (url.protocol) {
+        return undefined;
+      }
+    } catch {
+      // Keep non-URL values.
+    }
+
+    return normalized;
   }
 }
 

@@ -6,6 +6,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/domain/websiteEmbedSettings.js";
 import { isAssistantBootstrapActive } from "../../../modules/settings/domain/assistantBootstrapSettings.js";
 import { issueWebsiteEmbedSession } from "../../../modules/settings/domain/websiteEmbedSession.js";
+import { serviceUnavailable } from "../../../shared/domain/errors.js";
 
 export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
@@ -15,6 +16,13 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
 
   router.post("/:token/session", async (req, res, next) => {
     try {
+      const embedSecret = dependencies.env.WEBSITE_EMBED_SECRET;
+      if (!embedSecret) {
+        throw serviceUnavailable("Website embed sessions are not configured.", {
+          missingEnv: "WEBSITE_EMBED_SECRET",
+        });
+      }
+
       const origin = req.header("x-radioso-embed-origin");
       const signature = req.header("x-radioso-embed-signature");
 
@@ -28,7 +36,7 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
         return;
       }
 
-      const expectedSignature = createHmac("sha256", dependencies.env.WEBSITE_EMBED_SECRET)
+      const expectedSignature = createHmac("sha256", embedSecret)
         .update(`${req.params.token}:${origin}`)
         .digest("hex");
 
@@ -117,7 +125,7 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
         metadata: { origin },
       });
 
-      const embedSession = issueWebsiteEmbedSession(dependencies.env.WEBSITE_EMBED_SECRET, {
+      const embedSession = issueWebsiteEmbedSession(embedSecret, {
         workspaceId: workspace.id,
         publicChatToken: workspace.anonymousChatToken,
         anonymousSessionId: parsedBody.data.anonymousSessionId ?? randomUUID(),

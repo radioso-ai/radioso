@@ -39,9 +39,9 @@ export const issueWebsiteEmbedSession = (
 
 export const verifyWebsiteEmbedSession = (
   token: string | undefined,
-  secret: string,
+  secret: string | undefined,
 ): WebsiteEmbedSessionPayload | null => {
-  if (!token) {
+  if (!token || !secret) {
     return null;
   }
 

@@ -113,6 +113,29 @@ describe("auth integration", () => {
     expect(tokenRoute.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
   });
 
+  it("returns 503 for workspace token operations when the token secret is unset", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        WORKSPACE_TOKEN_SECRET: undefined,
+      },
+    });
+
+    const register = await request(app).post("/api/v1/auth/register").send({
+      email: "missing-workspace-token-secret@example.com",
+      password: "verysecurepassword",
+    });
+
+    const response = await request(app)
+      .get(`/api/v1/account/workspaces/${register.body.workspaceId}/token`)
+      .set("Cookie", register.headers["set-cookie"][0] as string);
+
+    expect(response.status).toBe(503);
+    expect(response.body.error).toMatchObject({
+      code: "service_unavailable",
+      message: "Workspace token operations are not configured.",
+    });
+  });
+
   it("rotates an unreadable stored token instead of failing", async () => {
     const env = createTestEnv();
     const auditService = createAuditService();

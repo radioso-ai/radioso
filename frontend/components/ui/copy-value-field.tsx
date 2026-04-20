@@ -56,7 +56,13 @@ export function CopyValueField({
           {label}
         </p>
       ) : null}
-      <div className={cn('flex min-w-0 flex-nowrap items-start gap-2', fitContent ? 'inline-flex max-w-full' : '')}>
+      <div
+        className={cn(
+          'flex min-w-0 items-start gap-2',
+          wrap ? 'flex-col sm:flex-row' : 'flex-nowrap',
+          fitContent ? 'inline-flex max-w-full' : '',
+        )}
+      >
         <div
           aria-label={ariaLabel}
           className={cn(

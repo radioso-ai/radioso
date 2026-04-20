@@ -354,13 +354,13 @@ export function GeneralTab({
       onNavigate={(href) => router.push(href)}
     >
       <div className="mx-auto max-w-4xl space-y-8">
-          <section id="workspace-access" className="space-y-6 scroll-mt-24">
-            <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-foreground">Workspace and access</h2>
-              <p className="text-sm text-muted-foreground">
-                Core operator controls for naming, admin API access, and workspace lifecycle.
-              </p>
-            </div>
+        <section id="workspace-access" className="space-y-6 scroll-mt-24">
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold text-foreground">Workspace and access</h2>
+            <p className="text-sm text-muted-foreground">
+              Core operator controls for naming, admin API access, and workspace lifecycle.
+            </p>
+          </div>
 
             {isOrganizationLoading ? (
               <div className="flex items-center justify-center py-4">
@@ -379,7 +379,7 @@ export function GeneralTab({
                         Update the label shown in the organization picker and invite flows.
                       </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row">
                       <Input
                         value={organizationName}
                         onChange={(event) => {
@@ -389,7 +389,12 @@ export function GeneralTab({
                         maxLength={80}
                         className="flex-1"
                       />
-                      <Button size="sm" onClick={handleOrganizationRename} disabled={!organizationName.trim() || isOrganizationSaving}>
+                      <Button
+                        size="sm"
+                        className="sm:self-start"
+                        onClick={handleOrganizationRename}
+                        disabled={!organizationName.trim() || isOrganizationSaving}
+                      >
                         {isOrganizationSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
                         Save
                       </Button>
@@ -407,7 +412,7 @@ export function GeneralTab({
                   Rename the active workspace without changing any of its data or settings.
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   id="workspaceName"
                   value={workspaceName}
@@ -418,7 +423,12 @@ export function GeneralTab({
                   maxLength={100}
                   className="flex-1"
                 />
-                <Button size="sm" onClick={handleRename} disabled={!hasNameChange || isRenameSaving}>
+                <Button
+                  size="sm"
+                  className="sm:self-start"
+                  onClick={handleRename}
+                  disabled={!hasNameChange || isRenameSaving}
+                >
                   {isRenameSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
                   Save
                 </Button>
@@ -461,7 +471,7 @@ export function GeneralTab({
                       ) : null}
                     </div>
                     {apiToken ? (
-                      <CopyValueField value={apiToken} ariaLabel="Copy API token" wrap className="min-w-[320px]" />
+                      <CopyValueField value={apiToken} ariaLabel="Copy API token" wrap className="w-full" />
                     ) : (
                       <p className="text-sm text-muted-foreground">
                         The token is fetched on demand, shown only in this tab, and cleared when you switch workspaces
@@ -484,80 +494,7 @@ export function GeneralTab({
                 </div>
               </details>
 
-            <section id="danger-zone" className="space-y-4 rounded-md border border-destructive/50 p-4 scroll-mt-24">
-              <h2 className="text-sm font-medium text-destructive uppercase tracking-wide">Danger Zone</h2>
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Delete this workspace</p>
-                  <p className="text-sm text-muted-foreground">
-                    Permanently delete this workspace and all its documents, chats, and settings. This action cannot be undone.
-                  </p>
-                </div>
-
-                <Dialog
-                  open={deleteDialogOpen}
-                  onOpenChange={(open) => {
-                    setDeleteDialogOpen(open)
-                    if (!open) {
-                      setDeleteConfirmName('')
-                      setIsDeleting(false)
-                    }
-                  }}
-                >
-                  <DialogTrigger asChild>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      disabled={isLastWorkspace}
-                      title={isLastWorkspace ? 'Cannot delete the last workspace' : undefined}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Delete workspace</DialogTitle>
-                      <DialogDescription>
-                        This will permanently delete the workspace <strong>{activeWorkspace?.name}</strong> and
-                        all its documents, conversations, and settings. This action cannot be undone.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-2 py-2">
-                      <Label htmlFor="deleteConfirm" className="text-foreground">
-                        Type <strong>{activeWorkspace?.name}</strong> to confirm
-                      </Label>
-                      <Input
-                        id="deleteConfirm"
-                        value={deleteConfirmName}
-                        onChange={(event) => setDeleteConfirmName(event.target.value)}
-                        placeholder={activeWorkspace?.name}
-                      />
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={handleDelete}
-                        disabled={!deleteConfirmValid || isDeleting}
-                      >
-                        {isDeleting ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
-                        Delete workspace
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              {isLastWorkspace ? (
-                <p className="text-sm text-muted-foreground">
-                  You cannot delete your only workspace. Create another workspace first.
-                </p>
-              ) : null}
-            </section>
-          </section>
+        </section>
 
           <section id="assistant-identity" className="space-y-6 scroll-mt-24">
             <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Assistant Identity</h2>
@@ -567,14 +504,19 @@ export function GeneralTab({
               </div>
             ) : anonSettings ? (
               <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
                     <p className="text-base font-medium text-foreground">Assistant bootstrap</p>
                     <p className="text-sm text-muted-foreground mt-0.5">
                       Define the assistant&apos;s stable identity here. The active chat language can still be overridden per session, for example by an embedded website popup.
                     </p>
                   </div>
-                  <Button size="sm" onClick={handleAssistantSave} disabled={!hasAssistantChanges || isAnonSaving}>
+                  <Button
+                    size="sm"
+                    className="sm:self-start"
+                    onClick={handleAssistantSave}
+                    disabled={!hasAssistantChanges || isAnonSaving}
+                  >
                     {isAnonSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
                     Save
                   </Button>
@@ -633,8 +575,8 @@ export function GeneralTab({
                   />
                 </div>
 
-                <div className="flex items-start justify-between gap-4 rounded bg-muted/50 p-3">
-                  <div>
+                <div className="flex flex-col gap-4 rounded bg-muted/50 p-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
                     <Label htmlFor="proactiveGreetingEnabled" className="text-foreground">Proactive first greeting</Label>
                     <p className="text-sm text-muted-foreground mt-0.5">
                       When enabled, a brand-new chat can begin with an assistant-first greeting. Leave the identity fields blank if you prefer silent startup.
@@ -664,8 +606,8 @@ export function GeneralTab({
               </div>
             ) : anonSettings ? (
               <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
                       <MessageSquare className="h-5 w-5 text-primary" />
                     </div>
@@ -690,13 +632,14 @@ export function GeneralTab({
                   <>
                     <div className="space-y-2">
                       <Label htmlFor="anonChatUrl" className="text-foreground">Public Chat URL</Label>
-                      <div className="flex flex-wrap items-start gap-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
                         <CopyValueField
                           value={anonSettings.anonymousChatUrl}
                           ariaLabel="Copy URL"
-                          className="min-w-[320px] flex-1"
+                          className="min-w-0 flex-1"
+                          wrap
                         />
-                        <Button asChild className="bg-blue-600 text-white hover:bg-blue-500">
+                        <Button asChild className="bg-blue-600 text-white hover:bg-blue-500 sm:self-start">
                           <a href={anonSettings.anonymousChatUrl} target="_blank" rel="noreferrer">
                             <ExternalLink className="w-4 h-4" />
                             Try the chat
@@ -751,8 +694,8 @@ export function GeneralTab({
               </div>
             ) : anonSettings ? (
               <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
                       <Globe className="h-5 w-5 text-primary" />
                     </div>
@@ -841,6 +784,7 @@ export function GeneralTab({
                       value={websiteEmbedSnippet}
                       ariaLabel="Copy install snippet"
                       className="w-full"
+                      wrap
                     />
                     <p className="text-sm text-muted-foreground">
                       Paste this script tag into the target website. The loader opens a Radioso-hosted iframe on approved domains only.
@@ -872,6 +816,81 @@ export function GeneralTab({
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load website embed settings.</p>
             )}
+          </section>
+
+          <section className="space-y-4 rounded-md border border-destructive/50 p-4">
+            <h2 className="text-sm font-medium text-destructive uppercase tracking-wide">Danger Zone</h2>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Delete this workspace</p>
+                <p className="text-sm text-muted-foreground">
+                  Permanently delete this workspace and all its documents, chats, and settings. This action cannot be undone.
+                </p>
+              </div>
+
+              <Dialog
+                open={deleteDialogOpen}
+                onOpenChange={(open) => {
+                  setDeleteDialogOpen(open)
+                  if (!open) {
+                    setDeleteConfirmName('')
+                    setIsDeleting(false)
+                  }
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="sm:self-start"
+                    disabled={isLastWorkspace}
+                    title={isLastWorkspace ? 'Cannot delete the last workspace' : undefined}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Delete workspace</DialogTitle>
+                    <DialogDescription>
+                      This will permanently delete the workspace <strong>{activeWorkspace?.name}</strong> and
+                      all its documents, conversations, and settings. This action cannot be undone.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2 py-2">
+                    <Label htmlFor="deleteConfirm" className="text-foreground">
+                      Type <strong>{activeWorkspace?.name}</strong> to confirm
+                    </Label>
+                    <Input
+                      id="deleteConfirm"
+                      value={deleteConfirmName}
+                      onChange={(event) => setDeleteConfirmName(event.target.value)}
+                      placeholder={activeWorkspace?.name}
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDelete}
+                      disabled={!deleteConfirmValid || isDeleting}
+                    >
+                      {isDeleting ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                      Delete workspace
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {isLastWorkspace ? (
+              <p className="text-sm text-muted-foreground">
+                You cannot delete your only workspace. Create another workspace first.
+              </p>
+            ) : null}
           </section>
 
       </div>

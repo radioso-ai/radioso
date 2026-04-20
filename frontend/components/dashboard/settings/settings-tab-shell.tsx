@@ -25,8 +25,8 @@ export function SettingsTabShell({
 }) {
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-6 py-6 lg:flex-row lg:items-start">
-        <aside className="lg:sticky lg:top-6 lg:w-72 lg:flex-none">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 xl:flex-row xl:items-start">
+        <aside className="hidden xl:block xl:sticky xl:top-6 xl:w-72 xl:flex-none">
           <div className="overflow-hidden rounded-2xl border border-border bg-card/95 shadow-sm">
             <div className="border-b border-border bg-gradient-to-br from-primary/12 via-primary/5 to-transparent px-5 py-5">
               <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">

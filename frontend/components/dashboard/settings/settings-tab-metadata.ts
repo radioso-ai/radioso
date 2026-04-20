@@ -22,17 +22,17 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
     sections: [
       {
         id: 'workspace-access',
-        label: 'Workspace & access',
+        label: 'Workspace and access',
         summary: 'Organization label, workspace naming, API access, and destructive actions.',
       },
       {
         id: 'assistant-identity',
-        label: 'Assistant setup',
+        label: 'Assistant Identity',
         summary: 'Assistant identity, locale fallback, and greeting behavior.',
       },
       {
         id: 'anonymous-chat',
-        label: 'Anonymous chat',
+        label: 'Anonymous Chat Access',
         summary: 'Public chat access, link sharing, and rate limits.',
       },
       {
@@ -50,17 +50,17 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
     sections: [
       {
         id: 'chunking-strategy',
-        label: 'Strategy',
+        label: 'Choose a chunking strategy',
         summary: 'Pick the chunking approach used for future ingests.',
       },
       {
         id: 'chunking-tuning',
-        label: 'Active tuning',
+        label: 'Tune active chunking',
         summary: 'Adjust the parameters for the currently selected strategy.',
       },
       {
         id: 'existing-documents',
-        label: 'Existing documents',
+        label: 'Apply changes to existing documents',
         summary: 'Re-queue current documents when you want stored chunks rewritten.',
       },
     ],
@@ -73,22 +73,22 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
     sections: [
       {
         id: 'query-rewrite',
-        label: 'Query rewriting',
+        label: 'Rewrite the incoming question',
         summary: 'Control how incoming questions are rewritten for retrieval.',
       },
       {
         id: 'search-tuning',
-        label: 'Search tuning',
+        label: 'Tune search and reranking',
         summary: 'Configure vector search thresholds and reranking behavior.',
       },
       {
         id: 'metadata-rules',
-        label: 'Metadata rules',
+        label: 'Prioritize by metadata',
         summary: 'Boost or filter results using persistent metadata conditions.',
       },
       {
         id: 'answer-behavior',
-        label: 'Answer behavior',
+        label: 'Shape the final answer',
         summary: 'Shape grounded answer style, suggestions, and support validation.',
       },
     ],

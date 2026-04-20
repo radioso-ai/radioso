@@ -66,9 +66,10 @@ export function CopyValueField({
         <div
           aria-label={ariaLabel}
           className={cn(
-            'flex min-w-0 items-center rounded-md border border-input bg-background px-3 text-foreground shadow-xs',
+            'flex min-w-0 rounded-md border border-input bg-background px-3 text-foreground shadow-xs',
             fitContent ? 'w-fit max-w-full flex-none' : 'flex-1',
-            compact ? 'h-10' : 'h-9',
+            wrap ? 'items-start py-2' : 'items-center',
+            wrap ? 'min-h-[3.5rem]' : compact ? 'h-10' : 'h-9',
           )}
         >
           <code
@@ -76,7 +77,7 @@ export function CopyValueField({
               'block font-mono text-sm',
               fitContent ? 'max-w-full' : 'w-full',
               wrap
-                ? 'overflow-hidden whitespace-pre-wrap break-all'
+                ? 'overflow-hidden whitespace-pre-wrap break-all leading-7'
                 : 'overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent',
               compact ? 'text-base md:text-sm' : '',
             )}

@@ -31,7 +31,11 @@ describe('settings tab metadata', () => {
 
   it('returns tab descriptors and resolves only known sections', () => {
     expect(getSettingsTabDescriptor('connectors').title).toBe('Chat Connectors')
-    expect(getSettingsSectionDescriptor('retrieval', 'metadata-rules')?.label).toBe('Metadata rules')
+    expect(getSettingsSectionDescriptor('general', 'workspace-access')?.label).toBe('Workspace and access')
+    expect(getSettingsSectionDescriptor('ingestion', 'existing-documents')?.label).toBe(
+      'Apply changes to existing documents'
+    )
+    expect(getSettingsSectionDescriptor('retrieval', 'metadata-rules')?.label).toBe('Prioritize by metadata')
     expect(getSettingsSectionDescriptor('retrieval', 'missing-section')).toBeNull()
     expect(getSettingsSectionDescriptor('general', undefined)).toBeNull()
   })

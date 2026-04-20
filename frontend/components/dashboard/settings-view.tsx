@@ -94,6 +94,7 @@ export function SettingsView({
             routeState={routeState}
             descriptor={getSettingsTabDescriptor('connectors')}
             onNavigate={(href) => router.push(href)}
+            showSidebar={false}
           >
             <div id="connectors" className="mx-auto max-w-5xl scroll-mt-24">
               <ConnectorsTab accountId={accountId} routeState={routeState} />

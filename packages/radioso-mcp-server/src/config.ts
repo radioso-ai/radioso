@@ -41,6 +41,8 @@ const configSchema = z.object({
   RADIOSO_API_TOKEN: z.string().trim().min(1).optional(),
 });
 
+export const STDIO_COMPAT_SIGNING_SECRET = "stdio-compat";
+
 export interface RadiosoMcpConfig {
   accessTokenTtlSeconds: number;
   allowedReadTools: string[];
@@ -79,13 +81,9 @@ const normalizeEnv = (
     ]),
   );
 
-export const loadConfig = (env: NodeJS.ProcessEnv | Record<string, string | undefined>): RadiosoMcpConfig => {
-  const parsed = configSchema.parse(normalizeEnv(env));
+type ParsedConfig = z.infer<typeof configSchema>;
 
-  if (!parsed.RADIOSO_MCP_SIGNING_SECRET && !parsed.RADIOSO_API_TOKEN) {
-    throw new Error("RADIOSO_MCP_SIGNING_SECRET is required in remote mode.");
-  }
-
+const buildConfig = (parsed: ParsedConfig, signingSecret: string): RadiosoMcpConfig => {
   const config: RadiosoMcpConfig = {
     accessTokenTtlSeconds: parsed.RADIOSO_MCP_ACCESS_TOKEN_TTL_SECONDS ?? 900,
     allowedReadTools: parsed.RADIOSO_MCP_ALLOWED_READ_TOOLS ?? DEFAULT_ALLOWED_READ_TOOLS,
@@ -101,7 +99,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv | Record<string, string | unde
     redisUrl: parsed.RADIOSO_MCP_REDIS_URL,
     requestTimeoutMs: parsed.RADIOSO_MCP_REQUEST_TIMEOUT_MS ?? 30_000,
     serverName: parsed.RADIOSO_MCP_SERVER_NAME ?? "radioso-context",
-    signingSecret: parsed.RADIOSO_MCP_SIGNING_SECRET ?? "stdio-compat",
+    signingSecret,
     workspacePoliciesPath: parsed.RADIOSO_MCP_WORKSPACE_POLICIES_PATH,
   };
 
@@ -111,3 +109,32 @@ export const loadConfig = (env: NodeJS.ProcessEnv | Record<string, string | unde
 
   return config;
 };
+
+const parseConfig = (env: NodeJS.ProcessEnv | Record<string, string | undefined>): ParsedConfig =>
+  configSchema.parse(normalizeEnv(env));
+
+export const loadRemoteConfig = (
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+): RadiosoMcpConfig => {
+  const parsed = parseConfig(env);
+
+  if (!parsed.RADIOSO_MCP_SIGNING_SECRET || parsed.RADIOSO_MCP_SIGNING_SECRET === STDIO_COMPAT_SIGNING_SECRET) {
+    throw new Error("RADIOSO_MCP_SIGNING_SECRET must be set to a non-default secret in remote mode.");
+  }
+
+  return buildConfig(parsed, parsed.RADIOSO_MCP_SIGNING_SECRET);
+};
+
+export const loadStdioConfig = (
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+): RadiosoMcpConfig => {
+  const parsed = parseConfig(env);
+
+  if (!parsed.RADIOSO_API_TOKEN) {
+    throw new Error("RADIOSO_API_TOKEN is required for stdio mode.");
+  }
+
+  return buildConfig(parsed, parsed.RADIOSO_MCP_SIGNING_SECRET ?? STDIO_COMPAT_SIGNING_SECRET);
+};
+
+export const loadConfig = loadRemoteConfig;

@@ -2,7 +2,7 @@
 
 import { createAuditLogger, createConsoleAuditSink, createJsonlFileAuditSink } from "../audit/auditLogger.js";
 import { createAuthService } from "../auth/authService.js";
-import { loadConfig } from "../config.js";
+import { loadRemoteConfig } from "../config.js";
 import { createCapabilityPolicyRegistry } from "../policy/capabilityPolicy.js";
 import { createWorkspacePolicyResolver, loadWorkspacePolicyOverrides } from "../policy/workspacePolicy.js";
 import { createHttpServer } from "../http/createHttpServer.js";
@@ -10,7 +10,7 @@ import { validateWorkspaceTokenWithFallback } from "../http/validateWorkspaceTok
 import { createRuntimeStoreHandle } from "../state/runtimeStores.js";
 
 const main = async () => {
-  const config = loadConfig(process.env);
+  const config = loadRemoteConfig(process.env);
   const auditLogger = createAuditLogger(
     [
       createConsoleAuditSink(),

@@ -2,14 +2,11 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/server";
 
-import { loadConfig } from "../config.js";
+import { loadStdioConfig } from "../config.js";
 import { createRadiosoMcpServer } from "../server.js";
 
 const main = async () => {
-  const config = loadConfig(process.env);
-  if (!config.apiToken) {
-    throw new Error("RADIOSO_API_TOKEN is required for stdio mode.");
-  }
+  const config = loadStdioConfig(process.env);
 
   const { server } = createRadiosoMcpServer({
     baseConfig: {

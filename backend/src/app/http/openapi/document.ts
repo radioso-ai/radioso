@@ -1595,8 +1595,8 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description: "Workspace not found",
+    403: {
+      description: "Workspace token no longer resolves to an active workspace",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

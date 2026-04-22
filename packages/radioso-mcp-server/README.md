@@ -20,7 +20,7 @@ The remote HTTP server is the primary product surface.
 ### Required Environment Variables
 
 - `RADIOSO_BASE_URL`
-- `RADIOSO_MCP_SIGNING_SECRET`
+- `RADIOSO_MCP_SIGNING_SECRET` must be explicitly set to a non-default secret in remote mode
 
 ### Common Optional Environment Variables
 
@@ -184,6 +184,8 @@ RADIOSO_BASE_URL=http://localhost:8080 \
 RADIOSO_API_TOKEN=sk_proj_example \
 node dist/src/cli/stdio.js
 ```
+
+If `RADIOSO_MCP_SIGNING_SECRET` is omitted in stdio mode, the package uses the reserved compatibility secret internally. Remote HTTP mode does not allow that fallback.
 
 ## Available Tools
 

@@ -144,6 +144,8 @@ RADIOSO_MCP_SIGNING_SECRET=dev-signing-secret \
 node dist/src/cli/http.js
 ```
 
+`RADIOSO_MCP_SIGNING_SECRET` is mandatory in remote mode and must be a real deployment secret. The reserved stdio compatibility secret is only valid for the local stdio entrypoint.
+
 Set `RADIOSO_MCP_REDIS_URL` to move MCP access sessions and approval grants into a shared Redis store for multi-instance deployments. Leave it blank to stay in the documented in-memory single-node mode. You can also point `RADIOSO_MCP_WORKSPACE_POLICIES_PATH` at a JSON file with workspace-specific tool overrides when different workspaces need different MCP catalogs.
 
 Exchange a workspace token for an MCP access token:

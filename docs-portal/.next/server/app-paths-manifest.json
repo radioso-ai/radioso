@@ -1,8 +1,0 @@
-{
-  "/_not-found/page": "app/_not-found/page.js",
-  "/_global-error/page": "app/_global-error/page.js",
-  "/health/route": "app/health/route.js",
-  "/page": "app/page.js",
-  "/(docs)/api-reference/route": "app/(docs)/api-reference/route.js",
-  "/(docs)/[...mdxPath]/page": "app/(docs)/[...mdxPath]/page.js"
-}

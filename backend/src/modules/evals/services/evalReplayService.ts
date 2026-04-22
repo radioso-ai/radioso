@@ -16,6 +16,7 @@ import {
   MissingGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
 } from "../../chat/services/groundedMissResponseComposer.js";
+import { assertInteractiveAssistantWorkflow } from "../../chat/services/chatExecutionPolicy.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import type { EvalCaseConversationMessage, EvalReplayDiagnostics } from "../domain/evalTypes.js";
 
@@ -37,6 +38,7 @@ export class EvalReplayService {
     query: string;
     conversationContext?: EvalCaseConversationMessage[];
   }): Promise<EvalReplayDiagnostics> {
+    assertInteractiveAssistantWorkflow("eval.replay");
     const startedAt = Date.now();
     const history = this.toMessageHistory(input.workspaceId, input.conversationContext ?? []);
     const retrieval = await this.retrievalPipeline.run({
@@ -75,6 +77,7 @@ export class EvalReplayService {
       ran: false,
       answerModified: false,
       unsupportedSegmentCount: 0,
+      substantiveUnsupportedSegmentCount: 0,
       supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 0,
     };
@@ -118,6 +121,7 @@ export class EvalReplayService {
         ran: validated.validation.ran,
         answerModified: validated.validation.answerModified,
         unsupportedSegmentCount: validated.validation.unsupportedSegmentCount,
+        substantiveUnsupportedSegmentCount: validated.validation.substantiveUnsupportedSegmentCount,
         supportedSegmentCount: validated.validation.supportedSegmentCount,
         nonSubstantiveSegmentCount: validated.validation.nonSubstantiveSegmentCount,
       };
@@ -140,6 +144,7 @@ export class EvalReplayService {
                 ran: false,
                 answerModified: false,
                 unsupportedSegmentCount: 0,
+                substantiveUnsupportedSegmentCount: 0,
                 supportedSegmentCount: 0,
                 nonSubstantiveSegmentCount: 0,
               },

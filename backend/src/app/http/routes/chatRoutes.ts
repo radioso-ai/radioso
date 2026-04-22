@@ -6,6 +6,7 @@ import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+import { assertInteractiveAssistantWorkflow } from "../../../modules/chat/services/chatExecutionPolicy.js";
 
 const MAX_COLLECTION_PAGE_LIMIT = 100;
 const DEFAULT_COLLECTION_PAGE_LIMIT = 50;
@@ -117,6 +118,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
     try {
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
       if (req.body.bootstrapGreeting) {
+        assertInteractiveAssistantWorkflow("chat.bootstrap");
         const bootstrap = await dependencies.chatBootstrapService.startConversation({
           workspaceId,
           accountId,
@@ -130,6 +132,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
         return;
       }
       if (req.body.stream) {
+        assertInteractiveAssistantWorkflow("chat.turn");
         await sendChatSse(
           res,
           dependencies.chatService.streamAnswer({
@@ -145,6 +148,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
         return;
       }
 
+      assertInteractiveAssistantWorkflow("chat.turn");
       const result = await dependencies.chatService.answer({
         workspaceId,
         accountId,

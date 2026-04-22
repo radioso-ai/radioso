@@ -74,6 +74,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence inside existing `attribute_controls` JSON plus additive assistant-turn audit metadata (041-conversation-modes)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend for later analytics emitters only) + Express, `pg`, Pino, Zod, OpenAI SDK, Vitest, Supertest, existing audit and retrieval modules; planned vendor-neutral telemetry and metrics libraries only when implementation begins (045-oss-observability)
 - PostgreSQL 16 with `pgvector`; existing `audit_events` as the initial durable event sink; no new external storage required for the planning phase (045-oss-observability)
+- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing dashboard settings docs pipeline (044-async-chat-jobs)
+- PostgreSQL 16 with `pgvector`; existing conversations, messages, audit events, and document-processing jobs; no new persistence required in this feature (044-async-chat-jobs)
 
 
 ## Project Structure
@@ -101,5 +103,6 @@ tests/
 
 ## Recent Changes
 - 045-oss-observability: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend for later analytics emitters only) + Express, `pg`, Pino, Zod, OpenAI SDK, Vitest, Supertest, existing audit and retrieval modules; planned vendor-neutral telemetry and metrics libraries only when implementation begins
+- 044-async-chat-jobs: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing dashboard settings docs pipeline
 - 042-autoscale-workers: Added TypeScript 5.x on Node.js 22 + Express, `pg`, Zod, Pino, Vitest, Supertest, `@google-cloud/tasks`, existing local connector/document packages
 - 041-conversation-modes: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives

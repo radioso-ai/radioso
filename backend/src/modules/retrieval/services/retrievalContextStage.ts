@@ -13,7 +13,7 @@ export class RetrievalContextStageService implements RetrievalContextStageContra
     const contextWindow = this.conversationContextService.select({
       history: input.history,
       query: input.query,
-      rewriteCarryForwardLiterals: input.rewriteCarryForwardLiterals,
+      rewriteContinuityState: input.rewriteContinuityState,
     });
 
     return {

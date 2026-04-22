@@ -60,4 +60,16 @@ export class SessionRepository implements SessionRepositoryPort {
       [sessionId, lastSeenAt],
     );
   }
+
+  async revokeAllForUser(userId: string, revokedAt: Date): Promise<number> {
+    const result = await this.database.pool.query(
+      `UPDATE sessions
+       SET revoked_at = $2
+       WHERE user_id = $1
+         AND revoked_at IS NULL`,
+      [userId, revokedAt],
+    );
+
+    return result.rowCount ?? 0;
+  }
 }

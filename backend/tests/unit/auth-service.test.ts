@@ -17,6 +17,7 @@ import {
   type AccountRepositoryPort,
   type SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
+import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { sha256 } from "../../src/modules/auth/domain/authPrimitives.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 
@@ -76,6 +77,16 @@ class FailingSessionRepository implements SessionRepositoryPort {
   }
 
   async touch(_sessionId: string, _lastSeenAt: Date): Promise<void> {}
+
+  async revokeAllForUser(_userId: string, _revokedAt: Date): Promise<number> {
+    return 0;
+  }
+}
+
+class FailingEmailVerificationService implements Pick<EmailVerificationService, "issueVerification"> {
+  async issueVerification(): Promise<never> {
+    throw new Error("verification delivery failed");
+  }
 }
 
 const createAuthService = (options: {
@@ -84,6 +95,7 @@ const createAuthService = (options: {
   sessionRepository?: SessionRepositoryPort;
   workspaceService?: WorkspaceService;
   accountInvitationRepository?: InMemoryAccountInvitationRepository;
+  emailVerificationService?: Pick<EmailVerificationService, "issueVerification">;
 }) => {
   const env = createTestEnv();
   const auditService = createAuditService();
@@ -112,6 +124,7 @@ const createAuthService = (options: {
       workspaceService,
       accountAccessService,
       accountInvitationService,
+      emailVerificationService: options.emailVerificationService,
     }),
     accountRepository,
     userRepository,
@@ -127,6 +140,7 @@ describe("AuthService rollback", () => {
     const { authService } = createAuthService({
       accountRepository,
       userRepository,
+      emailVerificationService: new FailingEmailVerificationService(),
     });
 
     await expect(
@@ -134,7 +148,7 @@ describe("AuthService rollback", () => {
         email: "rollback-register@example.com",
         password: "verysecurepassword",
       }),
-    ).rejects.toThrow("session create failed");
+    ).rejects.toThrow("verification delivery failed");
 
     expect(accountRepository.deletedIds).toEqual(["account-1"]);
     expect(await accountRepository.findById("account-1")).toBeNull();

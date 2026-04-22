@@ -1,11 +1,11 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp, issueTestToken } from "../support/testApp.js";
+import { createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
 describe("auth contract", () => {
-  it("registers a user, returns workspace bootstrap data, and sets a session cookie", async () => {
-    const { app } = createTestApp();
+  it("registers a user, returns workspace bootstrap data, and requires email verification", async () => {
+    const { app, dependencies } = createTestApp();
 
     const response = await request(app).post("/api/v1/auth/register").send({
       email: "alice@example.com",
@@ -25,16 +25,15 @@ describe("auth contract", () => {
     );
     expect(response.body.workspaceName).toBe("Default");
     expect(response.body.token).toBeUndefined();
-    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
+    expect(response.body.requiresEmailVerification).toBe(true);
+    expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(dependencies.emailService.sentMessages.at(-1)?.metadata?.kind).toBe("email_verification");
   });
 
   it("logs in an existing user, returns workspace bootstrap data, and sets a session cookie", async () => {
     const { app } = createTestApp();
 
-    const registration = await request(app).post("/api/v1/auth/register").send({
-      email: "bob@example.com",
-      password: "verysecurepassword",
-    });
+    const registration = await issueTestSession(app, "bob@example.com");
 
     const response = await request(app).post("/api/v1/auth/login").send({
       email: "bob@example.com",
@@ -43,21 +42,71 @@ describe("auth contract", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.userId).toBeDefined();
-    expect(response.body.accountId).toBe(registration.body.accountId);
+    expect(response.body.accountId).toBe(registration.accountId);
     expect(response.body.organizationName).toBe("Bob Organization");
-    expect(response.body.workspaceId).toBe(registration.body.workspaceId);
+    expect(response.body.workspaceId).toBe(registration.workspaceId);
     expect(response.body.workspaceName).toBe("Default");
     expect(response.body.token).toBeUndefined();
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
 
+  it("rejects login for an unverified user until the verification link is used", async () => {
+    const { app, dependencies } = createTestApp();
+
+    const registration = await request(app).post("/api/v1/auth/register").send({
+      email: "pending@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(registration.status).toBe(201);
+
+    const loginBeforeVerification = await request(app).post("/api/v1/auth/login").send({
+      email: "pending@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(loginBeforeVerification.status).toBe(403);
+    expect(loginBeforeVerification.body.error.code).toBe("email_verification_required");
+
+    const verificationUrl = dependencies.emailService.sentMessages.at(-1)?.metadata?.verificationUrl;
+    const token = verificationUrl ? new URL(verificationUrl).searchParams.get("token") : null;
+    const verify = await request(app).post("/api/v1/auth/email-verification/verify").send({ token });
+
+    expect(verify.status).toBe(200);
+    expect(verify.body).toEqual({ verified: true });
+
+    const loginAfterVerification = await request(app).post("/api/v1/auth/login").send({
+      email: "pending@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(loginAfterVerification.status).toBe(200);
+    expect(loginAfterVerification.headers["set-cookie"]?.[0]).toContain("radioso_session=");
+  });
+
+  it("accepts explicit verification resends for unverified users", async () => {
+    const { app, dependencies } = createTestApp();
+
+    await request(app).post("/api/v1/auth/register").send({
+      email: "resend@example.com",
+      password: "verysecurepassword",
+    });
+
+    const initialEmailCount = dependencies.emailService.sentMessages.length;
+    const response = await request(app).post("/api/v1/auth/email-verification/resend").send({
+      email: "resend@example.com",
+    });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toEqual({ accepted: true });
+    expect(dependencies.emailService.sentMessages).toHaveLength(initialEmailCount + 1);
+    expect(dependencies.emailService.sentMessages.at(-1)?.metadata?.kind).toBe("email_verification");
+  });
+
   it("accepts JSON auth requests when the content type includes charset UTF-8", async () => {
     const { app } = createTestApp();
 
-    await request(app).post("/api/v1/auth/register").send({
-      email: "charset-login@example.com",
-      password: "verysecurepassword",
-    });
+    await issueTestSession(app, "charset-login@example.com");
 
     const response = await request(app)
       .post("/api/v1/auth/login")
@@ -75,15 +124,10 @@ describe("auth contract", () => {
   it("honors a preferred workspace on login when it belongs to the account", async () => {
     const { app } = createTestApp();
 
-    const registration = await request(app).post("/api/v1/auth/register").send({
-      email: "preferred@example.com",
-      password: "verysecurepassword",
-    });
-
-    const cookie = registration.headers["set-cookie"]?.[0];
+    const registration = await issueTestSession(app, "preferred@example.com");
     const created = await request(app)
       .post("/api/v1/workspace")
-      .set("Cookie", cookie)
+      .set("Cookie", registration.cookie)
       .send({ name: "Research" });
 
     const response = await request(app).post("/api/v1/auth/login").send({
@@ -101,12 +145,9 @@ describe("auth contract", () => {
 
   it("requires a session workspace selection for cookie auth and still accepts valid bearer tokens", async () => {
     const { app } = createTestApp();
-    const registration = await request(app).post("/api/v1/auth/register").send({
-      email: "session-workspace@example.com",
-      password: "verysecurepassword",
-    });
-    const cookie = registration.headers["set-cookie"]?.[0];
-    const workspaceId = registration.body.workspaceId as string;
+    const registration = await issueTestSession(app, "session-workspace@example.com");
+    const cookie = registration.cookie;
+    const workspaceId = registration.workspaceId;
     const { token } = await issueTestToken(app, "session-workspace-token@example.com");
 
     const missingSelection = await request(app)
@@ -135,11 +176,8 @@ describe("auth contract", () => {
 
   it("falls back to a valid bearer token when a stale session cookie is present", async () => {
     const { app } = createTestApp();
-    const registration = await request(app).post("/api/v1/auth/register").send({
-      email: "stale-cookie@example.com",
-      password: "verysecurepassword",
-    });
-    const workspaceId = registration.body.workspaceId as string;
+    const registration = await issueTestSession(app, "stale-cookie@example.com");
+    const workspaceId = registration.workspaceId;
     const { token } = await issueTestToken(app, "stale-cookie-token@example.com");
 
     const response = await request(app)
@@ -155,14 +193,11 @@ describe("auth contract", () => {
   it("reveals a workspace token through an explicit session-authenticated account route", async () => {
     const { app } = createTestApp();
 
-    const registration = await request(app).post("/api/v1/auth/register").send({
-      email: "token-route-restored@example.com",
-      password: "verysecurepassword",
-    });
-    const cookie = registration.headers["set-cookie"]?.[0];
+    const registration = await issueTestSession(app, "token-route-restored@example.com");
+    const cookie = registration.cookie;
 
     const response = await request(app)
-      .get(`/api/v1/account/workspaces/${registration.body.workspaceId}/token`)
+      .get(`/api/v1/account/workspaces/${registration.workspaceId}/token`)
       .set("Cookie", cookie);
 
     expect(response.status).toBe(200);
@@ -172,11 +207,8 @@ describe("auth contract", () => {
   it("creates and accepts account invitations", async () => {
     const { app } = createTestApp();
 
-    const owner = await request(app).post("/api/v1/auth/register").send({
-      email: "owner-invite@example.com",
-      password: "verysecurepassword",
-    });
-    const ownerCookie = owner.headers["set-cookie"]?.[0];
+    const owner = await issueTestSession(app, "owner-invite@example.com");
+    const ownerCookie = owner.cookie;
 
     const invitation = await request(app)
       .post("/api/v1/account/invitations")
@@ -202,9 +234,9 @@ describe("auth contract", () => {
       });
 
     expect(accepted.status).toBe(200);
-    expect(accepted.body.accountId).toBe(owner.body.accountId);
-    expect(accepted.body.organizationName).toBe(owner.body.organizationName);
-    expect(accepted.body.userId).not.toBe(owner.body.userId);
+    expect(accepted.body.accountId).toBe(owner.accountId);
+    expect(accepted.body.organizationName).toBe("Owner Invite Organization");
+    expect(accepted.body.userId).not.toBe(owner.userId);
   });
 
   it("rate limits repeated workspace token reveal requests", async () => {
@@ -214,12 +246,9 @@ describe("auth contract", () => {
       },
     });
 
-    const registration = await request(app).post("/api/v1/auth/register").send({
-      email: "token-route-rate-limit@example.com",
-      password: "verysecurepassword",
-    });
-    const cookie = registration.headers["set-cookie"]?.[0];
-    const tokenRoute = `/api/v1/account/workspaces/${registration.body.workspaceId}/token`;
+    const registration = await issueTestSession(app, "token-route-rate-limit@example.com");
+    const cookie = registration.cookie;
+    const tokenRoute = `/api/v1/account/workspaces/${registration.workspaceId}/token`;
 
     const first = await request(app)
       .get(tokenRoute)

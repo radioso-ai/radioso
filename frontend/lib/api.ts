@@ -415,6 +415,7 @@ export interface RegisterResponse {
   organizationName: string
   workspaceId: string
   workspaceName: string
+  requiresEmailVerification: true
 }
 
 export interface LoginRequest {
@@ -430,6 +431,22 @@ export interface LoginResponse {
   organizationName: string
   workspaceId: string
   workspaceName: string
+}
+
+export interface EmailVerificationVerifyRequest {
+  token: string
+}
+
+export interface EmailVerificationVerifyResponse {
+  verified: true
+}
+
+export interface EmailVerificationResendRequest {
+  email: string
+}
+
+export interface EmailVerificationResendResponse {
+  accepted: true
 }
 
 export interface RetrievalSettings {
@@ -1245,6 +1262,19 @@ export interface InvitationDetailsResponse {
   expiresAt: string
 }
 
+export interface PasswordResetRequest {
+  email: string
+}
+
+export interface PasswordResetRequestResponse {
+  accepted: true
+}
+
+export interface PasswordResetConfirmRequest {
+  token: string
+  password: string
+}
+
 // Workspace API
 export const workspaceApi = {
   async list(): Promise<Workspace[]> {
@@ -1299,6 +1329,34 @@ export const authApi = {
 
   async acceptInvitation(invitationToken: string, data: RegisterRequest): Promise<LoginResponse> {
     return request<LoginResponse>(`/auth/invitations/${invitationToken}/accept`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withSession: true })
+  },
+
+  async requestPasswordReset(data: PasswordResetRequest): Promise<PasswordResetRequestResponse> {
+    return request<PasswordResetRequestResponse>('/auth/password-reset/request', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withSession: true })
+  },
+
+  async confirmPasswordReset(data: PasswordResetConfirmRequest): Promise<LoginResponse> {
+    return request<LoginResponse>('/auth/password-reset/confirm', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withSession: true })
+  },
+
+  async verifyEmail(data: EmailVerificationVerifyRequest): Promise<EmailVerificationVerifyResponse> {
+    return request<EmailVerificationVerifyResponse>('/auth/email-verification/verify', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withSession: true })
+  },
+
+  async resendVerificationEmail(data: EmailVerificationResendRequest): Promise<EmailVerificationResendResponse> {
+    return request<EmailVerificationResendResponse>('/auth/email-verification/resend', {
       method: 'POST',
       body: JSON.stringify(data),
     }, { withSession: true })

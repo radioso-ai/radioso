@@ -1,5 +1,5 @@
 import type { Env } from "../../../app/config/env.js";
-import { conflict, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
+import { conflict, emailVerificationRequired, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService } from "../../account/services/accountAccessService.js";
 import type { AccountInvitationService } from "../../account/services/accountInvitationService.js";
 import type { AuditService } from "../../audit/services/auditService.js";
@@ -62,6 +62,7 @@ export interface SessionRepositoryPort {
   create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord>;
   findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<SessionRecord | null>;
   touch(sessionId: string, lastSeenAt: Date): Promise<void>;
+  revokeAllForUser(userId: string, revokedAt: Date): Promise<number>;
 }
 
 export interface WorkspaceTokenRepositoryPort {
@@ -86,6 +87,14 @@ interface AuthServiceDependencies {
   workspaceService: WorkspaceService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
+  emailVerificationService?: {
+    issueVerification(input: {
+      userId: string;
+      email: string;
+      requestIp?: string | null;
+      requestUserAgent?: string | null;
+    }): Promise<void>;
+  };
   auditService: AuditService;
 }
 
@@ -116,13 +125,19 @@ export class AuthService {
     );
   }
 
-  async register(input: { email: string; password: string; organizationName?: string | null }): Promise<{
+  async register(input: {
+    email: string;
+    password: string;
+    organizationName?: string | null;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }): Promise<{
     userId: string;
     accountId: string;
     organizationName: string;
     workspaceId: string;
     workspaceName: string;
-    sessionCookie: string;
+    requiresEmailVerification: true;
   }> {
     const email = normalizeEmail(input.email);
     const existing = await this.dependencies.userRepository.findByEmail(email);
@@ -141,14 +156,24 @@ export class AuthService {
     const account = await this.dependencies.accountRepository.create({ name: organizationName, email, passwordHash });
 
     try {
-      const user = await this.dependencies.userRepository.create({ id: account.id, email, passwordHash });
+      const user = await this.dependencies.userRepository.create({
+        id: account.id,
+        email,
+        passwordHash,
+        emailVerifiedAt: null,
+      });
       await this.dependencies.accountAccessService.ensureMembership({
         accountId: account.id,
         userId: user.id,
         role: "owner",
       });
       const workspace = await this.dependencies.workspaceService.createDefault(account.id);
-      const sessionCookie = await this.createSessionCookie(user.id, account.id);
+      await this.dependencies.emailVerificationService?.issueVerification({
+        userId: user.id,
+        email,
+        requestIp: input.requestIp,
+        requestUserAgent: input.requestUserAgent,
+      });
 
       await this.dependencies.auditService.record({
         accountId: account.id,
@@ -163,7 +188,7 @@ export class AuthService {
         organizationName: account.name,
         workspaceId: workspace.id,
         workspaceName: workspace.name,
-        sessionCookie,
+        requiresEmailVerification: true,
       };
     } catch (error) {
       await this.rollbackCreatedAccount(account.id, account.id);
@@ -251,6 +276,15 @@ export class AuthService {
       throw unauthorized("Invalid email or password");
     }
 
+    if (!user.emailVerifiedAt) {
+      await this.dependencies.auditService.record({
+        eventType: "auth.login",
+        eventStatus: "failure",
+        metadata: { email, reason: "email_verification_required" },
+      });
+      throw emailVerificationRequired();
+    }
+
     const membership = await this.dependencies.accountAccessService.resolveLoginAccount(user.id, input.preferredAccountId);
     const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(
       membership.accountId,
@@ -328,6 +362,7 @@ export class AuthService {
       : await this.dependencies.userRepository.create({
           email,
           passwordHash: await hashPassword(input.password),
+          emailVerifiedAt: new Date(),
         });
 
     const createdUserId: string | null = existingUser ? null : user.id;

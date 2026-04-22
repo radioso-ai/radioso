@@ -26,7 +26,17 @@ import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { accountApi, generalSettingsApi, type GeneralSettings } from '@/lib/api'
-import { buildWebsiteEmbedSnippet, formatWebsiteEmbedOrigins, parseWebsiteEmbedOrigins } from '@/lib/embed-widget'
+import {
+  buildWebsiteEmbedSnippet,
+  formatWebsiteEmbedOrigins,
+  normalizeWebsiteEmbedAvatarUrl,
+  normalizeWebsiteEmbedInitialState,
+  normalizeWebsiteEmbedLocale,
+  parseWebsiteEmbedJsonOverrides,
+  parseWebsiteEmbedOrigins,
+  sanitizeWebsiteEmbedCopyOverrides,
+  sanitizeWebsiteEmbedThemeOverrides,
+} from '@/lib/embed-widget'
 import { useWorkspace } from '@/lib/workspace-context'
 
 export function GeneralTab({
@@ -57,6 +67,11 @@ export function GeneralTab({
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
   const [websiteEmbedOrigins, setWebsiteEmbedOrigins] = useState('')
+  const [websiteEmbedSnippetLocale, setWebsiteEmbedSnippetLocale] = useState('')
+  const [websiteEmbedSnippetInitialState, setWebsiteEmbedSnippetInitialState] = useState('')
+  const [websiteEmbedSnippetAvatarUrl, setWebsiteEmbedSnippetAvatarUrl] = useState('')
+  const [websiteEmbedSnippetCopyJson, setWebsiteEmbedSnippetCopyJson] = useState('')
+  const [websiteEmbedSnippetThemeJson, setWebsiteEmbedSnippetThemeJson] = useState('')
   const [assistantSettingsError, setAssistantSettingsError] = useState<string | null>(null)
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
@@ -277,8 +292,38 @@ export function GeneralTab({
       return null
     }
 
+    const normalizedLocale = normalizeWebsiteEmbedLocale(websiteEmbedSnippetLocale) ?? undefined
+    const normalizedInitialState = normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined
+    const copyOverrides =
+      websiteEmbedSnippetCopyJson.trim().length > 0
+        ? parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetCopyJson)
+        : null
+    const themeOverrides =
+      websiteEmbedSnippetThemeJson.trim().length > 0
+        ? parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetThemeJson)
+        : null
+    const hasCopyJsonError = websiteEmbedSnippetCopyJson.trim().length > 0 && copyOverrides === null
+    const hasThemeJsonError = websiteEmbedSnippetThemeJson.trim().length > 0 && themeOverrides === null
+    const normalizedAvatarUrl =
+      websiteEmbedSnippetAvatarUrl.trim().length > 0
+        ? normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl)
+        : null
+    const hasAvatarUrlError =
+      websiteEmbedSnippetAvatarUrl.trim().length > 0 && normalizedAvatarUrl === null
+
+    if (hasCopyJsonError || hasThemeJsonError || hasAvatarUrlError) {
+      return null
+    }
+
+    const hasLocalSnippetOverrides =
+      Boolean(normalizedLocale) ||
+      Boolean(normalizedInitialState) ||
+      Boolean(normalizedAvatarUrl) ||
+      websiteEmbedSnippetCopyJson.trim().length > 0 ||
+      websiteEmbedSnippetThemeJson.trim().length > 0
+
     return (
-      anonSettings.websiteEmbedSnippet ??
+      (!hasLocalSnippetOverrides ? anonSettings.websiteEmbedSnippet : null) ??
       buildWebsiteEmbedSnippet({
         websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
         websiteEmbedToken: anonSettings.websiteEmbedToken ?? null,
@@ -287,9 +332,52 @@ export function GeneralTab({
         websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
         websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
         websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
+      }, undefined, {
+        locale: normalizedLocale,
+        initialState: normalizedInitialState,
+        avatarUrl: normalizedAvatarUrl,
+        copy: sanitizeWebsiteEmbedCopyOverrides(copyOverrides),
+        theme: sanitizeWebsiteEmbedThemeOverrides(themeOverrides),
       })
     )
-  }, [anonSettings])
+  }, [
+    anonSettings,
+    websiteEmbedSnippetAvatarUrl,
+    websiteEmbedSnippetCopyJson,
+    websiteEmbedSnippetInitialState,
+    websiteEmbedSnippetLocale,
+    websiteEmbedSnippetThemeJson,
+  ])
+
+  const websiteEmbedSnippetCopyJsonError = useMemo(() => {
+    if (!websiteEmbedSnippetCopyJson.trim()) {
+      return null
+    }
+
+    return parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetCopyJson)
+      ? null
+      : 'Copy overrides must be valid JSON.'
+  }, [websiteEmbedSnippetCopyJson])
+
+  const websiteEmbedSnippetThemeJsonError = useMemo(() => {
+    if (!websiteEmbedSnippetThemeJson.trim()) {
+      return null
+    }
+
+    return parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetThemeJson)
+      ? null
+      : 'Theme overrides must be valid JSON.'
+  }, [websiteEmbedSnippetThemeJson])
+
+  const websiteEmbedSnippetAvatarUrlError = useMemo(() => {
+    if (!websiteEmbedSnippetAvatarUrl.trim()) {
+      return null
+    }
+
+    return normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl)
+      ? null
+      : 'Avatar URL must be an http(s) URL or supported relative asset path.'
+  }, [websiteEmbedSnippetAvatarUrl])
 
   const handleWebsiteEmbedSave = async () => {
     if (!anonSettings) return
@@ -774,18 +862,111 @@ export function GeneralTab({
                   </p>
                 </div>
 
-                {anonSettings.websiteEmbedEnabled && websiteEmbedSnippet ? (
+                {anonSettings.websiteEmbedEnabled ? (
                   <div className="rounded bg-muted/50 p-3 space-y-3">
                     <div className="flex items-center gap-2 text-foreground">
                       <Code2 className="h-4 w-4" />
                       <Label className="text-foreground">Install snippet</Label>
                     </div>
-                    <CopyValueField
-                      value={websiteEmbedSnippet}
-                      ariaLabel="Copy install snippet"
-                      className="w-full"
-                      wrap
-                    />
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="websiteEmbedSnippetLocale" className="text-foreground">Locale override</Label>
+                        <select
+                          id="websiteEmbedSnippetLocale"
+                          value={websiteEmbedSnippetLocale}
+                          onChange={(event) => setWebsiteEmbedSnippetLocale(event.target.value)}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                        >
+                          <option value="">Browser default</option>
+                          <option value="de-DE">German</option>
+                          <option value="en-US">English</option>
+                          <option value="es-ES">Spanish</option>
+                          <option value="fr-FR">French</option>
+                          <option value="it-IT">Italian</option>
+                          <option value="pt-BR">Portuguese</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="websiteEmbedSnippetInitialState" className="text-foreground">Initial state</Label>
+                        <select
+                          id="websiteEmbedSnippetInitialState"
+                          value={websiteEmbedSnippetInitialState}
+                          onChange={(event) => setWebsiteEmbedSnippetInitialState(event.target.value)}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                        >
+                          <option value="">Workspace default</option>
+                          <option value="collapsed">Collapsed</option>
+                          <option value="open">Open</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="websiteEmbedSnippetAvatarUrl" className="text-foreground">Custom avatar image or GIF URL</Label>
+                      <Input
+                        id="websiteEmbedSnippetAvatarUrl"
+                        value={websiteEmbedSnippetAvatarUrl}
+                        onChange={(event) => setWebsiteEmbedSnippetAvatarUrl(event.target.value)}
+                        placeholder="https://cdn.example.com/support-avatar.gif"
+                      />
+                      {websiteEmbedSnippetAvatarUrlError ? (
+                        <p className="text-xs text-destructive">{websiteEmbedSnippetAvatarUrlError}</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          When set, this replaces the built-in launcher icon and the assistant avatar inside the hosted chat.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="websiteEmbedSnippetCopyJson" className="text-foreground">Static text overrides JSON</Label>
+                      <Textarea
+                        id="websiteEmbedSnippetCopyJson"
+                        value={websiteEmbedSnippetCopyJson}
+                        onChange={(event) => setWebsiteEmbedSnippetCopyJson(event.target.value)}
+                        placeholder={`{"publicChatEmptyTitle":"Ask anything","startPrompt":"Type your question..."}`}
+                        className="min-h-[96px] font-mono text-xs"
+                      />
+                      {websiteEmbedSnippetCopyJsonError ? (
+                        <p className="text-xs text-destructive">{websiteEmbedSnippetCopyJsonError}</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Override the hosted chat&apos;s static UI text for translation or customer-specific wording.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="websiteEmbedSnippetThemeJson" className="text-foreground">Theme overrides JSON</Label>
+                      <Textarea
+                        id="websiteEmbedSnippetThemeJson"
+                        value={websiteEmbedSnippetThemeJson}
+                        onChange={(event) => setWebsiteEmbedSnippetThemeJson(event.target.value)}
+                        placeholder={`{"accent":"#1d4ed8","panelBackground":"#ffffff","userBubbleBackground":"#1d4ed8"}`}
+                        className="min-h-[96px] font-mono text-xs"
+                      />
+                      {websiteEmbedSnippetThemeJsonError ? (
+                        <p className="text-xs text-destructive">{websiteEmbedSnippetThemeJsonError}</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Override launcher, panel, message, and input colors to match the customer&apos;s theme.
+                        </p>
+                      )}
+                    </div>
+
+                    {websiteEmbedSnippet ? (
+                      <CopyValueField
+                        value={websiteEmbedSnippet}
+                        ariaLabel="Copy install snippet"
+                        className="w-full"
+                        wrap
+                      />
+                    ) : (
+                      <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                        Fix the snippet override errors above to generate a copyable script tag.
+                      </div>
+                    )}
                     <p className="text-sm text-muted-foreground">
                       Paste this script tag into the target website. The loader opens a Radioso-hosted iframe on approved domains only.
                     </p>

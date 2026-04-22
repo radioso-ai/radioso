@@ -64,6 +64,7 @@ export const DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON: WebsiteEmbedLauncherIcon = 'ch
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION: WebsiteEmbedLauncherPosition = 'bottom-right'
 export const DEFAULT_WEBSITE_EMBED_SCRIPT_PATH = '/radioso-embed.js'
 export const DEFAULT_WEBSITE_EMBED_INITIAL_STATE: WebsiteEmbedInitialState = 'collapsed'
+export const LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL = 'http://127.0.0.1:4321'
 export const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
   launcherBackground: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
   launcherForeground: '#f8fafc',
@@ -457,6 +458,87 @@ export const resolveWebsiteEmbedScriptUrl = (scriptUrl?: string | null, baseUrl?
   }
 
   return DEFAULT_WEBSITE_EMBED_SCRIPT_PATH
+}
+
+export const resolveWebsiteEmbedAppOrigin = (scriptUrl?: string | null, baseUrl?: string) => {
+  const resolvedScriptUrl = resolveWebsiteEmbedScriptUrl(scriptUrl, baseUrl)
+
+  try {
+    return new URL(resolvedScriptUrl, baseUrl).origin
+  } catch {
+    if (baseUrl) {
+      try {
+        return new URL(baseUrl).origin
+      } catch {
+        return baseUrl
+      }
+    }
+
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin
+    }
+
+    return 'http://localhost:3000'
+  }
+}
+
+export const buildWebsiteEmbedTestHarnessUrl = (
+  settings: Pick<
+    GeneralSettings,
+    | 'websiteEmbedToken'
+    | 'websiteEmbedScriptUrl'
+    | 'websiteEmbedLauncherLabel'
+    | 'websiteEmbedLauncherIcon'
+    | 'websiteEmbedLauncherPosition'
+  >,
+  appBaseUrl?: string,
+  overrides?: WebsiteEmbedSnippetOverrides,
+  harnessBaseUrl: string = LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL,
+) => {
+  if (!settings.websiteEmbedToken) {
+    return null
+  }
+
+  const params = new URLSearchParams()
+  params.set('appOrigin', resolveWebsiteEmbedAppOrigin(settings.websiteEmbedScriptUrl, appBaseUrl))
+  params.set('token', settings.websiteEmbedToken)
+  params.set(
+    'label',
+    settings.websiteEmbedLauncherLabel?.trim() || DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL,
+  )
+  params.set('icon', settings.websiteEmbedLauncherIcon ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON)
+  params.set(
+    'position',
+    settings.websiteEmbedLauncherPosition ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION,
+  )
+
+  const locale = normalizeWebsiteEmbedLocale(overrides?.locale)
+  const initialState = normalizeWebsiteEmbedInitialState(overrides?.initialState)
+  const avatarUrl = normalizeWebsiteEmbedAvatarUrl(overrides?.avatarUrl ?? overrides?.collapsedAvatarUrl)
+  const copyOverrides = sanitizeWebsiteEmbedCopyOverrides(overrides?.copy)
+  const themeOverrides = sanitizeWebsiteEmbedThemeOverrides(overrides?.theme)
+
+  if (locale) {
+    params.set('locale', overrides?.locale?.trim() ?? locale)
+  }
+
+  if (initialState) {
+    params.set('initialState', initialState)
+  }
+
+  if (avatarUrl) {
+    params.set('avatarUrl', avatarUrl)
+  }
+
+  if (Object.keys(copyOverrides).length > 0) {
+    params.set('copy', JSON.stringify(copyOverrides))
+  }
+
+  if (Object.keys(themeOverrides).length > 0) {
+    params.set('theme', JSON.stringify(themeOverrides))
+  }
+
+  return `${harnessBaseUrl}/?${params.toString()}`
 }
 
 export const buildWebsiteEmbedSnippet = (

@@ -27,8 +27,10 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { accountApi, generalSettingsApi, type GeneralSettings } from '@/lib/api'
 import {
+  buildWebsiteEmbedTestHarnessUrl,
   buildWebsiteEmbedSnippet,
   formatWebsiteEmbedOrigins,
+  LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL,
   normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedInitialState,
   normalizeWebsiteEmbedLocale,
@@ -72,6 +74,8 @@ export function GeneralTab({
   const [websiteEmbedSnippetAvatarUrl, setWebsiteEmbedSnippetAvatarUrl] = useState('')
   const [websiteEmbedSnippetCopyJson, setWebsiteEmbedSnippetCopyJson] = useState('')
   const [websiteEmbedSnippetThemeJson, setWebsiteEmbedSnippetThemeJson] = useState('')
+  const [isPreparingWebsiteEmbedDemo, setIsPreparingWebsiteEmbedDemo] = useState(false)
+  const [websiteEmbedDemoError, setWebsiteEmbedDemoError] = useState<string | null>(null)
   const [assistantSettingsError, setAssistantSettingsError] = useState<string | null>(null)
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
@@ -379,6 +383,54 @@ export function GeneralTab({
       : 'Avatar URL must be an http(s) URL or supported relative asset path.'
   }, [websiteEmbedSnippetAvatarUrl])
 
+  const websiteEmbedDemoUrl = useMemo(() => {
+    if (!anonSettings || websiteEmbedSnippetCopyJsonError || websiteEmbedSnippetThemeJsonError || websiteEmbedSnippetAvatarUrlError) {
+      return null
+    }
+
+    const copyOverrides =
+      websiteEmbedSnippetCopyJson.trim().length > 0
+        ? parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetCopyJson)
+        : null
+    const themeOverrides =
+      websiteEmbedSnippetThemeJson.trim().length > 0
+        ? parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetThemeJson)
+        : null
+
+    return buildWebsiteEmbedTestHarnessUrl(
+      {
+        websiteEmbedToken: anonSettings.websiteEmbedToken ?? null,
+        websiteEmbedScriptUrl: anonSettings.websiteEmbedScriptUrl ?? null,
+        websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
+        websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
+        websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
+      },
+      typeof window !== 'undefined' ? window.location.origin : undefined,
+      {
+        locale: normalizeWebsiteEmbedLocale(websiteEmbedSnippetLocale) ?? undefined,
+        initialState: normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined,
+        avatarUrl: normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl) ?? undefined,
+        copy: sanitizeWebsiteEmbedCopyOverrides(copyOverrides),
+        theme: sanitizeWebsiteEmbedThemeOverrides(themeOverrides),
+      },
+    )
+  }, [
+    anonSettings,
+    websiteEmbedSnippetAvatarUrl,
+    websiteEmbedSnippetAvatarUrlError,
+    websiteEmbedSnippetCopyJson,
+    websiteEmbedSnippetCopyJsonError,
+    websiteEmbedSnippetInitialState,
+    websiteEmbedSnippetLocale,
+    websiteEmbedSnippetThemeJson,
+    websiteEmbedSnippetThemeJsonError,
+  ])
+
+  const websiteEmbedHasLocalHarnessOrigin = useMemo(
+    () => parseWebsiteEmbedOrigins(websiteEmbedOrigins).includes(LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL),
+    [websiteEmbedOrigins],
+  )
+
   const handleWebsiteEmbedSave = async () => {
     if (!anonSettings) return
     setIsAnonSaving(true)
@@ -397,6 +449,50 @@ export function GeneralTab({
       console.error('Failed to update website embed settings:', error)
     } finally {
       setIsAnonSaving(false)
+    }
+  }
+
+  const handleOpenWebsiteEmbedDemo = async () => {
+    if (!anonSettings?.websiteEmbedEnabled || !websiteEmbedDemoUrl || typeof window === 'undefined') {
+      return
+    }
+
+    setIsPreparingWebsiteEmbedDemo(true)
+    setWebsiteEmbedDemoError(null)
+
+    try {
+      const parsedOrigins = parseWebsiteEmbedOrigins(websiteEmbedOrigins)
+      const nextOrigins = websiteEmbedHasLocalHarnessOrigin
+        ? parsedOrigins
+        : [...parsedOrigins, LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL]
+
+      const hasPersistedChanges =
+        !websiteEmbedHasLocalHarnessOrigin ||
+        anonSettings.websiteEmbedEnabled !== (savedAnonSettings?.websiteEmbedEnabled ?? false) ||
+        websiteEmbedOrigins !== formatWebsiteEmbedOrigins(savedAnonSettings?.websiteEmbedAllowedOrigins ?? []) ||
+        anonSettings.websiteEmbedLauncherLabel !== savedAnonSettings?.websiteEmbedLauncherLabel ||
+        anonSettings.websiteEmbedLauncherIcon !== savedAnonSettings?.websiteEmbedLauncherIcon ||
+        anonSettings.websiteEmbedLauncherPosition !== savedAnonSettings?.websiteEmbedLauncherPosition
+
+      if (hasPersistedChanges) {
+        const updated = await generalSettingsApi.updateGeneralSettings({
+          websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
+          websiteEmbedAllowedOrigins: nextOrigins,
+          websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
+          websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
+          websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
+        })
+        setAnonSettings(updated)
+        setSavedAnonSettings(updated)
+        setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
+      }
+
+      window.open(websiteEmbedDemoUrl, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      console.error('Failed to prepare website embed demo page:', error)
+      setWebsiteEmbedDemoError(getApiErrorMessage(error, 'Failed to prepare the local demo page.'))
+    } finally {
+      setIsPreparingWebsiteEmbedDemo(false)
     }
   }
 
@@ -973,12 +1069,35 @@ export function GeneralTab({
                     <p className="text-sm text-muted-foreground">
                       Optional script attributes can override locale, start the widget open, swap in a custom avatar image or GIF, and replace the hosted chat text or colors for translation and theming.
                     </p>
+                    <p className="text-xs text-muted-foreground">
+                      Quick local tryout: this action saves the current website embed settings, adds <span className="font-mono">{LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL}</span> to the approved origins when needed, and opens the local demo page prefilled with the current widget configuration.
+                    </p>
+                    {websiteEmbedDemoError ? (
+                      <p className="text-xs text-destructive">{websiteEmbedDemoError}</p>
+                    ) : null}
                     {anonSettings.websiteEmbedScriptUrl ? (
                       <p className="text-xs text-muted-foreground">
                         Loader URL: <span className="font-mono">{anonSettings.websiteEmbedScriptUrl}</span>
                       </p>
                     ) : null}
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={handleOpenWebsiteEmbedDemo}
+                        disabled={
+                          isAnonSaving ||
+                          isPreparingWebsiteEmbedDemo ||
+                          !anonSettings.websiteEmbedEnabled ||
+                          !websiteEmbedDemoUrl
+                        }
+                      >
+                        {isPreparingWebsiteEmbedDemo ? (
+                          <Spinner className="mr-2 h-4 w-4" />
+                        ) : (
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                        )}
+                        Open local demo page
+                      </Button>
                       <Button variant="outline" onClick={handleWebsiteEmbedTokenRotate} disabled={isAnonSaving}>
                         {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                         Rotate embed token

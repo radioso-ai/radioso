@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildWebsiteEmbedTestHarnessUrl,
   buildWebsiteEmbedSnippet,
   formatWebsiteEmbedOrigins,
   formatWebsiteEmbedRateLimitRetry,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
+  LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL,
   normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedInitialState,
   normalizeWebsiteEmbedLocale,
@@ -100,6 +102,39 @@ describe('embed widget helpers', () => {
     expect(snippet).toContain(
       'data-radioso-theme="{&quot;accent&quot;:&quot;#112233&quot;,&quot;panelBackground&quot;:&quot;#f5f5f5&quot;}"',
     )
+  })
+
+  it('builds a local harness URL from the current embed settings and overrides', () => {
+    const harnessUrl = buildWebsiteEmbedTestHarnessUrl(
+      {
+        websiteEmbedToken: 'embed-token',
+        websiteEmbedScriptUrl: 'https://app.example.com/radioso-embed.js',
+        websiteEmbedLauncherLabel: 'Talk to us',
+        websiteEmbedLauncherIcon: 'message',
+        websiteEmbedLauncherPosition: 'bottom-left',
+      },
+      undefined,
+      {
+        locale: 'fr-FR',
+        initialState: 'open',
+        avatarUrl: 'https://cdn.example.com/avatar.gif',
+        copy: { publicChatEmptyTitle: 'Bonjour' },
+        theme: { accent: '#123456' },
+      },
+    )
+
+    expect(harnessUrl).toContain(`${LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL}/?`)
+    const url = new URL(harnessUrl ?? '')
+    expect(url.searchParams.get('appOrigin')).toBe('https://app.example.com')
+    expect(url.searchParams.get('token')).toBe('embed-token')
+    expect(url.searchParams.get('label')).toBe('Talk to us')
+    expect(url.searchParams.get('icon')).toBe('message')
+    expect(url.searchParams.get('position')).toBe('bottom-left')
+    expect(url.searchParams.get('locale')).toBe('fr-FR')
+    expect(url.searchParams.get('initialState')).toBe('open')
+    expect(url.searchParams.get('avatarUrl')).toBe('https://cdn.example.com/avatar.gif')
+    expect(url.searchParams.get('copy')).toBe('{"publicChatEmptyTitle":"Bonjour"}')
+    expect(url.searchParams.get('theme')).toBe('{"accent":"#123456"}')
   })
 
   it('normalizes supported locale, initial-state, and avatar overrides', () => {

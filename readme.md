@@ -122,6 +122,16 @@ If a workspace token or public embed link is ever exposed, rotate it from the se
 
 A valid provider key is required for both document processing and chat responses.
 
+## Assistant Execution Model
+
+Radioso deliberately separates live chat from background assistant work.
+
+- Normal chat stays on the live request path, including authenticated chat, anonymous or embedded chat, and assistant bootstrap greetings.
+- Those interactions remain immediate and streaming when requested. Radioso does not silently queue a normal chat turn behind the scenes.
+- Long-running assistant-adjacent work belongs in an explicit deferred path once a real background runtime exists. Eval replay is still an inline workflow today, even though it is a plausible future candidate for that path.
+
+For the operator-facing explanation, see [docs/assistant-execution-model.md](/Users/dm/conductor/workspaces/radioso/provo/docs/assistant-execution-model.md).
+
 ## TypeScript SDK
 
 The repo includes a TypeScript SDK with the package name `@radioso/typescript-sdk`.

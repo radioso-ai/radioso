@@ -149,6 +149,8 @@ describe("chat service streaming", () => {
       { role: "user", content: "What does this page do?" },
       { role: "assistant", content: "full answer" },
     ]);
+    expect(auditService.events[0]?.metadata?.workflow).toBe("chat.turn");
+    expect(auditService.events[0]?.metadata?.executionClass).toBe("interactive_synchronous");
     expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual([]);
   });
 
@@ -312,6 +314,73 @@ describe("chat service streaming", () => {
     expect(response.answer).toBe("My name is Marta. I am your museum guide.");
     expect(response.citations).toBeUndefined();
     expect(response.answerSegments).toBeUndefined();
+  });
+
+  it("falls back to the normal no-context response when the identity prompt returns blank output", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what is your name",
+          contexts: [],
+          prompt: "unused retrieval prompt",
+          citations: [],
+          assistantIdentity: {
+            assistantName: "Marta",
+            assistantRole: "Museum guide",
+            greetingInstruction: "Warm and concise",
+          },
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "what is your name",
+              lexicalQuery: "what is your name",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "   ";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "What is your name?",
+      stream: false,
+    });
+
+    expect(response.answer).toBe(
+      "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+    );
   });
 
   it("streams assistant identity answers for no-context follow-ups", async () => {

@@ -171,11 +171,12 @@ export class InMemoryAccountRepository implements AccountRepositoryPort {
 export class InMemoryUserRepository implements UserRepositoryPort {
   private readonly items = new Map<string, UserRecord>();
 
-  async create(params: { id?: string; email: string; passwordHash: string }): Promise<UserRecord> {
+  async create(params: { id?: string; email: string; passwordHash: string; emailVerifiedAt?: Date | null }): Promise<UserRecord> {
     const record: UserRecord = {
       id: params.id ?? randomUUID(),
       email: params.email,
       passwordHash: params.passwordHash,
+      emailVerifiedAt: params.emailVerifiedAt === undefined ? new Date() : params.emailVerifiedAt,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -190,6 +191,36 @@ export class InMemoryUserRepository implements UserRepositoryPort {
 
   async findById(id: string): Promise<UserRecord | null> {
     return this.items.get(id) ?? null;
+  }
+
+  async updatePassword(id: string, passwordHash: string): Promise<UserRecord> {
+    const existing = this.items.get(id);
+    if (!existing) {
+      throw notFound("User not found");
+    }
+
+    const updated: UserRecord = {
+      ...existing,
+      passwordHash,
+      updatedAt: new Date(),
+    };
+    this.items.set(id, updated);
+    return updated;
+  }
+
+  async markEmailVerified(id: string, verifiedAt: Date): Promise<UserRecord> {
+    const existing = this.items.get(id);
+    if (!existing) {
+      throw notFound("User not found");
+    }
+
+    const updated: UserRecord = {
+      ...existing,
+      emailVerifiedAt: existing.emailVerifiedAt ?? verifiedAt,
+      updatedAt: new Date(),
+    };
+    this.items.set(id, updated);
+    return updated;
   }
 
   async deleteById(id: string): Promise<boolean> {
@@ -229,6 +260,18 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
     if (item) {
       item.lastSeenAt = lastSeenAt;
     }
+  }
+
+  async revokeAllForUser(userId: string, revokedAt: Date): Promise<number> {
+    let count = 0;
+    for (const item of this.items.values()) {
+      if (item.userId === userId && item.revokedAt === null) {
+        item.revokedAt = revokedAt;
+        count += 1;
+      }
+    }
+
+    return count;
   }
 }
 

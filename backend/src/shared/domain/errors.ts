@@ -24,6 +24,9 @@ export const unauthorized = (message = "Unauthorized"): AppError =>
 export const forbidden = (message = "Forbidden"): AppError =>
   new AppError(403, "forbidden", message);
 
+export const emailVerificationRequired = (message = "Email verification is required before sign-in"): AppError =>
+  new AppError(403, "email_verification_required", message);
+
 export const conflict = (message: string): AppError =>
   new AppError(409, "conflict", message);
 

@@ -137,6 +137,25 @@ describe('embed widget helpers', () => {
     expect(url.searchParams.get('theme')).toBe('{"accent":"#123456"}')
   })
 
+  it('supports a custom same-origin demo page URL', () => {
+    const harnessUrl = buildWebsiteEmbedTestHarnessUrl(
+      {
+        websiteEmbedToken: 'embed-token',
+        websiteEmbedScriptUrl: 'https://app.example.com/radioso-embed.js',
+        websiteEmbedLauncherLabel: 'Talk to us',
+        websiteEmbedLauncherIcon: 'message',
+        websiteEmbedLauncherPosition: 'bottom-left',
+      },
+      'https://app.example.com',
+      undefined,
+      'https://app.example.com/embed-demo.html',
+    )
+
+    expect(harnessUrl).toBe(
+      'https://app.example.com/embed-demo.html?appOrigin=https%3A%2F%2Fapp.example.com&token=embed-token&label=Talk+to+us&icon=message&position=bottom-left',
+    )
+  })
+
   it('normalizes supported locale, initial-state, and avatar overrides', () => {
     expect(normalizeWebsiteEmbedLocale(' it-IT ')).toBe('it')
     expect(normalizeWebsiteEmbedInitialState('OPEN')).toBe('open')

@@ -27,10 +27,10 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { accountApi, generalSettingsApi, type GeneralSettings } from '@/lib/api'
 import {
+  APP_WEBSITE_EMBED_DEMO_PATH,
   buildWebsiteEmbedTestHarnessUrl,
   buildWebsiteEmbedSnippet,
   formatWebsiteEmbedOrigins,
-  LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL,
   normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedInitialState,
   normalizeWebsiteEmbedLocale,
@@ -384,7 +384,13 @@ export function GeneralTab({
   }, [websiteEmbedSnippetAvatarUrl])
 
   const websiteEmbedDemoUrl = useMemo(() => {
-    if (!anonSettings || websiteEmbedSnippetCopyJsonError || websiteEmbedSnippetThemeJsonError || websiteEmbedSnippetAvatarUrlError) {
+    if (
+      !anonSettings ||
+      websiteEmbedSnippetCopyJsonError ||
+      websiteEmbedSnippetThemeJsonError ||
+      websiteEmbedSnippetAvatarUrlError ||
+      typeof window === 'undefined'
+    ) {
       return null
     }
 
@@ -405,7 +411,7 @@ export function GeneralTab({
         websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
         websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
       },
-      typeof window !== 'undefined' ? window.location.origin : undefined,
+      window.location.origin,
       {
         locale: normalizeWebsiteEmbedLocale(websiteEmbedSnippetLocale) ?? undefined,
         initialState: normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined,
@@ -413,6 +419,7 @@ export function GeneralTab({
         copy: sanitizeWebsiteEmbedCopyOverrides(copyOverrides),
         theme: sanitizeWebsiteEmbedThemeOverrides(themeOverrides),
       },
+      new URL(APP_WEBSITE_EMBED_DEMO_PATH, window.location.origin).toString(),
     )
   }, [
     anonSettings,
@@ -426,9 +433,12 @@ export function GeneralTab({
     websiteEmbedSnippetThemeJsonError,
   ])
 
+  const websiteEmbedDemoOrigin =
+    typeof window !== 'undefined' ? window.location.origin : ''
+
   const websiteEmbedHasLocalHarnessOrigin = useMemo(
-    () => parseWebsiteEmbedOrigins(websiteEmbedOrigins).includes(LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL),
-    [websiteEmbedOrigins],
+    () => (websiteEmbedDemoOrigin ? parseWebsiteEmbedOrigins(websiteEmbedOrigins).includes(websiteEmbedDemoOrigin) : false),
+    [websiteEmbedDemoOrigin, websiteEmbedOrigins],
   )
 
   const handleWebsiteEmbedSave = async () => {
@@ -464,7 +474,9 @@ export function GeneralTab({
       const parsedOrigins = parseWebsiteEmbedOrigins(websiteEmbedOrigins)
       const nextOrigins = websiteEmbedHasLocalHarnessOrigin
         ? parsedOrigins
-        : [...parsedOrigins, LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL]
+        : websiteEmbedDemoOrigin
+          ? [...parsedOrigins, websiteEmbedDemoOrigin]
+          : parsedOrigins
 
       const hasPersistedChanges =
         !websiteEmbedHasLocalHarnessOrigin ||
@@ -1070,7 +1082,7 @@ export function GeneralTab({
                       Optional script attributes can override locale, start the widget open, swap in a custom avatar image or GIF, and replace the hosted chat text or colors for translation and theming.
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Quick local tryout: this action saves the current website embed settings, adds <span className="font-mono">{LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL}</span> to the approved origins when needed, and opens the local demo page prefilled with the current widget configuration.
+                      Quick local tryout: this action saves the current website embed settings, adds the current app origin to the approved origins when needed, and opens a same-origin demo page prefilled with the current widget configuration.
                     </p>
                     {websiteEmbedDemoError ? (
                       <p className="text-xs text-destructive">{websiteEmbedDemoError}</p>

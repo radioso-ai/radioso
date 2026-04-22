@@ -383,6 +383,9 @@ export function GeneralTab({
       : 'Avatar URL must be an http(s) URL or supported relative asset path.'
   }, [websiteEmbedSnippetAvatarUrl])
 
+  const hasWebsiteEmbedAdvancedOverrides =
+    websiteEmbedSnippetCopyJson.trim().length > 0 || websiteEmbedSnippetThemeJson.trim().length > 0
+
   const websiteEmbedDemoUrl = useMemo(() => {
     if (
       !anonSettings ||
@@ -976,16 +979,20 @@ export function GeneralTab({
                       <Code2 className="h-4 w-4" />
                       <Label className="text-foreground">Install snippet</Label>
                     </div>
+                    <p className="text-sm text-muted-foreground">
+                      Keep this simple for most installs: pick the language, decide whether the panel starts open, and
+                      optionally add a custom avatar. Full copy and color overrides stay available under Advanced.
+                    </p>
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="websiteEmbedSnippetLocale" className="text-foreground">Locale override</Label>
+                        <Label htmlFor="websiteEmbedSnippetLocale" className="text-foreground">Language</Label>
                         <select
                           id="websiteEmbedSnippetLocale"
                           value={websiteEmbedSnippetLocale}
                           onChange={(event) => setWebsiteEmbedSnippetLocale(event.target.value)}
                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
                         >
-                          <option value="">Browser default</option>
+                          <option value="">Use browser language</option>
                           <option value="de-DE">German</option>
                           <option value="en-US">English</option>
                           <option value="es-ES">Spanish</option>
@@ -996,22 +1003,22 @@ export function GeneralTab({
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="websiteEmbedSnippetInitialState" className="text-foreground">Initial state</Label>
+                        <Label htmlFor="websiteEmbedSnippetInitialState" className="text-foreground">Open behavior</Label>
                         <select
                           id="websiteEmbedSnippetInitialState"
                           value={websiteEmbedSnippetInitialState}
                           onChange={(event) => setWebsiteEmbedSnippetInitialState(event.target.value)}
                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
                         >
-                          <option value="">Workspace default</option>
-                          <option value="collapsed">Collapsed</option>
-                          <option value="open">Open</option>
+                          <option value="">Use workspace default</option>
+                          <option value="collapsed">Start collapsed</option>
+                          <option value="open">Start open</option>
                         </select>
                       </div>
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="websiteEmbedSnippetAvatarUrl" className="text-foreground">Custom avatar image or GIF URL</Label>
+                      <Label htmlFor="websiteEmbedSnippetAvatarUrl" className="text-foreground">Avatar image or GIF URL</Label>
                       <Input
                         id="websiteEmbedSnippetAvatarUrl"
                         value={websiteEmbedSnippetAvatarUrl}
@@ -1027,41 +1034,58 @@ export function GeneralTab({
                       )}
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="websiteEmbedSnippetCopyJson" className="text-foreground">Static text overrides JSON</Label>
-                      <Textarea
-                        id="websiteEmbedSnippetCopyJson"
-                        value={websiteEmbedSnippetCopyJson}
-                        onChange={(event) => setWebsiteEmbedSnippetCopyJson(event.target.value)}
-                        placeholder={`{"publicChatEmptyTitle":"Ask anything","startPrompt":"Type your question..."}`}
-                        className="min-h-[96px] font-mono text-xs"
-                      />
-                      {websiteEmbedSnippetCopyJsonError ? (
-                        <p className="text-xs text-destructive">{websiteEmbedSnippetCopyJsonError}</p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          Override the hosted chat&apos;s static UI text for translation or customer-specific wording.
-                        </p>
-                      )}
-                    </div>
+                    <details className="rounded-md border border-border bg-background/80 p-3">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">Advanced copy and theme overrides</p>
+                          <p className="text-xs text-muted-foreground">
+                            Only open this when the defaults, language, and avatar are not enough.
+                          </p>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {hasWebsiteEmbedAdvancedOverrides ? 'Custom overrides active' : 'Optional'}
+                        </span>
+                      </summary>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="websiteEmbedSnippetThemeJson" className="text-foreground">Theme overrides JSON</Label>
-                      <Textarea
-                        id="websiteEmbedSnippetThemeJson"
-                        value={websiteEmbedSnippetThemeJson}
-                        onChange={(event) => setWebsiteEmbedSnippetThemeJson(event.target.value)}
-                        placeholder={`{"accent":"#1d4ed8","panelBackground":"#ffffff","userBubbleBackground":"#1d4ed8"}`}
-                        className="min-h-[96px] font-mono text-xs"
-                      />
-                      {websiteEmbedSnippetThemeJsonError ? (
-                        <p className="text-xs text-destructive">{websiteEmbedSnippetThemeJsonError}</p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          Override launcher, panel, message, and input colors to match the customer&apos;s theme.
-                        </p>
-                      )}
-                    </div>
+                      <div className="mt-4 space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="websiteEmbedSnippetCopyJson" className="text-foreground">Copy overrides JSON</Label>
+                          <Textarea
+                            id="websiteEmbedSnippetCopyJson"
+                            value={websiteEmbedSnippetCopyJson}
+                            onChange={(event) => setWebsiteEmbedSnippetCopyJson(event.target.value)}
+                            placeholder={`{"publicChatEmptyTitle":"Ask anything","startPrompt":"Type your question..."}`}
+                            className="min-h-[96px] font-mono text-xs"
+                          />
+                          {websiteEmbedSnippetCopyJsonError ? (
+                            <p className="text-xs text-destructive">{websiteEmbedSnippetCopyJsonError}</p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              Override hosted chat UI text for translation edge cases or customer-specific wording.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="websiteEmbedSnippetThemeJson" className="text-foreground">Theme overrides JSON</Label>
+                          <Textarea
+                            id="websiteEmbedSnippetThemeJson"
+                            value={websiteEmbedSnippetThemeJson}
+                            onChange={(event) => setWebsiteEmbedSnippetThemeJson(event.target.value)}
+                            placeholder={`{"accent":"#1d4ed8","panelBackground":"#ffffff","userBubbleBackground":"#1d4ed8"}`}
+                            className="min-h-[96px] font-mono text-xs"
+                          />
+                          {websiteEmbedSnippetThemeJsonError ? (
+                            <p className="text-xs text-destructive">{websiteEmbedSnippetThemeJsonError}</p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              Override launcher, panel, message, and input colors when a customer brand needs full
+                              control.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </details>
 
                     {websiteEmbedSnippet ? (
                       <CopyValueField

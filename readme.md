@@ -189,7 +189,7 @@ ACCESS_TOKEN=$(
 )
 ```
 
-For project-local clients such as Cursor, the repo now includes [.cursor/mcp.json](./.cursor/mcp.json). Export a short-lived bearer token for that config with:
+For project-local clients such as Cursor, generate or update your local client config and export a short-lived bearer token with:
 
 ```bash
 eval "$(

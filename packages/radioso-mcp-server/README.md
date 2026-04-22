@@ -121,7 +121,7 @@ That uses `launchctl setenv RADIOSO_MCP_ACCESS_TOKEN ...` and opens a fresh Curs
 
 ## Client Setup
 
-The repo includes a project-local Cursor config at [`../../.cursor/mcp.json`](../../.cursor/mcp.json). It points at `http://127.0.0.1:8787/mcp` and reads the bearer token from `RADIOSO_MCP_ACCESS_TOKEN`.
+Cursor can connect to a local config that points at `http://127.0.0.1:8787/mcp` and reads the bearer token from `RADIOSO_MCP_ACCESS_TOKEN`.
 
 Cursor can use that local config directly once you export an access token with `npm run -s token:exchange`.
 

@@ -1,12 +1,10 @@
 # MCP Client Setup
 
-This repo includes a project-local Cursor MCP config at [.cursor/mcp.json](../.cursor/mcp.json).
-
 ## Cursor On Localhost
 
 Cursor can connect to Radioso in two ways:
 
-- **Remote HTTP (URL mode)**: Cursor connects to a local HTTP MCP server at `http://127.0.0.1:8787/mcp`. The checked-in config expects a short-lived bearer token in `RADIOSO_MCP_ACCESS_TOKEN`.
+- **Remote HTTP (URL mode)**: Cursor connects to a local HTTP MCP server at `http://127.0.0.1:8787/mcp`. Point your local Cursor MCP config at that URL and pass a short-lived bearer token in `RADIOSO_MCP_ACCESS_TOKEN`.
 - **Local stdio (stdio mode)**: Cursor launches the MCP server process itself (no separate HTTP daemon). This uses `RADIOSO_BASE_URL` and `RADIOSO_API_TOKEN` directly.
 
 1. Start the Radioso backend and the remote MCP server.
@@ -19,7 +17,7 @@ eval "$(
 )"
 ```
 
-3. Open this repo in Cursor. Cursor loads [.cursor/mcp.json](../.cursor/mcp.json) automatically and connects to `http://127.0.0.1:8787/mcp`.
+3. Configure Cursor to connect to `http://127.0.0.1:8787/mcp` with `Authorization: Bearer ${env:RADIOSO_MCP_ACCESS_TOKEN}`, then open this repo in Cursor.
 4. Ask Cursor to list tools or query workspace documents.
 
 The exchange helper emits a short-lived token. Rerun it when the MCP session expires.

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { Request, Response } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
@@ -11,8 +12,12 @@ import { assertInteractiveAssistantWorkflow } from "../../../modules/chat/servic
 const MAX_COLLECTION_PAGE_LIMIT = 100;
 const DEFAULT_COLLECTION_PAGE_LIMIT = 50;
 const DEFAULT_MESSAGE_WINDOW_LIMIT = 50;
+const SOURCE_CHANNEL_HEADER = "x-radioso-source-channel";
+const SOURCE_ORIGIN_HEADER = "x-radioso-source-origin";
 
 const localeHintSchema = z.string().trim().max(35);
+const trustedSourceChannelSchema = z.enum(["mcp"]);
+const trustedSourceOriginSchema = z.string().trim().min(1).max(120);
 const userInputMetadataSchema = z.object({
   method: z.enum(["typed", "suggestion_click"]),
   suggestionSourceMessageId: z.string().uuid().optional(),
@@ -70,6 +75,38 @@ export const conversationWindowQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
 });
 
+const resolveTrustedChatSource = (
+  req: Request,
+  res: Response,
+): {
+  sourceChannel?: "mcp";
+  sourceOrigin?: string | null;
+} => {
+  const authMode = (res.locals as { authMode?: string }).authMode;
+  const rawChannel = req.header(SOURCE_CHANNEL_HEADER)?.trim();
+  const rawOrigin = req.header(SOURCE_ORIGIN_HEADER)?.trim();
+
+  if ((!rawChannel || rawChannel.length === 0) && (!rawOrigin || rawOrigin.length === 0)) {
+    return {};
+  }
+
+  if (authMode !== "bearer") {
+    return {};
+  }
+
+  if (!rawChannel) {
+    throw badRequest(`${SOURCE_CHANNEL_HEADER} is required when ${SOURCE_ORIGIN_HEADER} is set.`);
+  }
+
+  const sourceChannel = trustedSourceChannelSchema.parse(rawChannel);
+  const sourceOrigin = rawOrigin ? trustedSourceOriginSchema.parse(rawOrigin) : null;
+
+  return {
+    sourceChannel,
+    sourceOrigin,
+  };
+};
+
 export const createChatRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
@@ -117,11 +154,14 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
   router.post("/", workspaceSession, validateBody(chatSchema), async (req, res, next) => {
     try {
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
+      const { sourceChannel, sourceOrigin } = resolveTrustedChatSource(req, res);
       if (req.body.bootstrapGreeting) {
         assertInteractiveAssistantWorkflow("chat.bootstrap");
         const bootstrap = await dependencies.chatBootstrapService.startConversation({
           workspaceId,
           accountId,
+          sourceChannel,
+          sourceOrigin,
           userExpectedLocale: req.body.userExpectedLocale,
         });
         if (!bootstrap) {
@@ -143,6 +183,8 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
             conversationId: req.body.conversationId,
             inputMetadata: req.body.inputMetadata,
             metadataFilter: req.body.metadataFilter,
+            sourceChannel,
+            sourceOrigin,
           }),
         );
         return;
@@ -157,6 +199,8 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
         conversationId: req.body.conversationId,
         inputMetadata: req.body.inputMetadata,
         metadataFilter: req.body.metadataFilter,
+        sourceChannel,
+        sourceOrigin,
       });
       sendChatJson(res, result);
     } catch (error) {

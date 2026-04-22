@@ -140,4 +140,35 @@ describe("createRadiosoApiAdapter", () => {
       }),
     );
   });
+
+  it("marks grounded answers as MCP-originated chat traffic", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ conversationId: "conv_123", answer: "Hello" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const adapter = createRadiosoApiAdapter(
+      {
+        apiToken: "sk_proj_test",
+        baseUrl: "http://localhost:8080",
+        requestTimeoutMs: 30_000,
+        serverName: "radioso-test",
+      },
+      fetchMock,
+    );
+
+    await adapter.answerGrounded({ query: "hello" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8080/api/v1/chat",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          authorization: "Bearer sk_proj_test",
+          "x-radioso-source-channel": "mcp",
+        }),
+      }),
+    );
+  });
 });

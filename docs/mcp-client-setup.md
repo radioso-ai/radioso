@@ -1,0 +1,125 @@
+# MCP Client Setup
+
+This repo includes a project-local Cursor MCP config at [.cursor/mcp.json](../.cursor/mcp.json).
+
+## Cursor On Localhost
+
+Cursor can connect to Radioso in two ways:
+
+- **Remote HTTP (URL mode)**: Cursor connects to a local HTTP MCP server at `http://127.0.0.1:8787/mcp`. The checked-in config expects a short-lived bearer token in `RADIOSO_MCP_ACCESS_TOKEN`.
+- **Local stdio (stdio mode)**: Cursor launches the MCP server process itself (no separate HTTP daemon). This uses `RADIOSO_BASE_URL` and `RADIOSO_API_TOKEN` directly.
+
+1. Start the Radioso backend and the remote MCP server.
+2. Exchange a Radioso workspace token for an MCP access token:
+
+```bash
+eval "$(
+  RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
+  npm --prefix packages/radioso-mcp-server run -s token:exchange
+)"
+```
+
+3. Open this repo in Cursor. Cursor loads [.cursor/mcp.json](../.cursor/mcp.json) automatically and connects to `http://127.0.0.1:8787/mcp`.
+4. Ask Cursor to list tools or query workspace documents.
+
+The exchange helper emits a short-lived token. Rerun it when the MCP session expires.
+
+### macOS GUI Launches
+
+If you normally open Cursor from the Dock, Spotlight, Raycast, or a desktop launcher, use the macOS helper instead:
+
+```bash
+RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
+npm --prefix packages/radioso-mcp-server run -s cursor:prepare -- --open
+```
+
+That exchanges the token, installs `RADIOSO_MCP_ACCESS_TOKEN` into the macOS GUI app environment with `launchctl`, and opens a fresh Cursor instance for this repo.
+
+If Cursor is already open, fully quit it first so the relaunched app picks up the new token.
+
+### Cursor With Stdio (No Local HTTP Server)
+
+If you prefer Cursor to spawn the MCP server directly:
+
+- Set `RADIOSO_BASE_URL` (for example `http://localhost:8080`)
+- Set `RADIOSO_API_TOKEN` (your workspace token, `sk_proj_...`)
+- Ensure `npm install` has been run in `packages/radioso-mcp-server/` so the `cursor:mcp-stdio` entrypoint can run.
+
+## Claude And Claude Desktop Remote Connectors
+
+Claude custom connectors are true remote connectors. Anthropic connects to your MCP server from Anthropic's cloud infrastructure, not from your laptop, so `http://127.0.0.1:8787/mcp` will not work there.
+
+To use Radioso from Claude or Claude Desktop as a remote connector:
+
+1. Deploy the MCP server to a public HTTPS URL such as `https://mcp.example.com/mcp`.
+2. Add connector-compatible authentication in front of that public deployment. The current package ships its own `/v1/auth/exchange` flow, which works for local and API-driven clients, but it is not a native Claude connector auth flow yet.
+3. In Claude, open `Customize -> Connectors` and add a custom connector with that remote URL.
+4. If your hosted server uses OAuth, provide the client ID and client secret in Claude's advanced settings.
+5. Authenticate the connector, then enable it in a conversation.
+
+If you want localhost-only Claude Desktop access, use the stdio compatibility entrypoint instead of the remote connector flow.
+
+### Anthropic Messages API
+
+For direct API testing, Anthropic's Messages API can connect to a public remote MCP server and inject a bearer token per request. That makes the current Radioso auth flow usable for ad hoc API calls once you mint a short-lived access token first.
+
+```json
+{
+  "model": "claude-opus-4-6",
+  "max_tokens": 1000,
+  "messages": [
+    {
+      "role": "user",
+      "content": "List the tools available from Radioso."
+    }
+  ],
+  "mcp_servers": [
+    {
+      "type": "url",
+      "url": "https://mcp.example.com/mcp",
+      "name": "radioso",
+      "authorization_token": "mcp_sess_..."
+    }
+  ],
+  "tools": [
+    {
+      "type": "mcp_toolset",
+      "mcp_server_name": "radioso"
+    }
+  ]
+}
+```
+
+## ChatGPT Apps And Responses API
+
+ChatGPT custom apps and OpenAI API integrations also require a public remote MCP server. OpenAI does not support connecting ChatGPT to a local MCP server.
+
+### ChatGPT App
+
+1. Deploy the MCP server to a public HTTPS URL.
+2. Add app-compatible authentication. In practice that means OAuth or OpenID Connect with refresh-token support. The current package's `/v1/auth/exchange` flow is not enough for native ChatGPT app onboarding by itself.
+3. In ChatGPT workspace settings, enable developer mode and create a custom app from that MCP server URL.
+4. If your deployment uses OAuth or OpenID Connect, configure refresh-token-capable auth before publishing.
+5. Connect the app in ChatGPT and test both read paths and approval-gated writes.
+
+### OpenAI Responses API
+
+The Responses API can call a remote MCP server directly. A typical tool stanza looks like this:
+
+```json
+{
+  "type": "mcp",
+  "server_label": "radioso",
+  "server_url": "https://mcp.example.com/mcp",
+  "allowed_tools": [
+    "describe_capabilities",
+    "list_documents",
+    "get_document",
+    "search_documents",
+    "answer_grounded"
+  ],
+  "require_approval": "never"
+}
+```
+
+`require_approval: "never"` is suitable for read-only OpenAI API use. The current Radioso server uses explicit approval gating for write tools, so deep-research-style API clients should stay read-only unless you intentionally deploy a separate policy profile for that integration. If your hosted Radioso MCP endpoint is not public and unauthenticated, you will also need an OpenAI-compatible auth layer before this can be used from ChatGPT apps or OpenAI-hosted flows.

@@ -7,7 +7,7 @@ import type { ChatGateway } from "../../src/modules/chat/services/chatService.js
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
 describe("chat contract", () => {
   it("lists chat history summaries for the active account", async () => {
@@ -689,6 +689,54 @@ describe("chat contract", () => {
         }),
       ]),
     );
+  });
+
+  it("marks MCP-originated conversations in chat history", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "mcp-history@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+
+    const chat = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .set("x-radioso-source-channel", "mcp")
+      .send({
+        query: "What does this page do?",
+        stream: false,
+      });
+
+    expect(chat.status).toBe(200);
+
+    const history = await request(app)
+      .get("/api/v1/chat/history")
+      .set("Authorization", authorization);
+
+    expect(history.status).toBe(200);
+    expect(history.body.conversations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: chat.body.conversationId,
+          sourceChannel: "mcp",
+          sourceOrigin: null,
+        }),
+      ]),
+    );
+
+    const detail = await request(app)
+      .get(`/api/v1/chat/history/${chat.body.conversationId}`)
+      .set("Authorization", authorization);
+
+    expect(detail.status).toBe(200);
+    expect(detail.body).toMatchObject({
+      conversationId: chat.body.conversationId,
+      sourceChannel: "mcp",
+      sourceOrigin: null,
+    });
   });
 
   it("documents the chat history endpoints in the shared OpenAPI contract", () => {

@@ -21,9 +21,12 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "cursor:prepare": "node --import tsx ./scripts/prepareCursorSession.ts",
+    "cursor:mcp-stdio": "node --import tsx ./src/cli/stdio.ts",
     "smoke:all": "npm run smoke:http && npm run smoke:redis",
     "smoke:http": "node --import tsx ./scripts/smokeHttp.ts",
     "smoke:redis": "node --import tsx ./scripts/smokeRedis.ts",
+    "token:exchange": "node --import tsx ./scripts/exchangeAccessToken.ts",
     "test": "vitest run"
   },
   "dependencies": {

@@ -173,6 +173,21 @@ ACCESS_TOKEN=$(
 )
 ```
 
+For project-local clients such as Cursor, the repo now includes [.cursor/mcp.json](./.cursor/mcp.json). Export a short-lived bearer token for that config with:
+
+```bash
+eval "$(
+  RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
+  npm --prefix packages/radioso-mcp-server run -s token:exchange
+)"
+```
+
+See [docs/mcp-client-setup.md](./docs/mcp-client-setup.md) for the current client matrix:
+- Cursor can use the local HTTP server directly.
+- Anthropic API clients can use a public deployment plus a pre-minted bearer token.
+- Claude and Claude Desktop remote connectors require a public HTTPS deployment plus connector-compatible auth.
+- ChatGPT apps and OpenAI-hosted remote MCP flows also require a public HTTPS deployment plus app-compatible auth, and OpenAI API deep-research use should stay read-only unless you intentionally relax approval policy.
+
 Initialize MCP and list the granted tools:
 
 ```bash

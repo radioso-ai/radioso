@@ -120,6 +120,9 @@ export const createRadiosoApiAdapter = (
     answerGrounded: (body) =>
       request("/api/v1/chat", {
         body: JSON.stringify({ ...body, stream: false }),
+        headers: {
+          "x-radioso-source-channel": "mcp",
+        },
         method: "POST",
       }, { notFoundCode: "unsupported_capability" }),
     createDocument: (body) =>

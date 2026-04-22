@@ -99,6 +99,32 @@ ACCESS_TOKEN=$(
 )
 ```
 
+For Cursor or other local clients that read bearer tokens from the environment, use the helper script:
+
+```bash
+eval "$(
+  RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
+  npm run -s token:exchange
+)"
+```
+
+On macOS, if you launch Cursor from the Dock or Spotlight instead of from Terminal, install the token into the GUI app environment first:
+
+```bash
+RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
+npm run -s cursor:prepare -- --open
+```
+
+That uses `launchctl setenv RADIOSO_MCP_ACCESS_TOKEN ...` and opens a fresh Cursor instance. If Cursor was already running, fully quit it before reopening so it picks up the new token.
+
+## Client Setup
+
+The repo includes a project-local Cursor config at [`../../.cursor/mcp.json`](../../.cursor/mcp.json). It points at `http://127.0.0.1:8787/mcp` and reads the bearer token from `RADIOSO_MCP_ACCESS_TOKEN`.
+
+Cursor can use that local config directly once you export an access token with `npm run -s token:exchange`.
+
+Claude, Claude Desktop remote connectors, ChatGPT apps, and OpenAI-hosted remote MCP flows require a public HTTPS deployment of this server. They do not connect to `localhost` from your laptop, and the current package's `/v1/auth/exchange` flow is not a native cloud-connector auth mechanism by itself. See [`../../docs/mcp-client-setup.md`](../../docs/mcp-client-setup.md) for the exact split between local Cursor usage, Anthropic API usage with a pre-minted token, and hosted Claude/OpenAI connector requirements.
+
 ## Initialize MCP
 
 ```bash

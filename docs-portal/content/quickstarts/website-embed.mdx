@@ -1,0 +1,29 @@
+---
+title: Embed on your website
+description: Launch the Radioso embed flow against a local test site, then adapt it for production.
+---
+
+# Embed on your website
+
+## Local embed harness
+
+Start the local harness from the repo root:
+
+```bash
+node scripts/serve-embed-test-site.mjs
+```
+
+Then open:
+
+- Approved origin: `http://127.0.0.1:4321`
+- Blocked origin: `http://localhost:4321`
+
+## What to verify
+
+- The launcher appears only on approved origins
+- The embedded chat can establish a session
+- Responses stay aligned with your workspace content and settings
+
+## Common failure mode
+
+Allowlist mismatches are usually exact-origin problems. Include the full origin, including port.

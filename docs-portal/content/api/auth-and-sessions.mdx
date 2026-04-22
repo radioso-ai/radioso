@@ -1,0 +1,74 @@
+---
+title: Auth and sessions
+description: Register, log in, inspect invitations, and accept account invites with the session-authenticated API.
+---
+
+# Auth and sessions
+
+These routes establish a user session. They are the entry point for account and workspace management.
+
+## Relevant endpoints
+
+```text
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+GET  /api/v1/auth/invitations/{invitationToken}
+POST /api/v1/auth/invitations/{invitationToken}/accept
+```
+
+## How it works
+
+1. Register or log in with `email` and `password`.
+2. Store the session cookie returned by the server.
+3. Use that session for account, workspace, and token-management routes.
+4. If a user joins through an invitation, inspect the invitation first and then accept it.
+
+The key point is that these routes establish browser or cookie-jar state. They are not the same as the workspace token flow used by the SDK.
+
+## Register
+
+Use registration when you want to create a new account and initial user in one step.
+
+```bash
+curl -sS -c cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"verysecurepassword","organizationName":"Acme"}' \
+  http://localhost:8080/api/v1/auth/register
+```
+
+`organizationName` is optional. The required fields are `email` and `password`.
+
+## Log in
+
+Use login when the account already exists.
+
+```bash
+curl -sS -c cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
+  http://localhost:8080/api/v1/auth/login
+```
+
+The login request can also include `preferredWorkspaceId` or `preferredAccountId` when you want to restore a known context.
+
+## Invitation flow
+
+In practice, the invitation flow has two steps:
+
+1. Read the invitation details with `GET /api/v1/auth/invitations/{invitationToken}`.
+2. Accept it with `POST /api/v1/auth/invitations/{invitationToken}/accept`.
+
+The accept request establishes a session for the joined account.
+
+## Common failure modes
+
+- `400` usually means the request body is incomplete or malformed.
+- `401` usually means the credentials are wrong, or the invitation accept flow is no longer valid.
+- `404` means the invitation token does not exist.
+- `409` usually means the account or invitation state is in conflict with the requested action.
+
+## Read next
+
+- [Accounts and users](/api/accounts-and-users)
+- [Workspaces and tokens](/api/workspaces-and-tokens)
+- [API Reference](/api-reference)

@@ -1,0 +1,15 @@
+---
+title: Deployment
+description: Production deployment expectations for Radioso and the standalone docs portal.
+---
+
+# Deployment
+
+Radioso currently deploys the product services through Cloud Run and Terraform. The docs portal should follow the same overall operating model but remain isolated as a separately hostable app.
+
+## Production contract
+
+- independent image
+- independent Cloud Run service
+- public hostname
+- no runtime dependency on product frontend routes

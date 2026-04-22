@@ -47,8 +47,20 @@ resource "google_cloud_run_v2_service" "backend" {
         value = "production"
       }
       env {
+        name  = "OBSERVABILITY_ENVIRONMENT"
+        value = "production"
+      }
+      env {
+        name  = "OBSERVABILITY_SERVICE_NAME"
+        value = "radioso-api"
+      }
+      env {
         name  = "GOOGLE_CLOUD_PROJECT"
         value = var.project_id
+      }
+      env {
+        name  = "METRICS_ENABLED"
+        value = tostring(var.metrics_enabled)
       }
       env {
         name  = "DATABASE_URL"
@@ -122,6 +134,18 @@ resource "google_cloud_run_v2_service" "backend" {
         content {
           name  = "PUBLIC_CHAT_BASE_URL"
           value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.metrics_auth_token == null ? [] : [var.metrics_auth_token]
+        content {
+          name = "METRICS_AUTH_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["metrics-auth-token"].secret_id
+              version = "latest"
+            }
+          }
         }
       }
 
@@ -269,6 +293,14 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "NODE_ENV"
         value = "production"
+      }
+      env {
+        name  = "OBSERVABILITY_ENVIRONMENT"
+        value = "production"
+      }
+      env {
+        name  = "OBSERVABILITY_SERVICE_NAME"
+        value = "radioso-worker"
       }
       env {
         name  = "GOOGLE_CLOUD_PROJECT"

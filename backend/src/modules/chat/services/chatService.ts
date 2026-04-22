@@ -32,6 +32,10 @@ import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
+import {
+  NoopProductAnalyticsService,
+  type ProductAnalyticsPort,
+} from "../../../shared/analytics/productAnalyticsService.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -185,6 +189,7 @@ export class ChatService {
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
+    private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
   ) {
     this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, prompt }) =>
       this.chatGateway.answer({
@@ -425,6 +430,10 @@ export class ChatService {
             type: "chunk",
             text: trailing,
           };
+        }
+
+        if (!rawAnswer.trim()) {
+          throw new BlankChatAnswerError();
         }
       }
 
@@ -703,6 +712,25 @@ export class ChatService {
         retrievalTrace: input.retrievalTrace,
       },
     });
+    try {
+      await this.productAnalyticsService.track({
+        eventName: "chat.completed",
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        subjectType: "conversation",
+        subjectId: input.conversationId,
+        properties: {
+          stream: input.stream,
+          answerOutcome: input.answerOutcome,
+          conversationMode: input.conversationMode,
+          citationCount: input.citations.length,
+          suggestionCount: input.suggestions?.length ?? 0,
+        },
+        source: "backend",
+      });
+    } catch {
+      // Analytics fan-out must not change successful chat behavior.
+    }
   }
 
   private async applyConversationMode(
@@ -787,6 +815,22 @@ export class ChatService {
         errorMessage: error instanceof Error ? error.message : "Unknown error",
       },
     });
+    try {
+      await this.productAnalyticsService.track({
+        eventName: "chat.failed",
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        subjectType: "conversation",
+        subjectId: session?.conversation.id ?? input.conversationId,
+        properties: {
+          stream: input.stream,
+          errorMessage: error instanceof Error ? error.message : "Unknown error",
+        },
+        source: "backend",
+      });
+    } catch {
+      // Analytics fan-out must not change failure behavior.
+    }
   }
 
   private async ensureConversation(conversationId: string, workspaceId: string, anonymousSessionId?: string | null) {

@@ -25,6 +25,9 @@ describe("document ingestion", () => {
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
     const auditService = createAuditService();
+    const analyticsService = {
+      track: vi.fn().mockResolvedValue(undefined),
+    };
     const dispatcher = {
       dispatch: vi.fn().mockResolvedValue(undefined),
       dispatchMany: vi.fn().mockResolvedValue(undefined),
@@ -35,6 +38,7 @@ describe("document ingestion", () => {
       () => jobRepository.getQueueSnapshot(),
       jobRepository,
       dispatcher,
+      analyticsService as never,
     );
 
     const response = await service.ingest({
@@ -64,6 +68,13 @@ describe("document ingestion", () => {
         documentId: document.id,
         workspaceId: "workspace-1",
         revision: 1,
+      }),
+    );
+    expect(analyticsService.track).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "document.ingest_queued",
+        workspaceId: "workspace-1",
+        subjectId: document.id,
       }),
     );
   });
@@ -113,9 +124,16 @@ describe("document ingestion", () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
+    const analyticsService = {
+      track: vi.fn().mockResolvedValue(undefined),
+    };
     const service = new DocumentIngestionService(
       documentRepository,
       createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      analyticsService as never,
     );
 
     jobRepository.enqueue = async () => {
@@ -131,6 +149,12 @@ describe("document ingestion", () => {
     ).rejects.toThrow("queue unavailable");
 
     expect(await documentRepository.listByWorkspaceId("workspace-1")).toHaveLength(0);
+    expect(analyticsService.track).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "document.ingest_failed",
+        workspaceId: "workspace-1",
+      }),
+    );
   });
 
   it("keeps ingest successful when dispatching the queued job fails after durable queueing", async () => {

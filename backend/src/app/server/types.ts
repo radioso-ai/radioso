@@ -29,10 +29,18 @@ import type { Env } from "../config/env.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { EvalLabService } from "../../modules/evals/services/evalLabService.js";
+import type { ProductAnalyticsPort } from "../../shared/analytics/productAnalyticsService.js";
+import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
+import type { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
+import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 
 export interface AppDependencies {
   env: Env;
   logger: AppLogger;
+  metricsRegistry: MetricsRegistry | null;
+  telemetryService: TelemetryService;
+  incidentReportingService: IncidentReportingService;
+  productAnalyticsService: ProductAnalyticsPort;
   authService: AuthService;
   passwordResetService: PasswordResetService;
   emailVerificationService: EmailVerificationService;

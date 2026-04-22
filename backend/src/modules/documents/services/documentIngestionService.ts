@@ -6,6 +6,10 @@ import type {
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { normalizeMarkdown } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 import { conflict, notFound } from "../../../shared/domain/errors.js";
+import {
+  NoopProductAnalyticsService,
+  type ProductAnalyticsPort,
+} from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 
 export type DocumentSourceKind = "inline_text" | "uploaded_file";
@@ -187,6 +191,7 @@ export class DocumentIngestionService {
     private readonly getQueueSnapshot?: () => Promise<DocumentProcessingQueueSnapshot>,
     private readonly jobRepository?: Pick<DocumentProcessingJobRepositoryPort, "findByDocumentRevision">,
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
+    private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
   ) {}
 
   async ingest(input: {
@@ -232,6 +237,20 @@ export class DocumentIngestionService {
           reason: error instanceof Error ? error.message : "Failed to queue document processing",
         },
       });
+      try {
+        await this.productAnalyticsService.track({
+          eventName: "document.ingest_failed",
+          workspaceId: input.workspaceId,
+          subjectType: "document",
+          properties: {
+            title: input.title,
+            reason: error instanceof Error ? error.message : "Failed to queue document processing",
+          },
+          source: "backend",
+        });
+      } catch {
+        // Analytics fan-out must not change failure behavior.
+      }
       throw error;
     }
 
@@ -247,6 +266,21 @@ export class DocumentIngestionService {
         ...(await this.queueSnapshotMetadata()),
       },
     });
+    try {
+      await this.productAnalyticsService.track({
+        eventName: "document.ingest_queued",
+        workspaceId: input.workspaceId,
+        subjectType: "document",
+        subjectId: document.id,
+        properties: {
+          revision: document.revision,
+          status: document.status,
+        },
+        source: "backend",
+      });
+    } catch {
+      // Analytics fan-out must not change successful ingest behavior.
+    }
     await this.dispatchQueuedDocumentJob({
       documentId: document.id,
       workspaceId: input.workspaceId,

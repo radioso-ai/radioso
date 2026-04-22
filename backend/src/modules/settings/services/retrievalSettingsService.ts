@@ -7,6 +7,10 @@ import {
   validateRetrievalSettings,
 } from "../domain/retrievalSettings.js";
 import type { AuditService } from "../../audit/services/auditService.js";
+import {
+  NoopProductAnalyticsService,
+  type ProductAnalyticsPort,
+} from "../../../shared/analytics/productAnalyticsService.js";
 
 export interface RetrievalSettingsRepositoryPort {
   findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null>;
@@ -22,6 +26,7 @@ export class RetrievalSettingsService {
     private readonly repository: RetrievalSettingsRepositoryPort,
     private readonly auditService: AuditService,
     private readonly metadataFieldSource?: RetrievalMetadataFieldSourcePort,
+    private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
   ) {}
 
   async listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]> {
@@ -57,6 +62,24 @@ export class RetrievalSettingsService {
         });
       } catch {
         // Audit logging must not turn a successful settings save into a 500.
+      }
+      try {
+        await this.productAnalyticsService.track({
+          eventName: "retrieval_settings.updated",
+          workspaceId,
+          subjectType: "settings",
+          subjectId: workspaceId,
+          properties: {
+            queryRewriteEnabled: settings.queryRewriteEnabled,
+            conversationMode: settings.conversationMode,
+            answerSupportPolicy: settings.answerSupportPolicy,
+            rerankEnabled: settings.rerankEnabled,
+            suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
+          },
+          source: "backend",
+        });
+      } catch {
+        // Analytics fan-out must not turn a successful settings save into a 500.
       }
       return settings;
     } catch (error) {

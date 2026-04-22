@@ -3,8 +3,9 @@ import express from "express";
 import swaggerUi from "swagger-ui-express";
 
 import { createHttpLogger } from "../../shared/observability/logger.js";
+import { createRequestTelemetryMiddleware } from "../../shared/observability/telemetry/telemetryService.js";
 import { badRequest, payloadTooLarge } from "../../shared/domain/errors.js";
-import { errorHandler } from "../http/middleware/errorHandler.js";
+import { createErrorHandler } from "../http/middleware/errorHandler.js";
 import { createOpenApiDocument } from "../http/openapi/document.js";
 import { createApiRouter } from "../http/routes/index.js";
 import type { AppDependencies } from "./types.js";
@@ -14,6 +15,7 @@ export const createApp = (dependencies: AppDependencies) => {
 
   app.disable("x-powered-by");
   app.use(createHttpLogger(dependencies.logger));
+  app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));
   app.use(async (req, _res, next) => {
     const contentType = req.headers["content-type"];
     if (typeof contentType !== "string" || !/^application\/json\b/i.test(contentType)) {
@@ -71,7 +73,7 @@ export const createApp = (dependencies: AppDependencies) => {
     app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
   }
   app.use(createApiRouter(dependencies));
-  app.use(errorHandler);
+  app.use(createErrorHandler(dependencies.incidentReportingService));
 
   return app;
 };

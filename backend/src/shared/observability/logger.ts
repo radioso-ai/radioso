@@ -1,6 +1,9 @@
 import type { RequestHandler } from "express";
 import pino from "pino";
 import { pinoHttp } from "pino-http";
+import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
+import type { IncidentEvent } from "../incidents/incidentTypes.js";
+import type { CorrelationFields } from "./telemetry/correlation.js";
 
 export const createLogger = (level = process.env.NODE_ENV === "production" ? "info" : "debug") =>
   pino({ level });
@@ -22,6 +25,62 @@ export interface RetrievalLogFields {
   candidateFallbackApplied: boolean;
   fallbackApplied: boolean;
 }
+
+export const extractCorrelationLogFields = (correlation?: CorrelationFields): Record<string, string> | undefined => {
+  if (!correlation) {
+    return undefined;
+  }
+
+  const fields = Object.fromEntries(
+    Object.entries(correlation).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
+  );
+
+  return Object.keys(fields).length > 0 ? fields : undefined;
+};
+
+export const extractIncidentLogFields = (
+  incident?: Pick<IncidentEvent, "incidentType" | "severity" | "errorClass" | "correlation" | "requestContext">,
+): Record<string, string> | undefined => {
+  if (!incident) {
+    return undefined;
+  }
+
+  const correlation = extractCorrelationLogFields(incident.correlation) ?? {};
+  const fields = Object.fromEntries(
+    Object.entries({
+      incidentType: incident.incidentType,
+      severity: incident.severity,
+      errorClass: incident.errorClass,
+      method: incident.requestContext?.method,
+      route: incident.requestContext?.route,
+      ...correlation,
+    }).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
+  );
+
+  return Object.keys(fields).length > 0 ? fields : undefined;
+};
+
+export const extractProductAnalyticsLogFields = (
+  analytics?: Pick<ProductAnalyticsEvent, "eventName" | "workspaceId" | "accountId" | "actorType" | "subjectType" | "subjectId" | "source">,
+): Record<string, string> | undefined => {
+  if (!analytics) {
+    return undefined;
+  }
+
+  const fields = Object.fromEntries(
+    Object.entries({
+      eventName: analytics.eventName,
+      workspaceId: analytics.workspaceId,
+      accountId: analytics.accountId,
+      actorType: analytics.actorType,
+      subjectType: analytics.subjectType,
+      subjectId: analytics.subjectId,
+      source: analytics.source,
+    }).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
+  );
+
+  return Object.keys(fields).length > 0 ? fields : undefined;
+};
 
 export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): RetrievalLogFields | undefined => {
   const retrieval = metadata?.retrieval;

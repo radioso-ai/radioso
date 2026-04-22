@@ -20,12 +20,36 @@ import { DocumentProcessingWorker } from "../../src/modules/documents/services/d
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
+import { AuditEventRepository } from "../../src/db/repositories/auditEventRepository.js";
+import { AuditEventAnalyticsSink } from "../../src/shared/analytics/auditEventAnalyticsSink.js";
+import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
+import { AuditIncidentSink } from "../../src/shared/incidents/auditIncidentSink.js";
+import { IncidentReportingService } from "../../src/shared/incidents/incidentReportingService.js";
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL ?? process.env.DATABASE_URL;
+const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+
+const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolean> => {
+  if (!databaseUrl) {
+    return false;
+  }
+
+  const database = new Database(databaseUrl);
+
+  try {
+    await database.query("SELECT 1");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await database.close().catch(() => undefined);
+  }
+};
+
+const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 
 const noopAuditRepository = {
   async create() {
@@ -55,7 +79,7 @@ const noopAuditRepository = {
     return null;
   },
 };
-const describeIfDatabase = integrationDatabaseUrl ? describe : describe.skip;
+const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
 describeIfDatabase("persistence integration", () => {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -588,5 +612,85 @@ describeIfDatabase("persistence integration", () => {
       }),
       "audit_event",
     );
+  });
+
+  it("persists analytics and incident sink events in audit storage", async () => {
+    const accountRepository = new AccountRepository(database);
+    const account = await accountRepository.create({
+      name: "Analytics Account",
+      email: `analytics-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+    });
+    const workspace = await workspaceRepository.create(account.id, "Analytics Workspace");
+    const auditRepository = new AuditEventRepository(database);
+    const auditService = new AuditService(createLogger("silent"), auditRepository);
+    const analyticsService = new ProductAnalyticsService({
+      enabled: true,
+      logger: createLogger("silent"),
+      sinks: [new AuditEventAnalyticsSink(auditService)],
+    });
+    const incidentService = new IncidentReportingService({
+      enabled: true,
+      environment: "test",
+      logger: createLogger("silent"),
+      service: "radioso-api",
+      sinks: [new AuditIncidentSink(auditService)],
+    });
+
+    await analyticsService.track({
+      eventName: "retrieval_settings.updated",
+      workspaceId: workspace.id,
+      accountId: account.id,
+      subjectType: "settings",
+      subjectId: workspace.id,
+      source: "backend",
+    });
+    await incidentService.report({
+      incidentType: "http.request.unhandled",
+      severity: "error",
+      correlation: {
+        workspaceId: workspace.id,
+        accountId: account.id,
+      },
+      message: "boom",
+    });
+
+    const rows = await database.query<{
+      event_type: string;
+      event_status: string;
+      metadata_json: Record<string, unknown>;
+    }>(
+      `SELECT event_type, event_status, metadata_json
+       FROM audit_events
+       WHERE workspace_id = $1
+         AND event_type IN ('product.analytics', 'incident.recorded')
+       ORDER BY created_at ASC`,
+      [workspace.id],
+    );
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        event_type: "product.analytics",
+        event_status: "success",
+        metadata_json: {
+          analytics: expect.objectContaining({
+            eventName: "retrieval_settings.updated",
+          }),
+        },
+      }),
+      expect.objectContaining({
+        event_type: "incident.recorded",
+        event_status: "failure",
+        metadata_json: {
+          incident: expect.objectContaining({
+            incidentType: "http.request.unhandled",
+          }),
+        },
+      }),
+    ]);
+
+    await database.query("DELETE FROM audit_events WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM workspaces WHERE id = $1", [workspace.id]);
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 });

@@ -9,6 +9,20 @@ import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
 const createEnv = (): Env => ({
   NODE_ENV: "test",
   PORT: 8088,
+  OBSERVABILITY_ENABLED: true,
+  OBSERVABILITY_SERVICE_NAME: "radioso-api",
+  OBSERVABILITY_ENVIRONMENT: "test",
+  OBSERVABILITY_VERSION: "test",
+  METRICS_ENABLED: false,
+  METRICS_PATH: "/metrics",
+  METRICS_AUTH_TOKEN: undefined,
+  OTEL_ENABLED: false,
+  OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
+  PRODUCT_ANALYTICS_SINKS: "audit",
+  INCIDENT_SINKS: "audit",
+  POSTHOG_HOST: undefined,
+  POSTHOG_API_KEY: undefined,
+  SENTRY_DSN: undefined,
   GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
@@ -76,6 +90,7 @@ const createLogger = () => {
 
 const createDependencies = () =>
   ({
+    metricsRegistry: null,
     logger: createLogger().logger,
     documentProcessingWorker: {
       start: vi.fn().mockResolvedValue(undefined),
@@ -190,5 +205,45 @@ describe("runtime startup", () => {
 
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
+  });
+
+  it("passes the metrics registry through API startup composition when metrics are enabled", async () => {
+    const env = {
+      ...createEnv(),
+      METRICS_ENABLED: true,
+      METRICS_AUTH_TOKEN: "metrics-test-token",
+    };
+    const dependencies = {
+      ...createDependencies(),
+      metricsRegistry: {
+        renderPrometheus: vi.fn().mockReturnValue(""),
+      },
+    } as unknown as AppDependencies;
+    const runMigrations = vi.fn().mockResolvedValue(undefined);
+    const createAppSpy = vi.fn().mockReturnValue({} as any);
+    const listen = vi.fn((_app: unknown, _port: number, onListening: () => void) => {
+      onListening();
+      return {
+        close(callback?: () => void) {
+          callback?.();
+        },
+      };
+    });
+
+    const runtime = await startApiRuntime({
+      env,
+      logger: createLogger().logger as any,
+      runMigrations,
+      buildDependencies: () => dependencies,
+      createApp: createAppSpy,
+      listen,
+    });
+
+    expect(runMigrations).toHaveBeenCalledWith(env.DATABASE_URL, expect.anything());
+    expect(createAppSpy).toHaveBeenCalledWith(expect.objectContaining({
+      metricsRegistry: dependencies.metricsRegistry,
+    }));
+
+    await runtime.shutdown("test");
   });
 });

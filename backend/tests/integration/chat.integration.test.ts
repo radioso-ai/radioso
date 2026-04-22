@@ -3,8 +3,18 @@ import { describe, expect, it } from "vitest";
 
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
+import type { ProductAnalyticsEvent } from "../../src/shared/analytics/productAnalyticsTypes.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
+
+const getAnalyticsPayload = (metadata: Record<string, unknown>): ProductAnalyticsEvent | null => {
+  const candidate = metadata.analytics;
+  if (!candidate || typeof candidate !== "object" || typeof (candidate as { eventName?: unknown }).eventName !== "string") {
+    return null;
+  }
+
+  return candidate as ProductAnalyticsEvent;
+};
 
 describe("chat integration", () => {
   it("adds bounded grounded continuations for guided and exploratory modes", async () => {
@@ -218,6 +228,39 @@ describe("chat integration", () => {
     expect(response.status).toBe(200);
     expect(response.body.answer).toBe(
       "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+    );
+  });
+
+  it("records product analytics for completed chat answers", async () => {
+    const { app, repositories } = createTestApp();
+
+    const { token } = await issueTestToken(app, "chat-analytics@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What does the page explain?", stream: false });
+
+    expect(response.status).toBe(200);
+
+    const analyticsEvent = [...repositories.auditEventRepository.items]
+      .reverse()
+      .find((event) => event.eventType === "product.analytics" && getAnalyticsPayload(event.metadata)?.eventName === "chat.completed");
+    const analyticsPayload = analyticsEvent ? getAnalyticsPayload(analyticsEvent.metadata) : null;
+
+    expect(analyticsEvent).toBeTruthy();
+    expect(analyticsPayload).toEqual(
+      expect.objectContaining({
+        eventName: "chat.completed",
+        subjectType: "conversation",
+        source: "backend",
+      }),
     );
   });
 

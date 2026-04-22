@@ -1,8 +1,9 @@
 import express from "express";
 
 import { createHttpLogger } from "../../shared/observability/logger.js";
+import { createRequestTelemetryMiddleware } from "../../shared/observability/telemetry/telemetryService.js";
 import { badRequest } from "../../shared/domain/errors.js";
-import { errorHandler } from "../http/middleware/errorHandler.js";
+import { createErrorHandler } from "../http/middleware/errorHandler.js";
 import type { AppDependencies } from "../server/types.js";
 import { createWorkerTaskRoutes } from "./workerTaskRoutes.js";
 
@@ -11,6 +12,7 @@ export const createWorkerTaskApp = (dependencies: AppDependencies) => {
 
   app.disable("x-powered-by");
   app.use(createHttpLogger(dependencies.logger));
+  app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));
   app.use(express.json({ limit: "1mb" }));
   app.use((error: unknown, _req: express.Request, _res: express.Response, next: express.NextFunction) => {
     if (error instanceof SyntaxError) {
@@ -24,7 +26,7 @@ export const createWorkerTaskApp = (dependencies: AppDependencies) => {
     next();
   });
   app.use(createWorkerTaskRoutes(dependencies));
-  app.use(errorHandler);
+  app.use(createErrorHandler(dependencies.incidentReportingService));
 
   return app;
 };

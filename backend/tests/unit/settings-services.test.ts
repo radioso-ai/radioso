@@ -16,15 +16,24 @@ describe("settings services", () => {
     const auditService = {
       record: vi.fn().mockRejectedValue(new Error("audit down")),
     };
-    const service = new RetrievalSettingsService(repository, auditService as never);
+    const analyticsService = {
+      track: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new RetrievalSettingsService(repository, auditService as never, undefined, analyticsService as never);
 
     await expect(service.updateForWorkspace("workspace-1", settings)).resolves.toEqual(settings);
     expect(repository.upsert).toHaveBeenCalledOnce();
     expect(auditService.record).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
-      eventType: "settings.update",
-      eventStatus: "success",
-    });
+        eventType: "settings.update",
+        eventStatus: "success",
+      });
+    expect(analyticsService.track).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "retrieval_settings.updated",
+        workspaceId: "workspace-1",
+      }),
+    );
   });
 
   it("rethrows the original retrieval save error when failure audit logging also fails", async () => {
@@ -36,16 +45,20 @@ describe("settings services", () => {
     const auditService = {
       record: vi.fn().mockRejectedValue(new Error("audit down")),
     };
-    const service = new RetrievalSettingsService(repository, auditService as never);
+    const analyticsService = {
+      track: vi.fn(),
+    };
+    const service = new RetrievalSettingsService(repository, auditService as never, undefined, analyticsService as never);
 
     await expect(service.updateForWorkspace("workspace-1", defaultRetrievalSettings("workspace-1"))).rejects.toBe(
       writeError,
     );
     expect(auditService.record).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
-      eventType: "settings.update",
-      eventStatus: "failure",
-    });
+        eventType: "settings.update",
+        eventStatus: "failure",
+      });
+    expect(analyticsService.track).not.toHaveBeenCalled();
   });
 
   it("returns saved ingestion settings even when success audit logging fails", async () => {

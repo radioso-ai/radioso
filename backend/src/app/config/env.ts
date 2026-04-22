@@ -1,11 +1,43 @@
 import { z } from "zod";
+import { findInvalidConfiguredSinks, hasConfiguredSink } from "../../shared/observability/configuredSinks.js";
 
 const emptyStringToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
 
+const booleanish = (defaultValue: boolean) =>
+  z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") {
+      return defaultValue;
+    }
+
+    if (typeof value === "boolean") {
+      return value;
+    }
+
+    if (typeof value === "string") {
+      return value.toLowerCase() === "true";
+    }
+
+    return value;
+  }, z.boolean());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
+  OBSERVABILITY_ENABLED: booleanish(true),
+  OBSERVABILITY_SERVICE_NAME: z.string().min(1).default("radioso-api"),
+  OBSERVABILITY_ENVIRONMENT: emptyStringToUndefined(z.string().min(1)),
+  OBSERVABILITY_VERSION: emptyStringToUndefined(z.string().min(1)),
+  METRICS_ENABLED: booleanish(false),
+  METRICS_PATH: z.string().min(1).default("/metrics"),
+  METRICS_AUTH_TOKEN: emptyStringToUndefined(z.string().min(16)),
+  OTEL_ENABLED: booleanish(false),
+  OTEL_EXPORTER_OTLP_ENDPOINT: emptyStringToUndefined(z.string().url()),
+  PRODUCT_ANALYTICS_SINKS: z.string().min(1).default("audit"),
+  INCIDENT_SINKS: z.string().min(1).default("audit"),
+  POSTHOG_HOST: emptyStringToUndefined(z.string().url()),
+  POSTHOG_API_KEY: emptyStringToUndefined(z.string().min(1)),
+  SENTRY_DSN: emptyStringToUndefined(z.string().url()),
   GOOGLE_CLOUD_PROJECT: emptyStringToUndefined(z.string().min(1)),
   DATABASE_URL: z.string().min(1),
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
@@ -71,6 +103,57 @@ const envSchema = z.object({
   DOCUMENT_PROCESSING_JOB_LEASE_MS: z.coerce.number().int().positive().default(300_000),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
 }).superRefine((value, ctx) => {
+  const invalidAnalyticsSinks = findInvalidConfiguredSinks(value.PRODUCT_ANALYTICS_SINKS, ["audit", "posthog"]);
+  if (invalidAnalyticsSinks.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["PRODUCT_ANALYTICS_SINKS"],
+      message: `Unsupported analytics sinks: ${invalidAnalyticsSinks.join(", ")}`,
+    });
+  }
+
+  const invalidIncidentSinks = findInvalidConfiguredSinks(value.INCIDENT_SINKS, ["audit", "sentry"]);
+  if (invalidIncidentSinks.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["INCIDENT_SINKS"],
+      message: `Unsupported incident sinks: ${invalidIncidentSinks.join(", ")}`,
+    });
+  }
+
+  if (hasConfiguredSink(value.PRODUCT_ANALYTICS_SINKS, "posthog")) {
+    if (!value.POSTHOG_HOST) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["POSTHOG_HOST"],
+        message: "POSTHOG_HOST is required when PRODUCT_ANALYTICS_SINKS includes posthog",
+      });
+    }
+    if (!value.POSTHOG_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["POSTHOG_API_KEY"],
+        message: "POSTHOG_API_KEY is required when PRODUCT_ANALYTICS_SINKS includes posthog",
+      });
+    }
+  }
+
+  if (hasConfiguredSink(value.INCIDENT_SINKS, "sentry") && !value.SENTRY_DSN) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["SENTRY_DSN"],
+      message: "SENTRY_DSN is required when INCIDENT_SINKS includes sentry",
+    });
+  }
+
+  if (value.METRICS_ENABLED && !value.METRICS_AUTH_TOKEN) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["METRICS_AUTH_TOKEN"],
+      message: "METRICS_AUTH_TOKEN is required when METRICS_ENABLED is true",
+    });
+  }
+
   if (value.DOCUMENT_STORAGE_DRIVER === "gcs" && !value.DOCUMENT_STORAGE_BUCKET) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -117,13 +200,21 @@ const envSchema = z.object({
   }
 });
 
-export type Env = z.infer<typeof envSchema>;
+type ParsedEnv = z.infer<typeof envSchema>;
+
+export type Env = Omit<ParsedEnv, "OBSERVABILITY_ENVIRONMENT"> & {
+  OBSERVABILITY_ENVIRONMENT: string;
+};
 
 let cachedEnv: Env | null = null;
 
 export const getEnv = (source: NodeJS.ProcessEnv = process.env): Env => {
   if (!cachedEnv || source !== process.env) {
-    cachedEnv = envSchema.parse(source);
+    const parsed = envSchema.parse(source);
+    cachedEnv = {
+      ...parsed,
+      OBSERVABILITY_ENVIRONMENT: parsed.OBSERVABILITY_ENVIRONMENT ?? parsed.NODE_ENV,
+    };
   }
 
   return cachedEnv;

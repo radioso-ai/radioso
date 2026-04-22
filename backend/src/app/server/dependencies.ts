@@ -68,11 +68,26 @@ import { registerBuiltInConnectors } from "../../modules/connectors/plugins/inde
 import { Database } from "../../shared/infra/database.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
+import { buildAnalyticsSinks } from "../../shared/analytics/buildAnalyticsSinks.js";
+import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
+import { buildIncidentSinks } from "../../shared/incidents/buildIncidentSinks.js";
 import { createLogger } from "../../shared/observability/logger.js";
+import { buildTelemetrySinks } from "../../shared/observability/telemetry/buildTelemetrySinks.js";
+import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
+import { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
 import type { AppDependencies } from "./types.js";
 
 export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const logger = createLogger();
+  const { metricsRegistry, sinks: telemetrySinks } = buildTelemetrySinks(env);
+  const telemetryService = new TelemetryService({
+    enabled: env.OBSERVABILITY_ENABLED,
+    environment: env.OBSERVABILITY_ENVIRONMENT,
+    logger,
+    service: env.OBSERVABILITY_SERVICE_NAME,
+    sinks: telemetrySinks,
+    version: env.OBSERVABILITY_VERSION,
+  });
   const database = new Database(env.DATABASE_URL, {
     poolMax: env.DB_POOL_MAX,
     idleTimeoutMs: env.DB_POOL_IDLE_TIMEOUT_MS,
@@ -83,6 +98,27 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   });
   const auditEventRepository = new AuditEventRepository(database);
   const auditService = new AuditService(logger, auditEventRepository);
+  const productAnalyticsService = new ProductAnalyticsService({
+    enabled: env.OBSERVABILITY_ENABLED,
+    logger,
+    sinks: buildAnalyticsSinks({
+      auditService,
+      env,
+      metricsRegistry,
+    }),
+  });
+  const persistentIncidentReportingService = new IncidentReportingService({
+    enabled: env.OBSERVABILITY_ENABLED,
+    environment: env.OBSERVABILITY_ENVIRONMENT,
+    logger,
+    service: env.OBSERVABILITY_SERVICE_NAME,
+    version: env.OBSERVABILITY_VERSION,
+    sinks: buildIncidentSinks({
+      auditService,
+      env,
+      metricsRegistry,
+    }),
+  });
   const accountMembershipRepository = new AccountMembershipRepository(database);
   const accountRepository = new AccountRepository(database);
   const userRepository = new UserRepository(database);
@@ -103,6 +139,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new RetrievalSettingsRepository(database),
     auditService,
     documentRepository,
+    productAnalyticsService,
   );
   const documentStorage: DocumentStoragePort = env.DOCUMENT_STORAGE_DRIVER === "gcs"
     ? new GcsDocumentStorage(env.DOCUMENT_STORAGE_BUCKET!)
@@ -140,6 +177,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     () => documentProcessingJobRepository.getQueueSnapshot(),
     documentProcessingJobRepository,
     documentJobDispatcher,
+    productAnalyticsService,
   );
   const documentImportService = new DocumentImportService(
     documentRepository,
@@ -158,6 +196,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     undefined,
     documentJobDispatcher,
     env.DOCUMENT_PROCESSING_JOB_LEASE_MS,
+    telemetryService,
   );
   const documentDeletionService = new DocumentDeletionService(documentRepository, documentStorage, auditService);
   const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(
@@ -182,7 +221,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new RerankService(llmRegistry.createRerankGateway(), logger),
     new PromptContextSelectorService(),
     new PromptBuilder(),
-    new RetrievalExecutionTelemetryService(),
+    new RetrievalExecutionTelemetryService(telemetryService),
     workspaceRepository,
   );
   const documentSearchService = new DocumentSearchService(
@@ -201,6 +240,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     llmRegistry.createChatGateway(),
     auditService,
     llmRegistry.createGroundedMissResponseComposer(),
+    productAnalyticsService,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -273,6 +313,10 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   return {
     env,
     logger,
+    metricsRegistry,
+    telemetryService,
+    incidentReportingService: persistentIncidentReportingService,
+    productAnalyticsService,
     authService: verificationAwareAuthService,
     passwordResetService,
     emailVerificationService,

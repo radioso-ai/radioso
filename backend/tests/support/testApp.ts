@@ -48,7 +48,13 @@ import { WhatsAppPlugin } from "../../src/modules/connectors/plugins/whatsapp/wh
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
 import { EvalReplayService } from "../../src/modules/evals/services/evalReplayService.js";
 import { EvalLabService } from "../../src/modules/evals/services/evalLabService.js";
+import { buildAnalyticsSinks } from "../../src/shared/analytics/buildAnalyticsSinks.js";
+import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
+import { buildIncidentSinks } from "../../src/shared/incidents/buildIncidentSinks.js";
+import { IncidentReportingService } from "../../src/shared/incidents/incidentReportingService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
+import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
+import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import {
@@ -78,6 +84,19 @@ import {
 export const createTestEnv = (): Env => ({
   NODE_ENV: "test",
   PORT: 8080,
+  OBSERVABILITY_ENABLED: true,
+  OBSERVABILITY_SERVICE_NAME: "radioso-api",
+  OBSERVABILITY_ENVIRONMENT: "test",
+  OBSERVABILITY_VERSION: "test",
+  METRICS_ENABLED: false,
+  METRICS_PATH: "/metrics",
+  OTEL_ENABLED: false,
+  OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
+  PRODUCT_ANALYTICS_SINKS: "audit",
+  INCIDENT_SINKS: "audit",
+  POSTHOG_HOST: undefined,
+  POSTHOG_API_KEY: undefined,
+  SENTRY_DSN: undefined,
   GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
@@ -113,6 +132,7 @@ export const createTestEnv = (): Env => ({
 });
 
 interface TestRepositories {
+  auditEventRepository: InMemoryAuditEventRepository;
   ingestionSettingsRepository: InMemoryIngestionSettingsRepository;
   retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
   documentRepository: InMemoryDocumentRepository;
@@ -158,8 +178,39 @@ export const createTestDependencies = (overrides: {
     ...createTestEnv(),
     ...overrides.envOverrides,
   } satisfies Env;
+  const logger = createLogger("silent");
+  const { metricsRegistry, sinks: telemetrySinks } = buildTelemetrySinks(env);
+  const telemetryService = new TelemetryService({
+    enabled: env.OBSERVABILITY_ENABLED,
+    environment: env.OBSERVABILITY_ENVIRONMENT,
+    logger,
+    service: env.OBSERVABILITY_SERVICE_NAME,
+    sinks: telemetrySinks,
+    version: env.OBSERVABILITY_VERSION,
+  });
   const auditEventRepository = new InMemoryAuditEventRepository();
   const auditService = createAuditService(auditEventRepository);
+  const productAnalyticsService = new ProductAnalyticsService({
+    enabled: env.OBSERVABILITY_ENABLED,
+    logger,
+    sinks: buildAnalyticsSinks({
+      auditService,
+      env,
+      metricsRegistry,
+    }),
+  });
+  const persistentIncidentReportingService = new IncidentReportingService({
+    enabled: env.OBSERVABILITY_ENABLED,
+    environment: env.OBSERVABILITY_ENVIRONMENT,
+    logger,
+    service: env.OBSERVABILITY_SERVICE_NAME,
+    version: env.OBSERVABILITY_VERSION,
+    sinks: buildIncidentSinks({
+      auditService,
+      env,
+      metricsRegistry,
+    }),
+  });
   const accountRepository = new InMemoryAccountRepository();
   const userRepository = new InMemoryUserRepository();
   const accountMembershipRepository = new InMemoryAccountMembershipRepository();
@@ -338,6 +389,7 @@ export const createTestDependencies = (overrides: {
     retrievalSettingsRepository,
     auditService,
     documentRepository,
+    productAnalyticsService,
   );
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingService = new DocumentProcessingService(
@@ -355,11 +407,18 @@ export const createTestDependencies = (overrides: {
     documentProcessingService,
     auditService,
     createLogger("silent"),
+    undefined,
+    undefined,
+    undefined,
+    telemetryService,
   );
   const documentIngestionService = new DocumentIngestionService(
     documentRepository,
     auditService,
     () => documentProcessingJobRepository.getQueueSnapshot(),
+    undefined,
+    undefined,
+    productAnalyticsService,
   );
   const documentImportService = new DocumentImportService(
     documentRepository,
@@ -418,7 +477,7 @@ export const createTestDependencies = (overrides: {
     new RerankService(rerankGateway),
     new PromptContextSelectorService(),
     new PromptBuilder(),
-    new RetrievalExecutionTelemetryService(),
+    new RetrievalExecutionTelemetryService(telemetryService),
     workspaceRepository,
   );
   const documentSearchService = new DocumentSearchService(
@@ -476,6 +535,7 @@ export const createTestDependencies = (overrides: {
     chatGateway,
     auditService,
     overrides.groundedMissResponseComposer ?? new TestGroundedMissResponseComposer(),
+    productAnalyticsService,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -496,7 +556,11 @@ export const createTestDependencies = (overrides: {
 
   const dependencies: AppDependencies = {
     env,
-    logger: createLogger("silent"),
+    logger,
+    metricsRegistry,
+    telemetryService,
+    incidentReportingService: persistentIncidentReportingService,
+    productAnalyticsService,
     auditService,
     accountAccessService,
     accountInvitationService,
@@ -544,6 +608,7 @@ export const createTestDependencies = (overrides: {
   return {
     dependencies,
     repositories: {
+      auditEventRepository,
       ingestionSettingsRepository,
       retrievalSettingsRepository,
       documentRepository,

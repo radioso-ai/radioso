@@ -113,5 +113,5 @@ export interface PromptAssemblyStage {
 }
 
 export interface RetrievalDiagnosticsStage {
-  execute(input: PromptAssemblyStageResult): import("../domain/retrievalPipelineTypes.js").RetrievalExecutionDiagnostics;
+  execute(input: PromptAssemblyStageResult): Promise<import("../domain/retrievalPipelineTypes.js").RetrievalExecutionDiagnostics>;
 }

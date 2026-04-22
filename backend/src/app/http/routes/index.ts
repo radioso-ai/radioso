@@ -6,6 +6,7 @@ import { createAccountUserRoutes } from "./accountUserRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
 import { createChatRoutes } from "./chatRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
+import { createMetricsRoutes } from "./metricsRoutes.js";
 import { createSettingsRoutes } from "./settingsRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 import { createConnectorRoutes } from "../../../modules/connectors/http/connectorRoutes.js";
@@ -19,6 +20,9 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok" });
   });
+  if (dependencies.env.METRICS_ENABLED && dependencies.metricsRegistry) {
+    router.use(dependencies.env.METRICS_PATH, createMetricsRoutes(dependencies.metricsRegistry));
+  }
   router.use("/api/v1/auth", createAuthRoutes(dependencies));
   router.use("/api/v1/account", createAccountRoutes(dependencies));
   router.use("/api/v1/account", createAccountUserRoutes(dependencies));

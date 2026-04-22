@@ -13,6 +13,19 @@ import { createTestDependencies } from "../support/testApp.js";
 const createEnv = (port: number): Env => ({
   NODE_ENV: "test",
   PORT: port,
+  OBSERVABILITY_ENABLED: true,
+  OBSERVABILITY_SERVICE_NAME: "radioso-api",
+  OBSERVABILITY_ENVIRONMENT: "test",
+  OBSERVABILITY_VERSION: "test",
+  METRICS_ENABLED: false,
+  METRICS_PATH: "/metrics",
+  OTEL_ENABLED: false,
+  OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
+  PRODUCT_ANALYTICS_SINKS: "audit",
+  INCIDENT_SINKS: "audit",
+  POSTHOG_HOST: undefined,
+  POSTHOG_API_KEY: undefined,
+  SENTRY_DSN: undefined,
   GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
@@ -163,5 +176,64 @@ describe("runtime entrypoints", () => {
     expect(register.status).toBe(201);
     expect(settings.status).toBe(200);
     expect(settings.body.anonymousChatEnabled).toBe(false);
+  });
+
+  it("reports unhandled request failures through the incident reporting seam", async () => {
+    const { dependencies } = createTestDependencies();
+    const reportIncidentSpy = vi.spyOn(dependencies.incidentReportingService, "reportUnhandledRequestError");
+    vi.spyOn(dependencies.retrievalSettingsService, "getForWorkspace").mockRejectedValue(new Error("boom"));
+
+    const runtime = await startApiRuntime({
+      env: createEnv(8095),
+      logger: dependencies.logger,
+      runMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+      createApp,
+    });
+    runtimes.push(runtime);
+
+    const register = await request(runtime.server!)
+      .post("/api/v1/auth/register")
+      .send({
+        email: "runtime-failure@example.com",
+        password: "verysecurepassword",
+      });
+
+    const response = await request(runtime.server!)
+      .get("/api/v1/settings/retrieval")
+      .set("Cookie", register.headers["set-cookie"][0] as string)
+      .set("X-Workspace-Id", register.body.workspaceId as string);
+
+    expect(response.status).toBe(500);
+    expect(reportIncidentSpy).toHaveBeenCalledOnce();
+  });
+
+  it("serves Prometheus-style metrics when metrics exposure is enabled", async () => {
+    const env = {
+      ...createEnv(8096),
+      METRICS_ENABLED: true,
+    };
+    const { dependencies } = createTestDependencies({
+      envOverrides: {
+        METRICS_ENABLED: true,
+      },
+    });
+
+    const runtime = await startApiRuntime({
+      env,
+      logger: dependencies.logger,
+      runMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+      createApp,
+    });
+    runtimes.push(runtime);
+
+    await request(runtime.server!).get("/health");
+
+    const response = await request(runtime.server!).get("/metrics");
+
+    expect(response.status).toBe(200);
+    expect(response.text).toContain("radioso_http_requests_total");
+    expect(response.text).toContain('route="/health"');
   });
 });

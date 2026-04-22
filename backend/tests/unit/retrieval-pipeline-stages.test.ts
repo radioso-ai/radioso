@@ -463,10 +463,10 @@ describe("retrieval pipeline stages", () => {
     expect(result.activeParsedQuery.lexicalQuery).toBe("summer retreat price");
   });
 
-  it("reports rejected rewrites as having run in diagnostics", () => {
+  it("reports rejected rewrites as having run in diagnostics", async () => {
     const stage = new RetrievalDiagnosticsStageService(new RetrievalExecutionTelemetryService());
 
-    const diagnostics = stage.execute({
+    const diagnostics = await stage.execute({
       request: {
         workspaceId: "a1",
         query: "what about her later work?",

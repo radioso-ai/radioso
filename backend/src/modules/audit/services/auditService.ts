@@ -1,9 +1,18 @@
 import type { RetrievalExecutionDiagnostics } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
-import { extractRetrievalLogFields, type AppLogger } from "../../../shared/observability/logger.js";
+import type { ProductAnalyticsEvent } from "../../../shared/analytics/productAnalyticsTypes.js";
+import type { IncidentEvent } from "../../../shared/incidents/incidentTypes.js";
+import {
+  extractIncidentLogFields,
+  extractProductAnalyticsLogFields,
+  extractRetrievalLogFields,
+  type AppLogger,
+} from "../../../shared/observability/logger.js";
 
 export interface AuditEventMetadata extends Record<string, unknown> {
   retrieval?: RetrievalExecutionDiagnostics;
+  analytics?: ProductAnalyticsEvent;
+  incident?: IncidentEvent;
 }
 
 interface ChatAnswerAuditMetadata extends AuditEventMetadata {
@@ -38,6 +47,8 @@ export class AuditService {
       {
         audit: event,
         retrieval: extractRetrievalLogFields(event.metadata),
+        analytics: extractProductAnalyticsLogFields(event.metadata?.analytics),
+        incident: extractIncidentLogFields(event.metadata?.incident),
       },
       "audit_event",
     );

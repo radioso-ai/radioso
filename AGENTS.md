@@ -95,6 +95,7 @@ tests/
 
 ## Documentation
 
+- Before creating or revising documentation, read [`docs/document-writer-prompt.md`](docs/document-writer-prompt.md) and follow it. This applies to `readme.md`, files under `docs/`, files under `docs-portal/content/`, and settings docs used by the product UI.
 - When delivering a new feature through Speckit, review the root `readme.md` before closing the work.
 - Update `readme.md` whenever the feature changes the Docker run flow, authentication or token setup, common API usage, or the most important ingestion or retrieval settings operators are likely to tune.
 - Store backend runtime LLM prompt templates under `backend/prompts/`. Do not add new runtime prompt files at repo root `/prompts`; if prompt text is extracted from backend code, the destination is `backend/prompts/`.

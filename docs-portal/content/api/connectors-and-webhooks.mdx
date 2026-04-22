@@ -1,0 +1,76 @@
+---
+title: Connectors and webhooks
+description: Read connector state, save connector config, enable or disable connectors, and handle WhatsApp webhook verification and delivery.
+---
+
+# Connectors and webhooks
+
+Connectors link a workspace to external systems. The exact config shape depends on the connector type.
+
+## Relevant endpoints
+
+```text
+GET  /api/v1/connectors
+GET  /api/v1/connectors/{connectorId}
+PUT  /api/v1/connectors/{connectorId}
+POST /api/v1/connectors/{connectorId}/enable
+POST /api/v1/connectors/{connectorId}/disable
+GET  /api/connectors/whatsapp/{workspaceId}/webhook
+POST /api/connectors/whatsapp/{workspaceId}/webhook
+```
+
+## How it works
+
+1. List the connectors available to the workspace.
+2. Read one connector's current detail.
+3. Save connector-specific config.
+4. Enable the connector when the config is ready.
+5. For WhatsApp, expose the webhook routes expected by Meta.
+
+The key point is that connector config is not one global schema. The body depends on the connector you are configuring, so the [API Reference](/api-reference) is the authoritative place for the exact shape.
+
+## Save connector config
+
+Use:
+
+```text
+PUT /api/v1/connectors/{connectorId}
+```
+
+Then enable it with:
+
+```text
+POST /api/v1/connectors/{connectorId}/enable
+```
+
+Disable it with:
+
+```text
+POST /api/v1/connectors/{connectorId}/disable
+```
+
+## WhatsApp webhook flow
+
+The WhatsApp webhook endpoints are workspace-specific:
+
+```text
+GET  /api/connectors/whatsapp/{workspaceId}/webhook
+POST /api/connectors/whatsapp/{workspaceId}/webhook
+```
+
+Use the `GET` route for webhook ownership verification.
+
+Use the `POST` route to receive incoming webhook events.
+
+## Common failure modes
+
+- `400` usually means the connector config is incomplete or invalid.
+- `401` means the authenticated workspace context is missing for connector-management routes.
+- `403` on the webhook verify route means the verification request did not match the expected workspace state.
+- `404` means the connector or workspace was not found.
+- `409` usually means the connector is in a conflicting state for the requested save or enable action.
+
+## Read next
+
+- [Public chat and embed](/api/public-chat-and-embed)
+- [API Reference](/api-reference)

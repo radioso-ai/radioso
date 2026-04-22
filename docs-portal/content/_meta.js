@@ -16,6 +16,9 @@ const meta = {
   guides: {
     title: 'Guides',
   },
+  api: {
+    title: 'API',
+  },
   sdk: {
     title: 'SDK',
   },

@@ -45,6 +45,23 @@ const navigation: NavItem[] = [
     ],
   },
   {
+    title: 'API',
+    icon: <Database className="h-4 w-4" />,
+    items: [
+      { title: 'Overview', href: '/api' },
+      { title: 'Auth and sessions', href: '/api/auth-and-sessions' },
+      { title: 'Accounts and users', href: '/api/accounts-and-users' },
+      { title: 'Workspaces and tokens', href: '/api/workspaces-and-tokens' },
+      { title: 'Documents and search', href: '/api/documents-and-search' },
+      { title: 'Chat and history', href: '/api/chat-and-history' },
+      { title: 'Public chat and embed', href: '/api/public-chat-and-embed' },
+      { title: 'Settings', href: '/api/settings' },
+      { title: 'Evals', href: '/api/evals' },
+      { title: 'Connectors and webhooks', href: '/api/connectors-and-webhooks' },
+      { title: 'API reference', href: '/api-reference' },
+    ],
+  },
+  {
     title: 'SDK',
     icon: <Settings2 className="h-4 w-4" />,
     items: [

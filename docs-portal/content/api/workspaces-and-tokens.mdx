@@ -1,0 +1,66 @@
+---
+title: Workspaces and tokens
+description: Create and manage workspaces, then reveal the workspace token used by the SDK and server-side API calls.
+---
+
+# Workspaces and tokens
+
+Workspaces are the unit that holds documents, settings, chat history, and connector state. The workspace token is what server-side API clients use after setup.
+
+## Relevant endpoints
+
+```text
+GET    /api/v1/workspace
+POST   /api/v1/workspace
+PATCH  /api/v1/workspace/{workspaceId}
+DELETE /api/v1/workspace/{workspaceId}
+GET    /api/v1/account/workspaces/{workspaceId}/token
+```
+
+## How it works
+
+1. Use a session-authenticated route to list or create a workspace.
+2. Choose the workspace you want the SDK or backend job to use.
+3. Reveal that workspace's API token.
+4. Send that token as `Authorization: Bearer <token>` on token-authenticated routes.
+
+The key point is that workspace management is session-based, but most developer automation after that point is token-based.
+
+## Create a workspace
+
+```bash
+curl -sS -b cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Support knowledge base"}' \
+  http://localhost:8080/api/v1/workspace
+```
+
+## Reveal the workspace token
+
+```bash
+curl -sS -b cookies.txt \
+  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
+```
+
+Use that token from trusted server environments. Do not expose it in browser code.
+
+## Rename or delete a workspace
+
+Use `PATCH /api/v1/workspace/{workspaceId}` to rename a workspace.
+
+Use `DELETE /api/v1/workspace/{workspaceId}` to remove it.
+
+In practice, deletion is a high-impact operation. Make sure the workspace is not the one you still need for documents, settings, or public chat.
+
+## Common failure modes
+
+- `400` usually means the request is missing a required field, or the workspace cannot be deleted in its current state.
+- `401` means the session is missing or invalid.
+- `404` means the workspace is not visible from the active account context.
+- `429` on token reveal means the reveal action is being rate limited.
+
+## Read next
+
+- [Documents and search](/api/documents-and-search)
+- [Chat and history](/api/chat-and-history)
+- [API Reference](/api-reference)

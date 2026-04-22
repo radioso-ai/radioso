@@ -15,7 +15,7 @@ export function DocsHeader() {
   const navItems = [
     { href: '/', label: 'Home' },
     { href: '/quickstarts/run-locally', label: 'Guides' },
-    { href: '/api-reference', label: 'API Reference' },
+    { href: '/api', label: 'API' },
     { href: '/architecture', label: 'Architecture' },
   ]
 
@@ -26,6 +26,8 @@ export function DocsHeader() {
           const active =
             item.href === '/'
               ? pathname === '/'
+              : item.href === '/api'
+                ? pathname === '/api' || pathname.startsWith('/api/') || pathname === '/api-reference'
               : pathname === item.href || pathname.startsWith(`${item.href}/`)
 
           return (

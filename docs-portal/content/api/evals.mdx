@@ -1,0 +1,89 @@
+---
+title: Evals
+description: Create datasets, add or import cases, run evaluations, and compare results against a baseline.
+---
+
+# Evals
+
+The evals API lets you turn real chat behavior into testable datasets and compare runs over time.
+
+## Relevant endpoints
+
+```text
+GET  /api/v1/evals/datasets
+POST /api/v1/evals/datasets
+GET  /api/v1/evals/datasets/{datasetId}
+POST /api/v1/evals/import/chat-history
+POST /api/v1/evals/datasets/{datasetId}/cases
+POST /api/v1/evals/datasets/{datasetId}/runs
+GET  /api/v1/evals/datasets/{datasetId}/runs/{runId}
+GET  /api/v1/evals/datasets/{datasetId}/runs/{runId}/comparison
+```
+
+## How it works
+
+1. Create a dataset.
+2. Add cases manually or import them from chat history.
+3. Start a run.
+4. Inspect the run.
+5. Compare it with a baseline when you want to measure change.
+
+## Create a dataset
+
+The create request is small:
+
+```json
+{
+  "name": "Support answers April",
+  "description": "Regression checks for support-facing grounded answers"
+}
+```
+
+`name` is required. `description` is optional.
+
+## Add cases
+
+Manual cases are added with:
+
+```text
+POST /api/v1/evals/datasets/{datasetId}/cases
+```
+
+The case schema supports:
+
+- `title`
+- `query`
+- `sourceType`
+- optional `conversationContext`
+- optional expectations such as expected documents, citation titles, refusal behavior, answer outcome, required phrases, forbidden phrases, and latency budget
+
+## Import from chat history
+
+Use `POST /api/v1/evals/import/chat-history` when you already have a conversation and assistant message you want to turn into a draft eval case source.
+
+## Run and compare
+
+Start a run with:
+
+```text
+POST /api/v1/evals/datasets/{datasetId}/runs
+```
+
+The run body can include a `label`, a `baselineRunId`, and `runMetadata`.
+
+Read the result from:
+
+```text
+GET /api/v1/evals/datasets/{datasetId}/runs/{runId}
+GET /api/v1/evals/datasets/{datasetId}/runs/{runId}/comparison
+```
+
+## Common failure modes
+
+- `400` usually means the dataset, case, or run body is invalid.
+- `404` means the dataset or run id is not available in the current workspace context.
+
+## Read next
+
+- [Chat and history](/api/chat-and-history)
+- [API Reference](/api-reference)

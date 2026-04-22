@@ -1,0 +1,73 @@
+---
+title: Accounts and users
+description: List accounts, invite users, switch account context, and remove account access.
+---
+
+# Accounts and users
+
+These routes manage who can access an account and which account the current session is operating on.
+
+## Relevant endpoints
+
+```text
+GET    /api/v1/account/users
+GET    /api/v1/account/accounts
+POST   /api/v1/account/invitations
+POST   /api/v1/account/switch
+DELETE /api/v1/account/users/{membershipId}
+```
+
+## How it works
+
+Use these routes after a session has already been established.
+
+1. List accessible accounts if the user belongs to more than one account.
+2. Switch the active account if needed.
+3. List current users and invitations for that account.
+4. Create invitations or remove access.
+
+## Invite a user
+
+Create an invitation from the active account context.
+
+```text
+POST /api/v1/account/invitations
+```
+
+The request body is defined by the OpenAPI schema. Use the [API Reference](/api-reference) for the exact payload.
+
+## Switch account context
+
+Switching accounts changes which account subsequent session-scoped routes operate on.
+
+```json
+{
+  "accountId": "account-uuid",
+  "preferredWorkspaceId": "workspace-uuid"
+}
+```
+
+`accountId` is required. `preferredWorkspaceId` is optional.
+
+## Remove account access
+
+Use the membership id from `GET /api/v1/account/users` when removing access.
+
+The route is:
+
+```text
+DELETE /api/v1/account/users/{membershipId}
+```
+
+## Common failure modes
+
+- `401` means the session is missing or no longer valid.
+- `403` on delete means the caller is not allowed to remove that membership.
+- `404` means the membership does not exist in the current account.
+- `409` usually means the requested removal would violate an account rule.
+
+## Read next
+
+- [Auth and sessions](/api/auth-and-sessions)
+- [Workspaces and tokens](/api/workspaces-and-tokens)
+- [API Reference](/api-reference)

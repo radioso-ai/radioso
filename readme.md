@@ -134,6 +134,16 @@ npm install
 npm run build
 ```
 
+The package also includes safe smoke commands that do not touch the local Radioso PostgreSQL volume:
+
+```bash
+cd packages/radioso-mcp-server
+npm run smoke:http
+npm run smoke:redis
+```
+
+`smoke:http` uses the backend's in-memory test app. `smoke:redis` uses the same in-memory backend plus a shared Redis runtime, sourcing Redis from `RADIOSO_MCP_SMOKE_REDIS_URL` when provided or from a disposable local Redis process/container otherwise.
+
 Start the remote HTTP server against a running Radioso instance:
 
 ```bash

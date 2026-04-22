@@ -64,6 +64,14 @@ npm install
 npm run build
 ```
 
+## Safe Smoke Tests
+
+The package includes smoke commands that do not touch your existing Radioso PostgreSQL data.
+
+- `npm run smoke:http` starts the backend's in-memory test app and runs a real remote MCP read/write flow against it.
+- `npm run smoke:redis` runs the same style of flow across two MCP HTTP instances with a shared Redis store. It uses `RADIOSO_MCP_SMOKE_REDIS_URL` when provided, otherwise it starts a disposable local Redis instance with `redis-server` or Docker.
+- `npm run smoke:all` runs both.
+
 ## Start The Remote HTTP Server
 
 ```bash

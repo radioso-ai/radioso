@@ -4,6 +4,7 @@ export {
   loadRemoteConfig,
   loadStdioConfig,
 } from "./config.js";
+export { createRemoteHttpRuntime } from "./http/runtime.js";
 export { createRadiosoApiAdapter, RadiosoApiError } from "./radiosoApiAdapter.js";
 export { createRadiosoMcpServer, getRemoteToolAuthInfo } from "./server.js";
 export { createHttpServer } from "./http/createHttpServer.js";

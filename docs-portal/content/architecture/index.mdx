@@ -1,0 +1,48 @@
+---
+title: Architecture overview
+description: High-level request, retrieval, and deployment structure for Radioso.
+---
+
+# Architecture overview
+
+Radioso separates interactive chat from background document processing. That separation is part of the product contract and shows up both in the operator model and in the user experience.
+
+## Main surfaces
+
+- frontend application
+- backend API
+- document worker
+- PostgreSQL
+- optional public embed surface
+
+## Assistant execution model
+
+Radioso uses two assistant execution classes on purpose, even though only the interactive path is shipped for the core chat workflows.
+
+### Live chat stays immediate
+
+Normal chat runs in the live request path. That includes:
+
+- authenticated chat turns
+- anonymous or embedded chat turns
+- assistant bootstrap greetings for new conversations
+
+Users either get an immediate response, immediate streaming, or an explicit failure. Radioso does not silently convert normal chat into background work under load.
+
+### Background work is separate
+
+Long-running assistant-adjacent work belongs in a separate deferred class when Radioso has a real background runtime behind it.
+
+Use deferred execution for workflows such as:
+
+- eval replay and replay batches
+- exports and offline analysis
+- notifications or other post-turn follow-up jobs
+
+Those workflows should present themselves as background work from the start. They should expose status, completion, and failure clearly instead of pretending to be a live chat turn.
+
+## Read next
+
+- [Retrieval pipeline](/architecture/retrieval-pipeline)
+- [Document processing lifecycle](/architecture/document-processing-lifecycle)
+- [Deployment topology](/architecture/deployment-topology)

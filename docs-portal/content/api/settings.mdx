@@ -1,0 +1,96 @@
+---
+title: Settings
+description: Read and update retrieval, ingestion, and general workspace settings, then requeue documents when ingestion behavior changes.
+---
+
+# Settings
+
+Settings are workspace-scoped. They control how Radioso retrieves, processes, and presents information.
+
+## Relevant endpoints
+
+```text
+GET /api/v1/settings/retrieval
+PUT /api/v1/settings/retrieval
+GET /api/v1/settings/ingestion
+PUT /api/v1/settings/ingestion
+POST /api/v1/settings/ingestion/reprocess
+GET /api/v1/settings/general
+PUT /api/v1/settings/general
+```
+
+## How it works
+
+There are three setting groups:
+
+- retrieval settings for ranking, citations, rewrite behavior, and answer policy
+- ingestion settings for chunking behavior
+- general settings for anonymous chat, assistant defaults, and website embed behavior
+
+When ingestion settings change, you can requeue eligible documents so the new chunking behavior is applied to existing content.
+
+## Retrieval settings
+
+This payload includes fields such as:
+
+- `queryRewriteEnabled`
+- `semanticRewriteInstructions`
+- `lexicalRewriteInstructions`
+- `answerSupportPolicy`
+- `conversationMode`
+- `rerankEnabled`
+- `vectorTopK`
+- `similarityThreshold`
+- `rerankTopK`
+- `citationDisplayEnabled`
+- `metadataRules`
+- `customInstruction`
+
+For tuning guidance, also read [SDK retrieval settings](/sdk/retrieval-settings).
+
+## Ingestion settings
+
+This payload includes fields such as:
+
+- `chunkingStrategy`
+- `fixedWindowChunkSize`
+- `fixedWindowChunkOverlap`
+- `structuredMinChunkSize`
+- `structuredMaxChunkSize`
+
+If you change these values and want them applied to existing documents, call:
+
+```text
+POST /api/v1/settings/ingestion/reprocess
+```
+
+## General settings
+
+This payload covers user-facing workspace behavior such as:
+
+- `anonymousChatEnabled`
+- `anonymousRateLimit`
+- `rotateAnonymousChatToken`
+- `assistantName`
+- `assistantRole`
+- `greetingInstruction`
+- `assistantDefaultLocale`
+- `proactiveGreetingEnabled`
+- `websiteEmbedEnabled`
+- `rotateWebsiteEmbedToken`
+- `websiteEmbedAllowedOrigins`
+- `websiteEmbedLauncherLabel`
+- `websiteEmbedLauncherIcon`
+- `websiteEmbedLauncherPosition`
+
+## Common failure modes
+
+- `400` usually means the payload is invalid for that settings group.
+- `401` means the workspace token is missing or invalid.
+- `404` on general settings usually means the workspace context is not available.
+
+## Read next
+
+- [Documents and search](/api/documents-and-search)
+- [Public chat and embed](/api/public-chat-and-embed)
+- [API Reference](/api-reference)

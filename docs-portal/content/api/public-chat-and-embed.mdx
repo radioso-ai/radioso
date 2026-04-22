@@ -1,0 +1,67 @@
+---
+title: Public chat and embed
+description: Bootstrap anonymous website embed sessions and use the public chat routes that preserve session continuity with cookies.
+---
+
+# Public chat and embed
+
+These routes support anonymous or embedded chat experiences. They do not use the workspace API token.
+
+## Relevant endpoints
+
+```text
+POST /api/v1/public/embed/{token}/session
+GET  /api/v1/public/chat/{token}
+POST /api/v1/public/chat/{token}
+GET  /api/v1/public/chat/{token}/history/{conversationId}
+```
+
+## How it works
+
+1. Enable public chat or website embed in general settings.
+2. Use the public token associated with that workspace.
+3. For website embed, bootstrap a session from an approved origin.
+4. Preserve the server-set anonymous session cookie across requests.
+
+The key point is that session continuity is maintained by an HttpOnly cookie, not by a fixed anonymous secret stored in the client.
+
+## Bootstrap an embed session
+
+Use this route from an approved website origin:
+
+```text
+POST /api/v1/public/embed/{token}/session
+```
+
+The request can include `anonymousSessionId` when you want to reattach a known anonymous visitor identity.
+
+## Send a public chat message
+
+```json
+{
+  "query": "What can this workspace answer?",
+  "stream": false,
+  "conversationId": "optional-conversation-id"
+}
+```
+
+The public chat request also supports `bootstrapGreeting`, `userExpectedLocale`, and `inputMetadata`.
+
+## History in the anonymous flow
+
+Use `GET /api/v1/public/chat/{token}` to list conversations for the current anonymous session.
+
+Use `GET /api/v1/public/chat/{token}/history/{conversationId}` to fetch one conversation from that same anonymous session.
+
+## Common failure modes
+
+- `403` on the embed session route usually means the origin is not in the allowlist.
+- `404` usually means the public token is unknown or not active.
+- `429` on public chat means the anonymous rate limit has been reached.
+- If history appears empty, the browser or cookie jar is probably not preserving the HttpOnly anonymous session cookie.
+
+## Read next
+
+- [Settings](/api/settings)
+- [Connectors and webhooks](/api/connectors-and-webhooks)
+- [API Reference](/api-reference)

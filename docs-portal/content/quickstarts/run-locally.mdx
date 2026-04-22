@@ -1,0 +1,83 @@
+---
+title: Run locally in 5 minutes
+description: Start the full Radioso stack locally, create a workspace, upload a document, and ask the first question.
+---
+
+# Run locally in 5 minutes
+
+## Prerequisites
+
+- Node.js 22+
+- Docker with `docker compose`
+- At least one supported provider key:
+  - `OPENAI_API_KEY`
+  - `GEMINI_API_KEY`
+  - `ANTHROPIC_API_KEY`
+
+`Node.js` is required because `./run-dev.sh` uses a small Node-based bootstrap script before the containers come up.
+
+## Start the stack
+
+```bash
+./run-dev.sh
+```
+
+This is the intended local bootstrap path. It:
+
+- checks local prerequisites
+- creates or reuses `backend/.env`
+- prompts for the AI provider and required credentials
+- generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `WEBSITE_EMBED_SECRET`
+- configures uploaded document storage to use the local filesystem by default
+- builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose
+- waits until the frontend and backend are reachable
+
+When it finishes successfully, open:
+
+- App: `http://localhost:3000`
+- API: `http://localhost:8080`
+- Embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
+
+## Verify first success
+
+1. Open `http://localhost:3000`
+2. Register or sign in
+3. Upload a document or let the starter documents finish processing
+4. Ask one suggested question
+
+Success looks like this:
+
+- the frontend loads
+- you can register or sign in
+- you can upload a document
+- Radioso returns an answer grounded in that document
+
+## Choose your path
+
+### Use the web app
+
+This is the fastest path if you want to click around the product and verify that the full app works.
+
+### Use the API or SDK only
+
+You do not need to open the web app at all.
+
+Register a new user and save the session cookie:
+
+```bash
+curl -sS -c cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
+  http://localhost:8080/api/v1/auth/register
+```
+
+Reveal the workspace API token with the session cookie:
+
+```bash
+curl -sS -b cookies.txt \
+  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
+```
+
+## Common failure mode
+
+If the stack starts but answers fail, the most common issue is missing or invalid provider credentials in `backend/.env`.

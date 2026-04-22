@@ -220,6 +220,22 @@ Governed write tools use the same endpoint, but require an approval token from `
 
 The remote package keeps MCP transport, session exchange, approval gating, audit logging, workspace policy resolution, and shared-store runtime concerns separate from backend application modules. Newer Radioso deployments also expose `GET /api/v1/workspace/mcp/context`, which the package uses to negotiate workspace identity and supported MCP capabilities before a session grants tools. The local stdio mode still exists for compatibility, but remote HTTP is now the primary MCP surface.
 
+## Assistant Execution Model
+
+Radioso deliberately codifies a separation between live chat and any future background assistant work.
+
+- Normal chat stays on the live request path, including authenticated chat, anonymous or embedded chat, and assistant bootstrap greetings.
+- Those interactions remain immediate and streaming when requested. Radioso does not silently queue a normal chat turn behind the scenes.
+- Long-running assistant-adjacent work belongs in an explicit deferred path once a real background runtime exists. Eval replay is still an inline workflow today, even though it is a plausible future candidate for that path.
+
+For the operator-facing explanation, see [docs/assistant-execution-model.md](./docs/assistant-execution-model.md).
+
+### Enterprise Architecture FAQ
+
+- **Is live chat queue-backed?** No. Normal chat stays synchronous and streaming so users get an immediate answer or an explicit failure instead of a silent handoff into background work.
+- **Does Radioso support durable background processing?** Yes for document processing today. Chat-related deferred execution is reserved for future long-running workflows and is not substituted automatically for live conversation turns.
+- **What is the product contract?** Radioso treats interactive conversation and background work as separate modes. Live chat is optimized for responsiveness, while any future deferred workflow must be explicit, inspectable, and independently operated.
+
 ## TypeScript SDK
 
 The repo includes a TypeScript SDK with the package name `@radioso/typescript-sdk`.

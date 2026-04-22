@@ -1,12 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { RefreshCw, Save, Search, Settings2, SlidersHorizontal } from 'lucide-react'
 
 import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
-import { PipelineConnector, SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
+import { SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
 import { chunkingStrategyOptions } from '@/components/dashboard/settings/settings-options'
+import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
+import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { ingestionSettingDocs } from '@/components/dashboard/settings/settings-docs'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -19,9 +22,18 @@ import {
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
+import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { type IngestionSettings, settingsApi } from '@/lib/api'
 
-export function IngestionSettingsPanel() {
+export function IngestionSettingsPanel({
+  accountId,
+  routeState,
+}: {
+  accountId: string
+  routeState: DashboardRouteState
+}) {
+  const router = useRouter()
+  const descriptor = getSettingsTabDescriptor('ingestion')
   const [settings, setSettings] = useState<IngestionSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -113,26 +125,32 @@ export function IngestionSettingsPanel() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-medium text-foreground">Ingestion Settings</h2>
-          <p className="text-sm text-muted-foreground">Tune how documents are chunked before retrieval.</p>
+    <SettingsTabShell
+      accountId={accountId}
+      routeState={routeState}
+      descriptor={descriptor}
+      onNavigate={(href) => router.push(href)}
+      footer={
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-foreground">Ingestion changes affect future processing.</p>
+            <p className="text-sm text-muted-foreground">
+              Save your tuning first, then reprocess existing documents only when you want stored chunks rewritten.
+            </p>
+          </div>
+          <Button size="sm" onClick={handleSave} disabled={!hasChanges || isSaving}>
+            {isSaving ? <Spinner className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
+            Save changes
+          </Button>
         </div>
-        <Button size="sm" onClick={handleSave} disabled={!hasChanges || isSaving}>
-          {isSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-          Save Changes
-        </Button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-2xl space-y-2">
+      }
+    >
+      <div className="mx-auto max-w-4xl space-y-6">
           <SettingsCard
-            id="document-processing"
-            eyebrow="Stage 1"
+            id="chunking-strategy"
             icon={<Settings2 className="h-5 w-5 text-primary" />}
             title="Choose a chunking strategy"
-            description="Set the splitting approach first, then tune the active strategy before reprocessing existing documents."
+            description="Pick the splitting approach for future ingests. Strategy choice establishes the baseline before you tune the active parameters."
           >
             <div className="space-y-4">
               <SettingFieldHeader
@@ -174,10 +192,8 @@ export function IngestionSettingsPanel() {
             </div>
           </SettingsCard>
 
-          <PipelineConnector />
-
           <SettingsCard
-            eyebrow="Stage 2"
+            id="chunking-tuning"
             icon={
               settings.chunkingStrategy === 'fixed_window' ? (
                 <SlidersHorizontal className="h-5 w-5 text-primary" />
@@ -188,8 +204,8 @@ export function IngestionSettingsPanel() {
             title={settings.chunkingStrategy === 'fixed_window' ? 'Tune fixed windows' : 'Tune structure-aware chunks'}
             description={
               settings.chunkingStrategy === 'fixed_window'
-                ? 'These controls define the chunk size and overlap used for fixed-window splitting.'
-                : 'These controls define the min and max chunk bounds used when structure-aware splitting groups adjacent content.'
+                ? 'Adjust the chunk size and overlap used by the fixed-window strategy.'
+                : 'Adjust the min and max chunk bounds used when structure-aware splitting groups adjacent content.'
             }
           >
             <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
@@ -296,11 +312,8 @@ export function IngestionSettingsPanel() {
             </div>
           </SettingsCard>
 
-          <PipelineConnector />
-
           <SettingsCard
             id="existing-documents"
-            eyebrow="Stage 3"
             icon={<RefreshCw className="h-5 w-5 text-primary" />}
             title="Apply changes to existing documents"
             description="Save the new ingestion settings, then re-queue eligible documents when you want stored chunks rewritten."
@@ -332,8 +345,7 @@ export function IngestionSettingsPanel() {
               </div>
             </div>
           </SettingsCard>
-        </div>
       </div>
-    </div>
+    </SettingsTabShell>
   )
 }

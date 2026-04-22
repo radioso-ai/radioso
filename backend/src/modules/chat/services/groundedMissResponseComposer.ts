@@ -1,6 +1,5 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { serviceUnavailable } from "../../../shared/domain/errors.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
@@ -16,12 +15,10 @@ export interface GroundedMissResponseComposer {
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string>;
   composeNoContext(input: {
     query: string;
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string>;
 }
 
@@ -31,17 +28,15 @@ export class MissingGroundedMissResponseComposer implements GroundedMissResponse
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string> {
-    throw new Error("grounded_miss_response_composer_not_configured");
+    return buildUnsupportedWithContextFallback(_input.contexts);
   }
 
   async composeNoContext(_input: {
     query: string;
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string> {
-    throw new Error("grounded_miss_response_composer_not_configured");
+    return buildNoContextFallback();
   }
 }
 
@@ -95,37 +90,42 @@ const normalizeModelResponse = (value: string | undefined): string => {
   return normalized;
 };
 
-const groundedMissGenerationFailed = (reason: string) =>
-  serviceUnavailable("Grounded miss response generation failed.", {
-    reason,
-  });
-
 const buildConversationModeGuidance = (input: {
   conversationMode?: ConversationMode;
-  brevityOverrideRequested?: boolean;
   hasRetrievedContexts: boolean;
 }): string => {
-  const promptName = input.brevityOverrideRequested
+  const promptName = input.conversationMode === "factual"
     ? input.hasRetrievedContexts
-      ? "chat/grounded-miss/guidance-brief-with-context.md"
-      : "chat/grounded-miss/guidance-brief-no-context.md"
-    : input.conversationMode === "factual"
+      ? "chat/grounded-miss/guidance-factual-with-context.md"
+      : "chat/grounded-miss/guidance-factual-no-context.md"
+    : input.conversationMode === "exploratory"
       ? input.hasRetrievedContexts
-        ? "chat/grounded-miss/guidance-factual-with-context.md"
-        : "chat/grounded-miss/guidance-factual-no-context.md"
-      : input.conversationMode === "exploratory"
-        ? input.hasRetrievedContexts
-          ? "chat/grounded-miss/guidance-exploratory-with-context.md"
-          : "chat/grounded-miss/guidance-exploratory-no-context.md"
-        : input.hasRetrievedContexts
-          ? "chat/grounded-miss/guidance-guided-with-context.md"
-          : "chat/grounded-miss/guidance-guided-no-context.md";
+        ? "chat/grounded-miss/guidance-exploratory-with-context.md"
+        : "chat/grounded-miss/guidance-exploratory-no-context.md"
+      : input.hasRetrievedContexts
+        ? "chat/grounded-miss/guidance-guided-with-context.md"
+        : "chat/grounded-miss/guidance-guided-no-context.md";
 
   return loadPromptTemplate(promptName);
 };
 
 const NO_CONTEXT_SYSTEM_PROMPT = loadPromptTemplate("chat/no-context-system.md");
 const UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT = loadPromptTemplate("chat/unsupported-with-context-system.md");
+const NO_CONTEXT_FALLBACK_PROMPT = loadPromptTemplate("chat/grounded-miss/fallback-no-context.md");
+
+const buildNoContextFallback = (): string => NO_CONTEXT_FALLBACK_PROMPT;
+
+const buildUnsupportedWithContextFallback = (contexts: GroundedMissContextSummary[]): string => {
+  const titledContext = normalizeContexts(contexts).find((context) => context.title.length > 0);
+
+  if (!titledContext) {
+    return loadPromptTemplate("chat/grounded-miss/fallback-unsupported-with-context-untitled.md");
+  }
+
+  return renderPromptTemplate("chat/grounded-miss/fallback-unsupported-with-context.md", {
+    title: titledContext.title,
+  });
+};
 
 export class ModelGroundedMissResponseComposer implements GroundedMissResponseComposer {
   constructor(private readonly client: TextGenerationClient) {}
@@ -148,7 +148,6 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     unsupportedText: string;
     contexts: GroundedMissContextSummary[];
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string> {
     try {
       const raw = await this.completeWithRetry({
@@ -159,7 +158,6 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
           contexts_section: formatContextsForPrompt(input.contexts),
           conversation_mode_guidance: buildConversationModeGuidance({
             conversationMode: input.conversationMode,
-            brevityOverrideRequested: input.brevityOverrideRequested,
             hasRetrievedContexts: true,
           }),
         }),
@@ -172,22 +170,19 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         return normalized;
       }
 
-      throw groundedMissGenerationFailed("empty_grounded_miss_response");
+      return buildUnsupportedWithContextFallback(input.contexts);
     } catch (error) {
       if (isProviderCredentialError(error)) {
         throw error;
       }
 
-      throw groundedMissGenerationFailed(
-        error instanceof Error ? error.message : "grounded_miss_generation_failed",
-      );
+      return buildUnsupportedWithContextFallback(input.contexts);
     }
   }
 
   async composeNoContext(input: {
     query: string;
     conversationMode?: ConversationMode;
-    brevityOverrideRequested?: boolean;
   }): Promise<string> {
     try {
       const raw = await this.completeWithRetry({
@@ -196,7 +191,6 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
           query: input.query,
           conversation_mode_guidance: buildConversationModeGuidance({
             conversationMode: input.conversationMode,
-            brevityOverrideRequested: input.brevityOverrideRequested,
             hasRetrievedContexts: false,
           }),
         }),
@@ -209,15 +203,13 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         return normalized;
       }
 
-      throw groundedMissGenerationFailed("empty_grounded_miss_response");
+      return buildNoContextFallback();
     } catch (error) {
       if (isProviderCredentialError(error)) {
         throw error;
       }
 
-      throw groundedMissGenerationFailed(
-        error instanceof Error ? error.message : "grounded_miss_generation_failed",
-      );
+      return buildNoContextFallback();
     }
   }
 }

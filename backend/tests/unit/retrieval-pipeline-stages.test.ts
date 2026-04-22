@@ -255,7 +255,7 @@ describe("retrieval pipeline stages", () => {
     expect(result.promptHistory).toEqual([]);
   });
 
-  it("decomposes retrieval into multiple subqueries when rewrite provides them", async () => {
+  it("keeps decomposed retrieval branches for history-free comparative turns", async () => {
     const interpretationStage = new QueryInterpretationStageService(
       new QueryRewriteService({
         async rewrite() {
@@ -366,6 +366,7 @@ describe("retrieval pipeline stages", () => {
     expect(lexicalQueries).toEqual(["narayani", "arudra"]);
     expect(retrieved.retrievalBranches).toHaveLength(2);
     expect(retrieved.retrievalBranches.map((branch) => branch.label)).toEqual(["Narayani", "Arudra"]);
+    expect(retrieved.originalContexts).toHaveLength(0);
     expect(retrieved.rewrittenContexts).toHaveLength(2);
     expect(retrieved.lexicalContexts).toHaveLength(2);
   });
@@ -561,7 +562,6 @@ describe("retrieval pipeline stages", () => {
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
-        brevityOverrideRequested: false,
       },
     });
 

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { EvalReplayService } from "../../src/modules/evals/services/evalReplayService.js";
 import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
+import { getAssistantWorkflowPolicy } from "../../src/modules/chat/services/chatExecutionPolicy.js";
 
 const groundedMissResponseComposer: GroundedMissResponseComposer = {
   async composeUnsupportedWithContext() {
@@ -13,6 +14,13 @@ const groundedMissResponseComposer: GroundedMissResponseComposer = {
 };
 
 describe("EvalReplayService", () => {
+  it("keeps eval replay classified on the current inline execution path", () => {
+    expect(getAssistantWorkflowPolicy("eval.replay")).toMatchObject({
+      executionClass: "interactive_synchronous",
+      operatorLabel: "Eval replay",
+    });
+  });
+
   it("uses the conversational no-context response during replay", async () => {
     const retrievalPipeline = {
       async run() {
@@ -156,7 +164,6 @@ describe("EvalReplayService", () => {
             answerSupportPolicy: "strict",
             citationDisplayEnabled: true,
             conversationMode: "guided",
-            brevityOverrideRequested: false,
           },
         };
       },

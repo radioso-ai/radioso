@@ -79,6 +79,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`) (043-mcp-context-server)
 - TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`), a Redis client for optional shared-store mode (043-mcp-context-server)
 - Existing Radioso PostgreSQL state remains behind HTTP APIs; package-owned MCP session and approval state must support both in-memory local mode and shared-store mode for multi-instance hosting (043-mcp-context-server)
+- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing dashboard settings docs pipeline (044-async-chat-jobs)
+- PostgreSQL 16 with `pgvector`; existing conversations, messages, audit events, and document-processing jobs; no new persistence required in this feature (044-async-chat-jobs)
 
 
 ## Project Structure
@@ -105,6 +107,6 @@ tests/
 - Store backend runtime LLM prompt templates under `backend/prompts/`. Do not add new runtime prompt files at repo root `/prompts`; if prompt text is extracted from backend code, the destination is `backend/prompts/`.
 
 ## Recent Changes
+- 044-async-chat-jobs: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing dashboard settings docs pipeline
 - 043-mcp-context-server: Added TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`), a Redis client for optional shared-store mode
-- 043-mcp-context-server: Added TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`)
-- 043-mcp-context-server: Added TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, `@modelcontextprotocol/node`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`)
+- 042-autoscale-workers: Added TypeScript 5.x on Node.js 22 + Express, `pg`, Zod, Pino, Vitest, Supertest, `@google-cloud/tasks`, existing local connector/document packages

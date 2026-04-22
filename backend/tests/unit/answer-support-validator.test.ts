@@ -51,7 +51,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -71,6 +70,7 @@ describe("answer support validator", () => {
       ran: true,
       answerModified: true,
       unsupportedSegmentCount: 1,
+      substantiveUnsupportedSegmentCount: 1,
       supportedSegmentCount: 1,
       nonSubstantiveSegmentCount: 3,
       answerSupportPolicy: "strict",
@@ -99,7 +99,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -110,6 +109,7 @@ describe("answer support validator", () => {
       ran: true,
       answerModified: true,
       unsupportedSegmentCount: 1,
+      substantiveUnsupportedSegmentCount: 1,
       supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 1,
       answerSupportPolicy: "strict",
@@ -137,7 +137,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: false,
       answerSupportPolicy: "strict",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -167,7 +166,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -184,6 +182,7 @@ describe("answer support validator", () => {
       ran: true,
       answerModified: false,
       unsupportedSegmentCount: 0,
+      substantiveUnsupportedSegmentCount: 0,
       supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 6,
       answerSupportPolicy: "strict",
@@ -215,7 +214,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "strict",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -225,6 +223,37 @@ describe("answer support validator", () => {
       { text: "." },
     ]);
     expect(result.validation.unsupportedSegmentCount).toBe(2);
+  });
+
+  it("counts unsupported non-Latin text as substantive", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Что сказано на странице?",
+      answer: "Страница объясняет тестирование. Она также обещает круглосуточную поддержку.",
+      answerSegments: [
+        {
+          text: "Страница объясняет тестирование",
+          citationIndices: [0],
+        },
+        { text: ". " },
+        { text: "Она также обещает круглосуточную поддержку" },
+        { text: "." },
+      ],
+      citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("Страница объясняет тестирование.");
+    expect(result.validation.unsupportedSegmentCount).toBe(1);
+    expect(result.validation.substantiveUnsupportedSegmentCount).toBe(1);
   });
 
   it("preserves unsupported content under warn without replacing it", async () => {
@@ -239,7 +268,6 @@ describe("answer support validator", () => {
       citationDisplayEnabled: true,
       answerSupportPolicy: "warn",
       conversationMode: "guided",
-      brevityOverrideRequested: false,
       groundedMissResponseComposer,
     });
 
@@ -265,6 +293,7 @@ describe("assistant turn outcome classifier", () => {
           ran: true,
           answerModified: false,
           unsupportedSegmentCount: 0,
+          substantiveUnsupportedSegmentCount: 0,
           supportedSegmentCount: 2,
           nonSubstantiveSegmentCount: 1,
         },
@@ -282,6 +311,7 @@ describe("assistant turn outcome classifier", () => {
           ran: true,
           answerModified: true,
           unsupportedSegmentCount: 1,
+          substantiveUnsupportedSegmentCount: 1,
           supportedSegmentCount: 1,
           nonSubstantiveSegmentCount: 0,
         },
@@ -299,6 +329,7 @@ describe("assistant turn outcome classifier", () => {
           ran: true,
           answerModified: false,
           unsupportedSegmentCount: 1,
+          substantiveUnsupportedSegmentCount: 1,
           supportedSegmentCount: 0,
           nonSubstantiveSegmentCount: 0,
           answerSupportPolicy: "warn",
@@ -317,10 +348,47 @@ describe("assistant turn outcome classifier", () => {
           ran: false,
           answerModified: false,
           unsupportedSegmentCount: 0,
+          substantiveUnsupportedSegmentCount: 0,
           supportedSegmentCount: 0,
           nonSubstantiveSegmentCount: 0,
         },
       }),
     ).toBe(ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL);
+  });
+
+  it("treats whitespace-only unsupported tails as non-substantive for outcome classification", () => {
+    const classifier = new AssistantTurnOutcomeClassifier();
+
+    expect(
+      classifier.classify({
+        hadRetrievedContext: true,
+        validation: {
+          ran: true,
+          answerModified: true,
+          unsupportedSegmentCount: 1,
+          substantiveUnsupportedSegmentCount: 0,
+          supportedSegmentCount: 1,
+          nonSubstantiveSegmentCount: 1,
+        },
+      }),
+    ).toBe(ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS);
+  });
+
+  it("keeps non-Latin unsupported content on the degraded path", () => {
+    const classifier = new AssistantTurnOutcomeClassifier();
+
+    expect(
+      classifier.classify({
+        hadRetrievedContext: true,
+        validation: {
+          ran: true,
+          answerModified: true,
+          unsupportedSegmentCount: 1,
+          substantiveUnsupportedSegmentCount: 1,
+          supportedSegmentCount: 1,
+          nonSubstantiveSegmentCount: 1,
+        },
+      }),
+    ).toBe(ASSISTANT_TURN_OUTCOME.GROUNDED_DEGRADED_UNSUPPORTED_SEGMENTS);
   });
 });

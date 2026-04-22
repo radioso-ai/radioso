@@ -6,6 +6,7 @@ import type {
   RetrievalSubquery,
   ResponseLanguagePolicy,
   RewrittenRetrievalQuery,
+  RewriteContinuityState,
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
@@ -16,9 +17,8 @@ export interface RetrievalPipelineRequest {
   query: string;
   history: MessageRecord[];
   assistantIdentity?: AssistantIdentityPromptInput | null;
-  brevityOverrideRequested?: boolean;
   responseLanguagePolicy?: ResponseLanguagePolicy;
-  rewriteCarryForwardLiterals?: string[];
+  rewriteContinuityState?: RewriteContinuityState;
   metadataFilter?: Record<string, unknown>;
 }
 
@@ -85,7 +85,6 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
     conversationMode: RetrievalSettingsRecord["conversationMode"];
     suggestedQuestionsEnabled: RetrievalSettingsRecord["suggestedQuestionsEnabled"];
     suggestedQuestionsCount: RetrievalSettingsRecord["suggestedQuestionsCount"];
-    brevityOverrideRequested: boolean;
     responseLanguagePolicy?: ResponseLanguagePolicy;
   };
 }

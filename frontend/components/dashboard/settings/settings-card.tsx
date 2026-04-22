@@ -18,12 +18,15 @@ export function SettingsCard({
   children: ReactNode
 }) {
   return (
-    <section id={id} className="rounded-lg border border-border bg-card p-4 space-y-4 scroll-mt-24">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+    <section
+      id={id}
+      className="scroll-mt-24 space-y-5 rounded-2xl border border-border bg-card/95 p-5 shadow-sm"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
           {icon}
         </div>
-        <div>
+        <div className="min-w-0">
           {eyebrow ? (
             <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">
               {eyebrow}

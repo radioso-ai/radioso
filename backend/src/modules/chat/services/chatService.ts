@@ -431,6 +431,10 @@ export class ChatService {
             text: trailing,
           };
         }
+
+        if (!rawAnswer.trim()) {
+          throw new BlankChatAnswerError();
+        }
       }
 
       const presentation = noContextPresentation ?? await this.presentAnswer(session, rawAnswer, input.query);

@@ -36,7 +36,10 @@ describe("retrieval trace assembler", () => {
           selectedMessages: [],
           truncated: false,
           selectionReason: "no-history",
-          rewriteCarryForwardLiterals: [],
+          rewriteContinuityState: {
+            relatedEntities: [],
+            groundedTitles: [],
+          },
         },
         originalParsedQuery: {
           originalQuery: "who is narayani and arudra?",

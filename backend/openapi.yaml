@@ -1641,6 +1641,8 @@ components:
     ValidationSegmentResult:
       type: object
       properties:
+        originalText:
+          type: string
         text:
           type: string
         disposition:
@@ -1655,6 +1657,7 @@ components:
             type: integer
             minimum: 0
       required:
+        - originalText
         - text
         - disposition
         - replacementApplied
@@ -1667,6 +1670,9 @@ components:
         answerModified:
           type: boolean
         unsupportedSegmentCount:
+          type: integer
+          minimum: 0
+        substantiveUnsupportedSegmentCount:
           type: integer
           minimum: 0
         supportedSegmentCount:
@@ -1686,6 +1692,7 @@ components:
         - ran
         - answerModified
         - unsupportedSegmentCount
+        - substantiveUnsupportedSegmentCount
         - supportedSegmentCount
         - nonSubstantiveSegmentCount
         - segmentResults

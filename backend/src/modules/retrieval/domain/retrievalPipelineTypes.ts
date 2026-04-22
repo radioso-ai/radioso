@@ -6,7 +6,13 @@ export interface ConversationContextWindow {
   selectedMessages: MessageRecord[];
   truncated: boolean;
   selectionReason: string;
-  rewriteCarryForwardLiterals?: string[];
+  rewriteContinuityState?: RewriteContinuityState;
+}
+
+export interface RewriteContinuityState {
+  activeSubject?: string;
+  relatedEntities: string[];
+  groundedTitles: string[];
 }
 
 export const REWRITE_STATUS = {

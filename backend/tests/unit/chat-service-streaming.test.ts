@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { ChatService, type ChatGateway, type ChatStreamEvent } from "../../src/modules/chat/services/chatService.js";
+import {
+  BlankChatAnswerError,
+  ChatService,
+  type ChatGateway,
+  type ChatStreamEvent,
+} from "../../src/modules/chat/services/chatService.js";
 import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
-import { createAuditService, InMemoryConversationRepository, InMemoryMessageRepository } from "../support/fakes.js";
+import {
+  createAuditService,
+  InMemoryAuditEventRepository,
+  InMemoryConversationRepository,
+  InMemoryMessageRepository,
+} from "../support/fakes.js";
 
 const groundedMissResponseComposer: GroundedMissResponseComposer = {
   async composeUnsupportedWithContext(input) {
@@ -149,17 +159,23 @@ describe("chat service streaming", () => {
       { role: "user", content: "What does this page do?" },
       { role: "assistant", content: "full answer" },
     ]);
-    expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual([]);
+    expect(auditService.events[0]?.metadata?.workflow).toBe("chat.turn");
+    expect(auditService.events[0]?.metadata?.executionClass).toBe("interactive_synchronous");
+    expect(auditService.events[0]?.metadata?.rewriteContinuityState).toEqual({
+      activeSubject: "Intro",
+      relatedEntities: [],
+      groundedTitles: ["Intro"],
+    });
   });
 
-  it("loads literal-only carry-forward from the previous successful answer", async () => {
+  it("loads rewrite continuity state from the previous successful answer", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const capturedInputs: Array<{ rewriteCarryForwardLiterals?: string[] }> = [];
+    const capturedInputs: Array<{ rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }> = [];
     const retrievalPipeline = {
-      async run(input: { query: string; rewriteCarryForwardLiterals?: string[] }) {
-        capturedInputs.push({ rewriteCarryForwardLiterals: input.rewriteCarryForwardLiterals });
+      async run(input: { query: string; rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }) {
+        capturedInputs.push({ rewriteContinuityState: input.rewriteContinuityState });
         return {
           rewrittenQuery: input.query,
           contexts: [
@@ -241,8 +257,115 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(capturedInputs[0]?.rewriteCarryForwardLiterals).toBeUndefined();
-    expect(capturedInputs[1]?.rewriteCarryForwardLiterals).toEqual(["Narayani"]);
+    expect(capturedInputs[0]?.rewriteContinuityState).toBeUndefined();
+    expect(capturedInputs[1]?.rewriteContinuityState).toEqual({
+      activeSubject: "Narayani",
+      relatedEntities: [],
+      groundedTitles: ["La mia anima ricorda Swami Kriyananda"],
+    });
+  });
+
+  it("normalizes malformed rewrite continuity state loaded from audit metadata", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditEventRepository = new InMemoryAuditEventRepository();
+    const auditService = createAuditService(auditEventRepository);
+    const capturedInputs: Array<{ rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }> = [];
+    const retrievalPipeline = {
+      async run(input: { query: string; rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }) {
+        capturedInputs.push({ rewriteContinuityState: input.rewriteContinuityState });
+        return {
+          rewrittenQuery: input.query,
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "La mia anima ricorda Swami Kriyananda",
+              content: "full answer",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [
+            {
+              documentId: "doc-1",
+              chunkId: "chunk-1",
+              title: "La mia anima ricorda Swami Kriyananda",
+            },
+          ],
+          diagnostics: {
+            rewriteStatus: "applied",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            rewriteProposal: {
+              rewrittenQuery: "Can I buy Narayani's book?",
+              turnKind: "referential_followup",
+              proposedActiveSubject: "Narayani",
+              relatedEntities: [],
+              unresolved: false,
+              confidence: 0.9,
+            },
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "full answer[[1]]";
+      },
+      async *streamAnswer() {
+        yield "full answer[[1]]";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const first = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Can I buy her book?",
+      stream: false,
+    });
+
+    auditEventRepository.items[0]!.metadata.rewriteContinuityState = {
+      activeSubject: 42,
+      relatedEntities: ["Narayani", 7, ""],
+      groundedTitles: ["La mia anima ricorda Swami Kriyananda", null],
+    };
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: first.conversationId,
+      query: "how much is it?",
+      stream: false,
+    });
+
+    expect(capturedInputs[1]?.rewriteContinuityState).toEqual({
+      activeSubject: "La mia anima ricorda Swami Kriyananda",
+      relatedEntities: [],
+      groundedTitles: ["La mia anima ricorda Swami Kriyananda"],
+    });
   });
 
   it("answers assistant identity questions without retrieved document context", async () => {
@@ -312,6 +435,148 @@ describe("chat service streaming", () => {
     expect(response.answer).toBe("My name is Marta. I am your museum guide.");
     expect(response.citations).toBeUndefined();
     expect(response.answerSegments).toBeUndefined();
+  });
+
+  it("falls back to the normal no-context response when the identity prompt returns blank output", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what is your name",
+          contexts: [],
+          prompt: "unused retrieval prompt",
+          citations: [],
+          assistantIdentity: {
+            assistantName: "Marta",
+            assistantRole: "Museum guide",
+            greetingInstruction: "Warm and concise",
+          },
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "what is your name",
+              lexicalQuery: "what is your name",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        throw new BlankChatAnswerError();
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "What is your name?",
+      stream: false,
+    });
+
+    expect(response.answer).toBe(
+      "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+    );
+  });
+
+  it("does not swallow provider failures from the identity prompt", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what is your name",
+          contexts: [],
+          prompt: "unused retrieval prompt",
+          citations: [],
+          assistantIdentity: {
+            assistantName: "Marta",
+            assistantRole: "Museum guide",
+            greetingInstruction: "Warm and concise",
+          },
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "what is your name",
+              lexicalQuery: "what is your name",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        throw new Error("provider unavailable");
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    await expect(
+      service.answer({
+        workspaceId: "workspace-1",
+        query: "What is your name?",
+        stream: false,
+      }),
+    ).rejects.toThrow("provider unavailable");
+
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "chat.answer",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          errorMessage: "provider unavailable",
+        }),
+      }),
+    );
   });
 
   it("streams assistant identity answers for no-context follow-ups", async () => {
@@ -460,10 +725,10 @@ describe("chat service streaming", () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const capturedInputs: Array<{ rewriteCarryForwardLiterals?: string[] }> = [];
+    const capturedInputs: Array<{ rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }> = [];
     const retrievalPipeline = {
-      async run(input: { query: string; rewriteCarryForwardLiterals?: string[] }) {
-        capturedInputs.push({ rewriteCarryForwardLiterals: input.rewriteCarryForwardLiterals });
+      async run(input: { query: string; rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }) {
+        capturedInputs.push({ rewriteContinuityState: input.rewriteContinuityState });
         return {
           rewrittenQuery: input.query,
           contexts: [
@@ -545,11 +810,19 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual(["kaibemaksumaar Eestis"]);
-    expect(capturedInputs[1]?.rewriteCarryForwardLiterals).toEqual(["kaibemaksumaar Eestis"]);
+    expect(auditService.events[0]?.metadata?.rewriteContinuityState).toEqual({
+      activeSubject: "kaibemaksumaar Eestis",
+      relatedEntities: [],
+      groundedTitles: [],
+    });
+    expect(capturedInputs[1]?.rewriteContinuityState).toEqual({
+      activeSubject: "kaibemaksumaar Eestis",
+      relatedEntities: [],
+      groundedTitles: [],
+    });
   });
 
-  it("does not persist related entities as carry-forward literals", async () => {
+  it("drops inferred related entities from rewrite continuity state", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -622,7 +895,11 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(auditService.events[0]?.metadata?.carryForwardLiterals).toEqual(["Narayani"]);
+    expect(auditService.events[0]?.metadata?.rewriteContinuityState).toEqual({
+      activeSubject: "Narayani",
+      relatedEntities: [],
+      groundedTitles: ["Narayani"],
+    });
   });
 
   it("includes the normalized final answer in the done event when a malformed anchor is truncated during streaming", async () => {

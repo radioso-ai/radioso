@@ -23,10 +23,11 @@ import {
   MissingGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
 } from "./groundedMissResponseComposer.js";
+import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { ConversationModeExpansionService } from "./conversationModeExpansionService.js";
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
-import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
+import type { RetrievalTrace, RewriteContinuityState } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
@@ -44,6 +45,15 @@ export interface ChatGateway {
     prompt: string;
   }): AsyncIterable<string>;
 }
+
+export class BlankChatAnswerError extends Error {
+  constructor() {
+    super("chat_answer_generation_failed");
+    this.name = "BlankChatAnswerError";
+  }
+}
+
+const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError => error instanceof BlankChatAnswerError;
 
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
@@ -66,17 +76,22 @@ interface PreparedSession {
   history: MessageRecord[];
   retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
   userMessage: MessageRecord;
+  priorRewriteContinuityState?: RewriteContinuityState;
 }
 
 interface ChatAnswerAuditMetadata {
+  workflow?: string;
+  executionClass?: string;
   answerOutcome?: AssistantTurnOutcome;
   answerSupportPolicy?: AnswerSupportPolicy;
   conversationMode?: ConversationMode;
   conversationModeMetadata?: ConversationModeMetadata;
   validation?: AnswerValidationSummary & {
-    segmentResults?: Array<Pick<AnswerSegmentValidationResult, "text" | "disposition" | "replacementApplied" | "reason" | "citationIndices">>;
+    segmentResults?: Array<
+      Pick<AnswerSegmentValidationResult, "originalText" | "text" | "disposition" | "replacementApplied" | "reason" | "citationIndices">
+    >;
   };
-  carryForwardLiterals?: string[];
+  rewriteContinuityState?: RewriteContinuityState;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
@@ -137,7 +152,7 @@ export class ModelChatGateway implements ChatGateway {
     });
 
     if (!response?.trim()) {
-      throw new Error("chat_answer_generation_failed");
+      throw new BlankChatAnswerError();
     }
 
     return response;
@@ -215,15 +230,23 @@ export class ChatService {
       return null;
     }
 
-    const answer = (await this.chatGateway.answer({
-      query,
-      history: session.history,
-      prompt: buildAssistantIdentityAnswerPrompt({
-        assistantIdentity: session.retrieval.assistantIdentity,
-        history: session.history,
+    let answer: string;
+    try {
+      answer = (await this.chatGateway.answer({
         query,
-      }),
-    })).trim();
+        history: session.history,
+        prompt: buildAssistantIdentityAnswerPrompt({
+          assistantIdentity: session.retrieval.assistantIdentity,
+          history: session.history,
+          query,
+        }),
+      })).trim();
+    } catch (error) {
+      if (isBlankChatAnswerError(error)) {
+        return null;
+      }
+      throw error;
+    }
 
     if (!answer) {
       return null;
@@ -243,6 +266,7 @@ export class ChatService {
         ran: false,
         answerModified: false,
         unsupportedSegmentCount: 0,
+        substantiveUnsupportedSegmentCount: 0,
         supportedSegmentCount: 0,
         nonSubstantiveSegmentCount: 0,
         answerSupportPolicy: this.getAnswerSupportPolicy(session),
@@ -266,6 +290,7 @@ export class ChatService {
   }): Promise<ChatResponse> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
+    const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
 
     try {
       session = await this.prepareSession(input);
@@ -307,6 +332,7 @@ export class ChatService {
         answerSupportPolicy: presentation.validation.answerSupportPolicy,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
+        priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
         stream: input.stream,
@@ -325,7 +351,7 @@ export class ChatService {
       };
     } catch (error) {
       const normalizedError = normalizeProviderCredentialError(error);
-      await this.recordFailure(input, session, assistantMessageId, normalizedError);
+      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     }
   }
@@ -344,6 +370,7 @@ export class ChatService {
   }): AsyncIterable<ChatStreamEvent> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
+    const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
 
     try {
       session = await this.prepareSession(input);
@@ -446,6 +473,7 @@ export class ChatService {
         answerSupportPolicy: presentation.validation.answerSupportPolicy,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
+        priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
         stream: input.stream,
@@ -465,7 +493,7 @@ export class ChatService {
       };
     } catch (error) {
       const normalizedError = normalizeProviderCredentialError(error);
-      await this.recordFailure(input, session, assistantMessageId, normalizedError);
+      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     }
   }
@@ -487,14 +515,14 @@ export class ChatService {
     const history = conversation
       ? await this.messageRepository.listByConversationId(input.workspaceId, conversation.id)
       : [];
-    const carryForwardLiterals = conversation
-      ? await this.loadRewriteCarryForwardLiterals(input.workspaceId, conversation.id)
+    const rewriteContinuityState = conversation
+      ? await this.loadRewriteContinuityState(input.workspaceId, conversation.id)
       : undefined;
     const retrieval = await this.retrievalPipeline.run({
       workspaceId: input.workspaceId,
       query: input.query,
       history,
-      rewriteCarryForwardLiterals: carryForwardLiterals,
+      rewriteContinuityState,
       metadataFilter: input.metadataFilter,
     });
     const persistedConversation =
@@ -518,6 +546,7 @@ export class ChatService {
       history,
       retrieval,
       userMessage,
+      priorRewriteContinuityState: rewriteContinuityState,
     };
   }
 
@@ -568,6 +597,7 @@ export class ChatService {
           ran: false,
           answerModified: false,
           unsupportedSegmentCount: 0,
+          substantiveUnsupportedSegmentCount: 0,
           supportedSegmentCount: 0,
           nonSubstantiveSegmentCount: 0,
           answerSupportPolicy: this.getAnswerSupportPolicy(session),
@@ -626,10 +656,12 @@ export class ChatService {
     answerSupportPolicy?: AnswerSupportPolicy;
     conversationMode: ConversationMode;
     conversationModeMetadata: ConversationModeMetadata;
+    priorRewriteContinuityState?: RewriteContinuityState;
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
     retrievalTrace: RetrievalTrace;
     stream: boolean;
   }): Promise<void> {
+    const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
     await this.conversationRepository.touch(input.conversationId, input.workspaceId);
     await this.auditService.record({
       accountId: input.accountId,
@@ -637,6 +669,8 @@ export class ChatService {
       eventType: "chat.answer",
       eventStatus: "success",
       metadata: {
+        workflow: workflowPolicy.workflow,
+        executionClass: workflowPolicy.executionClass,
         conversationId: input.conversationId,
         userMessageId: input.userMessageId,
         assistantMessageId: input.assistantMessageId,
@@ -648,6 +682,7 @@ export class ChatService {
         validation: {
           ...input.validation,
           segmentResults: input.segmentResults.map((segment) => ({
+            originalText: segment.originalText,
             text: segment.text,
             disposition: segment.disposition,
             replacementApplied: segment.replacementApplied,
@@ -659,8 +694,10 @@ export class ChatService {
         citations: input.citations,
         answerSegments: input.answerSegments,
         suggestions: input.suggestions,
-        carryForwardLiterals: this.buildCarryForwardLiterals({
+        rewriteContinuityState: this.buildRewriteContinuityState({
+          previousState: input.priorRewriteContinuityState,
           diagnostics: input.diagnostics,
+          citations: input.citations,
         }),
         retrieval: input.diagnostics,
         retrievalTrace: input.retrievalTrace,
@@ -712,6 +749,7 @@ export class ChatService {
     session: PreparedSession | null,
     existingAssistantMessageId: string | undefined,
     error: unknown,
+    workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn"),
   ) {
     let assistantMessageId = existingAssistantMessageId;
 
@@ -726,6 +764,8 @@ export class ChatService {
       eventStatus: "failure",
       metadata: {
         stage: "chat.answer",
+        workflow: workflowPolicy.workflow,
+        executionClass: workflowPolicy.executionClass,
         conversationId: session?.conversation.id ?? input.conversationId,
         userMessageId: session?.userMessage.id,
         assistantMessageId,
@@ -772,54 +812,117 @@ export class ChatService {
     return conversation;
   }
 
-  private async loadRewriteCarryForwardLiterals(
+  private async loadRewriteContinuityState(
     workspaceId: string,
     conversationId: string,
-  ): Promise<string[] | undefined> {
+  ): Promise<RewriteContinuityState | undefined> {
     const metadata = await this.auditService.getLatestSuccessfulChatAnswerMetadata({
       workspaceId,
       conversationId,
     }) as ChatAnswerAuditMetadata | null;
 
-    const literals = metadata?.carryForwardLiterals?.filter((value): value is string => typeof value === "string");
-    return literals && literals.length > 0 ? literals : undefined;
+    return this.normalizeRewriteContinuityState(metadata?.rewriteContinuityState);
   }
 
-  private buildCarryForwardLiterals(input: {
+  private buildRewriteContinuityState(input: {
+    previousState?: RewriteContinuityState;
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
-  }): string[] {
-    const candidates = [input.diagnostics.rewriteProposal?.proposedActiveSubject];
+    citations: ChatCitation[];
+  }): RewriteContinuityState | undefined {
+    const groundedTitles = this.collectContinuityValues([
+      ...(input.previousState?.groundedTitles ?? []),
+      ...input.citations.map((citation) => citation.title),
+    ]);
+    const activeSubject = this.resolveContinuityActiveSubject(
+      this.normalizeContinuityValue(input.diagnostics.rewriteProposal?.proposedActiveSubject)
+        ?? input.previousState?.activeSubject,
+      groundedTitles,
+    );
+    const relatedEntities: string[] = [];
 
+    if (!activeSubject && relatedEntities.length === 0 && groundedTitles.length === 0) {
+      return undefined;
+    }
+
+    return {
+      activeSubject,
+      relatedEntities,
+      groundedTitles,
+    };
+  }
+
+  private normalizeRewriteContinuityState(state: unknown): RewriteContinuityState | undefined {
+    if (!state || typeof state !== "object") {
+      return undefined;
+    }
+
+    const candidate = state as Partial<Record<keyof RewriteContinuityState, unknown>>;
+    const groundedTitles = this.collectContinuityValues(
+      Array.isArray(candidate.groundedTitles)
+        ? candidate.groundedTitles.map((value) => (typeof value === "string" ? value : undefined))
+        : [],
+    );
+    const activeSubject = this.resolveContinuityActiveSubject(
+      typeof candidate.activeSubject === "string" ? candidate.activeSubject : undefined,
+      groundedTitles,
+    );
+    const relatedEntities: string[] = [];
+
+    if (!activeSubject && relatedEntities.length === 0 && groundedTitles.length === 0) {
+      return undefined;
+    }
+
+    return {
+      activeSubject,
+      relatedEntities,
+      groundedTitles,
+    };
+  }
+
+  private resolveContinuityActiveSubject(candidate: string | undefined, groundedTitles: string[]): string | undefined {
+    const normalizedCandidate = this.normalizeContinuityValue(candidate);
+    if (normalizedCandidate) {
+      return normalizedCandidate;
+    }
+
+    return groundedTitles.length === 1 ? groundedTitles[0] : undefined;
+  }
+
+  private collectContinuityValues(values: Array<string | undefined>): string[] {
     const unique: string[] = [];
-    for (const value of candidates) {
-      if (typeof value !== "string") {
+    for (const value of values) {
+      const normalized = this.normalizeContinuityValue(value);
+      if (!normalized || unique.includes(normalized)) {
         continue;
       }
-
-      const literal = value.trim();
-      if (literal.length === 0 || literal.length > CHAT_BEHAVIOR.carryForward.maxLiteralLength) {
-        continue;
-      }
-
-      if (this.isUrlLikeLiteral(literal)) {
-        continue;
-      }
-
-      if (unique.includes(literal)) {
-        continue;
-      }
-
-      unique.push(literal);
+      unique.push(normalized);
       if (unique.length >= CHAT_BEHAVIOR.carryForward.maxLiterals) {
         break;
       }
     }
-
     return unique;
   }
 
-  private isUrlLikeLiteral(value: string): boolean {
-    return /^https?:\/\//i.test(value) || /^www\./i.test(value);
+  private normalizeContinuityValue(value?: string): string | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    if (normalized.length === 0 || normalized.length > CHAT_BEHAVIOR.carryForward.maxLiteralLength) {
+      return undefined;
+    }
+
+    try {
+      const url = new URL(normalized);
+      if (url.protocol) {
+        return undefined;
+      }
+    } catch {
+      // Keep non-URL values.
+    }
+
+    return normalized;
   }
 }
 

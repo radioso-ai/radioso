@@ -28,6 +28,7 @@ import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { accountApi, generalSettingsApi, type GeneralSettings } from '@/lib/api'
 import {
   APP_WEBSITE_EMBED_DEMO_PATH,
+  DEFAULT_WEBSITE_EMBED_THEME,
   buildWebsiteEmbedTestHarnessUrl,
   buildWebsiteEmbedSnippet,
   formatWebsiteEmbedOrigins,
@@ -40,6 +41,33 @@ import {
   sanitizeWebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
 import { useWorkspace } from '@/lib/workspace-context'
+
+type JsonOverrideRecord = Record<string, unknown>
+
+const getWebsiteEmbedJsonOverrideRecord = (value: string): JsonOverrideRecord => {
+  const parsed = parseWebsiteEmbedJsonOverrides(value)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {}
+  }
+
+  return { ...(parsed as JsonOverrideRecord) }
+}
+
+const stringifyWebsiteEmbedJsonOverrideRecord = (value: JsonOverrideRecord) =>
+  Object.keys(value).length > 0 ? JSON.stringify(value, null, 2) : ''
+
+const updateWebsiteEmbedJsonOverrideValue = (currentValue: string, key: string, nextValue: string) => {
+  const nextOverrides = getWebsiteEmbedJsonOverrideRecord(currentValue)
+  const trimmedValue = nextValue.trim()
+
+  if (trimmedValue) {
+    nextOverrides[key] = trimmedValue
+  } else {
+    delete nextOverrides[key]
+  }
+
+  return stringifyWebsiteEmbedJsonOverrideRecord(nextOverrides)
+}
 
 export function GeneralTab({
   accountId,
@@ -291,6 +319,72 @@ export function GeneralTab({
         )
       : false
 
+  const websiteEmbedSnippetParsedCopyJson = useMemo(
+    () =>
+      websiteEmbedSnippetCopyJson.trim().length > 0
+        ? parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetCopyJson)
+        : null,
+    [websiteEmbedSnippetCopyJson],
+  )
+
+  const websiteEmbedSnippetParsedThemeJson = useMemo(
+    () =>
+      websiteEmbedSnippetThemeJson.trim().length > 0
+        ? parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetThemeJson)
+        : null,
+    [websiteEmbedSnippetThemeJson],
+  )
+
+  const websiteEmbedSnippetCopyJsonError = useMemo(() => {
+    if (!websiteEmbedSnippetCopyJson.trim()) {
+      return null
+    }
+
+    return websiteEmbedSnippetParsedCopyJson ? null : 'Copy overrides must be valid JSON.'
+  }, [websiteEmbedSnippetCopyJson, websiteEmbedSnippetParsedCopyJson])
+
+  const websiteEmbedSnippetThemeJsonError = useMemo(() => {
+    if (!websiteEmbedSnippetThemeJson.trim()) {
+      return null
+    }
+
+    return websiteEmbedSnippetParsedThemeJson ? null : 'Theme overrides must be valid JSON.'
+  }, [websiteEmbedSnippetParsedThemeJson, websiteEmbedSnippetThemeJson])
+
+  const websiteEmbedSnippetAvatarUrlError = useMemo(() => {
+    if (!websiteEmbedSnippetAvatarUrl.trim()) {
+      return null
+    }
+
+    return normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl)
+      ? null
+      : 'Avatar URL must be an http(s) URL or supported relative asset path.'
+  }, [websiteEmbedSnippetAvatarUrl])
+
+  const websiteEmbedSnippetCopyOverrides = useMemo(
+    () => sanitizeWebsiteEmbedCopyOverrides(websiteEmbedSnippetParsedCopyJson),
+    [websiteEmbedSnippetParsedCopyJson],
+  )
+
+  const websiteEmbedSnippetThemeOverrides = useMemo(
+    () => sanitizeWebsiteEmbedThemeOverrides(websiteEmbedSnippetParsedThemeJson),
+    [websiteEmbedSnippetParsedThemeJson],
+  )
+
+  const hasWebsiteEmbedVisibleTextOverrides = Boolean(
+    websiteEmbedSnippetCopyOverrides.publicChatSubtitle ||
+    websiteEmbedSnippetCopyOverrides.publicChatEmptyTitle ||
+    websiteEmbedSnippetCopyOverrides.publicChatEmptyMessage ||
+    websiteEmbedSnippetCopyOverrides.startPrompt,
+  )
+
+  const hasWebsiteEmbedColorOverrides = Boolean(
+    websiteEmbedSnippetThemeOverrides.accent ||
+    websiteEmbedSnippetThemeOverrides.accentForeground ||
+    websiteEmbedSnippetThemeOverrides.panelBackground ||
+    websiteEmbedSnippetThemeOverrides.panelForeground,
+  )
+
   const websiteEmbedSnippet = useMemo(() => {
     if (!anonSettings) {
       return null
@@ -298,16 +392,6 @@ export function GeneralTab({
 
     const normalizedLocale = normalizeWebsiteEmbedLocale(websiteEmbedSnippetLocale) ?? undefined
     const normalizedInitialState = normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined
-    const copyOverrides =
-      websiteEmbedSnippetCopyJson.trim().length > 0
-        ? parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetCopyJson)
-        : null
-    const themeOverrides =
-      websiteEmbedSnippetThemeJson.trim().length > 0
-        ? parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetThemeJson)
-        : null
-    const hasCopyJsonError = websiteEmbedSnippetCopyJson.trim().length > 0 && copyOverrides === null
-    const hasThemeJsonError = websiteEmbedSnippetThemeJson.trim().length > 0 && themeOverrides === null
     const normalizedAvatarUrl =
       websiteEmbedSnippetAvatarUrl.trim().length > 0
         ? normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl)
@@ -315,7 +399,7 @@ export function GeneralTab({
     const hasAvatarUrlError =
       websiteEmbedSnippetAvatarUrl.trim().length > 0 && normalizedAvatarUrl === null
 
-    if (hasCopyJsonError || hasThemeJsonError || hasAvatarUrlError) {
+    if (websiteEmbedSnippetCopyJsonError || websiteEmbedSnippetThemeJsonError || hasAvatarUrlError) {
       return null
     }
 
@@ -340,48 +424,22 @@ export function GeneralTab({
         locale: normalizedLocale,
         initialState: normalizedInitialState,
         avatarUrl: normalizedAvatarUrl,
-        copy: sanitizeWebsiteEmbedCopyOverrides(copyOverrides),
-        theme: sanitizeWebsiteEmbedThemeOverrides(themeOverrides),
+        copy: websiteEmbedSnippetCopyOverrides,
+        theme: websiteEmbedSnippetThemeOverrides,
       })
     )
   }, [
     anonSettings,
     websiteEmbedSnippetAvatarUrl,
     websiteEmbedSnippetCopyJson,
+    websiteEmbedSnippetCopyJsonError,
+    websiteEmbedSnippetCopyOverrides,
     websiteEmbedSnippetInitialState,
     websiteEmbedSnippetLocale,
     websiteEmbedSnippetThemeJson,
+    websiteEmbedSnippetThemeJsonError,
+    websiteEmbedSnippetThemeOverrides,
   ])
-
-  const websiteEmbedSnippetCopyJsonError = useMemo(() => {
-    if (!websiteEmbedSnippetCopyJson.trim()) {
-      return null
-    }
-
-    return parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetCopyJson)
-      ? null
-      : 'Copy overrides must be valid JSON.'
-  }, [websiteEmbedSnippetCopyJson])
-
-  const websiteEmbedSnippetThemeJsonError = useMemo(() => {
-    if (!websiteEmbedSnippetThemeJson.trim()) {
-      return null
-    }
-
-    return parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetThemeJson)
-      ? null
-      : 'Theme overrides must be valid JSON.'
-  }, [websiteEmbedSnippetThemeJson])
-
-  const websiteEmbedSnippetAvatarUrlError = useMemo(() => {
-    if (!websiteEmbedSnippetAvatarUrl.trim()) {
-      return null
-    }
-
-    return normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl)
-      ? null
-      : 'Avatar URL must be an http(s) URL or supported relative asset path.'
-  }, [websiteEmbedSnippetAvatarUrl])
 
   const hasWebsiteEmbedAdvancedOverrides =
     websiteEmbedSnippetCopyJson.trim().length > 0 || websiteEmbedSnippetThemeJson.trim().length > 0
@@ -397,15 +455,6 @@ export function GeneralTab({
       return null
     }
 
-    const copyOverrides =
-      websiteEmbedSnippetCopyJson.trim().length > 0
-        ? parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetCopyJson)
-        : null
-    const themeOverrides =
-      websiteEmbedSnippetThemeJson.trim().length > 0
-        ? parseWebsiteEmbedJsonOverrides(websiteEmbedSnippetThemeJson)
-        : null
-
     return buildWebsiteEmbedTestHarnessUrl(
       {
         websiteEmbedToken: anonSettings.websiteEmbedToken ?? null,
@@ -419,8 +468,8 @@ export function GeneralTab({
         locale: normalizeWebsiteEmbedLocale(websiteEmbedSnippetLocale) ?? undefined,
         initialState: normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined,
         avatarUrl: normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl) ?? undefined,
-        copy: sanitizeWebsiteEmbedCopyOverrides(copyOverrides),
-        theme: sanitizeWebsiteEmbedThemeOverrides(themeOverrides),
+        copy: websiteEmbedSnippetCopyOverrides,
+        theme: websiteEmbedSnippetThemeOverrides,
       },
       new URL(APP_WEBSITE_EMBED_DEMO_PATH, window.location.origin).toString(),
     )
@@ -430,10 +479,12 @@ export function GeneralTab({
     websiteEmbedSnippetAvatarUrlError,
     websiteEmbedSnippetCopyJson,
     websiteEmbedSnippetCopyJsonError,
+    websiteEmbedSnippetCopyOverrides,
     websiteEmbedSnippetInitialState,
     websiteEmbedSnippetLocale,
     websiteEmbedSnippetThemeJson,
     websiteEmbedSnippetThemeJsonError,
+    websiteEmbedSnippetThemeOverrides,
   ])
 
   const websiteEmbedDemoOrigin =
@@ -509,6 +560,22 @@ export function GeneralTab({
     } finally {
       setIsPreparingWebsiteEmbedDemo(false)
     }
+  }
+
+  const handleWebsiteEmbedCopyOverrideFieldChange = (key: string, value: string) => {
+    setWebsiteEmbedSnippetCopyJson((currentValue) => updateWebsiteEmbedJsonOverrideValue(currentValue, key, value))
+  }
+
+  const handleWebsiteEmbedThemeOverrideGroupChange = (keys: readonly string[], value: string) => {
+    setWebsiteEmbedSnippetThemeJson((currentValue) => {
+      let nextValue = currentValue
+
+      for (const key of keys) {
+        nextValue = updateWebsiteEmbedJsonOverrideValue(nextValue, key, value)
+      }
+
+      return nextValue
+    })
   }
 
   const handleAnonymousChatTokenRotate = async () => {
@@ -981,7 +1048,8 @@ export function GeneralTab({
                     </div>
                     <p className="text-sm text-muted-foreground">
                       Keep this simple for most installs: pick the language, decide whether the panel starts open, and
-                      optionally add a custom avatar. Full copy and color overrides stay available under Advanced.
+                      optionally add a custom avatar. Visible text and brand colors are tucked into short customize
+                      sections, and full JSON overrides stay available for edge cases.
                     </p>
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
@@ -1034,12 +1102,173 @@ export function GeneralTab({
                       )}
                     </div>
 
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <details className="rounded-md border border-border bg-background/80 p-3">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">Customize visible text</p>
+                            <p className="text-xs text-muted-foreground">
+                              Override the subtitle, empty state, and composer placeholder without touching JSON.
+                            </p>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {hasWebsiteEmbedVisibleTextOverrides ? 'Custom text active' : 'Optional'}
+                          </span>
+                        </summary>
+
+                        <div className="mt-4 space-y-4">
+                          <p className="text-xs text-muted-foreground">
+                            Leave any field blank to inherit the selected language defaults.
+                          </p>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="websiteEmbedSnippetSubtitle" className="text-foreground">Header subtitle</Label>
+                            <Input
+                              id="websiteEmbedSnippetSubtitle"
+                              value={websiteEmbedSnippetCopyOverrides.publicChatSubtitle ?? ''}
+                              onChange={(event) =>
+                                handleWebsiteEmbedCopyOverrideFieldChange('publicChatSubtitle', event.target.value)
+                              }
+                              placeholder="Ask questions and get AI-powered answers"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="websiteEmbedSnippetEmptyTitle" className="text-foreground">Empty-state title</Label>
+                            <Input
+                              id="websiteEmbedSnippetEmptyTitle"
+                              value={websiteEmbedSnippetCopyOverrides.publicChatEmptyTitle ?? ''}
+                              onChange={(event) =>
+                                handleWebsiteEmbedCopyOverrideFieldChange('publicChatEmptyTitle', event.target.value)
+                              }
+                              placeholder="Start a conversation"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="websiteEmbedSnippetEmptyMessage" className="text-foreground">Empty-state message</Label>
+                            <Textarea
+                              id="websiteEmbedSnippetEmptyMessage"
+                              value={websiteEmbedSnippetCopyOverrides.publicChatEmptyMessage ?? ''}
+                              onChange={(event) =>
+                                handleWebsiteEmbedCopyOverrideFieldChange('publicChatEmptyMessage', event.target.value)
+                              }
+                              placeholder="Ask a question and get an AI-powered answer."
+                              className="min-h-[80px]"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="websiteEmbedSnippetStartPrompt" className="text-foreground">Composer placeholder</Label>
+                            <Input
+                              id="websiteEmbedSnippetStartPrompt"
+                              value={websiteEmbedSnippetCopyOverrides.startPrompt ?? ''}
+                              onChange={(event) =>
+                                handleWebsiteEmbedCopyOverrideFieldChange('startPrompt', event.target.value)
+                              }
+                              placeholder="Ask a question..."
+                            />
+                          </div>
+                        </div>
+                      </details>
+
+                      <details className="rounded-md border border-border bg-background/80 p-3">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">Customize colors</p>
+                            <p className="text-xs text-muted-foreground">
+                              Set the main brand and surface colors without mapping individual theme tokens.
+                            </p>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {hasWebsiteEmbedColorOverrides ? 'Custom colors active' : 'Optional'}
+                          </span>
+                        </summary>
+
+                        <div className="mt-4 space-y-4">
+                          <p className="text-xs text-muted-foreground">
+                            These high-level fields update the main launcher, panel, and message colors together. Use
+                            hex colors here. Expert JSON is still available for borders, shadows, or split bubble
+                            colors.
+                          </p>
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="websiteEmbedSnippetAccentColor" className="text-foreground">Brand color</Label>
+                              <Input
+                                id="websiteEmbedSnippetAccentColor"
+                                value={websiteEmbedSnippetThemeOverrides.accent ?? ''}
+                                onChange={(event) =>
+                                  handleWebsiteEmbedThemeOverrideGroupChange(
+                                    ['accent', 'launcherBackground', 'userBubbleBackground'],
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={DEFAULT_WEBSITE_EMBED_THEME.accent}
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="websiteEmbedSnippetAccentForeground" className="text-foreground">Brand text color</Label>
+                              <Input
+                                id="websiteEmbedSnippetAccentForeground"
+                                value={websiteEmbedSnippetThemeOverrides.accentForeground ?? ''}
+                                onChange={(event) =>
+                                  handleWebsiteEmbedThemeOverrideGroupChange(
+                                    ['accentForeground', 'launcherForeground', 'userBubbleForeground'],
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={DEFAULT_WEBSITE_EMBED_THEME.accentForeground}
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="websiteEmbedSnippetSurfaceBackground" className="text-foreground">Surface background</Label>
+                              <Input
+                                id="websiteEmbedSnippetSurfaceBackground"
+                                value={websiteEmbedSnippetThemeOverrides.panelBackground ?? ''}
+                                onChange={(event) =>
+                                  handleWebsiteEmbedThemeOverrideGroupChange(
+                                    ['panelBackground', 'assistantBubbleBackground', 'inputBackground', 'mutedBackground'],
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={DEFAULT_WEBSITE_EMBED_THEME.panelBackground}
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="websiteEmbedSnippetSurfaceForeground" className="text-foreground">Surface text color</Label>
+                              <Input
+                                id="websiteEmbedSnippetSurfaceForeground"
+                                value={websiteEmbedSnippetThemeOverrides.panelForeground ?? ''}
+                                onChange={(event) =>
+                                  handleWebsiteEmbedThemeOverrideGroupChange(
+                                    [
+                                      'panelForeground',
+                                      'assistantBubbleForeground',
+                                      'inputForeground',
+                                      'inputPlaceholder',
+                                      'mutedForeground',
+                                    ],
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={DEFAULT_WEBSITE_EMBED_THEME.panelForeground}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+
                     <details className="rounded-md border border-border bg-background/80 p-3">
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
                         <div>
-                          <p className="text-sm font-medium text-foreground">Advanced copy and theme overrides</p>
+                          <p className="text-sm font-medium text-foreground">Expert JSON overrides</p>
                           <p className="text-xs text-muted-foreground">
-                            Only open this when the defaults, language, and avatar are not enough.
+                            Only use this when you need token-level control beyond the named fields above.
                           </p>
                         </div>
                         <span className="text-xs text-muted-foreground">
@@ -1054,14 +1283,15 @@ export function GeneralTab({
                             id="websiteEmbedSnippetCopyJson"
                             value={websiteEmbedSnippetCopyJson}
                             onChange={(event) => setWebsiteEmbedSnippetCopyJson(event.target.value)}
-                            placeholder={`{"publicChatEmptyTitle":"Ask anything","startPrompt":"Type your question..."}`}
+                            placeholder={`{"publicChatNewChatLabel":"Start over","publicChatUnavailableTitle":"Support offline"}`}
                             className="min-h-[96px] font-mono text-xs"
                           />
                           {websiteEmbedSnippetCopyJsonError ? (
                             <p className="text-xs text-destructive">{websiteEmbedSnippetCopyJsonError}</p>
                           ) : (
                             <p className="text-xs text-muted-foreground">
-                              Override hosted chat UI text for translation edge cases or customer-specific wording.
+                              Use this for less common text keys such as unavailable states, rate-limit copy, or the
+                              new-chat button label.
                             </p>
                           )}
                         </div>
@@ -1072,15 +1302,15 @@ export function GeneralTab({
                             id="websiteEmbedSnippetThemeJson"
                             value={websiteEmbedSnippetThemeJson}
                             onChange={(event) => setWebsiteEmbedSnippetThemeJson(event.target.value)}
-                            placeholder={`{"accent":"#1d4ed8","panelBackground":"#ffffff","userBubbleBackground":"#1d4ed8"}`}
+                            placeholder={`{"panelBorder":"#cbd5e1","launcherShadow":"0 18px 40px rgba(15,23,42,0.24)"}`}
                             className="min-h-[96px] font-mono text-xs"
                           />
                           {websiteEmbedSnippetThemeJsonError ? (
                             <p className="text-xs text-destructive">{websiteEmbedSnippetThemeJsonError}</p>
                           ) : (
                             <p className="text-xs text-muted-foreground">
-                              Override launcher, panel, message, and input colors when a customer brand needs full
-                              control.
+                              Use this when you need borders, shadows, separate bubble colors, or other token-level
+                              theme control.
                             </p>
                           )}
                         </div>
@@ -1103,7 +1333,8 @@ export function GeneralTab({
                       Paste this script tag into the target website. The loader opens a Radioso-hosted iframe on approved domains only.
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Optional script attributes can override locale, start the widget open, swap in a custom avatar image or GIF, and replace the hosted chat text or colors for translation and theming.
+                      Optional script attributes can set the language, start the widget open, swap in a custom avatar
+                      image or GIF, and apply the text or color customizations configured above.
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Quick local tryout: this action saves the current website embed settings, adds the current app origin to the approved origins when needed, and opens a same-origin demo page prefilled with the current widget configuration.

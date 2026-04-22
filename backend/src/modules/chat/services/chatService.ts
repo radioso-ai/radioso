@@ -46,6 +46,15 @@ export interface ChatGateway {
   }): AsyncIterable<string>;
 }
 
+export class BlankChatAnswerError extends Error {
+  constructor() {
+    super("chat_answer_generation_failed");
+    this.name = "BlankChatAnswerError";
+  }
+}
+
+const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError => error instanceof BlankChatAnswerError;
+
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
@@ -140,7 +149,7 @@ export class ModelChatGateway implements ChatGateway {
     });
 
     if (!response?.trim()) {
-      throw new Error("chat_answer_generation_failed");
+      throw new BlankChatAnswerError();
     }
 
     return response;
@@ -230,7 +239,7 @@ export class ChatService {
         }),
       })).trim();
     } catch (error) {
-      if (error instanceof Error && error.message === "chat_answer_generation_failed") {
+      if (isBlankChatAnswerError(error)) {
         return null;
       }
       throw error;

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { ChatService, type ChatGateway, type ChatStreamEvent } from "../../src/modules/chat/services/chatService.js";
+import {
+  BlankChatAnswerError,
+  ChatService,
+  type ChatGateway,
+  type ChatStreamEvent,
+} from "../../src/modules/chat/services/chatService.js";
 import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 import { createAuditService, InMemoryConversationRepository, InMemoryMessageRepository } from "../support/fakes.js";
 
@@ -357,7 +362,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "   ";
+        throw new BlankChatAnswerError();
       },
       async *streamAnswer() {
         yield "unused";
@@ -380,6 +385,81 @@ describe("chat service streaming", () => {
 
     expect(response.answer).toBe(
       "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+    );
+  });
+
+  it("does not swallow provider failures from the identity prompt", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what is your name",
+          contexts: [],
+          prompt: "unused retrieval prompt",
+          citations: [],
+          assistantIdentity: {
+            assistantName: "Marta",
+            assistantRole: "Museum guide",
+            greetingInstruction: "Warm and concise",
+          },
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "what is your name",
+              lexicalQuery: "what is your name",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        throw new Error("provider unavailable");
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    await expect(
+      service.answer({
+        workspaceId: "workspace-1",
+        query: "What is your name?",
+        stream: false,
+      }),
+    ).rejects.toThrow("provider unavailable");
+
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "chat.answer",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          errorMessage: "provider unavailable",
+        }),
+      }),
     );
   });
 

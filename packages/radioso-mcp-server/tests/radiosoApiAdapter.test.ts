@@ -85,6 +85,34 @@ describe("createRadiosoApiAdapter", () => {
     });
   });
 
+  it("preserves chat not-found errors for unknown conversation ids", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: "not_found", message: "Conversation not found" } }), {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const adapter = createRadiosoApiAdapter(
+      {
+        apiToken: "sk_proj_test",
+        baseUrl: "http://localhost:8080",
+        requestTimeoutMs: 30_000,
+        serverName: "radioso-test",
+      },
+      fetchMock,
+    );
+
+    await expect(adapter.answerGrounded({
+      conversationId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
+      query: "hello",
+    })).rejects.toMatchObject({
+      code: "not_found",
+      message: "Conversation not found",
+      status: 404,
+    });
+  });
+
   it("maps request timeouts to upstream_timeout", async () => {
     const fetchMock = vi.fn().mockImplementation((_url, init) => new Promise((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));

@@ -125,7 +125,9 @@ export const createRadiosoApiAdapter = (
 
     if (!response.ok) {
       const errorPayload = data as { error?: { code?: string; message?: string; details?: unknown } } | undefined;
-      const code = response.status === 404 ? options.notFoundCode ?? "resource_not_found" : errorPayload?.error?.code;
+      const code = response.status === 404
+        ? options.notFoundCode ?? errorPayload?.error?.code ?? "resource_not_found"
+        : errorPayload?.error?.code;
       throw new RadiosoApiError(
         errorPayload?.error?.message ?? `Radioso request failed with status ${response.status}`,
         response.status,
@@ -145,7 +147,7 @@ export const createRadiosoApiAdapter = (
           ...buildMcpSourceHeaders(),
         },
         method: "POST",
-      }, { notFoundCode: "unsupported_capability" }),
+      }),
     createDocument: (body) =>
       request("/api/v1/document", {
         body: JSON.stringify(body),

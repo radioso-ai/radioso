@@ -656,6 +656,7 @@ const ValidationDispositionSchema = registry.register(
 const ValidationSegmentResultSchema = registry.register(
   "ValidationSegmentResult",
   z.object({
+    originalText: z.string(),
     text: z.string(),
     disposition: ValidationDispositionSchema,
     replacementApplied: z.boolean(),
@@ -670,6 +671,7 @@ const ValidationDebugSchema = registry.register(
     ran: z.boolean(),
     answerModified: z.boolean(),
     unsupportedSegmentCount: z.number().int().min(0),
+    substantiveUnsupportedSegmentCount: z.number().int().min(0),
     supportedSegmentCount: z.number().int().min(0),
     nonSubstantiveSegmentCount: z.number().int().min(0),
     answerSupportPolicy: z.enum(answerSupportPolicies).optional(),

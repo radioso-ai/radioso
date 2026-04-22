@@ -2316,6 +2316,9 @@
       "ValidationSegmentResult": {
         "type": "object",
         "properties": {
+          "originalText": {
+            "type": "string"
+          },
           "text": {
             "type": "string"
           },
@@ -2337,6 +2340,7 @@
           }
         },
         "required": [
+          "originalText",
           "text",
           "disposition",
           "replacementApplied",
@@ -2353,6 +2357,10 @@
             "type": "boolean"
           },
           "unsupportedSegmentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "substantiveUnsupportedSegmentCount": {
             "type": "integer",
             "minimum": 0
           },
@@ -2383,6 +2391,7 @@
           "ran",
           "answerModified",
           "unsupportedSegmentCount",
+          "substantiveUnsupportedSegmentCount",
           "supportedSegmentCount",
           "nonSubstantiveSegmentCount",
           "segmentResults"

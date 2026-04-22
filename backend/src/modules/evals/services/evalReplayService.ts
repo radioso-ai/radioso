@@ -77,6 +77,7 @@ export class EvalReplayService {
       ran: false,
       answerModified: false,
       unsupportedSegmentCount: 0,
+      substantiveUnsupportedSegmentCount: 0,
       supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 0,
     };
@@ -120,6 +121,7 @@ export class EvalReplayService {
         ran: validated.validation.ran,
         answerModified: validated.validation.answerModified,
         unsupportedSegmentCount: validated.validation.unsupportedSegmentCount,
+        substantiveUnsupportedSegmentCount: validated.validation.substantiveUnsupportedSegmentCount,
         supportedSegmentCount: validated.validation.supportedSegmentCount,
         nonSubstantiveSegmentCount: validated.validation.nonSubstantiveSegmentCount,
       };
@@ -142,6 +144,7 @@ export class EvalReplayService {
                 ran: false,
                 answerModified: false,
                 unsupportedSegmentCount: 0,
+                substantiveUnsupportedSegmentCount: 0,
                 supportedSegmentCount: 0,
                 nonSubstantiveSegmentCount: 0,
               },

@@ -7,6 +7,7 @@ project_id = "your-gcp-project-id"
 # workspace_token_secret   = ""
 # website_embed_secret     = ""
 # connector_encryption_key = ""
+# metrics_auth_token       = ""
 
 # Optional overrides (defaults shown)
 # region                  = "us-central1"
@@ -31,5 +32,6 @@ project_id = "your-gcp-project-id"
 # openai_rerank_model     = "gpt-4.1-mini"
 # openai_vector_model     = "text-embedding-3-small"
 # session_ttl_hours       = 168
+# metrics_enabled         = false
 # connector_public_base_url = "https://your-backend-url"
 # public_chat_base_url    = "https://your-frontend-url/chat"

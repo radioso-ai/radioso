@@ -1,12 +1,17 @@
 locals {
-  secrets = {
-    "database-password"        = random_password.db_password.result
-    "openai-api-key"           = var.openai_api_key
-    "session-cookie-secret"    = var.session_cookie_secret
-    "workspace-token-secret"   = var.workspace_token_secret
-    "website-embed-secret"     = var.website_embed_secret
-    "connector-encryption-key" = var.connector_encryption_key
-  }
+  secrets = merge(
+    {
+      "database-password"        = random_password.db_password.result
+      "openai-api-key"           = var.openai_api_key
+      "session-cookie-secret"    = var.session_cookie_secret
+      "workspace-token-secret"   = var.workspace_token_secret
+      "website-embed-secret"     = var.website_embed_secret
+      "connector-encryption-key" = var.connector_encryption_key
+    },
+    var.metrics_auth_token == null ? {} : {
+      "metrics-auth-token" = var.metrics_auth_token
+    },
+  )
 }
 
 resource "google_secret_manager_secret" "secrets" {

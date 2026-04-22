@@ -1,4 +1,5 @@
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import type {
@@ -29,6 +30,7 @@ export class DocumentProcessingWorker {
     private readonly pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
     private readonly jobLeaseMs = DEFAULT_JOB_LEASE_MS,
+    private readonly telemetryService?: TelemetryService,
   ) {}
 
   async start(): Promise<void> {
@@ -65,7 +67,7 @@ export class DocumentProcessingWorker {
       });
     }));
     await this.repairQueueGaps();
-    await this.logQueueState("Document processing worker started");
+    await this.logQueueState("Document processing worker started", "document.worker.started", "started");
     this.scheduleNextTick(0);
   }
 
@@ -81,14 +83,14 @@ export class DocumentProcessingWorker {
     const job = await this.claimNextAvailableJob(now);
     if (!job) {
       if (this.lastActivityState !== "idle") {
-        await this.logQueueState("Document processing worker idle");
+        await this.logQueueState("Document processing worker idle", "document.worker.idle", "idle");
         this.lastActivityState = "idle";
       }
       return false;
     }
 
     this.lastActivityState = "processing";
-    await this.logQueueState("Document processing worker processing");
+    await this.logQueueState("Document processing worker processing", "document.worker.processing", "processing");
     await this.processClaimedJob(job);
 
     return true;
@@ -160,19 +162,29 @@ export class DocumentProcessingWorker {
   }
 
   private async processClaimedJob(job: DocumentProcessingJobRecord): Promise<void> {
+    const startedAt = Date.now();
+
     try {
       const outcome = await this.processingService.process(job);
       if (outcome === "completed") {
         await this.jobRepository.markCompleted(job.id);
+        await this.emitJobTelemetry("document.worker.job_completed", job, {
+          durationMs: Date.now() - startedAt,
+          outcome: "completed",
+        });
       } else {
         await this.jobRepository.markSkipped(job.id, outcome === "stale" ? "stale_revision" : "document_deleted");
+        await this.emitJobTelemetry("document.worker.job_skipped", job, {
+          durationMs: Date.now() - startedAt,
+          outcome,
+        });
       }
     } catch (error) {
-      await this.handleFailure(job, error);
+      await this.handleFailure(job, error, Date.now() - startedAt);
     }
   }
 
-  private async handleFailure(job: DocumentProcessingJobRecord, error: unknown): Promise<void> {
+  private async handleFailure(job: DocumentProcessingJobRecord, error: unknown, durationMs: number): Promise<void> {
     const message = getProviderFailureReason(error);
     const hasRetriesRemaining = job.attemptCount < MAX_ATTEMPTS;
 
@@ -206,6 +218,11 @@ export class DocumentProcessingWorker {
           reason: message,
         },
       });
+      await this.emitJobTelemetry("document.worker.job_failed", job, {
+        durationMs,
+        outcome: "retry_scheduled",
+        reason: message,
+      });
       return;
     }
 
@@ -232,6 +249,11 @@ export class DocumentProcessingWorker {
         reason: message,
       },
     });
+    await this.emitJobTelemetry("document.worker.job_failed", job, {
+      durationMs,
+      outcome: "failed",
+      reason: message,
+    });
   }
 
   private async repairQueueGaps(): Promise<number> {
@@ -244,12 +266,26 @@ export class DocumentProcessingWorker {
         },
         "Document processing worker repaired missing queued jobs",
       );
+      await this.telemetryService?.emit({
+        eventType: "document.worker.queue_repaired",
+        severity: "warn",
+        metrics: {
+          repairedJobCount,
+        },
+        tags: {
+          outcome: "repaired",
+        },
+      });
     }
 
     return repairedJobCount;
   }
 
-  private async logQueueState(message: string): Promise<void> {
+  private async logQueueState(
+    message: string,
+    eventType: "document.worker.started" | "document.worker.idle" | "document.worker.processing",
+    outcome: "started" | "idle" | "processing",
+  ): Promise<void> {
     const snapshot = await this.jobRepository.getQueueSnapshot();
     this.logger.info(
       {
@@ -258,6 +294,13 @@ export class DocumentProcessingWorker {
       },
       message,
     );
+    await this.telemetryService?.emit({
+      eventType,
+      metrics: this.toTelemetryMetrics(snapshot),
+      tags: {
+        outcome,
+      },
+    });
   }
 
   private toLogFields(snapshot: DocumentProcessingQueueSnapshot) {
@@ -268,5 +311,43 @@ export class DocumentProcessingWorker {
         ? Math.max(0, Date.now() - snapshot.oldestQueuedJobCreatedAt.getTime())
         : null,
     };
+  }
+
+  private toTelemetryMetrics(snapshot: DocumentProcessingQueueSnapshot): Record<string, number> {
+    return {
+      queuedJobCount: snapshot.queuedJobCount,
+      processingJobCount: snapshot.processingJobCount,
+      oldestQueuedJobAgeMs: snapshot.oldestQueuedJobCreatedAt
+        ? Math.max(0, Date.now() - snapshot.oldestQueuedJobCreatedAt.getTime())
+        : 0,
+    };
+  }
+
+  private async emitJobTelemetry(
+    eventType: "document.worker.job_completed" | "document.worker.job_failed" | "document.worker.job_skipped",
+    job: DocumentProcessingJobRecord,
+    input: {
+      durationMs: number;
+      outcome: "completed" | "stale" | "deleted" | "retry_scheduled" | "failed";
+      reason?: string;
+    },
+  ): Promise<void> {
+    await this.telemetryService?.emit({
+      eventType,
+      severity: eventType === "document.worker.job_failed" ? "error" : "info",
+      correlation: {
+        workspaceId: job.workspaceId,
+        jobId: job.id,
+        documentId: job.documentId,
+      },
+      metrics: {
+        durationMs: input.durationMs,
+        attemptCount: job.attemptCount,
+      },
+      metadata: input.reason ? { reason: input.reason } : undefined,
+      tags: {
+        outcome: input.outcome,
+      },
+    });
   }
 }

@@ -166,6 +166,18 @@ variable "connector_encryption_key" {
   sensitive   = true
 }
 
+variable "metrics_auth_token" {
+  description = "Optional bearer token required to read the Prometheus metrics endpoint when enabled."
+  type        = string
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition     = !var.metrics_enabled || var.metrics_auth_token != null
+    error_message = "metrics_auth_token must be set when metrics_enabled is true."
+  }
+}
+
 # --- Backend env vars (non-secret) ---
 
 variable "openai_chat_model" {
@@ -190,6 +202,12 @@ variable "session_ttl_hours" {
   description = "Session TTL in hours"
   type        = number
   default     = 168
+}
+
+variable "metrics_enabled" {
+  description = "Whether to expose the Prometheus metrics endpoint on the backend service."
+  type        = bool
+  default     = false
 }
 
 variable "connector_public_base_url" {

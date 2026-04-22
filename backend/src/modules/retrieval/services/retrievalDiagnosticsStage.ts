@@ -4,8 +4,9 @@ import type { PromptAssemblyStageResult, RetrievalDiagnosticsStage as RetrievalD
 export class RetrievalDiagnosticsStageService implements RetrievalDiagnosticsStageContract {
   constructor(private readonly retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService) {}
 
-  execute(input: PromptAssemblyStageResult) {
+  async execute(input: PromptAssemblyStageResult) {
     return this.retrievalExecutionTelemetryService.create({
+      workspaceId: input.request.workspaceId,
       rewriteStatus: input.rewrittenQuery.status,
       rerankStatus: input.rerankStatus,
       originalCandidateCount: input.originalContexts.length,

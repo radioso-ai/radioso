@@ -112,4 +112,65 @@ describe("document processing worker runtime signals", () => {
       "Document processing worker repaired missing queued jobs",
     );
   });
+
+  it("emits worker telemetry for processing failures and retries", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+    const telemetryService = {
+      emit: vi.fn().mockResolvedValue(null),
+    };
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Retry me",
+      sourceContent: "Retry me",
+      markdownContent: "Retry me",
+      status: "queued",
+      sourceKind: "inline_text",
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+    await jobRepository.enqueue({
+      documentId: document.id,
+      workspaceId: document.workspaceId,
+      documentRevision: document.revision,
+    });
+
+    const worker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      {
+        process: vi.fn().mockRejectedValue(new Error("embedding timeout")),
+      } as any,
+      createAuditService(),
+      logger as any,
+      10_000,
+      undefined,
+      undefined,
+      telemetryService as any,
+    );
+
+    await expect(worker.runOnce()).resolves.toBe(true);
+
+    expect(telemetryService.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "document.worker.processing",
+        tags: { outcome: "processing" },
+      }),
+    );
+    expect(telemetryService.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "document.worker.job_failed",
+        tags: { outcome: "retry_scheduled" },
+      }),
+    );
+  });
 });

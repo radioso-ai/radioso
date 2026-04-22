@@ -1,9 +1,9 @@
 # Feature Specification: Remote MCP Context Server
 
 **Feature Branch**: `borohhov/mcp-control-plane`
-**Created**: 2026-04-19  
+**Created**: 2026-04-19
 **Updated**: 2026-04-22
-**Status**: Approved  
+**Status**: Approved
 **Input**: User description: "Let's do the next 2 weeks. This needs to be a fully functional remote MCP server with code that can be extracted to a separate repo soon, not Radioso addendum. For now, let it be a monorepo with all its benefits."
 
 ## Scope Review

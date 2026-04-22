@@ -1,7 +1,7 @@
 # Specification Quality Checklist: MCP Context Server
 
-**Purpose**: Validate specification completeness and quality before proceeding to planning  
-**Created**: 2026-04-19  
+**Purpose**: Validate specification completeness and quality before proceeding to planning
+**Created**: 2026-04-19
 **Feature**: [spec.md](/Users/dm/conductor/workspaces/radioso/milan/specs/043-mcp-context-server/spec.md)
 
 ## Content Quality

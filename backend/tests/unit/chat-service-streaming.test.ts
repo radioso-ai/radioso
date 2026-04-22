@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { ChatService, type ChatGateway, type ChatStreamEvent } from "../../src/modules/chat/services/chatService.js";
 import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
-import { createAuditService, InMemoryConversationRepository, InMemoryMessageRepository } from "../support/fakes.js";
+import {
+  createAuditService,
+  InMemoryAuditEventRepository,
+  InMemoryConversationRepository,
+  InMemoryMessageRepository,
+} from "../support/fakes.js";
 
 const groundedMissResponseComposer: GroundedMissResponseComposer = {
   async composeUnsupportedWithContext(input) {
@@ -249,6 +254,109 @@ describe("chat service streaming", () => {
     expect(capturedInputs[1]?.rewriteContinuityState).toEqual({
       activeSubject: "Narayani",
       relatedEntities: [],
+      groundedTitles: ["La mia anima ricorda Swami Kriyananda"],
+    });
+  });
+
+  it("normalizes malformed rewrite continuity state loaded from audit metadata", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditEventRepository = new InMemoryAuditEventRepository();
+    const auditService = createAuditService(auditEventRepository);
+    const capturedInputs: Array<{ rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }> = [];
+    const retrievalPipeline = {
+      async run(input: { query: string; rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }) {
+        capturedInputs.push({ rewriteContinuityState: input.rewriteContinuityState });
+        return {
+          rewrittenQuery: input.query,
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "La mia anima ricorda Swami Kriyananda",
+              content: "full answer",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [
+            {
+              documentId: "doc-1",
+              chunkId: "chunk-1",
+              title: "La mia anima ricorda Swami Kriyananda",
+            },
+          ],
+          diagnostics: {
+            rewriteStatus: "applied",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            rewriteProposal: {
+              rewrittenQuery: "Can I buy Narayani's book?",
+              turnKind: "referential_followup",
+              proposedActiveSubject: "Narayani",
+              relatedEntities: [],
+              unresolved: false,
+              confidence: 0.9,
+            },
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "full answer[[1]]";
+      },
+      async *streamAnswer() {
+        yield "full answer[[1]]";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const first = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Can I buy her book?",
+      stream: false,
+    });
+
+    auditEventRepository.items[0]!.metadata.rewriteContinuityState = {
+      activeSubject: 42,
+      relatedEntities: ["Narayani", 7, ""],
+      groundedTitles: ["La mia anima ricorda Swami Kriyananda", null],
+    };
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: first.conversationId,
+      query: "how much is it?",
+      stream: false,
+    });
+
+    expect(capturedInputs[1]?.rewriteContinuityState).toEqual({
+      activeSubject: undefined,
+      relatedEntities: ["Narayani"],
       groundedTitles: ["La mia anima ricorda Swami Kriyananda"],
     });
   });

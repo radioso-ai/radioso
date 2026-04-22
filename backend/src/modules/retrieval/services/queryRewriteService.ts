@@ -160,7 +160,7 @@ export class QueryRewriteService {
       return this.skipped(input.query);
     }
 
-    if (!this.shouldRewrite(input.contextWindow)) {
+    if (!this.shouldRewrite()) {
       return this.skipped(input.query);
     }
 
@@ -228,9 +228,8 @@ export class QueryRewriteService {
     }
   }
 
-  private shouldRewrite(contextWindow: ConversationContextWindow): boolean {
-    return this.gateway !== undefined
-      && (contextWindow.selectedMessages.length > 0 || hasContinuityState(contextWindow.rewriteContinuityState));
+  private shouldRewrite(): boolean {
+    return this.gateway !== undefined;
   }
 
   private skipped(query: string): RewrittenRetrievalQuery {

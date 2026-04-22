@@ -164,7 +164,7 @@ describe("chat retrieval domain", () => {
     expect(result.rewriteApplied).toBe(false);
   });
 
-  it("keeps explicit first-turn queries unchanged when rewrite introduces excessive drift", async () => {
+  it("falls back to the original query when first-turn rewrite introduces excessive drift", async () => {
     const service = new QueryRewriteService({
       async rewrite() {
         return {
@@ -190,7 +190,7 @@ describe("chat retrieval domain", () => {
       },
     });
 
-    expect(result.status).toBe("skipped");
+    expect(result.status).toBe("fallback");
     expect(result.semanticQuery).toBe("Who is Narayani?");
     expect(result.lexicalQuery).toBe("Who is Narayani?");
     expect(result.rewriteApplied).toBe(false);

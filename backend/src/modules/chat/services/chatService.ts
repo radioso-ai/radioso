@@ -793,7 +793,7 @@ export class ChatService {
       conversationId,
     }) as ChatAnswerAuditMetadata | null;
 
-    return metadata?.rewriteContinuityState;
+    return this.normalizeRewriteContinuityState(metadata?.rewriteContinuityState);
   }
 
   private buildRewriteContinuityState(input: {
@@ -812,6 +812,37 @@ export class ChatService {
       ...input.citations.map((citation) => citation.title),
       ...(input.diagnostics.retrievalSubqueries?.map((subquery) => subquery.label) ?? []),
     ]);
+
+    if (!activeSubject && relatedEntities.length === 0 && groundedTitles.length === 0) {
+      return undefined;
+    }
+
+    return {
+      activeSubject,
+      relatedEntities,
+      groundedTitles,
+    };
+  }
+
+  private normalizeRewriteContinuityState(state: unknown): RewriteContinuityState | undefined {
+    if (!state || typeof state !== "object") {
+      return undefined;
+    }
+
+    const candidate = state as Partial<Record<keyof RewriteContinuityState, unknown>>;
+    const activeSubject = this.normalizeContinuityValue(
+      typeof candidate.activeSubject === "string" ? candidate.activeSubject : undefined,
+    );
+    const relatedEntities = this.collectContinuityValues(
+      Array.isArray(candidate.relatedEntities)
+        ? candidate.relatedEntities.map((value) => (typeof value === "string" ? value : undefined))
+        : [],
+    );
+    const groundedTitles = this.collectContinuityValues(
+      Array.isArray(candidate.groundedTitles)
+        ? candidate.groundedTitles.map((value) => (typeof value === "string" ? value : undefined))
+        : [],
+    );
 
     if (!activeSubject && relatedEntities.length === 0 && groundedTitles.length === 0) {
       return undefined;

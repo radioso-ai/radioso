@@ -6,6 +6,7 @@ import type {
   RetrievalSubquery,
   ResponseLanguagePolicy,
   RewrittenRetrievalQuery,
+  RewriteContinuityState,
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
@@ -17,7 +18,7 @@ export interface RetrievalPipelineRequest {
   history: MessageRecord[];
   assistantIdentity?: AssistantIdentityPromptInput | null;
   responseLanguagePolicy?: ResponseLanguagePolicy;
-  rewriteCarryForwardLiterals?: string[];
+  rewriteContinuityState?: RewriteContinuityState;
   metadataFilter?: Record<string, unknown>;
 }
 

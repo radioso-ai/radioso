@@ -156,4 +156,36 @@ describe("remote MCP read transport", () => {
       }),
     );
   });
+
+  it("returns JSON-RPC auth errors for unauthenticated MCP requests", async () => {
+    const runtime = await createRemoteRuntime();
+    runtimes.push(runtime);
+
+    const response = await fetch(`${runtime.baseUrl}/mcp`, {
+      body: JSON.stringify({
+        id: "unauth-1",
+        jsonrpc: "2.0",
+        method: "tools/list",
+        params: {},
+      }),
+      headers: {
+        "content-type": "application/json",
+        "mcp-protocol-version": "2025-11-25",
+      },
+      method: "POST",
+    });
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: -32001,
+        data: {
+          code: "invalid_access_token",
+        },
+        message: "MCP access token is invalid or expired.",
+      },
+      id: null,
+      jsonrpc: "2.0",
+    });
+  });
 });

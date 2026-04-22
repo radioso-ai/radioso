@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { notFound } from "../../../shared/domain/errors.js";
+import { forbidden } from "../../../shared/domain/errors.js";
 import { requireApiToken } from "../middleware/requireApiToken.js";
 
 export const supportedMcpTools = [
@@ -35,7 +35,7 @@ export const createMcpContextRoutes = (dependencies: AppDependencies): Router =>
       const { workspaceId } = res.locals as { workspaceId: string };
       const workspace = await dependencies.workspaceRepository.findById(workspaceId);
       if (!workspace) {
-        throw notFound("Workspace not found");
+        throw forbidden("Workspace token no longer resolves to an active workspace.");
       }
 
       res.status(200).json({

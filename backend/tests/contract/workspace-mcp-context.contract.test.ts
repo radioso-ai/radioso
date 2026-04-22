@@ -46,4 +46,22 @@ describe("workspace MCP context contract", () => {
       },
     });
   });
+
+  it("fails closed when the workspace token no longer resolves to an active workspace", async () => {
+    const { app, dependencies } = createTestApp();
+    const token = await issueTestToken(app, "workspace-mcp-context-deleted@example.com");
+    await dependencies.workspaceRepository.deleteById(token.workspaceId);
+
+    const response = await request(app)
+      .get("/api/v1/workspace/mcp/context")
+      .set("authorization", `Bearer ${token.token}`);
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "forbidden",
+        message: "Workspace token no longer resolves to an active workspace.",
+      },
+    });
+  });
 });

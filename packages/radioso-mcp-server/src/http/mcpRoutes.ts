@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { toInternalAuthInfo, type SessionServerManagerDependencies } from "./sessionServerManager.js";
 import type { SessionMcpServerManager } from "./types.js";
-import { toWebRequest, writeJson, writeWebResponse } from "./nodeHttp.js";
+import { toWebRequest, writeJsonRpcError, writeWebResponse } from "./nodeHttp.js";
 import { readBearerToken } from "./authRoutes.js";
 
 export interface McpRouteDependencies extends SessionServerManagerDependencies {
@@ -14,26 +14,22 @@ export const createMcpRouteHandler = ({
   config,
   serverManager,
 }: McpRouteDependencies) => {
+  const writeInvalidAccessToken = (res: ServerResponse) => {
+    writeJsonRpcError(res, 401, -32001, "MCP access token is invalid or expired.", {
+      code: "invalid_access_token",
+    });
+  };
+
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const accessToken = readBearerToken(req);
     if (!accessToken) {
-      writeJson(res, 401, {
-        error: {
-          code: "invalid_access_token",
-          message: "MCP access token is invalid or expired.",
-        },
-      });
+      writeInvalidAccessToken(res);
       return;
     }
 
     const session = await authService.getSession(accessToken);
     if (!session) {
-      writeJson(res, 401, {
-        error: {
-          code: "invalid_access_token",
-          message: "MCP access token is invalid or expired.",
-        },
-      });
+      writeInvalidAccessToken(res);
       return;
     }
 

@@ -7,6 +7,15 @@ import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createHttpServer } from "../src/http/createHttpServer.js";
 import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
 
+const workspaceValidation = {
+  apiVersion: "0.1.0",
+  mcpContextVersion: "2026-04-22",
+  supportedTools: ["describe_capabilities", "list_documents", "create_document"],
+  workspaceHint: "Default",
+  workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
+  workspaceName: "Default",
+};
+
 const createRemoteRuntime = async () => {
   const policy = createCapabilityPolicyRegistry({
     allowedReadTools: ["describe_capabilities", "list_documents"],
@@ -19,7 +28,7 @@ const createRemoteRuntime = async () => {
     policy,
     sessionStore: createInMemorySessionStore(),
     signingSecret: "dev-signing-secret",
-    validateWorkspaceToken: async () => undefined,
+    validateWorkspaceToken: async () => workspaceValidation,
   });
   const server = createHttpServer({
     authService,

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { validateWorkspaceTokenWithFallback } from "../src/http/validateWorkspaceToken.js";
+import { validateWorkspaceToken } from "../src/http/validateWorkspaceToken.js";
 import { RadiosoApiError } from "../src/radiosoApiAdapter.js";
 
-describe("validateWorkspaceTokenWithFallback", () => {
+describe("validateWorkspaceToken", () => {
   it("returns workspace MCP context when the backend supports it", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -20,7 +20,7 @@ describe("validateWorkspaceTokenWithFallback", () => {
       );
 
     await expect(
-      validateWorkspaceTokenWithFallback(
+      validateWorkspaceToken(
         {
           baseUrl: "http://localhost:8080",
           requestTimeoutMs: 30_000,
@@ -35,23 +35,17 @@ describe("validateWorkspaceTokenWithFallback", () => {
     });
   });
 
-  it("falls back to listDocuments only when the MCP context route is unsupported", async () => {
+  it("fails when the backend does not expose the MCP context route", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ error: { code: "not_found", message: "Missing route" } }), {
           headers: { "content-type": "application/json" },
           status: 404,
         }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ documents: [] }), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        }),
       );
 
     await expect(
-      validateWorkspaceTokenWithFallback(
+      validateWorkspaceToken(
         {
           baseUrl: "http://localhost:8080",
           requestTimeoutMs: 30_000,
@@ -60,16 +54,11 @@ describe("validateWorkspaceTokenWithFallback", () => {
         "sk_proj_test",
         fetchMock,
       ),
-    ).resolves.toBeUndefined();
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "http://localhost:8080/api/v1/document?limit=1",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          authorization: "Bearer sk_proj_test",
-        }),
-      }),
-    );
+    ).rejects.toMatchObject({
+      code: "unsupported_capability",
+      status: 404,
+    } satisfies Partial<RadiosoApiError>);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("fails closed when the MCP context route rejects the token", async () => {
@@ -87,7 +76,7 @@ describe("validateWorkspaceTokenWithFallback", () => {
       );
 
     await expect(
-      validateWorkspaceTokenWithFallback(
+      validateWorkspaceToken(
         {
           baseUrl: "http://localhost:8080",
           requestTimeoutMs: 30_000,

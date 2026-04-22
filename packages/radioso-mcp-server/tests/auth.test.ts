@@ -6,6 +6,21 @@ import { createAuthService } from "../src/auth/authService.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
 
+const defaultWorkspaceValidation = {
+  apiVersion: "0.1.0",
+  mcpContextVersion: "2026-04-22",
+  supportedTools: [
+    "describe_capabilities",
+    "search_documents",
+    "list_documents",
+    "create_document",
+    "update_document",
+  ],
+  workspaceHint: "Default",
+  workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
+  workspaceName: "Default",
+};
+
 describe("auth foundations", () => {
   it("stores and resolves access sessions by opaque token without exposing the raw token", async () => {
     const store = createInMemorySessionStore();
@@ -63,7 +78,7 @@ describe("auth foundations", () => {
       policy,
       sessionStore,
       signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue(undefined),
+      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
       now: () => new Date("2026-04-21T12:00:00.000Z"),
     });
 
@@ -107,6 +122,7 @@ describe("auth foundations", () => {
     const sessionStore = createInMemorySessionStore();
     const approvalStore = createInMemoryApprovalStore();
     const validateWorkspaceToken = vi.fn().mockResolvedValue({
+      ...defaultWorkspaceValidation,
       workspaceHint: "workspace-123",
     });
 
@@ -160,7 +176,7 @@ describe("auth foundations", () => {
       }),
       sessionStore: createInMemorySessionStore(),
       signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue(undefined),
+      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
       now: () => new Date("2026-04-21T12:00:00.000Z"),
     });
 
@@ -227,12 +243,8 @@ describe("auth foundations", () => {
       sessionStore: createInMemorySessionStore(),
       signingSecret: "dev-signing-secret",
       validateWorkspaceToken: vi.fn().mockResolvedValue({
-        apiVersion: "0.1.0",
-        mcpContextVersion: "2026-04-22",
+        ...defaultWorkspaceValidation,
         supportedTools: ["describe_capabilities", "create_document"],
-        workspaceHint: "Default",
-        workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
-        workspaceName: "Default",
       }),
       now: () => new Date("2026-04-21T12:00:00.000Z"),
     });
@@ -262,7 +274,7 @@ describe("auth foundations", () => {
       }),
       sessionStore: createInMemorySessionStore(),
       signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue(undefined),
+      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
       now: () => new Date("2026-04-21T12:00:00.000Z"),
     });
 

@@ -7,6 +7,15 @@ import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createHttpServer } from "../src/http/createHttpServer.js";
 import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
 
+const workspaceValidation = {
+  apiVersion: "0.1.0",
+  mcpContextVersion: "2026-04-22",
+  supportedTools: ["describe_capabilities", "create_document", "get_retrieval_settings"],
+  workspaceHint: "Default",
+  workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
+  workspaceName: "Default",
+};
+
 const mcpRequest = async (baseUrl: string, accessToken: string, payload: unknown) =>
   fetch(`${baseUrl}/mcp`, {
     body: JSON.stringify(payload),
@@ -50,7 +59,7 @@ describe("remote MCP audit logging", () => {
     allowedReadTools: string[];
     allowedWriteTools: string[];
     approvalRequiredWriteTools: string[];
-    validateWorkspaceToken?: () => Promise<void>;
+    validateWorkspaceToken?: () => Promise<typeof workspaceValidation>;
   }) => {
     const { events, sink } = createInMemoryAuditSink();
     const policy = createCapabilityPolicyRegistry({
@@ -64,7 +73,7 @@ describe("remote MCP audit logging", () => {
       policy,
       sessionStore: createInMemorySessionStore(),
       signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: options.validateWorkspaceToken ?? (async () => undefined),
+      validateWorkspaceToken: options.validateWorkspaceToken ?? (async () => workspaceValidation),
     });
     const server = createHttpServer({
       auditLogger: createAuditLogger([sink]),

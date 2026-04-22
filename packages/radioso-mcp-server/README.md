@@ -82,7 +82,7 @@ RADIOSO_MCP_SIGNING_SECRET=dev-signing-secret \
 node dist/src/cli/http.js
 ```
 
-On newer Radioso deployments the remote package first calls `GET /api/v1/workspace/mcp/context` to negotiate workspace identity and supported MCP capabilities before granting tools to the client. Older deployments still fall back to a legacy token validation path.
+The remote package requires `GET /api/v1/workspace/mcp/context` on the target Radioso backend. It uses that route to negotiate workspace identity and supported MCP capabilities before granting tools to the client.
 
 ## Exchange A Workspace Token
 

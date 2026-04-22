@@ -12,7 +12,7 @@ import { createWorkspacePolicyResolver, loadWorkspacePolicyOverrides } from "../
 import { createRuntimeStoreHandle, type RuntimeStoreHandle } from "../state/runtimeStores.js";
 
 import { createHttpServer, type RadiosoRemoteHttpServer } from "./createHttpServer.js";
-import { validateWorkspaceTokenWithFallback } from "./validateWorkspaceToken.js";
+import { validateWorkspaceToken } from "./validateWorkspaceToken.js";
 
 export interface CreateRemoteHttpRuntimeOptions {
   auditLogger?: AuditLogger;
@@ -73,7 +73,7 @@ export const createRemoteHttpRuntime = async ({
     resolvePolicy: (workspaceId) => workspacePolicyResolver.resolve(workspaceId),
     sessionStore: resolvedRuntimeStores.sessionStore,
     signingSecret: config.signingSecret,
-    validateWorkspaceToken: (radiosoApiToken) => validateWorkspaceTokenWithFallback(config, radiosoApiToken),
+    validateWorkspaceToken: (radiosoApiToken) => validateWorkspaceToken(config, radiosoApiToken),
   });
   const server = createHttpServer({
     authService,

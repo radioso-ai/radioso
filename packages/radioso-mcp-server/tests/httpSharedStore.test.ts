@@ -7,6 +7,15 @@ import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createHttpServer } from "../src/http/createHttpServer.js";
 import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
 
+const workspaceValidation = {
+  apiVersion: "0.1.0",
+  mcpContextVersion: "2026-04-22",
+  supportedTools: ["describe_capabilities", "create_document"],
+  workspaceHint: "Default",
+  workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
+  workspaceName: "Default",
+};
+
 const createRuntime = async (stores: {
   approvalStore: ReturnType<typeof createInMemoryApprovalStore>;
   sessionStore: ReturnType<typeof createInMemorySessionStore>;
@@ -22,7 +31,7 @@ const createRuntime = async (stores: {
     policy,
     sessionStore: stores.sessionStore,
     signingSecret: "dev-signing-secret",
-    validateWorkspaceToken: async () => undefined,
+    validateWorkspaceToken: async () => workspaceValidation,
   });
   const server = createHttpServer({
     authService,

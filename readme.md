@@ -218,7 +218,7 @@ curl -s http://127.0.0.1:8787/mcp \
 
 Governed write tools use the same endpoint, but require an approval token from `POST /v1/approvals` before the `tools/call`.
 
-The remote package keeps MCP transport, session exchange, approval gating, audit logging, workspace policy resolution, and shared-store runtime concerns separate from backend application modules. Newer Radioso deployments also expose `GET /api/v1/workspace/mcp/context`, which the package uses to negotiate workspace identity and supported MCP capabilities before a session grants tools. The local stdio mode still exists for compatibility, but remote HTTP is now the primary MCP surface.
+The remote package keeps MCP transport, session exchange, approval gating, audit logging, workspace policy resolution, and shared-store runtime concerns separate from backend application modules. It requires `GET /api/v1/workspace/mcp/context` on the target backend and uses that route to negotiate workspace identity and supported MCP capabilities before a session grants tools. The local stdio mode still exists for compatibility, but remote HTTP is now the primary MCP surface.
 
 ## Assistant Execution Model
 

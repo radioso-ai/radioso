@@ -40,7 +40,7 @@ export interface AuthServiceDependencies {
     workspaceHint?: string;
     workspaceId?: string;
     workspaceName?: string;
-  } | void>;
+  }>;
   accessTokenTtlSeconds?: number;
   approvalTtlSeconds?: number;
 }
@@ -167,10 +167,10 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
       try {
         const issuedAt = now();
         const validation = await dependencies.validateWorkspaceToken(input.radiosoApiToken);
-        const policyResolution = dependencies.resolvePolicy?.(validation?.workspaceId) ?? {
+        const policyResolution = dependencies.resolvePolicy?.(validation.workspaceId) ?? {
           policy: dependencies.policy,
           source: "global" as const,
-          workspaceId: validation?.workspaceId,
+          workspaceId: validation.workspaceId,
         };
         const requestedTools = input.requestedTools && input.requestedTools.length > 0
           ? input.requestedTools
@@ -185,7 +185,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
           );
         }
 
-        const upstreamSupportedTools = validation?.supportedTools ? unique(validation.supportedTools) : undefined;
+        const upstreamSupportedTools = validation.supportedTools ? unique(validation.supportedTools) : undefined;
         const unsupportedTools = upstreamSupportedTools
           ? resolution.grantedTools.filter((toolName) => !upstreamSupportedTools.includes(toolName))
           : [];
@@ -207,13 +207,13 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
           grantedTools,
           issuedAt,
           sessionId,
-          upstreamApiVersion: validation?.apiVersion,
-          upstreamMcpContextVersion: validation?.mcpContextVersion,
+          upstreamApiVersion: validation.apiVersion,
+          upstreamMcpContextVersion: validation.mcpContextVersion,
           upstreamSupportedTools,
           upstreamApiToken: input.radiosoApiToken,
-          workspaceId: validation?.workspaceId,
-          workspaceHint: validation?.workspaceHint,
-          workspaceName: validation?.workspaceName,
+          workspaceId: validation.workspaceId,
+          workspaceHint: validation.workspaceHint,
+          workspaceName: validation.workspaceName,
         });
 
         await emit({
@@ -224,9 +224,9 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
             grantedTools,
             policySource: policyResolution.source,
             unsupportedTools,
-            workspaceId: validation?.workspaceId,
-            workspaceHint: validation?.workspaceHint,
-            workspaceName: validation?.workspaceName,
+            workspaceId: validation.workspaceId,
+            workspaceHint: validation.workspaceHint,
+            workspaceName: validation.workspaceName,
           },
           outcome: "success",
           sessionId,
@@ -241,9 +241,9 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
           sessionId,
           tokenType: "Bearer",
           unsupportedTools: unsupportedTools.length > 0 ? unsupportedTools : undefined,
-          workspaceId: validation?.workspaceId,
-          workspaceHint: validation?.workspaceHint,
-          workspaceName: validation?.workspaceName,
+          workspaceId: validation.workspaceId,
+          workspaceHint: validation.workspaceHint,
+          workspaceName: validation.workspaceName,
         };
       } catch (error) {
         const failure = toAuditFailure(error);

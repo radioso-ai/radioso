@@ -1,5 +1,5 @@
 import type { RadiosoMcpConfig } from "../config.js";
-import { createRadiosoApiAdapter, RadiosoApiError } from "../radiosoApiAdapter.js";
+import { createRadiosoApiAdapter } from "../radiosoApiAdapter.js";
 
 export interface WorkspaceTokenValidationResult {
   apiVersion?: string;
@@ -10,11 +10,11 @@ export interface WorkspaceTokenValidationResult {
   workspaceName?: string;
 }
 
-export const validateWorkspaceTokenWithFallback = async (
+export const validateWorkspaceToken = async (
   config: Pick<RadiosoMcpConfig, "baseUrl" | "requestTimeoutMs" | "serverName">,
   radiosoApiToken: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<WorkspaceTokenValidationResult | void> => {
+): Promise<WorkspaceTokenValidationResult> => {
   const adapter = createRadiosoApiAdapter(
     {
       ...config,
@@ -23,22 +23,13 @@ export const validateWorkspaceTokenWithFallback = async (
     fetchImpl,
   );
 
-  try {
-    const context = await adapter.getWorkspaceMcpContext();
-    return {
-      apiVersion: context.apiVersion,
-      mcpContextVersion: context.mcpContextVersion,
-      supportedTools: context.supportedTools,
-      workspaceHint: context.workspaceName,
-      workspaceId: context.workspaceId,
-      workspaceName: context.workspaceName,
-    };
-  } catch (error) {
-    if (!(error instanceof RadiosoApiError) || error.code !== "unsupported_capability") {
-      throw error;
-    }
-
-    await adapter.listDocuments({ limit: 1 });
-    return undefined;
-  }
+  const context = await adapter.getWorkspaceMcpContext();
+  return {
+    apiVersion: context.apiVersion,
+    mcpContextVersion: context.mcpContextVersion,
+    supportedTools: context.supportedTools,
+    workspaceHint: context.workspaceName,
+    workspaceId: context.workspaceId,
+    workspaceName: context.workspaceName,
+  };
 };

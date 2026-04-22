@@ -29,6 +29,7 @@ This is the intended local run path. It:
 - creates or reuses `backend/.env`
 - prompts for the AI provider and required credentials
 - generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `WEBSITE_EMBED_SECRET`
+- enables `AUTH_SKIP_EMAIL_VERIFICATION=true` in the generated local `backend/.env` so local registration can skip email verification by default
 - configures uploaded document storage to use the local filesystem by default
 - builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose
 - waits until the frontend and backend are reachable
@@ -74,22 +75,24 @@ Important: the website embed allowlist must include the exact origin, including 
 5. Wait for document processing to finish.
 6. Ask one of the suggested questions in chat.
 
+New accounts must verify their email before the first sign-in completes, except in the default `./run-dev.sh` local setup where `AUTH_SKIP_EMAIL_VERIFICATION=true` is written into `backend/.env` for faster local iteration. Local runs also default to `MAIL_DRIVER=log`, so verification and password reset links are written to backend logs unless you point the app at a real SMTP server.
+
 This is the fastest path if you want to click around the product and verify that the full app works.
 
 ### Use The API Or SDK Only
 
 You do not need to open the web app at all.
 
-Register a new user and save the session cookie:
+Register a new user:
 
 ```bash
-curl -sS -c cookies.txt \
+curl -sS \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"verysecurepassword"}' \
   http://localhost:8080/api/v1/auth/register
 ```
 
-That response includes `workspaceId`. You can also log in instead:
+That response includes `workspaceId` plus `requiresEmailVerification: true`, but it does not create a session. Verify the email first, then log in to save the session cookie:
 
 ```bash
 curl -sS -c cookies.txt \
@@ -97,6 +100,17 @@ curl -sS -c cookies.txt \
   -d '{"email":"you@example.com","password":"verysecurepassword"}' \
   http://localhost:8080/api/v1/auth/login
 ```
+
+Request a password reset email:
+
+```bash
+curl -sS \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com"}' \
+  http://localhost:8080/api/v1/auth/password-reset/request
+```
+
+If the account exists, Radioso accepts the request and sends the reset link through the configured mail driver. The same shared email module also sends verification links for new registrations. Local runs default to `MAIL_DRIVER=log`, which records the verification and reset URLs in backend logs instead of delivering externally. To deliver real email, set `APP_BASE_URL`, `MAIL_FROM_EMAIL`, and either keep `MAIL_DRIVER=log` for internal relay capture or configure `MAIL_DRIVER=smtp` plus `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT`, `MAIL_SMTP_USERNAME`, and `MAIL_SMTP_PASSWORD`.
 
 Reveal the workspace API token with the session cookie:
 
@@ -337,6 +351,27 @@ packages/radioso-mcp-server/  Standalone MCP server package for workspace-scoped
 infra/           Docker Compose and Terraform
 docs/            Product and SDK guides
 ```
+
+## Observability
+
+The OSS default path is first-party only:
+
+- structured logs through Pino
+- audit-backed product analytics and incident persistence
+- optional Prometheus-style metrics at `METRICS_PATH` when `METRICS_ENABLED=true` and a bearer `METRICS_AUTH_TOKEN` is configured
+
+Optional SaaS adapters stay off by default and are enabled only through env:
+
+```bash
+PRODUCT_ANALYTICS_SINKS=audit,posthog
+POSTHOG_HOST=https://app.posthog.com
+POSTHOG_API_KEY=...
+
+INCIDENT_SINKS=audit,sentry
+SENTRY_DSN=...
+```
+
+If those adapters fail, Radioso still keeps the first-party audit record and continues serving requests. For more detail, see [docs/oss-saas-observability.md](./docs/oss-saas-observability.md).
 
 ## Common Settings To Tune
 

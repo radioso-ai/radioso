@@ -18,10 +18,15 @@ import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import { IngestionSettingsRepository } from "../../db/repositories/ingestionSettingsRepository.js";
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
+import { PasswordResetTokenRepository } from "../../db/repositories/passwordResetTokenRepository.js";
+import { EmailVerificationTokenRepository } from "../../db/repositories/emailVerificationTokenRepository.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
+import { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
+import { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import { AuditService } from "../../modules/audit/services/auditService.js";
+import { createEmailService } from "../../modules/email/services/emailService.js";
 import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
@@ -63,11 +68,26 @@ import { registerBuiltInConnectors } from "../../modules/connectors/plugins/inde
 import { Database } from "../../shared/infra/database.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
+import { buildAnalyticsSinks } from "../../shared/analytics/buildAnalyticsSinks.js";
+import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
+import { buildIncidentSinks } from "../../shared/incidents/buildIncidentSinks.js";
 import { createLogger } from "../../shared/observability/logger.js";
+import { buildTelemetrySinks } from "../../shared/observability/telemetry/buildTelemetrySinks.js";
+import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
+import { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
 import type { AppDependencies } from "./types.js";
 
 export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const logger = createLogger();
+  const { metricsRegistry, sinks: telemetrySinks } = buildTelemetrySinks(env);
+  const telemetryService = new TelemetryService({
+    enabled: env.OBSERVABILITY_ENABLED,
+    environment: env.OBSERVABILITY_ENVIRONMENT,
+    logger,
+    service: env.OBSERVABILITY_SERVICE_NAME,
+    sinks: telemetrySinks,
+    version: env.OBSERVABILITY_VERSION,
+  });
   const database = new Database(env.DATABASE_URL, {
     poolMax: env.DB_POOL_MAX,
     idleTimeoutMs: env.DB_POOL_IDLE_TIMEOUT_MS,
@@ -78,8 +98,31 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   });
   const auditEventRepository = new AuditEventRepository(database);
   const auditService = new AuditService(logger, auditEventRepository);
+  const productAnalyticsService = new ProductAnalyticsService({
+    enabled: env.OBSERVABILITY_ENABLED,
+    logger,
+    sinks: buildAnalyticsSinks({
+      auditService,
+      env,
+      metricsRegistry,
+    }),
+  });
+  const persistentIncidentReportingService = new IncidentReportingService({
+    enabled: env.OBSERVABILITY_ENABLED,
+    environment: env.OBSERVABILITY_ENVIRONMENT,
+    logger,
+    service: env.OBSERVABILITY_SERVICE_NAME,
+    version: env.OBSERVABILITY_VERSION,
+    sinks: buildIncidentSinks({
+      auditService,
+      env,
+      metricsRegistry,
+    }),
+  });
   const accountMembershipRepository = new AccountMembershipRepository(database);
+  const accountRepository = new AccountRepository(database);
   const userRepository = new UserRepository(database);
+  const sessionRepository = new SessionRepository(database);
   const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
   const accountInvitationService = new AccountInvitationService(
     new AccountInvitationRepository(database),
@@ -96,6 +139,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new RetrievalSettingsRepository(database),
     auditService,
     documentRepository,
+    productAnalyticsService,
   );
   const documentStorage: DocumentStoragePort = env.DOCUMENT_STORAGE_DRIVER === "gcs"
     ? new GcsDocumentStorage(env.DOCUMENT_STORAGE_BUCKET!)
@@ -133,6 +177,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     () => documentProcessingJobRepository.getQueueSnapshot(),
     documentProcessingJobRepository,
     documentJobDispatcher,
+    productAnalyticsService,
   );
   const documentImportService = new DocumentImportService(
     documentRepository,
@@ -151,6 +196,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     undefined,
     documentJobDispatcher,
     env.DOCUMENT_PROCESSING_JOB_LEASE_MS,
+    telemetryService,
   );
   const documentDeletionService = new DocumentDeletionService(documentRepository, documentStorage, auditService);
   const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(
@@ -175,7 +221,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new RerankService(llmRegistry.createRerankGateway(), logger),
     new PromptContextSelectorService(),
     new PromptBuilder(),
-    new RetrievalExecutionTelemetryService(),
+    new RetrievalExecutionTelemetryService(telemetryService),
     workspaceRepository,
   );
   const documentSearchService = new DocumentSearchService(
@@ -194,6 +240,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     llmRegistry.createChatGateway(),
     auditService,
     llmRegistry.createGroundedMissResponseComposer(),
+    productAnalyticsService,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -231,22 +278,49 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
       "Connector secret encryption is not configured; secret-field writes will be rejected until this is fixed",
     );
   }
-  const authService = new AuthService({
+  const emailService = createEmailService(env);
+  const emailVerificationService = new EmailVerificationService({
     env,
-    accountRepository: new AccountRepository(database),
+    auditService,
+    emailService,
+    tokenRepository: new EmailVerificationTokenRepository(database),
     userRepository,
-    sessionRepository: new SessionRepository(database),
+  });
+  const verificationAwareAuthService = new AuthService({
+    env,
+    accountRepository,
+    userRepository,
+    sessionRepository,
     workspaceTokenRepository: new WorkspaceTokenRepository(database),
     workspaceService,
     accountAccessService,
     accountInvitationService,
+    emailVerificationService,
     auditService,
+  });
+  const passwordResetService = new PasswordResetService({
+    env,
+    auditService,
+    accountRepository,
+    accountAccessService,
+    emailService,
+    passwordResetTokenRepository: new PasswordResetTokenRepository(database),
+    sessionRepository,
+    userRepository,
+    workspaceService,
   });
 
   return {
     env,
     logger,
-    authService,
+    metricsRegistry,
+    telemetryService,
+    incidentReportingService: persistentIncidentReportingService,
+    productAnalyticsService,
+    authService: verificationAwareAuthService,
+    passwordResetService,
+    emailVerificationService,
+    emailService,
     accountAccessService,
     accountInvitationService,
     workspaceSessionService,

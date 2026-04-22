@@ -6,6 +6,7 @@ import { createAccountUserRoutes } from "./accountUserRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
 import { createChatRoutes } from "./chatRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
+import { createMetricsRoutes } from "./metricsRoutes.js";
 import { createSettingsRoutes } from "./settingsRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 import { createMcpContextRoutes } from "./mcpContextRoutes.js";
@@ -20,6 +21,16 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok" });
   });
+  if (dependencies.env.METRICS_ENABLED) {
+    if (!dependencies.metricsRegistry || !dependencies.env.METRICS_AUTH_TOKEN) {
+      throw new Error("Metrics exposure requires a registry and METRICS_AUTH_TOKEN");
+    }
+
+    router.use(
+      dependencies.env.METRICS_PATH,
+      createMetricsRoutes(dependencies.metricsRegistry, dependencies.env.METRICS_AUTH_TOKEN),
+    );
+  }
   router.use("/api/v1/auth", createAuthRoutes(dependencies));
   router.use("/api/v1/account", createAccountRoutes(dependencies));
   router.use("/api/v1/account", createAccountUserRoutes(dependencies));

@@ -11,9 +11,12 @@ import type { WorkspaceIngestionReprocessService } from "../../modules/documents
 import type { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import type { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
+import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
+import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import type { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import type { AuditService } from "../../modules/audit/services/auditService.js";
+import type { EmailService } from "../../modules/email/services/emailService.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
@@ -26,11 +29,22 @@ import type { Env } from "../config/env.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { EvalLabService } from "../../modules/evals/services/evalLabService.js";
+import type { ProductAnalyticsPort } from "../../shared/analytics/productAnalyticsService.js";
+import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
+import type { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
+import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 
 export interface AppDependencies {
   env: Env;
   logger: AppLogger;
+  metricsRegistry: MetricsRegistry | null;
+  telemetryService: TelemetryService;
+  incidentReportingService: IncidentReportingService;
+  productAnalyticsService: ProductAnalyticsPort;
   authService: AuthService;
+  passwordResetService: PasswordResetService;
+  emailVerificationService: EmailVerificationService;
+  emailService: EmailService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
   workspaceSessionService: WorkspaceSessionService;

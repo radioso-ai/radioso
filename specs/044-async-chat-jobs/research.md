@@ -13,13 +13,13 @@
 - Queue every chat turn behind a durable worker: rejected because it would degrade live UX and blur the product boundary between conversation and background work.
 - Use queueing only during overload as a fallback: rejected because silent downgrade from live chat to background work would be unpredictable and hard to explain to users.
 
-## Decision: Treat async assistant work as an explicit deferred product mode
+## Decision: Treat async assistant work as a future explicit deferred product mode
 
 ### Rationale
 
-- Long-running analysis, replay, export, or notification workflows benefit from durability and independence from live request time limits.
+- Long-running analysis, replay, export, or notification workflows may eventually benefit from durability and independence from live request time limits.
 - Users and operators can accept deferred completion when the product clearly presents the work as background processing.
-- A separate async category gives enterprise reviewers a credible reliability story without forcing all assistant behavior through one execution model.
+- A separate async category gives enterprise reviewers a credible reliability story without forcing all assistant behavior through one execution model before the runtime exists.
 
 ### Alternatives considered
 
@@ -39,13 +39,13 @@
 - Document the decision only in the spec: rejected because the implementation would still lack an enforceable source of truth.
 - Keep the policy only in documentation: rejected because future code changes could drift away from the approved execution model unnoticed.
 
-## Decision: Use eval replay as the first reference workflow for deferred assistant work
+## Decision: Use eval replay as the first reference workflow for future deferred assistant work
 
 ### Rationale
 
 - Eval replay is already a non-interactive, operator-oriented workflow that resembles background assistant work more than live chat.
 - It provides a concrete example for classification without forcing immediate implementation of a generic async chat runtime.
-- Starting with a reference workflow keeps the feature grounded in the current codebase.
+- In this feature it remains inline, which keeps the documentation honest while still identifying a plausible future deferred candidate.
 
 ### Alternatives considered
 

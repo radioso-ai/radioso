@@ -65,22 +65,22 @@
 
 ## Phase 4: User Story 2 - Run Long Jobs Reliably (Priority: P1)
 
-**Goal**: Define the deferred async category clearly enough that long-running assistant-adjacent work has a credible enterprise story without building a generic async runtime in this feature.
+**Goal**: Define the future deferred category clearly enough that long-running assistant-adjacent work has a credible enterprise story without pretending this feature already ships a generic async runtime.
 
-**Independent Test**: Classify eval replay and other covered workflows, then verify the async class is explicit and durable-background expectations are documented.
+**Independent Test**: Classify eval replay and other covered workflows, then verify future deferred candidates are documented honestly without claiming a shipped durable-background runtime.
 
 ### Tests for User Story 2
 
-- [ ] T017 [P] [US2] Add failing unit coverage for async workflow classification in `backend/tests/unit/chat-execution-policy.test.ts`
-- [ ] T018 [P] [US2] Extend eval replay coverage to assert deferred classification assumptions in `backend/tests/unit/eval-replay-service.test.ts`
+- [ ] T017 [P] [US2] Add failing unit coverage for future deferred workflow classification in `backend/tests/unit/chat-execution-policy.test.ts`
+- [ ] T018 [P] [US2] Extend eval replay coverage to assert current inline classification and future-candidate assumptions in `backend/tests/unit/eval-replay-service.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T019 [P] [US2] Extend `backend/src/modules/chat/services/chatExecutionPolicy.ts` with the initial async workflow set and explanatory metadata
-- [ ] T020 [US2] Apply the execution policy to `backend/src/modules/evals/services/evalReplayService.ts` as the first concrete deferred workflow reference
+- [ ] T019 [P] [US2] Extend `backend/src/modules/chat/services/chatExecutionPolicy.ts` with the future deferred workflow category and explanatory metadata
+- [ ] T020 [US2] Apply the execution policy to `backend/src/modules/evals/services/evalReplayService.ts` as the first concrete inline workflow that remains a future deferred reference candidate
 - [ ] T021 [US2] Add or update any shared types or internal metadata needed to expose execution-class decisions without introducing a new public API
 
-**Checkpoint**: The codebase has an explicit deferred category for long-running assistant work, anchored by a real existing workflow.
+**Checkpoint**: The codebase has an explicit future deferred category for long-running assistant work, anchored by a real existing workflow that is still represented honestly as inline today.
 
 ---
 
@@ -107,9 +107,9 @@
 
 ## Phase 6: User Story 4 - Document Immediate Versus Background Work (Priority: P2)
 
-**Goal**: Ship operator- and enterprise-facing documentation that explains the difference between live chat and deferred assistant work in plain language.
+**Goal**: Ship operator- and enterprise-facing documentation that explains the difference between live chat and any future deferred assistant work in plain language.
 
-**Independent Test**: Use the shipped documentation alone to classify each covered workflow and explain how deferred work differs from normal chat.
+**Independent Test**: Use the shipped documentation alone to classify each covered workflow and explain how future deferred work would differ from normal chat.
 
 ### Tests for User Story 4
 
@@ -117,7 +117,7 @@
 
 ### Implementation for User Story 4
 
-- [ ] T028 [P] [US4] Update `readme.md` with the approved service-model explanation for live chat versus deferred assistant work
+- [ ] T028 [P] [US4] Update `readme.md` with the approved service-model explanation for live chat versus any future deferred assistant work
 - [ ] T029 [P] [US4] Add `docs/assistant-execution-model.md` with plain-language operator and enterprise guidance
 - [ ] T030 [P] [US4] Update `docs/README.md` to link the new execution-model guide
 - [ ] T031 [US4] Update `frontend/components/dashboard/settings/settings-docs.ts` and `frontend/components/dashboard/settings/retrieval-settings-panel.tsx` only if in-product operator guidance is needed for this feature
@@ -195,7 +195,7 @@ Task: "Wire chatExecutionPolicy.ts into backend/src/modules/chat/services/chatBo
 
 1. Add the execution-policy seam and guardrail tests
 2. Protect normal chat and bootstrap flows
-3. Classify the initial async workflow set with eval replay as the reference case
+3. Classify the current workflow set while keeping eval replay explicit as an inline workflow and future deferred candidate
 4. Clarify the operator service model
 5. Ship documentation and validation
 
@@ -210,4 +210,4 @@ Task: "Wire chatExecutionPolicy.ts into backend/src/modules/chat/services/chatBo
 - [P] tasks touch different files and avoid same-file conflicts
 - No backend HTTP contract change is expected in this feature
 - Runtime prompt assets are not expected, but if any are introduced they must live under `backend/prompts/`
-- Keep live chat and deferred assistant work as separate product modes throughout the implementation
+- Keep live chat and any future deferred assistant work as separate product modes throughout the implementation

@@ -3,7 +3,7 @@
 **Feature Branch**: `044-async-chat-jobs`  
 **Created**: 2026-04-22  
 **Status**: Draft  
-**Input**: User description: "Define Radioso's chat execution model so normal chat remains synchronous and streaming while only explicitly long-running chat-adjacent work uses a durable async job path."
+**Input**: User description: "Define Radioso's chat execution model so normal chat remains synchronous and streaming, while future long-running chat-adjacent work has a clear deferred path instead of pressuring the product to queue every chat turn."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -23,19 +23,19 @@ As a chat user, I want normal conversations to start immediately and stream answ
 
 ---
 
-### User Story 2 - Run Long Jobs Reliably (Priority: P1)
+### User Story 2 - Reserve Long Jobs For A Future Deferred Path (Priority: P1)
 
-As a workspace operator or enterprise reviewer, I want clearly defined long-running chat-adjacent work to use a durable async path, so expensive analysis or replay jobs can complete reliably without blocking live chat capacity.
+As a workspace operator or enterprise reviewer, I want long-running chat-adjacent work to be clearly identified as future deferred product scope rather than implied live-chat behavior, so expensive analysis or replay jobs can gain a credible enterprise path later without blocking live chat capacity now.
 
-**Why this priority**: The product needs a credible enterprise story for background analysis, replay, and other non-interactive workloads without pushing a broker into the critical path for every chat turn.
+**Why this priority**: The product needs a credible enterprise story for background analysis, replay, and other non-interactive workloads without pretending that a deferred runtime already shipped in this feature.
 
-**Independent Test**: Can be fully tested by classifying a set of long-running tasks, starting one through the async path, and verifying it can outlive the initiating request while preserving durable job state and clear completion status.
+**Independent Test**: Can be fully tested by classifying a set of long-running tasks, verifying they are documented as future deferred candidates rather than shipped background workflows, and confirming no current route silently behaves as if a deferred runtime exists.
 
 **Acceptance Scenarios**:
 
-1. **Given** a requested workflow is explicitly classified as async, **When** the operator starts it, **Then** the system uses a durable background job path rather than the interactive chat request path.
-2. **Given** a long-running async chat-adjacent job is in progress, **When** live users continue chatting, **Then** the background workload does not require the live chat route to wait for that job to finish.
-3. **Given** an async chat-adjacent job fails or is interrupted, **When** operators inspect the system, **Then** the failure is visible with durable job state rather than being lost in transient request logs.
+1. **Given** the team reviews long-running assistant-adjacent workflows, **When** they classify them in the execution model, **Then** the model distinguishes current interactive behavior from future deferred candidates without implying a shipped background runtime.
+2. **Given** an enterprise reviewer asks how heavy assistant workflows will evolve, **When** the team uses the approved docs and policy seam, **Then** the answer identifies a future deferred path without claiming those workflows already outlive the initiating request.
+3. **Given** a current workflow such as eval replay still runs inline, **When** operators inspect the execution model, **Then** that workflow is described honestly as interactive today and only as a candidate for future deferred execution.
 
 ---
 
@@ -96,9 +96,9 @@ As a workspace operator or enterprise reviewer, I want clear documentation of wh
 
 ## Architecture Constraints *(mandatory)*
 
-- **Boundary Rule**: Chat HTTP routes own request validation, auth attachment, streaming transport, and overload responses for interactive turns. Chat orchestration owns session preparation, retrieval execution, answer generation, validation, and message persistence for interactive chat. Durable job orchestration owns lifecycle for explicitly async chat-adjacent work. Persistence owns conversations, messages, audits, and any future async job records.
+- **Boundary Rule**: Chat HTTP routes own request validation, auth attachment, streaming transport, and overload responses for interactive turns. Chat orchestration owns session preparation, retrieval execution, answer generation, validation, and message persistence for interactive chat. Any future durable job orchestration for chat-adjacent work must remain separate from those live request seams. Persistence owns conversations, messages, audits, and any future async job records.
 - **Encapsulation Rule**: `backend/src/app/http/routes/chatRoutes.ts` and `backend/src/app/http/routes/publicChatRoutes.ts` must remain transport-focused and must not absorb background job policy. `backend/src/modules/chat/services/chatService.ts` must remain the orchestration seam for live interactive chat and must not become the catch-all implementation for future batch workflows. Existing document worker modules must remain document-focused and must not become a generic chat task runner by accretion.
-- **New Seams Required**: A focused execution-class policy seam that classifies workflows as interactive or async, plus a dedicated async chat-job seam for future long-running chat-adjacent tasks such as eval replay, exports, or multi-step analysis.
+- **New Seams Required**: A focused execution-class policy seam that classifies workflows and documents future deferred candidates without forcing this feature to ship a dedicated async chat-job runtime.
 - **Anti-Goals**: Do not put a broker or durable job queue in the critical path for normal chat turns. Do not silently downgrade overloaded interactive chat into eventual background work. Do not reuse document-processing worker modules for chat tasks without an explicit chat-job boundary. Do not blur interactive chat semantics with operator-triggered async analysis.
 
 ## Requirements *(mandatory)*
@@ -110,14 +110,14 @@ As a workspace operator or enterprise reviewer, I want clear documentation of wh
 - **FR-003**: Interactive synchronous chat MUST keep retrieval, answer generation, validation, conversation persistence, and answer delivery in the live request path.
 - **FR-004**: Interactive synchronous chat MUST preserve token streaming behavior for supported live chat surfaces instead of routing normal turns through a delayed job queue.
 - **FR-005**: When interactive chat cannot be served within defined interactive limits, the system MUST fail explicitly with a bounded overload, timeout, or cancellation outcome rather than implicitly queueing the turn.
-- **FR-006**: System MUST identify a separate category of explicitly async chat-adjacent work that is allowed to use a durable background job path.
-- **FR-007**: Async chat-adjacent work MUST be limited to workflows whose value does not depend on immediate token streaming in the initiating request.
-- **FR-008**: The execution model MUST name initial async chat-adjacent candidates, including eval replay, exports, bulk analysis, notifications, and other operator-triggered long-running workflows, while treating normal chat turns as out of scope for background execution.
+- **FR-006**: System MUST identify a separate category of future async chat-adjacent work that may use a durable background job path in a later feature.
+- **FR-007**: Future async chat-adjacent work MUST be limited to workflows whose value does not depend on immediate token streaming in the initiating request.
+- **FR-008**: The execution model MUST name initial future async chat-adjacent candidates, including eval replay, exports, bulk analysis, notifications, and other operator-triggered long-running workflows, while treating normal chat turns as out of scope for background execution.
 - **FR-009**: Future async chat-adjacent jobs MUST use durable job state that survives process restarts and allows operators to inspect queued, running, succeeded, and failed outcomes.
-- **FR-010**: The platform MUST preserve independent capacity planning for interactive chat serving and background job execution so long-running async work does not require the live chat path to block on background completion.
+- **FR-010**: The execution model MUST preserve the requirement for independent capacity planning between interactive chat serving and any future background job execution so long-running async work does not require the live chat path to block on background completion.
 - **FR-011**: The approved execution model MUST be documented clearly enough that product, engineering, and enterprise reviewers can map each major chat-related workflow to the correct execution class.
-- **FR-011a**: Documentation for any async chat-adjacent workflow MUST explain how the workflow is started, how a user or operator knows it is background work, and how completion or failure is surfaced.
-- **FR-012**: The feature MUST include validation coverage that proves normal chat routes remain synchronous and that explicitly async workloads are not misclassified as interactive chat.
+- **FR-011a**: Documentation for any future async chat-adjacent workflow MUST explain how the workflow is started, how a user or operator knows it is background work, and how completion or failure is surfaced.
+- **FR-012**: The feature MUST include validation coverage that proves normal chat routes remain synchronous and that future async candidates are not misrepresented as shipped background workflows.
 - **FR-013**: If this feature introduces or extracts backend runtime prompt assets for execution-class messaging or async job behavior, those prompt assets MUST live under `backend/prompts/`.
 - **FR-014**: Any user-facing assistant or chat copy introduced by this feature MUST come from the LLM at runtime rather than hard-coded application strings because the system is multilingual.
 
@@ -132,7 +132,7 @@ As a workspace operator or enterprise reviewer, I want clear documentation of wh
 
 - **Execution Class**: The approved classification for a chat-related workflow, indicating whether it is interactive synchronous or durable async.
 - **Interactive Chat Turn**: A user-visible live conversation turn that performs retrieval, answer generation, validation, persistence, and delivery in the initiating request.
-- **Async Chat Job**: A durable background workflow for long-running chat-adjacent work whose value does not depend on immediate token streaming.
+- **Async Chat Job**: A future durable background workflow for long-running chat-adjacent work whose value does not depend on immediate token streaming.
 - **Execution Policy Decision**: The operator- and developer-facing rule that determines which workflows may run async and which must remain interactive.
 
 ## Assumptions
@@ -148,7 +148,7 @@ As a workspace operator or enterprise reviewer, I want clear documentation of wh
 
 - **SC-001**: In validation, 100% of covered normal chat flows continue to execute in the live request path without requiring background job creation.
 - **SC-002**: In validation, 100% of covered interactive streaming flows can still begin answer delivery before any durable async handoff would have been required.
-- **SC-003**: In validation, every covered long-running chat-adjacent workflow identified by the spec is classified unambiguously as either interactive or async with no mixed or implicit fallback mode.
+- **SC-003**: In validation, every covered long-running chat-adjacent workflow identified by the spec is classified unambiguously either as interactive today or as future deferred scope, with no mixed or implicit fallback mode.
 - **SC-004**: Architecture and operator documentation allow a reviewer to identify the correct execution class for each covered workflow in one pass without relying on tribal knowledge or unstated assumptions.
 - **SC-004a**: In validation, operators can explain the difference between immediate live chat and background assistant work for every covered workflow using the shipped documentation alone.
 - **SC-005**: Future planning for async chat-adjacent jobs can proceed without reopening the question of whether normal live chat should be queue-backed.

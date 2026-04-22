@@ -5,7 +5,7 @@
 
 ## Summary
 
-Codify Radioso's assistant execution model as two explicit classes: interactive synchronous work for normal live chat and durable async work for long-running chat-adjacent workflows. The implementation will keep authenticated chat, public chat, embedded chat, and bootstrap greeting on the current live request path, add a focused execution-policy seam so the classification lives in code instead of tribal knowledge, add guardrail tests that prevent silent queue-backed fallback for normal chat, and update operator-facing documentation so enterprise reviewers can understand the model without reading source code. This feature does not build a generic async chat runtime; it creates the policy, validation, and documentation foundation for later async job work.
+Codify Radioso's assistant execution model as two explicit classes while shipping only the interactive side for the covered workflows in this feature. The implementation keeps authenticated chat, public chat, embedded chat, bootstrap greeting, and eval replay on their current inline paths, adds a focused execution-policy seam so the classification lives in code instead of tribal knowledge, adds guardrail tests that prevent silent queue-backed fallback for normal chat, and updates operator-facing documentation so enterprise reviewers can understand the model without reading source code. This feature does not build a generic async chat runtime; it creates the policy, validation, and documentation foundation for later async job work.
 
 ## Technical Context
 
@@ -101,7 +101,7 @@ readme.md
 - **Persistence/Integration Layer**:
   - existing conversation/message repositories
   - existing audit service and audit-event persistence
-  - existing document-processing job system as the reference durable async implementation, not as a dependency to reuse in this feature
+  - existing document-processing job system as the reference durable async implementation for future follow-on work, not as a dependency to reuse in this feature
 - **Files Kept Small**:
   - `backend/src/modules/chat/services/chatService.ts`
   - `backend/src/app/http/routes/chatRoutes.ts`
@@ -128,9 +128,9 @@ readme.md
 ## Phase 2: Implementation Strategy
 
 1. Add failing backend tests that lock normal authenticated chat, public chat, embedded/bootstrap paths, and eval replay classification to the approved execution classes.
-2. Introduce a focused execution-policy seam that classifies covered workflows as interactive synchronous or durable async without expanding the responsibilities of `chatService.ts` or route handlers.
+2. Introduce a focused execution-policy seam that defines the current interactive workflows and preserves room for a future durable async class without expanding the responsibilities of `chatService.ts` or route handlers.
 3. Wire the existing chat and bootstrap services to rely on the policy seam where needed for guardrail assertions and future extensibility, while preserving current live request behavior.
-4. Update operator-facing documentation in `readme.md` and `docs/` so the distinction between live chat and background work is explicit, plain-language, and enterprise-review ready.
+4. Update operator-facing documentation in `readme.md` and `docs/` so the distinction between live chat and any future background work is explicit, plain-language, and enterprise-review ready.
 5. Run targeted validation proving there is no queue-backed handoff in normal chat and that documentation alone is enough to classify covered workflows correctly.
 
 ## Post-Design Constitution Check

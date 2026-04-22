@@ -1,6 +1,6 @@
 # Assistant Execution Model
 
-Radioso uses two assistant execution classes on purpose.
+Radioso uses two assistant execution classes on purpose, even though only the interactive path is shipped for the covered workflows in this feature.
 
 ## Live Chat Stays Immediate
 
@@ -31,7 +31,7 @@ Today, eval replay still runs inline on the request path. It is a future candida
 When you explain the system to customers or reviewers, use plain language:
 
 - live chat is immediate and streaming
-- background assistant work is explicit and delayed
+- any future background assistant work must be explicit and delayed
 - the product never hides a queued chat turn behind the normal chat UI
 
-That distinction is the service model. It protects chat responsiveness while still leaving room for durable async workflows where they actually help.
+That distinction is the service model. It protects chat responsiveness now while still leaving room for durable async workflows later if the product adds a real background execution path.

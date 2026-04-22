@@ -85,8 +85,6 @@ components:
           type: string
         requiresEmailVerification:
           type: boolean
-          enum:
-            - true
       required:
         - userId
         - accountId

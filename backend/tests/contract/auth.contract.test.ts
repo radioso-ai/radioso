@@ -103,6 +103,23 @@ describe("auth contract", () => {
     expect(dependencies.emailService.sentMessages.at(-1)?.metadata?.kind).toBe("email_verification");
   });
 
+  it("can skip email verification in local-dev mode and establish a session on registration", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        AUTH_SKIP_EMAIL_VERIFICATION: true,
+      },
+    });
+
+    const response = await request(app).post("/api/v1/auth/register").send({
+      email: "local-dev@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.requiresEmailVerification).toBe(false);
+    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
+  });
+
   it("accepts JSON auth requests when the content type includes charset UTF-8", async () => {
     const { app } = createTestApp();
 

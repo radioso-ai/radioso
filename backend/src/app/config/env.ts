@@ -35,6 +35,10 @@ const envSchema = z.object({
   WORKSPACE_TOKEN_SECRET: emptyStringToUndefined(z.string().min(16)),
   WEBSITE_EMBED_SECRET: emptyStringToUndefined(z.string().min(16)),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
+  AUTH_SKIP_EMAIL_VERIFICATION: z
+    .union([z.boolean(), z.enum(["true", "false"])])
+    .transform((value) => value === true || value === "true")
+    .default(false),
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
   PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(30),
   PASSWORD_RESET_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),

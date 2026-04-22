@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import { authApi } from '@/lib/api'
+import { authApi, seedWorkspaceSession } from '@/lib/api'
+import { useOptionalAuth } from '@/lib/auth-context'
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void
@@ -28,6 +29,7 @@ const getErrorMessage = (error: unknown) => {
 }
 
 export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
+  const auth = useOptionalAuth()
   const [organizationName, setOrganizationName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -53,12 +55,20 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
     setIsLoading(true)
 
     try {
-      await authApi.register({
+      const response = await authApi.register({
         email,
         password,
         organizationName: organizationName.trim() || undefined,
       })
-      setPendingEmail(email)
+      if (response.requiresEmailVerification) {
+        setPendingEmail(email)
+      } else {
+        seedWorkspaceSession(response.workspaceId)
+        if (!auth) {
+          throw new Error('Registration is unavailable outside the auth shell')
+        }
+        await auth.login(email, response.userId, response.accountId)
+      }
     } catch (error) {
       setError(getErrorMessage(error))
     } finally {

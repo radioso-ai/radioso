@@ -127,9 +127,14 @@ class FailingEmailService {
   }
 }
 
+type PasswordResetEmailTestService = {
+  sendPasswordResetEmail(input: { to: string; resetUrl: string }): Promise<void>;
+  messages?: Array<{ to: string; resetUrl: string }>;
+};
+
 const createPasswordResetService = async (options?: {
   emailVerifiedAt?: Date | null;
-  emailService?: { sendPasswordResetEmail(input: { to: string; resetUrl: string }): Promise<void> };
+  emailService?: PasswordResetEmailTestService;
 }) => {
   const env = {
     ...createTestEnv(),
@@ -145,7 +150,7 @@ const createPasswordResetService = async (options?: {
   const workspaceService = new WorkspaceService(new InMemoryWorkspaceRepository(), auditService);
   const sessionRepository = new TrackingSessionRepository();
   const passwordResetTokenRepository = new InMemoryPasswordResetTokenRepository();
-  const emailService = options?.emailService ?? new RecordingEmailService();
+  const emailService: PasswordResetEmailTestService = options?.emailService ?? new RecordingEmailService();
 
   const account = await accountRepository.create({
     name: "Reset Organization",
@@ -199,9 +204,9 @@ describe("PasswordResetService", () => {
     });
 
     expect(response).toEqual({ accepted: true });
-    expect(emailService.messages).toHaveLength(1);
-    expect(emailService.messages[0]?.to).toBe("reset@example.com");
-    expect(emailService.messages[0]?.resetUrl).toContain("http://localhost:3000/reset-password?token=");
+    expect(emailService.messages!).toHaveLength(1);
+    expect(emailService.messages![0]?.to).toBe("reset@example.com");
+    expect(emailService.messages![0]?.resetUrl).toContain("http://localhost:3000/reset-password?token=");
     const activeToken = await passwordResetTokenRepository.findLatestActiveByUserId(user.id, new Date());
     expect(activeToken?.requestIp).toBe("127.0.0.1");
     expect(activeToken?.requestUserAgent).toBe("vitest");
@@ -216,7 +221,7 @@ describe("PasswordResetService", () => {
     });
 
     expect(response).toEqual({ accepted: true });
-    expect(emailService.messages).toHaveLength(0);
+    expect(emailService.messages!).toHaveLength(0);
     expect(passwordResetTokenRepository.items.size).toBe(0);
   });
 
@@ -252,7 +257,7 @@ describe("PasswordResetService", () => {
     await service.requestReset({ email: "reset@example.com" });
     await service.requestReset({ email: "reset@example.com" });
 
-    const staleToken = new URL(emailService.messages[0]!.resetUrl).searchParams.get("token");
+    const staleToken = new URL(emailService.messages![0]!.resetUrl).searchParams.get("token");
 
     await expect(
       service.confirmReset({
@@ -282,7 +287,7 @@ describe("PasswordResetService", () => {
     });
 
     await service.requestReset({ email: "reset@example.com" });
-    const token = new URL(emailService.messages[0]!.resetUrl).searchParams.get("token");
+    const token = new URL(emailService.messages![0]!.resetUrl).searchParams.get("token");
 
     const result = await service.confirmReset({
       token: token!,
@@ -311,7 +316,7 @@ describe("PasswordResetService", () => {
     });
 
     await service.requestReset({ email: "reset@example.com" });
-    const token = new URL(emailService.messages[0]!.resetUrl).searchParams.get("token");
+    const token = new URL(emailService.messages![0]!.resetUrl).searchParams.get("token");
 
     await expect(
       service.confirmReset({

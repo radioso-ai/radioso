@@ -29,6 +29,7 @@ This is the intended local run path. It:
 - creates or reuses `backend/.env`
 - prompts for the AI provider and required credentials
 - generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `WEBSITE_EMBED_SECRET`
+- enables `AUTH_SKIP_EMAIL_VERIFICATION=true` in the generated local `backend/.env` so local registration can skip email verification by default
 - configures uploaded document storage to use the local filesystem by default
 - builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose
 - waits until the frontend and backend are reachable
@@ -74,7 +75,7 @@ Important: the website embed allowlist must include the exact origin, including 
 5. Wait for document processing to finish.
 6. Ask one of the suggested questions in chat.
 
-New accounts must verify their email before the first sign-in completes. Local runs default to `MAIL_DRIVER=log`, so verification and password reset links are written to backend logs unless you point the app at a real SMTP server.
+New accounts must verify their email before the first sign-in completes, except in the default `./run-dev.sh` local setup where `AUTH_SKIP_EMAIL_VERIFICATION=true` is written into `backend/.env` for faster local iteration. Local runs also default to `MAIL_DRIVER=log`, so verification and password reset links are written to backend logs unless you point the app at a real SMTP server.
 
 This is the fastest path if you want to click around the product and verify that the full app works.
 

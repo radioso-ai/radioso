@@ -137,7 +137,8 @@ export class AuthService {
     organizationName: string;
     workspaceId: string;
     workspaceName: string;
-    requiresEmailVerification: true;
+    requiresEmailVerification: boolean;
+    sessionCookie?: string;
   }> {
     const email = normalizeEmail(input.email);
     const existing = await this.dependencies.userRepository.findByEmail(email);
@@ -160,7 +161,7 @@ export class AuthService {
         id: account.id,
         email,
         passwordHash,
-        emailVerifiedAt: null,
+        emailVerifiedAt: this.dependencies.env.AUTH_SKIP_EMAIL_VERIFICATION ? new Date() : null,
       });
       await this.dependencies.accountAccessService.ensureMembership({
         accountId: account.id,
@@ -168,12 +169,17 @@ export class AuthService {
         role: "owner",
       });
       const workspace = await this.dependencies.workspaceService.createDefault(account.id);
-      await this.dependencies.emailVerificationService?.issueVerification({
-        userId: user.id,
-        email,
-        requestIp: input.requestIp,
-        requestUserAgent: input.requestUserAgent,
-      });
+      let sessionCookie: string | undefined;
+      if (this.dependencies.env.AUTH_SKIP_EMAIL_VERIFICATION) {
+        sessionCookie = await this.createSessionCookie(user.id, account.id);
+      } else {
+        await this.dependencies.emailVerificationService?.issueVerification({
+          userId: user.id,
+          email,
+          requestIp: input.requestIp,
+          requestUserAgent: input.requestUserAgent,
+        });
+      }
 
       await this.dependencies.auditService.record({
         accountId: account.id,
@@ -188,7 +194,8 @@ export class AuthService {
         organizationName: account.name,
         workspaceId: workspace.id,
         workspaceName: workspace.name,
-        requiresEmailVerification: true,
+        requiresEmailVerification: !this.dependencies.env.AUTH_SKIP_EMAIL_VERIFICATION,
+        sessionCookie,
       };
     } catch (error) {
       await this.rollbackCreatedAccount(account.id, account.id);
@@ -276,7 +283,7 @@ export class AuthService {
       throw unauthorized("Invalid email or password");
     }
 
-    if (!user.emailVerifiedAt) {
+    if (!this.dependencies.env.AUTH_SKIP_EMAIL_VERIFICATION && !user.emailVerifiedAt) {
       await this.dependencies.auditService.record({
         eventType: "auth.login",
         eventStatus: "failure",

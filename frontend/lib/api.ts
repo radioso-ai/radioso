@@ -415,7 +415,7 @@ export interface RegisterResponse {
   organizationName: string
   workspaceId: string
   workspaceName: string
-  requiresEmailVerification: true
+  requiresEmailVerification: boolean
 }
 
 export interface LoginRequest {

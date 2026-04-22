@@ -123,6 +123,9 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
         requestIp: req.ip,
         requestUserAgent: req.get("user-agent"),
       });
+      if (result.sessionCookie) {
+        res.setHeader("Set-Cookie", result.sessionCookie);
+      }
       res.status(201).json({
         userId: result.userId,
         accountId: result.accountId,

@@ -122,7 +122,7 @@ export class PasswordResetService {
     await this.dependencies.passwordResetTokenRepository.markAllActiveForUserUsed(user.id, now);
     await this.dependencies.sessionRepository.revokeAllForUser(user.id, now);
 
-    if (!user.emailVerifiedAt) {
+    if (!this.dependencies.env.AUTH_SKIP_EMAIL_VERIFICATION && !user.emailVerifiedAt) {
       await this.dependencies.auditService.record({
         eventType: "auth.password_reset.confirm",
         eventStatus: "failure",

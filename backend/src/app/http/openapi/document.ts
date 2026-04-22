@@ -122,7 +122,7 @@ const RegisterResponseSchema = registry.register(
     organizationName: z.string(),
     workspaceId: z.string().uuid(),
     workspaceName: z.string(),
-    requiresEmailVerification: z.literal(true),
+    requiresEmailVerification: z.boolean(),
   }),
 );
 

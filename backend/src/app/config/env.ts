@@ -26,10 +26,11 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(8080),
   OBSERVABILITY_ENABLED: booleanish(true),
   OBSERVABILITY_SERVICE_NAME: z.string().min(1).default("radioso-api"),
-  OBSERVABILITY_ENVIRONMENT: z.string().min(1).default("development"),
+  OBSERVABILITY_ENVIRONMENT: emptyStringToUndefined(z.string().min(1)),
   OBSERVABILITY_VERSION: emptyStringToUndefined(z.string().min(1)),
   METRICS_ENABLED: booleanish(false),
   METRICS_PATH: z.string().min(1).default("/metrics"),
+  METRICS_AUTH_TOKEN: emptyStringToUndefined(z.string().min(16)),
   OTEL_ENABLED: booleanish(false),
   OTEL_EXPORTER_OTLP_ENDPOINT: emptyStringToUndefined(z.string().url()),
   PRODUCT_ANALYTICS_SINKS: z.string().min(1).default("audit"),
@@ -127,6 +128,14 @@ const envSchema = z.object({
     });
   }
 
+  if (value.METRICS_ENABLED && !value.METRICS_AUTH_TOKEN) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["METRICS_AUTH_TOKEN"],
+      message: "METRICS_AUTH_TOKEN is required when METRICS_ENABLED is true",
+    });
+  }
+
   if (value.DOCUMENT_STORAGE_DRIVER === "gcs" && !value.DOCUMENT_STORAGE_BUCKET) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -157,13 +166,21 @@ const envSchema = z.object({
   }
 });
 
-export type Env = z.infer<typeof envSchema>;
+type ParsedEnv = z.infer<typeof envSchema>;
+
+export type Env = Omit<ParsedEnv, "OBSERVABILITY_ENVIRONMENT"> & {
+  OBSERVABILITY_ENVIRONMENT: string;
+};
 
 let cachedEnv: Env | null = null;
 
 export const getEnv = (source: NodeJS.ProcessEnv = process.env): Env => {
   if (!cachedEnv || source !== process.env) {
-    cachedEnv = envSchema.parse(source);
+    const parsed = envSchema.parse(source);
+    cachedEnv = {
+      ...parsed,
+      OBSERVABILITY_ENVIRONMENT: parsed.OBSERVABILITY_ENVIRONMENT ?? parsed.NODE_ENV,
+    };
   }
 
   return cachedEnv;

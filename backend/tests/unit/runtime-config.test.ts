@@ -45,11 +45,26 @@ describe("runtime configuration", () => {
 
     expect(env.OBSERVABILITY_ENABLED).toBe(true);
     expect(env.OBSERVABILITY_SERVICE_NAME).toBe("radioso-api");
+    expect(env.OBSERVABILITY_ENVIRONMENT).toBe("test");
     expect(env.METRICS_ENABLED).toBe(false);
     expect(env.METRICS_PATH).toBe("/metrics");
+    expect(env.METRICS_AUTH_TOKEN).toBeUndefined();
     expect(env.OTEL_ENABLED).toBe(false);
     expect(env.PRODUCT_ANALYTICS_SINKS).toBe("audit");
     expect(env.INCIDENT_SINKS).toBe("audit");
+  });
+
+  it("requires a metrics auth token when metrics exposure is enabled", () => {
+    expect(() => getEnv({
+      NODE_ENV: "test",
+      DATABASE_URL: "postgres://test:test@localhost:5432/test",
+      OPENAI_API_KEY: "test-key",
+      OPENAI_CHAT_MODEL: "gpt-5.2",
+      OPENAI_VECTOR_MODEL: "text-embedding-3-small",
+      LLM_PROVIDER: "openai",
+      SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+      METRICS_ENABLED: "true",
+    })).toThrow(/METRICS_AUTH_TOKEN/);
   });
 
   it("requires PostHog credentials when the adapter is enabled", () => {
@@ -98,5 +113,23 @@ describe("runtime configuration", () => {
     expect(env.POSTHOG_HOST).toBe("https://app.posthog.com");
     expect(env.INCIDENT_SINKS).toBe("audit,sentry");
     expect(env.SENTRY_DSN).toBe("https://public@example.ingest.sentry.io/123456");
+  });
+
+  it("pins production observability identity for the Cloud Run API and worker services", async () => {
+    const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
+
+    expect(computeTf).toContain('name  = "OBSERVABILITY_ENVIRONMENT"');
+    expect(computeTf).toContain('value = "production"');
+    expect(computeTf).toContain('name  = "OBSERVABILITY_SERVICE_NAME"');
+    expect(computeTf).toContain('value = "radioso-api"');
+    expect(computeTf).toContain('value = "radioso-worker"');
+  });
+
+  it("defaults worker entrypoints to the worker observability service name", async () => {
+    const workerEntry = await readFile(new URL("../../src/documentWorker.ts", import.meta.url), "utf8");
+    const workerServerEntry = await readFile(new URL("../../src/documentWorkerServer.ts", import.meta.url), "utf8");
+
+    expect(workerEntry).toContain('OBSERVABILITY_SERVICE_NAME: "radioso-worker"');
+    expect(workerServerEntry).toContain('OBSERVABILITY_SERVICE_NAME: "radioso-worker"');
   });
 });

@@ -305,6 +305,7 @@ OBSERVABILITY_VERSION=git-sha-or-release
 
 METRICS_ENABLED=true
 METRICS_PATH=/metrics
+METRICS_AUTH_TOKEN=replace-with-a-long-random-bearer-token
 
 OTEL_ENABLED=false
 OTEL_EXPORTER_OTLP_ENDPOINT=
@@ -312,6 +313,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT=
 PRODUCT_ANALYTICS_SINKS=audit
 INCIDENT_SINKS=audit
 ```
+
+`OBSERVABILITY_ENVIRONMENT` falls back to `NODE_ENV` when unset. `METRICS_ENABLED=true` requires `METRICS_AUTH_TOKEN`, and the backend serves `/metrics` only to callers that present `Authorization: Bearer <token>`.
 
 SaaS-only examples:
 

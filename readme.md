@@ -226,7 +226,7 @@ The OSS default path is first-party only:
 
 - structured logs through Pino
 - audit-backed product analytics and incident persistence
-- optional Prometheus-style metrics at `METRICS_PATH` when `METRICS_ENABLED=true`
+- optional Prometheus-style metrics at `METRICS_PATH` when `METRICS_ENABLED=true` and a bearer `METRICS_AUTH_TOKEN` is configured
 
 Optional SaaS adapters stay off by default and are enabled only through env:
 

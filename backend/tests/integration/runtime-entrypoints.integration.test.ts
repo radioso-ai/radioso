@@ -19,6 +19,7 @@ const createEnv = (port: number): Env => ({
   OBSERVABILITY_VERSION: "test",
   METRICS_ENABLED: false,
   METRICS_PATH: "/metrics",
+  METRICS_AUTH_TOKEN: undefined,
   OTEL_ENABLED: false,
   OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
   PRODUCT_ANALYTICS_SINKS: "audit",
@@ -212,10 +213,12 @@ describe("runtime entrypoints", () => {
     const env = {
       ...createEnv(8096),
       METRICS_ENABLED: true,
+      METRICS_AUTH_TOKEN: "metrics-test-token",
     };
     const { dependencies } = createTestDependencies({
       envOverrides: {
         METRICS_ENABLED: true,
+        METRICS_AUTH_TOKEN: "metrics-test-token",
       },
     });
 
@@ -230,7 +233,13 @@ describe("runtime entrypoints", () => {
 
     await request(runtime.server!).get("/health");
 
-    const response = await request(runtime.server!).get("/metrics");
+    const unauthorizedResponse = await request(runtime.server!).get("/metrics");
+
+    expect(unauthorizedResponse.status).toBe(401);
+
+    const response = await request(runtime.server!)
+      .get("/metrics")
+      .set("Authorization", "Bearer metrics-test-token");
 
     expect(response.status).toBe(200);
     expect(response.text).toContain("radioso_http_requests_total");

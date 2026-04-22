@@ -4,8 +4,12 @@ import { startWorkerRuntime } from "./runtime/startWorkerRuntime.js";
 
 loadEnvFileIfPresent();
 
+const env = getEnv();
 const runtime = await startWorkerRuntime({
-  env: getEnv(),
+  env: process.env.OBSERVABILITY_SERVICE_NAME ? env : {
+    ...env,
+    OBSERVABILITY_SERVICE_NAME: "radioso-worker",
+  },
 });
 
 process.once("SIGINT", () => {

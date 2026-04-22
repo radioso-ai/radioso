@@ -15,6 +15,7 @@ const createEnv = (): Env => ({
   OBSERVABILITY_VERSION: "test",
   METRICS_ENABLED: false,
   METRICS_PATH: "/metrics",
+  METRICS_AUTH_TOKEN: undefined,
   OTEL_ENABLED: false,
   OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
   PRODUCT_ANALYTICS_SINKS: "audit",
@@ -198,6 +199,7 @@ describe("runtime startup", () => {
     const env = {
       ...createEnv(),
       METRICS_ENABLED: true,
+      METRICS_AUTH_TOKEN: "metrics-test-token",
     };
     const dependencies = {
       ...createDependencies(),

@@ -90,6 +90,7 @@ export const createTestEnv = (): Env => ({
   OBSERVABILITY_VERSION: "test",
   METRICS_ENABLED: false,
   METRICS_PATH: "/metrics",
+  METRICS_AUTH_TOKEN: undefined,
   OTEL_ENABLED: false,
   OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
   PRODUCT_ANALYTICS_SINKS: "audit",

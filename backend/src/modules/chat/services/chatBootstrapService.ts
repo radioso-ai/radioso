@@ -9,6 +9,7 @@ import type { ChatGateway } from "./chatService.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import { isAssistantBootstrapActive } from "../../settings/domain/assistantBootstrapSettings.js";
 import { DEFAULT_CONVERSATION_MODE } from "../../settings/domain/retrievalSettings.js";
+import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { resolveChatLocale } from "./chatLocale.js";
 
 const emptyChatResponse = (conversationId: string, answer: string): ChatResponse => ({
@@ -68,6 +69,7 @@ export class ChatBootstrapService {
     sourceOrigin?: string | null;
     userExpectedLocale?: string | null;
   }): Promise<ChatResponse | null> {
+    const workflowPolicy = assertInteractiveAssistantWorkflow("chat.bootstrap");
     const workspace = await this.workspaceRepository.findById(input.workspaceId);
     if (!workspace || !isAssistantBootstrapActive(workspace)) {
       return null;
@@ -128,6 +130,8 @@ export class ChatBootstrapService {
         eventType: "chat.bootstrap",
         eventStatus: "success",
         metadata: {
+          workflow: workflowPolicy.workflow,
+          executionClass: workflowPolicy.executionClass,
           conversationId: conversation.id,
           sourceChannel: input.sourceChannel ?? null,
           sourceOrigin: input.sourceOrigin ?? null,
@@ -146,6 +150,8 @@ export class ChatBootstrapService {
         eventType: "chat.bootstrap",
         eventStatus: "failure",
         metadata: {
+          workflow: workflowPolicy.workflow,
+          executionClass: workflowPolicy.executionClass,
           sourceChannel: input.sourceChannel ?? null,
           sourceOrigin: input.sourceOrigin ?? null,
           localeUsed,

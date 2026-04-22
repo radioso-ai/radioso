@@ -23,6 +23,7 @@ import {
   MissingGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
 } from "./groundedMissResponseComposer.js";
+import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { ConversationModeExpansionService } from "./conversationModeExpansionService.js";
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
@@ -44,6 +45,15 @@ export interface ChatGateway {
     prompt: string;
   }): AsyncIterable<string>;
 }
+
+export class BlankChatAnswerError extends Error {
+  constructor() {
+    super("chat_answer_generation_failed");
+    this.name = "BlankChatAnswerError";
+  }
+}
+
+const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError => error instanceof BlankChatAnswerError;
 
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
@@ -70,6 +80,8 @@ interface PreparedSession {
 }
 
 interface ChatAnswerAuditMetadata {
+  workflow?: string;
+  executionClass?: string;
   answerOutcome?: AssistantTurnOutcome;
   answerSupportPolicy?: AnswerSupportPolicy;
   conversationMode?: ConversationMode;
@@ -140,7 +152,7 @@ export class ModelChatGateway implements ChatGateway {
     });
 
     if (!response?.trim()) {
-      throw new Error("chat_answer_generation_failed");
+      throw new BlankChatAnswerError();
     }
 
     return response;
@@ -218,15 +230,23 @@ export class ChatService {
       return null;
     }
 
-    const answer = (await this.chatGateway.answer({
-      query,
-      history: session.history,
-      prompt: buildAssistantIdentityAnswerPrompt({
-        assistantIdentity: session.retrieval.assistantIdentity,
-        history: session.history,
+    let answer: string;
+    try {
+      answer = (await this.chatGateway.answer({
         query,
-      }),
-    })).trim();
+        history: session.history,
+        prompt: buildAssistantIdentityAnswerPrompt({
+          assistantIdentity: session.retrieval.assistantIdentity,
+          history: session.history,
+          query,
+        }),
+      })).trim();
+    } catch (error) {
+      if (isBlankChatAnswerError(error)) {
+        return null;
+      }
+      throw error;
+    }
 
     if (!answer) {
       return null;
@@ -270,6 +290,7 @@ export class ChatService {
   }): Promise<ChatResponse> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
+    const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
 
     try {
       session = await this.prepareSession(input);
@@ -330,7 +351,7 @@ export class ChatService {
       };
     } catch (error) {
       const normalizedError = normalizeProviderCredentialError(error);
-      await this.recordFailure(input, session, assistantMessageId, normalizedError);
+      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     }
   }
@@ -349,6 +370,7 @@ export class ChatService {
   }): AsyncIterable<ChatStreamEvent> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
+    const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
 
     try {
       session = await this.prepareSession(input);
@@ -471,7 +493,7 @@ export class ChatService {
       };
     } catch (error) {
       const normalizedError = normalizeProviderCredentialError(error);
-      await this.recordFailure(input, session, assistantMessageId, normalizedError);
+      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     }
   }
@@ -639,6 +661,7 @@ export class ChatService {
     retrievalTrace: RetrievalTrace;
     stream: boolean;
   }): Promise<void> {
+    const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
     await this.conversationRepository.touch(input.conversationId, input.workspaceId);
     await this.auditService.record({
       accountId: input.accountId,
@@ -646,6 +669,8 @@ export class ChatService {
       eventType: "chat.answer",
       eventStatus: "success",
       metadata: {
+        workflow: workflowPolicy.workflow,
+        executionClass: workflowPolicy.executionClass,
         conversationId: input.conversationId,
         userMessageId: input.userMessageId,
         assistantMessageId: input.assistantMessageId,
@@ -724,6 +749,7 @@ export class ChatService {
     session: PreparedSession | null,
     existingAssistantMessageId: string | undefined,
     error: unknown,
+    workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn"),
   ) {
     let assistantMessageId = existingAssistantMessageId;
 
@@ -738,6 +764,8 @@ export class ChatService {
       eventStatus: "failure",
       metadata: {
         stage: "chat.answer",
+        workflow: workflowPolicy.workflow,
+        executionClass: workflowPolicy.executionClass,
         conversationId: session?.conversation.id ?? input.conversationId,
         userMessageId: session?.userMessage.id,
         assistantMessageId,

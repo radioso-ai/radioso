@@ -7,6 +7,7 @@ import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.j
 import { anonymousRateLimiter } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./chatRoutes.js";
+import { assertInteractiveAssistantWorkflow } from "../../../modules/chat/services/chatExecutionPolicy.js";
 
 const localeHintSchema = z.string().trim().max(35);
 
@@ -73,6 +74,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
         };
 
         if (req.body.bootstrapGreeting) {
+          assertInteractiveAssistantWorkflow("chat.bootstrap");
           const bootstrap = await dependencies.chatBootstrapService.startConversation({
             workspaceId,
             sourceChannel,
@@ -100,6 +102,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
         };
 
         if (input.stream) {
+          assertInteractiveAssistantWorkflow("chat.turn");
           res.setHeader("Content-Type", "text/event-stream");
           res.setHeader("Cache-Control", "no-cache");
           res.setHeader("Connection", "keep-alive");
@@ -109,6 +112,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
           }
           res.end();
         } else {
+          assertInteractiveAssistantWorkflow("chat.turn");
           const result = await dependencies.chatService.answer(input);
           res.status(200).json(result);
         }

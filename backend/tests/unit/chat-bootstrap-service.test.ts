@@ -51,6 +51,8 @@ describe("chat bootstrap service", () => {
         prompt: expect.stringContaining("locale it-IT"),
       }),
     );
+    expect(auditService.events[0]?.metadata?.workflow).toBe("chat.bootstrap");
+    expect(auditService.events[0]?.metadata?.executionClass).toBe("interactive_synchronous");
   });
 
   it("reuses a cached greeting until the locale changes", async () => {

@@ -121,6 +121,7 @@ export const createSessionMcpServerManager = ({
           adapter: createRadiosoApiAdapter({
             ...config,
             apiToken: authInfo.upstreamApiToken,
+            mcpSourceSigningSecret: config.signingSecret,
           }),
           authInfo,
           serverContext: ctx,

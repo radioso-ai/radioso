@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import type { RadiosoMcpConfig } from "./config.js";
 import type {
   DocumentListResult,
@@ -67,9 +69,28 @@ const readBody = async (response: Response): Promise<unknown> => {
 };
 
 export const createRadiosoApiAdapter = (
-  config: Pick<RadiosoMcpConfig, "apiToken" | "baseUrl" | "requestTimeoutMs" | "serverName">,
+  config: Pick<RadiosoMcpConfig, "apiToken" | "baseUrl" | "requestTimeoutMs" | "serverName"> & {
+    mcpSourceSigningSecret?: string;
+  },
   fetchImpl: FetchLike = fetch,
 ): RadiosoApiAdapter => {
+  const buildMcpSourceHeaders = (): Record<string, string> => {
+    if (!config.mcpSourceSigningSecret) {
+      return {};
+    }
+
+    const timestamp = Date.now().toString();
+    const signature = createHmac("sha256", config.mcpSourceSigningSecret)
+      .update(`mcp\n\n${timestamp}`)
+      .digest("hex");
+
+    return {
+      "x-radioso-source-channel": "mcp",
+      "x-radioso-source-signature": signature,
+      "x-radioso-source-timestamp": timestamp,
+    };
+  };
+
   const request = async <TResult>(path: string, init: RequestInit = {}, options: RequestOptions = {}): Promise<TResult> => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
@@ -121,7 +142,7 @@ export const createRadiosoApiAdapter = (
       request("/api/v1/chat", {
         body: JSON.stringify({ ...body, stream: false }),
         headers: {
-          "x-radioso-source-channel": "mcp",
+          ...buildMcpSourceHeaders(),
         },
         method: "POST",
       }, { notFoundCode: "unsupported_capability" }),

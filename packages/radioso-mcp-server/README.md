@@ -22,6 +22,8 @@ The remote HTTP server is the primary product surface.
 - `RADIOSO_BASE_URL`
 - `RADIOSO_MCP_SIGNING_SECRET` must be explicitly set to a non-default secret in remote mode
 
+The target Radioso backend must also have the same `RADIOSO_MCP_SIGNING_SECRET` configured so it can verify MCP-attributed chat traffic before marking history entries as MCP-originated.
+
 ### Common Optional Environment Variables
 
 - `RADIOSO_MCP_BIND_HOST` default `127.0.0.1`

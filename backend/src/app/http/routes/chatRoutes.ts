@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { z } from "zod";
@@ -6,7 +7,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
-import { badRequest } from "../../../shared/domain/errors.js";
+import { badRequest, forbidden, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { assertInteractiveAssistantWorkflow } from "../../../modules/chat/services/chatExecutionPolicy.js";
 
 const MAX_COLLECTION_PAGE_LIMIT = 100;
@@ -14,10 +15,15 @@ const DEFAULT_COLLECTION_PAGE_LIMIT = 50;
 const DEFAULT_MESSAGE_WINDOW_LIMIT = 50;
 const SOURCE_CHANNEL_HEADER = "x-radioso-source-channel";
 const SOURCE_ORIGIN_HEADER = "x-radioso-source-origin";
+const SOURCE_SIGNATURE_HEADER = "x-radioso-source-signature";
+const SOURCE_TIMESTAMP_HEADER = "x-radioso-source-timestamp";
+const MCP_SOURCE_MAX_SKEW_MS = 5 * 60 * 1000;
 
 const localeHintSchema = z.string().trim().max(35);
 const trustedSourceChannelSchema = z.enum(["mcp"]);
 const trustedSourceOriginSchema = z.string().trim().min(1).max(120);
+const trustedSourceSignatureSchema = z.string().trim().regex(/^[0-9a-f]{64}$/i);
+const trustedSourceTimestampSchema = z.string().trim().regex(/^\d{13}$/);
 const userInputMetadataSchema = z.object({
   method: z.enum(["typed", "suggestion_click"]),
   suggestionSourceMessageId: z.string().uuid().optional(),
@@ -75,9 +81,25 @@ export const conversationWindowQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
 });
 
+const safeCompare = (provided: string, expected: string): boolean => {
+  const providedBuffer = Buffer.from(provided);
+  const expectedBuffer = Buffer.from(expected);
+  return providedBuffer.length === expectedBuffer.length && timingSafeEqual(providedBuffer, expectedBuffer);
+};
+
+const signTrustedSource = (secret: string, input: {
+  channel: "mcp";
+  origin: string | null;
+  timestamp: string;
+}): string =>
+  createHmac("sha256", secret)
+    .update(`${input.channel}\n${input.origin ?? ""}\n${input.timestamp}`)
+    .digest("hex");
+
 const resolveTrustedChatSource = (
   req: Request,
   res: Response,
+  dependencies: Pick<AppDependencies, "env">,
 ): {
   sourceChannel?: "mcp";
   sourceOrigin?: string | null;
@@ -85,21 +107,79 @@ const resolveTrustedChatSource = (
   const authMode = (res.locals as { authMode?: string }).authMode;
   const rawChannel = req.header(SOURCE_CHANNEL_HEADER)?.trim();
   const rawOrigin = req.header(SOURCE_ORIGIN_HEADER)?.trim();
+  const rawSignature = req.header(SOURCE_SIGNATURE_HEADER)?.trim();
+  const rawTimestamp = req.header(SOURCE_TIMESTAMP_HEADER)?.trim();
 
-  if ((!rawChannel || rawChannel.length === 0) && (!rawOrigin || rawOrigin.length === 0)) {
+  if (
+    (!rawChannel || rawChannel.length === 0) &&
+    (!rawOrigin || rawOrigin.length === 0) &&
+    (!rawSignature || rawSignature.length === 0) &&
+    (!rawTimestamp || rawTimestamp.length === 0)
+  ) {
     return {};
   }
 
   if (authMode !== "bearer") {
-    return {};
+    throw badRequest("Trusted source headers are only supported for bearer-authenticated chat requests.");
   }
 
   if (!rawChannel) {
-    throw badRequest(`${SOURCE_CHANNEL_HEADER} is required when ${SOURCE_ORIGIN_HEADER} is set.`);
+    throw badRequest(`${SOURCE_CHANNEL_HEADER} is required when trusted source headers are provided.`);
   }
 
-  const sourceChannel = trustedSourceChannelSchema.parse(rawChannel);
-  const sourceOrigin = rawOrigin ? trustedSourceOriginSchema.parse(rawOrigin) : null;
+  const sourceChannelResult = trustedSourceChannelSchema.safeParse(rawChannel);
+  if (!sourceChannelResult.success) {
+    throw badRequest(`${SOURCE_CHANNEL_HEADER} is invalid.`, sourceChannelResult.error.flatten());
+  }
+
+  const sourceOriginResult = rawOrigin ? trustedSourceOriginSchema.safeParse(rawOrigin) : { success: true, data: null } as const;
+  if (!sourceOriginResult.success) {
+    throw badRequest(`${SOURCE_ORIGIN_HEADER} is invalid.`, sourceOriginResult.error.flatten());
+  }
+
+  const sourceChannel = sourceChannelResult.data;
+  const sourceOrigin = sourceOriginResult.data;
+
+  if (sourceChannel === "mcp") {
+    if (!rawTimestamp) {
+      throw badRequest(`${SOURCE_TIMESTAMP_HEADER} is required when ${SOURCE_CHANNEL_HEADER} is ${sourceChannel}.`);
+    }
+
+    if (!rawSignature) {
+      throw badRequest(`${SOURCE_SIGNATURE_HEADER} is required when ${SOURCE_CHANNEL_HEADER} is ${sourceChannel}.`);
+    }
+
+    const sourceTimestampResult = trustedSourceTimestampSchema.safeParse(rawTimestamp);
+    if (!sourceTimestampResult.success) {
+      throw badRequest(`${SOURCE_TIMESTAMP_HEADER} is invalid.`, sourceTimestampResult.error.flatten());
+    }
+
+    const sourceSignatureResult = trustedSourceSignatureSchema.safeParse(rawSignature);
+    if (!sourceSignatureResult.success) {
+      throw badRequest(`${SOURCE_SIGNATURE_HEADER} is invalid.`, sourceSignatureResult.error.flatten());
+    }
+
+    const mcpSigningSecret = dependencies.env.RADIOSO_MCP_SIGNING_SECRET;
+    if (!mcpSigningSecret) {
+      throw serviceUnavailable("MCP source verification is not configured.", {
+        missingEnv: "RADIOSO_MCP_SIGNING_SECRET",
+      });
+    }
+
+    const requestTimestamp = Number(sourceTimestampResult.data);
+    if (!Number.isSafeInteger(requestTimestamp) || Math.abs(Date.now() - requestTimestamp) > MCP_SOURCE_MAX_SKEW_MS) {
+      throw forbidden("This MCP source claim has expired.");
+    }
+
+    const expectedSignature = signTrustedSource(mcpSigningSecret, {
+      channel: sourceChannel,
+      origin: sourceOrigin,
+      timestamp: sourceTimestampResult.data,
+    });
+    if (!safeCompare(sourceSignatureResult.data, expectedSignature)) {
+      throw forbidden("This MCP source claim could not be verified.");
+    }
+  }
 
   return {
     sourceChannel,
@@ -154,7 +234,7 @@ export const createChatRoutes = (dependencies: AppDependencies): Router => {
   router.post("/", workspaceSession, validateBody(chatSchema), async (req, res, next) => {
     try {
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
-      const { sourceChannel, sourceOrigin } = resolveTrustedChatSource(req, res);
+      const { sourceChannel, sourceOrigin } = resolveTrustedChatSource(req, res, dependencies);
       if (req.body.bootstrapGreeting) {
         assertInteractiveAssistantWorkflow("chat.bootstrap");
         const bootstrap = await dependencies.chatBootstrapService.startConversation({

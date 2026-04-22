@@ -89,19 +89,25 @@ export const createInMemoryApprovalStore = (): ApprovalStore => {
         return null;
       }
 
-      if (storedGrant.remainingUses === 1) {
+      const remainingAllowedTools = storedGrant.allowedTools.slice(1);
+      const remainingUses =
+        typeof storedGrant.remainingUses === "number"
+          ? Math.max(0, storedGrant.remainingUses - 1)
+          : remainingAllowedTools.length;
+
+      if (remainingUses === 0 || remainingAllowedTools.length === 0) {
         grantsById.delete(storedGrant.approvalId);
         grantIdsByTokenHash.delete(tokenHash);
         return {
           ...grant,
+          allowedTools: remainingAllowedTools,
           remainingUses: 0,
         };
       }
 
-      if (typeof storedGrant.remainingUses === "number" && storedGrant.remainingUses > 1) {
-        storedGrant.remainingUses -= 1;
-        grantsById.set(storedGrant.approvalId, storedGrant);
-      }
+      storedGrant.allowedTools = remainingAllowedTools;
+      storedGrant.remainingUses = remainingUses;
+      grantsById.set(storedGrant.approvalId, storedGrant);
 
       return cloneGrant(storedGrant);
     },
@@ -125,15 +131,37 @@ export const createInMemoryApprovalStore = (): ApprovalStore => {
         };
       }
 
-      const consumedGrant = await this.consumeByToken(approvalToken, now);
-      return consumedGrant
-        ? {
-            grant: consumedGrant,
-            status: "consumed",
-          }
-        : {
-            status: "missing",
-          };
+      const storedGrant = grantsById.get(grant.approvalId);
+      if (!storedGrant) {
+        return { status: "missing" };
+      }
+
+      const remainingAllowedTools = storedGrant.allowedTools.filter((toolName) => toolName !== input.toolName);
+      const remainingUses =
+        typeof storedGrant.remainingUses === "number"
+          ? Math.max(0, storedGrant.remainingUses - 1)
+          : remainingAllowedTools.length;
+
+      if (remainingUses === 0 || remainingAllowedTools.length === 0) {
+        grantsById.delete(storedGrant.approvalId);
+        grantIdsByTokenHash.delete(storedGrant.approvalTokenHash);
+        return {
+          grant: {
+            ...grant,
+            allowedTools: remainingAllowedTools,
+            remainingUses: 0,
+          },
+          status: "consumed",
+        };
+      }
+
+      storedGrant.allowedTools = remainingAllowedTools;
+      storedGrant.remainingUses = remainingUses;
+      grantsById.set(storedGrant.approvalId, storedGrant);
+      return {
+        grant: cloneGrant(storedGrant),
+        status: "consumed",
+      };
     },
     async getByToken(approvalToken, now = new Date()) {
       return getGrantByTokenHash(hashToken(approvalToken), now);

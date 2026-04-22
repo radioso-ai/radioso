@@ -16,6 +16,7 @@ export const createRuntimeStoreHandle = async (config: RadiosoMcpConfig): Promis
     const redisHandle = await createRedisClientHandle({
       keyPrefix: config.redisKeyPrefix,
       redisUrl: config.redisUrl,
+      signingSecret: config.signingSecret,
     });
 
     return {

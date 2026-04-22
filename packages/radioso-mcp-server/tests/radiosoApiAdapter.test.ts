@@ -153,6 +153,7 @@ describe("createRadiosoApiAdapter", () => {
       {
         apiToken: "sk_proj_test",
         baseUrl: "http://localhost:8080",
+        mcpSourceSigningSecret: "dev-signing-secret",
         requestTimeoutMs: 30_000,
         serverName: "radioso-test",
       },
@@ -167,6 +168,8 @@ describe("createRadiosoApiAdapter", () => {
         headers: expect.objectContaining({
           authorization: "Bearer sk_proj_test",
           "x-radioso-source-channel": "mcp",
+          "x-radioso-source-signature": expect.stringMatching(/^[0-9a-f]{64}$/),
+          "x-radioso-source-timestamp": expect.stringMatching(/^\d{13}$/),
         }),
       }),
     );

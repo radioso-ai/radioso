@@ -9,6 +9,16 @@ import { describe, expect, it } from "vitest";
 
 import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
+const MCP_SIGNING_SECRET = "smoke-signing-secret";
+
+const createMcpSourceHeaders = (timestamp = Date.now().toString()) => ({
+  "x-radioso-source-channel": "mcp",
+  "x-radioso-source-signature": createHmac("sha256", MCP_SIGNING_SECRET)
+    .update(`mcp\n\n${timestamp}`)
+    .digest("hex"),
+  "x-radioso-source-timestamp": timestamp,
+});
+
 describe("chat contract", () => {
   it("lists chat history summaries for the active account", async () => {
     const { app } = createTestApp();
@@ -704,7 +714,7 @@ describe("chat contract", () => {
     const chat = await request(app)
       .post("/api/v1/chat/")
       .set("Authorization", authorization)
-      .set("x-radioso-source-channel", "mcp")
+      .set(createMcpSourceHeaders())
       .send({
         query: "What does this page do?",
         stream: false,
@@ -736,6 +746,53 @@ describe("chat contract", () => {
       conversationId: chat.body.conversationId,
       sourceChannel: "mcp",
       sourceOrigin: null,
+    });
+  });
+
+  it("rejects malformed MCP source verification headers with a 400", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "mcp-bad-header@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", `Bearer ${token}`)
+      .set("x-radioso-source-channel", "mcp")
+      .set("x-radioso-source-signature", "bad-signature")
+      .set("x-radioso-source-timestamp", "not-a-timestamp")
+      .send({
+        query: "What does this page do?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "bad_request",
+      },
+    });
+  });
+
+  it("rejects unverified MCP source claims from bearer clients", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "mcp-forbidden@example.com");
+    const timestamp = Date.now().toString();
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", `Bearer ${token}`)
+      .set("x-radioso-source-channel", "mcp")
+      .set("x-radioso-source-signature", createHmac("sha256", "wrong-secret").update(`mcp\n\n${timestamp}`).digest("hex"))
+      .set("x-radioso-source-timestamp", timestamp)
+      .send({
+        query: "What does this page do?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "forbidden",
+      },
     });
   });
 

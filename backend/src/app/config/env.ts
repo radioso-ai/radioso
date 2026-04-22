@@ -34,6 +34,7 @@ const envSchema = z.object({
   SESSION_COOKIE_SECRET: z.string().min(16),
   WORKSPACE_TOKEN_SECRET: emptyStringToUndefined(z.string().min(16)),
   WEBSITE_EMBED_SECRET: emptyStringToUndefined(z.string().min(16)),
+  RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(16)),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
   CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(z.string().min(1)),
   CONNECTOR_PUBLIC_BASE_URL: emptyStringToUndefined(z.string().url()),

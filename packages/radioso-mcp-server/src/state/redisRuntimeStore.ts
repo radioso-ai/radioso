@@ -1,3 +1,5 @@
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+
 import { createClient } from "redis";
 
 import { isExpired } from "../auth/token.js";
@@ -8,6 +10,7 @@ import { hashToken } from "../auth/token.js";
 interface RuntimeRedisStoreOptions {
   keyPrefix: string;
   redisUrl: string;
+  signingSecret: string;
 }
 
 const ttlSecondsFromDate = (expiresAt: Date, now = new Date()): number =>
@@ -36,23 +39,75 @@ const cloneApproval = (grant: ApprovalGrantRecord): ApprovalGrantRecord => ({
   resourceHints: grant.resourceHints ? [...grant.resourceHints] : undefined,
 });
 
-const serializeSession = (session: AccessSessionRecord): string =>
+const deriveSessionEncryptionKey = (signingSecret: string): Buffer =>
+  createHash("sha256").update(`radioso-mcp-session:${signingSecret}`).digest();
+
+const encryptUpstreamApiToken = (upstreamApiToken: string, signingSecret: string): {
+  authTag: string;
+  ciphertext: string;
+  iv: string;
+} => {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", deriveSessionEncryptionKey(signingSecret), iv);
+  const ciphertext = Buffer.concat([cipher.update(upstreamApiToken, "utf8"), cipher.final()]);
+
+  return {
+    authTag: cipher.getAuthTag().toString("base64url"),
+    ciphertext: ciphertext.toString("base64url"),
+    iv: iv.toString("base64url"),
+  };
+};
+
+const decryptUpstreamApiToken = (payload: {
+  authTag: string;
+  ciphertext: string;
+  iv: string;
+}, signingSecret: string): string => {
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    deriveSessionEncryptionKey(signingSecret),
+    Buffer.from(payload.iv, "base64url"),
+  );
+  decipher.setAuthTag(Buffer.from(payload.authTag, "base64url"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(payload.ciphertext, "base64url")),
+    decipher.final(),
+  ]).toString("utf8");
+};
+
+const serializeSession = (session: AccessSessionRecord, signingSecret: string): string =>
   JSON.stringify({
     ...session,
     expiresAt: session.expiresAt.toISOString(),
     issuedAt: session.issuedAt.toISOString(),
+    upstreamApiToken: undefined,
+    upstreamApiTokenEncrypted: encryptUpstreamApiToken(session.upstreamApiToken, signingSecret),
   });
 
-const deserializeSession = (value: string): AccessSessionRecord => {
+const deserializeSession = (value: string, signingSecret: string): AccessSessionRecord => {
   const parsed = JSON.parse(value) as Omit<AccessSessionRecord, "expiresAt" | "issuedAt"> & {
     expiresAt: string;
     issuedAt: string;
+    upstreamApiToken?: string;
+    upstreamApiTokenEncrypted?: {
+      authTag: string;
+      ciphertext: string;
+      iv: string;
+    };
   };
+  const upstreamApiToken = parsed.upstreamApiTokenEncrypted
+    ? decryptUpstreamApiToken(parsed.upstreamApiTokenEncrypted, signingSecret)
+    : parsed.upstreamApiToken;
+
+  if (!upstreamApiToken) {
+    throw new Error("Stored MCP session is missing an upstream API token.");
+  }
 
   return {
     ...parsed,
     expiresAt: new Date(parsed.expiresAt),
     issuedAt: new Date(parsed.issuedAt),
+    upstreamApiToken,
   };
 };
 
@@ -85,6 +140,7 @@ const ensureConnected = async (client: { connect(): Promise<unknown>; isOpen: bo
 export const createRedisClientHandle = async ({
   keyPrefix,
   redisUrl,
+  signingSecret,
 }: RuntimeRedisStoreOptions): Promise<{
   approvalStore: ApprovalStore;
   close(): Promise<void>;
@@ -100,7 +156,7 @@ export const createRedisClientHandle = async ({
         return false;
       }
 
-      const session = deserializeSession(stored);
+      const session = deserializeSession(stored, signingSecret);
       await client.del([
         sessionIdKey(keyPrefix, sessionId),
         sessionTokenKey(keyPrefix, session.accessTokenHash),
@@ -119,7 +175,7 @@ export const createRedisClientHandle = async ({
         return null;
       }
 
-      const session = deserializeSession(stored);
+      const session = deserializeSession(stored, signingSecret);
       if (isExpired(session.expiresAt, now)) {
         await client.del([
           sessionIdKey(keyPrefix, sessionId),
@@ -136,7 +192,7 @@ export const createRedisClientHandle = async ({
         return null;
       }
 
-      return cloneSession(deserializeSession(stored));
+      return cloneSession(deserializeSession(stored, signingSecret));
     },
     async save(input) {
       const session: AccessSessionRecord = {
@@ -159,7 +215,7 @@ export const createRedisClientHandle = async ({
 
       const ttlSeconds = ttlSecondsFromDate(session.expiresAt);
       await client.multi()
-        .set(sessionIdKey(keyPrefix, session.sessionId), serializeSession(session), { EX: ttlSeconds })
+        .set(sessionIdKey(keyPrefix, session.sessionId), serializeSession(session, signingSecret), { EX: ttlSeconds })
         .set(sessionTokenKey(keyPrefix, session.accessTokenHash), session.sessionId, { EX: ttlSeconds })
         .exec();
 
@@ -200,7 +256,13 @@ export const createRedisClientHandle = async ({
             continue;
           }
 
-          if (grant.remainingUses === 1) {
+          const remainingAllowedTools = grant.allowedTools.slice(1);
+          const remainingUses =
+            typeof grant.remainingUses === "number"
+              ? Math.max(0, grant.remainingUses - 1)
+              : remainingAllowedTools.length;
+
+          if (remainingUses === 0 || remainingAllowedTools.length === 0) {
             const result = await isolatedClient.multi().del([tokenKey, idKey]).exec();
             if (result === null) {
               continue;
@@ -208,13 +270,15 @@ export const createRedisClientHandle = async ({
 
             return {
               ...cloneApproval(grant),
+              allowedTools: remainingAllowedTools,
               remainingUses: 0,
             };
           }
 
           const updatedGrant: ApprovalGrantRecord = {
             ...grant,
-            remainingUses: typeof grant.remainingUses === "number" ? grant.remainingUses - 1 : grant.remainingUses,
+            allowedTools: remainingAllowedTools,
+            remainingUses,
           };
           const ttlSeconds = ttlSecondsFromDate(updatedGrant.expiresAt, now);
           const result = await isolatedClient.multi()
@@ -236,34 +300,97 @@ export const createRedisClientHandle = async ({
       }
     },
     async consumeForSessionTool(approvalToken, input, now = new Date()): Promise<ApprovalConsumeResult> {
-      const grant = await this.getByToken(approvalToken, now);
-      if (!grant) {
-        return { status: "missing" };
-      }
+      const tokenHash = hashToken(approvalToken);
+      const tokenKey = approvalTokenKey(keyPrefix, tokenHash);
+      const isolatedClient = client.duplicate();
+      await ensureConnected(isolatedClient);
 
-      if (grant.sessionId !== input.sessionId) {
-        return {
-          grant,
-          status: "session_mismatch",
-        };
-      }
-
-      if (!grant.allowedTools.includes(input.toolName)) {
-        return {
-          grant,
-          status: "tool_forbidden",
-        };
-      }
-
-      const consumedGrant = await this.consumeByToken(approvalToken, now);
-      return consumedGrant
-        ? {
-            grant: consumedGrant,
-            status: "consumed",
+      try {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          await isolatedClient.watch(tokenKey);
+          const approvalId = await isolatedClient.get(tokenKey);
+          if (!approvalId) {
+            await isolatedClient.unwatch();
+            return { status: "missing" };
           }
-        : {
-            status: "missing",
+
+          const idKey = approvalIdKey(keyPrefix, approvalId);
+          await isolatedClient.watch(idKey);
+          const stored = await isolatedClient.get(idKey);
+          if (!stored) {
+            await isolatedClient.unwatch();
+            return { status: "missing" };
+          }
+
+          const grant = deserializeApproval(stored);
+          if (isExpired(grant.expiresAt, now) || grant.remainingUses === 0) {
+            const expiredResult = await isolatedClient.multi().del([tokenKey, idKey]).exec();
+            if (expiredResult !== null) {
+              return { status: "missing" };
+            }
+            continue;
+          }
+
+          if (grant.sessionId !== input.sessionId) {
+            await isolatedClient.unwatch();
+            return {
+              grant: cloneApproval(grant),
+              status: "session_mismatch",
+            };
+          }
+
+          if (!grant.allowedTools.includes(input.toolName)) {
+            await isolatedClient.unwatch();
+            return {
+              grant: cloneApproval(grant),
+              status: "tool_forbidden",
+            };
+          }
+
+          const remainingAllowedTools = grant.allowedTools.filter((toolName) => toolName !== input.toolName);
+          const remainingUses =
+            typeof grant.remainingUses === "number"
+              ? Math.max(0, grant.remainingUses - 1)
+              : remainingAllowedTools.length;
+          const consumedGrant: ApprovalGrantRecord = {
+            ...grant,
+            allowedTools: remainingAllowedTools,
+            remainingUses,
           };
+
+          if (remainingUses === 0 || remainingAllowedTools.length === 0) {
+            const result = await isolatedClient.multi().del([tokenKey, idKey]).exec();
+            if (result === null) {
+              continue;
+            }
+
+            return {
+              grant: cloneApproval(consumedGrant),
+              status: "consumed",
+            };
+          }
+
+          const ttlSeconds = ttlSecondsFromDate(consumedGrant.expiresAt, now);
+          const result = await isolatedClient.multi()
+            .set(idKey, serializeApproval(consumedGrant), { EX: ttlSeconds })
+            .exec();
+
+          if (result === null) {
+            continue;
+          }
+
+          return {
+            grant: cloneApproval(consumedGrant),
+            status: "consumed",
+          };
+        }
+
+        return { status: "missing" };
+      } finally {
+        if (isolatedClient.isOpen) {
+          await isolatedClient.quit();
+        }
+      }
     },
     async getByToken(approvalToken, now = new Date()) {
       const tokenHash = hashToken(approvalToken);

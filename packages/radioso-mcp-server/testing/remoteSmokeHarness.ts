@@ -351,6 +351,19 @@ export const runSingleNodeSmoke = async (logger: SmokeLogger): Promise<SmokeSumm
     assert.ok(Array.isArray(answer.structuredContent.citations));
     assert.ok(answer.structuredContent.citations.length > 0);
 
+    logger.step("verifying MCP answers are labeled in chat history");
+    const historyResponse = await fetch(`${backend.baseUrl}/api/v1/chat/history`, {
+      headers: {
+        authorization: `Bearer ${issued.token}`,
+      },
+    });
+    const historyPayload = await readJson(historyResponse);
+    assert.equal(historyResponse.status, 200);
+    assert.ok(
+      historyPayload.conversations.some((conversation: { sourceChannel?: string }) => conversation.sourceChannel === "mcp"),
+      "Expected at least one MCP-originated conversation in history.",
+    );
+
     logger.step("verifying remote auth failures");
     await assertUnauthorizedMcp(remote.baseUrl);
 

@@ -75,7 +75,9 @@ interface ChatAnswerAuditMetadata {
   conversationMode?: ConversationMode;
   conversationModeMetadata?: ConversationModeMetadata;
   validation?: AnswerValidationSummary & {
-    segmentResults?: Array<Pick<AnswerSegmentValidationResult, "text" | "disposition" | "replacementApplied" | "reason" | "citationIndices">>;
+    segmentResults?: Array<
+      Pick<AnswerSegmentValidationResult, "originalText" | "text" | "disposition" | "replacementApplied" | "reason" | "citationIndices">
+    >;
   };
   rewriteContinuityState?: RewriteContinuityState;
   citations?: ChatCitation[];
@@ -655,6 +657,7 @@ export class ChatService {
         validation: {
           ...input.validation,
           segmentResults: input.segmentResults.map((segment) => ({
+            originalText: segment.originalText,
             text: segment.text,
             disposition: segment.disposition,
             replacementApplied: segment.replacementApplied,

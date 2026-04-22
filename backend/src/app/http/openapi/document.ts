@@ -656,6 +656,7 @@ const ValidationDispositionSchema = registry.register(
 const ValidationSegmentResultSchema = registry.register(
   "ValidationSegmentResult",
   z.object({
+    originalText: z.string(),
     text: z.string(),
     disposition: ValidationDispositionSchema,
     replacementApplied: z.boolean(),

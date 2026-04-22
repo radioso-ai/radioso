@@ -1582,6 +1582,8 @@ components:
     ValidationSegmentResult:
       type: object
       properties:
+        originalText:
+          type: string
         text:
           type: string
         disposition:
@@ -1596,6 +1598,7 @@ components:
             type: integer
             minimum: 0
       required:
+        - originalText
         - text
         - disposition
         - replacementApplied

@@ -47,6 +47,7 @@ export interface ChatConversationTurnDebug {
     nonSubstantiveSegmentCount: number;
     answerSupportPolicy?: AnswerSupportPolicy;
     segmentResults: Array<{
+      originalText: string;
       text: string;
       disposition: ValidationDisposition;
       replacementApplied: boolean;
@@ -133,6 +134,7 @@ interface ChatAuditMetadata {
     nonSubstantiveSegmentCount?: number;
     answerSupportPolicy?: AnswerSupportPolicy;
     segmentResults?: Array<{
+      originalText?: string;
       text?: string;
       disposition?: ValidationDisposition;
       replacementApplied?: boolean;
@@ -362,6 +364,7 @@ export class ChatHistoryService {
                   ? metadata.validation.answerSupportPolicy
                   : undefined,
               segmentResults: (metadata.validation.segmentResults ?? []).map((segment) => ({
+                originalText: typeof segment.originalText === "string" ? segment.originalText : "",
                 text: typeof segment.text === "string" ? segment.text : "",
                 disposition: (segment.disposition ?? "non_substantive") as ValidationDisposition,
                 replacementApplied: Boolean(segment.replacementApplied),

@@ -627,6 +627,7 @@ describe("chat integration", () => {
       | { segmentResults?: Array<Record<string, unknown>> }
       | undefined;
     expect(validation?.segmentResults?.every((segment) => !("content" in segment))).toBe(true);
+    expect(validation?.segmentResults?.every((segment) => "originalText" in segment)).toBe(true);
   });
 
   it("keeps no-context refusals distinct from validator-triggered degradation in audit metadata", async () => {

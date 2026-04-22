@@ -1,0 +1,12 @@
+---
+title: Document processing lifecycle
+description: How documents move from uploaded files to searchable chunks.
+---
+
+# Document processing lifecycle
+
+Uploaded content is stored, parsed, chunked, embedded, and made available for retrieval. That pipeline is intentionally separate from the live chat path.
+
+## Operational implication
+
+If chat returns nothing useful for a newly uploaded document, confirm processing has completed before treating it as a retrieval bug.

@@ -1,0 +1,22 @@
+---
+title: Architecture overview
+description: High-level request, retrieval, and deployment structure for Radioso.
+---
+
+# Architecture overview
+
+Radioso separates interactive chat from background document processing. That separation is part of the product contract and shows up both in the operator model and in the user experience.
+
+## Main surfaces
+
+- frontend application
+- backend API
+- document worker
+- PostgreSQL
+- optional public embed surface
+
+## Read next
+
+- [Retrieval pipeline](/architecture/retrieval-pipeline)
+- [Document processing lifecycle](/architecture/document-processing-lifecycle)
+- [Deployment topology](/architecture/deployment-topology)

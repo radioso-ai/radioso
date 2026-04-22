@@ -1,0 +1,23 @@
+---
+title: TypeScript SDK getting started
+description: Create a Radioso client and make the first document and chat calls.
+---
+
+# TypeScript SDK getting started
+
+The repository includes a first-party TypeScript SDK published as `@radioso/typescript-sdk`.
+
+## Create a client
+
+```ts
+import { createRadiosoClient } from '@radioso/typescript-sdk'
+
+const client = createRadiosoClient({
+  baseUrl: 'http://localhost:8080',
+  apiToken: process.env.RADIOSO_API_TOKEN!,
+})
+```
+
+## Next step
+
+Move to [Basic usage](/sdk/basic-usage) or [API first success](/quickstarts/api-first-success).

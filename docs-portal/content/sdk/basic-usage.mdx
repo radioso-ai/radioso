@@ -1,0 +1,24 @@
+---
+title: Basic usage
+description: Upload documents, list them, and create grounded chat responses.
+---
+
+# Basic usage
+
+## Upload a document
+
+```ts
+await client.documents.create({
+  title: 'FAQ',
+  content: 'Radioso can answer questions grounded in uploaded content.',
+})
+```
+
+## Ask a question
+
+```ts
+const response = await client.chat.create({
+  query: 'Summarize the FAQ',
+  stream: false,
+})
+```

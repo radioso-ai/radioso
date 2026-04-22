@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/(docs)/api-reference/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"/Users/dm/conductor/workspaces/radioso/toronto/docs-portal/app/(docs)/api-reference/route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};

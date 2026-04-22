@@ -1,0 +1,53 @@
+---
+title: API first success
+description: Reach first success with plain HTTP by registering, getting a token, uploading content, and asking a grounded question.
+---
+
+# API first success
+
+## Register and save the session cookie
+
+```bash
+curl -sS -c cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
+  http://localhost:8080/api/v1/auth/register
+```
+
+## Reveal the workspace token
+
+```bash
+curl -sS -b cookies.txt \
+  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
+```
+
+## Upload a document with the SDK
+
+```ts
+import { createRadiosoClient } from '@radioso/typescript-sdk'
+
+const client = createRadiosoClient({
+  baseUrl: 'http://localhost:8080',
+  apiToken: process.env.RADIOSO_API_TOKEN!,
+})
+
+await client.documents.create({
+  title: 'FAQ',
+  content: 'Radioso can answer questions grounded in uploaded content.',
+})
+```
+
+## Ask the first question
+
+```ts
+const response = await client.chat.create({
+  query: 'What does the FAQ say about uploaded content?',
+  stream: false,
+})
+
+console.log(response.answer)
+```
+
+## Common failure mode
+
+If upload works but chat does not, document processing may still be running or your provider key is unavailable to the backend.

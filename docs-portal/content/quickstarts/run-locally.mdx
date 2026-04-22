@@ -1,0 +1,31 @@
+---
+title: Run locally in 5 minutes
+description: Start the full Radioso stack locally, create a workspace, upload a document, and ask the first question.
+---
+
+# Run locally in 5 minutes
+
+## Prerequisites
+
+- Node.js 22+
+- Docker with `docker compose`
+- At least one provider key such as `OPENAI_API_KEY`
+
+## Start the stack
+
+```bash
+./run-dev.sh
+```
+
+This is the intended local bootstrap path. It prepares `backend/.env`, starts Postgres, the backend, the worker, and the frontend, then waits for health checks.
+
+## Verify first success
+
+1. Open `http://localhost:3000`
+2. Register or sign in
+3. Let the starter documents finish processing
+4. Ask one suggested question
+
+## Common failure mode
+
+If the stack starts but answers fail, the most common issue is missing or invalid provider credentials in `backend/.env`.

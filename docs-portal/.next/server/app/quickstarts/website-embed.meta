@@ -1,0 +1,16 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/(docs)/layout,_N_T_/(docs)/[...mdxPath]/layout,_N_T_/(docs)/[...mdxPath]/page,_N_T_/quickstarts/website-embed"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/!KGRvY3Mp/$c$mdxPath/__PAGE__",
+    "/!KGRvY3Mp/$c$mdxPath",
+    "/!KGRvY3Mp",
+    "/_index",
+    "/_head"
+  ]
+}

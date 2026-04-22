@@ -103,4 +103,41 @@ describe("createRadiosoApiAdapter", () => {
       status: 504,
     });
   });
+
+  it("calls the workspace MCP context route for capability negotiation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        apiVersion: "0.1.0",
+        mcpContextVersion: "2026-04-22",
+        supportedTools: ["describe_capabilities", "create_document"],
+        workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
+        workspaceName: "Default",
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const adapter = createRadiosoApiAdapter(
+      {
+        apiToken: "sk_proj_test",
+        baseUrl: "http://localhost:8080",
+        requestTimeoutMs: 30_000,
+        serverName: "radioso-test",
+      },
+      fetchMock,
+    );
+
+    await expect(adapter.getWorkspaceMcpContext()).resolves.toMatchObject({
+      workspaceName: "Default",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8080/api/v1/workspace/mcp/context",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          authorization: "Bearer sk_proj_test",
+        }),
+      }),
+    );
+  });
 });

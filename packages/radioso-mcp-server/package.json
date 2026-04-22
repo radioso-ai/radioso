@@ -12,7 +12,9 @@
     }
   },
   "bin": {
-    "radioso-mcp-server": "./dist/src/cli/stdio.js"
+    "radioso-mcp-http": "./dist/src/cli/http.js",
+    "radioso-mcp-server": "./dist/src/cli/http.js",
+    "radioso-mcp-stdio": "./dist/src/cli/stdio.js"
   },
   "engines": {
     "node": ">=22"
@@ -24,6 +26,7 @@
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
     "@modelcontextprotocol/server": "^2.0.0-alpha.2",
+    "redis": "^4.7.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

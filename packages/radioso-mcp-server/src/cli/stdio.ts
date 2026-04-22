@@ -3,14 +3,21 @@
 import { StdioServerTransport } from "@modelcontextprotocol/server";
 
 import { loadConfig } from "../config.js";
-import { createRadiosoApiAdapter } from "../radiosoApiAdapter.js";
 import { createRadiosoMcpServer } from "../server.js";
 
 const main = async () => {
   const config = loadConfig(process.env);
-  const adapter = createRadiosoApiAdapter(config);
+  if (!config.apiToken) {
+    throw new Error("RADIOSO_API_TOKEN is required for stdio mode.");
+  }
+
   const { server } = createRadiosoMcpServer({
-    adapter,
+    baseConfig: {
+      apiToken: config.apiToken,
+      baseUrl: config.baseUrl,
+      requestTimeoutMs: config.requestTimeoutMs,
+      serverName: config.serverName,
+    },
     serverName: config.serverName,
   });
 

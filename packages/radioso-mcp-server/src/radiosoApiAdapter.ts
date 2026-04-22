@@ -1,5 +1,10 @@
 import type { RadiosoMcpConfig } from "./config.js";
-import type { DocumentListResult, JsonRecord, RetrievalSettingsRecord } from "./types.js";
+import type {
+  DocumentListResult,
+  JsonRecord,
+  RetrievalSettingsRecord,
+  WorkspaceMcpContextRecord,
+} from "./types.js";
 
 export class RadiosoApiError extends Error {
   constructor(
@@ -14,6 +19,7 @@ export class RadiosoApiError extends Error {
 }
 
 export interface RadiosoApiAdapter {
+  getWorkspaceMcpContext(): Promise<WorkspaceMcpContextRecord>;
   listDocuments(query?: { limit?: number; cursor?: string; offset?: number }): Promise<DocumentListResult>;
   getDocument(documentId: string): Promise<unknown>;
   searchDocuments(body: { query: string; metadataFilter?: JsonRecord }): Promise<unknown>;
@@ -61,7 +67,7 @@ const readBody = async (response: Response): Promise<unknown> => {
 };
 
 export const createRadiosoApiAdapter = (
-  config: RadiosoMcpConfig,
+  config: Pick<RadiosoMcpConfig, "apiToken" | "baseUrl" | "requestTimeoutMs" | "serverName">,
   fetchImpl: FetchLike = fetch,
 ): RadiosoApiAdapter => {
   const request = async <TResult>(path: string, init: RequestInit = {}, options: RequestOptions = {}): Promise<TResult> => {
@@ -127,6 +133,8 @@ export const createRadiosoApiAdapter = (
       }),
     getDocument: (documentId) => request(`/api/v1/document/${documentId}`),
     getRetrievalSettings: () => request("/api/v1/settings/retrieval", {}, { notFoundCode: "unsupported_capability" }),
+    getWorkspaceMcpContext: () =>
+      request("/api/v1/workspace/mcp/context", {}, { notFoundCode: "unsupported_capability" }),
     listDocuments: (query) => {
       const searchParams = new URLSearchParams();
       if (query?.limit !== undefined) searchParams.set("limit", String(query.limit));

@@ -134,15 +134,79 @@ npm install
 npm run build
 ```
 
-Start it over stdio against a running Radioso instance:
+Start the remote HTTP server against a running Radioso instance:
 
 ```bash
 RADIOSO_BASE_URL=http://localhost:8080 \
-RADIOSO_API_TOKEN=sk_proj_example \
-node dist/src/cli/stdio.js
+RADIOSO_MCP_BIND_HOST=127.0.0.1 \
+RADIOSO_MCP_BIND_PORT=8787 \
+RADIOSO_MCP_SIGNING_SECRET=dev-signing-secret \
+node dist/src/cli/http.js
 ```
 
-The first release exposes grounded-answer, document read, document write, and retrieval-settings tools through MCP while keeping the server separate from backend application modules.
+Set `RADIOSO_MCP_REDIS_URL` to move MCP access sessions and approval grants into a shared Redis store for multi-instance deployments. Leave it blank to stay in the documented in-memory single-node mode. You can also point `RADIOSO_MCP_WORKSPACE_POLICIES_PATH` at a JSON file with workspace-specific tool overrides when different workspaces need different MCP catalogs.
+
+Exchange a workspace token for an MCP access token:
+
+```bash
+ACCESS_TOKEN=$(
+  curl -s http://127.0.0.1:8787/v1/auth/exchange \
+    -H 'content-type: application/json' \
+    -d '{
+      "radiosoApiToken": "sk_proj_example",
+      "clientName": "operator-shell",
+      "requestedTools": ["describe_capabilities","list_documents","answer_grounded","create_document"]
+    }' \
+  | jq -r '.accessToken'
+)
+```
+
+Initialize MCP and list the granted tools:
+
+```bash
+curl -s http://127.0.0.1:8787/mcp \
+  -H "authorization: Bearer $ACCESS_TOKEN" \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'mcp-protocol-version: 2025-11-25' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "init-1",
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-11-25",
+      "capabilities": {},
+      "clientInfo": { "name": "operator-shell", "version": "1.0.0" }
+    }
+  }'
+
+curl -s http://127.0.0.1:8787/mcp \
+  -H "authorization: Bearer $ACCESS_TOKEN" \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'mcp-protocol-version: 2025-11-25' \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "notifications/initialized",
+    "params": {}
+  }'
+
+curl -s http://127.0.0.1:8787/mcp \
+  -H "authorization: Bearer $ACCESS_TOKEN" \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'mcp-protocol-version: 2025-11-25' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "tools-1",
+    "method": "tools/list",
+    "params": {}
+  }'
+```
+
+Governed write tools use the same endpoint, but require an approval token from `POST /v1/approvals` before the `tools/call`.
+
+The remote package keeps MCP transport, session exchange, approval gating, audit logging, workspace policy resolution, and shared-store runtime concerns separate from backend application modules. Newer Radioso deployments also expose `GET /api/v1/workspace/mcp/context`, which the package uses to negotiate workspace identity and supported MCP capabilities before a session grants tools. The local stdio mode still exists for compatibility, but remote HTTP is now the primary MCP surface.
 
 ## TypeScript SDK
 

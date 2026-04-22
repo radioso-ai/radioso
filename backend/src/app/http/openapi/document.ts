@@ -17,6 +17,7 @@ import {
   renameWorkspaceSchema,
   workspaceParamsSchema,
 } from "../routes/workspaceRoutes.js";
+import { workspaceMcpContextSchema } from "../routes/mcpContextRoutes.js";
 import {
   updateGeneralSettingsSchema,
   updateIngestionSettingsSchema,
@@ -155,6 +156,11 @@ const WorkspaceTokenResponseSchema = registry.register(
   z.object({
     token: z.string(),
   }),
+);
+
+const WorkspaceMcpContextResponseSchema = registry.register(
+  "WorkspaceMcpContextResponse",
+  workspaceMcpContextSchema,
 );
 
 const RegisterRequestSchema = registry.register("RegisterRequest", registerSchema);
@@ -1559,6 +1565,41 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: RateLimitExceededSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/workspace/mcp/context",
+  tags: ["Workspace"],
+  summary: "Get workspace MCP context for a bearer-authenticated workspace token",
+  operationId: "getWorkspaceMcpContext",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Workspace MCP context returned",
+      content: {
+        "application/json": {
+          schema: WorkspaceMcpContextResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Workspace not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
         },
       },
     },

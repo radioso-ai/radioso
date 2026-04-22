@@ -8,6 +8,7 @@ import { createChatRoutes } from "./chatRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
 import { createSettingsRoutes } from "./settingsRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
+import { createMcpContextRoutes } from "./mcpContextRoutes.js";
 import { createConnectorRoutes } from "../../../modules/connectors/http/connectorRoutes.js";
 import { createPublicChatRoutes } from "./publicChatRoutes.js";
 import { createPublicEmbedRoutes } from "./publicEmbedRoutes.js";
@@ -23,6 +24,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/account", createAccountRoutes(dependencies));
   router.use("/api/v1/account", createAccountUserRoutes(dependencies));
   router.use("/api/v1/workspace", createWorkspaceRoutes(dependencies));
+  router.use("/api/v1/workspace/mcp", createMcpContextRoutes(dependencies));
   router.use("/api/v1/settings", createSettingsRoutes(dependencies));
   router.use("/api/v1/connectors", createConnectorRoutes(dependencies));
   router.use("/api/v1/document", createDocumentRoutes(dependencies));

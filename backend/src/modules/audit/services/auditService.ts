@@ -1,4 +1,5 @@
 import type { RetrievalExecutionDiagnostics } from "../../retrieval/domain/retrievalPipelineTypes.js";
+import type { RewriteContinuityState } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import { extractRetrievalLogFields, type AppLogger } from "../../../shared/observability/logger.js";
 
@@ -8,7 +9,7 @@ export interface AuditEventMetadata extends Record<string, unknown> {
 
 interface ChatAnswerAuditMetadata extends AuditEventMetadata {
   conversationId?: string;
-  carryForwardLiterals?: string[];
+  rewriteContinuityState?: RewriteContinuityState;
 }
 
 export interface AuditEventInput {

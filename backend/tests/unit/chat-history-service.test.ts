@@ -85,17 +85,20 @@ describe("chat history service", () => {
           ran: true,
           answerModified: true,
           unsupportedSegmentCount: 1,
+          substantiveUnsupportedSegmentCount: 1,
           supportedSegmentCount: 1,
           nonSubstantiveSegmentCount: 1,
           answerSupportPolicy: "strict",
           segmentResults: [
             {
+              originalText: "It answers questions.",
               text: "It answers questions.",
               disposition: "supported",
               replacementApplied: false,
               reason: "has_support_reference",
             },
             {
+              originalText: "I couldn't verify that part from the retrieved documents.",
               text: "I couldn't verify that part from the retrieved documents.",
               disposition: "unsupported",
               replacementApplied: true,
@@ -145,17 +148,20 @@ describe("chat history service", () => {
       ran: true,
       answerModified: true,
       unsupportedSegmentCount: 1,
+      substantiveUnsupportedSegmentCount: 1,
       supportedSegmentCount: 1,
       nonSubstantiveSegmentCount: 1,
       answerSupportPolicy: "strict",
       segmentResults: [
         {
+          originalText: "It answers questions.",
           text: "It answers questions.",
           disposition: "supported",
           replacementApplied: false,
           reason: "has_support_reference",
         },
         {
+          originalText: "I couldn't verify that part from the retrieved documents.",
           text: "I couldn't verify that part from the retrieved documents.",
           disposition: "unsupported",
           replacementApplied: true,

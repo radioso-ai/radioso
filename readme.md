@@ -132,6 +132,12 @@ Radioso deliberately codifies a separation between live chat and any future back
 
 For the operator-facing explanation, see [docs/assistant-execution-model.md](./docs/assistant-execution-model.md).
 
+### Enterprise Architecture FAQ
+
+- **Is live chat queue-backed?** No. Normal chat stays synchronous and streaming so users get an immediate answer or an explicit failure instead of a silent handoff into background work.
+- **Does Radioso support durable background processing?** Yes for document processing today. Chat-related deferred execution is reserved for future long-running workflows and is not substituted automatically for live conversation turns.
+- **What is the product contract?** Radioso treats interactive conversation and background work as separate modes. Live chat is optimized for responsiveness, while any future deferred workflow must be explicit, inspectable, and independently operated.
+
 ## TypeScript SDK
 
 The repo includes a TypeScript SDK with the package name `@radioso/typescript-sdk`.

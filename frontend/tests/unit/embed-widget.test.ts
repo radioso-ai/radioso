@@ -3,9 +3,14 @@ import { describe, expect, it } from 'vitest'
 import {
   buildWebsiteEmbedSnippet,
   formatWebsiteEmbedOrigins,
+  formatWebsiteEmbedRateLimitRetry,
+  getWebsiteEmbedCopy,
+  getWebsiteEmbedTheme,
   normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedInitialState,
   normalizeWebsiteEmbedLocale,
+  parseWebsiteEmbedCopyOverridesParam,
+  parseWebsiteEmbedThemeOverridesParam,
   parseWebsiteEmbedOrigins,
   resolveWebsiteEmbedScriptUrl,
 } from '@/lib/embed-widget'
@@ -77,13 +82,24 @@ describe('embed widget helpers', () => {
       {
         locale: 'it-IT',
         initialState: 'open',
-        collapsedAvatarUrl: 'https://cdn.example.com/avatar.gif',
+        avatarUrl: 'https://cdn.example.com/avatar.gif',
+        copy: {
+          publicChatEmptyTitle: 'Ask us anything',
+        },
+        theme: {
+          accent: '#112233',
+          panelBackground: '#f5f5f5',
+        },
       },
     )
 
     expect(snippet).toContain('data-radioso-locale="it-IT"')
     expect(snippet).toContain('data-radioso-initial-state="open"')
-    expect(snippet).toContain('data-radioso-collapsed-avatar-url="https://cdn.example.com/avatar.gif"')
+    expect(snippet).toContain('data-radioso-avatar-url="https://cdn.example.com/avatar.gif"')
+    expect(snippet).toContain('data-radioso-copy="{&quot;publicChatEmptyTitle&quot;:&quot;Ask us anything&quot;}"')
+    expect(snippet).toContain(
+      'data-radioso-theme="{&quot;accent&quot;:&quot;#112233&quot;,&quot;panelBackground&quot;:&quot;#f5f5f5&quot;}"',
+    )
   })
 
   it('normalizes supported locale, initial-state, and avatar overrides', () => {
@@ -99,5 +115,29 @@ describe('embed widget helpers', () => {
     expect(normalizeWebsiteEmbedLocale('not_a_locale')).toBeNull()
     expect(normalizeWebsiteEmbedInitialState('sideways')).toBeNull()
     expect(normalizeWebsiteEmbedAvatarUrl('javascript:alert(1)')).toBeNull()
+  })
+
+  it('parses copy and theme overrides from serialized params', () => {
+    expect(
+      parseWebsiteEmbedCopyOverridesParam(
+        '{"publicChatEmptyTitle":"Translated title","publicChatRateLimitRetryTemplate":"Retry in {seconds}s"}',
+      ),
+    ).toEqual({
+      publicChatEmptyTitle: 'Translated title',
+      publicChatRateLimitRetryTemplate: 'Retry in {seconds}s',
+    })
+    expect(parseWebsiteEmbedThemeOverridesParam('{"accent":"#123456","panelBackground":"#fafafa"}')).toEqual({
+      accent: '#123456',
+      panelBackground: '#fafafa',
+    })
+  })
+
+  it('merges locale copy and theme overrides into the resolved appearance', () => {
+    const copy = getWebsiteEmbedCopy('fr-FR', { publicChatEmptyTitle: 'Bonjour' })
+    const theme = getWebsiteEmbedTheme({ accent: '#224466' })
+
+    expect(copy.publicChatEmptyTitle).toBe('Bonjour')
+    expect(formatWebsiteEmbedRateLimitRetry(copy, 12)).toBe('Reessayez dans 12s.')
+    expect(theme.accent).toBe('#224466')
   })
 })

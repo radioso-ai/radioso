@@ -6,7 +6,12 @@ import { AlertCircle } from 'lucide-react'
 
 import { Spinner } from '@/components/ui/spinner'
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
-import { getWebsiteEmbedCopy } from '@/lib/embed-widget'
+import {
+  getWebsiteEmbedCopy,
+  getWebsiteEmbedTheme,
+  type WebsiteEmbedCopyOverrides,
+  type WebsiteEmbedThemeOverrides,
+} from '@/lib/embed-widget'
 import {
   clearStoredAnonymousSession,
   clearStoredEmbedBootstrapSession,
@@ -18,19 +23,27 @@ import {
 function EmbeddedChatUnavailable({
   localeOverride,
   message,
+  copyOverrides,
+  themeOverrides,
 }: {
   localeOverride?: string | null
   message: string
+  copyOverrides?: WebsiteEmbedCopyOverrides | null
+  themeOverrides?: WebsiteEmbedThemeOverrides | null
 }) {
-  const copy = getWebsiteEmbedCopy(localeOverride)
+  const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
+  const theme = getWebsiteEmbedTheme(themeOverrides)
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-        <AlertCircle className="h-5 w-5 text-muted-foreground" />
+    <div className="flex flex-1 flex-col items-center justify-center p-6 text-center" style={{ color: theme.panelForeground }}>
+      <div
+        className="mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+        style={{ background: theme.mutedBackground }}
+      >
+        <AlertCircle className="h-5 w-5" style={{ color: theme.mutedForeground }} />
       </div>
-      <h1 className="text-lg font-medium text-foreground">{copy.embeddedChatUnavailableTitle}</h1>
-      <p className="mt-1 max-w-sm text-sm text-muted-foreground">{message}</p>
+      <h1 className="text-lg font-medium">{copy.embeddedChatUnavailableTitle}</h1>
+      <p className="mt-1 max-w-sm text-sm" style={{ color: theme.mutedForeground }}>{message}</p>
     </div>
   )
 }
@@ -47,11 +60,18 @@ const ERROR_MESSAGE = 'radioso:embed:error'
 export function EmbeddedChatFrame({
   token,
   localeOverride,
+  avatarUrl,
+  copyOverrides,
+  themeOverrides,
 }: {
   token: string
   localeOverride?: string | null
+  avatarUrl?: string | null
+  copyOverrides?: WebsiteEmbedCopyOverrides | null
+  themeOverrides?: WebsiteEmbedThemeOverrides | null
 }) {
-  const copy = getWebsiteEmbedCopy(localeOverride)
+  const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
+  const theme = getWebsiteEmbedTheme(themeOverrides)
   const [resetNonce, setResetNonce] = useState(0)
   const [state, setState] = useState<BootstrapState>(() => {
     if (typeof window !== 'undefined' && window.parent === window) {
@@ -167,15 +187,27 @@ export function EmbeddedChatFrame({
 
   if (state.status === 'bootstrapping') {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+      <div
+        className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+        style={{ color: theme.panelForeground }}
+      >
         <Spinner className="h-6 w-6" />
-        <p className="max-w-sm text-sm text-muted-foreground">{copy.embeddedChatStartingMessage}</p>
+        <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
+          {copy.embeddedChatStartingMessage}
+        </p>
       </div>
     )
   }
 
   if (state.status === 'error') {
-    return <EmbeddedChatUnavailable localeOverride={localeOverride} message={state.message} />
+    return (
+      <EmbeddedChatUnavailable
+        localeOverride={localeOverride}
+        message={state.message}
+        copyOverrides={copyOverrides}
+        themeOverrides={themeOverrides}
+      />
+    )
   }
 
   const handleStartNewChat = async () => {
@@ -191,6 +223,9 @@ export function EmbeddedChatFrame({
       token={state.publicChatToken}
       localeOverride={localeOverride}
       onStartNewChat={handleStartNewChat}
+      avatarUrl={avatarUrl}
+      copyOverrides={copyOverrides}
+      themeOverrides={themeOverrides}
     />
   )
 }

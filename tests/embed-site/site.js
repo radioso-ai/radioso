@@ -17,6 +17,7 @@
   const labelInput = document.getElementById('label')
   const iconInput = document.getElementById('icon')
   const positionInput = document.getElementById('position')
+  const avatarInput = document.getElementById('avatar-url')
 
   const readStoredConfig = () => {
     try {
@@ -42,6 +43,7 @@
     label: params.get('label') || readStoredConfig().label || 'Chat with us',
     icon: params.get('icon') || readStoredConfig().icon || 'sparkles',
     position: params.get('position') || readStoredConfig().position || 'bottom-right',
+    avatarUrl: params.get('avatarUrl') || readStoredConfig().avatarUrl || '',
   }
 
   appOriginInput.value = config.appOrigin
@@ -50,6 +52,7 @@
   labelInput.value = config.label
   iconInput.value = config.icon
   positionInput.value = config.position
+  avatarInput.value = config.avatarUrl
 
   currentOrigin.textContent = window.location.origin
   allowlistOrigin.textContent = window.location.origin
@@ -71,9 +74,12 @@
       `  data-radioso-launcher-label="${settings.label}"`,
       `  data-radioso-launcher-icon="${settings.icon}"`,
       `  data-radioso-launcher-position="${settings.position}"`,
+      settings.avatarUrl ? `  data-radioso-avatar-url="${settings.avatarUrl}"` : null,
+      '  data-radioso-copy=\'{"publicChatSubtitle":"Embedded support chat","startPrompt":"Ask about pricing, docs, or setup..."}\'',
+      '  data-radioso-theme=\'{"accent":"#1d4ed8","panelBackground":"#ffffff","userBubbleBackground":"#1d4ed8","launcherBackground":"linear-gradient(135deg, #1d4ed8 0%, #1e3a8a 100%)"}\'',
       `  data-radioso-allowed-origins="${window.location.origin}"`,
       '></script>',
-    ].join('\n')
+    ].filter(Boolean).join('\n')
   }
 
   const updatePreview = (settings) => {
@@ -102,6 +108,19 @@
     script.dataset.radiosoLauncherLabel = settings.label
     script.dataset.radiosoLauncherIcon = settings.icon
     script.dataset.radiosoLauncherPosition = settings.position
+    if (settings.avatarUrl) {
+      script.dataset.radiosoAvatarUrl = settings.avatarUrl
+    }
+    script.dataset.radiosoCopy = JSON.stringify({
+      publicChatSubtitle: 'Embedded support chat',
+      startPrompt: 'Ask about pricing, docs, or setup...',
+    })
+    script.dataset.radiosoTheme = JSON.stringify({
+      accent: '#1d4ed8',
+      panelBackground: '#ffffff',
+      userBubbleBackground: '#1d4ed8',
+      launcherBackground: 'linear-gradient(135deg, #1d4ed8 0%, #1e3a8a 100%)',
+    })
     script.dataset.radiosoAllowedOrigins = window.location.origin
     script.addEventListener('load', () => {
       status.textContent = 'Launcher mounted'
@@ -127,6 +146,7 @@
       label: labelInput.value.trim() || 'Chat with us',
       icon: iconInput.value,
       position: positionInput.value,
+      avatarUrl: avatarInput.value.trim(),
     }
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextConfig))
@@ -138,6 +158,7 @@
     nextParams.set('label', nextConfig.label)
     nextParams.set('icon', nextConfig.icon)
     nextParams.set('position', nextConfig.position)
+    nextParams.set('avatarUrl', nextConfig.avatarUrl)
     window.location.search = nextParams.toString()
   })
 

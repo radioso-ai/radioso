@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  formatWebsiteEmbedRateLimitRetry,
   getWebsiteEmbedCopy,
+  getWebsiteEmbedTheme,
   normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedInitialState,
   normalizeWebsiteEmbedLocale,
+  sanitizeWebsiteEmbedCopyOverrides,
+  sanitizeWebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
 
 describe('website embed runtime helpers', () => {
@@ -25,5 +29,25 @@ describe('website embed runtime helpers', () => {
     )
     expect(normalizeWebsiteEmbedAvatarUrl('data:image/png;base64,abc')).toBeNull()
     expect(normalizeWebsiteEmbedLocale('de-DE')).toBe('de')
+  })
+
+  it('sanitizes copy and theme overrides and formats retry text', () => {
+    const copyOverrides = sanitizeWebsiteEmbedCopyOverrides({
+      publicChatSendMessageLabel: 'Enviar',
+      invalidKey: 'ignored',
+    })
+    const theme = getWebsiteEmbedTheme(
+      sanitizeWebsiteEmbedThemeOverrides({
+        accent: '#112233',
+        unsupported: '#ffffff',
+      }),
+    )
+    const copy = getWebsiteEmbedCopy('en-US', {
+      publicChatRateLimitRetryTemplate: 'Retry in {seconds} seconds.',
+    })
+
+    expect(copyOverrides).toEqual({ publicChatSendMessageLabel: 'Enviar' })
+    expect(theme.accent).toBe('#112233')
+    expect(formatWebsiteEmbedRateLimitRetry(copy, 7)).toBe('Retry in 7 seconds.')
   })
 })

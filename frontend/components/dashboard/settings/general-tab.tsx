@@ -790,7 +790,7 @@ export function GeneralTab({
                       Paste this script tag into the target website. The loader opens a Radioso-hosted iframe on approved domains only.
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Optional script attributes can override locale, start the widget open, or use a custom collapsed avatar image or GIF.
+                      Optional script attributes can override locale, start the widget open, swap in a custom avatar image or GIF, and replace the hosted chat text or colors for translation and theming.
                     </p>
                     {anonSettings.websiteEmbedScriptUrl ? (
                       <p className="text-xs text-muted-foreground">

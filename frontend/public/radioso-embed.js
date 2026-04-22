@@ -36,6 +36,71 @@
     },
   }
 
+  const defaultTheme = {
+    launcherBackground: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+    launcherForeground: '#f8fafc',
+    launcherBorder: 'rgba(15, 23, 42, 0.16)',
+    launcherShadow: '0 18px 40px rgba(15, 23, 42, 0.24)',
+    panelBackground: '#ffffff',
+    panelForeground: '#0f172a',
+    panelBorder: 'rgba(148, 163, 184, 0.35)',
+    panelShadow: '0 24px 60px rgba(15, 23, 42, 0.28)',
+    accent: '#0f172a',
+    accentForeground: '#f8fafc',
+    mutedBackground: '#f8fafc',
+    mutedForeground: '#64748b',
+    inputBackground: '#ffffff',
+    inputForeground: '#0f172a',
+    inputBorder: '#cbd5e1',
+    inputPlaceholder: '#94a3b8',
+    assistantBubbleBackground: '#ffffff',
+    assistantBubbleForeground: '#0f172a',
+    userBubbleBackground: '#0f172a',
+    userBubbleForeground: '#f8fafc',
+  }
+
+  const copyOverrideKeys = [
+    'launcherDefaultLabel',
+    'embeddedChatTitle',
+    'embeddedChatUnavailableTitle',
+    'embeddedChatUnavailableMessage',
+    'embeddedChatLauncherRequiredMessage',
+    'embeddedChatStartingMessage',
+    'publicChatSubtitle',
+    'publicChatEmptyTitle',
+    'publicChatEmptyMessage',
+    'startPrompt',
+    'publicChatUnavailableTitle',
+    'publicChatUnavailableMessage',
+    'publicChatLoadOlderMessages',
+    'publicChatSendMessageLabel',
+    'publicChatNewChatLabel',
+    'publicChatRateLimitRetryTemplate',
+  ]
+
+  const themeOverrideKeys = [
+    'launcherBackground',
+    'launcherForeground',
+    'launcherBorder',
+    'launcherShadow',
+    'panelBackground',
+    'panelForeground',
+    'panelBorder',
+    'panelShadow',
+    'accent',
+    'accentForeground',
+    'mutedBackground',
+    'mutedForeground',
+    'inputBackground',
+    'inputForeground',
+    'inputBorder',
+    'inputPlaceholder',
+    'assistantBubbleBackground',
+    'assistantBubbleForeground',
+    'userBubbleBackground',
+    'userBubbleForeground',
+  ]
+
   const iconMarkup = {
     chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 5.5A3.5 3.5 0 0 1 7.5 2h9A3.5 3.5 0 0 1 20 5.5v7A3.5 3.5 0 0 1 16.5 16H10l-4.5 4v-4.2A3.5 3.5 0 0 1 4 12.5z"/></svg>',
     sparkles: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13.5 2.5 15 7l4.5 1.5L15 10l-1.5 4.5L12 10 7.5 8.5 12 7zM5 13l1.2 3.8L10 18l-3.8 1.2L5 23l-1.2-3.8L0 18l3.8-1.2zM17 13l1.3 4.2L22.5 18l-4.2 1.3L17 23l-1.3-3.7L11.5 18l4.2-1.3z"/></svg>',
@@ -73,8 +138,6 @@
     return Object.prototype.hasOwnProperty.call(copyByLocale, language) ? language : null
   }
 
-  const getCopy = (locale) => copyByLocale[locale] ?? copyByLocale.en
-
   const normalizeInitialState = (value) => {
     if (!value) {
       return null
@@ -102,36 +165,101 @@
     }
   }
 
-  const createPanel = () => {
+  const parseJsonOverrides = (value) => {
+    if (!value || typeof value !== 'string') {
+      return null
+    }
+
+    try {
+      return JSON.parse(value.trim())
+    } catch {
+      return null
+    }
+  }
+
+  const sanitizeOverrides = (input, keys, maxLength) => {
+    if (!input || typeof input !== 'object') {
+      return {}
+    }
+
+    const next = {}
+    for (const key of keys) {
+      const value = input[key]
+      if (typeof value !== 'string') {
+        continue
+      }
+      const trimmed = value.trim()
+      if (!trimmed || trimmed.length > maxLength) {
+        continue
+      }
+      next[key] = trimmed
+    }
+    return next
+  }
+
+  const getCopy = (locale, overrides) => {
+    const next = { ...(copyByLocale[locale] ?? copyByLocale.en) }
+    if (overrides && typeof overrides === 'object') {
+      if (overrides.launcherDefaultLabel) {
+        next.launcherDefaultLabel = overrides.launcherDefaultLabel
+      }
+      if (overrides.embeddedChatTitle) {
+        next.iframeTitle = overrides.embeddedChatTitle
+      }
+    }
+    return next
+  }
+
+  const setIconMarkup = (container, icon) => {
+    container.innerHTML = iconMarkup[icon] ?? iconMarkup[DEFAULT_ICON]
+    const svg = container.querySelector('svg')
+    if (svg) {
+      svg.setAttribute('width', '18')
+      svg.setAttribute('height', '18')
+    }
+  }
+
+  const createPanel = (theme) => {
     const panel = document.createElement('div')
     panel.setAttribute('aria-hidden', 'true')
-    panel.style.position = 'absolute'
-    panel.style.width = 'min(420px, calc(100vw - 1.5rem))'
-    panel.style.height = 'min(640px, calc(100vh - 6rem))'
-    panel.style.maxHeight = 'calc(100vh - 6rem)'
-    panel.style.borderRadius = '24px'
+    panel.style.width = 'min(440px, calc(100vw - 2rem))'
+    panel.style.height = '100%'
+    panel.style.maxHeight = 'calc(100vh - 2rem)'
+    panel.style.borderRadius = '28px'
     panel.style.overflow = 'hidden'
-    panel.style.boxShadow = '0 24px 60px rgba(15, 23, 42, 0.28)'
-    panel.style.background = 'hsl(0 0% 100%)'
-    panel.style.border = '1px solid rgba(148, 163, 184, 0.35)'
+    panel.style.boxShadow = theme.panelShadow
+    panel.style.background = theme.panelBackground
+    panel.style.border = `1px solid ${theme.panelBorder}`
     panel.style.display = 'none'
-
+    panel.style.pointerEvents = 'auto'
     return panel
   }
 
-  const createIframe = (scriptUrl, token, locale) => {
+  const createIframe = (scriptUrl, token, options) => {
     const iframe = document.createElement('iframe')
-    iframe.title = getCopy(locale).iframeTitle
+    iframe.title = options.copy.iframeTitle
     iframe.loading = 'lazy'
     iframe.referrerPolicy = 'no-referrer-when-downgrade'
     iframe.allow = 'clipboard-read; clipboard-write'
     iframe.style.border = '0'
     iframe.style.width = '100%'
     iframe.style.height = '100%'
+    iframe.style.background = options.theme.panelBackground
+
     const iframeUrl = new URL(`/embed/${encodeURIComponent(token)}`, scriptUrl)
-    if (locale) {
-      iframeUrl.searchParams.set('locale', locale)
+    if (options.locale) {
+      iframeUrl.searchParams.set('locale', options.locale)
     }
+    if (options.avatarUrl) {
+      iframeUrl.searchParams.set('avatar', options.avatarUrl)
+    }
+    if (Object.keys(options.copyOverrides).length > 0) {
+      iframeUrl.searchParams.set('copy', JSON.stringify(options.copyOverrides))
+    }
+    if (Object.keys(options.themeOverrides).length > 0) {
+      iframeUrl.searchParams.set('theme', JSON.stringify(options.themeOverrides))
+    }
+
     iframe.src = iframeUrl.toString()
     return iframe
   }
@@ -157,16 +285,7 @@
     return payload
   }
 
-  const setIconMarkup = (container, icon) => {
-    container.innerHTML = iconMarkup[icon] ?? iconMarkup[DEFAULT_ICON]
-    const svg = container.querySelector('svg')
-    if (svg) {
-      svg.setAttribute('width', '18')
-      svg.setAttribute('height', '18')
-    }
-  }
-
-  const createButton = (label, icon, avatarUrl) => {
+  const createButton = (label, icon, avatarUrl, theme) => {
     const button = document.createElement('button')
     button.type = 'button'
     button.setAttribute('aria-label', label)
@@ -176,12 +295,13 @@
     iconContainer.style.display = 'inline-flex'
     iconContainer.style.alignItems = 'center'
     iconContainer.style.justifyContent = 'center'
-    iconContainer.style.width = '1.75rem'
-    iconContainer.style.height = '1.75rem'
+    iconContainer.style.width = '2rem'
+    iconContainer.style.height = '2rem'
     iconContainer.style.overflow = 'hidden'
     iconContainer.style.borderRadius = '9999px'
     iconContainer.style.flexShrink = '0'
-    iconContainer.style.background = 'rgba(248, 250, 252, 0.14)'
+    iconContainer.style.background = theme.mutedBackground
+    iconContainer.style.color = theme.accent
 
     if (avatarUrl) {
       const image = document.createElement('img')
@@ -207,32 +327,33 @@
 
     const labelNode = document.createElement('span')
     labelNode.textContent = label
+
     button.appendChild(iconContainer)
     button.appendChild(labelNode)
     button.style.all = 'unset'
     button.style.boxSizing = 'border-box'
     button.style.display = 'inline-flex'
     button.style.alignItems = 'center'
-    button.style.gap = '0.625rem'
+    button.style.gap = '0.75rem'
     button.style.padding = '0.875rem 1rem'
-    button.style.borderRadius = '9999px'
+    button.style.borderRadius = '18px'
     button.style.cursor = 'pointer'
-    button.style.background = 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'
-    button.style.color = '#f8fafc'
+    button.style.background = theme.launcherBackground
+    button.style.color = theme.launcherForeground
+    button.style.border = `1px solid ${theme.launcherBorder}`
     button.style.fontFamily = 'ui-sans-serif, system-ui, sans-serif'
     button.style.fontSize = '14px'
     button.style.fontWeight = '600'
     button.style.lineHeight = '1'
-    button.style.boxShadow = '0 12px 30px rgba(15, 23, 42, 0.25)'
-    button.style.transition = 'transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease'
+    button.style.boxShadow = theme.launcherShadow
+    button.style.transition = 'transform 140ms ease, opacity 140ms ease'
     button.style.userSelect = 'none'
+    button.style.pointerEvents = 'auto'
     button.addEventListener('mouseenter', () => {
       button.style.transform = 'translateY(-1px)'
-      button.style.boxShadow = '0 16px 34px rgba(15, 23, 42, 0.32)'
     })
     button.addEventListener('mouseleave', () => {
       button.style.transform = 'translateY(0)'
-      button.style.boxShadow = '0 12px 30px rgba(15, 23, 42, 0.25)'
     })
     return button
   }
@@ -244,54 +365,51 @@
     }
 
     const token = script.dataset.radiosoToken
-    if (!token) {
-      return
-    }
-
-    if (window.__radiosoEmbedMounted) {
+    if (!token || window.__radiosoEmbedMounted) {
       return
     }
     window.__radiosoEmbedMounted = true
 
     const scriptUrl = getScriptUrl(script)
     const locale = normalizeLocale(script.dataset.radiosoLocale)
-    const copy = getCopy(locale)
+    const copyOverrides = sanitizeOverrides(parseJsonOverrides(script.dataset.radiosoCopy), copyOverrideKeys, 280)
+    const themeOverrides = sanitizeOverrides(parseJsonOverrides(script.dataset.radiosoTheme), themeOverrideKeys, 160)
+    const copy = getCopy(locale, copyOverrides)
+    const theme = { ...defaultTheme, ...themeOverrides }
     const rawLabel = script.dataset.radiosoLauncherLabel
     const label =
       rawLabel && rawLabel.trim() && rawLabel.trim() !== DEFAULT_LABEL ? rawLabel.trim() : copy.launcherDefaultLabel
     const icon = script.dataset.radiosoLauncherIcon || DEFAULT_ICON
     const position = script.dataset.radiosoLauncherPosition || DEFAULT_POSITION
     const initialState = normalizeInitialState(script.dataset.radiosoInitialState) || DEFAULT_INITIAL_STATE
-    const avatarUrl = resolveAvatarUrl(script.dataset.radiosoCollapsedAvatarUrl)
+    const avatarUrl = resolveAvatarUrl(
+      script.dataset.radiosoAvatarUrl || script.dataset.radiosoCollapsedAvatarUrl,
+    )
 
     const host = document.createElement('div')
     host.style.position = 'fixed'
     host.style.zIndex = '2147483647'
-    host.style.bottom = '24px'
-    host.style.right = '24px'
+    host.style.top = '16px'
+    host.style.bottom = '16px'
+    host.style.right = '16px'
     host.style.left = 'auto'
     host.style.display = 'flex'
     host.style.flexDirection = 'column'
     host.style.alignItems = 'flex-end'
+    host.style.justifyContent = 'flex-end'
     host.style.gap = '12px'
+    host.style.pointerEvents = 'none'
+    host.style.maxWidth = 'calc(100vw - 2rem)'
 
     if (position === 'bottom-left') {
-      host.style.left = '24px'
+      host.style.left = '16px'
       host.style.right = 'auto'
       host.style.alignItems = 'flex-start'
     }
 
-    const panel = createPanel()
-    panel.style.bottom = '72px'
-    panel.style.right = '0'
-    panel.style.left = 'auto'
+    const panel = createPanel(theme)
+    const button = createButton(label, icon, avatarUrl, theme)
 
-    if (position === 'bottom-left') {
-      panel.style.left = '0'
-      panel.style.right = 'auto'
-    }
-
-    const button = createButton(label, icon, avatarUrl)
     let isOpen = initialState === 'open'
     let bootstrapPromise = null
     let iframe = null
@@ -301,7 +419,14 @@
         return iframe
       }
 
-      iframe = createIframe(scriptUrl, token, locale)
+      iframe = createIframe(scriptUrl, token, {
+        locale,
+        avatarUrl,
+        copy,
+        copyOverrides,
+        theme,
+        themeOverrides,
+      })
       panel.appendChild(iframe)
       return iframe
     }
@@ -365,6 +490,7 @@
       panel.style.display = isOpen ? 'block' : 'none'
       panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true')
       button.setAttribute('aria-expanded', isOpen ? 'true' : 'false')
+      button.style.opacity = isOpen ? '0.94' : '1'
     }
 
     button.addEventListener('click', () => {

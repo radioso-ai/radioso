@@ -155,7 +155,7 @@ describe("chat service streaming", () => {
       { role: "assistant", content: "full answer" },
     ]);
     expect(auditService.events[0]?.metadata?.rewriteContinuityState).toEqual({
-      activeSubject: undefined,
+      activeSubject: "Intro",
       relatedEntities: [],
       groundedTitles: ["Intro"],
     });
@@ -355,8 +355,8 @@ describe("chat service streaming", () => {
     });
 
     expect(capturedInputs[1]?.rewriteContinuityState).toEqual({
-      activeSubject: undefined,
-      relatedEntities: ["Narayani"],
+      activeSubject: "La mia anima ricorda Swami Kriyananda",
+      relatedEntities: [],
       groundedTitles: ["La mia anima ricorda Swami Kriyananda"],
     });
   });
@@ -673,7 +673,7 @@ describe("chat service streaming", () => {
     });
   });
 
-  it("persists related entities in rewrite continuity state", async () => {
+  it("drops inferred related entities from rewrite continuity state", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -748,7 +748,7 @@ describe("chat service streaming", () => {
 
     expect(auditService.events[0]?.metadata?.rewriteContinuityState).toEqual({
       activeSubject: "Narayani",
-      relatedEntities: ["Arudra"],
+      relatedEntities: [],
       groundedTitles: ["Narayani"],
     });
   });

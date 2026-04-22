@@ -37,7 +37,7 @@ const buildQueryRewritePrompt = (input: {
     context_section: input.context || "No prior context",
     continuity_state_block:
       input.continuityState && hasContinuityState(input.continuityState)
-        ? `\n\nGrounded retrieval continuity state from the most recent successful assistant turn:\n${JSON.stringify(input.continuityState)}`
+        ? `\n\nRetrieval continuity state from the most recent successful assistant turn:\n${JSON.stringify(input.continuityState)}`
         : "",
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",

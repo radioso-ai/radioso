@@ -592,7 +592,7 @@ describe("chat retrieval domain", () => {
       'For continuation-only follow-ups such as "teach me more", "tell me more", "go on", "continue", "say more", or "more please"',
     );
     expect(createInput?.messages[1]?.content).toContain(
-      "Grounded retrieval continuity state from the most recent successful assistant turn",
+      "Retrieval continuity state from the most recent successful assistant turn",
     );
     expect(createInput?.messages[1]?.content).toContain("\"activeSubject\":\"Narayani\"");
   });

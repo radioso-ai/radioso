@@ -801,17 +801,16 @@ export class ChatService {
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
     citations: ChatCitation[];
   }): RewriteContinuityState | undefined {
-    const activeSubject = this.normalizeContinuityValue(input.diagnostics.rewriteProposal?.proposedActiveSubject)
-      ?? input.previousState?.activeSubject;
-    const relatedEntities = this.collectContinuityValues([
-      ...(input.previousState?.relatedEntities ?? []),
-      ...(input.diagnostics.rewriteProposal?.relatedEntities ?? []),
-    ]);
     const groundedTitles = this.collectContinuityValues([
       ...(input.previousState?.groundedTitles ?? []),
       ...input.citations.map((citation) => citation.title),
-      ...(input.diagnostics.retrievalSubqueries?.map((subquery) => subquery.label) ?? []),
     ]);
+    const activeSubject = this.resolveContinuityActiveSubject(
+      this.normalizeContinuityValue(input.diagnostics.rewriteProposal?.proposedActiveSubject)
+        ?? input.previousState?.activeSubject,
+      groundedTitles,
+    );
+    const relatedEntities: string[] = [];
 
     if (!activeSubject && relatedEntities.length === 0 && groundedTitles.length === 0) {
       return undefined;
@@ -830,19 +829,16 @@ export class ChatService {
     }
 
     const candidate = state as Partial<Record<keyof RewriteContinuityState, unknown>>;
-    const activeSubject = this.normalizeContinuityValue(
-      typeof candidate.activeSubject === "string" ? candidate.activeSubject : undefined,
-    );
-    const relatedEntities = this.collectContinuityValues(
-      Array.isArray(candidate.relatedEntities)
-        ? candidate.relatedEntities.map((value) => (typeof value === "string" ? value : undefined))
-        : [],
-    );
     const groundedTitles = this.collectContinuityValues(
       Array.isArray(candidate.groundedTitles)
         ? candidate.groundedTitles.map((value) => (typeof value === "string" ? value : undefined))
         : [],
     );
+    const activeSubject = this.resolveContinuityActiveSubject(
+      typeof candidate.activeSubject === "string" ? candidate.activeSubject : undefined,
+      groundedTitles,
+    );
+    const relatedEntities: string[] = [];
 
     if (!activeSubject && relatedEntities.length === 0 && groundedTitles.length === 0) {
       return undefined;
@@ -853,6 +849,15 @@ export class ChatService {
       relatedEntities,
       groundedTitles,
     };
+  }
+
+  private resolveContinuityActiveSubject(candidate: string | undefined, groundedTitles: string[]): string | undefined {
+    const normalizedCandidate = this.normalizeContinuityValue(candidate);
+    if (normalizedCandidate) {
+      return normalizedCandidate;
+    }
+
+    return groundedTitles.length === 1 ? groundedTitles[0] : undefined;
   }
 
   private collectContinuityValues(values: Array<string | undefined>): string[] {

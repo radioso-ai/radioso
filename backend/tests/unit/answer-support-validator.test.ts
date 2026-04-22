@@ -225,6 +225,37 @@ describe("answer support validator", () => {
     expect(result.validation.unsupportedSegmentCount).toBe(2);
   });
 
+  it("counts unsupported non-Latin text as substantive", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Что сказано на странице?",
+      answer: "Страница объясняет тестирование. Она также обещает круглосуточную поддержку.",
+      answerSegments: [
+        {
+          text: "Страница объясняет тестирование",
+          citationIndices: [0],
+        },
+        { text: ". " },
+        { text: "Она также обещает круглосуточную поддержку" },
+        { text: "." },
+      ],
+      citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("Страница объясняет тестирование.");
+    expect(result.validation.unsupportedSegmentCount).toBe(1);
+    expect(result.validation.substantiveUnsupportedSegmentCount).toBe(1);
+  });
+
   it("preserves unsupported content under warn without replacing it", async () => {
     const validator = new AnswerSupportValidator();
 
@@ -341,5 +372,23 @@ describe("assistant turn outcome classifier", () => {
         },
       }),
     ).toBe(ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS);
+  });
+
+  it("keeps non-Latin unsupported content on the degraded path", () => {
+    const classifier = new AssistantTurnOutcomeClassifier();
+
+    expect(
+      classifier.classify({
+        hadRetrievedContext: true,
+        validation: {
+          ran: true,
+          answerModified: true,
+          unsupportedSegmentCount: 1,
+          substantiveUnsupportedSegmentCount: 1,
+          supportedSegmentCount: 1,
+          nonSubstantiveSegmentCount: 1,
+        },
+      }),
+    ).toBe(ASSISTANT_TURN_OUTCOME.GROUNDED_DEGRADED_UNSUPPORTED_SEGMENTS);
   });
 });

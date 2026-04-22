@@ -26,18 +26,30 @@ const NON_SUBSTANTIVE_PHRASES = new Set([
   "ok",
 ]);
 
+const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+
 const normalizeForMeaningCheck = (value: string): string =>
   value
     .replace(/[^a-z0-9]+/gi, " ")
     .trim()
     .toLowerCase();
 
+const hasWordLikeContent = (value: string): boolean => {
+  for (const segment of wordSegmenter.segment(value)) {
+    if (segment.isWordLike) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const isNonSubstantiveText = (value: string): boolean => {
-  const normalized = normalizeForMeaningCheck(value);
-  if (normalized.length === 0) {
+  if (!hasWordLikeContent(value)) {
     return true;
   }
 
+  const normalized = normalizeForMeaningCheck(value);
   return NON_SUBSTANTIVE_PHRASES.has(normalized);
 };
 
@@ -109,7 +121,7 @@ export class AnswerSupportValidator {
     const substantiveUnsupportedSegmentCount = segmentResults.filter(
       (segment) =>
         segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED
-        && normalizeForMeaningCheck(segment.originalText).length > 0,
+        && hasWordLikeContent(segment.originalText),
     ).length;
     const nonSubstantiveSegmentCount = segmentResults.filter((segment) => segment.disposition === VALIDATION_DISPOSITION.NON_SUBSTANTIVE).length;
 

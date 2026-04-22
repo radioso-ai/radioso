@@ -54,7 +54,7 @@ export class UserRepository implements UserRepositoryPort {
 
   async findByEmail(email: string): Promise<UserRecord | null> {
     const [row] = await this.database.query<UserRow>(
-      `SELECT id, email, password_hash, created_at, updated_at
+      `SELECT id, email, password_hash, email_verified_at, created_at, updated_at
        FROM users
        WHERE email = $1`,
       [email],

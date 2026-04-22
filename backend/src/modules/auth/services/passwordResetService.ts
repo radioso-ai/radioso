@@ -1,7 +1,7 @@
 import type { Env } from "../../../app/config/env.js";
 import type { PasswordResetTokenRepositoryPort } from "../../../db/repositories/passwordResetTokenRepository.js";
 import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
-import { serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
+import { emailVerificationRequired, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService } from "../../account/services/accountAccessService.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import { generateSessionToken, hashPassword, normalizeEmail, serializeSessionCookie, sha256 } from "../domain/authPrimitives.js";
@@ -70,9 +70,7 @@ export class PasswordResetService {
         eventStatus: "failure",
         metadata: { email, reason: "email_delivery_failed" },
       });
-      throw serviceUnavailable("Password reset is temporarily unavailable", {
-        cause: error instanceof Error ? error.message : "email_delivery_failed",
-      });
+      return { accepted: true };
     }
 
     await this.dependencies.auditService.record({
@@ -123,6 +121,15 @@ export class PasswordResetService {
     await this.dependencies.userRepository.updatePassword(user.id, await hashPassword(input.password));
     await this.dependencies.passwordResetTokenRepository.markAllActiveForUserUsed(user.id, now);
     await this.dependencies.sessionRepository.revokeAllForUser(user.id, now);
+
+    if (!user.emailVerifiedAt) {
+      await this.dependencies.auditService.record({
+        eventType: "auth.password_reset.confirm",
+        eventStatus: "failure",
+        metadata: { userId: user.id, reason: "email_verification_required" },
+      });
+      throw emailVerificationRequired();
+    }
 
     const membership = await this.dependencies.accountAccessService.resolveLoginAccount(user.id);
     const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(membership.accountId);

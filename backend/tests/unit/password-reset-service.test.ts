@@ -121,7 +121,16 @@ class RecordingEmailService {
   }
 }
 
-const createPasswordResetService = async () => {
+class FailingEmailService {
+  async sendPasswordResetEmail(): Promise<never> {
+    throw new Error("smtp unavailable");
+  }
+}
+
+const createPasswordResetService = async (options?: {
+  emailVerifiedAt?: Date | null;
+  emailService?: { sendPasswordResetEmail(input: { to: string; resetUrl: string }): Promise<void> };
+}) => {
   const env = {
     ...createTestEnv(),
     APP_BASE_URL: "http://localhost:3000",
@@ -136,7 +145,7 @@ const createPasswordResetService = async () => {
   const workspaceService = new WorkspaceService(new InMemoryWorkspaceRepository(), auditService);
   const sessionRepository = new TrackingSessionRepository();
   const passwordResetTokenRepository = new InMemoryPasswordResetTokenRepository();
-  const emailService = new RecordingEmailService();
+  const emailService = options?.emailService ?? new RecordingEmailService();
 
   const account = await accountRepository.create({
     name: "Reset Organization",
@@ -147,6 +156,7 @@ const createPasswordResetService = async () => {
     id: account.id,
     email: "reset@example.com",
     passwordHash: account.passwordHash,
+    emailVerifiedAt: options?.emailVerifiedAt,
   });
   await accountAccessService.ensureMembership({
     accountId: account.id,
@@ -210,6 +220,32 @@ describe("PasswordResetService", () => {
     expect(passwordResetTokenRepository.items.size).toBe(0);
   });
 
+  it("returns accepted for a known user even when email delivery fails", async () => {
+    const { service, passwordResetTokenRepository, auditService, user } = await createPasswordResetService({
+      emailService: new FailingEmailService(),
+    });
+
+    const response = await service.requestReset({
+      email: "reset@example.com",
+      requestIp: "127.0.0.1",
+    });
+
+    expect(response).toEqual({ accepted: true });
+    expect(await passwordResetTokenRepository.findLatestActiveByUserId(user.id, new Date())).toBeTruthy();
+    expect(auditService.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "auth.password_reset.request",
+          eventStatus: "failure",
+          metadata: expect.objectContaining({
+            email: "reset@example.com",
+            reason: "email_delivery_failed",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("rejects stale tokens after a newer request is issued", async () => {
     const { service, emailService } = await createPasswordResetService();
 
@@ -261,5 +297,33 @@ describe("PasswordResetService", () => {
     expect(result.sessionCookie).toContain("radioso_session=");
     const usedToken = await passwordResetTokenRepository.findByTokenHash(passwordResetTokenRepository.items.get("reset-1")!.tokenHash);
     expect(usedToken?.usedAt).toBeTruthy();
+  });
+
+  it("does not create a session for an unverified user after password reset", async () => {
+    const {
+      service,
+      emailService,
+      sessionRepository,
+      user,
+      userRepository,
+    } = await createPasswordResetService({
+      emailVerifiedAt: null,
+    });
+
+    await service.requestReset({ email: "reset@example.com" });
+    const token = new URL(emailService.messages[0]!.resetUrl).searchParams.get("token");
+
+    await expect(
+      service.confirmReset({
+        token: token!,
+        password: "newsecurepassword",
+      }),
+    ).rejects.toMatchObject({
+      code: "email_verification_required",
+    });
+
+    const updatedUser = await userRepository.findById(user.id);
+    expect(await verifyPassword("newsecurepassword", updatedUser!.passwordHash)).toBe(true);
+    expect(sessionRepository.items.size).toBe(0);
   });
 });

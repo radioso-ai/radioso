@@ -69,12 +69,27 @@ export class EmailVerificationService {
       return { accepted: true };
     }
 
-    await this.issueVerification({
-      userId: user.id,
-      email: user.email,
-      requestIp: input.requestIp,
-      requestUserAgent: input.requestUserAgent,
-    });
+    try {
+      await this.issueVerification({
+        userId: user.id,
+        email: user.email,
+        requestIp: input.requestIp,
+        requestUserAgent: input.requestUserAgent,
+      });
+    } catch (error) {
+      await this.dependencies.auditService.record({
+        eventType: "auth.email_verification.resend",
+        eventStatus: "failure",
+        metadata: {
+          email,
+          userExists: true,
+          alreadyVerified: false,
+          reason: "email_delivery_failed",
+          cause: error instanceof Error ? error.message : "email_delivery_failed",
+        },
+      });
+      return { accepted: true };
+    }
 
     await this.dependencies.auditService.record({
       eventType: "auth.email_verification.resend",

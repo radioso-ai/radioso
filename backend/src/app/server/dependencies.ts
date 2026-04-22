@@ -18,10 +18,15 @@ import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import { IngestionSettingsRepository } from "../../db/repositories/ingestionSettingsRepository.js";
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
+import { PasswordResetTokenRepository } from "../../db/repositories/passwordResetTokenRepository.js";
+import { EmailVerificationTokenRepository } from "../../db/repositories/emailVerificationTokenRepository.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
+import { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
+import { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import { AuditService } from "../../modules/audit/services/auditService.js";
+import { createEmailService } from "../../modules/email/services/emailService.js";
 import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
@@ -115,7 +120,9 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     }),
   });
   const accountMembershipRepository = new AccountMembershipRepository(database);
+  const accountRepository = new AccountRepository(database);
   const userRepository = new UserRepository(database);
+  const sessionRepository = new SessionRepository(database);
   const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
   const accountInvitationService = new AccountInvitationService(
     new AccountInvitationRepository(database),
@@ -271,16 +278,36 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
       "Connector secret encryption is not configured; secret-field writes will be rejected until this is fixed",
     );
   }
-  const authService = new AuthService({
+  const emailService = createEmailService(env);
+  const emailVerificationService = new EmailVerificationService({
     env,
-    accountRepository: new AccountRepository(database),
+    auditService,
+    emailService,
+    tokenRepository: new EmailVerificationTokenRepository(database),
     userRepository,
-    sessionRepository: new SessionRepository(database),
+  });
+  const verificationAwareAuthService = new AuthService({
+    env,
+    accountRepository,
+    userRepository,
+    sessionRepository,
     workspaceTokenRepository: new WorkspaceTokenRepository(database),
     workspaceService,
     accountAccessService,
     accountInvitationService,
+    emailVerificationService,
     auditService,
+  });
+  const passwordResetService = new PasswordResetService({
+    env,
+    auditService,
+    accountRepository,
+    accountAccessService,
+    emailService,
+    passwordResetTokenRepository: new PasswordResetTokenRepository(database),
+    sessionRepository,
+    userRepository,
+    workspaceService,
   });
 
   return {
@@ -290,7 +317,10 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     telemetryService,
     incidentReportingService: persistentIncidentReportingService,
     productAnalyticsService,
-    authService,
+    authService: verificationAwareAuthService,
+    passwordResetService,
+    emailVerificationService,
+    emailService,
     accountAccessService,
     accountInvitationService,
     workspaceSessionService,

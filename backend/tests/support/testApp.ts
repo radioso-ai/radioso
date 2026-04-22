@@ -8,6 +8,8 @@ import { randomUUID } from "node:crypto";
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
+import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
+import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import {
@@ -52,6 +54,9 @@ import { buildAnalyticsSinks } from "../../src/shared/analytics/buildAnalyticsSi
 import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
 import { buildIncidentSinks } from "../../src/shared/incidents/buildIncidentSinks.js";
 import { IncidentReportingService } from "../../src/shared/incidents/incidentReportingService.js";
+import { EmailService, NoopEmailDriver } from "../../src/modules/email/services/emailService.js";
+import { EmailVerificationTokenRepositoryPort } from "../../src/db/repositories/emailVerificationTokenRepository.js";
+import { PasswordResetTokenRepositoryPort } from "../../src/db/repositories/passwordResetTokenRepository.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
@@ -114,6 +119,7 @@ export const createTestEnv = (): Env => ({
   WORKSPACE_TOKEN_SECRET: "fedcba9876543210fedcba9876543210",
   WEBSITE_EMBED_SECRET: "00112233445566778899aabbccddeeff",
   SESSION_TTL_HOURS: 168,
+  AUTH_SKIP_EMAIL_VERIFICATION: false,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
@@ -130,7 +136,136 @@ export const createTestEnv = (): Env => ({
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
   DOCUMENT_PROCESSING_JOB_LEASE_MS: 300_000,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
+  APP_BASE_URL: "http://localhost:3000",
+  PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
+  PASSWORD_RESET_RATE_LIMIT_MAX_ATTEMPTS: 5,
+  MAIL_DRIVER: "noop",
+  MAIL_FROM_EMAIL: "noreply@example.com",
+  MAIL_FROM_NAME: "Radioso",
+  MAIL_SMTP_HOST: undefined,
+  MAIL_SMTP_PORT: 587,
+  MAIL_SMTP_SECURE: false,
+  MAIL_SMTP_USERNAME: undefined,
+  MAIL_SMTP_PASSWORD: undefined,
 });
+
+class InMemoryPasswordResetTokenRepository implements PasswordResetTokenRepositoryPort {
+  private readonly items = new Map<string, {
+    id: string;
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    usedAt: Date | null;
+    createdAt: Date;
+    requestIp: string | null;
+    requestUserAgent: string | null;
+  }>();
+
+  async create(params: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }) {
+    const record = {
+      id: randomUUID(),
+      userId: params.userId,
+      tokenHash: params.tokenHash,
+      expiresAt: params.expiresAt,
+      usedAt: null,
+      createdAt: new Date(),
+      requestIp: params.requestIp ?? null,
+      requestUserAgent: params.requestUserAgent ?? null,
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findByTokenHash(tokenHash: string) {
+    return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
+  }
+
+  async findLatestActiveByUserId(userId: string, now: Date) {
+    return [...this.items.values()]
+      .filter((item) => item.userId === userId && item.usedAt === null && item.expiresAt > now)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
+  }
+
+  async markUsed(id: string, usedAt: Date): Promise<void> {
+    const existing = this.items.get(id);
+    if (existing) {
+      existing.usedAt = existing.usedAt ?? usedAt;
+    }
+  }
+
+  async markAllActiveForUserUsed(userId: string, usedAt: Date): Promise<void> {
+    for (const item of this.items.values()) {
+      if (item.userId === userId && item.usedAt === null && item.expiresAt > usedAt) {
+        item.usedAt = usedAt;
+      }
+    }
+  }
+}
+
+class InMemoryEmailVerificationTokenRepository implements EmailVerificationTokenRepositoryPort {
+  private readonly items = new Map<string, {
+    id: string;
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    usedAt: Date | null;
+    createdAt: Date;
+    requestIp: string | null;
+    requestUserAgent: string | null;
+  }>();
+
+  async create(params: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }) {
+    const record = {
+      id: randomUUID(),
+      userId: params.userId,
+      tokenHash: params.tokenHash,
+      expiresAt: params.expiresAt,
+      usedAt: null,
+      createdAt: new Date(),
+      requestIp: params.requestIp ?? null,
+      requestUserAgent: params.requestUserAgent ?? null,
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async findByTokenHash(tokenHash: string) {
+    return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
+  }
+
+  async findLatestActiveByUserId(userId: string, now: Date) {
+    return [...this.items.values()]
+      .filter((item) => item.userId === userId && item.usedAt === null && item.expiresAt > now)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
+  }
+
+  async markUsed(id: string, usedAt: Date): Promise<void> {
+    const existing = this.items.get(id);
+    if (existing) {
+      existing.usedAt = existing.usedAt ?? usedAt;
+    }
+  }
+
+  async markAllActiveForUserUsed(userId: string, usedAt: Date): Promise<void> {
+    for (const item of this.items.values()) {
+      if (item.userId === userId && item.usedAt === null && item.expiresAt > usedAt) {
+        item.usedAt = usedAt;
+      }
+    }
+  }
+}
 
 interface TestRepositories {
   auditEventRepository: InMemoryAuditEventRepository;
@@ -224,6 +359,8 @@ export const createTestDependencies = (overrides: {
     auditService,
   );
   const sessionRepository = new InMemorySessionRepository();
+  const passwordResetTokenRepository = new InMemoryPasswordResetTokenRepository();
+  const emailVerificationTokenRepository = new InMemoryEmailVerificationTokenRepository();
   const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
   const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
@@ -523,6 +660,17 @@ export const createTestDependencies = (overrides: {
   }));
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
+  const emailService = new EmailService(new NoopEmailDriver(), {
+    fromEmail: env.MAIL_FROM_EMAIL,
+    fromName: env.MAIL_FROM_NAME,
+  });
+  const emailVerificationService = new EmailVerificationService({
+    env,
+    auditService,
+    emailService,
+    tokenRepository: emailVerificationTokenRepository,
+    userRepository,
+  });
 
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
@@ -563,6 +711,7 @@ export const createTestDependencies = (overrides: {
     incidentReportingService: persistentIncidentReportingService,
     productAnalyticsService,
     auditService,
+    emailService,
     accountAccessService,
     accountInvitationService,
     workspaceSessionService,
@@ -577,6 +726,19 @@ export const createTestDependencies = (overrides: {
       workspaceService,
       accountAccessService,
       accountInvitationService,
+      emailVerificationService,
+    }),
+    emailVerificationService,
+    passwordResetService: new PasswordResetService({
+      env,
+      auditService,
+      accountRepository,
+      accountAccessService,
+      emailService,
+      passwordResetTokenRepository,
+      sessionRepository,
+      userRepository,
+      workspaceService,
     }),
     workspaceService,
     ingestionSettingsService,
@@ -642,46 +804,67 @@ export const createTestApp = (overrides: {
 };
 
 /**
- * Registers a test user, lists workspaces, and issues a workspace token.
+ * Registers, verifies, and signs in a test user before issuing a workspace token.
  * Returns both the bearer token and the session cookie.
  */
 export const issueTestToken = async (
   app: ReturnType<typeof createTestApp>["app"],
   email = `test-${randomUUID()}@example.com`,
 ): Promise<{ token: string; cookie: string; workspaceId: string }> => {
-  const register = await request(app).post("/api/v1/auth/register").send({
-    email,
-    password: "verysecurepassword",
-  });
-  const cookie: string = register.headers["set-cookie"][0];
+  const { cookie, workspaceId, accountId } = await issueTestSession(app, email);
 
   const workspaces = await request(app)
     .get("/api/v1/workspace")
     .set("Cookie", cookie);
-  const workspaceId: string = workspaces.body.workspaces[0].id;
+  const resolvedWorkspaceId: string = workspaces.body.workspaces[0].id ?? workspaceId;
   const dependencies = appDependencyMap.get(app);
   if (!dependencies) {
     throw new Error("Test app dependencies were not registered for token issuance");
   }
 
-  const tokenResponse = await dependencies.authService.getTokenForWorkspace(workspaceId, register.body.accountId as string);
+  const tokenResponse = await dependencies.authService.getTokenForWorkspace(resolvedWorkspaceId, accountId);
 
-  return { token: tokenResponse.token, cookie, workspaceId };
+  return { token: tokenResponse.token, cookie, workspaceId: resolvedWorkspaceId };
 };
 
 export const issueTestSession = async (
   app: ReturnType<typeof createTestApp>["app"],
   email = `test-${randomUUID()}@example.com`,
-): Promise<{ cookie: string; workspaceId: string; userId: string }> => {
+): Promise<{ cookie: string; workspaceId: string; userId: string; accountId: string }> => {
+  const password = "verysecurepassword";
   const register = await request(app).post("/api/v1/auth/register").send({
     email,
-    password: "verysecurepassword",
+    password,
   });
+  const dependencies = appDependencyMap.get(app);
+  if (!dependencies) {
+    throw new Error("Test app dependencies were not registered for session issuance");
+  }
+
+  const verificationUrl = dependencies.emailService.sentMessages.at(-1)?.metadata?.verificationUrl;
+  const token = verificationUrl ? new URL(verificationUrl).searchParams.get("token") : null;
+  if (!token) {
+    throw new Error("Registration did not produce an email verification token");
+  }
+
+  const verify = await request(app).post("/api/v1/auth/email-verification/verify").send({ token });
+  if (verify.status !== 200) {
+    throw new Error(`Email verification failed with status ${verify.status}`);
+  }
+
+  const login = await request(app).post("/api/v1/auth/login").send({
+    email,
+    password,
+  });
+  if (login.status !== 200) {
+    throw new Error(`Login failed with status ${login.status}`);
+  }
 
   return {
-    cookie: register.headers["set-cookie"][0] as string,
+    cookie: login.headers["set-cookie"][0] as string,
     workspaceId: register.body.workspaceId as string,
     userId: register.body.userId as string,
+    accountId: register.body.accountId as string,
   };
 };
 

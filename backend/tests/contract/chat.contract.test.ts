@@ -11,10 +11,10 @@ import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } 
 
 const MCP_SIGNING_SECRET = "smoke-signing-secret";
 
-const createMcpSourceHeaders = (timestamp = Date.now().toString()) => ({
+const createMcpSourceHeaders = (bearerToken: string, timestamp = Date.now().toString()) => ({
   "x-radioso-source-channel": "mcp",
   "x-radioso-source-signature": createHmac("sha256", MCP_SIGNING_SECRET)
-    .update(`mcp\n\n${timestamp}`)
+    .update(`mcp\n\n${timestamp}\n${bearerToken}`)
     .digest("hex"),
   "x-radioso-source-timestamp": timestamp,
 });
@@ -714,7 +714,7 @@ describe("chat contract", () => {
     const chat = await request(app)
       .post("/api/v1/chat/")
       .set("Authorization", authorization)
-      .set(createMcpSourceHeaders())
+      .set(createMcpSourceHeaders(token))
       .send({
         query: "What does this page do?",
         stream: false,
@@ -781,8 +781,30 @@ describe("chat contract", () => {
       .post("/api/v1/chat/")
       .set("Authorization", `Bearer ${token}`)
       .set("x-radioso-source-channel", "mcp")
-      .set("x-radioso-source-signature", createHmac("sha256", "wrong-secret").update(`mcp\n\n${timestamp}`).digest("hex"))
+      .set("x-radioso-source-signature", createHmac("sha256", "wrong-secret").update(`mcp\n\n${timestamp}\n${token}`).digest("hex"))
       .set("x-radioso-source-timestamp", timestamp)
+      .send({
+        query: "What does this page do?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "forbidden",
+      },
+    });
+  });
+
+  it("rejects MCP source signatures replayed with a different bearer token", async () => {
+    const { app } = createTestApp();
+    const tokenA = await issueTestToken(app, "mcp-replay-a@example.com");
+    const tokenB = await issueTestToken(app, "mcp-replay-b@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", `Bearer ${tokenB.token}`)
+      .set(createMcpSourceHeaders(tokenA.token))
       .send({
         query: "What does this page do?",
         stream: false,

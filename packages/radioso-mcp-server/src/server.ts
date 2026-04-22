@@ -20,7 +20,9 @@ export interface RadiosoMcpServerContext {
   ) => Promise<void>;
   onToolResult?: (tool: ToolDefinition, context: ToolExecutionContext, result: Awaited<ReturnType<ToolDefinition["execute"]>>) => Promise<void>;
   serverName: string;
-  baseConfig?: Pick<RadiosoMcpConfig, "apiToken" | "baseUrl" | "requestTimeoutMs" | "serverName">;
+  baseConfig?: Pick<RadiosoMcpConfig, "apiToken" | "baseUrl" | "requestTimeoutMs" | "serverName"> & {
+    mcpSourceSigningSecret?: string;
+  };
   resolveExecutionContext?: (
     tool: ToolDefinition,
     args: Record<string, unknown>,
@@ -42,8 +44,10 @@ export const getRemoteToolAuthInfo = (ctx: ServerContext): RemoteToolAuthInfo | 
   return null;
 };
 
-const createStaticExecutionContextResolver = (
-  baseConfig: Pick<RadiosoMcpConfig, "apiToken" | "baseUrl" | "requestTimeoutMs" | "serverName">,
+export const createStaticExecutionContextResolver = (
+  baseConfig: Pick<RadiosoMcpConfig, "apiToken" | "baseUrl" | "requestTimeoutMs" | "serverName"> & {
+    mcpSourceSigningSecret?: string;
+  },
 ) => {
   return async (_tool: ToolDefinition, _args: Record<string, unknown>, ctx: ServerContext): Promise<ToolExecutionContext> => {
     const authInfo = getRemoteToolAuthInfo(ctx);

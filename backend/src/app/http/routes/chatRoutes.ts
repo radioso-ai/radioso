@@ -88,12 +88,13 @@ const safeCompare = (provided: string, expected: string): boolean => {
 };
 
 const signTrustedSource = (secret: string, input: {
+  bearerToken: string;
   channel: "mcp";
   origin: string | null;
   timestamp: string;
 }): string =>
   createHmac("sha256", secret)
-    .update(`${input.channel}\n${input.origin ?? ""}\n${input.timestamp}`)
+    .update(`${input.channel}\n${input.origin ?? ""}\n${input.timestamp}\n${input.bearerToken}`)
     .digest("hex");
 
 const resolveTrustedChatSource = (
@@ -105,6 +106,7 @@ const resolveTrustedChatSource = (
   sourceOrigin?: string | null;
 } => {
   const authMode = (res.locals as { authMode?: string }).authMode;
+  const bearerToken = (res.locals as { bearerToken?: string }).bearerToken;
   const rawChannel = req.header(SOURCE_CHANNEL_HEADER)?.trim();
   const rawOrigin = req.header(SOURCE_ORIGIN_HEADER)?.trim();
   const rawSignature = req.header(SOURCE_SIGNATURE_HEADER)?.trim();
@@ -121,6 +123,10 @@ const resolveTrustedChatSource = (
 
   if (authMode !== "bearer") {
     throw badRequest("Trusted source headers are only supported for bearer-authenticated chat requests.");
+  }
+
+  if (!bearerToken) {
+    throw badRequest("Trusted source headers require a bearer-authenticated workspace token.");
   }
 
   if (!rawChannel) {
@@ -172,6 +178,7 @@ const resolveTrustedChatSource = (
     }
 
     const expectedSignature = signTrustedSource(mcpSigningSecret, {
+      bearerToken,
       channel: sourceChannel,
       origin: sourceOrigin,
       timestamp: sourceTimestampResult.data,

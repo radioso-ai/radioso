@@ -237,6 +237,8 @@ Governed write tools use the same endpoint, but require an approval token from `
 
 The remote package keeps MCP transport, session exchange, approval gating, audit logging, workspace policy resolution, and shared-store runtime concerns separate from backend application modules. It requires `GET /api/v1/workspace/mcp/context` on the target backend and uses that route to negotiate workspace identity and supported MCP capabilities before a session grants tools. The local stdio mode still exists for compatibility, but remote HTTP is now the primary MCP surface.
 
+If you also use stdio mode and want those MCP conversations labeled in history, set `RADIOSO_MCP_SIGNING_SECRET` for the stdio process to the same non-default secret used by the backend.
+
 ## Assistant Execution Model
 
 Radioso deliberately codifies a separation between live chat and any future background assistant work.

@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RadiosoApiError, createRadiosoApiAdapter } from "../src/radiosoApiAdapter.js";
@@ -142,6 +144,7 @@ describe("createRadiosoApiAdapter", () => {
   });
 
   it("marks grounded answers as MCP-originated chat traffic", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_713_779_200_000);
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ conversationId: "conv_123", answer: "Hello" }), {
         status: 200,
@@ -168,8 +171,10 @@ describe("createRadiosoApiAdapter", () => {
         headers: expect.objectContaining({
           authorization: "Bearer sk_proj_test",
           "x-radioso-source-channel": "mcp",
-          "x-radioso-source-signature": expect.stringMatching(/^[0-9a-f]{64}$/),
-          "x-radioso-source-timestamp": expect.stringMatching(/^\d{13}$/),
+          "x-radioso-source-signature": createHmac("sha256", "dev-signing-secret")
+            .update("mcp\n\n1713779200000\nsk_proj_test")
+            .digest("hex"),
+          "x-radioso-source-timestamp": "1713779200000",
         }),
       }),
     );

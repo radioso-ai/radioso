@@ -81,7 +81,7 @@ export const createRadiosoApiAdapter = (
 
     const timestamp = Date.now().toString();
     const signature = createHmac("sha256", config.mcpSourceSigningSecret)
-      .update(`mcp\n\n${timestamp}`)
+      .update(`mcp\n\n${timestamp}\n${config.apiToken}`)
       .digest("hex");
 
     return {

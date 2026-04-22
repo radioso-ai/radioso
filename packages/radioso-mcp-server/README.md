@@ -223,6 +223,8 @@ node dist/src/cli/stdio.js
 
 If `RADIOSO_MCP_SIGNING_SECRET` is omitted in stdio mode, the package uses the reserved compatibility secret internally. Remote HTTP mode does not allow that fallback.
 
+If you want stdio-originated `answer_grounded` traffic to be labeled as `MCP` in Radioso history, explicitly set `RADIOSO_MCP_SIGNING_SECRET` in stdio mode to the same non-default secret the backend is using.
+
 ## Available Tools
 
 - `describe_capabilities`

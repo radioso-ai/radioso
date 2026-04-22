@@ -1,0 +1,61 @@
+---
+title: Retrieval settings
+description: Safe defaults and tuning guidance for search and answer behavior in the TypeScript SDK.
+---
+
+# Retrieval settings
+
+This guide explains when to change search and answer settings, what the main options do, and a safe starting point for most teams.
+
+You do not need to touch these settings to get started. Most teams should first:
+
+1. Upload documents
+2. Run document search and chat
+3. Review answer quality
+4. Change these settings only when there is a clear problem to solve
+
+## Read current settings
+
+```ts
+const settings = await client.settings.getRetrieval()
+```
+
+## Update retrieval settings
+
+```ts
+await client.settings.updateRetrieval({
+  queryRewriteEnabled: true,
+  semanticRewriteInstructions: '',
+  lexicalRewriteInstructions: '',
+  answerSupportPolicy: 'strict',
+  rerankEnabled: true,
+  vectorTopK: 20,
+  similarityThreshold: 0.2,
+  rerankTopK: 20,
+  citationDisplayEnabled: true,
+  metadataRules: [],
+  customInstruction: '',
+})
+```
+
+## Recommended starting point
+
+For most teams:
+
+- `queryRewriteEnabled: true`
+- `rerankEnabled: true`
+- `vectorTopK: 20`
+- `similarityThreshold: 0.2`
+- `rerankTopK: 20`
+- `answerSupportPolicy: "strict"`
+- `citationDisplayEnabled: true`
+
+This is a safe default: look for a good set of matches, reorder them, show citations, and stay conservative when the system is not confident.
+
+## Practical tuning advice
+
+- Change one setting family at a time.
+- Test with a stable set of representative queries.
+- Prefer small adjustments before large jumps.
+- If search results are poor, inspect the documents and chunking before over-tuning search settings.
+- If answers are going beyond what the documents actually say, check `answerSupportPolicy` and `similarityThreshold` first.

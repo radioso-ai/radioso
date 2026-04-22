@@ -1,0 +1,84 @@
+---
+title: API first success
+description: Reach first success with plain HTTP by registering, getting a token, uploading content, and asking a grounded question.
+---
+
+# API first success
+
+You can use Radioso without opening the web app. The API-first path is:
+
+1. Register or log in and save the session cookie
+2. Reveal the workspace token
+3. Upload content
+4. Ask one grounded question
+
+## Register and save the session cookie
+
+```bash
+curl -sS -c cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
+  http://localhost:8080/api/v1/auth/register
+```
+
+If the user already exists, log in instead:
+
+```bash
+curl -sS -c cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
+  http://localhost:8080/api/v1/auth/login
+```
+
+## Reveal the workspace token
+
+```bash
+curl -sS -b cookies.txt \
+  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
+```
+
+If you need to list workspaces first:
+
+```bash
+curl -sS -b cookies.txt \
+  http://localhost:8080/api/v1/workspace
+```
+
+The token response looks like:
+
+```json
+{"token":"sk_proj_..."}
+```
+
+If a workspace token or public embed link is ever exposed, rotate it from the settings screen instead of relying on disable and re-enable toggles.
+
+## Upload a document with the SDK
+
+```ts
+import { createRadiosoClient } from '@radioso/typescript-sdk'
+
+const client = createRadiosoClient({
+  baseUrl: 'http://localhost:8080',
+  apiToken: process.env.RADIOSO_API_TOKEN!,
+})
+
+await client.documents.create({
+  title: 'FAQ',
+  content: 'Radioso can answer questions grounded in uploaded content.',
+})
+```
+
+## Ask the first question
+
+```ts
+const response = await client.chat.create({
+  query: 'What does the FAQ say about uploaded content?',
+  stream: false,
+})
+
+console.log(response.answer)
+```
+
+## Common failure mode
+
+If upload works but chat does not, document processing may still be running or the backend may not have a valid provider key.

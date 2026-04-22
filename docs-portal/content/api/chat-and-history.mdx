@@ -1,0 +1,71 @@
+---
+title: Chat and history
+description: Ask grounded questions, continue conversations, and inspect saved conversation history.
+---
+
+# Chat and history
+
+This is the main grounded-answer workflow for authenticated API clients.
+
+## Relevant endpoints
+
+```text
+POST /api/v1/chat/
+GET  /api/v1/chat/history
+GET  /api/v1/chat/history/{conversationId}
+```
+
+## How it works
+
+1. Send a chat request with a workspace token.
+2. Choose whether the response should stream.
+3. Reuse `conversationId` when you want continuity across turns.
+4. Inspect saved conversations later through the history routes.
+
+## Ask a grounded question
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/chat/ \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What does the FAQ say about uploaded content?","stream":false}'
+```
+
+The chat request schema also supports:
+
+- `conversationId` for follow-up turns
+- `bootstrapGreeting` for bootstrap flows
+- `userExpectedLocale` when the caller knows the user's locale
+- `inputMetadata` and `metadataFilter` for richer routing and filtering
+
+## Streaming and non-streaming modes
+
+`stream` is required.
+
+In practice:
+
+- use `stream: false` for simple request-response flows
+- use `stream: true` when you want incremental output
+
+Use the [API Reference](/api-reference) for the exact streaming and non-streaming response contracts.
+
+## Conversation history
+
+Use `GET /api/v1/chat/history` to list saved conversations.
+
+Use `GET /api/v1/chat/history/{conversationId}` to retrieve one conversation and its debug metadata.
+
+That second route is the one to use when you need to inspect how a specific answer was produced.
+
+## Common failure modes
+
+- `400` usually means the request body is invalid.
+- `401` means the workspace token is missing or invalid.
+- `404` can mean the conversation id is not available in the current workspace context.
+- `204` is part of the route contract. Use the reference page for the exact no-body case.
+
+## Read next
+
+- [Documents and search](/api/documents-and-search)
+- [Settings](/api/settings)
+- [API Reference](/api-reference)

@@ -1,0 +1,8 @@
+---
+title: Deployment topology
+description: The current Radioso production topology and where the docs portal fits.
+---
+
+# Deployment topology
+
+The production footprint currently includes separate Cloud Run services for the backend, frontend, and document worker. The docs portal should join that topology as its own public service rather than riding on the product frontend.

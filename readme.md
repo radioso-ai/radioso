@@ -204,6 +204,27 @@ infra/           Docker Compose and Terraform
 docs/            Product and SDK guides
 ```
 
+## Observability
+
+The OSS default path is first-party only:
+
+- structured logs through Pino
+- audit-backed product analytics and incident persistence
+- optional Prometheus-style metrics at `METRICS_PATH` when `METRICS_ENABLED=true`
+
+Optional SaaS adapters stay off by default and are enabled only through env:
+
+```bash
+PRODUCT_ANALYTICS_SINKS=audit,posthog
+POSTHOG_HOST=https://app.posthog.com
+POSTHOG_API_KEY=...
+
+INCIDENT_SINKS=audit,sentry
+SENTRY_DSN=...
+```
+
+If those adapters fail, Radioso still keeps the first-party audit record and continues serving requests. For more detail, see [docs/oss-saas-observability.md](./docs/oss-saas-observability.md).
+
 ## Common Settings To Tune
 
 You usually do not need to change settings on day one. Tune them when retrieval is clearly too noisy, too narrow, or chunking is doing something a little too creative with your documents.

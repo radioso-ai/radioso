@@ -1,0 +1,379 @@
+# OSS And SaaS Observability
+
+This note defines a vendor-neutral observability strategy for Radioso that works for both open source deployments and Radioso-operated SaaS.
+
+The goal is simple:
+
+- keep the open source product free of hard-coded PostHog or Sentry dependencies
+- provide strong operational visibility for Radioso Cloud
+- let self-hosting operators stop at logs, metrics, and built-in audit events if they want
+- make commercial backends optional deployment-time adapters instead of product defaults
+
+## Recommendation
+
+Radioso should separate three concerns that are often mixed together:
+
+1. application telemetry
+2. product analytics
+3. crash and incident reporting
+
+Each concern should use a stable internal interface owned by Radioso. Vendor SDKs, if enabled at all, should sit behind adapters that are disabled by default.
+
+## Why This Fits Radioso
+
+Radioso already has two useful primitives:
+
+- structured backend logging in [`backend/src/shared/observability/logger.ts`](../backend/src/shared/observability/logger.ts)
+- workspace-scoped audit events in [`backend/src/modules/audit/services/auditService.ts`](../backend/src/modules/audit/services/auditService.ts)
+
+Those pieces are enough to avoid a vendor-first design.
+
+The missing layer is a small internal observability contract that routes:
+
+- runtime telemetry to logs, metrics, and traces
+- product events to audit storage and optional exporters
+- crashes to a normalized internal incident event stream plus optional external sinks
+
+## Design Principles
+
+### OSS-first defaults
+
+The repository should ship with no required dependency on closed hosted services. A local or self-hosted operator should get value from the default install without signing up for another product.
+
+### Vendor-neutral instrumentation
+
+Instrumentation should be based on standards, not a storage vendor. OpenTelemetry is the right default for traces and telemetry export, and Prometheus or OpenMetrics is the right default for metrics exposure.
+
+### Adapters at the edge
+
+Third-party integrations should be deployment choices. The core app should know about an `AnalyticsSink` or `IncidentSink`, not about PostHog or Sentry directly.
+
+### Privacy by default
+
+Telemetry emitted from a retrieval product can accidentally include prompts, user content, document fragments, connector secrets, and account identifiers. The internal model must define what is allowed to leave the process and what must stay local.
+
+## Layer 1: Application Telemetry
+
+Application telemetry answers operational questions such as:
+
+- is the API healthy
+- are background jobs stuck
+- is latency regressing
+- which retrieval stage is failing
+- which workspace or route is producing the highest error rate
+
+### What to emit
+
+- structured logs
+- counters
+- gauges
+- histograms
+- traces and spans
+
+### Source of truth
+
+- Pino remains the structured log source
+- OpenTelemetry becomes the trace and metric instrumentation layer
+- a Prometheus-compatible `/metrics` endpoint becomes the default scrape surface
+
+### Current metric set
+
+The current Prometheus-style surface is intentionally small and low-cardinality:
+
+- `radioso_http_requests_total`
+- `radioso_http_request_duration_ms`
+- `radioso_telemetry_events_total`
+- `radioso_retrieval_pipeline_runs_total`
+- `radioso_retrieval_candidate_count`
+- `radioso_retrieval_final_context_count`
+- `radioso_document_worker_events_total`
+- `radioso_document_worker_queue_jobs`
+- `radioso_document_worker_job_duration_ms`
+- `radioso_product_events_total`
+- `radioso_incidents_total`
+
+Additional traces, request-in-flight gauges, and richer chat-specific metrics can
+be layered on later without changing the internal seams.
+
+### Trace boundaries
+
+Create spans around:
+
+- inbound HTTP requests
+- chat answer generation
+- retrieval pipeline stages
+- document processing jobs
+- connector fetch operations
+- database queries only where sampling and cost remain acceptable
+
+### Correlation fields
+
+Every log and trace should carry stable identifiers where available:
+
+- `requestId`
+- `workspaceId`
+- `accountId`
+- `conversationId`
+- `jobId`
+- `documentId`
+- `route`
+- `deployment.environment`
+- `deployment.version`
+
+Do not attach raw document text, prompt bodies, or secrets to high-cardinality telemetry by default.
+
+## Layer 2: Product Analytics
+
+Product analytics answers questions such as:
+
+- which features are used
+- where onboarding drops off
+- which settings correlate with successful answers
+- how many workspaces activate document upload, chat, public chat, or embed
+
+This should not be implemented as direct PostHog calls from random controller code.
+
+### Internal event model
+
+Define a small typed product event contract, for example:
+
+- `workspace.created`
+- `workspace.invited_user_added`
+- `document.upload_requested`
+- `document.processing_completed`
+- `document.processing_failed`
+- `chat.started`
+- `chat.completed`
+- `chat.unsupported_answer_returned`
+- `chat.citation_clicked`
+- `public_chat.started`
+- `website_embed.loaded`
+- `connector.sync_completed`
+- `retrieval_settings.updated`
+
+### Storage strategy
+
+Default OSS path:
+
+- persist the canonical event to `audit_events` or a dedicated append-only analytics table
+- optionally mirror it to logs
+
+SaaS path:
+
+- persist the same canonical event internally first
+- fan it out asynchronously to zero or more exporters
+
+This preserves one Radioso-owned event schema regardless of backend.
+
+### Exporter interface
+
+Use an internal interface such as:
+
+```ts
+export interface ProductAnalyticsSink {
+  emit(event: ProductAnalyticsEvent): Promise<void>;
+}
+```
+
+Candidate sink implementations:
+
+- `NoopProductAnalyticsSink`
+- `AuditEventAnalyticsSink`
+- `LogAnalyticsSink`
+- `WebhookAnalyticsSink`
+- `PostHogAnalyticsSink`
+
+The first three should be safe to ship in OSS defaults. Vendor sinks can remain optional packages or optional dependencies enabled only in Radioso Cloud.
+
+### Identity rules
+
+Analytics identity should be explicit and privacy-aware:
+
+- prefer workspace and account identifiers over personal identifiers where possible
+- hash or pseudonymize end-user identifiers before export if the sink leaves Radioso infrastructure
+- never emit raw session cookies, access tokens, connector secrets, prompt bodies, or document payloads
+
+## Layer 3: Crash And Incident Reporting
+
+Crash monitoring answers questions such as:
+
+- what broke
+- who was affected
+- what version shipped the regression
+- is the same exception recurring across workspaces
+
+### Internal incident event shape
+
+Normalize crashes into a Radioso-owned shape before any external export:
+
+- timestamp
+- severity
+- environment
+- version
+- service
+- request metadata
+- workspace or account identifiers
+- normalized exception type
+- message
+- stack trace
+- tags
+- selected breadcrumbs
+
+### Default OSS behavior
+
+- log the incident through Pino
+- record an internal audit-backed incident event
+- increment failure metrics when metrics exposure is enabled
+
+### SaaS behavior
+
+- do the default OSS behavior
+- optionally forward the normalized incident to an external sink such as Sentry
+
+This keeps external crash tooling optional without weakening the product's default failure capture.
+
+### Current implementation
+
+The current backend slice already routes unhandled request failures through the
+shared incident service in [`backend/src/app/http/middleware/errorHandler.ts`](../backend/src/app/http/middleware/errorHandler.ts).
+Analytics and incidents persist through audit-backed sinks first, and optional
+exporters fan out afterward.
+
+## Recommended OSS Default Stack
+
+For the public repository, the default supported path should be:
+
+- Pino structured logs
+- OpenTelemetry instrumentation libraries
+- Prometheus or OpenMetrics `/metrics`
+- existing `audit_events` for domain and product events
+- optional Grafana dashboard examples
+
+This gives a self-hoster a complete stack using common OSS infrastructure:
+
+- Prometheus for scraping
+- Grafana for dashboards
+- Loki or another log backend if desired
+- Jaeger or Tempo if traces are enabled
+
+Radioso should document these as examples, not hard requirements.
+
+## Recommended Radioso Cloud Stack
+
+For the hosted SaaS, use the same instrumentation with deployment-time sinks:
+
+- logs: Pino to the platform log pipeline
+- metrics and traces: OpenTelemetry Collector
+- storage and dashboards: whichever backend operations wants
+- product analytics: exporter from the internal event bus
+- incidents: exporter from the internal incident pipeline
+
+The key point is that the cloud deployment gets extra sinks, not a different product architecture.
+
+## Packaging Strategy
+
+Avoid shipping the backend as:
+
+- code paths that directly import PostHog or Sentry in shared modules
+- required environment variables for vendor SDKs
+- frontend bundles that assume a vendor analytics script exists
+
+Prefer:
+
+- internal interfaces in the main app
+- `noop` default implementations
+- optional adapter modules wired by environment configuration
+
+One reasonable packaging split is:
+
+- `backend/src/shared/observability/telemetry/`
+- `backend/src/shared/analytics/`
+- `backend/src/shared/incidents/`
+- optional adapter folders such as `backend/src/integrations/posthog/` and `backend/src/integrations/sentry/`
+
+If vendor-specific code becomes operationally noisy, move it into optional local packages under `packages/`.
+
+## Environment Model
+
+Recommended core flags:
+
+```bash
+OBSERVABILITY_ENABLED=true
+OBSERVABILITY_SERVICE_NAME=radioso-api
+OBSERVABILITY_ENVIRONMENT=production
+OBSERVABILITY_VERSION=git-sha-or-release
+
+METRICS_ENABLED=true
+METRICS_PATH=/metrics
+
+OTEL_ENABLED=false
+OTEL_EXPORTER_OTLP_ENDPOINT=
+
+PRODUCT_ANALYTICS_SINKS=audit
+INCIDENT_SINKS=audit
+```
+
+SaaS-only examples:
+
+```bash
+PRODUCT_ANALYTICS_SINKS=audit,posthog
+INCIDENT_SINKS=audit,sentry
+SENTRY_DSN=...
+POSTHOG_API_KEY=...
+POSTHOG_HOST=...
+```
+
+The public repo can support these variables without making them part of the default local run flow.
+
+## Frontend-only events
+
+Most product events should remain backend-derived. For the small set of actions
+the backend cannot infer reliably, such as citation clicks or embed-only page
+loads, use the isolated emitter seam in
+[`frontend/lib/product-analytics.ts`](../frontend/lib/product-analytics.ts)
+instead of scattering vendor calls through React components.
+
+## Rollout Plan
+
+### Phase 1
+
+- formalize telemetry, analytics, and incident interfaces
+- replace direct `console.error` fallback paths with the internal logger and incident service
+- document a small stable product event taxonomy
+
+### Phase 2
+
+- add Prometheus metrics exposure
+- add OpenTelemetry trace instrumentation around HTTP, chat, retrieval, and document processing
+- correlate logs with request and workspace identifiers
+
+### Phase 3
+
+- route product events through a dedicated sink interface
+- keep `audit_events` as the first sink
+- add async fan-out so external exporters cannot break request paths
+
+### Phase 4
+
+- add optional SaaS-only sinks for incident reporting and product analytics
+- document exporter redaction and privacy rules
+- add dashboards and alert examples
+
+## What Not To Do
+
+- do not hard-code PostHog calls in frontend components as the canonical analytics source
+- do not make Sentry the only place an error exists
+- do not send raw prompts, retrieved chunks, or document bodies to third-party telemetry tools by default
+- do not create separate event semantics for OSS and SaaS
+- do not block critical request paths on external analytics or incident vendors
+
+## Decision Summary
+
+The best practice for an open source SaaS product like Radioso is:
+
+- standards in core
+- optional vendors at the edge
+- internal event ownership
+- privacy-safe defaults
+
+Concretely, Radioso should build around Pino, `audit_events`, OpenTelemetry, and Prometheus-compatible metrics, then add vendor exporters only as optional deployment adapters for Radioso Cloud.

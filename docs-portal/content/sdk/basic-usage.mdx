@@ -1,24 +1,206 @@
 ---
 title: Basic usage
-description: Upload documents, list them, and create grounded chat responses.
+description: Documents, chat, settings, and error handling with the TypeScript SDK.
 ---
 
 # Basic usage
 
-## Upload a document
+This guide covers the main things you are likely to do first with the SDK.
+
+## Setup
 
 ```ts
-await client.documents.create({
-  title: 'FAQ',
-  content: 'Radioso can answer questions grounded in uploaded content.',
+import { createRadiosoClient, RadiosoError } from '@radioso/typescript-sdk'
+
+const client = createRadiosoClient({
+  baseUrl: 'https://your-radioso-instance.example.com',
+  apiToken: process.env.RADIOSO_API_TOKEN!,
 })
 ```
 
-## Ask a question
+## Documents
+
+List documents:
+
+```ts
+const documents = await client.documents.list({ limit: 20 })
+```
+
+Create a document:
+
+```ts
+const queued = await client.documents.create({
+  title: 'FAQ',
+  content: 'Radioso can answer questions about uploaded content.',
+  metadata: {
+    category: 'support',
+    published: true,
+  },
+})
+```
+
+Fetch a document:
+
+```ts
+const document = await client.documents.get('document-id')
+```
+
+Update a document:
+
+```ts
+await client.documents.update('document-id', {
+  title: 'FAQ v2',
+  content: 'Updated content',
+  metadata: {
+    category: 'support',
+    version: 2,
+  },
+})
+```
+
+Delete a document:
+
+```ts
+await client.documents.delete('document-id')
+```
+
+Search documents:
+
+```ts
+const search = await client.documents.search({
+  query: 'answers about uploaded content',
+})
+```
+
+List document search history:
+
+```ts
+const history = await client.documents.listHistory({ limit: 10 })
+```
+
+Replay one historical search:
+
+```ts
+const replay = await client.documents.getHistory('search-id')
+```
+
+Reprocess a document:
+
+```ts
+await client.documents.reprocess('document-id')
+```
+
+## Settings
+
+Read ingestion settings:
+
+```ts
+const ingestion = await client.settings.getIngestion()
+```
+
+Update ingestion settings:
+
+```ts
+await client.settings.updateIngestion({
+  chunkingStrategy: 'fixed_window',
+  fixedWindowChunkSize: 800,
+  fixedWindowChunkOverlap: 120,
+  structuredMinChunkSize: 400,
+  structuredMaxChunkSize: 1200,
+})
+```
+
+Queue workspace-wide reprocessing after an ingestion change:
+
+```ts
+await client.settings.reprocessIngestion()
+```
+
+Read general settings:
+
+```ts
+const general = await client.settings.getGeneral()
+```
+
+Update general settings:
+
+```ts
+await client.settings.updateGeneral({
+  anonymousChatEnabled: true,
+  anonymousRateLimit: 10,
+})
+```
+
+## Non-streaming chat
 
 ```ts
 const response = await client.chat.create({
-  query: 'Summarize the FAQ',
+  query: 'What does the FAQ say about uploaded content?',
   stream: false,
 })
 ```
+
+## Streaming chat
+
+`client.chat.stream()` returns events one at a time. Check `event.type` and handle each case.
+
+```ts
+for await (const event of client.chat.stream({
+  query: 'Summarize the FAQ',
+})) {
+  if (event.type === 'conversation') {
+    continue
+  }
+
+  if (event.type === 'chunk') {
+    continue
+  }
+
+  if (event.type === 'done') {
+    continue
+  }
+
+  if (event.type === 'error') {
+    throw event.error
+  }
+}
+```
+
+List chat history:
+
+```ts
+const conversations = await client.chat.listHistory({ limit: 20 })
+```
+
+Fetch one historical conversation:
+
+```ts
+const conversation = await client.chat.getHistoryConversation('conversation-id', { limit: 50 })
+```
+
+## Error handling
+
+The SDK turns request failures into `RadiosoError`, so you can handle them in one place.
+
+```ts
+try {
+  await client.documents.list()
+} catch (error) {
+  if (error instanceof RadiosoError) {
+    if (error.status === 401) {
+      // refresh or replace the API token
+    }
+  } else {
+    throw error
+  }
+}
+```
+
+## Notes
+
+- `baseUrl` should be the Radioso server origin, without a trailing slash.
+- The SDK sends the API token as `Authorization: Bearer <token>`.
+- Streaming chat is layered on top of the same `/api/v1/chat/` endpoint, with `stream: true`.
+- Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.
+- Run `npm run sync` in `typescript-sdk/` after backend API changes so the generated types stay up to date.
+- Search and answer settings are documented separately in [Retrieval settings](/sdk/retrieval-settings).

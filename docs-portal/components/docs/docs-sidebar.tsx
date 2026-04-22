@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { Book, ChevronDown, ChevronRight, Code2, Database, FileText, Search, Settings2, Shield, Workflow } from 'lucide-react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -18,70 +20,68 @@ const navigation: NavItem[] = [
     title: 'Getting Started',
     icon: <Book className="h-4 w-4" />,
     items: [
-      { title: 'Introduction', href: '#introduction' },
-      { title: 'Run locally in 5 minutes', href: '#run-locally' },
-      { title: 'Embed on your website', href: '#website-embed' },
-      { title: 'API first success', href: '#api-first-success' },
+      { title: 'Overview', href: '/quickstarts' },
+      { title: 'Run locally in 5 minutes', href: '/quickstarts/run-locally' },
+      { title: 'Embed on your website', href: '/quickstarts/website-embed' },
+      { title: 'API first success', href: '/quickstarts/api-first-success' },
     ],
   },
   {
-    title: 'Grounding',
+    title: 'Why Radioso',
     icon: <Shield className="h-4 w-4" />,
     items: [
-      { title: 'Grounded answers', href: '#grounded-answers' },
-      { title: 'Citations', href: '#citations' },
-      { title: 'Unsupported answers', href: '#unsupported-answers' },
+      { title: 'Overview', href: '/why-radioso' },
+      { title: 'Grounded answers', href: '/why-radioso/grounded-answers' },
+      { title: 'Use cases', href: '/why-radioso/use-cases' },
     ],
   },
   {
-    title: 'API Reference',
+    title: 'Guides',
     icon: <Code2 className="h-4 w-4" />,
     items: [
-      { title: 'Authentication', href: '#authentication' },
-      { title: 'Upload documents', href: '#upload-documents' },
-      { title: 'Create chat responses', href: '#chat-responses' },
-      { title: 'Response format', href: '#response-format' },
+      { title: 'Authentication', href: '/guides/authentication' },
+      { title: 'Document upload', href: '/guides/document-upload' },
+      { title: 'Retrieval tuning', href: '/guides/retrieval-tuning' },
     ],
   },
   {
-    title: 'Operations',
+    title: 'SDK',
     icon: <Settings2 className="h-4 w-4" />,
     items: [
-      { title: 'Retrieval settings', href: '#retrieval-settings' },
-      { title: 'Document processing', href: '#document-processing' },
-      { title: 'Deployment', href: '#deployment' },
+      { title: 'TypeScript getting started', href: '/sdk/typescript-getting-started' },
+      { title: 'Basic usage', href: '/sdk/basic-usage' },
+      { title: 'Retrieval settings', href: '/sdk/retrieval-settings' },
     ],
   },
   {
     title: 'Architecture',
     icon: <Workflow className="h-4 w-4" />,
     items: [
-      { title: 'Request flow', href: '#request-flow' },
-      { title: 'Retrieval pipeline', href: '#retrieval-pipeline' },
-      { title: 'Storage model', href: '#storage-model' },
+      { title: 'Overview', href: '/architecture' },
+      { title: 'Retrieval pipeline', href: '/architecture/retrieval-pipeline' },
+      { title: 'Document processing lifecycle', href: '/architecture/document-processing-lifecycle' },
+      { title: 'Deployment topology', href: '/architecture/deployment-topology' },
     ],
   },
   {
-    title: 'Resources',
+    title: 'Operators',
     icon: <FileText className="h-4 w-4" />,
     items: [
-      { title: 'TypeScript SDK', href: '#typescript-sdk' },
-      { title: 'Operator guides', href: '#operator-guides' },
-      { title: 'Benchmarks', href: '#benchmarks' },
+      { title: 'Deployment', href: '/operators/deployment' },
+      { title: 'Document processing', href: '/operators/document-processing' },
     ],
   },
 ]
 
 function NavSection({
-  activeHref,
   item,
-  onSelect,
+  pathname,
 }: {
-  activeHref: string
   item: NavItem
-  onSelect: (href: string) => void
+  pathname: string
 }) {
-  const [isOpen, setIsOpen] = useState(true)
+  const hasActiveChild = Boolean(item.items?.some((subItem) => subItem.href === pathname))
+  const [isOpen, setIsOpen] = useState(hasActiveChild || pathname === '/')
 
   return (
     <div className="mb-2">
@@ -96,16 +96,16 @@ function NavSection({
       {isOpen && item.items ? (
         <div className="ml-4 mt-2 space-y-1 border-l border-border pl-3">
           {item.items.map((subItem) => (
-            <button
+            <Link
               key={subItem.href}
-              onClick={() => (subItem.href ? onSelect(subItem.href) : undefined)}
+              href={subItem.href ?? '/'}
               className={cn(
                 'block w-full rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                activeHref === subItem.href ? 'bg-primary/8 font-medium text-primary' : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'
+                pathname === subItem.href ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'
               )}
             >
               {subItem.title}
-            </button>
+            </Link>
           ))}
         </div>
       ) : null}
@@ -114,16 +114,13 @@ function NavSection({
 }
 
 export function DocsSidebar({
-  activeHref,
   onSearchChange,
-  onSelect,
   searchQuery,
 }: {
-  activeHref: string
   onSearchChange: (value: string) => void
-  onSelect: (href: string) => void
   searchQuery: string
 }) {
+  const pathname = usePathname()
   const filteredNavigation = navigation
     .map((section) => ({
       ...section,
@@ -150,7 +147,7 @@ export function DocsSidebar({
       </div>
       <nav className="p-4">
         {(searchQuery ? filteredNavigation : navigation).map((item) => (
-          <NavSection key={item.title} item={item} activeHref={activeHref} onSelect={onSelect} />
+          <NavSection key={item.title} item={item} pathname={pathname} />
         ))}
       </nav>
     </aside>

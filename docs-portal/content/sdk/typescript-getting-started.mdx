@@ -7,6 +7,26 @@ description: Create a Radioso client and make the first document and chat calls.
 
 The repository includes a first-party TypeScript SDK published as `@radioso/typescript-sdk`.
 
+## What you need
+
+- Node.js 22+
+- A Radioso base URL
+- An API token
+
+The current SDK uses API tokens. It does not cover browser sign-in or admin-only actions.
+
+## Install
+
+If you are working in this repo:
+
+```bash
+cd typescript-sdk
+npm install
+npm run build
+```
+
+If you are consuming the built package from another project, point your package manager at the SDK package output or local package path.
+
 ## Create a client
 
 ```ts
@@ -18,6 +38,53 @@ const client = createRadiosoClient({
 })
 ```
 
+## First request
+
+This example lists documents available to that token.
+
+```ts
+const documents = await client.documents.list({ limit: 10 })
+```
+
+## Common development commands
+
+From `typescript-sdk/`:
+
+```bash
+npm run sync
+npm run test
+npm run build
+```
+
+`npm run sync` updates the SDK's generated types from the backend API description.
+
+## What you can do with it right now
+
+```ts
+client.settings.getRetrieval(...)
+client.settings.updateRetrieval(...)
+client.settings.getIngestion(...)
+client.settings.updateIngestion(...)
+client.settings.reprocessIngestion()
+client.settings.getGeneral(...)
+client.settings.updateGeneral(...)
+
+client.documents.list(...)
+client.documents.create(...)
+client.documents.get(...)
+client.documents.update(...)
+client.documents.delete(...)
+client.documents.search(...)
+client.documents.listHistory(...)
+client.documents.getHistory(...)
+client.documents.reprocess(...)
+
+client.chat.create(...)
+client.chat.listHistory(...)
+client.chat.getHistoryConversation(...)
+client.chat.stream(...)
+```
+
 ## Next step
 
-Move to [Basic usage](/sdk/basic-usage) or [API first success](/quickstarts/api-first-success).
+Move to [Basic usage](/sdk/basic-usage), [Retrieval settings](/sdk/retrieval-settings), or [API first success](/quickstarts/api-first-success).

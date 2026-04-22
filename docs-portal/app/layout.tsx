@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
+import 'nextra-theme-docs/style.css'
 
 import { ThemeProvider } from '@/components/theme-provider'
 import { site } from '@/lib/site'

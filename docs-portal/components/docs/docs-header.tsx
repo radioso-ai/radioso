@@ -2,6 +2,7 @@
 
 import { Github, Moon, Sun } from 'lucide-react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useTheme } from 'next-themes'
 
 import { Button } from '@/components/ui/button'
@@ -9,19 +10,38 @@ import { site } from '@/lib/site'
 
 export function DocsHeader() {
   const { resolvedTheme, setTheme } = useTheme()
+  const pathname = usePathname()
+
+  const navItems = [
+    { href: '/', label: 'Home' },
+    { href: '/quickstarts/run-locally', label: 'Guides' },
+    { href: '/api-reference', label: 'API Reference' },
+    { href: '/architecture', label: 'Architecture' },
+  ]
 
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-border/80 bg-background/90 px-8 backdrop-blur">
       <nav className="flex items-center gap-2">
-        <Link className="rounded-md px-4 py-2 text-sm font-medium text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground" href="/">
-          Guides
-        </Link>
-        <Link className="rounded-md px-4 py-2 text-sm font-medium text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground" href="/api-reference">
-          API Reference
-        </Link>
-        <Link className="rounded-md px-4 py-2 text-sm font-medium text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground" href="/architecture">
-          Architecture
-        </Link>
+        {navItems.map((item) => {
+          const active =
+            item.href === '/'
+              ? pathname === '/'
+              : pathname === item.href || pathname.startsWith(`${item.href}/`)
+
+          return (
+            <Link
+              key={item.href}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                active
+                  ? 'bg-secondary text-secondary-foreground'
+                  : 'text-foreground/70 hover:bg-secondary/60 hover:text-foreground'
+              }`}
+              href={item.href}
+            >
+              {item.label}
+            </Link>
+          )
+        })}
       </nav>
       <div className="flex items-center gap-2">
         <Button asChild variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground">

@@ -6,6 +6,7 @@ import type {
   RetrievalSubquery,
   RewrittenRetrievalQuery,
   ResponseLanguagePolicy,
+  RewriteContinuityState,
   RewriteTurnKind,
   StructuredRewriteResult,
 } from "../domain/retrievalPipelineTypes.js";
@@ -27,16 +28,16 @@ const DEFAULT_RESPONSE_LANGUAGE_POLICY: ResponseLanguagePolicy = "match_user_que
 
 const buildQueryRewritePrompt = (input: {
   context: string;
-  carryForwardLiterals?: string[];
+  continuityState?: RewriteContinuityState;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   query: string;
 }): string =>
   renderPromptTemplate("retrieval/query-rewrite-user.md", {
     context_section: input.context || "No prior context",
-    carry_forward_literals_block:
-      input.carryForwardLiterals && input.carryForwardLiterals.length > 0
-        ? `\n\nGrounded carry-forward literals from the immediately previous assistant answer (for retrieval only, not as user-authored grounding):\n${JSON.stringify(input.carryForwardLiterals)}`
+    continuity_state_block:
+      input.continuityState && hasContinuityState(input.continuityState)
+        ? `\n\nRetrieval continuity state from the most recent successful assistant turn:\n${JSON.stringify(input.continuityState)}`
         : "",
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
@@ -49,7 +50,7 @@ export interface QueryRewriteGateway {
   rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
-    carryForwardLiterals?: string[];
+    continuityState?: RewriteContinuityState;
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<QueryRewriteGatewayResult>;
@@ -61,7 +62,7 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
   async rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
-    carryForwardLiterals?: string[];
+    continuityState?: RewriteContinuityState;
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<StructuredRewriteResult> {
@@ -77,7 +78,7 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
       systemPrompt: QUERY_REWRITE_SYSTEM_PROMPT,
       prompt: buildQueryRewritePrompt({
         context,
-        carryForwardLiterals: input.carryForwardLiterals,
+        continuityState: input.continuityState,
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         query: input.query,
@@ -106,7 +107,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
   async rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
-    carryForwardLiterals?: string[];
+    continuityState?: RewriteContinuityState;
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<StructuredRewriteResult> {
@@ -129,7 +130,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
           role: "user",
           content: buildQueryRewritePrompt({
             context,
-            carryForwardLiterals: input.carryForwardLiterals,
+            continuityState: input.continuityState,
             semanticRewriteInstructions: input.semanticRewriteInstructions,
             lexicalRewriteInstructions: input.lexicalRewriteInstructions,
             query: input.query,
@@ -159,7 +160,7 @@ export class QueryRewriteService {
       return this.skipped(input.query);
     }
 
-    if (!this.shouldRewrite(input.contextWindow)) {
+    if (!this.shouldRewrite()) {
       return this.skipped(input.query);
     }
 
@@ -168,7 +169,7 @@ export class QueryRewriteService {
       const rawResult = await this.gateway?.rewrite({
         query: input.query,
         contextMessages: input.contextWindow.selectedMessages,
-        carryForwardLiterals: input.contextWindow.rewriteCarryForwardLiterals,
+        continuityState: input.contextWindow.rewriteContinuityState,
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
       });
@@ -227,7 +228,7 @@ export class QueryRewriteService {
     }
   }
 
-  private shouldRewrite(contextWindow: ConversationContextWindow): boolean {
+  private shouldRewrite(): boolean {
     return this.gateway !== undefined;
   }
 
@@ -436,6 +437,12 @@ export class QueryRewriteService {
     return candidateTerms.filter((term) => !originalTerms.has(term)).length;
   }
 }
+
+const hasContinuityState = (state?: RewriteContinuityState): boolean => Boolean(
+  state?.activeSubject
+  || state?.relatedEntities.length
+  || state?.groundedTitles.length,
+);
 
 const tokenizeRewriteTerms = (value: string): string[] =>
   value

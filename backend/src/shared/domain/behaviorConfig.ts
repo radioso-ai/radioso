@@ -27,6 +27,7 @@ export const RETRIEVAL_BEHAVIOR = {
   defaultSimilarityThreshold: 0.2,
   promptContextTokenBudget: 1200,
   conversationContextMaxMessages: 4,
+  continuityContextMaxMessages: 8,
   candidateMergeSecondaryWeight: 0.25,
   metadataBoostWeight: 0.2,
   hybrid: {

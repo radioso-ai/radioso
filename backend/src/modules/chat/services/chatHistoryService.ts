@@ -42,10 +42,12 @@ export interface ChatConversationTurnDebug {
     ran: boolean;
     answerModified: boolean;
     unsupportedSegmentCount: number;
+    substantiveUnsupportedSegmentCount: number;
     supportedSegmentCount: number;
     nonSubstantiveSegmentCount: number;
     answerSupportPolicy?: AnswerSupportPolicy;
     segmentResults: Array<{
+      originalText: string;
       text: string;
       disposition: ValidationDisposition;
       replacementApplied: boolean;
@@ -127,10 +129,12 @@ interface ChatAuditMetadata {
     ran?: boolean;
     answerModified?: boolean;
     unsupportedSegmentCount?: number;
+    substantiveUnsupportedSegmentCount?: number;
     supportedSegmentCount?: number;
     nonSubstantiveSegmentCount?: number;
     answerSupportPolicy?: AnswerSupportPolicy;
     segmentResults?: Array<{
+      originalText?: string;
       text?: string;
       disposition?: ValidationDisposition;
       replacementApplied?: boolean;
@@ -345,6 +349,10 @@ export class ChatHistoryService {
               answerModified: Boolean(metadata.validation.answerModified),
               unsupportedSegmentCount:
                 typeof metadata.validation.unsupportedSegmentCount === "number" ? metadata.validation.unsupportedSegmentCount : 0,
+              substantiveUnsupportedSegmentCount:
+                typeof metadata.validation.substantiveUnsupportedSegmentCount === "number"
+                  ? metadata.validation.substantiveUnsupportedSegmentCount
+                  : 0,
               supportedSegmentCount:
                 typeof metadata.validation.supportedSegmentCount === "number" ? metadata.validation.supportedSegmentCount : 0,
               nonSubstantiveSegmentCount:
@@ -356,6 +364,7 @@ export class ChatHistoryService {
                   ? metadata.validation.answerSupportPolicy
                   : undefined,
               segmentResults: (metadata.validation.segmentResults ?? []).map((segment) => ({
+                originalText: typeof segment.originalText === "string" ? segment.originalText : "",
                 text: typeof segment.text === "string" ? segment.text : "",
                 disposition: (segment.disposition ?? "non_substantive") as ValidationDisposition,
                 replacementApplied: Boolean(segment.replacementApplied),

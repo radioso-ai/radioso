@@ -15,6 +15,7 @@ export interface AnswerOutcomeInput {
     ran: boolean;
     answerModified: boolean;
     unsupportedSegmentCount: number;
+    substantiveUnsupportedSegmentCount?: number;
   };
 }
 
@@ -85,6 +86,7 @@ export class RetrievalTracePresenter {
         validationRan: input.outcome.validation?.ran,
         answerModified: input.outcome.validation?.answerModified,
         unsupportedSegmentCount: input.outcome.validation?.unsupportedSegmentCount,
+        substantiveUnsupportedSegmentCount: input.outcome.validation?.substantiveUnsupportedSegmentCount,
       },
       metrics: {
         answerLength: input.outcome.answer.length,

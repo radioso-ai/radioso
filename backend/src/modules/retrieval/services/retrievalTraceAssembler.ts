@@ -128,7 +128,7 @@ export class RetrievalTraceAssembler {
           selectedHistoryCount: prompt.contextWindow.selectedMessages.length,
           historyTruncated: prompt.contextWindow.truncated,
           selectionReason: prompt.contextWindow.selectionReason,
-          carryForwardLiterals: prompt.contextWindow.rewriteCarryForwardLiterals ?? [],
+          continuityState: prompt.contextWindow.rewriteContinuityState,
         },
         metrics: {
           selectedHistoryCount: prompt.contextWindow.selectedMessages.length,

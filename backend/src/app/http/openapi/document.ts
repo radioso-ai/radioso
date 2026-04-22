@@ -6,10 +6,14 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 
 import {
+  emailVerificationResendSchema,
+  emailVerificationVerifySchema,
   invitationAcceptSchema,
   invitationTokenParamsSchema,
-  registerSchema,
   loginSchema,
+  passwordResetConfirmSchema,
+  passwordResetRequestSchema,
+  registerSchema,
 } from "../routes/authRoutes.js";
 import { accountMembershipParamsSchema, accountSwitchSchema, createAccountInvitationSchema } from "../routes/accountUserRoutes.js";
 import {
@@ -118,6 +122,7 @@ const RegisterResponseSchema = registry.register(
     organizationName: z.string(),
     workspaceId: z.string().uuid(),
     workspaceName: z.string(),
+    requiresEmailVerification: z.boolean(),
   }),
 );
 
@@ -160,6 +165,10 @@ const WorkspaceTokenResponseSchema = registry.register(
 const RegisterRequestSchema = registry.register("RegisterRequest", registerSchema);
 const LoginRequestSchema = registry.register("LoginRequest", loginSchema);
 const InvitationAcceptRequestSchema = registry.register("InvitationAcceptRequest", invitationAcceptSchema);
+const PasswordResetRequestSchema = registry.register("PasswordResetRequest", passwordResetRequestSchema);
+const PasswordResetConfirmSchema = registry.register("PasswordResetConfirmRequest", passwordResetConfirmSchema);
+const EmailVerificationVerifyRequestSchema = registry.register("EmailVerificationVerifyRequest", emailVerificationVerifySchema);
+const EmailVerificationResendRequestSchema = registry.register("EmailVerificationResendRequest", emailVerificationResendSchema);
 const AccountInvitationCreateRequestSchema = registry.register("AccountInvitationCreateRequest", createAccountInvitationSchema);
 const WorkspaceCreateRequestSchema = registry.register("WorkspaceCreateRequest", createWorkspaceSchema);
 const WorkspaceRenameRequestSchema = registry.register("WorkspaceRenameRequest", renameWorkspaceSchema);
@@ -231,6 +240,20 @@ const InvitationDetailsResponseSchema = registry.register(
     email: z.string().email(),
     status: z.enum(["pending", "accepted", "revoked", "expired"]),
     expiresAt: z.string().datetime(),
+  }),
+);
+
+const PasswordResetAcceptedResponseSchema = registry.register(
+  "PasswordResetAcceptedResponse",
+  z.object({
+    accepted: z.literal(true),
+  }),
+);
+
+const EmailVerificationVerifiedResponseSchema = registry.register(
+  "EmailVerificationVerifiedResponse",
+  z.object({
+    verified: z.literal(true),
   }),
 );
 
@@ -1160,7 +1183,7 @@ registry.registerPath({
   },
   responses: {
     201: {
-      description: "Account created and session established",
+      description: "Account created and verification required before sign-in",
       content: {
         "application/json": {
           schema: RegisterResponseSchema,
@@ -1235,8 +1258,216 @@ registry.registerPath({
         },
       },
     },
+    403: {
+      description: "Email verification required before sign-in",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
     500: {
       description: "Unexpected server error",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/password-reset/request",
+  tags: ["Auth"],
+  summary: "Request a password reset email",
+  operationId: "requestPasswordReset",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: PasswordResetRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    202: {
+      description: "Password reset request accepted",
+      content: {
+        "application/json": {
+          schema: PasswordResetAcceptedResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Too many password reset requests",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    503: {
+      description: "Password reset delivery is temporarily unavailable",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/email-verification/verify",
+  tags: ["Auth"],
+  summary: "Verify a user's email address",
+  operationId: "verifyEmail",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: EmailVerificationVerifyRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Email verified",
+      content: {
+        "application/json": {
+          schema: EmailVerificationVerifiedResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Verification token is invalid or expired",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Too many verification attempts",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/email-verification/resend",
+  tags: ["Auth"],
+  summary: "Resend an email verification link",
+  operationId: "resendEmailVerification",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: EmailVerificationResendRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    202: {
+      description: "Verification resend accepted",
+      content: {
+        "application/json": {
+          schema: PasswordResetAcceptedResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Too many verification resend attempts",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/password-reset/confirm",
+  tags: ["Auth"],
+  summary: "Confirm a password reset and establish a new session",
+  operationId: "confirmPasswordReset",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: PasswordResetConfirmSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Password reset completed and session established",
+      content: {
+        "application/json": {
+          schema: LoginResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Password reset token is invalid or expired",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Too many password reset attempts",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

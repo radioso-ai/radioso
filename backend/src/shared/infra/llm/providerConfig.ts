@@ -7,7 +7,7 @@ import {
   type ResolvedLlmConfig,
 } from "./providerTypes.js";
 
-type ProviderEnv = Partial<Env> & Record<string, string | number | undefined>;
+type ProviderEnv = Partial<Env> & Record<string, string | number | boolean | undefined>;
 
 const PROVIDERS: LlmProviderName[] = ["openai", "openai-compatible", "gemini", "claude"];
 const DEFAULT_PROVIDER: LlmProviderName = "openai";
@@ -16,7 +16,7 @@ const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 const DEFAULT_GEMINI_TEXT_MODEL = "gemini-2.5-flash";
 const DEFAULT_CLAUDE_TEXT_MODEL = "claude-sonnet-4-5";
 
-const asProvider = (value: string | number | undefined, field: string): LlmProviderName | undefined => {
+const asProvider = (value: string | number | boolean | undefined, field: string): LlmProviderName | undefined => {
   if (value === undefined) {
     return undefined;
   }
@@ -28,7 +28,7 @@ const asProvider = (value: string | number | undefined, field: string): LlmProvi
   return value as LlmProviderName;
 };
 
-const requireString = (value: string | number | undefined, field: string): string => {
+const requireString = (value: string | number | boolean | undefined, field: string): string => {
   if (typeof value === "string" && value.trim().length > 0) {
     return value.trim();
   }
@@ -72,8 +72,8 @@ const resolveCapability = (
 
 const resolveTextModel = (
   provider: LlmProviderName,
-  overrideValue: string | number | undefined,
-  legacyOpenAiValue: string | number | undefined,
+  overrideValue: string | number | boolean | undefined,
+  legacyOpenAiValue: string | number | boolean | undefined,
 ): string => {
   if (typeof overrideValue === "string" && overrideValue.trim().length > 0) {
     return overrideValue.trim();
@@ -96,8 +96,8 @@ const resolveTextModel = (
 
 const resolveEmbeddingModel = (
   provider: LlmProviderName,
-  overrideValue: string | number | undefined,
-  legacyOpenAiValue: string | number | undefined,
+  overrideValue: string | number | boolean | undefined,
+  legacyOpenAiValue: string | number | boolean | undefined,
 ): string => {
   if (typeof overrideValue === "string" && overrideValue.trim().length > 0) {
     return overrideValue.trim();

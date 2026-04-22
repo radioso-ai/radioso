@@ -30,6 +30,20 @@ test("buildEnvValues preserves existing values unless overridden", () => {
   assert.equal(values.WEBSITE_EMBED_SECRET, "embed-secret");
 });
 
+test("env contract defaults local bootstrap to skip email verification", () => {
+  const values = buildEnvValues(
+    { OPENAI_API_KEY: "existing", LLM_PROVIDER: "openai" },
+    {
+      SESSION_COOKIE_SECRET: "generated",
+      WORKSPACE_TOKEN_SECRET: "workspace-secret",
+      WEBSITE_EMBED_SECRET: "embed-secret",
+      CONNECTOR_ENCRYPTION_KEY: "connector",
+    },
+  );
+
+  assert.equal(values.AUTH_SKIP_EMAIL_VERIFICATION, "true");
+});
+
 test("writeEnvFileAtomic writes rendered env content", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-bootstrap-"));
   const filePath = path.join(tempDir, ".env");

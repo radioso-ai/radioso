@@ -1,7 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp } from "../support/testApp.js";
+import { createTestApp, issueTestSession } from "../support/testApp.js";
 import type { InMemoryAuditService } from "../support/fakes.js";
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
@@ -68,17 +68,15 @@ describe("auth integration", () => {
     expect(response.body.workspaceName).toBe("Default");
     expect(response.body.workspaceId).toBeDefined();
     expect(response.body.token).toBeUndefined();
-    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
+    expect(response.body.requiresEmailVerification).toBe(true);
+    expect(response.headers["set-cookie"]).toBeUndefined();
   });
 
   it("supports multi-workspace session flows and explicit token reveal", async () => {
     const { app } = createTestApp();
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "repeat@example.com",
-      password: "verysecurepassword",
-    });
-    const cookie = register.headers["set-cookie"][0] as string;
-    const defaultWorkspaceId = register.body.workspaceId as string;
+    const register = await issueTestSession(app, "repeat@example.com");
+    const cookie = register.cookie;
+    const defaultWorkspaceId = register.workspaceId;
 
     const created = await request(app)
       .post("/api/v1/workspace")
@@ -120,14 +118,11 @@ describe("auth integration", () => {
       },
     });
 
-    const register = await request(app).post("/api/v1/auth/register").send({
-      email: "missing-workspace-token-secret@example.com",
-      password: "verysecurepassword",
-    });
+    const register = await issueTestSession(app, "missing-workspace-token-secret@example.com");
 
     const response = await request(app)
-      .get(`/api/v1/account/workspaces/${register.body.workspaceId}/token`)
-      .set("Cookie", register.headers["set-cookie"][0] as string);
+      .get(`/api/v1/account/workspaces/${register.workspaceId}/token`)
+      .set("Cookie", register.cookie);
 
     expect(response.status).toBe(503);
     expect(response.body.error).toMatchObject({
@@ -306,12 +301,8 @@ describe("auth integration", () => {
   it("returns the preferred workspace on login when the account already has multiple workspaces", async () => {
     const { app } = createTestApp();
 
-    const registration = await request(app).post("/api/v1/auth/register").send({
-      email: "multi-workspace@example.com",
-      password: "verysecurepassword",
-    });
-
-    const cookie = registration.headers["set-cookie"]?.[0];
+    const registration = await issueTestSession(app, "multi-workspace@example.com");
+    const cookie = registration.cookie;
     const created = await request(app)
       .post("/api/v1/workspace")
       .set("Cookie", cookie)
@@ -324,7 +315,7 @@ describe("auth integration", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.body.accountId).toBe(registration.body.accountId);
+    expect(response.body.accountId).toBe(registration.accountId);
     expect(response.body.organizationName).toBe("Multi Workspace Organization");
     expect(response.body.workspaceId).toBe(created.body.id);
     expect(response.body.workspaceName).toBe("Research");
@@ -335,11 +326,8 @@ describe("auth integration", () => {
   it("lets an invited user access the shared account workspaces", async () => {
     const { app } = createTestApp();
 
-    const owner = await request(app).post("/api/v1/auth/register").send({
-      email: "owner-shared@example.com",
-      password: "verysecurepassword",
-    });
-    const ownerCookie = owner.headers["set-cookie"]?.[0];
+    const owner = await issueTestSession(app, "owner-shared@example.com");
+    const ownerCookie = owner.cookie;
 
     const createdWorkspace = await request(app)
       .post("/api/v1/workspace")
@@ -366,26 +354,23 @@ describe("auth integration", () => {
 
     expect(workspaces.status).toBe(200);
     expect(workspaces.body.workspaces.map((workspace: { id: string }) => workspace.id)).toEqual(
-      expect.arrayContaining([owner.body.workspaceId, createdWorkspace.body.id]),
+      expect.arrayContaining([owner.workspaceId, createdWorkspace.body.id]),
     );
   });
 
   it("creates a new organization for the signed-in user and switches the session to it", async () => {
     const { app } = createTestApp();
 
-    const registration = await request(app).post("/api/v1/auth/register").send({
-      email: "multi-org@example.com",
-      password: "verysecurepassword",
-    });
+    const registration = await issueTestSession(app, "multi-org@example.com");
 
     const response = await request(app)
       .post("/api/v1/account/accounts")
-      .set("Cookie", registration.headers["set-cookie"]?.[0])
+      .set("Cookie", registration.cookie)
       .send({ organizationName: "Second Organization" });
 
     expect(response.status).toBe(201);
-    expect(response.body.userId).toBe(registration.body.userId);
-    expect(response.body.accountId).not.toBe(registration.body.accountId);
+    expect(response.body.userId).toBe(registration.userId);
+    expect(response.body.accountId).not.toBe(registration.accountId);
     expect(response.body.organizationName).toBe("Second Organization");
     expect(response.body.workspaceName).toBe("Default");
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
@@ -394,11 +379,8 @@ describe("auth integration", () => {
   it("does not leave behind a user when invitation acceptance fails for a new email", async () => {
     const { app, dependencies } = createTestApp();
 
-    const owner = await request(app).post("/api/v1/auth/register").send({
-      email: "owner-expired@example.com",
-      password: "verysecurepassword",
-    });
-    const ownerCookie = owner.headers["set-cookie"]?.[0];
+    const owner = await issueTestSession(app, "owner-expired@example.com");
+    const ownerCookie = owner.cookie;
 
     const invitation = await request(app)
       .post("/api/v1/account/invitations")
@@ -407,7 +389,7 @@ describe("auth integration", () => {
     const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
 
     const invitationRecord = await dependencies.accountInvitationService["invitationRepository"].findPendingByAccountAndEmail(
-      owner.body.accountId,
+      owner.accountId,
       "new-user-expired@example.com",
     );
     if (!invitationRecord) {
@@ -437,11 +419,8 @@ describe("auth integration", () => {
   it("lets an account owner remove a member and immediately revoke that account access", async () => {
     const { app } = createTestApp();
 
-    const owner = await request(app).post("/api/v1/auth/register").send({
-      email: "owner-remove@example.com",
-      password: "verysecurepassword",
-    });
-    const ownerCookie = owner.headers["set-cookie"]?.[0];
+    const owner = await issueTestSession(app, "owner-remove@example.com");
+    const ownerCookie = owner.cookie;
 
     const invitation = await request(app)
       .post("/api/v1/account/invitations")
@@ -477,11 +456,8 @@ describe("auth integration", () => {
   it("still lets a removed user list and switch to other accessible accounts from the same session", async () => {
     const { app } = createTestApp();
 
-    const primaryOwner = await request(app).post("/api/v1/auth/register").send({
-      email: "primary-owner@example.com",
-      password: "verysecurepassword",
-    });
-    const primaryOwnerCookie = primaryOwner.headers["set-cookie"]?.[0];
+    const primaryOwner = await issueTestSession(app, "primary-owner@example.com");
+    const primaryOwnerCookie = primaryOwner.cookie;
 
     const memberInvite = await request(app)
       .post("/api/v1/account/invitations")
@@ -497,11 +473,8 @@ describe("auth integration", () => {
       });
     const memberCookie = acceptedPrimary.headers["set-cookie"]?.[0];
 
-    const secondaryOwner = await request(app).post("/api/v1/auth/register").send({
-      email: "secondary-owner@example.com",
-      password: "verysecurepassword",
-    });
-    const secondaryOwnerCookie = secondaryOwner.headers["set-cookie"]?.[0];
+    const secondaryOwner = await issueTestSession(app, "secondary-owner@example.com");
+    const secondaryOwnerCookie = secondaryOwner.cookie;
 
     const secondaryInvite = await request(app)
       .post("/api/v1/account/invitations")
@@ -535,35 +508,29 @@ describe("auth integration", () => {
       .post("/api/v1/account/switch")
       .set("Cookie", memberCookie)
       .send({
-        accountId: secondaryOwner.body.accountId,
-        preferredWorkspaceId: secondaryOwner.body.workspaceId,
+        accountId: secondaryOwner.accountId,
+        preferredWorkspaceId: secondaryOwner.workspaceId,
       });
 
     expect(accounts.status).toBe(200);
     expect(accounts.body.accounts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          accountId: secondaryOwner.body.accountId,
+          accountId: secondaryOwner.accountId,
         }),
       ]),
     );
     expect(switched.status).toBe(200);
-    expect(switched.body.accountId).toBe(secondaryOwner.body.accountId);
+    expect(switched.body.accountId).toBe(secondaryOwner.accountId);
   });
 
   it("logs a multi-account user into the invited account when no preferred account is provided", async () => {
     const { app } = createTestApp();
 
-    const existingAccount = await request(app).post("/api/v1/auth/register").send({
-      email: "multi-account@example.com",
-      password: "verysecurepassword",
-    });
+    await issueTestSession(app, "multi-account@example.com");
 
-    const invitingAccount = await request(app).post("/api/v1/auth/register").send({
-      email: "owner-second-account@example.com",
-      password: "verysecurepassword",
-    });
-    const invitingCookie = invitingAccount.headers["set-cookie"]?.[0];
+    const invitingAccount = await issueTestSession(app, "owner-second-account@example.com");
+    const invitingCookie = invitingAccount.cookie;
 
     const invitation = await request(app)
       .post("/api/v1/account/invitations")
@@ -585,24 +552,18 @@ describe("auth integration", () => {
 
     expect(accepted.status).toBe(200);
     expect(login.status).toBe(200);
-    expect(login.body.accountId).toBe(invitingAccount.body.accountId);
-    expect(login.body.organizationName).toBe(invitingAccount.body.organizationName);
-    expect(login.body.workspaceId).toBe(invitingAccount.body.workspaceId);
+    expect(login.body.accountId).toBe(invitingAccount.accountId);
+    expect(login.body.organizationName).toBe("Owner Second Account Organization");
+    expect(login.body.workspaceId).toBe(invitingAccount.workspaceId);
   });
 
   it("switches the active session to another accessible account", async () => {
     const { app } = createTestApp();
 
-    const primary = await request(app).post("/api/v1/auth/register").send({
-      email: "switcher@example.com",
-      password: "verysecurepassword",
-    });
+    const primary = await issueTestSession(app, "switcher@example.com");
 
-    const secondary = await request(app).post("/api/v1/auth/register").send({
-      email: "owner-switch-target@example.com",
-      password: "verysecurepassword",
-    });
-    const secondaryCookie = secondary.headers["set-cookie"]?.[0];
+    const secondary = await issueTestSession(app, "owner-switch-target@example.com");
+    const secondaryCookie = secondary.cookie;
 
     const invitation = await request(app)
       .post("/api/v1/account/invitations")
@@ -620,10 +581,10 @@ describe("auth integration", () => {
 
     const switched = await request(app)
       .post("/api/v1/account/switch")
-      .set("Cookie", primary.headers["set-cookie"]?.[0])
+      .set("Cookie", primary.cookie)
       .send({
-        accountId: secondary.body.accountId,
-        preferredWorkspaceId: secondary.body.workspaceId,
+        accountId: secondary.accountId,
+        preferredWorkspaceId: secondary.workspaceId,
       });
 
     const switchedCookie = switched.headers["set-cookie"]?.[0];
@@ -632,42 +593,38 @@ describe("auth integration", () => {
       .set("Cookie", switchedCookie);
 
     expect(switched.status).toBe(200);
-    expect(switched.body.accountId).toBe(secondary.body.accountId);
-    expect(switched.body.organizationName).toBe(secondary.body.organizationName);
-    expect(switched.body.workspaceId).toBe(secondary.body.workspaceId);
+    expect(switched.body.accountId).toBe(secondary.accountId);
+    expect(switched.body.organizationName).toBe("Owner Switch Target Organization");
+    expect(switched.body.workspaceId).toBe(secondary.workspaceId);
     expect(workspaces.status).toBe(200);
     expect(workspaces.body.workspaces.map((workspace: { id: string }) => workspace.id)).toEqual(
-      expect.arrayContaining([secondary.body.workspaceId]),
+      expect.arrayContaining([secondary.workspaceId]),
     );
   });
 
   it("renames the active organization", async () => {
     const { app } = createTestApp();
 
-    const registration = await request(app).post("/api/v1/auth/register").send({
-      email: "rename-org@example.com",
-      password: "verysecurepassword",
-      organizationName: "Original Org",
-    });
+    const registration = await issueTestSession(app, "rename-org@example.com");
 
     const rename = await request(app)
       .patch("/api/v1/account")
-      .set("Cookie", registration.headers["set-cookie"]?.[0])
+      .set("Cookie", registration.cookie)
       .send({ organizationName: "Renamed Org" });
 
     const accounts = await request(app)
       .get("/api/v1/account/accounts")
-      .set("Cookie", registration.headers["set-cookie"]?.[0]);
+      .set("Cookie", registration.cookie);
 
     expect(rename.status).toBe(200);
     expect(rename.body).toEqual({
-      accountId: registration.body.accountId,
+      accountId: registration.accountId,
       organizationName: "Renamed Org",
     });
     expect(accounts.body.accounts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          accountId: registration.body.accountId,
+          accountId: registration.accountId,
           organizationName: "Renamed Org",
         }),
       ]),
@@ -677,16 +634,10 @@ describe("auth integration", () => {
   it("audits invitation acceptance failures when an existing invited user enters the wrong password", async () => {
     const { app, dependencies } = createTestApp();
 
-    const owner = await request(app).post("/api/v1/auth/register").send({
-      email: "owner-audit@example.com",
-      password: "verysecurepassword",
-    });
-    const ownerCookie = owner.headers["set-cookie"]?.[0];
+    const owner = await issueTestSession(app, "owner-audit@example.com");
+    const ownerCookie = owner.cookie;
 
-    await request(app).post("/api/v1/auth/register").send({
-      email: "existing-invitee@example.com",
-      password: "correct-password",
-    });
+    await issueTestSession(app, "existing-invitee@example.com");
 
     const invitation = await request(app)
       .post("/api/v1/account/invitations")
@@ -704,7 +655,7 @@ describe("auth integration", () => {
     expect(accepted.status).toBe(401);
     expect((dependencies.auditService as InMemoryAuditService).events).toContainEqual(
       expect.objectContaining({
-        accountId: owner.body.accountId,
+        accountId: owner.accountId,
         eventType: "account.invitation.accept",
         eventStatus: "failure",
         metadata: expect.objectContaining({

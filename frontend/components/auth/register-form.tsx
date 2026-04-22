@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
-import { useAuth } from '@/lib/auth-context'
+import { useOptionalAuth } from '@/lib/auth-context'
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void
@@ -29,13 +29,14 @@ const getErrorMessage = (error: unknown) => {
 }
 
 export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
-  const { login } = useAuth()
+  const auth = useOptionalAuth()
   const [organizationName, setOrganizationName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -59,13 +60,33 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
         password,
         organizationName: organizationName.trim() || undefined,
       })
-      seedWorkspaceSession(response.workspaceId)
-      await login(email, response.userId, response.accountId)
+      if (response.requiresEmailVerification) {
+        setPendingEmail(email)
+      } else {
+        seedWorkspaceSession(response.workspaceId)
+        if (!auth) {
+          throw new Error('Registration is unavailable outside the auth shell')
+        }
+        await auth.login(email, response.userId, response.accountId)
+      }
     } catch (error) {
       setError(getErrorMessage(error))
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (pendingEmail) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Check <span className="font-medium text-foreground">{pendingEmail}</span> for a verification link before you sign in.
+        </p>
+        <Button type="button" className="w-full" onClick={onSwitchToLogin}>
+          Back to Sign In
+        </Button>
+      </div>
+    )
   }
 
   return (

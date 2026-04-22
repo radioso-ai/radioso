@@ -128,6 +128,7 @@ interface ChatAuditMetadata {
     ran?: boolean;
     answerModified?: boolean;
     unsupportedSegmentCount?: number;
+    substantiveUnsupportedSegmentCount?: number;
     supportedSegmentCount?: number;
     nonSubstantiveSegmentCount?: number;
     answerSupportPolicy?: AnswerSupportPolicy;

@@ -2356,6 +2356,10 @@
             "type": "integer",
             "minimum": 0
           },
+          "substantiveUnsupportedSegmentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
           "supportedSegmentCount": {
             "type": "integer",
             "minimum": 0
@@ -2383,6 +2387,7 @@
           "ran",
           "answerModified",
           "unsupportedSegmentCount",
+          "substantiveUnsupportedSegmentCount",
           "supportedSegmentCount",
           "nonSubstantiveSegmentCount",
           "segmentResults"

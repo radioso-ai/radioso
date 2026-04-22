@@ -1610,6 +1610,9 @@ components:
         unsupportedSegmentCount:
           type: integer
           minimum: 0
+        substantiveUnsupportedSegmentCount:
+          type: integer
+          minimum: 0
         supportedSegmentCount:
           type: integer
           minimum: 0
@@ -1627,6 +1630,7 @@ components:
         - ran
         - answerModified
         - unsupportedSegmentCount
+        - substantiveUnsupportedSegmentCount
         - supportedSegmentCount
         - nonSubstantiveSegmentCount
         - segmentResults

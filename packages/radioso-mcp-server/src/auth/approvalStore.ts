@@ -12,8 +12,19 @@ export interface ApprovalGrantRecord {
   sessionId: string;
 }
 
+export type ApprovalConsumeResult =
+  | { grant: ApprovalGrantRecord; status: "consumed" }
+  | { status: "missing" }
+  | { grant: ApprovalGrantRecord; status: "session_mismatch" }
+  | { grant: ApprovalGrantRecord; status: "tool_forbidden" };
+
 export interface ApprovalStore {
   consumeByToken(approvalToken: string, now?: Date): Promise<ApprovalGrantRecord | null>;
+  consumeForSessionTool(
+    approvalToken: string,
+    input: { sessionId: string; toolName: string },
+    now?: Date,
+  ): Promise<ApprovalConsumeResult>;
   getByToken(approvalToken: string, now?: Date): Promise<ApprovalGrantRecord | null>;
   listBySessionId(sessionId: string, now?: Date): Promise<ApprovalGrantRecord[]>;
   save(input: {
@@ -93,6 +104,36 @@ export const createInMemoryApprovalStore = (): ApprovalStore => {
       }
 
       return cloneGrant(storedGrant);
+    },
+    async consumeForSessionTool(approvalToken, input, now = new Date()) {
+      const grant = getGrantByTokenHash(hashToken(approvalToken), now);
+      if (!grant) {
+        return { status: "missing" };
+      }
+
+      if (grant.sessionId !== input.sessionId) {
+        return {
+          grant,
+          status: "session_mismatch",
+        };
+      }
+
+      if (!grant.allowedTools.includes(input.toolName)) {
+        return {
+          grant,
+          status: "tool_forbidden",
+        };
+      }
+
+      const consumedGrant = await this.consumeByToken(approvalToken, now);
+      return consumedGrant
+        ? {
+            grant: consumedGrant,
+            status: "consumed",
+          }
+        : {
+            status: "missing",
+          };
     },
     async getByToken(approvalToken, now = new Date()) {
       return getGrantByTokenHash(hashToken(approvalToken), now);

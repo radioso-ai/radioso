@@ -7,11 +7,17 @@ import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { createHttpServer } from "../src/http/createHttpServer.js";
 import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
 
-const createRuntime = async (options: { now?: () => Date } = {}) => {
+const createRuntime = async (
+  options: {
+    approvalRequiredWriteTools?: string[];
+    now?: () => Date;
+  } = {},
+) => {
+  const approvalRequiredWriteTools = options.approvalRequiredWriteTools ?? ["create_document"];
   const policy = createCapabilityPolicyRegistry({
     allowedReadTools: ["describe_capabilities"],
     allowedWriteTools: ["create_document"],
-    approvalRequiredWriteTools: ["create_document"],
+    approvalRequiredWriteTools,
   });
   const authService = createAuthService({
     approvalStore: createInMemoryApprovalStore(),
@@ -28,7 +34,7 @@ const createRuntime = async (options: { now?: () => Date } = {}) => {
       accessTokenTtlSeconds: 900,
       allowedReadTools: ["describe_capabilities"],
       allowedWriteTools: ["create_document"],
-      approvalRequiredWriteTools: ["create_document"],
+      approvalRequiredWriteTools,
       approvalTtlSeconds: 300,
       baseUrl: "http://radioso.test",
       bindHost: "127.0.0.1",
@@ -266,5 +272,76 @@ describe("remote MCP approvals", () => {
       "http://radioso.test/api/v1/document",
       expect.anything(),
     );
+  });
+
+  it("allows write tools configured as approval-free", async () => {
+    const actualFetch = globalThis.fetch;
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.startsWith("http://127.0.0.1")) {
+        return actualFetch(input as RequestInfo | URL, init);
+      }
+
+      return new Response(JSON.stringify({ documentId: "doc-1", status: "queued" }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runtime = await createRuntime({
+      approvalRequiredWriteTools: [],
+    });
+    runtimes.push(runtime);
+
+    const exchangeResponse = await actualFetch(`${runtime.baseUrl}/v1/auth/exchange`, {
+      body: JSON.stringify({
+        radiosoApiToken: "sk_proj_test",
+        requestedTools: ["create_document"],
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+    const exchange = await exchangeResponse.json() as { accessToken: string; approvalRequiredTools: string[] };
+
+    expect(exchange.approvalRequiredTools).toEqual([]);
+
+    await mcpRequest(runtime.baseUrl, exchange.accessToken, {
+      id: "1",
+      jsonrpc: "2.0",
+      method: "initialize",
+      params: {
+        capabilities: {},
+        clientInfo: { name: "test-client", version: "1.0.0" },
+        protocolVersion: "2025-11-25",
+      },
+    });
+    await mcpRequest(runtime.baseUrl, exchange.accessToken, {
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+      params: {},
+    });
+
+    const successResponse = await mcpRequest(runtime.baseUrl, exchange.accessToken, {
+      id: "2",
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: {
+        arguments: {
+          content: "Created remotely",
+          title: "Remote doc",
+        },
+        name: "create_document",
+      },
+    });
+    const successPayload = await successResponse.json() as { result: { structuredContent: unknown } };
+
+    expect(successPayload.result.structuredContent).toMatchObject({
+      documentId: "doc-1",
+      status: "queued",
+    });
   });
 });

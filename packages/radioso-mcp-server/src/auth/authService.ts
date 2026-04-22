@@ -365,25 +365,32 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
 
     async verifyApproval(accessToken: string, approvalToken: string, toolName: string): Promise<ApprovalGrantRecord> {
       const session = ensureSession(await dependencies.sessionStore.getByAccessToken(accessToken, now()));
-      const grant = await dependencies.approvalStore.consumeByToken(approvalToken, now());
+      const approvalResult = await dependencies.approvalStore.consumeForSessionTool(
+        approvalToken,
+        {
+          sessionId: session.sessionId,
+          toolName,
+        },
+        now(),
+      );
 
-      if (!grant) {
+      if (approvalResult.status === "missing") {
         throw new AuthServiceError("A valid approval grant is required.", "approval_required", { toolName });
       }
 
-      if (grant.sessionId !== session.sessionId) {
+      if (approvalResult.status === "session_mismatch") {
         throw new AuthServiceError("Approval grant does not match the active session.", "approval_forbidden", {
           toolName,
         });
       }
 
-      if (!grant.allowedTools.includes(toolName)) {
+      if (approvalResult.status === "tool_forbidden") {
         throw new AuthServiceError("Approval grant does not cover the requested tool.", "approval_forbidden", {
           toolName,
         });
       }
 
-      return grant;
+      return approvalResult.grant;
     },
   };
 };

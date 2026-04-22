@@ -1,7 +1,7 @@
 import { createClient } from "redis";
 
 import { isExpired } from "../auth/token.js";
-import type { ApprovalGrantRecord, ApprovalStore } from "../auth/approvalStore.js";
+import type { ApprovalConsumeResult, ApprovalGrantRecord, ApprovalStore } from "../auth/approvalStore.js";
 import type { AccessSessionRecord, SessionStore } from "../auth/sessionStore.js";
 import { hashToken } from "../auth/token.js";
 
@@ -234,6 +234,36 @@ export const createRedisClientHandle = async ({
           await isolatedClient.quit();
         }
       }
+    },
+    async consumeForSessionTool(approvalToken, input, now = new Date()): Promise<ApprovalConsumeResult> {
+      const grant = await this.getByToken(approvalToken, now);
+      if (!grant) {
+        return { status: "missing" };
+      }
+
+      if (grant.sessionId !== input.sessionId) {
+        return {
+          grant,
+          status: "session_mismatch",
+        };
+      }
+
+      if (!grant.allowedTools.includes(input.toolName)) {
+        return {
+          grant,
+          status: "tool_forbidden",
+        };
+      }
+
+      const consumedGrant = await this.consumeByToken(approvalToken, now);
+      return consumedGrant
+        ? {
+            grant: consumedGrant,
+            status: "consumed",
+          }
+        : {
+            status: "missing",
+          };
     },
     async getByToken(approvalToken, now = new Date()) {
       const tokenHash = hashToken(approvalToken);

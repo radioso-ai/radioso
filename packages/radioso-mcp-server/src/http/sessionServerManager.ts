@@ -39,6 +39,8 @@ export const createSessionMcpServerManager = ({
 }: SessionServerManagerDependencies): SessionMcpServerManager => {
   const sessionHandles = new Map<string, SessionMcpServerHandle>();
   const toToolCatalogKey = (grantedTools: string[]) => [...grantedTools].sort().join("\u0000");
+  const requiresApproval = (toolName: string, approvalRequiredTools?: string[]) =>
+    approvalRequiredTools?.includes(toolName) ?? false;
 
   const createSessionHandle = async (
     session: AccessSessionRecord,
@@ -60,7 +62,10 @@ export const createSessionMcpServerManager = ({
           metadata: {
             code: error.code,
             details: error.details,
-            requiresApproval: tool.requiresApproval ?? false,
+            requiresApproval: requiresApproval(
+              tool.name,
+              context?.authInfo?.approvalRequiredTools ?? session.approvalRequiredTools,
+            ),
           },
           outcome:
             error.code.includes("forbidden") || error.code.includes("required") || error.code.includes("invalid")
@@ -78,7 +83,10 @@ export const createSessionMcpServerManager = ({
         await auditLogger.emit({
           eventType: "tool.executed",
           metadata: {
-            requiresApproval: tool.requiresApproval ?? false,
+            requiresApproval: requiresApproval(
+              tool.name,
+              context.authInfo?.approvalRequiredTools ?? session.approvalRequiredTools,
+            ),
           },
           outcome: "success",
           sessionId: context.authInfo?.sessionId,
@@ -97,7 +105,7 @@ export const createSessionMcpServerManager = ({
           });
         }
 
-        if (tool.requiresApproval) {
+        if (requiresApproval(tool.name, authInfo.approvalRequiredTools)) {
           const args = isRecord(rawArgs) ? rawArgs : {};
           const approvalToken = getApprovalToken(args);
           if (!approvalToken) {

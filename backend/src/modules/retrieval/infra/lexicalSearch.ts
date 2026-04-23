@@ -60,7 +60,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
               c.end_offset,
               c.metadata,
               ts_rank_cd(
-                to_tsvector('simple', coalesce(c.search_text, '')),
+                to_tsvector('simple', coalesce(c.search_text, c.content, '')),
                 search_query.query
               ) AS rank
        FROM chunks c
@@ -68,7 +68,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
        JOIN documents d ON d.id = c.document_id
        WHERE c.workspace_id = $1
          AND d.status = 'ready'
-         AND search_query.query @@ to_tsvector('simple', coalesce(c.search_text, ''))
+         AND search_query.query @@ to_tsvector('simple', coalesce(c.search_text, c.content, ''))
          ${metadataClause}
        ORDER BY rank DESC, c.chunk_index ASC
        LIMIT $3`,

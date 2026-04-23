@@ -410,6 +410,18 @@ export function AnonymousChatProvider({
               didComplete = true
               applyCompletion(assistantMessageId, completion)
             },
+            onSuggestions: ({ suggestions }) => {
+              setMessages((prev) =>
+                prev.map((message) =>
+                  message.id === assistantMessageId
+                    ? {
+                        ...message,
+                        suggestions,
+                      }
+                    : message,
+                ),
+              )
+            },
           },
         )
 

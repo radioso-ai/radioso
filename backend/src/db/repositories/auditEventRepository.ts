@@ -27,6 +27,18 @@ export interface AuditEventRepositoryPort {
     conversationId: string,
     assistantMessageIds: string[],
   ): Promise<AuditEventRecord[]>;
+  findLatestChatAnswerEventByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    status?: "success" | "failure",
+  ): Promise<AuditEventRecord | null>;
+  updateChatAnswerSuggestions(input: {
+    workspaceId: string;
+    conversationId: string;
+    assistantMessageId: string;
+    suggestions: unknown[];
+    conversationModeMetadata: unknown;
+  }): Promise<boolean>;
   listDocumentSearchEventPageByWorkspaceId(
     workspaceId: string,
     input: { limit: number; offset?: number; cursor?: string },
@@ -109,6 +121,77 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     );
 
     return rows.map(mapAuditEvent);
+  }
+
+  async findLatestChatAnswerEventByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    status?: "success" | "failure",
+  ): Promise<AuditEventRecord | null> {
+    const params: unknown[] = [workspaceId, conversationId];
+    const statusClause = status ? `AND event_status = $3` : "";
+
+    if (status) {
+      params.push(status);
+    }
+
+    const [row] = await this.database.query<AuditEventRow>(
+      `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
+       FROM audit_events
+       WHERE workspace_id = $1
+         AND event_type = 'chat.answer'
+         AND metadata_json ->> 'conversationId' = $2
+         ${statusClause}
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+      params,
+    );
+
+    return row ? mapAuditEvent(row) : null;
+  }
+
+  async updateChatAnswerSuggestions(input: {
+    workspaceId: string;
+    conversationId: string;
+    assistantMessageId: string;
+    suggestions: unknown[];
+    conversationModeMetadata: unknown;
+  }): Promise<boolean> {
+    const result = await this.database.query<{ id: string }>(
+      `UPDATE audit_events
+       SET metadata_json = jsonb_set(
+         jsonb_set(
+           coalesce(metadata_json, '{}'::jsonb),
+           '{suggestions}',
+           $4::jsonb,
+           true
+         ),
+         '{conversationModeMetadata}',
+         $5::jsonb,
+         true
+       )
+       WHERE id = (
+         SELECT id
+         FROM audit_events
+         WHERE workspace_id = $1
+           AND event_type = 'chat.answer'
+           AND event_status = 'success'
+           AND metadata_json ->> 'conversationId' = $2
+           AND metadata_json ->> 'assistantMessageId' = $3
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1
+       )
+       RETURNING id`,
+      [
+        input.workspaceId,
+        input.conversationId,
+        input.assistantMessageId,
+        JSON.stringify(input.suggestions),
+        JSON.stringify(input.conversationModeMetadata),
+      ],
+    );
+
+    return result.length > 0;
   }
 
   async listDocumentSearchEventPageByWorkspaceId(

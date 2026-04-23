@@ -1750,9 +1750,9 @@ describe("chat service streaming", () => {
           suggestionPrompt = prompt;
           return JSON.stringify({
             suggestions: [
-              { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
-              { text: "Which books or projects is Mahiya associated with?", contextIndex: 2 },
-              { text: "What challenges does Mahiya describe in the other interview?", contextIndex: 3 },
+              { text: "What does the interview say about Mahiya's spiritual path?", kind: "deeper", contextIndex: 1 },
+              { text: "Which books or projects is Mahiya associated with?", kind: "broader", contextIndex: 2 },
+              { text: "What challenges does Mahiya describe in the other interview?", kind: "broader", contextIndex: 3 },
             ],
           });
         }
@@ -1785,6 +1785,7 @@ describe("chat service streaming", () => {
     expect(response.suggestions).toEqual([
       {
         text: "What does the interview say about Mahiya's spiritual path?",
+        kind: "deeper",
         citation: {
           documentId: "doc-1",
           chunkId: "chunk-1",
@@ -1793,6 +1794,7 @@ describe("chat service streaming", () => {
       },
       {
         text: "Which books or projects is Mahiya associated with?",
+        kind: "broader",
         citation: {
           documentId: "doc-2",
           chunkId: "chunk-2",
@@ -1801,6 +1803,7 @@ describe("chat service streaming", () => {
       },
       {
         text: "What challenges does Mahiya describe in the other interview?",
+        kind: "broader",
         citation: {
           documentId: "doc-3",
           chunkId: "chunk-3",
@@ -1874,7 +1877,7 @@ describe("chat service streaming", () => {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
           return JSON.stringify({
             suggestions: [
-              { text: "Quale altro libro o progetto è collegato a Narayani?", contextIndex: 1 },
+              { text: "Quale altro libro o progetto è collegato a Narayani?", kind: "broader", contextIndex: 1 },
             ],
           });
         }
@@ -1904,6 +1907,7 @@ describe("chat service streaming", () => {
     expect(response.suggestions).toEqual([
       {
         text: "Quale altro libro o progetto è collegato a Narayani?",
+        kind: "broader",
         citation: {
           documentId: "doc-1",
           chunkId: "chunk-1",
@@ -1966,8 +1970,8 @@ describe("chat service streaming", () => {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
           return JSON.stringify({
             suggestions: [
-              { text: "What videos are on page 3?", contextIndex: 2 },
-              { text: "How many Assisi archive pages are there?", contextIndex: 2 },
+              { text: "What videos are on page 3?", kind: "deeper", contextIndex: 2 },
+              { text: "How many Assisi archive pages are there?", kind: "broader", contextIndex: 2 },
             ],
           });
         }
@@ -1997,10 +2001,314 @@ describe("chat service streaming", () => {
     expect(response.suggestions).toEqual([
       {
         text: "How many Assisi archive pages are there?",
+        kind: "broader",
         citation: {
           documentId: "doc-2",
           chunkId: "chunk-2",
           title: "Assisi Archives - Page 3 of 14 - Ananda Europe",
+        },
+      },
+    ]);
+  });
+
+  it("feeds recent conversation context into exploratory suggestion planning", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run({ query }: { query: string }) {
+        return {
+          rewrittenQuery: query.toLowerCase(),
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Retreat Planning Guide",
+              content: "A beginner retreat should cover meditation, schedule planning, meals, and orientation.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Retreat Facilitation Notes",
+              content: "Facilitators should balance logistics, teaching goals, and attendee support.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Retreat Planning Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: query.toLowerCase(),
+              lexicalQuery: query.toLowerCase(),
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    let suggestionPrompt: string | undefined;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt, query }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          suggestionPrompt = prompt;
+          return JSON.stringify({
+            suggestions: [
+              { text: "What should a beginner retreat schedule include?", kind: "deeper", contextIndex: 1 },
+              { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
+            ],
+          });
+        }
+
+        if (query === "What should I include next?") {
+          return "You should include orientation and meals[[1]].";
+        }
+
+        return "Start with a beginner retreat schedule[[1]].";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const first = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Help me plan a beginner retreat",
+      stream: false,
+    });
+    const second = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: first.conversationId,
+      query: "What should I include next?",
+      stream: false,
+    });
+
+    expect(suggestionPrompt).toContain("Recent conversation context");
+    expect(suggestionPrompt).toContain("Help me plan a beginner retreat");
+    expect(suggestionPrompt).toContain("Start with a beginner retreat schedule.");
+    expect(second.suggestions).toEqual([
+      {
+        text: "What should a beginner retreat schedule include?",
+        kind: "deeper",
+        citation: {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Retreat Planning Guide",
+        },
+      },
+      {
+        text: "How should retreat facilitators support attendees?",
+        kind: "broader",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Retreat Facilitation Notes",
+        },
+      },
+    ]);
+  });
+
+  it("suppresses exploratory suggestions when the user asks for just the answer", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "just the answer what does the guide cover",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The guide covers testing, onboarding, and parser rules.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "guide cover",
+              lexicalQuery: "guide cover",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    let suggestionCallCount = 0;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          suggestionCallCount += 1;
+          return JSON.stringify({
+            suggestions: [
+              { text: "What parser rules does the guide cover?", kind: "deeper", contextIndex: 1 },
+            ],
+          });
+        }
+
+        return "The guide covers testing, onboarding, and parser rules[[1]].";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Just the answer: what does the guide cover?",
+      stream: false,
+    });
+
+    expect(suggestionCallCount).toBe(0);
+    expect(response.suggestions).toBeUndefined();
+    expect(response.conversationModeMetadata).toEqual({
+      conversationMode: "exploratory",
+      brevityOverrideApplied: true,
+      expansionApplied: false,
+      expansionKind: "none",
+      suggestionCount: 0,
+      followUpQuestionApplied: false,
+    });
+  });
+
+  it("drops invalid grouped suggestions and removes duplicates across lanes", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does the archive cover",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Archive Guide",
+              content: "The archive covers videos, audio, and retreat notes.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Archive Notes",
+              content: "The notes explain how the archive is organized.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Archive Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "archive cover",
+              lexicalQuery: "archive cover",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "What does the archive cover?", kind: "deeper", contextIndex: 1 },
+              { text: "How is the archive organized?", kind: "broader", contextIndex: 2 },
+              { text: "How is the archive organized?", kind: "deeper", contextIndex: 2 },
+              { text: "Which archive videos are available?", kind: "invalid_kind", contextIndex: 1 },
+            ],
+          });
+        }
+
+        return "The archive covers videos, audio, and retreat notes[[1]].";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does the archive cover?",
+      stream: false,
+    });
+
+    expect(response.suggestions).toEqual([
+      {
+        text: "How is the archive organized?",
+        kind: "broader",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Archive Notes",
         },
       },
     ]);

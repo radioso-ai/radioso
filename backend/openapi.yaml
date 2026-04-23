@@ -1428,6 +1428,21 @@ components:
         - query
         - resultCount
         - results
+    ChatSuggestion:
+      type: object
+      properties:
+        text:
+          type: string
+        kind:
+          type: string
+          enum:
+            - deeper
+            - broader
+        citation:
+          $ref: "#/components/schemas/Citation"
+      required:
+        - text
+        - kind
     ChatResponse:
       type: object
       properties:
@@ -1447,14 +1462,7 @@ components:
         suggestions:
           type: array
           items:
-            type: object
-            properties:
-              text:
-                type: string
-              citation:
-                $ref: "#/components/schemas/Citation"
-            required:
-              - text
+            $ref: "#/components/schemas/ChatSuggestion"
         conversationMode:
           type: string
           enum: *a3
@@ -1806,14 +1814,7 @@ components:
         suggestions:
           type: array
           items:
-            type: object
-            properties:
-              text:
-                type: string
-              citation:
-                $ref: "#/components/schemas/Citation"
-            required:
-              - text
+            $ref: "#/components/schemas/ChatSuggestion"
         debug:
           $ref: "#/components/schemas/ChatConversationMessageDebug"
       required:

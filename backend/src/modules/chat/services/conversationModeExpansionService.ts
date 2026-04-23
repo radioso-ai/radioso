@@ -1,6 +1,10 @@
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { ChatSuggestion } from "../types/chatResponses.js";
+import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { ChatSuggestion, ChatSuggestionKind } from "../types/chatResponses.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
+import { formatConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
+import { normalizeChatSuggestionKind } from "./chatSuggestionUtils.js";
 
 interface ExpansionContext {
   documentId: string;
@@ -9,7 +13,7 @@ interface ExpansionContext {
   content: string;
 }
 
-type SuggestionTextGenerator = (input: { query: string; prompt: string }) => Promise<string>;
+type SuggestionTextGenerator = (input: { query: string; history: MessageRecord[]; prompt: string }) => Promise<string>;
 
 export interface ConversationModeExpansionInput {
   query: string;
@@ -20,6 +24,9 @@ export interface ConversationModeExpansionInput {
   answer: string;
   contexts: ExpansionContext[];
   citations?: Array<{ documentId: string }>;
+  history: MessageRecord[];
+  conversationIntentSnapshot: ConversationIntentSnapshot;
+  suppressOptionalSuggestions?: boolean;
 }
 
 export interface ConversationModeExpansionResult {
@@ -28,6 +35,7 @@ export interface ConversationModeExpansionResult {
 
 interface PlannedSuggestion {
   text: string;
+  kind: ChatSuggestionKind;
   contextIndex: number;
 }
 
@@ -178,6 +186,7 @@ export class ConversationModeExpansionService {
       !input.groundedAnswerSupported ||
       input.conversationMode === "factual" ||
       !input.suggestedQuestionsEnabled ||
+      input.suppressOptionalSuggestions ||
       input.contexts.length === 0
     ) {
       return {};
@@ -198,16 +207,27 @@ export class ConversationModeExpansionService {
     try {
       const rawResponse = await this.generateSuggestionText({
         query: input.query,
+        history: input.history,
         prompt: renderPromptTemplate("chat/conversation-mode-suggestions.md", {
           conversation_mode: input.conversationMode,
           max_suggestions: String(maxSuggestions),
           query: input.query,
           answer: input.answer,
+          recent_turns_json: formatConversationIntentSnapshot(input.conversationIntentSnapshot),
+          active_subject: input.conversationIntentSnapshot.activeSubject ?? "None",
+          active_goal: input.conversationIntentSnapshot.activeGoal ?? "None",
           contexts_json: formatContextsJson(promptContexts),
         }),
       });
 
-      const suggestions = this.planSuggestions(rawResponse, promptContexts, maxSuggestions, input.query, input.answer);
+      const suggestions = this.planSuggestions(
+        rawResponse,
+        promptContexts,
+        maxSuggestions,
+        input.query,
+        input.answer,
+        input.conversationMode,
+      );
       return suggestions.length > 0 ? { suggestions } : {};
     } catch {
       return {};
@@ -220,6 +240,7 @@ export class ConversationModeExpansionService {
     maxSuggestions: number,
     query: string,
     answer: string,
+    conversationMode: ConversationMode,
   ): ChatSuggestion[] {
     let parsed: unknown;
     try {
@@ -252,8 +273,13 @@ export class ConversationModeExpansionService {
         continue;
       }
 
+      if (conversationMode !== "exploratory" && candidate.kind === "broader") {
+        continue;
+      }
+
       suggestions.push({
         text: normalizeWhitespace(candidate.text),
+        kind: candidate.kind,
         citation: {
           documentId: context.documentId,
           chunkId: context.chunkId,
@@ -282,15 +308,16 @@ export class ConversationModeExpansionService {
       }
 
       const text = "text" in entry && typeof entry.text === "string" ? normalizeWhitespace(entry.text) : "";
+      const kind = normalizeChatSuggestionKind("kind" in entry ? entry.kind : undefined, "deeper");
       const contextIndex = "contextIndex" in entry && typeof entry.contextIndex === "number"
         ? Math.trunc(entry.contextIndex)
         : NaN;
 
-      if (!text || !Number.isInteger(contextIndex) || contextIndex < 1) {
+      if (!text || !kind || !Number.isInteger(contextIndex) || contextIndex < 1) {
         return [];
       }
 
-      return [{ text, contextIndex }];
+      return [{ text, kind, contextIndex }];
     });
   }
 }

@@ -32,6 +32,8 @@ import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
+import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
+import { shouldSuppressOptionalSuggestions } from "./optionalSuggestionSuppression.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -191,10 +193,10 @@ export class ChatService {
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
   ) {
-    this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, prompt }) =>
+    this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, history, prompt }) =>
       this.chatGateway.answer({
         query,
-        history: [],
+        history,
         prompt,
       }));
   }
@@ -738,6 +740,28 @@ export class ChatService {
     presentation: Omit<PresentedAnswer, "conversationModeMetadata">,
   ): Promise<PresentedAnswer> {
     const conversationMode = this.getConversationMode(session);
+    const brevityOverrideApplied = shouldSuppressOptionalSuggestions(session.userMessage.content);
+
+    if (brevityOverrideApplied) {
+      return {
+        ...presentation,
+        suggestions: undefined,
+        conversationModeMetadata: this.getConversationModeMetadata(session, {
+          brevityOverrideApplied: true,
+          ...inferConversationModeMetadata({
+            conversationMode,
+            brevityOverrideApplied: true,
+            suggestionCount: 0,
+          }),
+        }),
+      };
+    }
+
+    const conversationIntentSnapshot = buildConversationIntentSnapshot({
+      history: session.history,
+      latestQuery: session.userMessage.content,
+      latestAnswer: presentation.answer,
+    });
     const expanded = await this.conversationModeExpansionService.apply({
       query: session.userMessage.content,
       conversationMode,
@@ -752,6 +776,9 @@ export class ChatService {
         title: context.title,
         content: context.content,
       })),
+      history: session.history,
+      conversationIntentSnapshot,
+      suppressOptionalSuggestions: brevityOverrideApplied,
     });
     const suggestions = expanded.suggestions;
 
@@ -760,7 +787,7 @@ export class ChatService {
       suggestions,
       conversationModeMetadata: this.getConversationModeMetadata(session, inferConversationModeMetadata({
         conversationMode,
-        brevityOverrideApplied: false,
+        brevityOverrideApplied,
         suggestionCount: suggestions?.length ?? 0,
       })),
     };

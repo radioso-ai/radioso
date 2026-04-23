@@ -171,6 +171,64 @@ describe("chat contract", () => {
     );
   });
 
+  it("returns typed suggestion kinds in chat responses and history detail", async () => {
+    const deterministicGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
+              { text: "Which onboarding topics are related?", kind: "broader", contextIndex: 2 },
+            ],
+          });
+        }
+
+        return "The guide explains testing and parsing content for users[[1]].";
+      },
+      async *streamAnswer() {
+        yield "The guide explains testing and parsing content for users[[1]].";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: deterministicGateway });
+    const session = await issueTestSession(app, "chat-typed-suggestions@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Parser Notes", content: "The guide explains parser notes, supported input formats, and validation rules." });
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "FAQ", content: "The guide explains onboarding topics and user questions." });
+
+    const chat = await request(app)
+      .post("/api/v1/chat/")
+      .set(adminSessionHeaders(session))
+      .send({ query: "What does the guide cover?", stream: false });
+
+    const detail = await request(app)
+      .get(`/api/v1/chat/history/${chat.body.conversationId}`)
+      .set(adminSessionHeaders(session));
+
+    expect(chat.status).toBe(200);
+    expect(chat.body.suggestions.length).toBeGreaterThan(0);
+    expect(
+      chat.body.suggestions.every((suggestion: { kind: string }) =>
+        suggestion.kind === "deeper" || suggestion.kind === "broader")
+    ).toBe(true);
+    expect(detail.status).toBe(200);
+    expect(detail.body.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "assistant",
+          suggestions: expect.arrayContaining([
+            expect.objectContaining({ kind: expect.stringMatching(/^(deeper|broader)$/) }),
+          ]),
+        }),
+      ]),
+    );
+  });
+
   it("supports cursor pagination for chat history lists", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "chat-history-cursor@example.com");
@@ -702,5 +760,6 @@ describe("chat contract", () => {
     expect(spec).toContain("answerOutcome:");
     expect(spec).toContain("segmentResults:");
     expect(spec).toContain("RetrievalTrace:");
+    expect(spec).toContain("kind:");
   });
 });

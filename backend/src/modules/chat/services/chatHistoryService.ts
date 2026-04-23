@@ -15,6 +15,7 @@ import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/serv
 import type { AssistantTurnOutcome, ValidationDisposition } from "./answerSupportValidationTypes.js";
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
+import { normalizeChatSuggestion } from "./chatSuggestionUtils.js";
 
 export interface ChatConversationSummary {
   id: string;
@@ -124,7 +125,7 @@ interface ChatAuditMetadata {
   citationCount?: number;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
-  suggestions?: ChatSuggestion[];
+  suggestions?: unknown[];
   validation?: {
     ran?: boolean;
     answerModified?: boolean;
@@ -400,7 +401,12 @@ export class ChatHistoryService {
       index.set(metadata.assistantMessageId, {
         citations: metadata.citations,
         answerSegments: metadata.answerSegments,
-        suggestions: metadata.suggestions,
+        suggestions: Array.isArray(metadata.suggestions)
+          ? metadata.suggestions.flatMap((suggestion) => {
+              const normalized = normalizeChatSuggestion(suggestion, "deeper");
+              return normalized ? [normalized] : [];
+            })
+          : undefined,
       });
     }
 

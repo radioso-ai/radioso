@@ -24,16 +24,16 @@ describe("chat integration", () => {
           if (prompt.includes("Conversation mode:\nguided")) {
             return JSON.stringify({
               suggestions: [
-                { text: "What parser rules do the docs cover?", contextIndex: 1 },
-                { text: "Which onboarding questions are answered?", contextIndex: 2 },
+                { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
+                { text: "Which onboarding questions are answered?", kind: "deeper", contextIndex: 2 },
               ],
             });
           }
 
           return JSON.stringify({
             suggestions: [
-              { text: "What parser rules do the docs cover?", contextIndex: 1 },
-              { text: "Which onboarding questions are answered?", contextIndex: 2 },
+              { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
+              { text: "Which onboarding questions are answered?", kind: "broader", contextIndex: 2 },
             ],
           });
         }
@@ -96,10 +96,11 @@ describe("chat integration", () => {
     expect(guided.body.answer).not.toContain("\n- ");
     expect(guided.body.suggestions).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ text: "Which onboarding questions are answered?" }),
+        expect.objectContaining({ text: "Which onboarding questions are answered?", kind: "deeper" }),
       ]),
     );
     expect(guided.body.suggestions.length).toBeGreaterThan(0);
+    expect(guided.body.suggestions.every((suggestion: { kind: string }) => suggestion.kind === "deeper")).toBe(true);
     expect(guided.body.conversationModeMetadata).toMatchObject({
       conversationMode: "guided",
       expansionApplied: true,
@@ -108,6 +109,15 @@ describe("chat integration", () => {
     });
     expect(exploratory.body.answer).not.toContain("\n- ");
     expect(exploratory.body.suggestions.length).toBeGreaterThan(0);
+    expect(exploratory.body.suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "broader" }),
+      ]),
+    );
+    expect(
+      exploratory.body.suggestions.every((suggestion: { kind: string }) =>
+        suggestion.kind === "deeper" || suggestion.kind === "broader")
+    ).toBe(true);
     expect(exploratory.body.conversationModeMetadata).toMatchObject({
       conversationMode: "exploratory",
       expansionApplied: true,
@@ -121,7 +131,7 @@ describe("chat integration", () => {
       async answer({ prompt }) {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
           return JSON.stringify({
-            suggestions: [{ text: "What parser rules apply?", contextIndex: 1 }],
+            suggestions: [{ text: "What parser rules apply?", kind: "deeper", contextIndex: 1 }],
           });
         }
         return "The testing guide explains testing and parsing content for users[[1]].";
@@ -167,6 +177,145 @@ describe("chat integration", () => {
     expect(response.body.suggestions).toBeUndefined();
     expect(response.body.conversationModeMetadata).toMatchObject({
       conversationMode: "exploratory",
+      expansionApplied: false,
+      suggestionCount: 0,
+    });
+  });
+
+  it("uses recent conversation context for broader exploratory suggestions across turns", async () => {
+    let latestSuggestionPrompt = "";
+    const deterministicGateway: ChatGateway = {
+      async answer({ prompt, query }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          latestSuggestionPrompt = prompt;
+          return JSON.stringify({
+            suggestions: [
+              { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
+              { text: "How should facilitators support retreat attendees?", kind: "broader", contextIndex: 2 },
+            ],
+          });
+        }
+
+        if (query === "What should I add next?") {
+          return "Add meals and orientation[[1]].";
+        }
+
+        return "Start with a beginner retreat schedule[[1]].";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: deterministicGateway });
+
+    const { token } = await issueTestToken(app, "conversation-intent@example.com");
+    const authorization = `Bearer ${token}`;
+
+    for (const document of [
+      { title: "Retreat Planning Guide", content: "A beginner retreat should cover meditation, schedule planning, meals, and orientation." },
+      { title: "Retreat Facilitation Notes", content: "Facilitators should balance logistics, teaching goals, and attendee support." },
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", authorization)
+        .send(document);
+    }
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 4,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        conversationMode: "exploratory",
+      });
+
+    const first = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Help me plan a beginner retreat", stream: false });
+    const second = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: first.body.conversationId,
+        query: "What should I add next?",
+        stream: false,
+      });
+
+    expect(second.status).toBe(200);
+    expect(latestSuggestionPrompt).toContain("Recent conversation context");
+    expect(latestSuggestionPrompt).toContain("Help me plan a beginner retreat");
+    expect(latestSuggestionPrompt).toContain("Start with a beginner retreat schedule.");
+    expect(second.body.suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: "What should the retreat schedule include?", kind: "deeper" }),
+        expect.objectContaining({ text: "How should facilitators support retreat attendees?", kind: "broader" }),
+      ]),
+    );
+  });
+
+  it("suppresses exploratory suggestions when the user explicitly asks for just the answer", async () => {
+    let suggestionCallCount = 0;
+    const deterministicGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          suggestionCallCount += 1;
+          return JSON.stringify({
+            suggestions: [{ text: "What parser rules apply?", kind: "deeper", contextIndex: 1 }],
+          });
+        }
+        return "The testing guide explains testing and parsing content for users[[1]].";
+      },
+      async *streamAnswer() {
+        yield "The testing guide explains testing and parsing content for users[[1]].";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: deterministicGateway });
+
+    const { token } = await issueTestToken(app, "conversation-directness@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Testing Guide",
+        content: "The testing docs cover testing and parsing content for users.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        conversationMode: "exploratory",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 4,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Just the answer: what do the testing docs cover?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(suggestionCallCount).toBe(0);
+    expect(response.body.suggestions).toBeUndefined();
+    expect(response.body.conversationModeMetadata).toMatchObject({
+      conversationMode: "exploratory",
+      brevityOverrideApplied: true,
       expansionApplied: false,
       suggestionCount: 0,
     });

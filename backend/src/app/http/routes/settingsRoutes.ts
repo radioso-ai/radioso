@@ -12,8 +12,10 @@ import {
   MIN_SUGGESTED_QUESTIONS_COUNT,
   answerSupportPolicies,
   conversationModes,
+  metadataRuleCombinators,
   metadataRuleEffects,
   metadataRuleOperators,
+  metadataRuleTriggerModes,
   metadataValueTypes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 import {
@@ -45,12 +47,24 @@ export const updateSettingsSchema = z.object({
     .array(
       z.object({
         id: z.string().min(1),
-        field: z.string().min(1),
-        valueType: z.enum(metadataValueTypes),
-        operator: z.enum(metadataRuleOperators),
-        value: z.string(),
+        field: z.string().min(1).optional(),
+        valueType: z.enum(metadataValueTypes).optional(),
+        operator: z.enum(metadataRuleOperators).optional(),
+        value: z.string().optional(),
+        combinator: z.enum(metadataRuleCombinators).optional(),
+        conditions: z.array(
+          z.object({
+            id: z.string().min(1),
+            field: z.string().min(1),
+            valueType: z.enum(metadataValueTypes),
+            operator: z.enum(metadataRuleOperators),
+            value: z.string(),
+          }),
+        ).optional(),
         effect: z.enum(metadataRuleEffects),
         enabled: z.boolean(),
+        triggerMode: z.enum(metadataRuleTriggerModes).optional(),
+        triggerInstruction: z.string().max(500).optional(),
       }),
     )
     .optional(),

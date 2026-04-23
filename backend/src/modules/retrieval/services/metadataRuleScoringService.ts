@@ -6,6 +6,8 @@ import type {
   MetadataValueType,
   RetrievalMetadataRule,
 } from "../../settings/domain/retrievalSettings.js";
+import { getNormalizedMetadataConditions } from "../../settings/domain/retrievalSettings.js";
+import { isDynamicDateToken, resolveDynamicDateTokenToEpochMs } from "../../settings/domain/dynamicDateToken.js";
 
 export class MetadataRuleScoringService {
   apply(input: {
@@ -53,12 +55,7 @@ export class MetadataRuleScoringService {
 
       candidates = updatedCandidates.map(({ matchesRule: _matchesRule, ...candidate }) => candidate);
 
-      appliedRules.push({
-        signalKey: `metadata.${rule.field}`,
-        mode: rule.effect === "filter" ? "hard_filter" : "boost_only",
-        outcome: "applied",
-        summary: `${rule.field} ${renderOperator(rule.operator)} ${rule.value}`,
-      });
+      appliedRules.push(buildAppliedConstraintForRule(rule, "applied"));
     }
 
     return {
@@ -68,10 +65,39 @@ export class MetadataRuleScoringService {
   }
 
   private matchesRule(candidate: RetrievedCandidate, rule: RetrievalMetadataRule): boolean {
-    const metadataValue = getValueAtPath(candidate.metadata ?? {}, rule.field);
-    return evaluateMetadataRule(metadataValue, rule.valueType, rule.operator, rule.value);
+    const conditions = getNormalizedMetadataConditions(rule);
+    const matches = conditions.map((condition) => {
+      const metadataValue = getValueAtPath(candidate.metadata ?? {}, condition.field);
+      return evaluateMetadataRule(metadataValue, condition.valueType, condition.operator, condition.value);
+    });
+
+    return (rule.combinator ?? "and") === "or" ? matches.some(Boolean) : matches.every(Boolean);
   }
 }
+
+export const buildAppliedConstraintForRule = (
+  rule: RetrievalMetadataRule,
+  outcome: AppliedConstraint["outcome"],
+): AppliedConstraint => ({
+  signalKey:
+    getNormalizedMetadataConditions(rule).length === 1
+      ? `metadata.${getNormalizedMetadataConditions(rule)[0]?.field ?? rule.field}`
+      : `metadata.group.${rule.id}`,
+  mode: rule.effect === "filter" ? "hard_filter" : "boost_only",
+  outcome,
+  summary: renderRuleSummary(rule),
+});
+
+const renderRuleSummary = (rule: RetrievalMetadataRule): string => {
+  const conditions = getNormalizedMetadataConditions(rule);
+  const rendered = conditions.map((condition) => `${condition.field} ${renderOperator(condition.operator)} ${condition.value}`);
+  if (rendered.length === 1) {
+    return rendered[0] ?? "";
+  }
+
+  const combinator = (rule.combinator ?? "and").toUpperCase();
+  return rendered.map((entry) => `(${entry})`).join(` ${combinator} `);
+};
 
 const getValueAtPath = (metadata: Record<string, unknown>, path: string): unknown =>
   path.split(".").reduce<unknown>((current, segment) => {
@@ -89,7 +115,12 @@ const normalizeString = (value: string | number | boolean | null): string => Str
 const normalizeBoolean = (value: string | boolean): boolean =>
   typeof value === "boolean" ? value : value.trim().toLowerCase() === "true";
 const normalizeNumber = (value: string | number): number => (typeof value === "number" ? value : Number(value.trim()));
-const normalizeDate = (value: string | number): number => (typeof value === "number" ? value : Date.parse(String(value).trim()));
+const normalizeDate = (value: string | number): number =>
+  typeof value === "number"
+    ? value
+    : isDynamicDateToken(String(value))
+      ? resolveDynamicDateTokenToEpochMs(String(value))
+      : Date.parse(String(value).trim());
 const isStringBooleanValue = (value: string | number | boolean | null): value is string | boolean =>
   typeof value === "string" || typeof value === "boolean";
 const isStringNumberValue = (value: string | number | boolean | null): value is string | number =>

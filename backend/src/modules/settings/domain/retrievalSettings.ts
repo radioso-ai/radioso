@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { badRequest } from "../../../shared/domain/errors.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { isDynamicDateToken, normalizeDateRuleValue } from "./dynamicDateToken.js";
 
 export const metadataRuleOperators = [
   "equals",
@@ -18,6 +19,12 @@ export type MetadataRuleOperator = (typeof metadataRuleOperators)[number];
 export const metadataRuleEffects = ["boost", "filter"] as const;
 export type MetadataRuleEffect = (typeof metadataRuleEffects)[number];
 
+export const metadataRuleTriggerModes = ["always_on", "match_turn"] as const;
+export type MetadataRuleTriggerMode = (typeof metadataRuleTriggerModes)[number];
+
+export const metadataRuleCombinators = ["and", "or"] as const;
+export type MetadataRuleCombinator = (typeof metadataRuleCombinators)[number];
+
 export const metadataValueTypes = ["string", "number", "date", "boolean"] as const;
 export type MetadataValueType = (typeof metadataValueTypes)[number];
 
@@ -26,14 +33,26 @@ export interface MetadataFieldSuggestion {
   inferredType: MetadataValueType;
 }
 
+export interface RetrievalMetadataCondition {
+  id: string;
+  field: string;
+  valueType: MetadataValueType;
+  operator: MetadataRuleOperator;
+  value: string;
+}
+
 export interface RetrievalMetadataRule {
   id: string;
   field: string;
   valueType: MetadataValueType;
   operator: MetadataRuleOperator;
   value: string;
+  combinator?: MetadataRuleCombinator;
+  conditions?: RetrievalMetadataCondition[];
   effect: MetadataRuleEffect;
   enabled: boolean;
+  triggerMode: MetadataRuleTriggerMode;
+  triggerInstruction?: string;
 }
 
 export const answerSupportPolicies = ["strict", "warn", "off"] as const;
@@ -63,8 +82,12 @@ interface LegacyMetadataRule {
   valueType?: unknown;
   operator?: unknown;
   value?: unknown;
+  combinator?: unknown;
+  conditions?: unknown;
   effect?: unknown;
   enabled?: unknown;
+  triggerMode?: unknown;
+  triggerInstruction?: unknown;
 }
 
 export interface RetrievalSettingsRecord {
@@ -147,8 +170,19 @@ export const createDefaultMetadataRule = (): RetrievalMetadataRule => ({
   valueType: "string",
   operator: "equals",
   value: "",
+  combinator: "and",
+  conditions: [],
   effect: "boost",
   enabled: true,
+  triggerMode: "always_on",
+});
+
+export const createDefaultMetadataCondition = (): RetrievalMetadataCondition => ({
+  id: randomUUID(),
+  field: "",
+  valueType: "string",
+  operator: "equals",
+  value: "",
 });
 
 const isFieldSupported = (field: string): boolean => /^[A-Za-z0-9_.-]+$/.test(field);
@@ -183,6 +217,37 @@ export const inferMetadataValueType = (value: unknown): MetadataValueType => {
 const isBooleanLiteral = (value: string): boolean => /^(true|false)$/i.test(value.trim());
 const isNumberLiteral = (value: string): boolean => value.trim().length > 0 && Number.isFinite(Number(value));
 const isDateLiteral = (value: string): boolean => isIsoDateLike(value) && !Number.isNaN(Date.parse(value));
+const normalizeTriggerInstruction = (value: string): string | undefined => {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const normalizeMetadataCondition = (candidate: Partial<RetrievalMetadataCondition>): RetrievalMetadataCondition => ({
+  id: typeof candidate.id === "string" && candidate.id.trim().length > 0 ? candidate.id.trim() : randomUUID(),
+  field: typeof candidate.field === "string" ? normalizeMetadataField(candidate.field) : "",
+  valueType: metadataValueTypes.includes(candidate.valueType as MetadataValueType)
+    ? (candidate.valueType as MetadataValueType)
+    : inferMetadataValueType(candidate.value),
+  operator: metadataRuleOperators.includes(candidate.operator as MetadataRuleOperator)
+    ? (candidate.operator as MetadataRuleOperator)
+    : "equals",
+  value: typeof candidate.value === "string" ? normalizeDateRuleValue(candidate.value) : String(candidate.value ?? ""),
+});
+
+export const getNormalizedMetadataConditions = (rule: RetrievalMetadataRule): RetrievalMetadataCondition[] => {
+  if (Array.isArray(rule.conditions) && rule.conditions.length > 0) {
+    return rule.conditions.map((condition) => normalizeMetadataCondition(condition));
+  }
+
+  return [
+    normalizeMetadataCondition({
+      field: rule.field,
+      valueType: rule.valueType,
+      operator: rule.operator,
+      value: rule.value,
+    }),
+  ];
+};
 
 export const normalizeMetadataRules = (value: unknown): RetrievalMetadataRule[] => {
   const rawRules: unknown[] = Array.isArray(value)
@@ -200,8 +265,28 @@ export const normalizeMetadataRules = (value: unknown): RetrievalMetadataRule[] 
     }
 
     const candidate = entry as LegacyMetadataRule;
-    const field = typeof candidate.field === "string" ? normalizeMetadataField(candidate.field) : "";
-    if (!field || !isFieldSupported(field)) {
+    const rawConditions = Array.isArray(candidate.conditions) ? candidate.conditions : [];
+    const normalizedConditions = rawConditions
+      .filter((entry): entry is Partial<RetrievalMetadataCondition> => Boolean(entry) && typeof entry === "object")
+      .map((entry) => normalizeMetadataCondition(entry))
+      .filter((entry) => entry.field.length > 0);
+
+    const fallbackCondition = normalizeMetadataCondition({
+      field: typeof candidate.field === "string" ? candidate.field : "",
+      valueType: candidate.valueType as MetadataValueType | undefined,
+      operator: candidate.operator as MetadataRuleOperator | undefined,
+      value: typeof candidate.value === "string" ? candidate.value : String(candidate.value ?? ""),
+    });
+
+    const conditions =
+      normalizedConditions.length > 0
+        ? normalizedConditions
+        : fallbackCondition.field.length > 0
+          ? [fallbackCondition]
+          : [];
+
+    const primaryCondition = conditions[0];
+    if (!primaryCondition || !isFieldSupported(primaryCondition.field)) {
       continue;
     }
 
@@ -213,18 +298,26 @@ export const normalizeMetadataRules = (value: unknown): RetrievalMetadataRule[] 
 
     normalizedRules.push({
       id: ruleId,
-      field,
-      valueType: metadataValueTypes.includes(candidate.valueType as MetadataValueType)
-        ? (candidate.valueType as MetadataValueType)
-        : inferMetadataValueType(candidate.value),
-      operator: metadataRuleOperators.includes(candidate.operator as MetadataRuleOperator)
-        ? (candidate.operator as MetadataRuleOperator)
-        : "equals",
-      value: typeof candidate.value === "string" ? candidate.value : String(candidate.value ?? ""),
+      field: primaryCondition.field,
+      valueType: primaryCondition.valueType,
+      operator: primaryCondition.operator,
+      value: primaryCondition.value,
+      combinator: metadataRuleCombinators.includes(candidate.combinator as MetadataRuleCombinator)
+        ? (candidate.combinator as MetadataRuleCombinator)
+        : "and",
+      conditions,
       effect: metadataRuleEffects.includes(candidate.effect as MetadataRuleEffect)
         ? (candidate.effect as MetadataRuleEffect)
         : "boost",
       enabled: typeof candidate.enabled === "boolean" ? candidate.enabled : true,
+      triggerMode: metadataRuleTriggerModes.includes(candidate.triggerMode as MetadataRuleTriggerMode)
+        ? (candidate.triggerMode as MetadataRuleTriggerMode)
+        : normalizeTriggerInstruction(typeof candidate.triggerInstruction === "string" ? candidate.triggerInstruction : "")
+          ? "match_turn"
+          : "always_on",
+      triggerInstruction: normalizeTriggerInstruction(
+        typeof candidate.triggerInstruction === "string" ? candidate.triggerInstruction : "",
+      ),
     });
   }
 
@@ -279,44 +372,79 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
 
   const seenRuleIds = new Set<string>();
   for (const rule of input.metadataRules) {
+    const conditions = getNormalizedMetadataConditions(rule);
+    const normalizedTriggerInstruction = normalizeTriggerInstruction(rule.triggerInstruction ?? "");
+    const normalizedTriggerMode =
+      metadataRuleTriggerModes.includes(rule.triggerMode)
+        ? rule.triggerMode
+        : normalizedTriggerInstruction
+          ? "match_turn"
+          : "always_on";
+
     if (typeof rule.id !== "string" || rule.id.trim().length === 0) {
       throw badRequest("metadataRules id must be a non-empty string");
     }
     if (seenRuleIds.has(rule.id)) {
       throw badRequest("metadataRules must not contain duplicate ids");
     }
-    if (typeof rule.field !== "string" || normalizeMetadataField(rule.field).length === 0) {
-      throw badRequest("metadataRules field must be a non-empty string");
+    if (conditions.length === 0) {
+      throw badRequest("metadataRules must contain at least one condition");
     }
-    if (!isFieldSupported(normalizeMetadataField(rule.field))) {
-      throw badRequest("metadataRules field must use only letters, numbers, dots, underscores, or hyphens");
-    }
-    if (!metadataValueTypes.includes(rule.valueType)) {
-      throw badRequest("metadataRules valueType must be supported");
-    }
-    if (!metadataRuleOperators.includes(rule.operator)) {
-      throw badRequest("metadataRules operator must be supported");
-    }
-    if (!allowedOperatorsForValueType(rule.valueType).includes(rule.operator)) {
-      throw badRequest("metadataRules operator must be valid for the selected valueType");
+    if (typeof rule.combinator !== "undefined" && !metadataRuleCombinators.includes(rule.combinator)) {
+      throw badRequest("metadataRules combinator must be supported");
     }
     if (!metadataRuleEffects.includes(rule.effect)) {
       throw badRequest("metadataRules effect must be supported");
     }
-    if (typeof rule.value !== "string") {
-      throw badRequest("metadataRules value must be a string");
+    if (typeof rule.triggerInstruction !== "undefined" && typeof rule.triggerInstruction !== "string") {
+      throw badRequest("metadataRules triggerInstruction must be a string when provided");
     }
-    if (rule.valueType === "boolean" && !isBooleanLiteral(rule.value)) {
-      throw badRequest("metadataRules boolean values must be true or false");
-    }
-    if (rule.valueType === "number" && !isNumberLiteral(rule.value)) {
-      throw badRequest("metadataRules number values must be numeric");
-    }
-    if (rule.valueType === "date" && !isDateLiteral(rule.value)) {
-      throw badRequest("metadataRules date values must use ISO format such as 2026-03-26");
+    if (normalizedTriggerMode === "match_turn" && !normalizedTriggerInstruction) {
+      throw badRequest("metadataRules triggerInstruction must be provided for match_turn rules");
     }
     if (typeof rule.enabled !== "boolean") {
       throw badRequest("metadataRules enabled must be a boolean");
+    }
+
+    const seenConditionIds = new Set<string>();
+    for (const condition of conditions) {
+      if (typeof condition.id !== "string" || condition.id.trim().length === 0) {
+        throw badRequest("metadataRules conditions id must be a non-empty string");
+      }
+      if (seenConditionIds.has(condition.id)) {
+        throw badRequest("metadataRules conditions must not contain duplicate ids");
+      }
+      if (typeof condition.field !== "string" || normalizeMetadataField(condition.field).length === 0) {
+        throw badRequest("metadataRules field must be a non-empty string");
+      }
+      if (!isFieldSupported(normalizeMetadataField(condition.field))) {
+        throw badRequest("metadataRules field must use only letters, numbers, dots, underscores, or hyphens");
+      }
+      if (!metadataValueTypes.includes(condition.valueType)) {
+        throw badRequest("metadataRules valueType must be supported");
+      }
+      if (!metadataRuleOperators.includes(condition.operator)) {
+        throw badRequest("metadataRules operator must be supported");
+      }
+      if (!allowedOperatorsForValueType(condition.valueType).includes(condition.operator)) {
+        throw badRequest("metadataRules operator must be valid for the selected valueType");
+      }
+      if (typeof condition.value !== "string") {
+        throw badRequest("metadataRules value must be a string");
+      }
+      if (condition.valueType === "boolean" && !isBooleanLiteral(condition.value)) {
+        throw badRequest("metadataRules boolean values must be true or false");
+      }
+      if (condition.valueType === "number" && !isNumberLiteral(condition.value)) {
+        throw badRequest("metadataRules number values must be numeric");
+      }
+      if (isDynamicDateToken(condition.value) && condition.valueType !== "date") {
+        throw badRequest("metadataRules dynamic date tokens are supported only for date values");
+      }
+      if (condition.valueType === "date" && !isDateLiteral(condition.value) && !isDynamicDateToken(condition.value)) {
+        throw badRequest("metadataRules date values must use ISO format such as 2026-03-26");
+      }
+      seenConditionIds.add(condition.id);
     }
 
     seenRuleIds.add(rule.id);
@@ -346,8 +474,24 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
     ),
     metadataRules: input.metadataRules.map((rule) => ({
       ...rule,
-      field: normalizeMetadataField(rule.field),
-      value: rule.value.trim(),
+      field: getNormalizedMetadataConditions(rule)[0]?.field ?? "",
+      valueType: getNormalizedMetadataConditions(rule)[0]?.valueType ?? "string",
+      operator: getNormalizedMetadataConditions(rule)[0]?.operator ?? "equals",
+      value: getNormalizedMetadataConditions(rule)[0]?.value ?? "",
+      combinator: metadataRuleCombinators.includes(rule.combinator ?? "and")
+        ? (rule.combinator ?? "and")
+        : "and",
+      conditions: getNormalizedMetadataConditions(rule).map((condition) => ({
+        ...condition,
+        field: normalizeMetadataField(condition.field),
+        value: condition.valueType === "date" ? normalizeDateRuleValue(condition.value) : condition.value.trim(),
+      })),
+      triggerInstruction: normalizeTriggerInstruction(rule.triggerInstruction ?? ""),
+      triggerMode: metadataRuleTriggerModes.includes(rule.triggerMode)
+        ? rule.triggerMode
+        : normalizeTriggerInstruction(rule.triggerInstruction ?? "")
+          ? "match_turn"
+          : "always_on",
     })),
   };
 };

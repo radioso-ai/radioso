@@ -36,6 +36,7 @@ export const RETRIEVAL_BEHAVIOR = {
     minimumUsefulCandidateCount: 3,
     hardFilterConfidenceThreshold: 0.85,
     attributeValueHardFilterConfidenceThreshold: 0.85,
+    triggerMatchEnactmentThreshold: 0.85,
   },
   rerank: {
     temperature: 0.2,

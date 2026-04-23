@@ -56,6 +56,7 @@ import {
   conversationModes,
   metadataRuleEffects,
   metadataRuleOperators,
+  metadataRuleTriggerModes,
   metadataValueTypes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 
@@ -299,8 +300,20 @@ const RetrievalSettingsSchema = registry.register(
         valueType: z.enum(metadataValueTypes),
         operator: z.enum(metadataRuleOperators),
         value: z.string(),
+        combinator: z.enum(["and", "or"]).default("and"),
+        conditions: z.array(
+          z.object({
+            id: z.string(),
+            field: z.string(),
+            valueType: z.enum(metadataValueTypes),
+            operator: z.enum(metadataRuleOperators),
+            value: z.string(),
+          }),
+        ).default([]),
         effect: z.enum(metadataRuleEffects),
         enabled: z.boolean(),
+        triggerMode: z.enum(metadataRuleTriggerModes),
+        triggerInstruction: z.string().optional(),
       }),
     ).default([]),
     customInstruction: z.string().max(2000),
@@ -341,8 +354,54 @@ const RetrievalMetadataRuleSchema = registry.register(
     valueType: z.enum(metadataValueTypes),
     operator: z.enum(metadataRuleOperators),
     value: z.string(),
+    combinator: z.enum(["and", "or"]).default("and"),
+    conditions: z.array(
+      z.object({
+        id: z.string(),
+        field: z.string(),
+        valueType: z.enum(metadataValueTypes),
+        operator: z.enum(metadataRuleOperators),
+        value: z.string(),
+      }),
+    ).default([]),
     effect: z.enum(metadataRuleEffects),
     enabled: z.boolean(),
+    triggerMode: z.enum(metadataRuleTriggerModes),
+    triggerInstruction: z.string().optional(),
+  }),
+);
+
+const TriggerAnalysisRuleSchema = registry.register(
+  "TriggerAnalysisRule",
+  z.object({
+    ruleId: z.string(),
+    matched: z.boolean(),
+    matchStrength: z.number().min(0).max(1),
+    reason: z.string(),
+    triggerInstructionPreview: z.string(),
+  }),
+);
+
+const TriggerAnalysisSchema = registry.register(
+  "TriggerAnalysis",
+  z.object({
+    status: z.enum(["skipped_not_configured", "skipped_unavailable", "applied", "fallback"]),
+    consideredRules: z.array(TriggerAnalysisRuleSchema),
+    matchedRuleIds: z.array(z.string()),
+    unmatchedRuleIds: z.array(z.string()),
+    matchCount: z.number().int().min(0),
+    matcherVersion: z.string(),
+    failureReason: z.string().optional(),
+  }),
+);
+
+const TriggerBackoffSchema = registry.register(
+  "TriggerBackoff",
+  z.object({
+    applied: z.boolean(),
+    reason: z.enum(["empty_filtered_candidates", "weak_filtered_support"]).optional(),
+    relaxedRuleIds: z.array(z.string()),
+    restoredCandidateCount: z.number().int().min(0).optional(),
   }),
 );
 
@@ -576,6 +635,8 @@ const RetrievalInfoSchema = registry.register(
     fallbackApplied: z.boolean(),
     rerankStatus: z.enum(["skipped", "applied", "fallback"]),
     rewrite: RewriteInfoSchema.optional(),
+    triggerAnalysis: TriggerAnalysisSchema.optional(),
+    triggerBackoff: TriggerBackoffSchema.optional(),
   }),
 );
 

@@ -117,9 +117,71 @@ describe("settings contract", () => {
           value: "en",
           effect: "filter",
           enabled: true,
+          triggerMode: "always_on",
         },
       ],
     });
+  });
+
+  it("updates retrieval settings with trigger-aware metadata rules", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "settings-trigger-update@example.com");
+
+    const response = await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set(adminSessionHeaders(session))
+      .send({
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
+        lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "rule-upcoming-events",
+            field: "dateFrom",
+            valueType: "date",
+            operator: "gte",
+            value: "today()",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact when the user is clearly asking about upcoming events or time-bound courses.",
+          },
+        ],
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.metadataRules).toEqual([
+      {
+        id: "rule-upcoming-events",
+        field: "dateFrom",
+        valueType: "date",
+        operator: "gte",
+        value: "today()",
+        combinator: "and",
+        conditions: [
+          expect.objectContaining({
+            field: "dateFrom",
+            valueType: "date",
+            operator: "gte",
+            value: "today()",
+          }),
+        ],
+        effect: "filter",
+        enabled: true,
+        triggerMode: "match_turn",
+        triggerInstruction: "Enact when the user is clearly asking about upcoming events or time-bound courses.",
+      },
+    ]);
   });
 
   it("preserves saved signal policies when an older client omits the field", async () => {

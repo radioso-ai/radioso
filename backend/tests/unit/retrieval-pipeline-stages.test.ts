@@ -48,6 +48,484 @@ describe("retrieval pipeline stages", () => {
     expect(result.activeParsedQuery.lexicalQuery).toBe("Find retreats in Estonia under 300 EUR");
     expect(result.activeQuery).toBe("Find retreats in Estonia under 300 EUR");
     expect(result.promptHistory).toEqual([]);
+    expect(result.triggerAnalysis).toMatchObject({
+      status: "skipped_not_configured",
+      matchedRuleIds: [],
+      matchCount: 0,
+    });
+  });
+
+  it("skips trigger matching when no triggerable rules are configured", async () => {
+    let triggerCalls = 0;
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService(undefined, {
+        async analyze() {
+          triggerCalls += 1;
+          return {
+            status: "applied",
+            consideredRules: [],
+            matchedRuleIds: [],
+            unmatchedRuleIds: [],
+            matchCount: 0,
+            matcherVersion: "test",
+          };
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "What is mononuclear disease?",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "always-on-language",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "boost",
+            enabled: true,
+            triggerMode: "always_on",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(triggerCalls).toBe(0);
+    expect(result.triggerAnalysis).toMatchObject({
+      status: "skipped_not_configured",
+      matchedRuleIds: [],
+      unmatchedRuleIds: [],
+      matchCount: 0,
+    });
+  });
+
+  it("records matched triggerable rules during query interpretation", async () => {
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService(undefined, {
+        async analyze() {
+          return {
+            status: "applied",
+            consideredRules: [
+              {
+                ruleId: "events-filter",
+                matched: true,
+                matchStrength: 0.93,
+                reason: "The user is asking for an upcoming event.",
+                triggerInstructionPreview: "Enact for upcoming events.",
+              },
+              {
+                ruleId: "definitions-filter",
+                matched: false,
+                matchStrength: 0.08,
+                reason: "The user is not asking for a definition-only answer.",
+                triggerInstructionPreview: "Enact for pure definitions.",
+              },
+            ],
+            matchedRuleIds: ["events-filter"],
+            unmatchedRuleIds: ["definitions-filter"],
+            matchCount: 1,
+            matcherVersion: "test",
+          };
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "When is the next conference?",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "events-filter",
+            field: "dateFrom",
+            valueType: "date",
+            operator: "gte",
+            value: "today()",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for upcoming events.",
+          },
+          {
+            id: "definitions-filter",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "glossary",
+            effect: "boost",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for pure definitions.",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.triggerAnalysis).toMatchObject({
+      status: "applied",
+      matchedRuleIds: ["events-filter"],
+      unmatchedRuleIds: ["definitions-filter"],
+      matchCount: 1,
+      matcherVersion: "test",
+    });
+  });
+
+  it("suppresses low-confidence trigger matches from enactment", async () => {
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService(undefined, {
+        async analyze() {
+          return {
+            status: "applied",
+            consideredRules: [
+              {
+                ruleId: "events-filter",
+                matched: true,
+                matchStrength: 0.42,
+                reason: "The query loosely overlaps with upcoming events.",
+                triggerInstructionPreview: "Enact for upcoming events.",
+              },
+            ],
+            matchedRuleIds: ["events-filter"],
+            unmatchedRuleIds: [],
+            matchCount: 1,
+            matcherVersion: "test",
+          };
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "Tell me something interesting happening soon.",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "events-filter",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for upcoming events.",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.triggerAnalysis.matchedRuleIds).toEqual([]);
+    expect(result.triggerAnalysis.unmatchedRuleIds).toEqual(["events-filter"]);
+    expect(result.triggerAnalysis.matchCount).toBe(0);
+    expect(result.triggerAnalysis.consideredRules[0]).toMatchObject({
+      ruleId: "events-filter",
+      matched: false,
+      matchStrength: 0.42,
+    });
+    expect(result.triggerAnalysis.consideredRules[0]?.reason).toContain("below the enactment threshold");
+  });
+
+  it("supports multiple trigger rules crossing the enactment threshold", async () => {
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService(undefined, {
+        async analyze() {
+          return {
+            status: "applied",
+            consideredRules: [
+              {
+                ruleId: "events-filter",
+                matched: true,
+                matchStrength: 0.94,
+                reason: "The user is asking about an upcoming event.",
+                triggerInstructionPreview: "Enact for upcoming events.",
+              },
+              {
+                ruleId: "active-registration-filter",
+                matched: true,
+                matchStrength: 0.88,
+                reason: "The question is also about currently open registration windows.",
+                triggerInstructionPreview: "Enact for active registrations.",
+              },
+            ],
+            matchedRuleIds: ["events-filter", "active-registration-filter"],
+            unmatchedRuleIds: [],
+            matchCount: 2,
+            matcherVersion: "test",
+          };
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "Which upcoming camps still have open registration?",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "events-filter",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for upcoming events.",
+          },
+          {
+            id: "active-registration-filter",
+            field: "registrationStatus",
+            valueType: "string",
+            operator: "equals",
+            value: "open",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for active registrations.",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.triggerAnalysis.matchedRuleIds).toEqual(["events-filter", "active-registration-filter"]);
+    expect(result.triggerAnalysis.matchCount).toBe(2);
+  });
+
+  it("passes resolved follow-up context into trigger analysis", async () => {
+    let triggerAnalysisInput:
+      | {
+          query: string;
+          activeQuery: string;
+          contextMessages: Array<{ role: "user" | "assistant"; content: string }>;
+        }
+      | undefined;
+
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService(
+        {
+          async rewrite({ contextMessages }) {
+            expect(contextMessages).toHaveLength(2);
+            return {
+              rewrittenQuery: "When is the conference in Riga?",
+              semanticQuery: "When is the conference in Riga?",
+              lexicalQuery: "conference Riga date",
+              turnKind: "referential_followup",
+              proposedActiveSubject: "conference in Riga",
+              relatedEntities: ["conference"],
+              unresolved: false,
+              confidence: 0.93,
+            };
+          },
+        },
+        {
+          async analyze({ query, activeQuery, contextMessages }) {
+            triggerAnalysisInput = {
+              query,
+              activeQuery,
+              contextMessages: contextMessages.map((message) => ({
+                role: message.role,
+                content: message.content,
+              })),
+            };
+
+            return {
+              status: "applied",
+              consideredRules: [
+                {
+                  ruleId: "events-filter",
+                  matched: true,
+                  matchStrength: 0.94,
+                  reason: "The resolved follow-up is still asking about the conference schedule.",
+                  triggerInstructionPreview: "Enact for upcoming events.",
+                },
+              ],
+              matchedRuleIds: ["events-filter"],
+              unmatchedRuleIds: [],
+              matchCount: 1,
+              matcherVersion: "test",
+            };
+          },
+        },
+      ),
+    );
+
+    const history = [
+      {
+        id: "u1",
+        conversationId: "c1",
+        workspaceId: "a1",
+        role: "user" as const,
+        content: "Tell me about the conference in Riga.",
+        createdAt: new Date(),
+      },
+      {
+        id: "a1",
+        conversationId: "c1",
+        workspaceId: "a1",
+        role: "assistant" as const,
+        content: "The conference in Riga is our annual event.",
+        createdAt: new Date(),
+      },
+    ];
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "When is it?",
+        history,
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "events-filter",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for upcoming events.",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: history,
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.activeQuery).toBe("When is the conference in Riga?");
+    expect(triggerAnalysisInput).toEqual({
+      query: "When is it?",
+      activeQuery: "When is the conference in Riga?",
+      contextMessages: [
+        {
+          role: "user",
+          content: "Tell me about the conference in Riga.",
+        },
+        {
+          role: "assistant",
+          content: "The conference in Riga is our annual event.",
+        },
+      ],
+    });
+    expect(result.triggerAnalysis.matchedRuleIds).toEqual(["events-filter"]);
   });
 
   it("clears prompt history when rewrite marks a fresh subject", async () => {
@@ -583,6 +1061,14 @@ describe("retrieval pipeline stages", () => {
           lexicalQuery: "what about her later work?",
         },
       ],
+      triggerAnalysis: {
+        status: "skipped_not_configured",
+        consideredRules: [],
+        matchedRuleIds: [],
+        unmatchedRuleIds: [],
+        matchCount: 0,
+        matcherVersion: "test",
+      },
       promptHistory: [],
       continuityDecision: "rejected",
       activeEmbedding: [1, 0, 0],
@@ -597,6 +1083,10 @@ describe("retrieval pipeline stages", () => {
       scoredCandidates: [],
       appliedConstraints: [],
       candidateFallbackApplied: false,
+      triggerBackoff: {
+        applied: false,
+        relaxedRuleIds: [],
+      },
       rerankedContexts: [],
       rerankStatus: "skipped",
       contexts: [],

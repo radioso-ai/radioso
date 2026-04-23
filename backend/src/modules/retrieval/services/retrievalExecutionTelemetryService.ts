@@ -2,6 +2,8 @@ import type {
   ResponseLanguagePolicy,
   RetrievalExecutionDiagnostics,
   RetrievalSubquery,
+  TriggerAnalysisResult,
+  TriggerBackoffDecision,
   RewriteStatus,
   RerankStatus,
 } from "../domain/retrievalPipelineTypes.js";
@@ -33,6 +35,8 @@ export class RetrievalExecutionTelemetryService {
     responseLanguagePolicy?: ResponseLanguagePolicy;
     rejectionReason?: string;
     fallbackReason?: string;
+    triggerAnalysis?: TriggerAnalysisResult;
+    triggerBackoff?: TriggerBackoffDecision;
   }): Promise<RetrievalExecutionDiagnostics> {
     const diagnostics = {
       ...input,
@@ -60,6 +64,8 @@ export class RetrievalExecutionTelemetryService {
         rewriteRan: input.rewriteRan ?? false,
         rejectionReason: input.rejectionReason,
         fallbackReason: input.fallbackReason,
+        triggerMatchCount: input.triggerAnalysis?.matchCount ?? 0,
+        triggerBackoffApplied: input.triggerBackoff?.applied ?? false,
       },
       tags: {
         rewrite_status: input.rewriteStatus,

@@ -10,10 +10,13 @@ import conversationModeSource from '../../../docs/settings-docs/retrieval/conver
 import customInstructionSource from '../../../docs/settings-docs/retrieval/custom-instruction.md'
 import lexicalRewriteInstructionsSource from '../../../docs/settings-docs/retrieval/lexical-rewrite-instructions.md'
 import metadataEffectSource from '../../../docs/settings-docs/retrieval/metadata-effect.md'
+import metadataDynamicDateSource from '../../../docs/settings-docs/retrieval/metadata-dynamic-date.md'
 import metadataEnabledSource from '../../../docs/settings-docs/retrieval/metadata-enabled.md'
 import metadataKeySource from '../../../docs/settings-docs/retrieval/metadata-key.md'
 import metadataOperatorSource from '../../../docs/settings-docs/retrieval/metadata-operator.md'
 import metadataRulesSource from '../../../docs/settings-docs/retrieval/metadata-rules.md'
+import metadataTriggerInstructionSource from '../../../docs/settings-docs/retrieval/metadata-trigger-instruction.md'
+import metadataTriggerModeSource from '../../../docs/settings-docs/retrieval/metadata-trigger-mode.md'
 import metadataValueSource from '../../../docs/settings-docs/retrieval/metadata-value.md'
 import metadataValueTypeSource from '../../../docs/settings-docs/retrieval/metadata-value-type.md'
 import queryRewriteEnabledSource from '../../../docs/settings-docs/retrieval/query-rewrite-enabled.md'
@@ -97,4 +100,7 @@ export const retrievalSettingDocs = {
   metadataOperator: parseSettingDoc(metadataOperatorSource),
   metadataEffect: parseSettingDoc(metadataEffectSource),
   metadataEnabled: parseSettingDoc(metadataEnabledSource),
+  metadataDynamicDate: parseSettingDoc(metadataDynamicDateSource),
+  metadataTriggerMode: parseSettingDoc(metadataTriggerModeSource),
+  metadataTriggerInstruction: parseSettingDoc(metadataTriggerInstructionSource),
 } satisfies Record<string, SettingDoc>

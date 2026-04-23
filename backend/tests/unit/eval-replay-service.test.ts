@@ -183,4 +183,98 @@ describe("EvalReplayService", () => {
 
     expect(replay.answer).toBe("The primary guide explains the direct answer.");
   });
+
+  it("preserves trigger diagnostics in replay output", async () => {
+    const retrievalPipeline = {
+      async run() {
+        return {
+          prompt: "Answer using retrieved context",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Conference Schedule",
+              content: "The next conference is on 2026-06-20.",
+            },
+          ],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "applied",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: true,
+            fallbackApplied: true,
+            appliedConstraints: [],
+            triggerAnalysis: {
+              status: "applied",
+              consideredRules: [
+                {
+                  ruleId: "events-only",
+                  matched: true,
+                  matchStrength: 0.95,
+                  reason: "The question is about an upcoming event.",
+                  triggerInstructionPreview: "Enact for upcoming events.",
+                },
+              ],
+              matchedRuleIds: ["events-only"],
+              unmatchedRuleIds: [],
+              matchCount: 1,
+              matcherVersion: "test",
+            },
+            triggerBackoff: {
+              applied: true,
+              reason: "empty_filtered_candidates",
+              relaxedRuleIds: ["events-only"],
+              restoredCandidateCount: 1,
+            },
+          },
+          trace: {
+            traceId: "trace-1",
+            startedAt: "2026-04-09T00:00:00.000Z",
+            stages: [
+              {
+                stageId: "trigger_analysis",
+                kind: "trigger_analysis",
+                label: "Trigger analysis",
+                status: "applied",
+              },
+            ],
+            links: [],
+          },
+          responseSettings: {
+            answerSupportPolicy: "strict",
+            citationDisplayEnabled: true,
+            conversationMode: "guided",
+          },
+        };
+      },
+    } as any;
+
+    const chatGateway = {
+      async answer() {
+        return "The next conference is on 2026-06-20.[[1]]";
+      },
+    } as any;
+
+    const service = new EvalReplayService(retrievalPipeline, chatGateway);
+    const replay = await service.replay({
+      workspaceId: "workspace-1",
+      query: "When is the next conference?",
+    });
+
+    expect(replay.retrievalInfo.triggerAnalysis).toMatchObject({
+      matchedRuleIds: ["events-only"],
+      matchCount: 1,
+    });
+    expect(replay.retrievalInfo.triggerBackoff).toMatchObject({
+      applied: true,
+      relaxedRuleIds: ["events-only"],
+    });
+    expect(replay.retrievalTrace?.stages).toEqual(
+      expect.arrayContaining([expect.objectContaining({ stageId: "trigger_analysis" })]),
+    );
+  });
 });

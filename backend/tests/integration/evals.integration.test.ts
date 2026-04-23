@@ -1,9 +1,125 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
+import type { TriggerAnalysisGateway } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 
 describe("eval regression lab", () => {
+  it("preserves trigger diagnostics in eval replay runs", async () => {
+    const triggerAnalysisGateway: TriggerAnalysisGateway = {
+      async analyze({ rules }) {
+        const eventRule = rules.find((rule) => rule.id === "events-only");
+        return {
+          status: "applied",
+          consideredRules: eventRule
+            ? [
+                {
+                  ruleId: eventRule.id,
+                  matched: true,
+                  matchStrength: 0.96,
+                  reason: "The question is asking about an upcoming event.",
+                  triggerInstructionPreview: eventRule.triggerInstruction ?? "",
+                },
+              ]
+            : [],
+          matchedRuleIds: eventRule ? [eventRule.id] : [],
+          unmatchedRuleIds: [],
+          matchCount: eventRule ? 1 : 0,
+          matcherVersion: "test",
+        };
+      },
+    };
+    const { app } = createTestApp({ triggerAnalysisGateway });
+    const { token } = await issueTestToken(app, "evals-trigger@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Conference Schedule",
+        content: "The next conference is on 2026-06-20.",
+        metadata: {
+          category: "event",
+          dateFrom: "2026-06-20",
+        },
+      })
+      .expect(202);
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        metadataRules: [
+          {
+            id: "events-only",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact when the user is asking about upcoming events.",
+          },
+        ],
+        customInstruction: "",
+      })
+      .expect(200);
+
+    const datasetResponse = await request(app)
+      .post("/api/v1/evals/datasets")
+      .set("Authorization", authorization)
+      .send({
+        name: "Triggered retrieval diagnostics",
+        description: "Covers trigger-aware replay output",
+      })
+      .expect(201);
+
+    const runCase = await request(app)
+      .post(`/api/v1/evals/datasets/${datasetResponse.body.id}/cases`)
+      .set("Authorization", authorization)
+      .send({
+        title: "Upcoming conference question",
+        query: "When is the next conference?",
+        conversationContext: [],
+        sourceType: "manual",
+        provenance: {},
+        expectations: {
+          expectedCitationTitles: ["Conference Schedule"],
+        },
+      })
+      .expect(201);
+
+    expect(runCase.body.id).toBeTruthy();
+
+    const runResponse = await request(app)
+      .post(`/api/v1/evals/datasets/${datasetResponse.body.id}/runs`)
+      .set("Authorization", authorization)
+      .send({ label: "trigger-run" })
+      .expect(201);
+
+    expect(runResponse.body.results[0].diagnostics.retrievalInfo.triggerAnalysis).toMatchObject({
+      matchedRuleIds: ["events-only"],
+      matchCount: 1,
+    });
+    expect(runResponse.body.results[0].diagnostics.retrievalTrace.stages).toEqual(
+      expect.arrayContaining([expect.objectContaining({ stageId: "trigger_analysis" })]),
+    );
+  });
+
   it("imports a chat turn into a dataset and runs replay with comparison", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "evals@example.com");

@@ -821,6 +821,16 @@
                 },
                 "enabled": {
                   "type": "boolean"
+                },
+                "triggerMode": {
+                  "type": "string",
+                  "enum": [
+                    "always_on",
+                    "match_turn"
+                  ]
+                },
+                "triggerInstruction": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -830,7 +840,8 @@
                 "operator",
                 "value",
                 "effect",
-                "enabled"
+                "enabled",
+                "triggerMode"
               ]
             },
             "default": []
@@ -967,6 +978,17 @@
                 },
                 "enabled": {
                   "type": "boolean"
+                },
+                "triggerMode": {
+                  "type": "string",
+                  "enum": [
+                    "always_on",
+                    "match_turn"
+                  ]
+                },
+                "triggerInstruction": {
+                  "type": "string",
+                  "maxLength": 500
                 }
               },
               "required": [
@@ -1122,6 +1144,16 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "triggerMode": {
+            "type": "string",
+            "enum": [
+              "always_on",
+              "match_turn"
+            ]
+          },
+          "triggerInstruction": {
+            "type": "string"
           }
         },
         "required": [
@@ -1131,7 +1163,116 @@
           "operator",
           "value",
           "effect",
-          "enabled"
+          "enabled",
+          "triggerMode"
+        ]
+      },
+      "TriggerAnalysisRule": {
+        "type": "object",
+        "properties": {
+          "ruleId": {
+            "type": "string"
+          },
+          "matched": {
+            "type": "boolean"
+          },
+          "matchStrength": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "reason": {
+            "type": "string"
+          },
+          "triggerInstructionPreview": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ruleId",
+          "matched",
+          "matchStrength",
+          "reason",
+          "triggerInstructionPreview"
+        ]
+      },
+      "TriggerAnalysis": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "skipped_not_configured",
+              "skipped_unavailable",
+              "applied",
+              "fallback"
+            ]
+          },
+          "consideredRules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TriggerAnalysisRule"
+            }
+          },
+          "matchedRuleIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unmatchedRuleIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "matchCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matcherVersion": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "consideredRules",
+          "matchedRuleIds",
+          "unmatchedRuleIds",
+          "matchCount",
+          "matcherVersion"
+        ]
+      },
+      "TriggerBackoff": {
+        "type": "object",
+        "properties": {
+          "applied": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "empty_filtered_candidates",
+              "weak_filtered_support"
+            ]
+          },
+          "relaxedRuleIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "restoredCandidateCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "applied",
+          "relaxedRuleIds"
         ]
       },
       "UpdateGeneralSettingsRequest": {
@@ -1977,6 +2118,12 @@
           },
           "rewrite": {
             "$ref": "#/components/schemas/RewriteInfo"
+          },
+          "triggerAnalysis": {
+            "$ref": "#/components/schemas/TriggerAnalysis"
+          },
+          "triggerBackoff": {
+            "$ref": "#/components/schemas/TriggerBackoff"
           }
         },
         "required": [

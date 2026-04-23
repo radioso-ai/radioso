@@ -215,7 +215,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new PgVectorSearch(database),
     new PgLexicalSearch(database),
     new ConversationContextService(),
-    new QueryRewriteService(llmRegistry.createRewriteGateway()),
+    new QueryRewriteService(llmRegistry.createRewriteGateway(), llmRegistry.createTriggerAnalysisGateway()),
     new CandidatePreparationService(),
     undefined,
     new RerankService(llmRegistry.createRerankGateway(), logger),

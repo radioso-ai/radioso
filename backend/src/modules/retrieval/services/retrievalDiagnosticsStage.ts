@@ -27,6 +27,8 @@ export class RetrievalDiagnosticsStageService implements RetrievalDiagnosticsSta
       responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy,
       rejectionReason: input.rewrittenQuery.rejectionReason,
       fallbackReason: input.rewrittenQuery.fallbackReason,
+      triggerAnalysis: input.triggerAnalysis,
+      triggerBackoff: input.triggerBackoff,
     });
   }
 }

@@ -16,6 +16,35 @@ const retrievalInfoStub = {
   rerankStatus: "skipped",
 } as const;
 
+const retrievalInfoWithTrigger = (overrides?: {
+  matchedRules?: Array<{ ruleId: string; triggerInstructionPreview: string; matchStrength?: number; reason?: string }>;
+  triggerBackoffReason?: "empty_filtered_candidates" | "weak_filtered_support";
+}) => ({
+  ...retrievalInfoStub,
+  triggerAnalysis: {
+    status: "applied" as const,
+    consideredRules: (overrides?.matchedRules ?? []).map((rule) => ({
+      ruleId: rule.ruleId,
+      matched: true,
+      matchStrength: rule.matchStrength ?? 0.95,
+      reason: rule.reason ?? "Matched during replay.",
+      triggerInstructionPreview: rule.triggerInstructionPreview,
+    })),
+    matchedRuleIds: (overrides?.matchedRules ?? []).map((rule) => rule.ruleId),
+    unmatchedRuleIds: [],
+    matchCount: (overrides?.matchedRules ?? []).length,
+    matcherVersion: "test",
+  },
+  triggerBackoff: overrides?.triggerBackoffReason
+    ? {
+        applied: true,
+        reason: overrides.triggerBackoffReason,
+        relaxedRuleIds: ["events-only"],
+        restoredCandidateCount: 3,
+      }
+    : undefined,
+});
+
 const createRepositoryStub = (): EvalRepositoryPort => ({
   listDatasets: async () => [],
   createDataset: async () => {
@@ -402,5 +431,270 @@ describe("EvalLabService", () => {
       unchanged: 0,
       unscored: 0,
     });
+  });
+
+  it("explains regression reasons when trigger decisions and backoff behavior change", async () => {
+    const evalCase: EvalCaseRecord = {
+      id: "case-trigger",
+      datasetId: "dataset-1",
+      workspaceId: "workspace-1",
+      title: "Upcoming event case",
+      sourceType: "manual",
+      query: "When is the next conference?",
+      conversationContext: [],
+      expectations: {},
+      provenance: {},
+      createdAt: "2026-04-04T00:00:00.000Z",
+      updatedAt: "2026-04-04T00:00:00.000Z",
+    };
+
+    const passedScore = {
+      documentMatch: { verdict: "unscored" as const },
+      citationMatch: { verdict: "unscored" as const },
+      refusalMatch: { verdict: "unscored" as const },
+      answerOutcomeMatch: { verdict: "unscored" as const },
+      answerContainsMatch: { verdict: "unscored" as const },
+      latencyMatch: { verdict: "unscored" as const },
+      overallVerdict: "pass" as const,
+      reasons: [],
+    };
+    const failedScore = {
+      ...passedScore,
+      overallVerdict: "fail" as const,
+      reasons: ["Expected citation titles were not all present."],
+    };
+
+    const baselineRun: EvalRunRecord = {
+      id: "run-base",
+      datasetId: "dataset-1",
+      workspaceId: "workspace-1",
+      label: "Baseline",
+      baselineRunId: null,
+      createdByAccountId: null,
+      runMetadata: {},
+      summary: {
+        totalCases: 1,
+        passCount: 1,
+        failCount: 0,
+        skippedCount: 0,
+        invalidCount: 0,
+        improvementCount: 0,
+        regressionCount: 0,
+        unchangedCount: 0,
+      },
+      results: [{
+        caseId: "case-trigger",
+        status: "pass",
+        score: passedScore,
+        diagnostics: {
+          retrievalInfo: retrievalInfoWithTrigger({
+            matchedRules: [{ ruleId: "events-only", triggerInstructionPreview: "Enact when the user is asking about upcoming events." }],
+          }),
+          answerOutcome: "grounded_success",
+          answer: "conference",
+          latencyMs: 10,
+        },
+      }],
+      startedAt: "2026-04-04T00:00:00.000Z",
+      completedAt: "2026-04-04T00:00:01.000Z",
+    };
+
+    const candidateRun: EvalRunRecord = {
+      id: "run-candidate",
+      datasetId: "dataset-1",
+      workspaceId: "workspace-1",
+      label: "Candidate",
+      baselineRunId: "run-base",
+      createdByAccountId: null,
+      runMetadata: {},
+      summary: {
+        totalCases: 1,
+        passCount: 0,
+        failCount: 1,
+        skippedCount: 0,
+        invalidCount: 0,
+        improvementCount: 0,
+        regressionCount: 1,
+        unchangedCount: 0,
+      },
+      results: [{
+        caseId: "case-trigger",
+        status: "fail",
+        score: failedScore,
+        diagnostics: {
+          retrievalInfo: retrievalInfoWithTrigger({
+            matchedRules: [],
+            triggerBackoffReason: "weak_filtered_support",
+          }),
+          answerOutcome: "grounded_success",
+          answer: "different",
+          latencyMs: 10,
+        },
+      }],
+      startedAt: "2026-04-05T00:00:00.000Z",
+      completedAt: "2026-04-05T00:00:01.000Z",
+    };
+
+    const repository: EvalRepositoryPort = {
+      ...createRepositoryStub(),
+      findRunById: async () => candidateRun,
+      listRuns: async () => [candidateRun, baselineRun],
+      listCases: async () => [evalCase],
+    };
+
+    const service = new EvalLabService(repository, {} as ChatHistoryService, {} as EvalReplayService);
+
+    await expect(
+      service.compareRun("workspace-1", "dataset-1", "run-candidate", "run-base"),
+    ).resolves.toMatchObject({
+      cases: [
+        expect.objectContaining({
+          caseId: "case-trigger",
+          outcome: "regressed",
+          reasons: expect.arrayContaining([
+            'Trigger decision changed from rule events-only ("Enact when the user is asking about upcoming events.") to no enacted trigger rules.',
+            "Trigger backoff changed from none to weak_filtered_support.",
+            "Expected citation titles were not all present.",
+          ]),
+        }),
+      ],
+    });
+  });
+
+  it("surfaces trigger confidence and rationale diffs even when the same rule stays enacted", async () => {
+    const passedScore = {
+      documentMatch: { verdict: "unscored" as const },
+      citationMatch: { verdict: "unscored" as const },
+      refusalMatch: { verdict: "unscored" as const },
+      answerOutcomeMatch: { verdict: "unscored" as const },
+      answerContainsMatch: { verdict: "unscored" as const },
+      latencyMatch: { verdict: "unscored" as const },
+      overallVerdict: "pass" as const,
+      reasons: [],
+    };
+
+    const evalCase: EvalCaseRecord = {
+      id: "case-trigger-strength",
+      datasetId: "dataset-1",
+      workspaceId: "workspace-1",
+      title: "Trigger diff case",
+      sourceType: "manual",
+      query: "When is the next conference?",
+      conversationContext: [],
+      expectations: {},
+      provenance: {},
+      createdAt: "2026-04-05T00:00:00.000Z",
+      updatedAt: "2026-04-05T00:00:00.000Z",
+    };
+
+    const baselineRun: EvalRunRecord = {
+      id: "run-trigger-base",
+      datasetId: "dataset-1",
+      workspaceId: "workspace-1",
+      label: "Baseline trigger run",
+      baselineRunId: null,
+      createdByAccountId: null,
+      runMetadata: {},
+      summary: {
+        totalCases: 1,
+        passCount: 1,
+        failCount: 0,
+        skippedCount: 0,
+        invalidCount: 0,
+        improvementCount: 0,
+        regressionCount: 0,
+        unchangedCount: 1,
+      },
+      results: [{
+        caseId: "case-trigger-strength",
+        status: "pass",
+        score: passedScore,
+        diagnostics: {
+          retrievalInfo: retrievalInfoWithTrigger({
+            matchedRules: [
+              {
+                ruleId: "events-only",
+                triggerInstructionPreview: "Enact when the user is asking about upcoming events.",
+                matchStrength: 0.95,
+                reason: "The query explicitly asks about the next event.",
+              },
+            ],
+          }),
+          answerOutcome: "grounded_success",
+          answer: "same",
+          latencyMs: 10,
+        },
+      }],
+      startedAt: "2026-04-05T00:00:00.000Z",
+      completedAt: "2026-04-05T00:00:01.000Z",
+    };
+
+    const candidateRun: EvalRunRecord = {
+      id: "run-trigger-candidate",
+      datasetId: "dataset-1",
+      workspaceId: "workspace-1",
+      label: "Candidate trigger run",
+      baselineRunId: "run-trigger-base",
+      createdByAccountId: null,
+      runMetadata: {},
+      summary: {
+        totalCases: 1,
+        passCount: 1,
+        failCount: 0,
+        skippedCount: 0,
+        invalidCount: 0,
+        improvementCount: 0,
+        regressionCount: 0,
+        unchangedCount: 1,
+      },
+      results: [{
+        caseId: "case-trigger-strength",
+        status: "pass",
+        score: passedScore,
+        diagnostics: {
+          retrievalInfo: retrievalInfoWithTrigger({
+            matchedRules: [
+              {
+                ruleId: "events-only",
+                triggerInstructionPreview: "Match follow-up turns that still ask about upcoming events.",
+                matchStrength: 0.88,
+                reason: "The resolved follow-up still looks event-oriented.",
+              },
+            ],
+          }),
+          answerOutcome: "grounded_success",
+          answer: "same",
+          latencyMs: 10,
+        },
+      }],
+      startedAt: "2026-04-05T00:00:02.000Z",
+      completedAt: "2026-04-05T00:00:03.000Z",
+    };
+
+    const repository: EvalRepositoryPort = {
+      ...createRepositoryStub(),
+      findRunById: async () => candidateRun,
+      listRuns: async () => [candidateRun, baselineRun],
+      listCases: async () => [evalCase],
+    };
+
+    const service = new EvalLabService(repository, {} as ChatHistoryService, {} as EvalReplayService);
+
+    const comparison = await service.compareRun("workspace-1", "dataset-1", "run-trigger-candidate", "run-trigger-base");
+
+    expect(comparison).toMatchObject({
+      cases: [{
+        caseId: "case-trigger-strength",
+        outcome: "unchanged",
+        reasons: expect.arrayContaining([
+          'Trigger confidence for rule events-only ("Match follow-up turns that still ask about upcoming events.") changed from 0.95 to 0.88.',
+          'Trigger rationale changed for rule events-only ("Match follow-up turns that still ask about upcoming events.").',
+          "Case outcome is unchanged from the baseline run.",
+        ]),
+      }],
+    });
+    expect(comparison.cases[0]?.reasons).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("Trigger decision changed")]),
+    );
   });
 });

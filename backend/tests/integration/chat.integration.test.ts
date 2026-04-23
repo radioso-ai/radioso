@@ -3,9 +3,16 @@ import { describe, expect, it } from "vitest";
 
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
+import type { TriggerAnalysisGateway } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import type { ProductAnalyticsEvent } from "../../src/shared/analytics/productAnalyticsTypes.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
+
+const isoDateOffset = (offsetDays: number): string => {
+  const value = new Date();
+  value.setUTCDate(value.getUTCDate() + offsetDays);
+  return value.toISOString().slice(0, 10);
+};
 
 const getAnalyticsPayload = (metadata: Record<string, unknown>): ProductAnalyticsEvent | null => {
   const candidate = metadata.analytics;
@@ -17,6 +24,209 @@ const getAnalyticsPayload = (metadata: Record<string, unknown>): ProductAnalytic
 };
 
 describe("chat integration", () => {
+  it("evaluates today() dynamically for date metadata rules", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "dynamic-date@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Upcoming Conference",
+        content: "The next conference is scheduled soon.",
+        metadata: {
+          category: "event",
+          dateFrom: isoDateOffset(5),
+        },
+      })
+      .expect(202);
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Past Conference",
+        content: "The last conference already happened.",
+        metadata: {
+          category: "event",
+          dateFrom: isoDateOffset(-5),
+        },
+      })
+      .expect(202);
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        metadataRules: [
+          {
+            id: "upcoming-events",
+            field: "dateFrom",
+            valueType: "date",
+            operator: "gte",
+            value: "today()",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "always_on",
+          },
+        ],
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Which conference is upcoming?", stream: false })
+      .expect(200);
+
+    expect(response.body.citations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Upcoming Conference",
+        }),
+      ]),
+    );
+    expect(response.body.retrievalInfo.appliedConstraints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          signalKey: "metadata.dateFrom",
+          summary: "dateFrom >= today()",
+        }),
+      ]),
+    );
+    expect(response.body.retrievalInfo.candidateCounts.final).toBeGreaterThan(0);
+  });
+
+  it("enacts triggerable filters only for matched turns", async () => {
+    const triggerAnalysisGateway: TriggerAnalysisGateway = {
+      async analyze({ query, rules }) {
+        const eventRule = rules.find((rule) => rule.id === "events-only");
+        const matched = /conference|event|course|camp/i.test(query);
+
+        return {
+          status: "applied",
+          consideredRules: eventRule
+            ? [
+                {
+                  ruleId: eventRule.id,
+                  matched,
+                  matchStrength: matched ? 0.95 : 0.08,
+                  reason: matched
+                    ? "The user is asking about an upcoming event."
+                    : "The user is not asking an event-style question.",
+                  triggerInstructionPreview: eventRule.triggerInstruction ?? "",
+                },
+              ]
+            : [],
+          matchedRuleIds: matched && eventRule ? [eventRule.id] : [],
+          unmatchedRuleIds: !matched && eventRule ? [eventRule.id] : [],
+          matchCount: matched && eventRule ? 1 : 0,
+          matcherVersion: "test",
+        };
+      },
+    };
+    const { app } = createTestApp({ triggerAnalysisGateway });
+
+    const { token } = await issueTestToken(app, "triggered-filters@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Conference Schedule",
+        content: "The next conference is on 2026-06-20.",
+        metadata: {
+          category: "event",
+          dateFrom: "2026-06-20",
+        },
+      });
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Medical Glossary",
+        content: "Mononuclear disease is an older term associated with infectious mononucleosis.",
+        metadata: {
+          category: "glossary",
+        },
+      });
+
+    const settingsResponse = await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
+        lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        metadataRules: [
+          {
+            id: "events-only",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact when the user is asking about upcoming events, conferences, camps, or courses.",
+          },
+        ],
+      });
+
+    expect(settingsResponse.status).toBe(200);
+
+    const matched = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "When is the next conference?", stream: false });
+
+    const unmatched = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "What is mononuclear disease?", stream: false });
+
+    expect(matched.status).toBe(200);
+    expect(unmatched.status).toBe(200);
+    expect(matched.body.answer.toLowerCase()).toContain("conference");
+    expect(unmatched.body.answer.toLowerCase()).toContain("mononuclear");
+    expect(matched.body.retrievalInfo.triggerAnalysis).toMatchObject({
+      matchedRuleIds: ["events-only"],
+      matchCount: 1,
+    });
+    expect(unmatched.body.retrievalInfo.triggerAnalysis).toMatchObject({
+      matchedRuleIds: [],
+      unmatchedRuleIds: ["events-only"],
+      matchCount: 0,
+    });
+    expect(matched.body.retrievalTrace.stages).toEqual(
+      expect.arrayContaining([expect.objectContaining({ stageId: "trigger_analysis", kind: "trigger_analysis" })]),
+    );
+  });
+
   it("adds bounded grounded continuations for guided and exploratory modes", async () => {
     const deterministicGateway: ChatGateway = {
       async answer({ prompt }) {

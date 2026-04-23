@@ -572,6 +572,13 @@ components:
                   - filter
               enabled:
                 type: boolean
+              triggerMode:
+                type: string
+                enum: &a6
+                  - always_on
+                  - match_turn
+              triggerInstruction:
+                type: string
             required:
               - id
               - field
@@ -580,6 +587,7 @@ components:
               - value
               - effect
               - enabled
+              - triggerMode
           default: []
         customInstruction:
           type: string
@@ -664,6 +672,12 @@ components:
                 enum: *a5
               enabled:
                 type: boolean
+              triggerMode:
+                type: string
+                enum: *a6
+              triggerInstruction:
+                type: string
+                maxLength: 500
             required:
               - id
               - field
@@ -690,7 +704,7 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a6
+          enum: &a7
             - fixed_window
             - structured_semantic
         fixedWindowChunkSize:
@@ -721,7 +735,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a6
+          enum: *a7
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -764,6 +778,11 @@ components:
           enum: *a5
         enabled:
           type: boolean
+        triggerMode:
+          type: string
+          enum: *a6
+        triggerInstruction:
+          type: string
       required:
         - id
         - field
@@ -772,6 +791,84 @@ components:
         - value
         - effect
         - enabled
+        - triggerMode
+    TriggerAnalysisRule:
+      type: object
+      properties:
+        ruleId:
+          type: string
+        matched:
+          type: boolean
+        matchStrength:
+          type: number
+          minimum: 0
+          maximum: 1
+        reason:
+          type: string
+        triggerInstructionPreview:
+          type: string
+      required:
+        - ruleId
+        - matched
+        - matchStrength
+        - reason
+        - triggerInstructionPreview
+    TriggerAnalysis:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - skipped_not_configured
+            - skipped_unavailable
+            - applied
+            - fallback
+        consideredRules:
+          type: array
+          items:
+            $ref: "#/components/schemas/TriggerAnalysisRule"
+        matchedRuleIds:
+          type: array
+          items:
+            type: string
+        unmatchedRuleIds:
+          type: array
+          items:
+            type: string
+        matchCount:
+          type: integer
+          minimum: 0
+        matcherVersion:
+          type: string
+        failureReason:
+          type: string
+      required:
+        - status
+        - consideredRules
+        - matchedRuleIds
+        - unmatchedRuleIds
+        - matchCount
+        - matcherVersion
+    TriggerBackoff:
+      type: object
+      properties:
+        applied:
+          type: boolean
+        reason:
+          type: string
+          enum:
+            - empty_filtered_candidates
+            - weak_filtered_support
+        relaxedRuleIds:
+          type: array
+          items:
+            type: string
+        restoredCandidateCount:
+          type: integer
+          minimum: 0
+      required:
+        - applied
+        - relaxedRuleIds
     UpdateGeneralSettingsRequest:
       type: object
       properties:
@@ -814,13 +911,13 @@ components:
           maxLength: 80
         websiteEmbedLauncherIcon:
           type: string
-          enum: &a7
+          enum: &a8
             - chat
             - sparkles
             - message
         websiteEmbedLauncherPosition:
           type: string
-          enum: &a8
+          enum: &a9
             - bottom-right
             - bottom-left
     GeneralSettingsResponse:
@@ -872,10 +969,10 @@ components:
           type: string
         websiteEmbedLauncherIcon:
           type: string
-          enum: *a7
+          enum: *a8
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a8
+          enum: *a9
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
@@ -1345,6 +1442,10 @@ components:
             - fallback
         rewrite:
           $ref: "#/components/schemas/RewriteInfo"
+        triggerAnalysis:
+          $ref: "#/components/schemas/TriggerAnalysis"
+        triggerBackoff:
+          $ref: "#/components/schemas/TriggerBackoff"
       required:
         - candidateCounts
         - fallbackApplied

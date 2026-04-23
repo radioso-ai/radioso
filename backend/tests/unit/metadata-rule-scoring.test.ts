@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MetadataRuleScoringService } from "../../src/modules/retrieval/services/metadataRuleScoringService.js";
 import type { RetrievedCandidate } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
@@ -19,6 +19,10 @@ const candidate = (overrides: Partial<RetrievedCandidate> = {}): RetrievedCandid
 });
 
 describe("metadata rule scoring", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("filters candidates by exact metadata match", () => {
     const service = new MetadataRuleScoringService();
 
@@ -36,6 +40,7 @@ describe("metadata rule scoring", () => {
           value: "en",
           effect: "filter",
           enabled: true,
+          triggerMode: "always_on",
         },
       ],
     });
@@ -61,6 +66,7 @@ describe("metadata rule scoring", () => {
           value: "example.com",
           effect: "boost",
           enabled: true,
+          triggerMode: "always_on",
         },
       ],
     });
@@ -71,6 +77,90 @@ describe("metadata rule scoring", () => {
       mode: "boost_only",
       outcome: "applied",
       summary: "parsedData.url contains example.com",
+    });
+  });
+
+  it("evaluates today() dynamically for date comparisons", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T12:00:00.000Z"));
+
+    const service = new MetadataRuleScoringService();
+
+    const result = service.apply({
+      candidates: [
+        candidate({ chunkId: "future", documentId: "future-doc", metadata: { dateFrom: "2026-06-15" } }),
+        candidate({ chunkId: "past", documentId: "past-doc", metadata: { dateFrom: "2026-05-15" } }),
+      ],
+      metadataRules: [
+        {
+          id: "upcoming-filter",
+          field: "dateFrom",
+          valueType: "date",
+          operator: "gte",
+          value: "today()",
+          effect: "filter",
+          enabled: true,
+          triggerMode: "always_on",
+        },
+      ],
+    });
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.chunkId).toBe("future");
+    expect(result.appliedRules).toContainEqual({
+      signalKey: "metadata.dateFrom",
+      mode: "hard_filter",
+      outcome: "applied",
+      summary: "dateFrom >= today()",
+    });
+  });
+
+  it("supports grouped OR conditions within a single rule", () => {
+    const service = new MetadataRuleScoringService();
+
+    const result = service.apply({
+      candidates: [
+        candidate({ chunkId: "events", metadata: { category: "event", language: "et" } }),
+        candidate({ chunkId: "english", metadata: { category: "article", language: "en" } }),
+        candidate({ chunkId: "other", metadata: { category: "article", language: "et" } }),
+      ],
+      metadataRules: [
+        {
+          id: "grouped-rule",
+          field: "category",
+          valueType: "string",
+          operator: "equals",
+          value: "event",
+          combinator: "or",
+          conditions: [
+            {
+              id: "condition-category",
+              field: "category",
+              valueType: "string",
+              operator: "equals",
+              value: "event",
+            },
+            {
+              id: "condition-language",
+              field: "language",
+              valueType: "string",
+              operator: "equals",
+              value: "en",
+            },
+          ],
+          effect: "filter",
+          enabled: true,
+          triggerMode: "always_on",
+        },
+      ],
+    });
+
+    expect(result.candidates.map((entry) => entry.chunkId)).toEqual(["events", "english"]);
+    expect(result.appliedRules).toContainEqual({
+      signalKey: "metadata.group.grouped-rule",
+      mode: "hard_filter",
+      outcome: "applied",
+      summary: "(category equals event) OR (language equals en)",
     });
   });
 });

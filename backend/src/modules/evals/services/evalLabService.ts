@@ -39,6 +39,9 @@ export interface EvalRepositoryPort {
 }
 
 const normalizeText = (value: string, maxLength: number): string => value.trim().slice(0, maxLength);
+type TriggerComparisonRule = NonNullable<
+  EvalCaseResultRecord["diagnostics"]["retrievalInfo"]["triggerAnalysis"]
+>["consideredRules"][number];
 
 const normalizeExpectedCitations = (
   citations: unknown,
@@ -67,6 +70,98 @@ const normalizeExpectedCitations = (
 
     return [{ documentId, title }];
   });
+};
+
+const formatTriggerRuleReference = (rule: {
+  ruleId: string;
+  triggerInstructionPreview: string;
+}): string => {
+  const preview = rule.triggerInstructionPreview.trim();
+  return preview.length > 0 ? `rule ${rule.ruleId} ("${preview}")` : `rule ${rule.ruleId}`;
+};
+
+const formatTriggerRuleList = (
+  rules: Array<{
+    ruleId: string;
+    triggerInstructionPreview: string;
+  }>,
+): string =>
+  rules.length > 0
+    ? rules
+        .slice()
+        .sort((left, right) => left.ruleId.localeCompare(right.ruleId))
+        .map((rule) => formatTriggerRuleReference(rule))
+        .join(", ")
+    : "no enacted trigger rules";
+
+const normalizeTriggerReason = (value: string): string => value.trim().replace(/\s+/g, " ");
+const normalizeTriggerStrength = (value: number): string => value.toFixed(2);
+
+const summarizeTriggerBehavior = (diagnostics: EvalCaseResultRecord["diagnostics"]): {
+  matchedRuleIds: string[];
+  matchedRules: TriggerComparisonRule[];
+  consideredRuleById: Map<string, TriggerComparisonRule>;
+  backoffReason?: "empty_filtered_candidates" | "weak_filtered_support";
+} => {
+  const triggerAnalysis = diagnostics.retrievalInfo.triggerAnalysis;
+  const consideredRules = triggerAnalysis?.consideredRules ?? [];
+  const matchedRules = consideredRules
+    .filter((rule) => triggerAnalysis?.matchedRuleIds.includes(rule.ruleId))
+
+  return {
+    matchedRuleIds: matchedRules.map((rule) => rule.ruleId).sort((left, right) => left.localeCompare(right)),
+    matchedRules,
+    consideredRuleById: new Map(consideredRules.map((rule) => [rule.ruleId, rule])),
+    backoffReason: diagnostics.retrievalInfo.triggerBackoff?.reason,
+  };
+};
+
+const buildTriggerComparisonReasons = (
+  baseline: EvalCaseResultRecord["diagnostics"],
+  candidate: EvalCaseResultRecord["diagnostics"],
+): string[] => {
+  const baselineTrigger = summarizeTriggerBehavior(baseline);
+  const candidateTrigger = summarizeTriggerBehavior(candidate);
+  const reasons: string[] = [];
+
+  const baselineMatched = formatTriggerRuleList(baselineTrigger.matchedRules);
+  const candidateMatched = formatTriggerRuleList(candidateTrigger.matchedRules);
+  if (baselineTrigger.matchedRuleIds.join(",") !== candidateTrigger.matchedRuleIds.join(",")) {
+    reasons.push(
+      `Trigger decision changed from ${baselineMatched} to ${candidateMatched}.`,
+    );
+  }
+
+  const sharedRuleIds = [...baselineTrigger.consideredRuleById.keys()]
+    .filter((ruleId) => candidateTrigger.consideredRuleById.has(ruleId))
+    .sort((left, right) => left.localeCompare(right));
+  for (const ruleId of sharedRuleIds) {
+    const baselineRule = baselineTrigger.consideredRuleById.get(ruleId);
+    const candidateRule = candidateTrigger.consideredRuleById.get(ruleId);
+    if (!baselineRule || !candidateRule || baselineRule.matched !== candidateRule.matched) {
+      continue;
+    }
+
+    const baselineStrength = normalizeTriggerStrength(baselineRule.matchStrength);
+    const candidateStrength = normalizeTriggerStrength(candidateRule.matchStrength);
+    if (baselineStrength !== candidateStrength) {
+      reasons.push(
+        `Trigger confidence for ${formatTriggerRuleReference(candidateRule)} changed from ${baselineStrength} to ${candidateStrength}.`,
+      );
+    }
+
+    if (normalizeTriggerReason(baselineRule.reason) !== normalizeTriggerReason(candidateRule.reason)) {
+      reasons.push(`Trigger rationale changed for ${formatTriggerRuleReference(candidateRule)}.`);
+    }
+  }
+
+  if (baselineTrigger.backoffReason !== candidateTrigger.backoffReason) {
+    reasons.push(
+      `Trigger backoff changed from ${baselineTrigger.backoffReason ?? "none"} to ${candidateTrigger.backoffReason ?? "none"}.`,
+    );
+  }
+
+  return reasons;
 };
 
 export class EvalLabService {
@@ -452,27 +547,33 @@ export class EvalLabService {
       }
 
       if (baseline.status === "pass" && result.status === "fail") {
+        const triggerReasons = buildTriggerComparisonReasons(baseline.diagnostics, result.diagnostics);
         return {
           ...result,
           comparisonOutcome: "regressed",
-          comparisonReasons: result.score.reasons.length > 0
+          comparisonReasons: [...triggerReasons, ...(result.score.reasons.length > 0
             ? result.score.reasons
-            : [`${caseTitleById.get(result.caseId) ?? "Case"} regressed.`],
+            : [`${caseTitleById.get(result.caseId) ?? "Case"} regressed.`]
+          )],
         };
       }
 
       if (baseline.status === "fail" && result.status === "pass") {
+        const triggerReasons = buildTriggerComparisonReasons(baseline.diagnostics, result.diagnostics);
         return {
           ...result,
           comparisonOutcome: "improved",
-          comparisonReasons: ["Case now passes all configured expectations."],
+          comparisonReasons: [...triggerReasons, "Case now passes all configured expectations."],
         };
       }
 
+      const triggerReasons = buildTriggerComparisonReasons(baseline.diagnostics, result.diagnostics);
       return {
         ...result,
         comparisonOutcome: "unchanged",
-        comparisonReasons: ["Case outcome is unchanged from the baseline run."],
+        comparisonReasons: triggerReasons.length > 0
+          ? [...triggerReasons, "Case outcome is unchanged from the baseline run."]
+          : ["Case outcome is unchanged from the baseline run."],
       };
     });
   }

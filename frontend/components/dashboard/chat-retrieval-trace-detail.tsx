@@ -233,6 +233,62 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
     )
   }
 
+  if (stage.stageId === 'trigger_analysis') {
+    const consideredRules = Array.isArray(outputs.consideredRules) ? outputs.consideredRules : []
+    const matchedRuleIds = asStringList(outputs.matchedRuleIds)
+    const unmatchedRuleIds = asStringList(outputs.unmatchedRuleIds)
+    const backoffDecision = asRecord(outputs.backoffDecision)
+
+    return (
+      <>
+        <Section title="Trigger analysis">
+          <KeyValueList
+            rows={[
+              { label: 'Query', value: inputs.query as string | undefined },
+              { label: 'Considered rules', value: metrics.consideredRuleCount as number | undefined },
+              { label: 'Matched rules', value: metrics.matchCount as number | undefined },
+              { label: 'Failure reason', value: stage.reason },
+            ]}
+          />
+        </Section>
+        <Section title="Matched rule ids">
+          <StringList values={matchedRuleIds} />
+        </Section>
+        <Section title="Unmatched rule ids">
+          <StringList values={unmatchedRuleIds} />
+        </Section>
+        {consideredRules.length > 0 ? (
+          <Section title="Considered rules">
+            <div className="space-y-2">
+              {consideredRules.map((rule, index) => {
+                const item = asRecord(rule)
+                const matchStrength = item.matchStrength
+                return (
+                  <div key={`${String(item.ruleId ?? index)}`} className="rounded-lg border border-border/70 bg-background/70 p-3">
+                    <KeyValueList
+                      rows={[
+                        { label: 'Rule id', value: item.ruleId as string | undefined },
+                        { label: 'Matched', value: item.matched as boolean | undefined },
+                        {
+                          label: 'Match strength',
+                          value:
+                            typeof matchStrength === 'number' ? `${(matchStrength * 100).toFixed(0)}%` : undefined,
+                        },
+                        { label: 'Instruction preview', value: item.triggerInstructionPreview as string | undefined },
+                        { label: 'Reason', value: item.reason as string | undefined },
+                      ]}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </Section>
+        ) : null}
+        <RawBlock label="Backoff decision" value={backoffDecision} />
+      </>
+    )
+  }
+
   if (stage.kind === 'semantic_original' || stage.kind === 'semantic_rewritten' || stage.kind === 'lexical') {
     return (
       <>

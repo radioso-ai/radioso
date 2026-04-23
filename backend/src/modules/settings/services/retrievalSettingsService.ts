@@ -53,7 +53,11 @@ export class RetrievalSettingsService {
 
   async updateForWorkspace(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
     try {
-      const settings = await this.repository.upsert(workspaceId, validateRetrievalSettings(input));
+      const normalizedInput: RetrievalSettingsInput = {
+        ...input,
+        metadataRules: normalizeMetadataRules(input.metadataRules),
+      };
+      const settings = await this.repository.upsert(workspaceId, validateRetrievalSettings(normalizedInput));
       try {
         await this.auditService.record({
           workspaceId,

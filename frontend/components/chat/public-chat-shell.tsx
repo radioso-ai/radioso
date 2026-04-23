@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-import { RotateCcw, Send, Sparkles, X } from 'lucide-react'
+import { Send, Sparkles, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -12,6 +12,7 @@ import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 import {
   buildWebsiteEmbedCssVars,
+  formatWebsiteEmbedDisclaimer,
   formatWebsiteEmbedStartingMessage,
   formatWebsiteEmbedRateLimitRetry,
   getWebsiteEmbedCopy,
@@ -258,37 +259,19 @@ function PublicChatContent({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          {onRequestCollapse ? (
             <Button
               type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => void handleStartNewChat()}
-              disabled={isLoading || isHydrating || isLoadingOlderMessages}
+              size="icon"
+              variant="ghost"
+              onClick={onRequestCollapse}
               className="hover:opacity-90"
-              style={{
-                borderColor: theme.panelBorder,
-                background: theme.mutedBackground,
-                color: theme.panelForeground,
-              }}
+              style={{ color: theme.mutedForeground }}
             >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              {copy.publicChatNewChatLabel}
+              <X className="h-4 w-4" />
+              <span className="sr-only">{copy.publicChatCollapseLabel}</span>
             </Button>
-            {onRequestCollapse ? (
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={onRequestCollapse}
-                className="hover:opacity-90"
-                style={{ color: theme.mutedForeground }}
-              >
-                <X className="h-4 w-4" />
-                <span className="sr-only">{copy.publicChatCollapseLabel}</span>
-              </Button>
-            ) : null}
-          </div>
+          ) : null}
         </div>
       </div>
 
@@ -387,6 +370,22 @@ function PublicChatContent({
             <span className="sr-only">{copy.publicChatSendMessageLabel}</span>
           </Button>
         </form>
+        <div className="mx-auto mt-3 flex max-w-3xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs" style={{ color: theme.mutedForeground }}>
+            {formatWebsiteEmbedDisclaimer(copy, resolvedWorkspaceName)}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => void handleStartNewChat()}
+            disabled={isLoading || isHydrating || isLoadingOlderMessages}
+            className="h-8 self-start px-2 text-xs hover:opacity-90"
+            style={{ color: theme.mutedForeground }}
+          >
+            {copy.publicChatNewChatLabel}
+          </Button>
+        </div>
       </div>
     </div>
   )

@@ -55,6 +55,7 @@
     'publicChatSendMessageLabel',
     'publicChatNewChatLabel',
     'publicChatCollapseLabel',
+    'publicChatDisclaimerTemplate',
     'publicChatRateLimitRetryTemplate',
   ]
 

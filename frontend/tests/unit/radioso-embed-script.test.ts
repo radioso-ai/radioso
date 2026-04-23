@@ -34,6 +34,7 @@ describe('website embed runtime helpers', () => {
   it('sanitizes copy and theme overrides and formats retry text', () => {
     const copyOverrides = sanitizeWebsiteEmbedCopyOverrides({
       publicChatSendMessageLabel: 'Enviar',
+      publicChatDisclaimerTemplate: '{name} puede cometer errores.',
       invalidKey: 'ignored',
     })
     const theme = getWebsiteEmbedTheme(
@@ -46,7 +47,10 @@ describe('website embed runtime helpers', () => {
       publicChatRateLimitRetryTemplate: 'Retry in {seconds} seconds.',
     })
 
-    expect(copyOverrides).toEqual({ publicChatSendMessageLabel: 'Enviar' })
+    expect(copyOverrides).toEqual({
+      publicChatSendMessageLabel: 'Enviar',
+      publicChatDisclaimerTemplate: '{name} puede cometer errores.',
+    })
     expect(theme.accent).toBe('#112233')
     expect(formatWebsiteEmbedRateLimitRetry(copy, 7)).toBe('Retry in 7 seconds.')
   })

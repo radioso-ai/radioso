@@ -32,6 +32,7 @@ export interface WebsiteEmbedCopy {
   publicChatSendMessageLabel: string
   publicChatNewChatLabel: string
   publicChatCollapseLabel: string
+  publicChatDisclaimerTemplate: string
   publicChatRateLimitRetryTemplate: string
 }
 
@@ -84,8 +85,9 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatUnavailableMessage: 'This chat link is no longer active. Please contact the workspace administrator for access.',
   publicChatLoadOlderMessages: 'Load older messages',
   publicChatSendMessageLabel: 'Send message',
-  publicChatNewChatLabel: 'New chat',
+  publicChatNewChatLabel: 'Clear chat',
   publicChatCollapseLabel: 'Collapse chat',
+  publicChatDisclaimerTemplate: '{name} uses AI and can make mistakes.',
   publicChatRateLimitRetryTemplate: 'Try again in {seconds}s.',
 }
 export const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
@@ -130,6 +132,7 @@ const COPY_OVERRIDE_KEYS = [
   'publicChatSendMessageLabel',
   'publicChatNewChatLabel',
   'publicChatCollapseLabel',
+  'publicChatDisclaimerTemplate',
   'publicChatRateLimitRetryTemplate',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
@@ -327,6 +330,11 @@ export const formatWebsiteEmbedRateLimitRetry = (
 export const formatWebsiteEmbedStartingMessage = (
   copy: Pick<WebsiteEmbedCopy, 'embeddedChatStartingMessage' | 'embeddedChatTitle'>,
 ) => copy.embeddedChatStartingMessage.replaceAll('{name}', copy.embeddedChatTitle)
+
+export const formatWebsiteEmbedDisclaimer = (
+  copy: Pick<WebsiteEmbedCopy, 'publicChatDisclaimerTemplate'>,
+  name: string,
+) => copy.publicChatDisclaimerTemplate.replaceAll('{name}', name)
 
 export const getWebsiteEmbedCopy = (
   _value: string | null | undefined,

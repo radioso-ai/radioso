@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildWebsiteEmbedTestHarnessUrl,
   buildWebsiteEmbedSnippet,
+  formatWebsiteEmbedDisclaimer,
   formatWebsiteEmbedOrigins,
   formatWebsiteEmbedRateLimitRetry,
   formatWebsiteEmbedStartingMessage,
@@ -197,6 +198,9 @@ describe('embed widget helpers', () => {
     expect(copy.publicChatEmptyTitle).toBe('Bonjour')
     expect(formatWebsiteEmbedRateLimitRetry(copy, 12)).toBe('Try again in 12s.')
     expect(formatWebsiteEmbedStartingMessage(copy)).toBe('Summoning Radioso embedded chat...')
+    expect(formatWebsiteEmbedDisclaimer(copy, 'Support concierge')).toBe(
+      'Support concierge uses AI and can make mistakes.',
+    )
     expect(theme.accent).toBe('#224466')
   })
 
@@ -213,5 +217,13 @@ describe('embed widget helpers', () => {
         embeddedChatTitle: 'Ignored name',
       }),
     ).toBe('Connecting now')
+    expect(
+      formatWebsiteEmbedDisclaimer(
+        {
+          publicChatDisclaimerTemplate: '{name} uses AI and can make mistakes.',
+        },
+        'Support concierge',
+      ),
+    ).toBe('Support concierge uses AI and can make mistakes.')
   })
 })

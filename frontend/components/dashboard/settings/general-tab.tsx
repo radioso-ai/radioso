@@ -1302,7 +1302,7 @@ export function GeneralTab({
                             id="websiteEmbedSnippetCopyJson"
                             value={websiteEmbedSnippetCopyJson}
                             onChange={(event) => setWebsiteEmbedSnippetCopyJson(event.target.value)}
-                            placeholder={`{"publicChatNewChatLabel":"Start over","publicChatUnavailableTitle":"Support offline"}`}
+                            placeholder={`{"publicChatNewChatLabel":"Clear chat","publicChatDisclaimerTemplate":"{name} uses AI and can make mistakes."}`}
                             className="min-h-[96px] font-mono text-xs"
                           />
                           {websiteEmbedSnippetCopyJsonError ? (

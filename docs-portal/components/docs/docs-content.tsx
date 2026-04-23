@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowRight, CheckCircle2, Info } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, FileText, Info, Shield } from 'lucide-react'
 import Link from 'next/link'
 
 import { CodeBlock } from '@/components/docs/code-block'
@@ -54,6 +54,32 @@ export function DocsContent() {
       description: 'Register, reveal a workspace token, upload a document, and ask the first grounded question.',
     },
   ]
+  const discoveryCards = [
+    {
+      href: '/api-reference',
+      title: 'API reference',
+      description: 'Jump directly into the full endpoint reference when you already know the integration surface you need.',
+      icon: ArrowRight,
+    },
+    {
+      href: '/operators',
+      title: 'Operators',
+      description: 'Find deployment and document-processing runbooks without traversing the full docs tree.',
+      icon: FileText,
+    },
+    {
+      href: '/security',
+      title: 'Security',
+      description: 'Review token handling and public embed safety before exposing Radioso to external traffic.',
+      icon: Shield,
+    },
+    {
+      href: '/troubleshooting',
+      title: 'Troubleshooting',
+      description: 'Open the incident path first when local startup, ingestion, or retrieval quality is off.',
+      icon: AlertTriangle,
+    },
+  ]
 
   return (
     <>
@@ -92,6 +118,41 @@ export function DocsContent() {
             <p className="mt-3 text-sm leading-6 text-muted-foreground">{card.description}</p>
           </Link>
         ))}
+      </section>
+
+      <section className="mb-14">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-3xl font-semibold text-foreground">Critical paths</h2>
+            <p className="mt-2 max-w-3xl text-base leading-7 text-muted-foreground">
+              If you are on a phone or coming in from search, these are the destinations that matter most once you are past the initial quickstart.
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {discoveryCards.map((card) => {
+            const Icon = card.icon
+
+            return (
+              <Link
+                key={card.href}
+                href={card.href}
+                className="group rounded-3xl border border-border bg-card p-6 transition-colors hover:border-primary/40 hover:bg-primary/5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-secondary/70 text-secondary-foreground">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-foreground">{card.title}</h3>
+                  </div>
+                  <ArrowRight className="mt-1 h-4 w-4 text-primary transition-transform group-hover:translate-x-0.5" />
+                </div>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">{card.description}</p>
+              </Link>
+            )
+          })}
+        </div>
       </section>
 
       <section id="run-locally" className="mb-14">

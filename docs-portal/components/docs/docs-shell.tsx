@@ -14,14 +14,25 @@ export function DocsShell({
   contentClassName?: string
 }) {
   const [searchQuery, setSearchQuery] = useState('')
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   return (
     <div className="flex min-h-screen bg-background">
       <DocsSidebar onSearchChange={setSearchQuery} searchQuery={searchQuery} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <DocsHeader />
+        <DocsHeader mobileNavOpen={mobileNavOpen} onMobileNavToggle={() => setMobileNavOpen((open) => !open)} />
+        {mobileNavOpen ? (
+          <div id="docs-mobile-navigation" className="border-b border-border/80 bg-background px-4 py-4 xl:hidden">
+            <DocsSidebar
+              mode="mobile"
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              onNavigate={() => setMobileNavOpen(false)}
+            />
+          </div>
+        ) : null}
         <main className="min-w-0 flex-1 overflow-y-auto">
-          <div className={cn('mx-auto w-full max-w-5xl px-8 py-14', contentClassName)}>{children}</div>
+          <div className={cn('mx-auto w-full max-w-5xl px-4 py-10 md:px-8 md:py-14', contentClassName)}>{children}</div>
         </main>
       </div>
     </div>

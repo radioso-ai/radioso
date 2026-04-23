@@ -3,7 +3,11 @@ title: Run locally in 5 minutes
 description: Start the full Radioso stack locally, create a workspace, upload a document, and ask the first question.
 ---
 
+import { Callout, Steps } from 'nextra/components'
+
 # Run locally in 5 minutes
+
+Use this path when you want to evaluate the full product quickly on one machine. In practice, this is the best starting point if you want to see the UI, upload documents, and verify grounded answers before thinking about deployment.
 
 ## Prerequisites
 
@@ -28,6 +32,8 @@ This is the intended local bootstrap path. It:
 - creates or reuses `backend/.env`
 - prompts for the AI provider and required credentials
 - generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `WEBSITE_EMBED_SECRET`
+- writes `AUTH_SKIP_EMAIL_VERIFICATION=true` for the default local bootstrap flow
+- defaults outbound mail to `MAIL_DRIVER=log`
 - configures uploaded document storage to use the local filesystem by default
 - builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose
 - waits until the frontend and backend are reachable
@@ -38,7 +44,23 @@ When it finishes successfully, open:
 - API: `http://localhost:8080`
 - Embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
 
-## Verify first success
+## Pick a local goal
+
+<Steps>
+### Goal 1: evaluate the product UI
+
+Open the app, create an account or sign in, upload a document, and ask a question.
+
+### Goal 2: test the API contract
+
+Use the local backend to register, log in, reveal a workspace token, and call document or chat routes directly.
+
+### Goal 3: test the website embed
+
+Start the local embed harness and verify both an approved origin and a blocked origin.
+</Steps>
+
+## Verify first success in the app
 
 1. Open `http://localhost:3000`
 2. Register or sign in
@@ -52,23 +74,28 @@ Success looks like this:
 - you can upload a document
 - Radioso returns an answer grounded in that document
 
-## Choose your path
-
-### Use the web app
-
-This is the fastest path if you want to click around the product and verify that the full app works.
-
-### Use the API or SDK only
+## Verify first success through the API
 
 You do not need to open the web app at all.
 
-Register a new user and save the session cookie:
+Register a new user:
+
+```bash
+curl -sS \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
+  http://localhost:8080/api/v1/auth/register
+```
+
+The default local bootstrap flow usually bypasses email verification, but keep in mind that production registration can return `requiresEmailVerification: true` without creating a session.
+
+Log in and save the session cookie:
 
 ```bash
 curl -sS -c cookies.txt \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"verysecurepassword"}' \
-  http://localhost:8080/api/v1/auth/register
+  http://localhost:8080/api/v1/auth/login
 ```
 
 Reveal the workspace API token with the session cookie:
@@ -78,6 +105,26 @@ curl -sS -b cookies.txt \
   http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
 ```
 
-## Common failure mode
+## What local development changes
 
-If the stack starts but answers fail, the most common issue is missing or invalid provider credentials in `backend/.env`.
+Local bootstrap is intentionally more permissive than production:
+
+- email verification is skipped by default
+- password reset and verification emails are written to logs by default
+- uploaded source files are stored on the local filesystem
+- Docker Compose runs the app, API, worker, and Postgres together
+
+<Callout type="info" emoji="i">
+  The key point is that local setup is optimized for fast evaluation, not for mirroring every production constraint.
+</Callout>
+
+## Common failure modes
+
+- If the stack starts but answers fail, the most common issue is missing or invalid provider credentials in `backend/.env`.
+- If upload works but chat ignores the new document, document processing may still be running.
+- If auth links do not arrive by email, check backend logs first because local mail defaults to log mode.
+
+## What to do next
+
+- If the local app experience looks correct, continue with [API first success](/quickstarts/api-first-success) or [Embed on your website](/quickstarts/website-embed).
+- If you are trying to understand why answers look wrong, go to [Retrieval tuning](/guides/retrieval-tuning).

@@ -1,7 +1,7 @@
 import { ModelChatGateway } from "../../../modules/chat/services/chatService.js";
 import { ModelGroundedMissResponseComposer } from "../../../modules/chat/services/groundedMissResponseComposer.js";
 import { ModelEmbeddingGateway } from "../../../modules/retrieval/services/embeddingService.js";
-import { ModelQueryRewriteGateway } from "../../../modules/retrieval/services/queryRewriteService.js";
+import { ModelQueryRewriteGateway, ModelTriggerAnalysisGateway } from "../../../modules/retrieval/services/queryRewriteService.js";
 import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../../modules/retrieval/services/rerankService.js";
 import { ClaudeTextGenerationClient } from "./claudeProvider.js";
 import { GeminiTextGenerationClient } from "./geminiProvider.js";
@@ -51,6 +51,10 @@ export class LlmProviderRegistry {
 
   createRewriteGateway() {
     return new ModelQueryRewriteGateway(this.createTextClient(this.config.rewrite));
+  }
+
+  createTriggerAnalysisGateway() {
+    return new ModelTriggerAnalysisGateway(this.createTextClient(this.config.rewrite));
   }
 
   createRerankGateway() {

@@ -77,6 +77,22 @@ describe("retrieval trace assembler", () => {
           { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani", responseLanguagePolicy: "match_user_question" },
           { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra", responseLanguagePolicy: "match_user_question" },
         ],
+        triggerAnalysis: {
+          status: "applied",
+          consideredRules: [
+            {
+              ruleId: "events-only",
+              matched: true,
+              matchStrength: 0.91,
+              reason: "The query is asking about an upcoming event.",
+              triggerInstructionPreview: "Enact for upcoming events.",
+            },
+          ],
+          matchedRuleIds: ["events-only"],
+          unmatchedRuleIds: [],
+          matchCount: 1,
+          matcherVersion: "test",
+        },
         promptHistory: [],
         continuityDecision: "updated",
         activeEmbedding: [1, 0, 0],
@@ -172,8 +188,21 @@ describe("retrieval trace assembler", () => {
         normalizedCandidates: [],
         mergedCandidates: [],
         scoredCandidates: [],
-        appliedConstraints: [],
+        appliedConstraints: [
+          {
+            signalKey: "metadata.category",
+            mode: "hard_filter",
+            outcome: "relaxed",
+            summary: "category equals event",
+          },
+        ],
         candidateFallbackApplied: false,
+        triggerBackoff: {
+          applied: true,
+          reason: "empty_filtered_candidates",
+          relaxedRuleIds: ["events-only"],
+          restoredCandidateCount: 2,
+        },
         rerankedContexts: [],
         rerankStatus: "applied",
         contexts: [],
@@ -203,13 +232,42 @@ describe("retrieval trace assembler", () => {
           lexicalQuery: "who is narayani and arudra?",
           constraints: [],
         },
-        appliedConstraints: [],
+        appliedConstraints: [
+          {
+            signalKey: "metadata.category",
+            mode: "hard_filter",
+            outcome: "relaxed",
+            summary: "category equals event",
+          },
+        ],
         candidateFallbackApplied: false,
         fallbackApplied: false,
         rewriteEligible: true,
         rewriteRan: true,
         materialDisagreement: false,
         continuityDecision: "updated",
+        triggerAnalysis: {
+          status: "applied",
+          consideredRules: [
+            {
+              ruleId: "events-only",
+              matched: true,
+              matchStrength: 0.91,
+              reason: "The query is asking about an upcoming event.",
+              triggerInstructionPreview: "Enact for upcoming events.",
+            },
+          ],
+          matchedRuleIds: ["events-only"],
+          unmatchedRuleIds: [],
+          matchCount: 1,
+          matcherVersion: "test",
+        },
+        triggerBackoff: {
+          applied: true,
+          reason: "empty_filtered_candidates",
+          relaxedRuleIds: ["events-only"],
+          restoredCandidateCount: 2,
+        },
         retrievalSubqueries: [
           { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani", responseLanguagePolicy: "match_user_question" },
           { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra", responseLanguagePolicy: "match_user_question" },
@@ -233,10 +291,34 @@ describe("retrieval trace assembler", () => {
 
     expect(trace.stages.filter((stage) => stage.kind === "semantic_rewritten")).toHaveLength(2);
     expect(trace.stages.filter((stage) => stage.kind === "lexical")).toHaveLength(2);
+    expect(trace.stages).toContainEqual(
+      expect.objectContaining({
+        stageId: "trigger_analysis",
+        kind: "trigger_analysis",
+        status: "applied",
+      }),
+    );
     expect(trace.summary?.retrievalSubqueries).toEqual([
       expect.objectContaining({ label: "Narayani", lexicalQuery: "narayani", responseLanguagePolicy: "match_user_question" }),
       expect.objectContaining({ label: "Arudra", lexicalQuery: "arudra", responseLanguagePolicy: "match_user_question" }),
     ]);
     expect(trace.summary?.responseLanguagePolicy).toBe("match_user_question");
+    expect(trace.summary?.triggerAnalysis).toMatchObject({
+      matchedRuleIds: ["events-only"],
+      matchCount: 1,
+    });
+    expect(trace.summary?.triggerBackoff).toMatchObject({
+      applied: true,
+      relaxedRuleIds: ["events-only"],
+    });
+    expect(trace.summary?.appliedConstraints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          signalKey: "metadata.category",
+          outcome: "relaxed",
+          summary: "category equals event",
+        }),
+      ]),
+    );
   });
 });

@@ -1,11 +1,15 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import type { RetrievalMetadataRule } from "../../settings/domain/retrievalSettings.js";
+import { getNormalizedMetadataConditions } from "../../settings/domain/retrievalSettings.js";
 import type {
   ConversationContextWindow,
   RetrievalSubquery,
   RewrittenRetrievalQuery,
   ResponseLanguagePolicy,
+  TriggerAnalysisResult,
   RewriteTurnKind,
   StructuredRewriteResult,
 } from "../domain/retrievalPipelineTypes.js";
@@ -20,10 +24,18 @@ export interface QueryRewriteGatewayFallbackResult {
 }
 
 export type QueryRewriteGatewayResult = QueryRewriteGatewayFallbackResult | StructuredRewriteResult;
+export interface TriggerAnalysisGatewayInput {
+  query: string;
+  activeQuery: string;
+  contextMessages: MessageRecord[];
+  rules: RetrievalMetadataRule[];
+}
 
 const QUERY_REWRITE_SYSTEM_PROMPT = loadPromptTemplate("retrieval/query-rewrite-system.md");
+const TRIGGER_ANALYSIS_SYSTEM_PROMPT = loadPromptTemplate("retrieval/trigger-analysis-system.md");
 
 const DEFAULT_RESPONSE_LANGUAGE_POLICY: ResponseLanguagePolicy = "match_user_question";
+const TRIGGER_MATCH_ENACTMENT_THRESHOLD = RETRIEVAL_BEHAVIOR.hybrid.triggerMatchEnactmentThreshold;
 
 const buildQueryRewritePrompt = (input: {
   context: string;
@@ -40,6 +52,43 @@ const buildQueryRewritePrompt = (input: {
     query: input.query,
   });
 
+const formatConversationContext = (messages: MessageRecord[]): string =>
+  messages
+    .map((message) =>
+      `${message.role.toUpperCase()}: ${message.content}${
+        message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
+      }`,
+    )
+    .join("\n");
+
+const buildTriggerAnalysisPrompt = (input: {
+  query: string;
+  activeQuery: string;
+  context: string;
+  rules: RetrievalMetadataRule[];
+}): string =>
+  renderPromptTemplate("retrieval/trigger-analysis-user.md", {
+    query: input.query,
+    active_query: input.activeQuery,
+    context_section: input.context || "No prior context",
+    rules_json: JSON.stringify(
+      input.rules.map((rule) => ({
+        ruleId: rule.id,
+        triggerInstruction: rule.triggerInstruction,
+        effect: rule.effect,
+        combinator: rule.combinator ?? "and",
+        conditions: getNormalizedMetadataConditions(rule).map((condition) => ({
+          field: condition.field,
+          operator: condition.operator,
+          value: condition.value,
+          valueType: condition.valueType,
+        })),
+      })),
+      null,
+      2,
+    ),
+  });
+
 export interface QueryRewriteGateway {
   rewrite(input: {
     query: string;
@@ -47,6 +96,28 @@ export interface QueryRewriteGateway {
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<QueryRewriteGatewayResult>;
+}
+
+export interface TriggerAnalysisGateway {
+  analyze(input: TriggerAnalysisGatewayInput): Promise<TriggerAnalysisResult>;
+}
+
+export class ModelTriggerAnalysisGateway implements TriggerAnalysisGateway {
+  constructor(private readonly client: TextGenerationClient) {}
+
+  async analyze(input: TriggerAnalysisGatewayInput): Promise<TriggerAnalysisResult> {
+    const raw = await this.client.complete({
+      systemPrompt: TRIGGER_ANALYSIS_SYSTEM_PROMPT,
+      prompt: buildTriggerAnalysisPrompt({
+        query: input.query,
+        activeQuery: input.activeQuery,
+        context: formatConversationContext(input.contextMessages),
+        rules: input.rules,
+      }),
+    });
+
+    return parseStructuredTriggerAnalysis(raw, input.rules);
+  }
 }
 
 export class ModelQueryRewriteGateway implements QueryRewriteGateway {
@@ -58,18 +129,10 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<StructuredRewriteResult> {
-    const context = input.contextMessages
-      .map((message) =>
-        `${message.role.toUpperCase()}: ${message.content}${
-          message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
-        }`,
-      )
-      .join("\n");
-
     const raw = await this.client.complete({
       systemPrompt: QUERY_REWRITE_SYSTEM_PROMPT,
       prompt: buildQueryRewritePrompt({
-        context,
+        context: formatConversationContext(input.contextMessages),
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         query: input.query,
@@ -101,14 +164,6 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<StructuredRewriteResult> {
-    const context = input.contextMessages
-      .map((message) =>
-        `${message.role.toUpperCase()}: ${message.content}${
-          message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
-        }`,
-      )
-      .join("\n");
-
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: [
@@ -119,7 +174,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
         {
           role: "user",
           content: buildQueryRewritePrompt({
-            context,
+            context: formatConversationContext(input.contextMessages),
             semanticRewriteInstructions: input.semanticRewriteInstructions,
             lexicalRewriteInstructions: input.lexicalRewriteInstructions,
             query: input.query,
@@ -136,7 +191,10 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
 export class QueryRewriteService {
   private readonly eligibilityService = new RewriteEligibilityService();
 
-  constructor(private readonly gateway?: QueryRewriteGateway) {}
+  constructor(
+    private readonly gateway?: QueryRewriteGateway,
+    private readonly triggerGateway?: TriggerAnalysisGateway,
+  ) {}
 
   async rewrite(input: {
     query: string;
@@ -210,6 +268,98 @@ export class QueryRewriteService {
       };
     } catch {
       return this.fallback(input.query, "rewrite_failed");
+    }
+  }
+
+  async analyzeTriggers(input: {
+    query: string;
+    activeQuery?: string;
+    contextMessages?: MessageRecord[];
+    metadataRules: RetrievalMetadataRule[];
+  }): Promise<TriggerAnalysisResult> {
+    const triggerableRules = input.metadataRules.filter(
+      (rule) => rule.enabled && rule.triggerMode === "match_turn" && typeof rule.triggerInstruction === "string",
+    );
+
+    if (triggerableRules.length === 0) {
+      return {
+        status: "skipped_not_configured",
+        consideredRules: [],
+        matchedRuleIds: [],
+        unmatchedRuleIds: [],
+        matchCount: 0,
+        matcherVersion: "none",
+      };
+    }
+
+    if (!this.triggerGateway) {
+      return {
+        status: "skipped_unavailable",
+        consideredRules: triggerableRules.map((rule) => ({
+          ruleId: rule.id,
+          matched: false,
+          matchStrength: 0,
+          reason: "Trigger analysis gateway unavailable.",
+          triggerInstructionPreview: rule.triggerInstruction ?? "",
+        })),
+        matchedRuleIds: [],
+        unmatchedRuleIds: triggerableRules.map((rule) => rule.id),
+        matchCount: 0,
+        matcherVersion: "unavailable",
+        failureReason: "trigger_gateway_unavailable",
+      };
+    }
+
+    try {
+      const result = await this.triggerGateway.analyze({
+        query: input.query,
+        activeQuery: input.activeQuery ?? input.query,
+        contextMessages: input.contextMessages ?? [],
+        rules: triggerableRules,
+      });
+      const normalizedConsideredRules = result.consideredRules.map((rule) => {
+        const thresholdMet = rule.matchStrength >= TRIGGER_MATCH_ENACTMENT_THRESHOLD;
+        const thresholdGuardedMatch = rule.matched && thresholdMet;
+
+        return {
+          ...rule,
+          matched: thresholdGuardedMatch,
+          reason: thresholdGuardedMatch
+            ? rule.reason.trim()
+            : rule.matched
+              ? `${rule.reason.trim()} Match strength ${rule.matchStrength.toFixed(2)} is below the enactment threshold ${TRIGGER_MATCH_ENACTMENT_THRESHOLD.toFixed(2)}.`
+              : rule.reason.trim(),
+          triggerInstructionPreview: rule.triggerInstructionPreview.trim(),
+        };
+      });
+      const matchedRuleIds = normalizedConsideredRules.filter((rule) => rule.matched).map((rule) => rule.ruleId);
+      const unmatchedRuleIds = normalizedConsideredRules.filter((rule) => !rule.matched).map((rule) => rule.ruleId);
+
+      return {
+        status: result.status,
+        consideredRules: normalizedConsideredRules,
+        matchedRuleIds,
+        unmatchedRuleIds,
+        matchCount: matchedRuleIds.length,
+        matcherVersion: result.matcherVersion,
+        failureReason: result.failureReason,
+      };
+    } catch {
+      return {
+        status: "fallback",
+        consideredRules: triggerableRules.map((rule) => ({
+          ruleId: rule.id,
+          matched: false,
+          matchStrength: 0,
+          reason: "Trigger analysis failed; baseline retrieval preserved.",
+          triggerInstructionPreview: truncateTriggerInstruction(rule.triggerInstruction ?? ""),
+        })),
+        matchedRuleIds: [],
+        unmatchedRuleIds: triggerableRules.map((rule) => rule.id),
+        matchCount: 0,
+        matcherVersion: "fallback",
+        failureReason: "trigger_analysis_failed",
+      };
     }
   }
 
@@ -409,6 +559,15 @@ const tokenizeRewriteTerms = (value: string): string[] =>
     .map((term) => term.trim())
     .filter((term) => term.length >= 3);
 
+const truncateTriggerInstruction = (value: string): string => value.trim().replace(/\s+/g, " ").slice(0, 160);
+
+const stripJsonFence = (value: string): string =>
+  value
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
 const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
   const normalized = raw.trim().replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim();
   const parsed = JSON.parse(normalized) as Partial<StructuredRewriteResult>;
@@ -465,4 +624,79 @@ const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
     unresolved: Boolean(parsed.unresolved),
     confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
   };
+};
+
+const parseStructuredTriggerAnalysis = (
+  raw: string,
+  rules: RetrievalMetadataRule[],
+): TriggerAnalysisResult => {
+  const fallback = {
+    status: "fallback" as const,
+    consideredRules: rules.map((rule) => ({
+      ruleId: rule.id,
+      matched: false,
+      matchStrength: 0,
+      reason: "Trigger analysis response was malformed; baseline retrieval preserved.",
+      triggerInstructionPreview: truncateTriggerInstruction(rule.triggerInstruction ?? ""),
+    })),
+    matchedRuleIds: [] as string[],
+    unmatchedRuleIds: rules.map((rule) => rule.id),
+    matchCount: 0,
+    matcherVersion: "fallback",
+    failureReason: "trigger_analysis_malformed",
+  };
+
+  try {
+    const parsed = JSON.parse(stripJsonFence(raw)) as {
+      matches?: Array<{
+        ruleId?: string;
+        matched?: boolean;
+        matchStrength?: number;
+        reason?: string;
+      }>;
+      matcherVersion?: string;
+    };
+
+    const entryByRuleId = new Map(
+      Array.isArray(parsed.matches)
+        ? parsed.matches
+            .filter((entry) => typeof entry?.ruleId === "string")
+            .map((entry) => [entry.ruleId!, entry] as const)
+        : [],
+    );
+
+    const consideredRules = rules.map((rule) => {
+      const entry = entryByRuleId.get(rule.id);
+      return {
+        ruleId: rule.id,
+        matched: entry?.matched === true,
+        matchStrength:
+          typeof entry?.matchStrength === "number" && Number.isFinite(entry.matchStrength)
+            ? Math.max(0, Math.min(1, entry.matchStrength))
+            : 0,
+        reason:
+          typeof entry?.reason === "string" && entry.reason.trim().length > 0
+            ? entry.reason.trim().slice(0, 240)
+            : "No trigger match explanation returned.",
+        triggerInstructionPreview: truncateTriggerInstruction(rule.triggerInstruction ?? ""),
+      };
+    });
+
+    const matchedRuleIds = consideredRules.filter((rule) => rule.matched).map((rule) => rule.ruleId);
+    const unmatchedRuleIds = consideredRules.filter((rule) => !rule.matched).map((rule) => rule.ruleId);
+
+    return {
+      status: "applied",
+      consideredRules,
+      matchedRuleIds,
+      unmatchedRuleIds,
+      matchCount: matchedRuleIds.length,
+      matcherVersion:
+        typeof parsed.matcherVersion === "string" && parsed.matcherVersion.trim().length > 0
+          ? parsed.matcherVersion.trim()
+          : "model_v1",
+    };
+  } catch {
+    return fallback;
+  }
 };

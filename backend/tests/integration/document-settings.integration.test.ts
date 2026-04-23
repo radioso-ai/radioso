@@ -155,15 +155,28 @@ describe("document and settings integration", () => {
     expect(firstUpdate.status).toBe(200);
     expect(firstUpdate.body.semanticRewriteInstructions).toBe("Keep semantic retrieval meaning-preserving.");
     expect(firstUpdate.body.lexicalRewriteInstructions).toBe("Prefer exact notation and aliases.");
-    expect(firstUpdate.body.metadataRules).toContainEqual({
-      id: "language-filter",
-      field: "language",
-      valueType: "string",
-      operator: "equals",
-      value: "en",
-      enabled: true,
-      effect: "filter",
-    });
+    expect(firstUpdate.body.metadataRules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "language-filter",
+          field: "language",
+          valueType: "string",
+          operator: "equals",
+          value: "en",
+          combinator: "and",
+          conditions: [
+            expect.objectContaining({
+              field: "language",
+              valueType: "string",
+              operator: "equals",
+              value: "en",
+            }),
+          ],
+          enabled: true,
+          effect: "filter",
+        }),
+      ]),
+    );
     expect(secondSettings.status).toBe(200);
     expect(secondSettings.body.metadataRules).toEqual([]);
     expect(secondSettings.body.semanticRewriteInstructions).not.toBe(firstUpdate.body.semanticRewriteInstructions);
@@ -275,14 +288,27 @@ describe("document and settings integration", () => {
       });
 
     expect(update.status).toBe(200);
-    expect(update.body.metadataRules).toContainEqual({
-      id: "language-filter",
-      field: "language",
-      valueType: "string",
-      operator: "equals",
-      value: "en",
-      enabled: true,
-      effect: "filter",
-    });
+    expect(update.body.metadataRules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "language-filter",
+          field: "language",
+          valueType: "string",
+          operator: "equals",
+          value: "en",
+          combinator: "and",
+          conditions: [
+            expect.objectContaining({
+              field: "language",
+              valueType: "string",
+              operator: "equals",
+              value: "en",
+            }),
+          ],
+          enabled: true,
+          effect: "filter",
+        }),
+      ]),
+    );
   });
 });

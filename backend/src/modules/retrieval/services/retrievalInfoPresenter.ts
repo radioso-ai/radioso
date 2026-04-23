@@ -47,6 +47,8 @@ export class RetrievalInfoPresenter {
         rejectionReason: input.rejectionReason,
         fallbackReason: input.fallbackReason,
       },
+      triggerAnalysis: input.triggerAnalysis,
+      triggerBackoff: input.triggerBackoff,
     };
   }
 }

@@ -487,6 +487,15 @@ export type RetrievalMetadataRuleOperator =
   | 'gte'
 
 export type RetrievalMetadataRuleEffect = 'boost' | 'filter'
+export type RetrievalMetadataRuleCombinator = 'and' | 'or'
+
+export interface RetrievalMetadataCondition {
+  id: string
+  field: string
+  valueType: RetrievalMetadataValueType
+  operator: RetrievalMetadataRuleOperator
+  value: string
+}
 
 export interface IngestionSettings {
   workspaceId: string
@@ -512,8 +521,12 @@ export interface RetrievalMetadataRule {
   valueType: RetrievalMetadataValueType
   operator: RetrievalMetadataRuleOperator
   value: string
+  combinator?: RetrievalMetadataRuleCombinator
+  conditions?: RetrievalMetadataCondition[]
   effect: RetrievalMetadataRuleEffect
   enabled: boolean
+  triggerMode: 'always_on' | 'match_turn'
+  triggerInstruction?: string
 }
 
 export interface DocumentCreateRequest {
@@ -646,6 +659,27 @@ export interface RetrievalInfo {
     continuityDecision?: string
     rejectionReason?: string
     fallbackReason?: string
+  }
+  triggerAnalysis?: {
+    status: 'skipped_not_configured' | 'skipped_unavailable' | 'applied' | 'fallback'
+    consideredRules: Array<{
+      ruleId: string
+      matched: boolean
+      matchStrength: number
+      reason: string
+      triggerInstructionPreview: string
+    }>
+    matchedRuleIds: string[]
+    unmatchedRuleIds: string[]
+    matchCount: number
+    matcherVersion: string
+    failureReason?: string
+  }
+  triggerBackoff?: {
+    applied: boolean
+    reason?: 'empty_filtered_candidates' | 'weak_filtered_support'
+    relaxedRuleIds: string[]
+    restoredCandidateCount?: number
   }
 }
 

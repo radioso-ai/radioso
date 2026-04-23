@@ -629,7 +629,7 @@ function EvalCaseInspector({
             <div>
               <p className="text-sm font-medium text-foreground">Diagnostics</p>
               <p className="text-xs text-muted-foreground">
-                Shared retrieval diagnostics for this eval replay.
+                Shared retrieval diagnostics for this eval replay, including trigger-analysis and backoff decisions when metadata rules are turn-sensitive.
               </p>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={onToggleGraph}>

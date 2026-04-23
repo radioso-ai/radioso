@@ -26,7 +26,36 @@ describe("hybrid retrieval info", () => {
         lexicalQuery: "retreats",
         constraints: [],
       },
-      appliedConstraints: [],
+      appliedConstraints: [
+        {
+          signalKey: "metadata.category",
+          mode: "hard_filter",
+          outcome: "relaxed",
+          summary: "category equals event",
+        },
+      ],
+      triggerAnalysis: {
+        status: "applied",
+        consideredRules: [
+          {
+            ruleId: "events-only",
+            matched: true,
+            matchStrength: 0.92,
+            reason: "The query is about an upcoming event.",
+            triggerInstructionPreview: "Enact for upcoming events.",
+          },
+        ],
+        matchedRuleIds: ["events-only"],
+        unmatchedRuleIds: [],
+        matchCount: 1,
+        matcherVersion: "test",
+      },
+      triggerBackoff: {
+        applied: true,
+        reason: "empty_filtered_candidates",
+        relaxedRuleIds: ["events-only"],
+        restoredCandidateCount: 3,
+      },
     });
 
     expect(result).toEqual({
@@ -42,7 +71,14 @@ describe("hybrid retrieval info", () => {
         merged: 5,
         final: 3,
       },
-      appliedConstraints: undefined,
+      appliedConstraints: [
+        {
+          signalKey: "metadata.category",
+          mode: "hard_filter",
+          outcome: "relaxed",
+          summary: "category equals event",
+        },
+      ],
       fallbackApplied: true,
       rerankStatus: "applied",
       rewrite: {
@@ -53,6 +89,28 @@ describe("hybrid retrieval info", () => {
         continuityDecision: "reused",
         rejectionReason: undefined,
         fallbackReason: undefined,
+      },
+      triggerAnalysis: {
+        status: "applied",
+        consideredRules: [
+          {
+            ruleId: "events-only",
+            matched: true,
+            matchStrength: 0.92,
+            reason: "The query is about an upcoming event.",
+            triggerInstructionPreview: "Enact for upcoming events.",
+          },
+        ],
+        matchedRuleIds: ["events-only"],
+        unmatchedRuleIds: [],
+        matchCount: 1,
+        matcherVersion: "test",
+      },
+      triggerBackoff: {
+        applied: true,
+        reason: "empty_filtered_candidates",
+        relaxedRuleIds: ["events-only"],
+        restoredCandidateCount: 3,
       },
     });
   });

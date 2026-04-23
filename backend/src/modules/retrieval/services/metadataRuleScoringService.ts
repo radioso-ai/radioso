@@ -54,12 +54,7 @@ export class MetadataRuleScoringService {
 
       candidates = updatedCandidates.map(({ matchesRule: _matchesRule, ...candidate }) => candidate);
 
-      appliedRules.push({
-        signalKey: `metadata.${rule.field}`,
-        mode: rule.effect === "filter" ? "hard_filter" : "boost_only",
-        outcome: "applied",
-        summary: `${rule.field} ${renderOperator(rule.operator)} ${rule.value}`,
-      });
+      appliedRules.push(buildAppliedConstraintForRule(rule, "applied"));
     }
 
     return {
@@ -73,6 +68,16 @@ export class MetadataRuleScoringService {
     return evaluateMetadataRule(metadataValue, rule.valueType, rule.operator, rule.value);
   }
 }
+
+export const buildAppliedConstraintForRule = (
+  rule: RetrievalMetadataRule,
+  outcome: AppliedConstraint["outcome"],
+): AppliedConstraint => ({
+  signalKey: `metadata.${rule.field}`,
+  mode: rule.effect === "filter" ? "hard_filter" : "boost_only",
+  outcome,
+  summary: `${rule.field} ${renderOperator(rule.operator)} ${rule.value}`,
+});
 
 const getValueAtPath = (metadata: Record<string, unknown>, path: string): unknown =>
   path.split(".").reduce<unknown>((current, segment) => {

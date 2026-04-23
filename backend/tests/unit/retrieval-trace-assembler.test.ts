@@ -192,7 +192,14 @@ describe("retrieval trace assembler", () => {
         normalizedCandidates: [],
         mergedCandidates: [],
         scoredCandidates: [],
-        appliedConstraints: [],
+        appliedConstraints: [
+          {
+            signalKey: "metadata.category",
+            mode: "hard_filter",
+            outcome: "relaxed",
+            summary: "category equals event",
+          },
+        ],
         candidateFallbackApplied: false,
         triggerBackoff: {
           applied: true,
@@ -229,7 +236,14 @@ describe("retrieval trace assembler", () => {
           lexicalQuery: "who is narayani and arudra?",
           constraints: [],
         },
-        appliedConstraints: [],
+        appliedConstraints: [
+          {
+            signalKey: "metadata.category",
+            mode: "hard_filter",
+            outcome: "relaxed",
+            summary: "category equals event",
+          },
+        ],
         candidateFallbackApplied: false,
         fallbackApplied: false,
         rewriteEligible: true,
@@ -301,5 +315,14 @@ describe("retrieval trace assembler", () => {
       applied: true,
       relaxedRuleIds: ["events-only"],
     });
+    expect(trace.summary?.appliedConstraints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          signalKey: "metadata.category",
+          outcome: "relaxed",
+          summary: "category equals event",
+        }),
+      ]),
+    );
   });
 });

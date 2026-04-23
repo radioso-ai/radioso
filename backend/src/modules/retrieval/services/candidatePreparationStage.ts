@@ -1,5 +1,5 @@
 import { CandidatePreparationService } from "./candidatePreparationService.js";
-import { MetadataRuleScoringService } from "./metadataRuleScoringService.js";
+import { buildAppliedConstraintForRule, MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { CandidatePreparationStage as CandidatePreparationStageContract, CandidateRetrievalStageResult } from "./retrievalPipelineStages.js";
 
@@ -44,6 +44,10 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
           metadataRules: relaxedRuleSet,
         })
       : metadataRuleCandidates;
+    const relaxedRuleIds = new Set(matchedHardFilterIds);
+    const relaxedConstraints = matchedTriggeredRules
+      .filter((rule) => relaxedRuleIds.has(rule.id))
+      .map((rule) => buildAppliedConstraintForRule(rule, "relaxed"));
     const mergedCandidates = relaxedCandidates.candidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
 
     return {
@@ -52,7 +56,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       mergedCandidates,
       scoredCandidates: mergedCandidates,
       appliedConstraints: shouldBackOff
-        ? [...metadataRuleCandidates.appliedRules, ...relaxedCandidates.appliedRules]
+        ? [...relaxedCandidates.appliedRules, ...relaxedConstraints]
         : relaxedCandidates.appliedRules,
       candidateFallbackApplied: input.vectorFallbackApplied || shouldBackOff,
       triggerBackoff: {

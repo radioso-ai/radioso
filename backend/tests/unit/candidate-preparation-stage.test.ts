@@ -264,6 +264,18 @@ describe("candidate preparation stage", () => {
       reason: "empty_filtered_candidates",
       relaxedRuleIds: ["matched-events"],
     });
+    expect(result.appliedConstraints).toContainEqual({
+      signalKey: "metadata.category",
+      mode: "hard_filter",
+      outcome: "relaxed",
+      summary: "category equals event",
+    });
+    expect(result.appliedConstraints).not.toContainEqual({
+      signalKey: "metadata.category",
+      mode: "hard_filter",
+      outcome: "applied",
+      summary: "category equals event",
+    });
     expect(result.scoredCandidates).toHaveLength(1);
   });
 
@@ -349,6 +361,18 @@ describe("candidate preparation stage", () => {
       reason: "weak_filtered_support",
       relaxedRuleIds: ["matched-events"],
       restoredCandidateCount: 4,
+    });
+    expect(result.appliedConstraints).toContainEqual({
+      signalKey: "metadata.category",
+      mode: "hard_filter",
+      outcome: "relaxed",
+      summary: "category equals event",
+    });
+    expect(result.appliedConstraints).not.toContainEqual({
+      signalKey: "metadata.category",
+      mode: "hard_filter",
+      outcome: "applied",
+      summary: "category equals event",
     });
     expect(result.scoredCandidates).toHaveLength(4);
   });

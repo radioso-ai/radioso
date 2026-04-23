@@ -26,7 +26,14 @@ describe("hybrid retrieval info", () => {
         lexicalQuery: "retreats",
         constraints: [],
       },
-      appliedConstraints: [],
+      appliedConstraints: [
+        {
+          signalKey: "metadata.category",
+          mode: "hard_filter",
+          outcome: "relaxed",
+          summary: "category equals event",
+        },
+      ],
       triggerAnalysis: {
         status: "applied",
         consideredRules: [
@@ -64,7 +71,14 @@ describe("hybrid retrieval info", () => {
         merged: 5,
         final: 3,
       },
-      appliedConstraints: undefined,
+      appliedConstraints: [
+        {
+          signalKey: "metadata.category",
+          mode: "hard_filter",
+          outcome: "relaxed",
+          summary: "category equals event",
+        },
+      ],
       fallbackApplied: true,
       rerankStatus: "applied",
       rewrite: {

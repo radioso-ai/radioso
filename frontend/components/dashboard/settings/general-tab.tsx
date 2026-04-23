@@ -366,6 +366,18 @@ export function GeneralTab({
     [websiteEmbedSnippetParsedCopyJson],
   )
 
+  const websiteEmbedSnippetResolvedCopyOverrides = useMemo(() => {
+    const fallbackEmbeddedChatTitle = activeWorkspace?.name?.trim()
+    if (!fallbackEmbeddedChatTitle || websiteEmbedSnippetCopyOverrides.embeddedChatTitle) {
+      return websiteEmbedSnippetCopyOverrides
+    }
+
+    return {
+      ...websiteEmbedSnippetCopyOverrides,
+      embeddedChatTitle: fallbackEmbeddedChatTitle,
+    }
+  }, [activeWorkspace?.name, websiteEmbedSnippetCopyOverrides])
+
   const websiteEmbedSnippetThemeOverrides = useMemo(
     () => sanitizeWebsiteEmbedThemeOverrides(websiteEmbedSnippetParsedThemeJson),
     [websiteEmbedSnippetParsedThemeJson],
@@ -407,7 +419,7 @@ export function GeneralTab({
       Boolean(normalizedDisplayMode) ||
       Boolean(normalizedInitialState) ||
       Boolean(normalizedAvatarUrl) ||
-      websiteEmbedSnippetCopyJson.trim().length > 0 ||
+      Object.keys(websiteEmbedSnippetResolvedCopyOverrides).length > 0 ||
       websiteEmbedSnippetThemeJson.trim().length > 0
 
     return (
@@ -424,16 +436,18 @@ export function GeneralTab({
         displayMode: normalizedDisplayMode,
         initialState: normalizedInitialState,
         avatarUrl: normalizedAvatarUrl,
-        copy: websiteEmbedSnippetCopyOverrides,
+        copy: websiteEmbedSnippetResolvedCopyOverrides,
         theme: websiteEmbedSnippetThemeOverrides,
       })
     )
   }, [
+    activeWorkspace?.name,
     anonSettings,
     websiteEmbedSnippetAvatarUrl,
     websiteEmbedSnippetCopyJson,
     websiteEmbedSnippetCopyJsonError,
     websiteEmbedSnippetCopyOverrides,
+    websiteEmbedSnippetResolvedCopyOverrides,
     websiteEmbedSnippetDisplayMode,
     websiteEmbedSnippetInitialState,
     websiteEmbedSnippetThemeJson,
@@ -470,18 +484,20 @@ export function GeneralTab({
         displayMode: normalizeWebsiteEmbedDisplayMode(websiteEmbedSnippetDisplayMode) ?? undefined,
         initialState: normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined,
         avatarUrl: normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl) ?? undefined,
-        copy: websiteEmbedSnippetCopyOverrides,
+        copy: websiteEmbedSnippetResolvedCopyOverrides,
         theme: websiteEmbedSnippetThemeOverrides,
       },
       new URL(APP_WEBSITE_EMBED_DEMO_PATH, window.location.origin).toString(),
     )
   }, [
+    activeWorkspace?.name,
     anonSettings,
     websiteEmbedSnippetAvatarUrl,
     websiteEmbedSnippetAvatarUrlError,
     websiteEmbedSnippetCopyJson,
     websiteEmbedSnippetCopyJsonError,
     websiteEmbedSnippetCopyOverrides,
+    websiteEmbedSnippetResolvedCopyOverrides,
     websiteEmbedSnippetDisplayMode,
     websiteEmbedSnippetInitialState,
     websiteEmbedSnippetThemeJson,

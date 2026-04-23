@@ -107,6 +107,14 @@ const getRenderableSegments = (
   return [{ text: content }]
 }
 
+const hasBlockMarkdown = (content: string) =>
+  /\n\s*\n/.test(content)
+  || /^\s{0,3}([-+*]|\d+\.)\s+/m.test(content)
+  || /^\s{0,3}>/m.test(content)
+  || /^\s{0,3}#{1,6}\s+/m.test(content)
+  || /```/.test(content)
+  || /^\s*\|.+\|\s*$/m.test(content)
+
 export function AssistantMessageContent({
   content,
   citations = [],
@@ -153,7 +161,7 @@ export function AssistantMessageContent({
 
     contentNodes.push(
       <Fragment key={`segment-${segmentIndex}`}>
-        <AssistantMarkdownContent content={segment.text} inline={dedupedIndices.length > 0} />
+        <AssistantMarkdownContent content={segment.text} inline={dedupedIndices.length > 0 && !hasBlockMarkdown(segment.text)} />
         {dedupedIndices.map((citationIndex) => {
           const citation = citations[citationIndex]
           if (!citation) {

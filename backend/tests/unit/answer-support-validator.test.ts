@@ -14,6 +14,7 @@ const citations: CitationEvidence[] = [
     chunkId: "chunk-1",
     title: "Guide",
     content: "The page explains testing and parsing content for users.",
+    sourceUrl: "https://example.com/guide",
   },
 ];
 
@@ -278,6 +279,56 @@ describe("answer support validator", () => {
       text: "Narayani is a teacher and author",
       replacementApplied: false,
       disposition: "unsupported",
+    });
+  });
+
+  it("treats link-only follow-up segments as supported when the URL matches cited source metadata", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Where can I read more?",
+      answer: "The page explains testing and parsing content for users.\n\nYou can read more here: [Guide](https://example.com/guide)",
+      answerSegments: [
+        {
+          text: "The page explains testing and parsing content for users",
+          citationIndices: [0],
+        },
+        {
+          text: "\n\nYou can read more here: [Guide](https://example.com/guide)",
+        },
+      ],
+      citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe(
+      "The page explains testing and parsing content for users.\n\nYou can read more here: [Guide](https://example.com/guide)",
+    );
+    expect(result.answerSegments).toEqual([
+      {
+        text: "The page explains testing and parsing content for users",
+        citationIndices: [0],
+      },
+      {
+        text: "\n\nYou can read more here: [Guide](https://example.com/guide)",
+        citationIndices: [0],
+      },
+    ]);
+    expect(result.validation).toEqual({
+      ran: true,
+      answerModified: false,
+      unsupportedSegmentCount: 0,
+      substantiveUnsupportedSegmentCount: 0,
+      supportedSegmentCount: 2,
+      nonSubstantiveSegmentCount: 0,
+      answerSupportPolicy: "strict",
     });
   });
 });

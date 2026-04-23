@@ -951,6 +951,7 @@ describe("chat retrieval domain", () => {
     expect(result.prompt).toContain("Respond in the same language as the current user question.");
     expect(result.prompt).toContain("Do not end the answer with a question");
     expect(result.prompt).toContain("embed it inline as a Markdown link with descriptive link text");
+    expect(result.prompt).toContain("append <<UNSUPPORTED>> at the very end of the answer");
     expect(result.prompt).toContain("Result 1 (Intro):");
     expect(result.prompt).toContain("[[1]]");
     expect(result.citations).toEqual([{ documentId: "d1", chunkId: "c1", title: "Intro" }]);
@@ -984,6 +985,36 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.prompt).toContain("Source: https://example.com/doc");
+  });
+
+  it("includes a Source line in the prompt when context has a url fallback in metadata", () => {
+    const builder = new PromptBuilder();
+    const result = builder.build({
+      query: "What is this about?",
+      history: [],
+      settings: {
+      },
+      contexts: [
+        {
+          chunkId: "c1",
+          documentId: "d1",
+          title: "External Doc",
+          content: "Some content from an external source.",
+          similarity: 0.9,
+          retrievalSources: ["semantic_original"],
+          retrievalText: "External Doc Some content from an external source.",
+          semanticScore: 0.9,
+          lexicalScore: 0,
+          relevanceScore: 0.9,
+          rerankPosition: 0,
+          promptPosition: 0,
+          estimatedTokenCost: 10,
+          metadata: { url: "https://example.com/fallback" },
+        },
+      ],
+    });
+
+    expect(result.prompt).toContain("Source: https://example.com/fallback");
   });
 
   it("does not include a Source line in the prompt when context has no sourceUrl", () => {

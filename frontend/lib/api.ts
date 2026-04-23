@@ -1,5 +1,6 @@
 const API_BASE = `${process.env.NEXT_PUBLIC_API_BASE_PATH ?? "/backend/api/v1"}`;
 const STREAMING_API_PATH = '/api/chat/stream'
+const PUBLIC_CHAT_STREAMING_API_PATH = '/api/public/chat'
 const API_TOKEN_STORAGE_KEY = "radioso.apiToken";
 const WORKSPACE_TOKENS_STORAGE_KEY = "radioso.workspaceTokens";
 const ACTIVE_WORKSPACE_STORAGE_KEY = "radioso.activeWorkspaceId";
@@ -1908,7 +1909,10 @@ export const accountApi = {
 
 // Public Chat API (anonymous, cookie-based auth)
 export const publicChatApi = {
-  async sendMessage(token: string, data: { query: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata }): Promise<ChatResponse> {
+  async sendMessage(
+    token: string,
+    data: { query: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string },
+  ): Promise<ChatResponse> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',
       cache: 'no-store',
@@ -1930,16 +1934,15 @@ export const publicChatApi = {
 
   async streamMessage(
     token: string,
-    data: { query: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata },
+    data: { query: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string },
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
-    const response = await fetch(`${API_BASE}/public/chat/${token}`, {
+    const response = await fetch(`${PUBLIC_CHAT_STREAMING_API_PATH}/${encodeURIComponent(token)}`, {
       method: 'POST',
       cache: 'no-store',
       credentials: 'include',
       headers: attachAnonymousSessionHeader(token, {
         'Content-Type': 'application/json',
-        'X-Forwarded-Prefix': '/backend',
       }),
       body: JSON.stringify(data),
     })

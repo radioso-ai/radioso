@@ -152,8 +152,8 @@ describe('AssistantMessageContent', () => {
 
     expect(html).toContain('<ol')
     expect(html).toContain('<li')
-    expect(html).toContain('<strong>Start small.</strong>')
-    expect(html).toContain('<strong>Stay consistent.</strong>')
+    expect(html).toMatch(/<strong[^>]*>Start small\.<\/strong>/)
+    expect(html).toMatch(/<strong[^>]*>Stay consistent\.<\/strong>/)
     expect(html.match(/aria-label="Open source/g)?.length).toBe(2)
   })
 })

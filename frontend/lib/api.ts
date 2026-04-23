@@ -622,9 +622,12 @@ export interface AnswerSegment {
   citationIndices?: number[]
 }
 
+export type ChatSuggestionKind = 'deeper' | 'broader'
+
 export interface ChatSuggestion {
   text: string
   citation?: Citation
+  kind?: ChatSuggestionKind
 }
 
 export interface RetrievalInfo {

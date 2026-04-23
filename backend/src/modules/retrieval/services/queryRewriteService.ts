@@ -6,7 +6,6 @@ import type {
   RetrievalSubquery,
   RewrittenRetrievalQuery,
   ResponseLanguagePolicy,
-  RewriteContinuityState,
   RewriteTurnKind,
   StructuredRewriteResult,
 } from "../domain/retrievalPipelineTypes.js";
@@ -28,17 +27,12 @@ const DEFAULT_RESPONSE_LANGUAGE_POLICY: ResponseLanguagePolicy = "match_user_que
 
 const buildQueryRewritePrompt = (input: {
   context: string;
-  continuityState?: RewriteContinuityState;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   query: string;
 }): string =>
   renderPromptTemplate("retrieval/query-rewrite-user.md", {
     context_section: input.context || "No prior context",
-    continuity_state_block:
-      input.continuityState && hasContinuityState(input.continuityState)
-        ? `\n\nRetrieval continuity state from the most recent successful assistant turn:\n${JSON.stringify(input.continuityState)}`
-        : "",
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
     lexical_rewrite_instructions:
@@ -50,7 +44,6 @@ export interface QueryRewriteGateway {
   rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
-    continuityState?: RewriteContinuityState;
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<QueryRewriteGatewayResult>;
@@ -62,7 +55,6 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
   async rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
-    continuityState?: RewriteContinuityState;
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<StructuredRewriteResult> {
@@ -78,7 +70,6 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
       systemPrompt: QUERY_REWRITE_SYSTEM_PROMPT,
       prompt: buildQueryRewritePrompt({
         context,
-        continuityState: input.continuityState,
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         query: input.query,
@@ -107,7 +98,6 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
   async rewrite(input: {
     query: string;
     contextMessages: MessageRecord[];
-    continuityState?: RewriteContinuityState;
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<StructuredRewriteResult> {
@@ -130,7 +120,6 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
           role: "user",
           content: buildQueryRewritePrompt({
             context,
-            continuityState: input.continuityState,
             semanticRewriteInstructions: input.semanticRewriteInstructions,
             lexicalRewriteInstructions: input.lexicalRewriteInstructions,
             query: input.query,
@@ -169,7 +158,6 @@ export class QueryRewriteService {
       const rawResult = await this.gateway?.rewrite({
         query: input.query,
         contextMessages: input.contextWindow.selectedMessages,
-        continuityState: input.contextWindow.rewriteContinuityState,
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
       });
@@ -190,39 +178,36 @@ export class QueryRewriteService {
         lexicalQuery !== input.query ||
         Boolean(result.retrievalSubqueries && result.retrievalSubqueries.length > 1);
 
-      if (applied) {
-        const eligibility = this.eligibilityService.evaluate({
-          originalQuery: input.query,
-          rewrite: {
-            ...result,
-            rewrittenQuery: compatibilityRewrite,
-            semanticQuery,
-            lexicalQuery,
-          },
-        });
-        return {
-          originalQuery: input.query,
-          rewrittenQuery: compatibilityRewrite,
-          effectiveQuery: eligibility.eligible ? semanticQuery : input.query,
-          semanticQuery: eligibility.eligible ? semanticQuery : input.query,
-          lexicalQuery: eligibility.eligible ? lexicalQuery : input.query,
-          responseLanguagePolicy: result.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY,
-          retrievalSubqueries: eligibility.eligible ? result.retrievalSubqueries : undefined,
-          rewriteApplied: eligibility.eligible,
-          retrievalEligible: eligibility.eligible,
-          status: eligibility.eligible ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
-          confidence: result.confidence ?? 0.5,
-          structuredResult: {
-            ...result,
-            rewrittenQuery: compatibilityRewrite,
-            semanticQuery,
-            lexicalQuery,
-          },
-          rejectionReason: eligibility.rejectionReason,
-        };
+      if (!applied) {
+        return this.fallback(input.query, "rewrite_unusable");
       }
 
-      return this.fallback(input.query, "rewrite_unusable");
+      const structuredResult = {
+        ...result,
+        rewrittenQuery: compatibilityRewrite,
+        semanticQuery,
+        lexicalQuery,
+      };
+      const eligibility = this.eligibilityService.evaluate({
+        originalQuery: input.query,
+        rewrite: structuredResult,
+      });
+
+      return {
+        originalQuery: input.query,
+        rewrittenQuery: compatibilityRewrite,
+        effectiveQuery: eligibility.eligible ? semanticQuery : input.query,
+        semanticQuery: eligibility.eligible ? semanticQuery : input.query,
+        lexicalQuery: eligibility.eligible ? lexicalQuery : input.query,
+        responseLanguagePolicy: result.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY,
+        retrievalSubqueries: eligibility.eligible ? result.retrievalSubqueries : undefined,
+        rewriteApplied: eligibility.eligible,
+        retrievalEligible: eligibility.eligible,
+        status: eligibility.eligible ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
+        confidence: result.confidence ?? 0.5,
+        structuredResult,
+        rejectionReason: eligibility.rejectionReason,
+      };
     } catch {
       return this.fallback(input.query, "rewrite_failed");
     }
@@ -262,28 +247,6 @@ export class QueryRewriteService {
       status: REWRITE_STATUS.FALLBACK,
       confidence: 0,
       fallbackReason: reason,
-    };
-  }
-
-  private rejected(
-    query: string,
-    rewrite: StructuredRewriteResult,
-    reason: string,
-  ): RewrittenRetrievalQuery {
-    return {
-      originalQuery: query,
-      rewrittenQuery: rewrite.semanticQuery ?? rewrite.rewrittenQuery,
-      effectiveQuery: query,
-      semanticQuery: query,
-      lexicalQuery: query,
-      responseLanguagePolicy: rewrite.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY,
-      retrievalSubqueries: rewrite.retrievalSubqueries,
-      rewriteApplied: false,
-      retrievalEligible: false,
-      status: REWRITE_STATUS.REJECTED,
-      confidence: rewrite.confidence,
-      structuredResult: rewrite,
-      rejectionReason: reason,
     };
   }
 
@@ -437,12 +400,6 @@ export class QueryRewriteService {
     return candidateTerms.filter((term) => !originalTerms.has(term)).length;
   }
 }
-
-const hasContinuityState = (state?: RewriteContinuityState): boolean => Boolean(
-  state?.activeSubject
-  || state?.relatedEntities.length
-  || state?.groundedTitles.length,
-);
 
 const tokenizeRewriteTerms = (value: string): string[] =>
   value

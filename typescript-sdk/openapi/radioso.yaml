@@ -83,12 +83,15 @@ components:
           format: uuid
         workspaceName:
           type: string
+        requiresEmailVerification:
+          type: boolean
       required:
         - userId
         - accountId
         - organizationName
         - workspaceId
         - workspaceName
+        - requiresEmailVerification
     LoginResponse:
       type: object
       properties:
@@ -196,6 +199,42 @@ components:
       required:
         - email
         - password
+    PasswordResetRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+      required:
+        - email
+    PasswordResetConfirmRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 8
+      required:
+        - token
+        - password
+    EmailVerificationVerifyRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 1
+      required:
+        - token
+    EmailVerificationResendRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+      required:
+        - email
     AccountInvitationCreateRequest:
       type: object
       properties:
@@ -379,6 +418,24 @@ components:
         - email
         - status
         - expiresAt
+    PasswordResetAcceptedResponse:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+          enum:
+            - true
+      required:
+        - accepted
+    EmailVerificationVerifiedResponse:
+      type: object
+      properties:
+        verified:
+          type: boolean
+          enum:
+            - true
+      required:
+        - verified
     RetrievalSettings:
       type: object
       properties:
@@ -685,6 +742,8 @@ components:
           type: integer
           minimum: 1
           maximum: 60
+        rotateAnonymousChatToken:
+          type: boolean
         assistantName:
           type: string
           maxLength: 200
@@ -702,6 +761,8 @@ components:
         proactiveGreetingEnabled:
           type: boolean
         websiteEmbedEnabled:
+          type: boolean
+        rotateWebsiteEmbedToken:
           type: boolean
         websiteEmbedAllowedOrigins:
           type: array
@@ -1367,6 +1428,21 @@ components:
         - query
         - resultCount
         - results
+    ChatSuggestion:
+      type: object
+      properties:
+        text:
+          type: string
+        kind:
+          type: string
+          enum:
+            - deeper
+            - broader
+        citation:
+          $ref: "#/components/schemas/Citation"
+      required:
+        - text
+        - kind
     ChatResponse:
       type: object
       properties:
@@ -1386,14 +1462,7 @@ components:
         suggestions:
           type: array
           items:
-            type: object
-            properties:
-              text:
-                type: string
-              citation:
-                $ref: "#/components/schemas/Citation"
-            required:
-              - text
+            $ref: "#/components/schemas/ChatSuggestion"
         conversationMode:
           type: string
           enum: *a3
@@ -1578,6 +1647,8 @@ components:
     ValidationSegmentResult:
       type: object
       properties:
+        originalText:
+          type: string
         text:
           type: string
         disposition:
@@ -1592,6 +1663,7 @@ components:
             type: integer
             minimum: 0
       required:
+        - originalText
         - text
         - disposition
         - replacementApplied
@@ -1604,6 +1676,9 @@ components:
         answerModified:
           type: boolean
         unsupportedSegmentCount:
+          type: integer
+          minimum: 0
+        substantiveUnsupportedSegmentCount:
           type: integer
           minimum: 0
         supportedSegmentCount:
@@ -1623,6 +1698,7 @@ components:
         - ran
         - answerModified
         - unsupportedSegmentCount
+        - substantiveUnsupportedSegmentCount
         - supportedSegmentCount
         - nonSubstantiveSegmentCount
         - segmentResults
@@ -1738,14 +1814,7 @@ components:
         suggestions:
           type: array
           items:
-            type: object
-            properties:
-              text:
-                type: string
-              citation:
-                $ref: "#/components/schemas/Citation"
-            required:
-              - text
+            $ref: "#/components/schemas/ChatSuggestion"
         debug:
           $ref: "#/components/schemas/ChatConversationMessageDebug"
       required:
@@ -2591,7 +2660,7 @@ paths:
               $ref: "#/components/schemas/RegisterRequest"
       responses:
         "201":
-          description: Account created and session established
+          description: Account created and verification required before sign-in
           content:
             application/json:
               schema:
@@ -2645,8 +2714,156 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Email verification required before sign-in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Unexpected server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/password-reset/request:
+    post:
+      tags:
+        - Auth
+      summary: Request a password reset email
+      operationId: requestPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequest"
+      responses:
+        "202":
+          description: Password reset request accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordResetAcceptedResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many password reset requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Password reset delivery is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/email-verification/verify:
+    post:
+      tags:
+        - Auth
+      summary: Verify a user's email address
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailVerificationVerifyRequest"
+      responses:
+        "200":
+          description: Email verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailVerificationVerifiedResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Verification token is invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many verification attempts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/email-verification/resend:
+    post:
+      tags:
+        - Auth
+      summary: Resend an email verification link
+      operationId: resendEmailVerification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailVerificationResendRequest"
+      responses:
+        "202":
+          description: Verification resend accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordResetAcceptedResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many verification resend attempts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/password-reset/confirm:
+    post:
+      tags:
+        - Auth
+      summary: Confirm a password reset and establish a new session
+      operationId: confirmPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetConfirmRequest"
+      responses:
+        "200":
+          description: Password reset completed and session established
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Password reset token is invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many password reset attempts
           content:
             application/json:
               schema:

@@ -24,16 +24,16 @@ describe("chat integration", () => {
           if (prompt.includes("Conversation mode:\nguided")) {
             return JSON.stringify({
               suggestions: [
-                { text: "What parser rules do the docs cover?", contextIndex: 1 },
-                { text: "Which onboarding questions are answered?", contextIndex: 2 },
+                { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
+                { text: "Which onboarding questions are answered?", kind: "deeper", contextIndex: 2 },
               ],
             });
           }
 
           return JSON.stringify({
             suggestions: [
-              { text: "What parser rules do the docs cover?", contextIndex: 1 },
-              { text: "Which onboarding questions are answered?", contextIndex: 2 },
+              { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
+              { text: "Which onboarding questions are answered?", kind: "broader", contextIndex: 2 },
             ],
           });
         }
@@ -96,10 +96,11 @@ describe("chat integration", () => {
     expect(guided.body.answer).not.toContain("\n- ");
     expect(guided.body.suggestions).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ text: "Which onboarding questions are answered?" }),
+        expect.objectContaining({ text: "Which onboarding questions are answered?", kind: "deeper" }),
       ]),
     );
     expect(guided.body.suggestions.length).toBeGreaterThan(0);
+    expect(guided.body.suggestions.every((suggestion: { kind: string }) => suggestion.kind === "deeper")).toBe(true);
     expect(guided.body.conversationModeMetadata).toMatchObject({
       conversationMode: "guided",
       expansionApplied: true,
@@ -108,6 +109,15 @@ describe("chat integration", () => {
     });
     expect(exploratory.body.answer).not.toContain("\n- ");
     expect(exploratory.body.suggestions.length).toBeGreaterThan(0);
+    expect(exploratory.body.suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "broader" }),
+      ]),
+    );
+    expect(
+      exploratory.body.suggestions.every((suggestion: { kind: string }) =>
+        suggestion.kind === "deeper" || suggestion.kind === "broader")
+    ).toBe(true);
     expect(exploratory.body.conversationModeMetadata).toMatchObject({
       conversationMode: "exploratory",
       expansionApplied: true,
@@ -121,7 +131,7 @@ describe("chat integration", () => {
       async answer({ prompt }) {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
           return JSON.stringify({
-            suggestions: [{ text: "What parser rules apply?", contextIndex: 1 }],
+            suggestions: [{ text: "What parser rules apply?", kind: "deeper", contextIndex: 1 }],
           });
         }
         return "The testing guide explains testing and parsing content for users[[1]].";
@@ -167,6 +177,264 @@ describe("chat integration", () => {
     expect(response.body.suggestions).toBeUndefined();
     expect(response.body.conversationModeMetadata).toMatchObject({
       conversationMode: "exploratory",
+      expansionApplied: false,
+      suggestionCount: 0,
+    });
+  });
+
+  it("uses recent conversation context for broader exploratory suggestions across turns", async () => {
+    let latestSuggestionPrompt = "";
+    const deterministicGateway: ChatGateway = {
+      async answer({ prompt, query }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          latestSuggestionPrompt = prompt;
+          return JSON.stringify({
+            suggestions: [
+              { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
+              { text: "How should facilitators support retreat attendees?", kind: "broader", contextIndex: 2 },
+            ],
+          });
+        }
+
+        if (query === "What should I add next?") {
+          return "Add meals and orientation[[1]].";
+        }
+
+        return "Start with a beginner retreat schedule[[1]].";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: deterministicGateway });
+
+    const { token } = await issueTestToken(app, "conversation-intent@example.com");
+    const authorization = `Bearer ${token}`;
+
+    for (const document of [
+      { title: "Retreat Planning Guide", content: "A beginner retreat should cover meditation, schedule planning, meals, and orientation." },
+      { title: "Retreat Facilitation Notes", content: "Facilitators should balance logistics, teaching goals, and attendee support." },
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", authorization)
+        .send(document);
+    }
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 4,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        conversationMode: "exploratory",
+      });
+
+    const first = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Help me plan a beginner retreat", stream: false });
+    const second = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: first.body.conversationId,
+        query: "What should I add next?",
+        stream: false,
+      });
+
+    expect(second.status).toBe(200);
+    expect(latestSuggestionPrompt).toContain("Recent conversation context");
+    expect(latestSuggestionPrompt).toContain("Help me plan a beginner retreat");
+    expect(latestSuggestionPrompt).toContain("Start with a beginner retreat schedule.");
+    expect(second.body.suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: "What should the retreat schedule include?", kind: "deeper" }),
+        expect.objectContaining({ text: "How should facilitators support retreat attendees?", kind: "broader" }),
+      ]),
+    );
+  });
+
+  it("recenters broader exploratory suggestions after an explicit subject pivot", async () => {
+    let latestSuggestionPrompt = "";
+    const deterministicGateway: ChatGateway = {
+      async answer({ prompt, query }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          latestSuggestionPrompt = prompt;
+
+          if (prompt.includes("Active subject:\nFacilitator support")) {
+            return JSON.stringify({
+              suggestions: [
+                { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
+                { text: "Which support roles should back up retreat facilitators?", kind: "broader", contextIndex: 2 },
+              ],
+            });
+          }
+
+          return JSON.stringify({
+            suggestions: [
+              { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
+              { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
+            ],
+          });
+        }
+
+        if (query === "What about facilitator support?") {
+          return "Facilitators should balance logistics and attendee care[[1]].";
+        }
+
+        return "Start with a beginner retreat schedule[[1]].";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const queryRewriteGateway = {
+      async rewrite({ query }: { query: string }) {
+        if (query === "What about facilitator support?") {
+          return {
+            rewrittenQuery: "facilitator support",
+            semanticQuery: "facilitator support retreat attendees",
+            lexicalQuery: "facilitator support",
+            turnKind: "explicit_recenter" as const,
+            proposedActiveSubject: "Facilitator support",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.97,
+          };
+        }
+
+        return {
+          rewrittenQuery: "beginner retreat planning",
+          semanticQuery: "beginner retreat planning",
+          lexicalQuery: "beginner retreat planning",
+          turnKind: "fresh_subject" as const,
+          proposedActiveSubject: "Beginner retreat planning",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.94,
+        };
+      },
+    };
+    const { app } = createTestApp({
+      chatGateway: deterministicGateway,
+      queryRewriteGateway,
+    });
+
+    const { token } = await issueTestToken(app, "conversation-pivot@example.com");
+    const authorization = `Bearer ${token}`;
+
+    for (const document of [
+      { title: "Retreat Planning Guide", content: "A beginner retreat should cover meditation, schedule planning, meals, and orientation." },
+      { title: "Retreat Facilitation Notes", content: "Facilitators should balance logistics, teaching goals, and attendee support." },
+      { title: "Retreat Support Roles", content: "Support roles include hospitality, orientation, and attendee care." },
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", authorization)
+        .send(document);
+    }
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 4,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        conversationMode: "exploratory",
+      });
+
+    const first = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Help me plan a beginner retreat", stream: false });
+    const second = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: first.body.conversationId,
+        query: "What about facilitator support?",
+        stream: false,
+      });
+
+    expect(second.status).toBe(200);
+    expect(latestSuggestionPrompt).toContain("Active subject:\nFacilitator support");
+    expect(latestSuggestionPrompt).toContain("Active goal:\nWhat about facilitator support?");
+    expect(second.body.suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: "How should facilitators support retreat attendees?", kind: "deeper" }),
+        expect.objectContaining({ text: "Which support roles should back up retreat facilitators?", kind: "broader" }),
+      ]),
+    );
+  });
+
+  it("suppresses exploratory suggestions when the user explicitly asks for just the answer", async () => {
+    let suggestionCallCount = 0;
+    const deterministicGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          suggestionCallCount += 1;
+          return JSON.stringify({
+            suggestions: [{ text: "What parser rules apply?", kind: "deeper", contextIndex: 1 }],
+          });
+        }
+        return "The testing guide explains testing and parsing content for users[[1]].";
+      },
+      async *streamAnswer() {
+        yield "The testing guide explains testing and parsing content for users[[1]].";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: deterministicGateway });
+
+    const { token } = await issueTestToken(app, "conversation-directness@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Testing Guide",
+        content: "The testing docs cover testing and parsing content for users.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        conversationMode: "exploratory",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 4,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+      });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Just the answer: what do the testing docs cover?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(suggestionCallCount).toBe(0);
+    expect(response.body.suggestions).toBeUndefined();
+    expect(response.body.conversationModeMetadata).toMatchObject({
+      conversationMode: "exploratory",
+      brevityOverrideApplied: true,
       expansionApplied: false,
       suggestionCount: 0,
     });
@@ -876,6 +1144,235 @@ describe("chat integration", () => {
       ran: true,
     });
   });
+
+  it("resolves a single assistant-offered branch after a bare acceptance", async () => {
+    const { app, dependencies } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite(input) {
+          if (input.query !== "go ahead") {
+            return {
+              rewrittenQuery: input.query,
+              semanticQuery: input.query,
+              lexicalQuery: input.query,
+              turnKind: "fresh_subject" as const,
+              relatedEntities: [],
+              unresolved: false,
+              confidence: 0.9,
+            };
+          }
+
+          return {
+            rewrittenQuery: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+            semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+            lexicalQuery: "\"RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking\"",
+            turnKind: "referential_followup" as const,
+            proposedActiveSubject: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.88,
+          };
+        },
+      },
+    });
+
+    const { token, workspaceId } = await issueTestToken(app, "assistant-acceptance-single@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+        content: "Simple Living and High Thinking explores the course themes, community ideals, and practical applications.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+      });
+
+    const conversation = await dependencies.conversationRepository.create(workspaceId);
+    await dependencies.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId,
+      role: "assistant",
+      content:
+        "I couldn't verify that from your workspace documents, but I did find related material in \"RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking\" if you'd like to explore that instead.",
+    });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: conversation.id,
+        query: "go ahead",
+        stream: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain("Simple Living and High Thinking explores the course themes");
+    expect(response.body.retrievalInfo.parsedQuery).toMatchObject({
+      originalQuery: "go ahead",
+      semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+    });
+    expect(response.body.retrievalInfo.rewrite).toMatchObject({
+      status: "applied",
+      eligible: true,
+      ran: true,
+    });
+  });
+
+  it("does not guess among multiple assistant-offered branches after a bare acceptance", async () => {
+    const { app, dependencies } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite(input) {
+          if (input.query !== "go ahead") {
+            return {
+              rewrittenQuery: input.query,
+              semanticQuery: input.query,
+              lexicalQuery: input.query,
+              turnKind: "fresh_subject" as const,
+              relatedEntities: [],
+              unresolved: false,
+              confidence: 0.9,
+            };
+          }
+
+          return {
+            rewrittenQuery: "go ahead",
+            semanticQuery: "go ahead",
+            lexicalQuery: "go ahead",
+            responseLanguagePolicy: "match_user_question" as const,
+            retrievalSubqueries: [
+              {
+                id: "",
+                label: "what I can do in this conversation",
+                semanticQuery: "what I can do in this conversation",
+                lexicalQuery: "\"what I can do in this conversation\"",
+                responseLanguagePolicy: "match_user_question" as const,
+              },
+              {
+                id: "",
+                label: "how I respond to your questions",
+                semanticQuery: "how I respond to your questions",
+                lexicalQuery: "\"how I respond to your questions\"",
+                responseLanguagePolicy: "match_user_question" as const,
+              },
+              {
+                id: "",
+                label: "Ananda course topics",
+                semanticQuery: "Ananda course topics",
+                lexicalQuery: "\"Ananda course topics\"",
+                responseLanguagePolicy: "match_user_question" as const,
+              },
+            ],
+            turnKind: "ambiguous" as const,
+            relatedEntities: ["what I can do in this conversation", "how I respond to your questions", "Ananda course topics"],
+            unresolved: false,
+            confidence: 0.84,
+          };
+        },
+      },
+    });
+
+    const { token, workspaceId } = await issueTestToken(app, "assistant-acceptance-multi@example.com");
+    const authorization = `Bearer ${token}`;
+
+    for (const document of [
+      {
+        title: "What I can do in this conversation",
+        content: "This document lists what the assistant can do in this conversation.",
+      },
+      {
+        title: "How I respond to your questions",
+        content: "This document describes how the assistant responds to questions.",
+      },
+      {
+        title: "Ananda course topics",
+        content: "This document summarizes the available Ananda course topics.",
+      },
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", authorization)
+        .send(document);
+    }
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+      });
+
+    const conversation = await dependencies.conversationRepository.create(workspaceId);
+    await dependencies.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId,
+      role: "assistant",
+      content:
+        "I can’t tell you my exact instruction set. If you want, I can still help with nearby things like: what I can do in this conversation, how I respond to your questions, or a brief summary of the Ananda course topics shown here.",
+    });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: conversation.id,
+        query: "go ahead",
+        stream: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.retrievalInfo.parsedQuery).toMatchObject({
+      originalQuery: "go ahead",
+      semanticQuery: "go ahead",
+      lexicalQuery: "go ahead",
+    });
+    expect(response.body.retrievalInfo.retrievalSubqueries).toEqual([
+      {
+        id: "subquery_1",
+        label: "what I can do in this conversation",
+        semanticQuery: "what I can do in this conversation",
+        lexicalQuery: "what I can do in this conversation",
+        responseLanguagePolicy: "match_user_question",
+      },
+      {
+        id: "subquery_2",
+        label: "how I respond to your questions",
+        semanticQuery: "how I respond to your questions",
+        lexicalQuery: "how I respond to your questions",
+        responseLanguagePolicy: "match_user_question",
+      },
+      {
+        id: "subquery_3",
+        label: "Ananda course topics",
+        semanticQuery: "Ananda course topics",
+        lexicalQuery: "Ananda course topics",
+        responseLanguagePolicy: "match_user_question",
+      },
+    ]);
+    expect(response.body.retrievalInfo.rewrite).toMatchObject({
+      status: "applied",
+      eligible: true,
+      ran: true,
+    });
+    expect(response.body.answer).toContain("This document");
+  }, 10_000);
 
   it("returns the exact-match source for identifier-style queries", async () => {
     const { app } = createTestApp();

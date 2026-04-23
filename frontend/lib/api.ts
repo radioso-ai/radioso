@@ -733,6 +733,12 @@ export interface ChatStreamChunk {
   text: string
 }
 
+export interface ChatStreamSuggestions {
+  conversationId?: string
+  suggestions?: ChatSuggestion[]
+  conversationModeMetadata?: ChatResponse['conversationModeMetadata']
+}
+
 export interface ChatStreamCompletion {
   conversationId?: string
   answer?: string
@@ -996,6 +1002,7 @@ interface ChatStreamHandlers {
   onConversation?: (payload: ChatStreamConversation) => void
   onChunk?: (payload: ChatStreamChunk) => void
   onDone?: (payload: ChatStreamCompletion) => void
+  onSuggestions?: (payload: ChatStreamSuggestions) => void
 }
 
 export interface ErrorResponse {
@@ -1124,6 +1131,7 @@ const streamChatEvents = async (
     const payload = JSON.parse(data) as
       | (ChatStreamConversation & { type?: 'conversation' })
       | (ChatStreamChunk & { type?: 'chunk' })
+      | (ChatStreamSuggestions & { type?: 'suggestions' })
       | (ChatStreamCompletion & { type?: 'done' })
 
     const normalizedEventName =
@@ -1166,6 +1174,19 @@ const streamChatEvents = async (
         conversationModeMetadata,
         retrievalInfo,
         retrievalTrace,
+      })
+      return
+    }
+
+    if (normalizedEventName === 'suggestions') {
+      const suggestionsPayload = payload as ChatStreamSuggestions
+      conversationId = suggestionsPayload.conversationId ?? conversationId
+      suggestions = suggestionsPayload.suggestions
+      conversationModeMetadata = suggestionsPayload.conversationModeMetadata ?? conversationModeMetadata
+      handlers.onSuggestions?.({
+        conversationId,
+        suggestions,
+        conversationModeMetadata,
       })
     }
   }

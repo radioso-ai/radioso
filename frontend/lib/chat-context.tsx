@@ -240,6 +240,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               didComplete = true
               applyCompletion(accountId, assistantMessageId, completion)
             },
+            onSuggestions: ({ suggestions }) => {
+              updateSession(accountId, (session) => ({
+                ...session,
+                messages: session.messages.map((message) =>
+                  message.id === assistantMessageId
+                    ? {
+                        ...message,
+                        suggestions,
+                      }
+                    : message,
+                ),
+              }))
+            },
           },
         )
 

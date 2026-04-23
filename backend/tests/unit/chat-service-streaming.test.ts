@@ -1821,6 +1821,128 @@ describe("chat service streaming", () => {
     ]);
   });
 
+  it("streams the answer before emitting grounded follow-up suggestions", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "who is mahiya",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Mahiya",
+              content: "Mahiya is a teacher and author.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Mahiya interview",
+              content: "An interview about Mahiya's spiritual path.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "who is mahiya",
+              lexicalQuery: "mahiya",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+            suggestedQuestionsEnabled: true,
+            suggestedQuestionsCount: 2,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
+            ],
+          });
+        }
+        return "Mahiya is a teacher and author[[1]].";
+      },
+      async *streamAnswer() {
+        yield "Mahiya is a teacher and author[[1]].";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Who is Mahiya?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual(["conversation", "chunk", "done", "suggestions"]);
+    expect(events[2]).toMatchObject({
+      type: "done",
+      answer: "Mahiya is a teacher and author.",
+      suggestions: undefined,
+      conversationModeMetadata: {
+        conversationMode: "exploratory",
+        brevityOverrideApplied: false,
+        expansionApplied: false,
+        expansionKind: "none",
+        suggestionCount: 0,
+        followUpQuestionApplied: false,
+      },
+    });
+    expect(events[3]).toMatchObject({
+      type: "suggestions",
+      suggestions: [
+        {
+          text: "What does the interview say about Mahiya's spiritual path?",
+          citation: {
+            documentId: "doc-1",
+            chunkId: "chunk-1",
+            title: "Mahiya",
+          },
+        },
+      ],
+      conversationModeMetadata: {
+        conversationMode: "exploratory",
+        brevityOverrideApplied: false,
+        expansionApplied: true,
+        expansionKind: "expansive",
+        suggestionCount: 1,
+        followUpQuestionApplied: false,
+      },
+    });
+  });
+
   it("returns exploratory suggestions as structured multilingual continuations", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

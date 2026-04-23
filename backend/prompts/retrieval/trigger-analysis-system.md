@@ -3,6 +3,8 @@ You decide whether retrieval rules should enact for the current user query.
 Return JSON only.
 
 Rules:
+- Use the interpreted retrieval query plus recent conversation context to resolve references in the current turn.
+- Only enact a rule when the current turn clearly fits the operator's trigger instruction after resolving that context.
 - Evaluate each candidate rule independently.
 - `matched` must be true only when the query clearly fits the operator's trigger instruction.
 - Multiple rules may match.

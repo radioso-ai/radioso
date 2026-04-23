@@ -20,60 +20,114 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       rewritten: input.rewrittenContexts,
       lexical: input.lexicalContexts,
     });
+    const minimumUsefulCandidateCount = RETRIEVAL_BEHAVIOR.hybrid.minimumUsefulCandidateCount;
     const alwaysOnRules = (input.settings.metadataRules ?? []).filter(
       (rule) => rule.enabled && rule.triggerMode !== "match_turn",
     );
     const matchedTriggeredRules = (input.settings.metadataRules ?? []).filter(
       (rule) => rule.enabled && rule.triggerMode === "match_turn" && input.triggerAnalysis.matchedRuleIds.includes(rule.id),
     );
-    const activeRules = [...alwaysOnRules, ...matchedTriggeredRules];
+    const matchedTriggerBoostRules = matchedTriggeredRules.filter((rule) => rule.effect !== "filter");
+    const matchedHardFilterRules = matchedTriggeredRules.filter((rule) => rule.effect === "filter");
+    const triggerStrengthByRuleId = new Map(
+      input.triggerAnalysis.consideredRules.map((rule) => [rule.ruleId, rule.matchStrength]),
+    );
+    const evaluateRules = (activeHardFilterRules: typeof matchedHardFilterRules) =>
+      this.metadataRuleScoringService.apply({
+        candidates: normalizedCandidates,
+        metadataRules: [...alwaysOnRules, ...matchedTriggerBoostRules, ...activeHardFilterRules],
+      });
+    const classifyBackoffReason = (
+      candidateCount: number,
+    ): TriggerBackoffDecision["reason"] | undefined => {
+      if (matchedHardFilterRules.length === 0) {
+        return undefined;
+      }
+      if (candidateCount === 0) {
+        return "empty_filtered_candidates";
+      }
+      if (
+        candidateCount < minimumUsefulCandidateCount &&
+        normalizedCandidates.length >= minimumUsefulCandidateCount
+      ) {
+        return "weak_filtered_support";
+      }
+      return undefined;
+    };
 
-    const metadataRuleCandidates = this.metadataRuleScoringService.apply({
-      candidates: normalizedCandidates,
-      metadataRules: activeRules,
+    const prioritizedHardFilterRules = [...matchedHardFilterRules].sort((left, right) => {
+      const leftStrength = triggerStrengthByRuleId.get(left.id) ?? 1;
+      const rightStrength = triggerStrengthByRuleId.get(right.id) ?? 1;
+      return leftStrength - rightStrength;
     });
-    const matchedHardFilterIds = matchedTriggeredRules.filter((rule) => rule.effect === "filter").map((rule) => rule.id);
-    const emptyFilteredCandidates = matchedHardFilterIds.length > 0 && metadataRuleCandidates.candidates.length === 0;
-    const weakFilteredSupport =
-      matchedHardFilterIds.length > 0 &&
-      metadataRuleCandidates.candidates.length > 0 &&
-      metadataRuleCandidates.candidates.length < RETRIEVAL_BEHAVIOR.hybrid.minimumUsefulCandidateCount &&
-      normalizedCandidates.length >= RETRIEVAL_BEHAVIOR.hybrid.minimumUsefulCandidateCount;
-    const shouldBackOff = emptyFilteredCandidates || weakFilteredSupport;
-    const relaxedRuleSet = shouldBackOff
-      ? [...alwaysOnRules, ...matchedTriggeredRules.filter((rule) => rule.effect !== "filter")]
-      : activeRules;
-    const relaxedCandidates = shouldBackOff
-      ? this.metadataRuleScoringService.apply({
-          candidates: normalizedCandidates,
-          metadataRules: relaxedRuleSet,
-        })
-      : metadataRuleCandidates;
-    const relaxedRuleIds = new Set(matchedHardFilterIds);
+
+    let retainedHardFilterRules = [...matchedHardFilterRules];
+    let selectedCandidates = evaluateRules(retainedHardFilterRules);
+    const triggerBackoffReason = classifyBackoffReason(selectedCandidates.candidates.length);
+    const relaxedRuleIds: string[] = [];
+
+    if (triggerBackoffReason) {
+      while (classifyBackoffReason(selectedCandidates.candidates.length)) {
+        const relaxationOptions = prioritizedHardFilterRules
+          .filter((rule) => retainedHardFilterRules.some((candidateRule) => candidateRule.id === rule.id))
+          .map((rule) => {
+            const remainingHardFilterRules = retainedHardFilterRules.filter((candidateRule) => candidateRule.id !== rule.id);
+            const evaluation = evaluateRules(remainingHardFilterRules);
+
+            return {
+              rule,
+              remainingHardFilterRules,
+              evaluation,
+              candidateCount: evaluation.candidates.length,
+              resolved: !classifyBackoffReason(evaluation.candidates.length),
+              matchStrength: triggerStrengthByRuleId.get(rule.id) ?? 1,
+            };
+          })
+          .filter((option) => option.candidateCount > selectedCandidates.candidates.length)
+          .sort((left, right) => {
+            if (left.resolved !== right.resolved) {
+              return left.resolved ? -1 : 1;
+            }
+            if (left.candidateCount !== right.candidateCount) {
+              return right.candidateCount - left.candidateCount;
+            }
+            if (left.matchStrength !== right.matchStrength) {
+              return left.matchStrength - right.matchStrength;
+            }
+            return left.rule.id.localeCompare(right.rule.id);
+          });
+        const selectedRelaxation = relaxationOptions[0];
+        if (!selectedRelaxation) {
+          break;
+        }
+
+        retainedHardFilterRules = selectedRelaxation.remainingHardFilterRules;
+        relaxedRuleIds.push(selectedRelaxation.rule.id);
+        selectedCandidates = selectedRelaxation.evaluation;
+      }
+    }
+
+    const relaxedRuleIdSet = new Set(relaxedRuleIds);
     const relaxedConstraints = matchedTriggeredRules
-      .filter((rule) => relaxedRuleIds.has(rule.id))
+      .filter((rule) => relaxedRuleIdSet.has(rule.id))
       .map((rule) => buildAppliedConstraintForRule(rule, "relaxed"));
-    const mergedCandidates = relaxedCandidates.candidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
-    const triggerBackoffReason: TriggerBackoffDecision["reason"] = emptyFilteredCandidates
-      ? "empty_filtered_candidates"
-      : weakFilteredSupport
-        ? "weak_filtered_support"
-        : undefined;
+    const mergedCandidates = selectedCandidates.candidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
+    const triggerBackoffApplied = relaxedRuleIds.length > 0;
 
     return {
       ...input,
       normalizedCandidates,
       mergedCandidates,
       scoredCandidates: mergedCandidates,
-      appliedConstraints: shouldBackOff
-        ? [...relaxedCandidates.appliedRules, ...relaxedConstraints]
-        : relaxedCandidates.appliedRules,
-      candidateFallbackApplied: input.vectorFallbackApplied || shouldBackOff,
+      appliedConstraints: triggerBackoffApplied
+        ? [...selectedCandidates.appliedRules, ...relaxedConstraints]
+        : selectedCandidates.appliedRules,
+      candidateFallbackApplied: input.vectorFallbackApplied || triggerBackoffApplied,
       triggerBackoff: {
-        applied: shouldBackOff,
-        reason: triggerBackoffReason,
-        relaxedRuleIds: shouldBackOff ? matchedHardFilterIds : [],
-        restoredCandidateCount: shouldBackOff ? relaxedCandidates.candidates.length : undefined,
+        applied: triggerBackoffApplied,
+        reason: triggerBackoffApplied ? triggerBackoffReason : undefined,
+        relaxedRuleIds,
+        restoredCandidateCount: triggerBackoffApplied ? selectedCandidates.candidates.length : undefined,
       },
     };
   }

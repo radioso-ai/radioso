@@ -83,6 +83,8 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
           ];
     const triggerAnalysis = await this.queryRewriteService.analyzeTriggers({
       query: input.request.query,
+      activeQuery,
+      contextMessages: promptHistory,
       metadataRules: input.settings.metadataRules ?? [],
     });
 

@@ -24,6 +24,12 @@ export interface QueryRewriteGatewayFallbackResult {
 }
 
 export type QueryRewriteGatewayResult = QueryRewriteGatewayFallbackResult | StructuredRewriteResult;
+export interface TriggerAnalysisGatewayInput {
+  query: string;
+  activeQuery: string;
+  contextMessages: MessageRecord[];
+  rules: RetrievalMetadataRule[];
+}
 
 const QUERY_REWRITE_SYSTEM_PROMPT = loadPromptTemplate("retrieval/query-rewrite-system.md");
 const TRIGGER_ANALYSIS_SYSTEM_PROMPT = loadPromptTemplate("retrieval/trigger-analysis-system.md");
@@ -46,12 +52,25 @@ const buildQueryRewritePrompt = (input: {
     query: input.query,
   });
 
+const formatConversationContext = (messages: MessageRecord[]): string =>
+  messages
+    .map((message) =>
+      `${message.role.toUpperCase()}: ${message.content}${
+        message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
+      }`,
+    )
+    .join("\n");
+
 const buildTriggerAnalysisPrompt = (input: {
   query: string;
+  activeQuery: string;
+  context: string;
   rules: RetrievalMetadataRule[];
 }): string =>
   renderPromptTemplate("retrieval/trigger-analysis-user.md", {
     query: input.query,
+    active_query: input.activeQuery,
+    context_section: input.context || "No prior context",
     rules_json: JSON.stringify(
       input.rules.map((rule) => ({
         ruleId: rule.id,
@@ -80,22 +99,21 @@ export interface QueryRewriteGateway {
 }
 
 export interface TriggerAnalysisGateway {
-  analyze(input: {
-    query: string;
-    rules: RetrievalMetadataRule[];
-  }): Promise<TriggerAnalysisResult>;
+  analyze(input: TriggerAnalysisGatewayInput): Promise<TriggerAnalysisResult>;
 }
 
 export class ModelTriggerAnalysisGateway implements TriggerAnalysisGateway {
   constructor(private readonly client: TextGenerationClient) {}
 
-  async analyze(input: {
-    query: string;
-    rules: RetrievalMetadataRule[];
-  }): Promise<TriggerAnalysisResult> {
+  async analyze(input: TriggerAnalysisGatewayInput): Promise<TriggerAnalysisResult> {
     const raw = await this.client.complete({
       systemPrompt: TRIGGER_ANALYSIS_SYSTEM_PROMPT,
-      prompt: buildTriggerAnalysisPrompt(input),
+      prompt: buildTriggerAnalysisPrompt({
+        query: input.query,
+        activeQuery: input.activeQuery,
+        context: formatConversationContext(input.contextMessages),
+        rules: input.rules,
+      }),
     });
 
     return parseStructuredTriggerAnalysis(raw, input.rules);
@@ -111,18 +129,10 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<StructuredRewriteResult> {
-    const context = input.contextMessages
-      .map((message) =>
-        `${message.role.toUpperCase()}: ${message.content}${
-          message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
-        }`,
-      )
-      .join("\n");
-
     const raw = await this.client.complete({
       systemPrompt: QUERY_REWRITE_SYSTEM_PROMPT,
       prompt: buildQueryRewritePrompt({
-        context,
+        context: formatConversationContext(input.contextMessages),
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         query: input.query,
@@ -154,14 +164,6 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<StructuredRewriteResult> {
-    const context = input.contextMessages
-      .map((message) =>
-        `${message.role.toUpperCase()}: ${message.content}${
-          message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
-        }`,
-      )
-      .join("\n");
-
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: [
@@ -172,7 +174,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
         {
           role: "user",
           content: buildQueryRewritePrompt({
-            context,
+            context: formatConversationContext(input.contextMessages),
             semanticRewriteInstructions: input.semanticRewriteInstructions,
             lexicalRewriteInstructions: input.lexicalRewriteInstructions,
             query: input.query,
@@ -271,6 +273,8 @@ export class QueryRewriteService {
 
   async analyzeTriggers(input: {
     query: string;
+    activeQuery?: string;
+    contextMessages?: MessageRecord[];
     metadataRules: RetrievalMetadataRule[];
   }): Promise<TriggerAnalysisResult> {
     const triggerableRules = input.metadataRules.filter(
@@ -309,6 +313,8 @@ export class QueryRewriteService {
     try {
       const result = await this.triggerGateway.analyze({
         query: input.query,
+        activeQuery: input.activeQuery ?? input.query,
+        contextMessages: input.contextMessages ?? [],
         rules: triggerableRules,
       });
       const normalizedConsideredRules = result.consideredRules.map((rule) => {

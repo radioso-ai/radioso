@@ -389,6 +389,145 @@ describe("retrieval pipeline stages", () => {
     expect(result.triggerAnalysis.matchCount).toBe(2);
   });
 
+  it("passes resolved follow-up context into trigger analysis", async () => {
+    let triggerAnalysisInput:
+      | {
+          query: string;
+          activeQuery: string;
+          contextMessages: Array<{ role: "user" | "assistant"; content: string }>;
+        }
+      | undefined;
+
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService(
+        {
+          async rewrite({ contextMessages }) {
+            expect(contextMessages).toHaveLength(2);
+            return {
+              rewrittenQuery: "When is the conference in Riga?",
+              semanticQuery: "When is the conference in Riga?",
+              lexicalQuery: "conference Riga date",
+              turnKind: "referential_followup",
+              proposedActiveSubject: "conference in Riga",
+              relatedEntities: ["conference"],
+              unresolved: false,
+              confidence: 0.93,
+            };
+          },
+        },
+        {
+          async analyze({ query, activeQuery, contextMessages }) {
+            triggerAnalysisInput = {
+              query,
+              activeQuery,
+              contextMessages: contextMessages.map((message) => ({
+                role: message.role,
+                content: message.content,
+              })),
+            };
+
+            return {
+              status: "applied",
+              consideredRules: [
+                {
+                  ruleId: "events-filter",
+                  matched: true,
+                  matchStrength: 0.94,
+                  reason: "The resolved follow-up is still asking about the conference schedule.",
+                  triggerInstructionPreview: "Enact for upcoming events.",
+                },
+              ],
+              matchedRuleIds: ["events-filter"],
+              unmatchedRuleIds: [],
+              matchCount: 1,
+              matcherVersion: "test",
+            };
+          },
+        },
+      ),
+    );
+
+    const history = [
+      {
+        id: "u1",
+        conversationId: "c1",
+        workspaceId: "a1",
+        role: "user" as const,
+        content: "Tell me about the conference in Riga.",
+        createdAt: new Date(),
+      },
+      {
+        id: "a1",
+        conversationId: "c1",
+        workspaceId: "a1",
+        role: "assistant" as const,
+        content: "The conference in Riga is our annual event.",
+        createdAt: new Date(),
+      },
+    ];
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "When is it?",
+        history,
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "events-filter",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for upcoming events.",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: history,
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.activeQuery).toBe("When is the conference in Riga?");
+    expect(triggerAnalysisInput).toEqual({
+      query: "When is it?",
+      activeQuery: "When is the conference in Riga?",
+      contextMessages: [
+        {
+          role: "user",
+          content: "Tell me about the conference in Riga.",
+        },
+        {
+          role: "assistant",
+          content: "The conference in Riga is our annual event.",
+        },
+      ],
+    });
+    expect(result.triggerAnalysis.matchedRuleIds).toEqual(["events-filter"]);
+  });
+
   it("clears prompt history when rewrite marks a fresh subject", async () => {
     const stage = new QueryInterpretationStageService(
       new QueryRewriteService({

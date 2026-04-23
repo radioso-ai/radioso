@@ -39,6 +39,9 @@ export interface EvalRepositoryPort {
 }
 
 const normalizeText = (value: string, maxLength: number): string => value.trim().slice(0, maxLength);
+type TriggerComparisonRule = NonNullable<
+  EvalCaseResultRecord["diagnostics"]["retrievalInfo"]["triggerAnalysis"]
+>["consideredRules"][number];
 
 const normalizeExpectedCitations = (
   citations: unknown,
@@ -74,21 +77,41 @@ const formatTriggerRuleReference = (rule: {
   triggerInstructionPreview: string;
 }): string => {
   const preview = rule.triggerInstructionPreview.trim();
-  return preview.length > 0 ? `"${preview}"` : `rule ${rule.ruleId}`;
+  return preview.length > 0 ? `rule ${rule.ruleId} ("${preview}")` : `rule ${rule.ruleId}`;
 };
 
+const formatTriggerRuleList = (
+  rules: Array<{
+    ruleId: string;
+    triggerInstructionPreview: string;
+  }>,
+): string =>
+  rules.length > 0
+    ? rules
+        .slice()
+        .sort((left, right) => left.ruleId.localeCompare(right.ruleId))
+        .map((rule) => formatTriggerRuleReference(rule))
+        .join(", ")
+    : "no enacted trigger rules";
+
+const normalizeTriggerReason = (value: string): string => value.trim().replace(/\s+/g, " ");
+const normalizeTriggerStrength = (value: number): string => value.toFixed(2);
+
 const summarizeTriggerBehavior = (diagnostics: EvalCaseResultRecord["diagnostics"]): {
-  matchedRules: string[];
+  matchedRuleIds: string[];
+  matchedRules: TriggerComparisonRule[];
+  consideredRuleById: Map<string, TriggerComparisonRule>;
   backoffReason?: "empty_filtered_candidates" | "weak_filtered_support";
 } => {
   const triggerAnalysis = diagnostics.retrievalInfo.triggerAnalysis;
   const consideredRules = triggerAnalysis?.consideredRules ?? [];
   const matchedRules = consideredRules
     .filter((rule) => triggerAnalysis?.matchedRuleIds.includes(rule.ruleId))
-    .map((rule) => formatTriggerRuleReference(rule));
 
   return {
+    matchedRuleIds: matchedRules.map((rule) => rule.ruleId).sort((left, right) => left.localeCompare(right)),
     matchedRules,
+    consideredRuleById: new Map(consideredRules.map((rule) => [rule.ruleId, rule])),
     backoffReason: diagnostics.retrievalInfo.triggerBackoff?.reason,
   };
 };
@@ -101,12 +124,35 @@ const buildTriggerComparisonReasons = (
   const candidateTrigger = summarizeTriggerBehavior(candidate);
   const reasons: string[] = [];
 
-  const baselineMatched = baselineTrigger.matchedRules.join(", ");
-  const candidateMatched = candidateTrigger.matchedRules.join(", ");
-  if (baselineMatched !== candidateMatched) {
+  const baselineMatched = formatTriggerRuleList(baselineTrigger.matchedRules);
+  const candidateMatched = formatTriggerRuleList(candidateTrigger.matchedRules);
+  if (baselineTrigger.matchedRuleIds.join(",") !== candidateTrigger.matchedRuleIds.join(",")) {
     reasons.push(
-      `Trigger decision changed from ${baselineMatched || "no enacted trigger rules"} to ${candidateMatched || "no enacted trigger rules"}.`,
+      `Trigger decision changed from ${baselineMatched} to ${candidateMatched}.`,
     );
+  }
+
+  const sharedRuleIds = [...baselineTrigger.consideredRuleById.keys()]
+    .filter((ruleId) => candidateTrigger.consideredRuleById.has(ruleId))
+    .sort((left, right) => left.localeCompare(right));
+  for (const ruleId of sharedRuleIds) {
+    const baselineRule = baselineTrigger.consideredRuleById.get(ruleId);
+    const candidateRule = candidateTrigger.consideredRuleById.get(ruleId);
+    if (!baselineRule || !candidateRule || baselineRule.matched !== candidateRule.matched) {
+      continue;
+    }
+
+    const baselineStrength = normalizeTriggerStrength(baselineRule.matchStrength);
+    const candidateStrength = normalizeTriggerStrength(candidateRule.matchStrength);
+    if (baselineStrength !== candidateStrength) {
+      reasons.push(
+        `Trigger confidence for ${formatTriggerRuleReference(candidateRule)} changed from ${baselineStrength} to ${candidateStrength}.`,
+      );
+    }
+
+    if (normalizeTriggerReason(baselineRule.reason) !== normalizeTriggerReason(candidateRule.reason)) {
+      reasons.push(`Trigger rationale changed for ${formatTriggerRuleReference(candidateRule)}.`);
+    }
   }
 
   if (baselineTrigger.backoffReason !== candidateTrigger.backoffReason) {

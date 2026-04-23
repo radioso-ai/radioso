@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
+import { sendChatSse } from "../presenters/chatPresenter.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { anonymousRateLimiter } from "../middleware/anonymousRateLimiter.js";
@@ -94,6 +95,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
           workspaceId,
           query: req.body.query!,
           stream: req.body.stream,
+          userExpectedLocale: req.body.userExpectedLocale,
           conversationId: req.body.conversationId,
           inputMetadata: req.body.inputMetadata,
           sourceChannel,
@@ -103,14 +105,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
 
         if (input.stream) {
           assertInteractiveAssistantWorkflow("chat.turn");
-          res.setHeader("Content-Type", "text/event-stream");
-          res.setHeader("Cache-Control", "no-cache");
-          res.setHeader("Connection", "keep-alive");
-
-          for await (const event of dependencies.chatService.streamAnswer(input)) {
-            res.write(`data: ${JSON.stringify(event)}\n\n`);
-          }
-          res.end();
+          await sendChatSse(res, dependencies.chatService.streamAnswer(input));
         } else {
           assertInteractiveAssistantWorkflow("chat.turn");
           const result = await dependencies.chatService.answer(input);

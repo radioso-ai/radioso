@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
 import type { ChatGateway } from "../../chat/services/chatService.js";
-import { AnswerPresentationService } from "../../chat/services/answerPresentationService.js";
+import {
+  AnswerPresentationService,
+  remapAnswerSegmentsToCitationEvidence,
+} from "../../chat/services/answerPresentationService.js";
 import { AnswerSupportValidator } from "../../chat/services/answerSupportValidator.js";
 import { AssistantTurnOutcomeClassifier } from "../../chat/services/assistantTurnOutcomeClassifier.js";
 import { RetrievalInfoPresenter } from "../../retrieval/services/retrievalInfoPresenter.js";
@@ -96,11 +99,16 @@ export class EvalReplayService {
         answer: rawAnswer,
         citations: citationEvidence,
       });
+      const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
+        normalized.answerSegments,
+        normalized.citationEvidence,
+        citationEvidence,
+      );
       const validated = await this.answerSupportValidator.validate({
         query: input.query,
         answer: normalized.answer,
-        answerSegments: normalized.answerSegments,
-        citationEvidence: normalized.citationEvidence,
+        answerSegments: validationAnswerSegments,
+        citationEvidence,
         retrievedContextSummaries: citationEvidence.map((citation) => ({
           title: citation.title,
           content: citation.content,
@@ -109,6 +117,7 @@ export class EvalReplayService {
         answerSupportPolicy,
         conversationMode,
         groundedMissResponseComposer: this.groundedMissResponseComposer,
+        unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
       });
       answer = validated.answer;
       citations = validated.citations;

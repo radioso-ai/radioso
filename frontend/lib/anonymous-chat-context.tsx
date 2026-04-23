@@ -151,6 +151,7 @@ const getLatestAssistantMessage = (detail: ChatConversationDetail): ChatMessage 
   return assistantMessages.at(-1) ?? null
 }
 
+const INITIAL_MESSAGE_WINDOW_SIZE = 10
 const MESSAGE_WINDOW_SIZE = 50
 const isValidLocaleHint = (value: string | null | undefined): value is string => {
   if (!value) {
@@ -245,7 +246,7 @@ export function AnonymousChatProvider({
       }
 
       const detail = await publicChatApi.getConversationDetail(token, response.conversations[0].id, {
-        limit: MESSAGE_WINDOW_SIZE,
+        limit: INITIAL_MESSAGE_WINDOW_SIZE,
       })
 
       setConversationId(detail.conversationId)
@@ -385,6 +386,9 @@ export function AnonymousChatProvider({
             stream: true,
             conversationId,
             inputMetadata,
+            userExpectedLocale: resolveAnonymousChatBootstrapLocale({
+              localeOverride,
+            }),
           },
           {
             onConversation: ({ conversationId: newId }) => {
@@ -473,7 +477,7 @@ export function AnonymousChatProvider({
         setIsLoading(false)
       }
     },
-    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, messages, recoverAssistantMessage, token],
+    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, recoverAssistantMessage, token],
   )
 
   const loadOlderMessages = useCallback(async () => {

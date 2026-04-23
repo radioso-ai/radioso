@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 import { resetRateLimiterState } from "../../src/app/http/middleware/anonymousRateLimiter.js";
+import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 
 describe("public chat contract", () => {
   beforeEach(() => {
@@ -185,6 +186,49 @@ describe("public chat contract", () => {
     );
     expect(detail.body.nextCursor).toBeNull();
     expect(detail.body.hasOlderMessages).toBe(false);
+  });
+
+  it("streams public chat responses with SSE event framing", async () => {
+    const streamingGateway: ChatGateway = {
+      async answer() {
+        return "unused";
+      },
+      async *streamAnswer() {
+        yield "Streaming ";
+        yield "works.";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: streamingGateway });
+    const session = await issueTestSession(app, "public-chat-stream@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Doc", content: "Hello. Streaming response coverage." });
+
+    const chatToken = await enableAnonymousChat(app, session);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .buffer(true)
+      .parse((res, callback) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => callback(null, body));
+      })
+      .send({ query: "Hello", stream: true });
+
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/event-stream");
+    expect(response.headers["x-accel-buffering"]).toBe("no");
+    expect(response.body).toContain("event: conversation");
+    expect(response.body).toContain("event: chunk");
+    expect(response.body).toContain('data: {"text":"Streaming "}');
+    expect(response.body).toContain('data: {"text":"works."}');
+    expect(response.body).toContain("event: done");
   });
 
   it("supports cursor pagination for anonymous chat history lists", async () => {

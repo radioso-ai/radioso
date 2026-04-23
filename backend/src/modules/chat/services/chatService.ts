@@ -9,7 +9,13 @@ import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositor
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import { RetrievalTracePresenter } from "../../retrieval/services/retrievalTracePresenter.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
-import { AnswerPresentationService, type AnswerSegment, type ChatCitation } from "./answerPresentationService.js";
+import { resolveContextSourceUrl } from "../../retrieval/services/contextSourceUrl.js";
+import {
+  AnswerPresentationService,
+  remapAnswerSegmentsToCitationEvidence,
+  type AnswerSegment,
+  type ChatCitation,
+} from "./answerPresentationService.js";
 import { AnswerSupportValidator } from "./answerSupportValidator.js";
 import {
   ASSISTANT_TURN_OUTCOME,
@@ -28,7 +34,6 @@ import { ConversationModeExpansionService } from "./conversationModeExpansionSer
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import type { RetrievalTrace, RewriteContinuityState } from "../../retrieval/domain/retrievalPipelineTypes.js";
-import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
@@ -312,6 +317,7 @@ export class ChatService {
     conversationId?: string;
     query: string;
     stream: boolean;
+    userExpectedLocale?: string | null;
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
@@ -325,7 +331,7 @@ export class ChatService {
     try {
       session = await this.prepareSession(input);
       const answerStartedAt = Date.now();
-      const presentation = await this.generateAnswerPresentation(session, input.query);
+      const presentation = await this.generateAnswerPresentation(session, input.query, input.userExpectedLocale);
       const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics);
       const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
         trace: session.retrieval.trace,
@@ -392,6 +398,7 @@ export class ChatService {
     conversationId?: string;
     query: string;
     stream: boolean;
+    userExpectedLocale?: string | null;
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     sourceChannel?: string | null;
@@ -416,9 +423,6 @@ export class ChatService {
       let rawAnswer = "";
       let noContextPresentation: PresentedAnswer | null = null;
       const answerStartedAt = Date.now();
-      const answerSupportPolicy = this.getAnswerSupportPolicy(session);
-      const suppressRawStreaming =
-        session.retrieval.contexts.length > 0 && shouldReplaceUnsupportedSegments(answerSupportPolicy);
 
       if (session.retrieval.contexts.length === 0) {
         noContextPresentation = await this.generateIdentityAnswer(session, input.query);
@@ -426,6 +430,7 @@ export class ChatService {
           ?? await this.groundedMissResponseComposer.composeNoContext({
             query: input.query,
             conversationMode: this.getConversationMode(session),
+            userExpectedLocale: input.userExpectedLocale,
           });
         yield {
           type: "chunk",
@@ -443,7 +448,10 @@ export class ChatService {
           }
           rawAnswer = `${rawAnswer}${text}`;
           const safe = sanitizer.push(text);
-          if (!safe || suppressRawStreaming) {
+          if (!safe) {
+            continue;
+          }
+          if (safe.trim().length === 0 && rawAnswer.trim().length === 0) {
             continue;
           }
           yield {
@@ -453,7 +461,7 @@ export class ChatService {
         }
 
         const trailing = sanitizer.flush();
-        if (trailing && !suppressRawStreaming) {
+        if (trailing) {
           yield {
             type: "chunk",
             text: trailing,
@@ -469,6 +477,7 @@ export class ChatService {
         session,
         rawAnswer,
         input.query,
+        input.userExpectedLocale,
       );
       lazySuggestionsPromise = noContextPresentation
         ? Promise.resolve({
@@ -481,13 +490,6 @@ export class ChatService {
         suggestions: undefined,
         conversationModeMetadata: noContextPresentation?.conversationModeMetadata ?? this.getConversationModeMetadata(session),
       };
-
-      if (suppressRawStreaming && presentation.answer.length > 0) {
-        yield {
-          type: "chunk",
-          text: presentation.answer,
-        };
-      }
 
       const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics);
       const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
@@ -633,6 +635,7 @@ export class ChatService {
   private async generateAnswerPresentation(
     session: PreparedSession,
     query: string,
+    userExpectedLocale?: string | null,
   ): Promise<PresentedAnswer> {
     if (session.retrieval.contexts.length === 0) {
       const identityAnswer = await this.generateIdentityAnswer(session, query);
@@ -645,6 +648,7 @@ export class ChatService {
       ? await this.groundedMissResponseComposer.composeNoContext({
           query,
           conversationMode: this.getConversationMode(session),
+          userExpectedLocale,
         })
       : await this.chatGateway.answer({
           query,
@@ -652,20 +656,21 @@ export class ChatService {
           prompt: session.retrieval.prompt,
         });
 
-    return this.presentAnswer(session, answer, query);
+    return this.presentAnswer(session, answer, query, userExpectedLocale);
   }
 
   private async presentAnswerWithoutSuggestions(
     session: PreparedSession,
     answer: string,
     query: string,
+    userExpectedLocale?: string | null,
   ): Promise<PresentedAnswer> {
     const citationEvidence = session.retrieval.contexts.map((context) => ({
       documentId: context.documentId,
       chunkId: context.chunkId,
       title: context.title,
       content: context.content,
-      sourceUrl: typeof context.metadata?.sourceUrl === "string" ? context.metadata.sourceUrl : undefined,
+      sourceUrl: resolveContextSourceUrl(context.metadata),
     }));
     const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
 
@@ -699,12 +704,17 @@ export class ChatService {
       answer,
       citations: citationEvidence,
     });
+    const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
+      normalized.answerSegments,
+      normalized.citationEvidence,
+      citationEvidence,
+    );
 
     const validated = await this.answerSupportValidator.validate({
       query,
       answer: normalized.answer,
-      answerSegments: normalized.answerSegments,
-      citationEvidence: normalized.citationEvidence,
+      answerSegments: validationAnswerSegments,
+      citationEvidence,
       retrievedContextSummaries: citationEvidence.map((citation) => ({
         title: citation.title,
         content: citation.content,
@@ -713,6 +723,8 @@ export class ChatService {
       answerSupportPolicy: this.getAnswerSupportPolicy(session),
       conversationMode: this.getConversationMode(session),
       groundedMissResponseComposer: this.groundedMissResponseComposer,
+      unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
+      userExpectedLocale,
     });
 
     return {
@@ -731,13 +743,18 @@ export class ChatService {
     };
   }
 
-  private async presentAnswer(session: PreparedSession, answer: string, query: string): Promise<PresentedAnswer> {
+  private async presentAnswer(
+    session: PreparedSession,
+    answer: string,
+    query: string,
+    userExpectedLocale?: string | null,
+  ): Promise<PresentedAnswer> {
     const citationEvidence = session.retrieval.contexts.map((context) => ({
       documentId: context.documentId,
       chunkId: context.chunkId,
       title: context.title,
       content: context.content,
-      sourceUrl: typeof context.metadata?.sourceUrl === "string" ? context.metadata.sourceUrl : undefined,
+      sourceUrl: resolveContextSourceUrl(context.metadata),
     }));
     const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
 
@@ -768,12 +785,17 @@ export class ChatService {
       answer,
       citations: citationEvidence,
     });
+    const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
+      normalized.answerSegments,
+      normalized.citationEvidence,
+      citationEvidence,
+    );
 
     const validated = await this.answerSupportValidator.validate({
       query,
       answer: normalized.answer,
-      answerSegments: normalized.answerSegments,
-      citationEvidence: normalized.citationEvidence,
+      answerSegments: validationAnswerSegments,
+      citationEvidence,
       retrievedContextSummaries: citationEvidence.map((citation) => ({
         title: citation.title,
         content: citation.content,
@@ -782,6 +804,8 @@ export class ChatService {
       answerSupportPolicy: this.getAnswerSupportPolicy(session),
       conversationMode: this.getConversationMode(session),
       groundedMissResponseComposer: this.groundedMissResponseComposer,
+      unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
+      userExpectedLocale,
     });
 
     return await this.applyConversationMode(session, {

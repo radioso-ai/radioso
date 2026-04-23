@@ -500,7 +500,7 @@ describe("chat contract", () => {
       },
       async *streamAnswer() {
         yield "streamed ";
-        await delay(80);
+        await delay(120);
         yield "answer";
       },
     };
@@ -566,6 +566,7 @@ describe("chat contract", () => {
       expect(result.body).toContain("event: done");
       expect(result.firstChunkMs).toBeGreaterThanOrEqual(0);
       expect(result.doneMs).toBeGreaterThanOrEqual(result.firstChunkMs);
+      expect(result.doneMs - result.firstChunkMs).toBeGreaterThanOrEqual(60);
       expect(result.body.indexOf("event: chunk")).toBeLessThan(result.body.indexOf("event: done"));
     } finally {
       await new Promise<void>((resolve, reject) => {

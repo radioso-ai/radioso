@@ -47,7 +47,7 @@ const normalizeForComparison = (value: string): string =>
 
 const isLikelyTagCloudLine = (value: string): boolean => {
   const tokens = value.trim().split(/\s+/);
-  return tokens.length >= 4 && tokens.every((token) => /^#[\p{L}\p{N}_-]+$/u.test(token));
+  return tokens.length >= 3 && tokens.every((token) => /^#[\p{L}\p{N}_-]+$/u.test(token));
 };
 
 const isLikelyTimecodeLine = (value: string): boolean => /^\d{1,2}:\d{2}(?::\d{2})?$/.test(value.trim());

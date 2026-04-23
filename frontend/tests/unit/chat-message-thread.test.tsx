@@ -114,6 +114,73 @@ describe('ChatMessageThread', () => {
     expect(html).not.toContain('Broader')
   })
 
+  it('preserves hover-capable suggestion styling for themed embedded chat', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            suggestions: [{ text: 'Which onboarding questions are answered?', kind: 'broader' }],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        onSuggestionSelect={() => {}}
+        themedSuggestionButtons
+        theme={{
+          launcherBackground: '#000000',
+          launcherForeground: '#ffffff',
+          launcherBorder: '#111111',
+          launcherShadow: 'none',
+          panelBackground: '#ffffff',
+          panelForeground: '#222222',
+          panelBorder: '#dddddd',
+          panelShadow: 'none',
+          accent: '#336699',
+          accentForeground: '#ffffff',
+          mutedBackground: '#f5f5f5',
+          mutedForeground: '#666666',
+          inputBackground: '#ffffff',
+          inputForeground: '#222222',
+          inputBorder: '#cccccc',
+          inputPlaceholder: '#999999',
+          assistantBubbleBackground: '#fafafa',
+          assistantBubbleForeground: '#222222',
+          userBubbleBackground: '#111111',
+          userBubbleForeground: '#ffffff',
+        }}
+      />,
+    )
+
+    expect(html).toContain('hover:border-[var(--suggestion-hover-border)]')
+    expect(html).toContain('hover:bg-[var(--suggestion-hover-bg)]')
+    expect(html).toContain('--suggestion-hover-border:#336699')
+  })
+
+  it('keeps the default auth-chat suggestion styling unchanged', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            suggestions: [{ text: 'Which onboarding questions are answered?', kind: 'broader' }],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        onSuggestionSelect={() => {}}
+      />,
+    )
+
+    expect(html).toContain('h-auto max-w-full whitespace-normal px-3 py-2 text-left')
+    expect(html).not.toContain('hover:border-[var(--suggestion-hover-border)]')
+    expect(html).not.toContain('--suggestion-hover-border:')
+  })
+
   it('omits empty suggestion text entries', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread

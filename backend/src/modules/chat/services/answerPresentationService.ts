@@ -1,4 +1,5 @@
 import { findCitationAnchorGroups, stripResidualCitationSyntax } from "./citationAnchorParser.js";
+import { hasUnsupportedNoticeMarker, stripUnsupportedNoticeMarker } from "./unsupportedNoticeMarker.js";
 
 export interface ChatCitation {
   documentId: string;
@@ -26,7 +27,42 @@ export interface NormalizedPresentedAnswer {
   answer: string;
   citationEvidence: CitationEvidence[];
   answerSegments: AnswerSegment[];
+  unsupportedNoticeMarked: boolean;
 }
+
+export const remapAnswerSegmentsToCitationEvidence = (
+  answerSegments: AnswerSegment[],
+  visibleCitationEvidence: CitationEvidence[],
+  targetCitationEvidence: CitationEvidence[],
+): AnswerSegment[] => {
+  const targetIndexByDocumentId = new Map<string, number>();
+
+  for (const [index, citation] of targetCitationEvidence.entries()) {
+    if (!targetIndexByDocumentId.has(citation.documentId)) {
+      targetIndexByDocumentId.set(citation.documentId, index);
+    }
+  }
+
+  return answerSegments.map((segment) => {
+    if (!segment.citationIndices || segment.citationIndices.length === 0) {
+      return { text: segment.text };
+    }
+
+    const remappedIndices = [...new Set(segment.citationIndices.flatMap((index) => {
+      const citation = visibleCitationEvidence[index];
+      if (!citation) {
+        return [];
+      }
+
+      const remappedIndex = targetIndexByDocumentId.get(citation.documentId);
+      return remappedIndex === undefined ? [] : [remappedIndex];
+    }))];
+
+    return remappedIndices.length > 0
+      ? { text: segment.text, citationIndices: remappedIndices }
+      : { text: segment.text };
+  });
+};
 
 const hasParagraphBreak = (text: string): boolean => /\r?\n\r?\n/.test(text);
 
@@ -49,7 +85,11 @@ export class AnswerPresentationService {
     answer: string;
     citations: CitationEvidence[];
   }): NormalizedPresentedAnswer {
-    return this.normalizeAnchoredAnswer(input.answer.trim(), input.citations);
+    const trimmedAnswer = input.answer.trim();
+    return {
+      ...this.normalizeAnchoredAnswer(stripUnsupportedNoticeMarker(trimmedAnswer), input.citations),
+      unsupportedNoticeMarked: hasUnsupportedNoticeMarker(trimmedAnswer),
+    };
   }
 
   present(input: {

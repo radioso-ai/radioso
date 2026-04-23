@@ -860,17 +860,13 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts.join("")).toBe(
-      `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
-    );
-    expect(doneEvent).toEqual({
+    expect(chunkTexts.join("")).toBe("full answer ");
+    expect(doneEvent).toEqual(expect.objectContaining({
       type: "done",
       conversationId: expect.any(String),
-      answer: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
-      citations: [],
-      answerSegments: [
-        { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
-      ],
+      answer: "full answer  marker",
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
+      answerSegments: [{ text: "full answer  marker", citationIndices: [0] }],
       conversationMode: "guided",
       conversationModeMetadata: {
         conversationMode: "guided",
@@ -897,13 +893,13 @@ describe("chat service streaming", () => {
           }),
         ]),
       }),
-    });
+    }));
 
     const [conversationId] = conversationRepository.items.keys();
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
+      content: "full answer  marker",
     });
   });
 
@@ -978,9 +974,7 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts).toEqual([
-      `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
-    ]);
+    expect(chunkTexts).toEqual(["full answer"]);
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
@@ -1203,7 +1197,7 @@ describe("chat service streaming", () => {
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 
-  it("buffers strict-mode chunks until the validated final answer is available", async () => {
+  it("streams provisional strict-mode chunks and still finishes with the validated final answer", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -1285,7 +1279,8 @@ describe("chat service streaming", () => {
       .map((event) => event.text)
       .join("");
 
-    expect(streamedText).toBe("The page explains testing and parsing content for users.");
+    expect(streamedText).toBe("The page explains testing and parsing content for users. It also offers 24/7 phone support.");
+    expect(streamedText).toContain("24/7 phone support");
     expect(events.findIndex((event) => event.type === "chunk")).toBeGreaterThanOrEqual(0);
     expect(events.findIndex((event) => event.type === "chunk")).toBeLessThan(
       events.findIndex((event) => event.type === "done"),
@@ -2606,6 +2601,250 @@ describe("chat service streaming", () => {
         },
       },
     ]);
+  });
+
+  it("preserves unanchored grounded markdown links during strict validation", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "where can i read more",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The page explains testing and parsing content for users.",
+              metadata: {
+                sourceUrl: "https://example.com/guide",
+              },
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "read more",
+              lexicalQuery: "read more",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "guided",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Read more here: [Guide](https://example.com/guide)";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "Where can I read more?",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Read more here: [Guide](https://example.com/guide)");
+    expect(response.citations).toEqual([
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
+    ]);
+    expect(response.answerSegments).toEqual([
+      {
+        text: "Read more here: [Guide](https://example.com/guide)",
+        citationIndices: [0],
+      },
+    ]);
+  });
+
+  it("preserves model-authored unsupported notices marked for strict validation", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "precio del curso",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Programa",
+              content: "El programa describe el curso, pero no incluye precios.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Programa" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "precio curso",
+              lexicalQuery: "precio curso",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "guided",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "No puedo verificar ese precio con lo que tengo aquí.<<UNSUPPORTED>>";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const fallbackComposer: GroundedMissResponseComposer = {
+      async composeUnsupportedWithContext() {
+        return 'I could not verify that from your workspace documents.';
+      },
+      async composeNoContext() {
+        return 'I could not find supporting material.';
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      fallbackComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "Cual es el precio del curso?",
+      stream: false,
+      userExpectedLocale: "es-ES",
+    });
+
+    expect(response.answer).toBe("No puedo verificar ese precio con lo que tengo aquí.");
+    expect(response.citations).toEqual([]);
+    expect(response.answerSegments).toEqual([
+      {
+        text: "No puedo verificar ese precio con lo que tengo aquí.",
+      },
+    ]);
+  });
+
+  it("strips unsupported notice markers from streamed chunks and final answers", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "precio del curso",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Programa",
+              content: "El programa describe el curso, pero no incluye precios.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Programa" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "precio curso",
+              lexicalQuery: "precio curso",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "guided",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "unused";
+      },
+      async *streamAnswer() {
+        yield "No puedo verificar ese precio";
+        yield " con lo que tengo aquí.<<UNSUP";
+        yield "PORTED>>";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "Cual es el precio del curso?",
+      stream: true,
+      userExpectedLocale: "es-ES",
+    })) {
+      events.push(event);
+    }
+
+    expect(events.filter((event) => event.type === "chunk")).toEqual([
+      { type: "chunk", text: "No puedo verificar ese precio" },
+      { type: "chunk", text: " con lo que tengo aquí." },
+    ]);
+    expect(events.at(-1)).toEqual(expect.objectContaining({
+      type: "done",
+      answer: "No puedo verificar ese precio con lo que tengo aquí.",
+    }));
   });
 
 });

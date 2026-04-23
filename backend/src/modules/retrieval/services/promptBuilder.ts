@@ -4,6 +4,7 @@ import type { AssistantIdentityPromptInput } from "../../settings/domain/assista
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { ConversationModeInstructionBuilder } from "./conversationModeInstructionBuilder.js";
+import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 
 export interface PromptBuildResult {
   prompt: string;
@@ -29,9 +30,8 @@ export class PromptBuilder {
       .join("\n");
     const contextsSection = input.contexts
       .map((context, index) => {
-        // Currently renders sourceUrl; extend as more metadata keys become prompt-relevant.
         // Sanitize to prevent prompt injection via newlines or control characters.
-        const rawSourceUrl = typeof context.metadata?.sourceUrl === "string" ? context.metadata.sourceUrl : "";
+        const rawSourceUrl = resolveContextSourceUrl(context.metadata) ?? "";
         const sanitizedSourceUrl = rawSourceUrl.replace(/[\n\r\t\x00-\x1f]/g, "").slice(0, 2048);
         const metadataLine = sanitizedSourceUrl ? `Source: ${sanitizedSourceUrl}\n` : "";
         return `Result ${index + 1} (${context.title}): ${metadataLine}${context.content}`;

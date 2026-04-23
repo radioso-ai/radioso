@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { PgLexicalSearch } from "../../src/modules/retrieval/infra/lexicalSearch.js";
+import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { renderSearchText } from "../../src/modules/retrieval/services/searchTextRenderer.js";
 
@@ -118,5 +119,108 @@ describe("hybrid retrieval search", () => {
     });
 
     expect(executedSql).toContain("coalesce(c.search_text, c.content, '')");
+  });
+
+  it("uses a materialized CTE and enables iterative scan for filtered semantic retrieval when available", async () => {
+    let transactionalQueryCount = 0;
+    const statements: string[] = [];
+    const search = new PgVectorSearch({
+      async query() {
+        return [];
+      },
+      async withTransaction(callback: (client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> }) => Promise<unknown>) {
+        const client = {
+          async query(sql: string) {
+            statements.push(sql);
+            if (sql.startsWith("SET LOCAL")) {
+              return { rows: [] };
+            }
+
+            transactionalQueryCount += 1;
+            expect(sql).toContain("WITH nearest_results AS MATERIALIZED");
+            expect(sql).toContain("WHERE c.workspace_id = $1");
+            expect(sql).toContain("ORDER BY c.embedding <=> $2::vector ASC");
+            expect(sql).toContain("WHERE distance <= $4");
+            expect(sql).toContain("AND d.status = 'ready'");
+            return { rows: [] };
+          },
+        };
+
+        return callback(client);
+      },
+    } as never);
+
+    const results = await search.search({
+      workspaceId: "workspace-1",
+      queryEmbedding: [0.1, 0.2],
+      topK: 2,
+      similarityThreshold: 0.2,
+    });
+
+    expect(statements[0]).toBe("SET LOCAL hnsw.iterative_scan = strict_order");
+    expect(transactionalQueryCount).toBe(1);
+    expect(results).toEqual([]);
+  });
+
+  it("falls back to the plain filtered query when iterative scan settings are unavailable", async () => {
+    let fallbackSql = "";
+    const search = new PgVectorSearch({
+      async query(sql: string, params: unknown[]) {
+        fallbackSql = sql;
+        expect(params).toEqual(["workspace-1", "[0.1,0.2]", 2, 0.8]);
+        expect(sql).toContain("WITH nearest_results AS MATERIALIZED");
+        expect(sql).toContain("WHERE c.workspace_id = $1");
+        expect(sql).toContain("AND d.status = 'ready'");
+        return [
+          {
+            chunk_id: "chunk-1",
+            document_id: "doc-1",
+            title: "Guide",
+            content: "Fallback hit",
+            search_text: null,
+            similarity: 0.81,
+            chunk_index: 0,
+            start_offset: 0,
+            end_offset: 30,
+            metadata: {},
+          },
+        ];
+      },
+      async withTransaction() {
+        throw new Error('unrecognized configuration parameter "hnsw.iterative_scan"');
+      },
+    } as never);
+
+    const results = await search.search({
+      workspaceId: "workspace-1",
+      queryEmbedding: [0.1, 0.2],
+      topK: 2,
+      similarityThreshold: 0.2,
+    });
+
+    expect(fallbackSql).toContain("WITH nearest_results AS MATERIALIZED");
+    expect(results).toHaveLength(1);
+  });
+
+  it("keeps metadata filters inside the nearest-neighbor CTE", async () => {
+    const search = new PgVectorSearch({
+      async query(_sql: string, params: unknown[]) {
+        expect(params).toEqual(["workspace-1", "[0.1,0.2]", 2, 0.8, JSON.stringify({ language: "en" })]);
+        return [];
+      },
+      async withTransaction() {
+        throw new Error('unrecognized configuration parameter "hnsw.iterative_scan"');
+      },
+    } as never);
+
+    const results = await search.search({
+      workspaceId: "workspace-1",
+      queryEmbedding: [0.1, 0.2],
+      topK: 2,
+      similarityThreshold: 0.2,
+      metadataFilter: { language: "en" },
+    });
+
+    expect(results).toEqual([]);
   });
 });

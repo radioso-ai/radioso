@@ -2,7 +2,7 @@
 
 import type { KeyboardEvent } from 'react'
 
-import { Button } from '@/components/ui/button'
+import { ChatSuggestionGroups } from '@/components/chat/chat-suggestion-groups'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
 import type { AnswerSegment, ChatSuggestion, ChatUserInputMetadata, Citation } from '@/lib/api'
@@ -128,33 +128,12 @@ export function ChatMessageThread({
                     )}
                   </div>
                 )}
-                {message.role === 'assistant' && message.suggestions && message.suggestions.length > 0 ? (
-                  <div className="flex max-w-full flex-wrap gap-2 px-1">
-                    {message.suggestions.map((suggestion, suggestionIndex) =>
-                      onSuggestionSelect ? (
-                        <Button
-                          key={`${message.id}-suggestion-${suggestionIndex}`}
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-auto max-w-full whitespace-normal px-3 py-2 text-left"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            onSuggestionSelect(suggestion.text, message.id)
-                          }}
-                        >
-                          {suggestion.text}
-                        </Button>
-                      ) : (
-                        <div
-                          key={`${message.id}-suggestion-${suggestionIndex}`}
-                          className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground"
-                        >
-                          {suggestion.text}
-                        </div>
-                      ),
-                    )}
-                  </div>
+                {message.role === 'assistant' ? (
+                  <ChatSuggestionGroups
+                    messageId={message.id}
+                    suggestions={message.suggestions}
+                    onSuggestionSelect={onSuggestionSelect}
+                  />
                 ) : null}
                 <p className="px-1 text-xs text-muted-foreground">
                   {timeFormatter.format(new Date(message.createdAt))}

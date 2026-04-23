@@ -50,6 +50,32 @@ describe('ChatMessageThread', () => {
             content: 'Answer text',
             createdAt: '2026-04-02T10:00:00.000Z',
             suggestions: [
+              { text: 'What parser rules do the docs cover?', kind: 'deeper' },
+              { text: 'Which onboarding questions are answered?', kind: 'broader' },
+            ],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Answer text')
+    expect(html).toContain('Deeper')
+    expect(html).toContain('Broader')
+    expect(html).toContain('What parser rules do the docs cover?')
+    expect(html).toContain('Which onboarding questions are answered?')
+  })
+
+  it('treats legacy flat suggestions as deeper suggestions for history compatibility', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            suggestions: [
               { text: 'What parser rules do the docs cover?' },
               { text: 'Which onboarding questions are answered?' },
             ],
@@ -59,9 +85,33 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html).toContain('Answer text')
+    expect(html).toContain('Deeper')
+    expect(html).not.toContain('Broader')
     expect(html).toContain('What parser rules do the docs cover?')
     expect(html).toContain('Which onboarding questions are answered?')
+  })
+
+  it('omits empty suggestion groups when only broader suggestions are supported', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            suggestions: [
+              { text: 'How does this connect to the broader workflow?', kind: 'broader' },
+            ],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).not.toContain('Deeper')
+    expect(html).toContain('Broader')
+    expect(html).toContain('How does this connect to the broader workflow?')
   })
 
   it('renders inline pseudo-lists as markdown lists for assistant messages', () => {

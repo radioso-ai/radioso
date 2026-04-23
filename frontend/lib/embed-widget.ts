@@ -77,7 +77,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   embeddedChatUnavailableMessage: 'This embedded chat could not be started from this website.',
   embeddedChatLauncherRequiredMessage: 'This embedded chat must be opened from the launcher script.',
   embeddedChatStartingMessage: 'Summoning {name}...',
-  publicChatSubtitle: 'Ask questions and get AI-powered answers',
+  publicChatSubtitle: '',
   publicChatEmptyTitle: 'Start a conversation',
   publicChatEmptyMessage: 'Ask a question and get an AI-powered answer.',
   startPrompt: 'Ask a question...',

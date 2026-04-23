@@ -254,9 +254,11 @@ function PublicChatContent({
             <AssistantAvatar avatarUrl={avatarUrl} label={resolvedWorkspaceName} themeOverrides={themeOverrides} />
             <div>
               <h1 className="text-lg font-medium">{resolvedWorkspaceName}</h1>
-              <p className="text-sm" style={{ color: theme.mutedForeground }}>
-                {copy.publicChatSubtitle}
-              </p>
+              {copy.publicChatSubtitle.trim() ? (
+                <p className="text-sm" style={{ color: theme.mutedForeground }}>
+                  {copy.publicChatSubtitle}
+                </p>
+              ) : null}
             </div>
           </div>
           <div className="flex items-center gap-1 self-start">

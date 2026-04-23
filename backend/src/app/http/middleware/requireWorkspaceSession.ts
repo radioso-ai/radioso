@@ -45,6 +45,7 @@ export const requireWorkspaceSession = (dependencies: AppDependencies): RequestH
 
       const auth = await dependencies.authService.authenticateApiToken(bearerToken);
       res.locals.accountId = auth.accountId;
+      res.locals.bearerToken = bearerToken;
       res.locals.workspaceId = auth.workspaceId;
       res.locals.authMode = "bearer";
       next();

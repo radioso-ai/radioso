@@ -27,6 +27,8 @@ export interface WebsiteEmbedCopy {
   publicChatLoadOlderMessages: string
   publicChatSendMessageLabel: string
   publicChatNewChatLabel: string
+  publicChatSuggestionDeeperLabel: string
+  publicChatSuggestionBroaderLabel: string
   publicChatRateLimitRetry: (seconds: number) => string
 }
 
@@ -55,6 +57,8 @@ const websiteEmbedCopyByLocale: Record<WebsiteEmbedSupportedLocale, WebsiteEmbed
     publicChatLoadOlderMessages: 'Altere Nachrichten laden',
     publicChatSendMessageLabel: 'Nachricht senden',
     publicChatNewChatLabel: 'Neuer Chat',
+    publicChatSuggestionDeeperLabel: 'Tiefer',
+    publicChatSuggestionBroaderLabel: 'Breiter',
     publicChatRateLimitRetry: (seconds) => `Versuche es in ${seconds}s erneut.`,
   },
   en: {
@@ -73,6 +77,8 @@ const websiteEmbedCopyByLocale: Record<WebsiteEmbedSupportedLocale, WebsiteEmbed
     publicChatLoadOlderMessages: 'Load older messages',
     publicChatSendMessageLabel: 'Send message',
     publicChatNewChatLabel: 'New chat',
+    publicChatSuggestionDeeperLabel: 'Deeper',
+    publicChatSuggestionBroaderLabel: 'Broader',
     publicChatRateLimitRetry: (seconds) => `Try again in ${seconds}s.`,
   },
   es: {
@@ -91,6 +97,8 @@ const websiteEmbedCopyByLocale: Record<WebsiteEmbedSupportedLocale, WebsiteEmbed
     publicChatLoadOlderMessages: 'Cargar mensajes anteriores',
     publicChatSendMessageLabel: 'Enviar mensaje',
     publicChatNewChatLabel: 'Nuevo chat',
+    publicChatSuggestionDeeperLabel: 'Mas a fondo',
+    publicChatSuggestionBroaderLabel: 'Mas amplio',
     publicChatRateLimitRetry: (seconds) => `Vuelve a intentarlo en ${seconds}s.`,
   },
   fr: {
@@ -109,6 +117,8 @@ const websiteEmbedCopyByLocale: Record<WebsiteEmbedSupportedLocale, WebsiteEmbed
     publicChatLoadOlderMessages: 'Charger les anciens messages',
     publicChatSendMessageLabel: 'Envoyer le message',
     publicChatNewChatLabel: 'Nouveau chat',
+    publicChatSuggestionDeeperLabel: 'Approfondir',
+    publicChatSuggestionBroaderLabel: 'Elargir',
     publicChatRateLimitRetry: (seconds) => `Reessayez dans ${seconds}s.`,
   },
   it: {
@@ -127,6 +137,8 @@ const websiteEmbedCopyByLocale: Record<WebsiteEmbedSupportedLocale, WebsiteEmbed
     publicChatLoadOlderMessages: 'Carica messaggi precedenti',
     publicChatSendMessageLabel: 'Invia messaggio',
     publicChatNewChatLabel: 'Nuova chat',
+    publicChatSuggestionDeeperLabel: 'Approfondisci',
+    publicChatSuggestionBroaderLabel: 'Allarga',
     publicChatRateLimitRetry: (seconds) => `Riprova tra ${seconds}s.`,
   },
   pt: {
@@ -145,6 +157,8 @@ const websiteEmbedCopyByLocale: Record<WebsiteEmbedSupportedLocale, WebsiteEmbed
     publicChatLoadOlderMessages: 'Carregar mensagens anteriores',
     publicChatSendMessageLabel: 'Enviar mensagem',
     publicChatNewChatLabel: 'Nova conversa',
+    publicChatSuggestionDeeperLabel: 'Aprofundar',
+    publicChatSuggestionBroaderLabel: 'Ampliar',
     publicChatRateLimitRetry: (seconds) => `Tente novamente em ${seconds}s.`,
   },
 }

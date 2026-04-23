@@ -17,8 +17,8 @@
 
 **Purpose**: Refresh the approved design artifacts and lock the implementation seams before editing runtime code.
 
-- [ ] T001 Reconcile the approved feature artifacts in `specs/047-expansive-followups/spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/suggestion-groups-contract.md`, and `quickstart.md`
-- [ ] T002 [P] Review the current suggestion, chat history, and chat rendering seams in `backend/src/modules/chat/services/`, `backend/src/modules/chat/types/`, `frontend/lib/`, and `frontend/components/`
+- [x] T001 Reconcile the approved feature artifacts in `specs/047-expansive-followups/spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/suggestion-groups-contract.md`, and `quickstart.md`
+- [x] T002 [P] Review the current suggestion, chat history, and chat rendering seams in `backend/src/modules/chat/services/`, `backend/src/modules/chat/types/`, `frontend/lib/`, and `frontend/components/`
 
 ---
 
@@ -74,10 +74,10 @@
 
 ### Implementation for User Story 2
 
-- [ ] T017 [P] [US2] Extend suggestion parsing/filtering in `backend/src/modules/chat/services/conversationModeExpansionService.ts` to classify `deeper` and `broader`
+- [x] T017 [P] [US2] Extend suggestion parsing/filtering in `backend/src/modules/chat/services/conversationModeExpansionService.ts` to classify `deeper` and `broader`
 - [x] T018 [P] [US2] Add a reusable grouped suggestion renderer under `frontend/components/`
 - [x] T019 [US2] Update `frontend/components/dashboard/chat-message-thread.tsx` to use the grouped renderer
-- [ ] T020 [US2] Update `frontend/components/chat/public-chat-shell.tsx` and related contexts to render grouped suggestions consistently
+- [x] T020 [US2] Update `frontend/components/chat/public-chat-shell.tsx` and related contexts to render grouped suggestions consistently
 
 **Checkpoint**: Users can distinguish between deeper and broader follow-ups in both chat surfaces.
 
@@ -99,7 +99,7 @@
 
 - [x] T024 [US3] Preserve and adapt duplicate filtering, standalone wording, and omission rules in `backend/src/modules/chat/services/conversationModeExpansionService.ts`
 - [x] T025 [US3] Ensure suggestion enable/count settings and brevity override behavior still apply through `backend/src/modules/chat/services/chatService.ts`
-- [ ] T026 [US3] Preserve grouped suggestion compatibility in `frontend/lib/chat-context.tsx` and `frontend/lib/anonymous-chat-context.tsx`
+- [x] T026 [US3] Preserve grouped suggestion compatibility in `frontend/lib/chat-context.tsx` and `frontend/lib/anonymous-chat-context.tsx`
 
 **Checkpoint**: Richer suggestions stay grounded, bounded, and predictable.
 
@@ -119,7 +119,7 @@
 ### Implementation for User Story 4
 
 - [x] T029 [P] [US4] Preserve history mapping compatibility in `backend/src/modules/chat/services/chatHistoryService.ts`
-- [ ] T030 [P] [US4] Keep suggestion-click provenance unchanged in `frontend/components/chat/public-chat-shell.tsx` and `frontend/components/dashboard/chat-message-thread.tsx`
+- [x] T030 [P] [US4] Keep suggestion-click provenance unchanged in `frontend/components/chat/public-chat-shell.tsx` and `frontend/components/dashboard/chat-message-thread.tsx`
 - [x] T031 [US4] Ensure legacy flat suggestions remain renderable through the new grouped renderer in `frontend/components/`
 
 **Checkpoint**: Existing history and click behavior remain stable after the grouped rollout.
@@ -131,11 +131,11 @@
 **Purpose**: Finish docs, validation, and final cleanup across stories.
 
 - [x] T032 [P] Update operator-facing docs in `frontend/docs/settings-docs/retrieval/conversation-mode.md` and `frontend/docs/settings-docs/retrieval/suggested-questions-enabled.md`
-- [ ] T033 [P] Review and update `readme.md` if the operator-facing suggestion behavior explanation now needs grouped expansive guidance
-- [ ] T034 Reconcile task completion and artifact wording in `specs/047-expansive-followups/`
-- [ ] T035 Run the validation scenarios from `specs/047-expansive-followups/quickstart.md`
+- [x] T033 [P] Review and update `readme.md` if the operator-facing suggestion behavior explanation now needs grouped expansive guidance
+- [x] T034 Reconcile task completion and artifact wording in `specs/047-expansive-followups/`
+- [x] T035 Run the validation scenarios from `specs/047-expansive-followups/quickstart.md`
 - [x] T036 Run targeted backend and frontend test commands for the completed feature
-- [ ] T037 Perform final cleanup to confirm responsibility-limited files did not absorb domain logic
+- [x] T037 Perform final cleanup to confirm responsibility-limited files did not absorb domain logic
 
 ---
 

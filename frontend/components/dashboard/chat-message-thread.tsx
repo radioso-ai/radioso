@@ -5,7 +5,13 @@ import type { KeyboardEvent } from 'react'
 import { ChatSuggestionGroups } from '@/components/chat/chat-suggestion-groups'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
-import type { AnswerSegment, ChatSuggestion, ChatUserInputMetadata, Citation } from '@/lib/api'
+import type {
+  AnswerSegment,
+  ChatSuggestion,
+  ChatSuggestionKind,
+  ChatUserInputMetadata,
+  Citation,
+} from '@/lib/api'
 
 const dayFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -32,12 +38,14 @@ export function ChatMessageThread({
   messages,
   onOpenDocument,
   onSuggestionSelect,
+  suggestionGroupLabels,
   onMessageSelect,
   selectedMessageId,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
   onSuggestionSelect?: (text: string, messageId: string) => void
+  suggestionGroupLabels?: Partial<Record<ChatSuggestionKind, string>>
   onMessageSelect?: (messageId: string) => void
   selectedMessageId?: string
 }) {
@@ -132,6 +140,7 @@ export function ChatMessageThread({
                   <ChatSuggestionGroups
                     messageId={message.id}
                     suggestions={message.suggestions}
+                    groupLabels={suggestionGroupLabels}
                     onSuggestionSelect={onSuggestionSelect}
                   />
                 ) : null}

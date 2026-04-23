@@ -6,7 +6,7 @@ import type { ChatSuggestion, ChatSuggestionKind } from '@/lib/api'
 
 const SUGGESTION_GROUP_ORDER: readonly ChatSuggestionKind[] = ['deeper', 'broader']
 
-const SUGGESTION_GROUP_LABELS: Record<ChatSuggestionKind, string> = {
+const DEFAULT_SUGGESTION_GROUP_LABELS: Record<ChatSuggestionKind, string> = {
   deeper: 'Deeper',
   broader: 'Broader',
 }
@@ -49,13 +49,19 @@ export const groupChatSuggestions = (
 export function ChatSuggestionGroups({
   messageId,
   suggestions,
+  groupLabels,
   onSuggestionSelect,
 }: {
   messageId: string
   suggestions?: ChatSuggestion[]
+  groupLabels?: Partial<Record<ChatSuggestionKind, string>>
   onSuggestionSelect?: (text: string, messageId: string) => void
 }) {
   const suggestionGroups = groupChatSuggestions(suggestions)
+  const resolvedGroupLabels = {
+    ...DEFAULT_SUGGESTION_GROUP_LABELS,
+    ...groupLabels,
+  }
 
   if (suggestionGroups.length === 0) {
     return null
@@ -67,7 +73,7 @@ export function ChatSuggestionGroups({
         <section key={`${messageId}-${group.kind}`} data-suggestion-group={group.kind} className="space-y-2">
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="border-primary/20 bg-primary/5 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-              {SUGGESTION_GROUP_LABELS[group.kind]}
+              {resolvedGroupLabels[group.kind]}
             </Badge>
           </div>
           <div className="flex max-w-full flex-wrap gap-2">

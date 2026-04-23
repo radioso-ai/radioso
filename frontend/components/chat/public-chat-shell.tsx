@@ -195,6 +195,10 @@ function PublicChatContent({
               messages={messages}
               onOpenDocument={async () => 'unavailable'}
               onSuggestionSelect={handleSuggestionSelect}
+              suggestionGroupLabels={{
+                deeper: copy.publicChatSuggestionDeeperLabel,
+                broader: copy.publicChatSuggestionBroaderLabel,
+              }}
             />
             <div ref={messagesEndRef} />
           </div>

@@ -114,6 +114,32 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('How does this connect to the broader workflow?')
   })
 
+  it('renders custom suggestion group labels when provided', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Risposta',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            suggestions: [
+              { text: 'Quali regole cita la guida?', kind: 'deeper' },
+              { text: 'Quali temi adiacenti sono supportati?', kind: 'broader' },
+            ],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        suggestionGroupLabels={{ deeper: 'Approfondisci', broader: 'Allarga' }}
+      />,
+    )
+
+    expect(html).toContain('Approfondisci')
+    expect(html).toContain('Allarga')
+    expect(html).not.toContain('Deeper')
+    expect(html).not.toContain('Broader')
+  })
+
   it('renders inline pseudo-lists as markdown lists for assistant messages', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread

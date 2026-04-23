@@ -3,10 +3,12 @@ import type { GeneralSettings } from '@/lib/api'
 export type WebsiteEmbedLauncherPosition = 'bottom-right' | 'bottom-left'
 export type WebsiteEmbedLauncherIcon = 'chat' | 'sparkles' | 'message'
 export type WebsiteEmbedInitialState = 'open' | 'collapsed'
+export type WebsiteEmbedDisplayMode = 'bubble' | 'panel'
 
 export interface WebsiteEmbedSnippetOverrides {
   locale?: string | null
   initialState?: string | null
+  displayMode?: string | null
   avatarUrl?: string | null
   collapsedAvatarUrl?: string | null
   copy?: WebsiteEmbedCopyOverrides | null
@@ -29,6 +31,7 @@ export interface WebsiteEmbedCopy {
   publicChatLoadOlderMessages: string
   publicChatSendMessageLabel: string
   publicChatNewChatLabel: string
+  publicChatCollapseLabel: string
   publicChatRateLimitRetryTemplate: string
 }
 
@@ -63,6 +66,7 @@ export const DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON: WebsiteEmbedLauncherIcon = 'ch
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION: WebsiteEmbedLauncherPosition = 'bottom-right'
 export const DEFAULT_WEBSITE_EMBED_SCRIPT_PATH = '/radioso-embed.js'
 export const DEFAULT_WEBSITE_EMBED_INITIAL_STATE: WebsiteEmbedInitialState = 'collapsed'
+export const DEFAULT_WEBSITE_EMBED_DISPLAY_MODE: WebsiteEmbedDisplayMode = 'bubble'
 export const APP_WEBSITE_EMBED_DEMO_PATH = '/embed-demo.html'
 export const LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL = 'http://127.0.0.1:4321'
 export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
@@ -81,6 +85,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatLoadOlderMessages: 'Load older messages',
   publicChatSendMessageLabel: 'Send message',
   publicChatNewChatLabel: 'New chat',
+  publicChatCollapseLabel: 'Collapse chat',
   publicChatRateLimitRetryTemplate: 'Try again in {seconds}s.',
 }
 export const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
@@ -124,6 +129,7 @@ const COPY_OVERRIDE_KEYS = [
   'publicChatLoadOlderMessages',
   'publicChatSendMessageLabel',
   'publicChatNewChatLabel',
+  'publicChatCollapseLabel',
   'publicChatRateLimitRetryTemplate',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
@@ -235,6 +241,19 @@ export const normalizeWebsiteEmbedInitialState = (value: string | null | undefin
 
   const normalized = value.trim().toLowerCase()
   if (normalized === 'open' || normalized === 'collapsed') {
+    return normalized
+  }
+
+  return null
+}
+
+export const normalizeWebsiteEmbedDisplayMode = (value: string | null | undefined): WebsiteEmbedDisplayMode | null => {
+  if (!value) {
+    return null
+  }
+
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'bubble' || normalized === 'panel') {
     return normalized
   }
 
@@ -413,10 +432,15 @@ export const buildWebsiteEmbedTestHarnessUrl = (
     settings.websiteEmbedLauncherPosition ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION,
   )
 
+  const displayMode = normalizeWebsiteEmbedDisplayMode(overrides?.displayMode)
   const initialState = normalizeWebsiteEmbedInitialState(overrides?.initialState)
   const avatarUrl = normalizeWebsiteEmbedAvatarUrl(overrides?.avatarUrl ?? overrides?.collapsedAvatarUrl)
   const copyOverrides = sanitizeWebsiteEmbedCopyOverrides(overrides?.copy)
   const themeOverrides = sanitizeWebsiteEmbedThemeOverrides(overrides?.theme)
+
+  if (displayMode && displayMode !== DEFAULT_WEBSITE_EMBED_DISPLAY_MODE) {
+    params.set('displayMode', displayMode)
+  }
 
   if (initialState) {
     params.set('initialState', initialState)
@@ -461,10 +485,15 @@ export const buildWebsiteEmbedSnippet = (
   const launcherPosition = settings.websiteEmbedLauncherPosition ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION
   const allowedOrigins = (settings.websiteEmbedAllowedOrigins ?? []).map(normalizeOrigin).filter((origin): origin is string => Boolean(origin))
   const originAttribute = allowedOrigins.length > 0 ? ` data-radioso-allowed-origins="${escapeHtmlAttribute(allowedOrigins.join(','))}"` : ''
+  const displayMode = normalizeWebsiteEmbedDisplayMode(overrides?.displayMode)
   const initialState = normalizeWebsiteEmbedInitialState(overrides?.initialState)
   const avatarUrl = normalizeWebsiteEmbedAvatarUrl(overrides?.avatarUrl ?? overrides?.collapsedAvatarUrl)
   const copyOverrides = sanitizeWebsiteEmbedCopyOverrides(overrides?.copy)
   const themeOverrides = sanitizeWebsiteEmbedThemeOverrides(overrides?.theme)
+  const displayModeAttribute =
+    displayMode && displayMode !== DEFAULT_WEBSITE_EMBED_DISPLAY_MODE
+      ? ` data-radioso-display-mode="${escapeHtmlAttribute(displayMode)}"`
+      : ''
   const initialStateAttribute = initialState ? ` data-radioso-initial-state="${escapeHtmlAttribute(initialState)}"` : ''
   const avatarAttribute = avatarUrl
     ? ` data-radioso-avatar-url="${escapeHtmlAttribute(avatarUrl)}"`
@@ -485,7 +514,7 @@ export const buildWebsiteEmbedSnippet = (
     `  data-radioso-token="${escapeHtmlAttribute(settings.websiteEmbedToken)}"`,
     `  data-radioso-launcher-label="${escapeHtmlAttribute(launcherLabel)}"`,
     `  data-radioso-launcher-icon="${escapeHtmlAttribute(launcherIcon)}"`,
-    `  data-radioso-launcher-position="${escapeHtmlAttribute(launcherPosition)}"${originAttribute}${initialStateAttribute}${avatarAttribute}${copyAttribute}${themeAttribute}`,
+    `  data-radioso-launcher-position="${escapeHtmlAttribute(launcherPosition)}"${originAttribute}${displayModeAttribute}${initialStateAttribute}${avatarAttribute}${copyAttribute}${themeAttribute}`,
     `></script>`,
   ].join('\n')
 }

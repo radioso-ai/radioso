@@ -3,10 +3,13 @@
   const DEFAULT_LABEL = 'Chat with us'
   const DEFAULT_POSITION = 'bottom-right'
   const DEFAULT_ICON = 'chat'
+  const DEFAULT_DISPLAY_MODE = 'bubble'
   const DEFAULT_INITIAL_STATE = 'collapsed'
   const READY_MESSAGE = 'radioso:embed:ready'
   const SESSION_MESSAGE = 'radioso:embed:session'
   const ERROR_MESSAGE = 'radioso:embed:error'
+  const COLLAPSE_MESSAGE = 'radioso:embed:collapse'
+  const PANEL_HANDLE_WIDTH = 56
   const defaultCopy = {
     launcherDefaultLabel: 'Chat with us',
     iframeTitle: 'Radioso embedded chat',
@@ -51,6 +54,7 @@
     'publicChatLoadOlderMessages',
     'publicChatSendMessageLabel',
     'publicChatNewChatLabel',
+    'publicChatCollapseLabel',
     'publicChatRateLimitRetryTemplate',
   ]
 
@@ -107,6 +111,15 @@
 
     const normalized = value.trim().toLowerCase()
     return normalized === 'open' || normalized === 'collapsed' ? normalized : null
+  }
+
+  const normalizeDisplayMode = (value) => {
+    if (!value) {
+      return null
+    }
+
+    const normalized = value.trim().toLowerCase()
+    return normalized === 'bubble' || normalized === 'panel' ? normalized : null
   }
 
   const resolveAvatarUrl = (value) => {
@@ -181,20 +194,112 @@
     }
   }
 
-  const createPanel = (theme) => {
+  const createPanel = (theme, displayMode, position) => {
     const panel = document.createElement('div')
-    panel.setAttribute('aria-hidden', 'true')
-    panel.style.width = 'min(440px, calc(100vw - 2rem))'
-    panel.style.height = '100%'
-    panel.style.maxHeight = 'calc(100vh - 2rem)'
-    panel.style.borderRadius = '28px'
+    panel.setAttribute('aria-hidden', displayMode === 'bubble' ? 'true' : 'false')
     panel.style.overflow = 'hidden'
     panel.style.boxShadow = theme.panelShadow
     panel.style.background = theme.panelBackground
     panel.style.border = `1px solid ${theme.panelBorder}`
-    panel.style.display = 'none'
     panel.style.pointerEvents = 'auto'
+
+    if (displayMode === 'panel') {
+      panel.style.position = 'absolute'
+      panel.style.top = '0'
+      panel.style.bottom = '0'
+      panel.style.width = `calc(100% - ${PANEL_HANDLE_WIDTH}px)`
+      panel.style.height = '100%'
+      panel.style.maxHeight = '100%'
+      panel.style.display = 'block'
+      if (position === 'bottom-left') {
+        panel.style.left = '0'
+        panel.style.borderLeft = '0'
+        panel.style.borderRadius = '0 28px 28px 0'
+      } else {
+        panel.style.right = '0'
+        panel.style.borderRight = '0'
+        panel.style.borderRadius = '28px 0 0 28px'
+      }
+      return panel
+    }
+
+    panel.style.width = 'min(440px, calc(100vw - 2rem))'
+    panel.style.height = '100%'
+    panel.style.maxHeight = 'calc(100vh - 2rem)'
+    panel.style.borderRadius = '28px'
+    panel.style.display = 'none'
     return panel
+  }
+
+  const createPanelHandle = (label, icon, avatarUrl, theme, position) => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.setAttribute('aria-label', label)
+    button.setAttribute('title', label)
+
+    const iconContainer = document.createElement('span')
+    iconContainer.setAttribute('aria-hidden', 'true')
+    iconContainer.style.display = 'inline-flex'
+    iconContainer.style.alignItems = 'center'
+    iconContainer.style.justifyContent = 'center'
+    iconContainer.style.width = '2rem'
+    iconContainer.style.height = '2rem'
+    iconContainer.style.overflow = 'hidden'
+    iconContainer.style.borderRadius = '9999px'
+    iconContainer.style.flexShrink = '0'
+    iconContainer.style.background = theme.mutedBackground
+    iconContainer.style.color = theme.accent
+
+    if (avatarUrl) {
+      const image = document.createElement('img')
+      image.alt = ''
+      image.src = avatarUrl
+      image.referrerPolicy = 'no-referrer'
+      image.style.width = '100%'
+      image.style.height = '100%'
+      image.style.objectFit = 'cover'
+      image.style.display = 'block'
+      image.addEventListener(
+        'error',
+        () => {
+          iconContainer.innerHTML = ''
+          setIconMarkup(iconContainer, icon)
+        },
+        { once: true },
+      )
+      iconContainer.appendChild(image)
+    } else {
+      setIconMarkup(iconContainer, icon)
+    }
+
+    button.appendChild(iconContainer)
+    button.style.all = 'unset'
+    button.style.boxSizing = 'border-box'
+    button.style.position = 'absolute'
+    button.style.top = '50%'
+    button.style.transform = 'translateY(-50%)'
+    button.style.width = `${PANEL_HANDLE_WIDTH}px`
+    button.style.height = '96px'
+    button.style.display = 'inline-flex'
+    button.style.alignItems = 'center'
+    button.style.justifyContent = 'center'
+    button.style.cursor = 'pointer'
+    button.style.background = theme.launcherBackground
+    button.style.color = theme.launcherForeground
+    button.style.border = `1px solid ${theme.launcherBorder}`
+    button.style.boxShadow = theme.launcherShadow
+    button.style.pointerEvents = 'auto'
+    button.style.transition = 'opacity 180ms ease'
+    if (position === 'bottom-left') {
+      button.style.right = '0'
+      button.style.borderRadius = '0 18px 18px 0'
+      button.style.borderLeft = '0'
+    } else {
+      button.style.left = '0'
+      button.style.borderRadius = '18px 0 0 18px'
+      button.style.borderRight = '0'
+    }
+    return button
   }
 
   const createIframe = (scriptUrl, token, options) => {
@@ -209,6 +314,9 @@
     iframe.style.background = options.theme.panelBackground
 
     const iframeUrl = new URL(`/embed/${encodeURIComponent(token)}`, scriptUrl)
+    if (options.displayMode && options.displayMode !== DEFAULT_DISPLAY_MODE) {
+      iframeUrl.searchParams.set('displayMode', options.displayMode)
+    }
     if (options.avatarUrl) {
       iframeUrl.searchParams.set('avatar', options.avatarUrl)
     }
@@ -339,6 +447,7 @@
       rawLabel && rawLabel.trim() && rawLabel.trim() !== DEFAULT_LABEL ? rawLabel.trim() : copy.launcherDefaultLabel
     const icon = script.dataset.radiosoLauncherIcon || DEFAULT_ICON
     const position = script.dataset.radiosoLauncherPosition || DEFAULT_POSITION
+    const displayMode = normalizeDisplayMode(script.dataset.radiosoDisplayMode) || DEFAULT_DISPLAY_MODE
     const initialState = normalizeInitialState(script.dataset.radiosoInitialState) || DEFAULT_INITIAL_STATE
     const avatarUrl = resolveAvatarUrl(
       script.dataset.radiosoAvatarUrl || script.dataset.radiosoCollapsedAvatarUrl,
@@ -347,26 +456,51 @@
     const host = document.createElement('div')
     host.style.position = 'fixed'
     host.style.zIndex = '2147483647'
-    host.style.top = '16px'
-    host.style.bottom = '16px'
-    host.style.right = '16px'
+    host.style.right = displayMode === 'panel' ? '0' : '16px'
     host.style.left = 'auto'
-    host.style.display = 'flex'
-    host.style.flexDirection = 'column'
-    host.style.alignItems = 'flex-end'
-    host.style.justifyContent = 'flex-end'
-    host.style.gap = '12px'
     host.style.pointerEvents = 'none'
-    host.style.maxWidth = 'calc(100vw - 2rem)'
+    host.style.overflow = 'visible'
 
-    if (position === 'bottom-left') {
-      host.style.left = '16px'
-      host.style.right = 'auto'
-      host.style.alignItems = 'flex-start'
+    if (displayMode === 'panel') {
+      host.style.top = '0'
+      host.style.bottom = '0'
+      host.style.width = 'min(496px, 100vw)'
+      host.style.maxWidth = '100vw'
+    } else {
+      host.style.top = '16px'
+      host.style.bottom = '16px'
+      host.style.display = 'flex'
+      host.style.flexDirection = 'column'
+      host.style.alignItems = 'flex-end'
+      host.style.justifyContent = 'flex-end'
+      host.style.gap = '12px'
+      host.style.maxWidth = 'calc(100vw - 2rem)'
     }
 
-    const panel = createPanel(theme)
-    const button = createButton(label, icon, avatarUrl, theme)
+    if (position === 'bottom-left') {
+      host.style.left = displayMode === 'panel' ? '0' : '16px'
+      host.style.right = 'auto'
+      if (displayMode !== 'panel') {
+        host.style.alignItems = 'flex-start'
+      }
+    }
+
+    const panel = createPanel(theme, displayMode, position)
+    const button =
+      displayMode === 'panel'
+        ? createPanelHandle(label, icon, avatarUrl, theme, position)
+        : createButton(label, icon, avatarUrl, theme)
+    const shell = displayMode === 'panel' ? document.createElement('div') : null
+    if (shell) {
+      shell.style.position = 'absolute'
+      shell.style.top = '0'
+      shell.style.bottom = '0'
+      shell.style.left = '0'
+      shell.style.right = '0'
+      shell.style.transition = 'transform 220ms ease'
+      shell.style.willChange = 'transform'
+      shell.style.pointerEvents = 'none'
+    }
 
     let isOpen = initialState === 'open'
     let bootstrapPromise = null
@@ -378,6 +512,7 @@
       }
 
       iframe = createIframe(scriptUrl, token, {
+        displayMode,
         avatarUrl,
         copy,
         copyOverrides,
@@ -403,7 +538,17 @@
         return
       }
 
-      if (!event.data || typeof event.data !== 'object' || event.data.type !== READY_MESSAGE) {
+      if (!event.data || typeof event.data !== 'object') {
+        return
+      }
+
+      if (event.data.type === COLLAPSE_MESSAGE) {
+        isOpen = false
+        updatePanelVisibility()
+        return
+      }
+
+      if (event.data.type !== READY_MESSAGE) {
         return
       }
 
@@ -444,17 +589,30 @@
     }
 
     const updatePanelVisibility = () => {
-      panel.style.display = isOpen ? 'block' : 'none'
+      if (displayMode === 'panel' && shell) {
+        shell.style.transform =
+          isOpen
+            ? 'translateX(0)'
+            : position === 'bottom-left'
+              ? `translateX(calc(-100% + ${PANEL_HANDLE_WIDTH}px))`
+              : `translateX(calc(100% - ${PANEL_HANDLE_WIDTH}px))`
+        shell.style.pointerEvents = 'none'
+        button.style.opacity = isOpen ? '0' : '1'
+        button.style.pointerEvents = isOpen ? 'none' : 'auto'
+        panel.style.pointerEvents = isOpen ? 'auto' : 'none'
+      } else {
+        panel.style.display = isOpen ? 'block' : 'none'
+        button.style.opacity = isOpen ? '0.94' : '1'
+      }
       panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true')
       button.setAttribute('aria-expanded', isOpen ? 'true' : 'false')
-      button.style.opacity = isOpen ? '0.94' : '1'
     }
 
     button.addEventListener('click', () => {
       isOpen = !isOpen
       if (isOpen) {
         ensureIframe()
-      } else {
+      } else if (displayMode === 'bubble') {
         destroyIframe()
       }
       updatePanelVisibility()
@@ -464,8 +622,14 @@
       ensureIframe()
     }
 
-    host.appendChild(panel)
-    host.appendChild(button)
+    if (shell) {
+      shell.appendChild(panel)
+      shell.appendChild(button)
+      host.appendChild(shell)
+    } else {
+      host.appendChild(panel)
+      host.appendChild(button)
+    }
     window.addEventListener('message', handleIframeMessage)
     updatePanelVisibility()
     document.body.appendChild(host)

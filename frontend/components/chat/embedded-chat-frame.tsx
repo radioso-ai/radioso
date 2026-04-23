@@ -10,6 +10,7 @@ import {
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
   type WebsiteEmbedCopyOverrides,
+  normalizeWebsiteEmbedDisplayMode,
   type WebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
 import {
@@ -60,18 +61,21 @@ const ERROR_MESSAGE = 'radioso:embed:error'
 export function EmbeddedChatFrame({
   token,
   localeOverride,
+  displayMode,
   avatarUrl,
   copyOverrides,
   themeOverrides,
 }: {
   token: string
   localeOverride?: string | null
+  displayMode?: string | null
   avatarUrl?: string | null
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
 }) {
   const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
   const theme = getWebsiteEmbedTheme(themeOverrides)
+  const normalizedDisplayMode = normalizeWebsiteEmbedDisplayMode(displayMode)
   const [resetNonce, setResetNonce] = useState(0)
   const [state, setState] = useState<BootstrapState>(() => {
     if (typeof window !== 'undefined' && window.parent === window) {
@@ -218,11 +222,21 @@ export function EmbeddedChatFrame({
     setResetNonce((current) => current + 1)
   }
 
+  const handleRequestCollapse =
+    normalizedDisplayMode === 'panel'
+      ? () => {
+          if (typeof window !== 'undefined' && window.parent !== window) {
+            window.parent.postMessage({ type: 'radioso:embed:collapse' }, '*')
+          }
+        }
+      : undefined
+
   return (
     <PublicChatShell
       token={state.publicChatToken}
       localeOverride={localeOverride}
       onStartNewChat={handleStartNewChat}
+      onRequestCollapse={handleRequestCollapse}
       avatarUrl={avatarUrl}
       copyOverrides={copyOverrides}
       themeOverrides={themeOverrides}

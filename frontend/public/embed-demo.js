@@ -16,6 +16,7 @@
   const labelInput = document.getElementById('label')
   const iconInput = document.getElementById('icon')
   const positionInput = document.getElementById('position')
+  const displayModeInput = document.getElementById('display-mode')
   const initialStateInput = document.getElementById('initial-state')
   const avatarInput = document.getElementById('avatar-url')
   const copyInput = document.getElementById('copy-json')
@@ -45,6 +46,7 @@
     label: params.get('label') || readStoredConfig().label || 'Chat with us',
     icon: params.get('icon') || readStoredConfig().icon || 'sparkles',
     position: params.get('position') || readStoredConfig().position || 'bottom-right',
+    displayMode: params.get('displayMode') || readStoredConfig().displayMode || '',
     initialState: params.get('initialState') || readStoredConfig().initialState || '',
     avatarUrl: params.get('avatarUrl') || readStoredConfig().avatarUrl || '',
     copyJson: params.get('copy') || readStoredConfig().copyJson || '',
@@ -57,6 +59,7 @@
   labelInput.value = config.label
   iconInput.value = config.icon
   positionInput.value = config.position
+  displayModeInput.value = config.displayMode
   initialStateInput.value = config.initialState
   avatarInput.value = config.avatarUrl
   copyInput.value = config.copyJson
@@ -81,6 +84,7 @@
       `  data-radioso-launcher-label="${settings.label}"`,
       `  data-radioso-launcher-icon="${settings.icon}"`,
       `  data-radioso-launcher-position="${settings.position}"`,
+      settings.displayMode ? `  data-radioso-display-mode="${settings.displayMode}"` : null,
       settings.initialState ? `  data-radioso-initial-state="${settings.initialState}"` : null,
       settings.avatarUrl ? `  data-radioso-avatar-url="${settings.avatarUrl}"` : null,
       settings.copyJson ? `  data-radioso-copy='${settings.copyJson}'` : null,
@@ -117,6 +121,9 @@
     script.dataset.radiosoLauncherLabel = settings.label
     script.dataset.radiosoLauncherIcon = settings.icon
     script.dataset.radiosoLauncherPosition = settings.position
+    if (settings.displayMode) {
+      script.dataset.radiosoDisplayMode = settings.displayMode
+    }
     if (settings.initialState) {
       script.dataset.radiosoInitialState = settings.initialState
     }
@@ -154,6 +161,7 @@
       label: labelInput.value.trim() || 'Chat with us',
       icon: iconInput.value,
       position: positionInput.value,
+      displayMode: displayModeInput.value,
       initialState: initialStateInput.value,
       avatarUrl: avatarInput.value.trim(),
       copyJson: copyInput.value.trim(),
@@ -171,6 +179,9 @@
     nextParams.set('label', nextConfig.label)
     nextParams.set('icon', nextConfig.icon)
     nextParams.set('position', nextConfig.position)
+    if (nextConfig.displayMode) {
+      nextParams.set('displayMode', nextConfig.displayMode)
+    }
     if (nextConfig.initialState) {
       nextParams.set('initialState', nextConfig.initialState)
     }

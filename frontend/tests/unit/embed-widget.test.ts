@@ -9,6 +9,7 @@ import {
   getWebsiteEmbedTheme,
   LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL,
   normalizeWebsiteEmbedAvatarUrl,
+  normalizeWebsiteEmbedDisplayMode,
   normalizeWebsiteEmbedInitialState,
   normalizeWebsiteEmbedLocale,
   parseWebsiteEmbedCopyOverridesParam,
@@ -82,6 +83,7 @@ describe('embed widget helpers', () => {
       },
       undefined,
       {
+        displayMode: 'panel',
         initialState: 'open',
         avatarUrl: 'https://cdn.example.com/avatar.gif',
         copy: {
@@ -94,6 +96,7 @@ describe('embed widget helpers', () => {
       },
     )
 
+    expect(snippet).toContain('data-radioso-display-mode="panel"')
     expect(snippet).toContain('data-radioso-initial-state="open"')
     expect(snippet).toContain('data-radioso-avatar-url="https://cdn.example.com/avatar.gif"')
     expect(snippet).toContain('data-radioso-copy="{&quot;publicChatEmptyTitle&quot;:&quot;Ask us anything&quot;}"')
@@ -113,6 +116,7 @@ describe('embed widget helpers', () => {
       },
       undefined,
       {
+        displayMode: 'panel',
         initialState: 'open',
         avatarUrl: 'https://cdn.example.com/avatar.gif',
         copy: { publicChatEmptyTitle: 'Bonjour' },
@@ -127,6 +131,7 @@ describe('embed widget helpers', () => {
     expect(url.searchParams.get('label')).toBe('Talk to us')
     expect(url.searchParams.get('icon')).toBe('message')
     expect(url.searchParams.get('position')).toBe('bottom-left')
+    expect(url.searchParams.get('displayMode')).toBe('panel')
     expect(url.searchParams.get('initialState')).toBe('open')
     expect(url.searchParams.get('avatarUrl')).toBe('https://cdn.example.com/avatar.gif')
     expect(url.searchParams.get('copy')).toBe('{"publicChatEmptyTitle":"Bonjour"}')
@@ -152,8 +157,9 @@ describe('embed widget helpers', () => {
     )
   })
 
-  it('normalizes locale, initial-state, and avatar overrides', () => {
+  it('normalizes locale, display-mode, initial-state, and avatar overrides', () => {
     expect(normalizeWebsiteEmbedLocale(' it-IT ')).toBe('it-IT')
+    expect(normalizeWebsiteEmbedDisplayMode(' PANEL ')).toBe('panel')
     expect(normalizeWebsiteEmbedInitialState('OPEN')).toBe('open')
     expect(normalizeWebsiteEmbedAvatarUrl('https://cdn.example.com/avatar.gif')).toBe(
       'https://cdn.example.com/avatar.gif',
@@ -163,6 +169,7 @@ describe('embed widget helpers', () => {
 
   it('drops unsupported override values', () => {
     expect(normalizeWebsiteEmbedLocale('not_a_locale')).toBeNull()
+    expect(normalizeWebsiteEmbedDisplayMode('drawer')).toBeNull()
     expect(normalizeWebsiteEmbedInitialState('sideways')).toBeNull()
     expect(normalizeWebsiteEmbedAvatarUrl('javascript:alert(1)')).toBeNull()
   })

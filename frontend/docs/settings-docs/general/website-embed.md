@@ -15,6 +15,7 @@ The launcher script stays thin. The actual assistant runs inside a Radioso-hoste
 
 You can also add optional static attributes to the script tag on the host site:
 
+- `data-radioso-display-mode="panel"` docks the widget as a full-height retractable side panel instead of using the floating launcher bubble.
 - `data-radioso-initial-state="open"` starts the widget expanded instead of collapsed.
 - `data-radioso-avatar-url="https://cdn.example.com/avatar.gif"` uses an image or GIF for both the launcher and the assistant avatar inside the hosted chat.
 - `data-radioso-copy='{"publicChatEmptyTitle":"Ask anything","startPrompt":"Type here..."}'` overrides any static chat text shown by the hosted UI. Without overrides, the hosted UI uses the default English copy.

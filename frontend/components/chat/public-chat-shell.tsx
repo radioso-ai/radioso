@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-import { RotateCcw, Send, Sparkles } from 'lucide-react'
+import { RotateCcw, Send, Sparkles, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -128,12 +128,14 @@ function RateLimitBanner({
 function PublicChatContent({
   localeOverride,
   onStartNewChat,
+  onRequestCollapse,
   avatarUrl,
   copyOverrides,
   themeOverrides,
 }: {
   localeOverride?: string | null
   onStartNewChat?: () => Promise<void>
+  onRequestCollapse?: () => void
   avatarUrl?: string | null
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
@@ -246,22 +248,37 @@ function PublicChatContent({
               </p>
             </div>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => void handleStartNewChat()}
-            disabled={isLoading || isHydrating || isLoadingOlderMessages}
-            className="hover:opacity-90"
-            style={{
-              borderColor: theme.panelBorder,
-              background: theme.mutedBackground,
-              color: theme.panelForeground,
-            }}
-          >
-            <RotateCcw className="mr-2 h-4 w-4" />
-            {copy.publicChatNewChatLabel}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void handleStartNewChat()}
+              disabled={isLoading || isHydrating || isLoadingOlderMessages}
+              className="hover:opacity-90"
+              style={{
+                borderColor: theme.panelBorder,
+                background: theme.mutedBackground,
+                color: theme.panelForeground,
+              }}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              {copy.publicChatNewChatLabel}
+            </Button>
+            {onRequestCollapse ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={onRequestCollapse}
+                className="hover:opacity-90"
+                style={{ color: theme.mutedForeground }}
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -369,6 +386,7 @@ export function PublicChatShell({
   token,
   localeOverride,
   onStartNewChat,
+  onRequestCollapse,
   avatarUrl,
   copyOverrides,
   themeOverrides,
@@ -376,6 +394,7 @@ export function PublicChatShell({
   token: string
   localeOverride?: string | null
   onStartNewChat?: () => Promise<void>
+  onRequestCollapse?: () => void
   avatarUrl?: string | null
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
@@ -395,6 +414,7 @@ export function PublicChatShell({
         <PublicChatContent
           localeOverride={localeOverride}
           onStartNewChat={onStartNewChat}
+          onRequestCollapse={onRequestCollapse}
           avatarUrl={avatarUrl}
           copyOverrides={copyOverrides}
           themeOverrides={themeOverrides}

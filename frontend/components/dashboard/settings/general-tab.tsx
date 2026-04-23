@@ -33,6 +33,7 @@ import {
   buildWebsiteEmbedSnippet,
   formatWebsiteEmbedOrigins,
   normalizeWebsiteEmbedAvatarUrl,
+  normalizeWebsiteEmbedDisplayMode,
   normalizeWebsiteEmbedInitialState,
   parseWebsiteEmbedJsonOverrides,
   parseWebsiteEmbedOrigins,
@@ -96,6 +97,7 @@ export function GeneralTab({
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
   const [websiteEmbedOrigins, setWebsiteEmbedOrigins] = useState('')
+  const [websiteEmbedSnippetDisplayMode, setWebsiteEmbedSnippetDisplayMode] = useState('')
   const [websiteEmbedSnippetInitialState, setWebsiteEmbedSnippetInitialState] = useState('')
   const [websiteEmbedSnippetAvatarUrl, setWebsiteEmbedSnippetAvatarUrl] = useState('')
   const [websiteEmbedSnippetCopyJson, setWebsiteEmbedSnippetCopyJson] = useState('')
@@ -388,6 +390,7 @@ export function GeneralTab({
       return null
     }
 
+    const normalizedDisplayMode = normalizeWebsiteEmbedDisplayMode(websiteEmbedSnippetDisplayMode) ?? undefined
     const normalizedInitialState = normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined
     const normalizedAvatarUrl =
       websiteEmbedSnippetAvatarUrl.trim().length > 0
@@ -401,6 +404,7 @@ export function GeneralTab({
     }
 
     const hasLocalSnippetOverrides =
+      Boolean(normalizedDisplayMode) ||
       Boolean(normalizedInitialState) ||
       Boolean(normalizedAvatarUrl) ||
       websiteEmbedSnippetCopyJson.trim().length > 0 ||
@@ -417,6 +421,7 @@ export function GeneralTab({
         websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
         websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
       }, undefined, {
+        displayMode: normalizedDisplayMode,
         initialState: normalizedInitialState,
         avatarUrl: normalizedAvatarUrl,
         copy: websiteEmbedSnippetCopyOverrides,
@@ -429,6 +434,7 @@ export function GeneralTab({
     websiteEmbedSnippetCopyJson,
     websiteEmbedSnippetCopyJsonError,
     websiteEmbedSnippetCopyOverrides,
+    websiteEmbedSnippetDisplayMode,
     websiteEmbedSnippetInitialState,
     websiteEmbedSnippetThemeJson,
     websiteEmbedSnippetThemeJsonError,
@@ -461,6 +467,7 @@ export function GeneralTab({
       },
       window.location.origin,
       {
+        displayMode: normalizeWebsiteEmbedDisplayMode(websiteEmbedSnippetDisplayMode) ?? undefined,
         initialState: normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined,
         avatarUrl: normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl) ?? undefined,
         copy: websiteEmbedSnippetCopyOverrides,
@@ -475,6 +482,7 @@ export function GeneralTab({
     websiteEmbedSnippetCopyJson,
     websiteEmbedSnippetCopyJsonError,
     websiteEmbedSnippetCopyOverrides,
+    websiteEmbedSnippetDisplayMode,
     websiteEmbedSnippetInitialState,
     websiteEmbedSnippetThemeJson,
     websiteEmbedSnippetThemeJsonError,
@@ -1045,6 +1053,24 @@ export function GeneralTab({
                       colors, and launch behavior stay tucked away under optional customize sections.
                     </p>
 
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="websiteEmbedSnippetDisplayMode" className="text-foreground">Display mode</Label>
+                        <select
+                          id="websiteEmbedSnippetDisplayMode"
+                          value={websiteEmbedSnippetDisplayMode}
+                          onChange={(event) => setWebsiteEmbedSnippetDisplayMode(event.target.value)}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                        >
+                          <option value="">Floating launcher bubble</option>
+                          <option value="panel">Retractable side panel</option>
+                        </select>
+                        <p className="text-xs text-muted-foreground">
+                          Use the side panel mode to dock the chat to the page edge with a retractable full-height shell.
+                        </p>
+                      </div>
+                    </div>
+
                     <div className="space-y-2">
                       <Label htmlFor="websiteEmbedSnippetAvatarUrl" className="text-foreground">Avatar image or GIF URL</Label>
                       <Input
@@ -1078,7 +1104,7 @@ export function GeneralTab({
 
                         <div className="mt-4 space-y-4">
                           <p className="text-xs text-muted-foreground">
-                            Leave any field blank to inherit the selected language defaults.
+                            Leave any field blank to inherit the default English copy.
                           </p>
 
                           <div className="space-y-2">

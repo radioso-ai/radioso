@@ -5,6 +5,7 @@ import {
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
   normalizeWebsiteEmbedAvatarUrl,
+  normalizeWebsiteEmbedDisplayMode,
   normalizeWebsiteEmbedInitialState,
   normalizeWebsiteEmbedLocale,
   sanitizeWebsiteEmbedCopyOverrides,
@@ -18,7 +19,9 @@ describe('website embed runtime helpers', () => {
     expect(getWebsiteEmbedCopy('xx-ZZ').launcherDefaultLabel).toBe('Chat with us')
   })
 
-  it('accepts only supported initial-state and avatar values', () => {
+  it('accepts only supported display-mode, initial-state, and avatar values', () => {
+    expect(normalizeWebsiteEmbedDisplayMode('panel')).toBe('panel')
+    expect(normalizeWebsiteEmbedDisplayMode('sidebar')).toBeNull()
     expect(normalizeWebsiteEmbedInitialState('collapsed')).toBe('collapsed')
     expect(normalizeWebsiteEmbedInitialState('invalid')).toBeNull()
     expect(normalizeWebsiteEmbedAvatarUrl('https://cdn.example.com/avatar.png')).toBe(

@@ -88,10 +88,7 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
     scope: "auth.password_reset.confirm",
     limit: dependencies.env.PASSWORD_RESET_RATE_LIMIT_MAX_ATTEMPTS,
     windowMs: authWindowMs,
-    resolveSubjectKey: (req) => {
-      const token = typeof req.body?.token === "string" ? req.body.token : null;
-      return token ?? String(req.ip ?? "unknown");
-    },
+    resolveSubjectKey: (req) => String(req.ip ?? "unknown"),
   });
   const emailVerificationResendRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
@@ -110,10 +107,7 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
     scope: "auth.email_verification.verify",
     limit: dependencies.env.PASSWORD_RESET_RATE_LIMIT_MAX_ATTEMPTS,
     windowMs: authWindowMs,
-    resolveSubjectKey: (req) => {
-      const token = typeof req.body?.token === "string" ? req.body.token : null;
-      return token ?? String(req.ip ?? "unknown");
-    },
+    resolveSubjectKey: (req) => String(req.ip ?? "unknown"),
   });
 
   router.post("/register", validateBody(registerSchema), registerRateLimit, async (req, res, next) => {
@@ -216,6 +210,7 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
         res.status(200).json({
           userId: result.userId,
           accountId: result.accountId,
+          email: result.email,
           organizationName: result.organizationName,
           workspaceId: result.workspaceId,
           workspaceName: result.workspaceName,

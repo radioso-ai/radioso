@@ -44,6 +44,19 @@ const getDefaultTheme = (defaultTheme: Theme, enableSystem: boolean): Theme => {
   return defaultTheme === 'system' ? 'light' : defaultTheme
 }
 
+const readStoredTheme = (storageKey: string, enableSystem: boolean, fallbackTheme: Theme): Theme => {
+  if (typeof window === 'undefined') {
+    return fallbackTheme
+  }
+
+  try {
+    const storedTheme = window.localStorage.getItem(storageKey)
+    return isTheme(storedTheme, enableSystem) ? storedTheme : fallbackTheme
+  } catch {
+    return fallbackTheme
+  }
+}
+
 const applyThemeAttribute = (attribute: ThemeProviderProps['attribute'], resolvedTheme: 'light' | 'dark') => {
   const root = document.documentElement
 
@@ -85,7 +98,9 @@ export function ThemeProvider({
     () => getDefaultTheme(defaultTheme, enableSystem),
     [defaultTheme, enableSystem],
   )
-  const [theme, setThemeState] = React.useState<Theme>(fallbackTheme)
+  const [theme, setThemeState] = React.useState<Theme>(() =>
+    readStoredTheme(storageKey, enableSystem, fallbackTheme),
+  )
   const [systemTheme, setSystemTheme] = React.useState<'light' | 'dark'>(() =>
     typeof window === 'undefined' ? 'light' : getSystemTheme(),
   )
@@ -100,8 +115,7 @@ export function ThemeProvider({
       setSystemTheme(mediaQuery.matches ? 'dark' : 'light')
     }
 
-    const storedTheme = window.localStorage.getItem(storageKey)
-    setThemeState(isTheme(storedTheme, enableSystem) ? storedTheme : fallbackTheme)
+    setThemeState(readStoredTheme(storageKey, enableSystem, fallbackTheme))
     handleSystemThemeChange()
 
     if (typeof mediaQuery.addEventListener === 'function') {
@@ -131,7 +145,11 @@ export function ThemeProvider({
       setThemeState(normalizedTheme)
 
       if (typeof window !== 'undefined') {
-        window.localStorage.setItem(storageKey, normalizedTheme)
+        try {
+          window.localStorage.setItem(storageKey, normalizedTheme)
+        } catch {
+          // Ignore storage write failures and keep the in-memory theme state.
+        }
       }
     },
     [enableSystem, fallbackTheme, storageKey],

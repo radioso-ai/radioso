@@ -137,6 +137,13 @@ const LoginResponseSchema = registry.register(
   }),
 );
 
+const PasswordResetConfirmResponseSchema = registry.register(
+  "PasswordResetConfirmResponse",
+  LoginResponseSchema.extend({
+    email: z.string().email(),
+  }),
+);
+
 const WorkspaceSchema = registry.register(
   "Workspace",
   z.object({
@@ -1446,7 +1453,7 @@ registry.registerPath({
       description: "Password reset completed and session established",
       content: {
         "application/json": {
-          schema: LoginResponseSchema,
+          schema: PasswordResetConfirmResponseSchema,
         },
       },
     },

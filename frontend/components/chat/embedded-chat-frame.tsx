@@ -4,14 +4,14 @@ import { useEffect, useRef, useState } from 'react'
 
 import { AlertCircle } from 'lucide-react'
 
-import { Spinner } from '@/components/ui/spinner'
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
+import { Spinner } from '@/components/ui/spinner'
 import {
   formatWebsiteEmbedStartingMessage,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
-  type WebsiteEmbedCopyOverrides,
   normalizeWebsiteEmbedDisplayMode,
+  type WebsiteEmbedCopyOverrides,
   type WebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
 import {
@@ -244,6 +244,7 @@ export function EmbeddedChatFrame({
 
   return (
     <PublicChatShell
+      key={`${state.publicChatToken}:${resetNonce}`}
       token={state.publicChatToken}
       initialWorkspaceName={state.workspaceName}
       localeOverride={localeOverride}

@@ -47,6 +47,7 @@ export interface PasswordResetTokenRepositoryPort {
   findLatestActiveByUserId(userId: string, now: Date): Promise<PasswordResetTokenRecord | null>;
   markUsed(id: string, usedAt: Date): Promise<void>;
   markAllActiveForUserUsed(userId: string, usedAt: Date): Promise<void>;
+  markOlderActiveForUserUsed(userId: string, createdBefore: Date, usedAt: Date): Promise<void>;
 }
 
 export class PasswordResetTokenRepository implements PasswordResetTokenRepositoryPort {
@@ -126,6 +127,18 @@ export class PasswordResetTokenRepository implements PasswordResetTokenRepositor
          AND used_at IS NULL
          AND expires_at > $2`,
       [userId, usedAt],
+    );
+  }
+
+  async markOlderActiveForUserUsed(userId: string, createdBefore: Date, usedAt: Date): Promise<void> {
+    await this.database.query(
+      `UPDATE password_reset_tokens
+       SET used_at = COALESCE(used_at, $3)
+       WHERE user_id = $1
+         AND created_at < $2
+         AND used_at IS NULL
+         AND expires_at > $3`,
+      [userId, createdBefore, usedAt],
     );
   }
 }

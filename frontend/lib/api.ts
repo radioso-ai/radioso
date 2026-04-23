@@ -1277,6 +1277,10 @@ export interface PasswordResetConfirmRequest {
   password: string
 }
 
+export interface PasswordResetConfirmResponse extends LoginResponse {
+  email: string
+}
+
 // Workspace API
 export const workspaceApi = {
   async list(): Promise<Workspace[]> {
@@ -1343,8 +1347,8 @@ export const authApi = {
     }, { withSession: true })
   },
 
-  async confirmPasswordReset(data: PasswordResetConfirmRequest): Promise<LoginResponse> {
-    return request<LoginResponse>('/auth/password-reset/confirm', {
+  async confirmPasswordReset(data: PasswordResetConfirmRequest): Promise<PasswordResetConfirmResponse> {
+    return request<PasswordResetConfirmResponse>('/auth/password-reset/confirm', {
       method: 'POST',
       body: JSON.stringify(data),
     }, { withSession: true })

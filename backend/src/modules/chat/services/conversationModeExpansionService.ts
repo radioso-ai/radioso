@@ -252,13 +252,9 @@ export class ConversationModeExpansionService {
     const candidates = this.readSuggestions(parsed);
     const contextByIndex = new Map(contexts.map((context) => [context.contextIndex, context]));
     const seenTexts = new Set<string>();
-    const suggestions: ChatSuggestion[] = [];
+    const validatedSuggestions: ChatSuggestion[] = [];
 
     for (const candidate of candidates) {
-      if (suggestions.length >= maxSuggestions) {
-        break;
-      }
-
       const normalizedText = normalizeComparableText(candidate.text);
       if (
         !normalizedText ||
@@ -277,7 +273,7 @@ export class ConversationModeExpansionService {
         continue;
       }
 
-      suggestions.push({
+      validatedSuggestions.push({
         text: normalizeWhitespace(candidate.text),
         kind: candidate.kind,
         citation: {
@@ -289,7 +285,44 @@ export class ConversationModeExpansionService {
       seenTexts.add(normalizedText);
     }
 
-    return suggestions;
+    return this.selectSuggestions(validatedSuggestions, maxSuggestions, conversationMode);
+  }
+
+  private selectSuggestions(
+    suggestions: ChatSuggestion[],
+    maxSuggestions: number,
+    conversationMode: ConversationMode,
+  ): ChatSuggestion[] {
+    if (suggestions.length <= maxSuggestions) {
+      return suggestions;
+    }
+
+    if (conversationMode !== "exploratory" || maxSuggestions < 2) {
+      return suggestions.slice(0, maxSuggestions);
+    }
+
+    const firstDeeper = suggestions.find((suggestion) => suggestion.kind === "deeper");
+    const firstBroader = suggestions.find((suggestion) => suggestion.kind === "broader");
+
+    if (!firstDeeper || !firstBroader) {
+      return suggestions.slice(0, maxSuggestions);
+    }
+
+    const selected: ChatSuggestion[] = [firstDeeper, firstBroader];
+
+    for (const suggestion of suggestions) {
+      if (selected.length >= maxSuggestions) {
+        break;
+      }
+
+      if (selected.includes(suggestion)) {
+        continue;
+      }
+
+      selected.push(suggestion);
+    }
+
+    return selected;
   }
 
   private readSuggestions(parsed: unknown): PlannedSuggestion[] {

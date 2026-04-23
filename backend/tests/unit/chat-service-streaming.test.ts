@@ -2130,6 +2130,177 @@ describe("chat service streaming", () => {
     ]);
   });
 
+  it("recenters exploratory planning when the user explicitly pivots subjects", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run({ query }: { query: string }) {
+        const pivotTurn = query === "What about facilitator support?";
+        return {
+          rewrittenQuery: pivotTurn ? "facilitator support" : "plan a beginner retreat",
+          contexts: pivotTurn
+            ? [
+                {
+                    chunkId: "chunk-2",
+                    documentId: "doc-2",
+                    title: "Retreat Facilitation Notes",
+                    content: "Facilitators should balance logistics, teaching goals, and attendee support.",
+                },
+                {
+                    chunkId: "chunk-3",
+                    documentId: "doc-3",
+                    title: "Retreat Support Roles",
+                    content: "Support roles include hospitality, orientation, and attendee care.",
+                },
+              ]
+            : [
+                {
+                    chunkId: "chunk-1",
+                    documentId: "doc-1",
+                    title: "Retreat Planning Guide",
+                    content: "A beginner retreat should cover meditation, schedule planning, meals, and orientation.",
+                },
+                {
+                    chunkId: "chunk-2",
+                    documentId: "doc-2",
+                    title: "Retreat Facilitation Notes",
+                    content: "Facilitators should balance logistics, teaching goals, and attendee support.",
+                },
+              ],
+          prompt: "prompt text",
+          citations: [
+            pivotTurn
+              ? { documentId: "doc-2", chunkId: "chunk-2", title: "Retreat Facilitation Notes" }
+              : { documentId: "doc-1", chunkId: "chunk-1", title: "Retreat Planning Guide" },
+          ],
+          diagnostics: {
+            rewriteStatus: "applied",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 1,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: query.toLowerCase(),
+              lexicalQuery: query.toLowerCase(),
+              constraints: [],
+            },
+            rewriteProposal: pivotTurn
+              ? {
+                  rewrittenQuery: "facilitator support",
+                  semanticQuery: "facilitator support retreat attendees",
+                  lexicalQuery: "facilitator support",
+                  turnKind: "explicit_recenter",
+                  proposedActiveSubject: "Facilitator support",
+                  relatedEntities: [],
+                  unresolved: false,
+                  confidence: 0.97,
+                }
+              : {
+                  rewrittenQuery: "plan a beginner retreat",
+                  semanticQuery: "beginner retreat planning",
+                  lexicalQuery: "beginner retreat planning",
+                  turnKind: "fresh_subject",
+                  proposedActiveSubject: "Beginner retreat planning",
+                  relatedEntities: [],
+                  unresolved: false,
+                  confidence: 0.94,
+                },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const suggestionPrompts: string[] = [];
+    const chatGateway: ChatGateway = {
+      async answer({ prompt, query }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          suggestionPrompts.push(prompt);
+
+          if (prompt.includes("Active subject:\nFacilitator support")) {
+            return JSON.stringify({
+              suggestions: [
+                { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
+                { text: "Which support roles should back up retreat facilitators?", kind: "broader", contextIndex: 2 },
+              ],
+            });
+          }
+
+          return JSON.stringify({
+            suggestions: [
+              { text: "What should a beginner retreat schedule include?", kind: "deeper", contextIndex: 1 },
+              { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
+            ],
+          });
+        }
+
+        if (query === "What about facilitator support?") {
+          return "Facilitators should balance logistics and attendee care[[1]].";
+        }
+
+        return "Start with a beginner retreat schedule[[1]].";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const first = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Help me plan a beginner retreat",
+      stream: false,
+    });
+    const second = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: first.conversationId,
+      query: "What about facilitator support?",
+      stream: false,
+    });
+
+    const latestSuggestionPrompt = suggestionPrompts.at(-1);
+    expect(latestSuggestionPrompt).toContain("Help me plan a beginner retreat");
+    expect(latestSuggestionPrompt).toContain("Active subject:\nFacilitator support");
+    expect(latestSuggestionPrompt).toContain("Active goal:\nWhat about facilitator support?");
+    expect(second.suggestions).toEqual([
+      {
+        text: "How should facilitators support retreat attendees?",
+        kind: "deeper",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Retreat Facilitation Notes",
+        },
+      },
+      {
+        text: "Which support roles should back up retreat facilitators?",
+        kind: "broader",
+        citation: {
+          documentId: "doc-3",
+          chunkId: "chunk-3",
+          title: "Retreat Support Roles",
+        },
+      },
+    ]);
+  });
+
   it("suppresses exploratory suggestions when the user asks for just the answer", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
@@ -2309,6 +2480,133 @@ describe("chat service streaming", () => {
           documentId: "doc-2",
           chunkId: "chunk-2",
           title: "Archive Notes",
+        },
+      },
+    ]);
+  });
+
+  it("preserves a broader lane when valid broader suggestions arrive after deeper ones", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "retreat planning",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Retreat Planning Guide",
+              content: "The guide covers schedules, meals, and orientation.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Retreat Meal Guide",
+              content: "Meals should fit the retreat schedule and attendee needs.",
+            },
+            {
+              chunkId: "chunk-3",
+              documentId: "doc-3",
+              title: "Retreat Orientation Guide",
+              content: "Orientation should set expectations and welcome attendees.",
+            },
+            {
+              chunkId: "chunk-4",
+              documentId: "doc-4",
+              title: "Retreat Facilitation Notes",
+              content: "Facilitators should support attendee logistics and questions.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Retreat Planning Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 4,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 4,
+            normalizedCandidateCount: 4,
+            finalContextCount: 4,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "retreat planning",
+              lexicalQuery: "retreat planning",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+            suggestedQuestionsCount: 3,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
+              { text: "How should retreat meals fit the schedule?", kind: "deeper", contextIndex: 2 },
+              { text: "What should orientation cover on day one?", kind: "deeper", contextIndex: 3 },
+              { text: "How should facilitators support retreat attendees?", kind: "broader", contextIndex: 4 },
+            ],
+          });
+        }
+
+        return "Start with the retreat schedule and day-one orientation[[1]].";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Help me plan a retreat",
+      stream: false,
+    });
+
+    expect(response.suggestions).toEqual([
+      {
+        text: "What should the retreat schedule include?",
+        kind: "deeper",
+        citation: {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Retreat Planning Guide",
+        },
+      },
+      {
+        text: "How should facilitators support retreat attendees?",
+        kind: "broader",
+        citation: {
+          documentId: "doc-4",
+          chunkId: "chunk-4",
+          title: "Retreat Facilitation Notes",
+        },
+      },
+      {
+        text: "How should retreat meals fit the schedule?",
+        kind: "deeper",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Retreat Meal Guide",
         },
       },
     ]);

@@ -261,6 +261,125 @@ describe("chat integration", () => {
     );
   });
 
+  it("recenters broader exploratory suggestions after an explicit subject pivot", async () => {
+    let latestSuggestionPrompt = "";
+    const deterministicGateway: ChatGateway = {
+      async answer({ prompt, query }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          latestSuggestionPrompt = prompt;
+
+          if (prompt.includes("Active subject:\nFacilitator support")) {
+            return JSON.stringify({
+              suggestions: [
+                { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
+                { text: "Which support roles should back up retreat facilitators?", kind: "broader", contextIndex: 2 },
+              ],
+            });
+          }
+
+          return JSON.stringify({
+            suggestions: [
+              { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
+              { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
+            ],
+          });
+        }
+
+        if (query === "What about facilitator support?") {
+          return "Facilitators should balance logistics and attendee care[[1]].";
+        }
+
+        return "Start with a beginner retreat schedule[[1]].";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const queryRewriteGateway = {
+      async rewrite({ query }: { query: string }) {
+        if (query === "What about facilitator support?") {
+          return {
+            rewrittenQuery: "facilitator support",
+            semanticQuery: "facilitator support retreat attendees",
+            lexicalQuery: "facilitator support",
+            turnKind: "explicit_recenter" as const,
+            proposedActiveSubject: "Facilitator support",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.97,
+          };
+        }
+
+        return {
+          rewrittenQuery: "beginner retreat planning",
+          semanticQuery: "beginner retreat planning",
+          lexicalQuery: "beginner retreat planning",
+          turnKind: "fresh_subject" as const,
+          proposedActiveSubject: "Beginner retreat planning",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.94,
+        };
+      },
+    };
+    const { app } = createTestApp({
+      chatGateway: deterministicGateway,
+      queryRewriteGateway,
+    });
+
+    const { token } = await issueTestToken(app, "conversation-pivot@example.com");
+    const authorization = `Bearer ${token}`;
+
+    for (const document of [
+      { title: "Retreat Planning Guide", content: "A beginner retreat should cover meditation, schedule planning, meals, and orientation." },
+      { title: "Retreat Facilitation Notes", content: "Facilitators should balance logistics, teaching goals, and attendee support." },
+      { title: "Retreat Support Roles", content: "Support roles include hospitality, orientation, and attendee care." },
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", authorization)
+        .send(document);
+    }
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 4,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        conversationMode: "exploratory",
+      });
+
+    const first = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Help me plan a beginner retreat", stream: false });
+    const second = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: first.body.conversationId,
+        query: "What about facilitator support?",
+        stream: false,
+      });
+
+    expect(second.status).toBe(200);
+    expect(latestSuggestionPrompt).toContain("Active subject:\nFacilitator support");
+    expect(latestSuggestionPrompt).toContain("Active goal:\nWhat about facilitator support?");
+    expect(second.body.suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: "How should facilitators support retreat attendees?", kind: "deeper" }),
+        expect.objectContaining({ text: "Which support roles should back up retreat facilitators?", kind: "broader" }),
+      ]),
+    );
+  });
+
   it("suppresses exploratory suggestions when the user explicitly asks for just the answer", async () => {
     let suggestionCallCount = 0;
     const deterministicGateway: ChatGateway = {

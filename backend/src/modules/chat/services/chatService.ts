@@ -761,6 +761,8 @@ export class ChatService {
       history: session.history,
       latestQuery: session.userMessage.content,
       latestAnswer: presentation.answer,
+      priorRewriteContinuityState: session.priorRewriteContinuityState,
+      rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
     });
     const expanded = await this.conversationModeExpansionService.apply({
       query: session.userMessage.content,

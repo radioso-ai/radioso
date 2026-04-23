@@ -6,6 +6,12 @@ import type { ChatRequest, ChatResponse } from "../generated/client.js";
 export type RadiosoChatStreamEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
+  | {
+      type: "suggestions";
+      conversationId: string;
+      suggestions: NonNullable<ChatResponse["suggestions"]>;
+      conversationModeMetadata: ChatResponse["conversationModeMetadata"];
+    }
   | ({ type: "done" } & ChatResponse)
   | { type: "error"; error: RadiosoError };
 
@@ -57,6 +63,21 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
 
   if (eventName === "chunk" && typeof payload.text === "string") {
     return { type: "chunk", text: payload.text };
+  }
+
+  if (
+    eventName === "suggestions" &&
+    typeof payload.conversationId === "string" &&
+    Array.isArray(payload.suggestions) &&
+    typeof payload.conversationModeMetadata === "object" &&
+    payload.conversationModeMetadata !== null
+  ) {
+    return {
+      type: "suggestions",
+      conversationId: payload.conversationId,
+      suggestions: payload.suggestions as NonNullable<ChatResponse["suggestions"]>,
+      conversationModeMetadata: payload.conversationModeMetadata as ChatResponse["conversationModeMetadata"],
+    };
   }
 
   if (

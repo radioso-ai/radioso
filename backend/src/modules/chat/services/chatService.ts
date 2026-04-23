@@ -381,6 +381,9 @@ export class ChatService {
   }): AsyncIterable<ChatStreamEvent> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
+    let lazySuggestionsPromise:
+      | Promise<Pick<PresentedAnswer, "suggestions" | "conversationModeMetadata">>
+      | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
 
     try {
@@ -448,7 +451,7 @@ export class ChatService {
         rawAnswer,
         input.query,
       );
-      const lazySuggestionsPromise = noContextPresentation
+      lazySuggestionsPromise = noContextPresentation
         ? Promise.resolve({
             suggestions: noContextPresentation.suggestions,
             conversationModeMetadata: noContextPresentation.conversationModeMetadata,
@@ -522,6 +525,13 @@ export class ChatService {
         retrievalTrace,
       };
 
+    } catch (error) {
+      const normalizedError = normalizeProviderCredentialError(error);
+      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
+      throw normalizedError;
+    }
+
+    try {
       const lazySuggestions = await lazySuggestionsPromise;
       if (lazySuggestions.suggestions && lazySuggestions.suggestions.length > 0) {
         if (assistantMessageId) {
@@ -541,10 +551,8 @@ export class ChatService {
           conversationModeMetadata: lazySuggestions.conversationModeMetadata,
         };
       }
-    } catch (error) {
-      const normalizedError = normalizeProviderCredentialError(error);
-      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
-      throw normalizedError;
+    } catch {
+      // Lazy follow-up suggestions are best effort after the answer is already complete.
     }
   }
 

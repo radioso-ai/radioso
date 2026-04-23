@@ -1943,6 +1943,87 @@ describe("chat service streaming", () => {
     });
   });
 
+  it("does not convert a completed answer into a failure when lazy suggestions fail", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditEventRepository = new InMemoryAuditEventRepository();
+    const auditService = createAuditService(auditEventRepository);
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "who is mahiya",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Mahiya",
+              content: "Mahiya is a teacher and author.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "who is mahiya",
+              lexicalQuery: "mahiya",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+            suggestedQuestionsEnabled: true,
+            suggestedQuestionsCount: 2,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          throw new Error("suggestions unavailable");
+        }
+        return "Mahiya is a teacher and author[[1]].";
+      },
+      async *streamAnswer() {
+        yield "Mahiya is a teacher and author[[1]].";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Who is Mahiya?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual(["conversation", "chunk", "done"]);
+    expect(auditEventRepository.items.filter((event) => event.eventType === "chat.answer")).toHaveLength(1);
+    expect(auditEventRepository.items[0]?.eventStatus).toBe("success");
+  });
+
   it("returns exploratory suggestions as structured multilingual continuations", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

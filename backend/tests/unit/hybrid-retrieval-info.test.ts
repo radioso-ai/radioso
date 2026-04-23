@@ -27,6 +27,28 @@ describe("hybrid retrieval info", () => {
         constraints: [],
       },
       appliedConstraints: [],
+      triggerAnalysis: {
+        status: "applied",
+        consideredRules: [
+          {
+            ruleId: "events-only",
+            matched: true,
+            matchStrength: 0.92,
+            reason: "The query is about an upcoming event.",
+            triggerInstructionPreview: "Enact for upcoming events.",
+          },
+        ],
+        matchedRuleIds: ["events-only"],
+        unmatchedRuleIds: [],
+        matchCount: 1,
+        matcherVersion: "test",
+      },
+      triggerBackoff: {
+        applied: true,
+        reason: "empty_filtered_candidates",
+        relaxedRuleIds: ["events-only"],
+        restoredCandidateCount: 3,
+      },
     });
 
     expect(result).toEqual({
@@ -53,6 +75,28 @@ describe("hybrid retrieval info", () => {
         continuityDecision: "reused",
         rejectionReason: undefined,
         fallbackReason: undefined,
+      },
+      triggerAnalysis: {
+        status: "applied",
+        consideredRules: [
+          {
+            ruleId: "events-only",
+            matched: true,
+            matchStrength: 0.92,
+            reason: "The query is about an upcoming event.",
+            triggerInstructionPreview: "Enact for upcoming events.",
+          },
+        ],
+        matchedRuleIds: ["events-only"],
+        unmatchedRuleIds: [],
+        matchCount: 1,
+        matcherVersion: "test",
+      },
+      triggerBackoff: {
+        applied: true,
+        reason: "empty_filtered_candidates",
+        relaxedRuleIds: ["events-only"],
+        restoredCandidateCount: 3,
       },
     });
   });

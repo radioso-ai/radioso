@@ -284,4 +284,73 @@ describe("settings and chunking", () => {
       }),
     ).toThrow("suggestedQuestionsCount must be between 1 and 4");
   });
+
+  it("accepts trigger-aware date rules that use today()", () => {
+    const normalized = validateRetrievalSettings({
+      queryRewriteEnabled: false,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
+      rerankEnabled: false,
+      vectorTopK: 15,
+      similarityThreshold: 0.2,
+      rerankTopK: 5,
+      citationDisplayEnabled: true,
+      metadataRules: [
+        {
+          ...createDefaultMetadataRule(),
+          field: "dateFrom",
+          valueType: "date",
+          operator: "gte",
+          value: "today()",
+          effect: "filter",
+          triggerMode: "match_turn",
+          triggerInstruction: "Enact when the user is clearly asking about upcoming events.",
+        },
+      ],
+      customInstruction: "",
+    });
+
+    expect(normalized.metadataRules[0]).toMatchObject({
+      field: "dateFrom",
+      valueType: "date",
+      operator: "gte",
+      value: "today()",
+      effect: "filter",
+      triggerMode: "match_turn",
+      triggerInstruction: "Enact when the user is clearly asking about upcoming events.",
+    });
+  });
+
+  it("rejects today() outside supported date comparisons", () => {
+    expect(() =>
+      validateRetrievalSettings({
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        metadataRules: [
+          {
+            ...createDefaultMetadataRule(),
+            field: "title",
+            valueType: "string",
+            operator: "equals",
+            value: "today()",
+          },
+        ],
+        customInstruction: "",
+      }),
+    ).toThrow("metadataRules dynamic date tokens are supported only for date values");
+  });
 });

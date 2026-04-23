@@ -34,7 +34,11 @@ import { CandidatePreparationService } from "../../src/modules/retrieval/service
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
-import { QueryRewriteService, type QueryRewriteGateway } from "../../src/modules/retrieval/services/queryRewriteService.js";
+import {
+  QueryRewriteService,
+  type QueryRewriteGateway,
+  type TriggerAnalysisGateway,
+} from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { RerankService, type RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
@@ -304,6 +308,7 @@ export const createTestDependencies = (overrides: {
   chunkingSimilarityPort?: ChunkingSimilarityPort;
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
+  triggerAnalysisGateway?: TriggerAnalysisGateway;
   rerankGateway?: RerankGateway;
   envOverrides?: Partial<Env>;
   abuseControlRepository?: AbuseControlRepositoryPort;
@@ -514,6 +519,7 @@ export const createTestDependencies = (overrides: {
     },
   };
   const queryRewriteGateway = overrides.queryRewriteGateway ?? defaultQueryRewriteGateway;
+  const triggerAnalysisGateway = overrides.triggerAnalysisGateway;
   const defaultRerankGateway: RerankGateway = {
     async rerank(input) {
       return input.contexts.map((context) => ({
@@ -610,7 +616,7 @@ export const createTestDependencies = (overrides: {
     vectorSearch,
     lexicalSearch,
     new ConversationContextService(),
-    new QueryRewriteService(queryRewriteGateway),
+    new QueryRewriteService(queryRewriteGateway, triggerAnalysisGateway),
     new CandidatePreparationService(),
     new AttributeMatchScoringService(),
     new RerankService(rerankGateway),
@@ -787,6 +793,7 @@ export const createTestApp = (overrides: {
   chunkingSimilarityPort?: ChunkingSimilarityPort;
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
+  triggerAnalysisGateway?: TriggerAnalysisGateway;
   rerankGateway?: RerankGateway;
   envOverrides?: Partial<Env>;
   abuseControlRepository?: AbuseControlRepositoryPort;

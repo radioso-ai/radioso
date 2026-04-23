@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation'
 import { Bot, Plus, Save, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
 
 import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
+import {
+  getRuleBehaviorLabel,
+  getRuleValuePlaceholder,
+  isDynamicTodayValue,
+  operatorOptionsForValueType,
+} from '@/components/dashboard/settings/retrieval-rule-helpers'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { retrievalSettingDocs } from '@/components/dashboard/settings/settings-docs'
 import { SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
@@ -140,17 +146,18 @@ const conversationModeLabels: Record<
   },
 }
 
-const operatorOptionsForValueType = (
-  valueType: RetrievalSettings['metadataRules'][number]['valueType']
-): RetrievalSettings['metadataRules'][number]['operator'][] => {
-  if (valueType === 'string') {
-    return ['equals', 'not_equals', 'contains', 'not_contains']
-  }
-  if (valueType === 'boolean') {
-    return ['equals', 'not_equals']
-  }
-
-  return ['equals', 'not_equals', 'lt', 'lte', 'gt', 'gte']
+const triggerModeLabels: Record<
+  RetrievalSettings['metadataRules'][number]['triggerMode'],
+  { label: string; description: string }
+> = {
+  always_on: {
+    label: 'Always on',
+    description: 'Apply this rule on every retrieval-backed turn.',
+  },
+  match_turn: {
+    label: 'Trigger per turn',
+    description: 'Apply this rule only when the current question matches the trigger instruction.',
+  },
 }
 
 const suggestedQuestionCountLabel = (count: number) =>
@@ -262,10 +269,30 @@ export function RetrievalSettingsPanel({
           value: suggestedField?.inferredType === 'boolean' ? 'true' : '',
           effect: 'boost',
           enabled: true,
+          triggerMode: 'always_on',
         },
       ],
     })
     setHasChanges(true)
+  }
+
+  const updateRuleTriggerMode = (
+    ruleId: RetrievalSettings['metadataRules'][number]['id'],
+    triggerMode: RetrievalSettings['metadataRules'][number]['triggerMode']
+  ) => {
+    updateMetadataRule(ruleId, {
+      triggerMode,
+      ...(triggerMode === 'always_on' ? { triggerInstruction: undefined } : {}),
+    })
+  }
+
+  const updateRuleDateValueMode = (
+    ruleId: RetrievalSettings['metadataRules'][number]['id'],
+    mode: 'literal' | 'today'
+  ) => {
+    updateMetadataRule(ruleId, {
+      value: mode === 'today' ? 'today()' : '',
+    })
   }
 
   const removeMetadataRule = (ruleId: string) => {
@@ -535,6 +562,9 @@ export function RetrievalSettingsPanel({
               <p className="text-sm text-muted-foreground">
                 Format hints: dates use <code>YYYY-MM-DD</code>, numbers use plain values like <code>100</code> or <code>12.5</code>, and booleans use <code>true</code> or <code>false</code>.
               </p>
+              <p className="text-sm text-muted-foreground">
+                Use <code>Always on</code> for global retrieval preferences. Use <code>Trigger per turn</code> when a rule should activate only for a matching kind of question, such as upcoming events or time-bound requests.
+              </p>
             </div>
 
             {settings.metadataRules.length === 0 ? (
@@ -547,6 +577,58 @@ export function RetrievalSettingsPanel({
                   <div key={rule.id} className="space-y-3 rounded-md border border-border bg-card p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="grid flex-1 gap-3 md:grid-cols-2">
+                        <div className="space-y-2 md:col-span-2">
+                          <SettingFieldHeader
+                            label={retrievalSettingDocs.metadataTriggerMode.label}
+                            description={retrievalSettingDocs.metadataTriggerMode.summary}
+                            tooltip={retrievalSettingDocs.metadataTriggerMode.details}
+                          />
+                          <Select
+                            value={rule.triggerMode}
+                            onValueChange={(value) =>
+                              updateRuleTriggerMode(
+                                rule.id,
+                                value as RetrievalSettings['metadataRules'][number]['triggerMode']
+                              )
+                            }
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(triggerModeLabels).map(([value, meta]) => (
+                                <SelectItem key={value} value={value}>
+                                  {meta.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-sm text-muted-foreground">
+                            {triggerModeLabels[rule.triggerMode].description}
+                          </p>
+                        </div>
+                        {rule.triggerMode === 'match_turn' ? (
+                          <div className="space-y-2 md:col-span-2">
+                            <SettingFieldHeader
+                              label={retrievalSettingDocs.metadataTriggerInstruction.label}
+                              description={retrievalSettingDocs.metadataTriggerInstruction.summary}
+                              tooltip={retrievalSettingDocs.metadataTriggerInstruction.details}
+                            />
+                            <Textarea
+                              value={rule.triggerInstruction ?? ''}
+                              onChange={(event) =>
+                                updateMetadataRule(rule.id, {
+                                  triggerInstruction: event.target.value.slice(0, 500),
+                                })
+                              }
+                              placeholder="e.g. Enact when the user is clearly asking about upcoming events, conferences, courses, or camps."
+                              rows={3}
+                            />
+                            <p className="text-sm text-muted-foreground">
+                              Trigger instructions change when the rule activates for a turn. They do not change the corpus itself.
+                            </p>
+                          </div>
+                        ) : null}
                         <div className="space-y-2">
                           <SettingFieldHeader
                             label={retrievalSettingDocs.metadataKey.label}
@@ -609,24 +691,43 @@ export function RetrievalSettingsPanel({
                                 <SelectItem value="false">False</SelectItem>
                               </SelectContent>
                             </Select>
+                          ) : rule.valueType === 'date' ? (
+                            <div className="space-y-2">
+                              <Select
+                                value={isDynamicTodayValue(rule.value) ? 'today' : 'literal'}
+                                onValueChange={(value) =>
+                                  updateRuleDateValueMode(rule.id, value as 'literal' | 'today')
+                                }
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="literal">Specific date</SelectItem>
+                                  <SelectItem value="today">Dynamic today()</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {isDynamicTodayValue(rule.value) ? (
+                                <div className="rounded-md border border-border bg-background/60 p-3 text-sm text-muted-foreground">
+                                  <AssistantMarkdownContent content={retrievalSettingDocs.metadataDynamicDate.summary} inline />
+                                  <span className="block pt-2 text-xs">
+                                    {retrievalSettingDocs.metadataDynamicDate.details}
+                                  </span>
+                                </div>
+                              ) : (
+                                <Input
+                                  type="date"
+                                  value={rule.value}
+                                  onChange={(event) => updateMetadataRule(rule.id, { value: event.target.value })}
+                                />
+                              )}
+                            </div>
                           ) : (
                             <Input
-                              type={
-                                rule.valueType === 'date'
-                                  ? 'date'
-                                  : rule.valueType === 'number'
-                                    ? 'number'
-                                    : 'text'
-                              }
+                              type={rule.valueType === 'number' ? 'number' : 'text'}
                               value={rule.value}
                               onChange={(event) => updateMetadataRule(rule.id, { value: event.target.value })}
-                              placeholder={
-                                rule.valueType === 'date'
-                                  ? '2026-03-26'
-                                  : rule.valueType === 'number'
-                                    ? '100'
-                                    : 'e.g. et or example.com'
-                              }
+                              placeholder={getRuleValuePlaceholder(rule.valueType)}
                             />
                           )}
                         </div>
@@ -702,6 +803,9 @@ export function RetrievalSettingsPanel({
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
+                    </div>
+                    <div className="rounded-md border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
+                      {getRuleBehaviorLabel(rule)}
                     </div>
                   </div>
                 ))}

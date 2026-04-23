@@ -40,6 +40,17 @@ const toStatus = (value: string | undefined, fallback: RetrievalTraceStageStatus
   return fallback;
 };
 
+const toTriggerStatus = (value: string | undefined): RetrievalTraceStageStatus => {
+  if (value === "fallback") {
+    return "fallback";
+  }
+  if (value?.startsWith("skipped")) {
+    return "skipped";
+  }
+
+  return "applied";
+};
+
 const buildStage = (
   stageId: string,
   kind: string,
@@ -172,6 +183,29 @@ export class RetrievalTraceAssembler {
           reason: rewriteReason,
         },
       ),
+      buildStage(
+        "trigger_analysis",
+        "trigger_analysis",
+        "Trigger analysis",
+        toTriggerStatus(prompt.triggerAnalysis.status),
+        timings.queryInterpretation,
+        {
+          inputs: {
+            query: prompt.request.query,
+          },
+          outputs: {
+            consideredRules: prompt.triggerAnalysis.consideredRules,
+            matchedRuleIds: prompt.triggerAnalysis.matchedRuleIds,
+            unmatchedRuleIds: prompt.triggerAnalysis.unmatchedRuleIds,
+            backoffDecision: prompt.triggerBackoff,
+          },
+          metrics: {
+            consideredRuleCount: prompt.triggerAnalysis.consideredRules.length,
+            matchCount: prompt.triggerAnalysis.matchCount,
+          },
+          reason: prompt.triggerAnalysis.failureReason,
+        },
+      ),
       ...semanticBranches.map((branch) =>
         buildStage(branch.stageId, branch.kind, branch.label, prompt.vectorFallbackApplied ? "fallback" : "applied", semanticTiming, {
           settings: {
@@ -271,8 +305,9 @@ export class RetrievalTraceAssembler {
 
     const links: RetrievalTraceLink[] = [
       { fromStageId: "context", toStageId: "interpretation", kind: "sequence" },
-      ...semanticBranches.map((branch) => ({ fromStageId: "interpretation", toStageId: branch.stageId, kind: "branch" as const })),
-      ...lexicalBranches.map((branch) => ({ fromStageId: "interpretation", toStageId: branch.stageId, kind: "branch" as const })),
+      { fromStageId: "interpretation", toStageId: "trigger_analysis", kind: "sequence" },
+      ...semanticBranches.map((branch) => ({ fromStageId: "trigger_analysis", toStageId: branch.stageId, kind: "branch" as const })),
+      ...lexicalBranches.map((branch) => ({ fromStageId: "trigger_analysis", toStageId: branch.stageId, kind: "branch" as const })),
       ...semanticBranches.map((branch) => ({ fromStageId: branch.stageId, toStageId: "preparation", kind: "converge" as const })),
       ...lexicalBranches.map((branch) => ({ fromStageId: branch.stageId, toStageId: "preparation", kind: "converge" as const })),
       { fromStageId: "preparation", toStageId: "selection", kind: "sequence" },
@@ -323,6 +358,8 @@ export class RetrievalTraceAssembler {
           rejectionReason: diagnostics.rejectionReason,
           fallbackReason: diagnostics.fallbackReason,
         },
+        triggerAnalysis: diagnostics.triggerAnalysis,
+        triggerBackoff: diagnostics.triggerBackoff,
       },
     };
   }

@@ -46,11 +46,39 @@ describe("chat history service", () => {
           finalContextCount: 1,
           candidateFallbackApplied: false,
           fallbackApplied: false,
+          triggerAnalysis: {
+            status: "applied",
+            consideredRules: [
+              {
+                ruleId: "events-only",
+                matched: true,
+                matchStrength: 0.88,
+                reason: "The question asks about an upcoming event.",
+                triggerInstructionPreview: "Enact for upcoming events.",
+              },
+            ],
+            matchedRuleIds: ["events-only"],
+            unmatchedRuleIds: [],
+            matchCount: 1,
+            matcherVersion: "test",
+          },
+          triggerBackoff: {
+            applied: true,
+            reason: "empty_filtered_candidates",
+            relaxedRuleIds: ["events-only"],
+            restoredCandidateCount: 1,
+          },
         },
         retrievalTrace: {
           traceId: "trace-1",
           startedAt: "2026-03-23T00:00:00.000Z",
           stages: [
+            {
+              stageId: "trigger_analysis",
+              kind: "trigger_analysis",
+              label: "Trigger analysis",
+              status: "applied",
+            },
             {
               stageId: "answer",
               kind: "answer_outcome",
@@ -119,9 +147,20 @@ describe("chat history service", () => {
       merged: 1,
       final: 1,
     });
+    expect(debug?.retrievalInfo?.triggerAnalysis).toMatchObject({
+      matchedRuleIds: ["events-only"],
+      matchCount: 1,
+    });
+    expect(debug?.retrievalInfo?.triggerBackoff).toMatchObject({
+      applied: true,
+      relaxedRuleIds: ["events-only"],
+    });
     expect(debug?.retrievalTrace).toMatchObject({
       traceId: "trace-1",
-      stages: [expect.objectContaining({ stageId: "answer" })],
+      stages: [
+        expect.objectContaining({ stageId: "trigger_analysis" }),
+        expect.objectContaining({ stageId: "answer" }),
+      ],
     });
     expect(debug?.answerOutcome).toBe("grounded_degraded_unsupported_segments");
     expect(debug?.answerSupportPolicy).toBe("strict");

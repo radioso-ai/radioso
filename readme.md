@@ -400,6 +400,16 @@ You usually do not need to change settings on day one. Tune them when retrieval 
 | `answerSupportPolicy` | `strict` | you want safer or looser answer behavior | controls whether unsupported answers are rewritten into safer conversational misses or left closer to the original model text |
 | `citationDisplayEnabled` | `true` | you want cleaner output or easier debugging | shows or hides citations |
 
+### Metadata Rule Tuning
+
+Use metadata rules when retrieval should consistently prefer or filter by structured document fields such as language, source, or date.
+
+- Use **Always on** for workspace-wide preferences.
+- Use **Trigger per turn** when a rule should only activate for matching questions, such as upcoming events or currently active courses.
+- Use `today()` in date comparisons like `dateFrom >= today()` when the rule should stay current without manual edits.
+
+In practice, trigger-based rules are easier to operate when the trigger instruction describes a user question pattern in plain language. That same instruction appears in retrieval diagnostics and eval replay, which makes mismatches easier to debug.
+
 ### Ingestion Settings
 
 | Setting | Good starting point | Change it when | Typical effect |

@@ -61,6 +61,33 @@ export interface RetrievalSubquery {
 
 export type ContinuityDecision = "unchanged" | "reused" | "updated" | "unresolved" | "rejected";
 
+export type TriggerAnalysisStatus = "skipped_not_configured" | "skipped_unavailable" | "applied" | "fallback";
+
+export interface TriggerRuleDecision {
+  ruleId: string;
+  matched: boolean;
+  matchStrength: number;
+  reason: string;
+  triggerInstructionPreview: string;
+}
+
+export interface TriggerAnalysisResult {
+  status: TriggerAnalysisStatus;
+  consideredRules: TriggerRuleDecision[];
+  matchedRuleIds: string[];
+  unmatchedRuleIds: string[];
+  matchCount: number;
+  matcherVersion: string;
+  failureReason?: string;
+}
+
+export interface TriggerBackoffDecision {
+  applied: boolean;
+  reason?: "empty_filtered_candidates" | "weak_filtered_support";
+  relaxedRuleIds: string[];
+  restoredCandidateCount?: number;
+}
+
 export interface RewrittenRetrievalQuery {
   originalQuery: string;
   rewrittenQuery: string;
@@ -135,6 +162,8 @@ export interface RetrievalTraceSummary {
     rejectionReason?: string;
     fallbackReason?: string;
   };
+  triggerAnalysis?: TriggerAnalysisResult;
+  triggerBackoff?: TriggerBackoffDecision;
 }
 
 export interface RetrievalTraceStage {
@@ -189,4 +218,6 @@ export interface RetrievalExecutionDiagnostics {
   responseLanguagePolicy?: ResponseLanguagePolicy;
   rejectionReason?: string;
   fallbackReason?: string;
+  triggerAnalysis?: TriggerAnalysisResult;
+  triggerBackoff?: TriggerBackoffDecision;
 }

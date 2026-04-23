@@ -22,6 +22,48 @@ export function ChatRetrievalInfo({
 
   return (
     <div className="space-y-3">
+      {retrievalInfo?.triggerAnalysis ? (
+        <section className="rounded-lg border border-border/70 bg-background/60 p-3">
+          <p className="text-sm font-medium text-foreground">Trigger analysis</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Status: {retrievalInfo.triggerAnalysis.status.replaceAll('_', ' ')}. Matched{' '}
+            {retrievalInfo.triggerAnalysis.matchCount} rule
+            {retrievalInfo.triggerAnalysis.matchCount === 1 ? '' : 's'}.
+          </p>
+          {retrievalInfo.triggerAnalysis.consideredRules.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              {retrievalInfo.triggerAnalysis.consideredRules.map((rule) => (
+                <div key={rule.ruleId} className="rounded-md border border-border/70 bg-background/70 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-foreground">{rule.ruleId}</p>
+                    <span className="text-xs text-muted-foreground">
+                      {rule.matched ? 'matched' : 'not matched'} • {(rule.matchStrength * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{rule.triggerInstructionPreview}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{rule.reason}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {retrievalInfo?.triggerBackoff?.applied ? (
+        <section className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+          <p className="text-sm font-medium text-foreground">Trigger backoff</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Retrieval relaxed hard-filter trigger rules after they removed all prepared candidates.
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Relaxed rules: {retrievalInfo.triggerBackoff.relaxedRuleIds.join(', ') || 'none recorded'}
+            {typeof retrievalInfo.triggerBackoff.restoredCandidateCount === 'number'
+              ? ` • Restored candidates: ${retrievalInfo.triggerBackoff.restoredCandidateCount}`
+              : ''}
+          </p>
+        </section>
+      ) : null}
+
       <ChatRetrievalTraceDetail
         retrievalTrace={retrievalTrace}
         selectedStageId={graphMode ? selectedStageId : undefined}

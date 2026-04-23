@@ -15,19 +15,46 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       rewritten: input.rewrittenContexts,
       lexical: input.lexicalContexts,
     });
+    const alwaysOnRules = (input.settings.metadataRules ?? []).filter(
+      (rule) => rule.enabled && rule.triggerMode !== "match_turn",
+    );
+    const matchedTriggeredRules = (input.settings.metadataRules ?? []).filter(
+      (rule) => rule.enabled && rule.triggerMode === "match_turn" && input.triggerAnalysis.matchedRuleIds.includes(rule.id),
+    );
+    const activeRules = [...alwaysOnRules, ...matchedTriggeredRules];
+
     const metadataRuleCandidates = this.metadataRuleScoringService.apply({
       candidates: normalizedCandidates,
-      metadataRules: input.settings.metadataRules ?? [],
+      metadataRules: activeRules,
     });
-    const mergedCandidates = metadataRuleCandidates.candidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
+    const matchedHardFilterIds = matchedTriggeredRules.filter((rule) => rule.effect === "filter").map((rule) => rule.id);
+    const shouldBackOff = matchedHardFilterIds.length > 0 && metadataRuleCandidates.candidates.length === 0;
+    const relaxedRuleSet = shouldBackOff
+      ? [...alwaysOnRules, ...matchedTriggeredRules.filter((rule) => rule.effect !== "filter")]
+      : activeRules;
+    const relaxedCandidates = shouldBackOff
+      ? this.metadataRuleScoringService.apply({
+          candidates: normalizedCandidates,
+          metadataRules: relaxedRuleSet,
+        })
+      : metadataRuleCandidates;
+    const mergedCandidates = relaxedCandidates.candidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
 
     return {
       ...input,
       normalizedCandidates,
       mergedCandidates,
       scoredCandidates: mergedCandidates,
-      appliedConstraints: metadataRuleCandidates.appliedRules,
-      candidateFallbackApplied: input.vectorFallbackApplied,
+      appliedConstraints: shouldBackOff
+        ? [...metadataRuleCandidates.appliedRules, ...relaxedCandidates.appliedRules]
+        : relaxedCandidates.appliedRules,
+      candidateFallbackApplied: input.vectorFallbackApplied || shouldBackOff,
+      triggerBackoff: {
+        applied: shouldBackOff,
+        reason: shouldBackOff ? "empty_filtered_candidates" : undefined,
+        relaxedRuleIds: shouldBackOff ? matchedHardFilterIds : [],
+        restoredCandidateCount: shouldBackOff ? relaxedCandidates.candidates.length : undefined,
+      },
     };
   }
 }

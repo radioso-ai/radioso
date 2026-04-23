@@ -72,7 +72,7 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => {
     similarityThreshold: row.similarity_threshold,
     rerankTopK: row.rerank_top_k,
     citationDisplayEnabled: row.citation_display_enabled,
-    metadataRules: normalizeMetadataRules(payload),
+    metadataRules: normalizeMetadataRules(payload.metadataRules),
     customInstruction: row.custom_instruction,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),

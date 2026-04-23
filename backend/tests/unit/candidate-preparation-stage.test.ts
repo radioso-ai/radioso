@@ -51,6 +51,7 @@ const buildInput = (rewrittenContexts: RetrievedChunk[]): CandidateRetrievalStag
         value: "2026-01-01",
         effect: "boost",
         enabled: true,
+        triggerMode: "always_on",
       },
     ],
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -111,6 +112,14 @@ const buildInput = (rewrittenContexts: RetrievedChunk[]): CandidateRetrievalStag
       responseLanguagePolicy: "match_user_question",
     },
   ],
+  triggerAnalysis: {
+    status: "skipped_not_configured",
+    consideredRules: [],
+    matchedRuleIds: [],
+    unmatchedRuleIds: [],
+    matchCount: 0,
+    matcherVersion: "none",
+  },
   promptHistory: [],
   continuityDecision: "unresolved",
   activeEmbedding: [0.1, 0.2],
@@ -162,5 +171,99 @@ describe("candidate preparation stage", () => {
       outcome: "applied",
       summary: "dateFrom > 2026-01-01",
     });
+  });
+
+  it("enacts only matched trigger rules and records backoff for empty hard filters", async () => {
+    const stage = new CandidatePreparationStageService(
+      new CandidatePreparationService(),
+      new MetadataRuleScoringService(),
+    );
+
+    const result = await stage.execute({
+      ...buildInput([
+        semanticChunk(1, {
+          metadata: {
+            language: "en",
+            dateFrom: "2026-06-20",
+          },
+        }),
+      ]),
+      settings: {
+        ...buildInput([]).settings,
+        metadataRules: [
+          {
+            id: "always-on-language",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "boost",
+            enabled: true,
+            triggerMode: "always_on",
+          },
+          {
+            id: "matched-events",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact when the user asks about upcoming events.",
+          },
+          {
+            id: "unmatched-definitions",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "glossary",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for pure definitions.",
+          },
+        ],
+      },
+      triggerAnalysis: {
+        status: "applied",
+        consideredRules: [
+          {
+            ruleId: "matched-events",
+            matched: true,
+            matchStrength: 0.94,
+            reason: "The question is clearly asking about upcoming events.",
+            triggerInstructionPreview: "Enact when the user asks about upcoming events.",
+          },
+          {
+            ruleId: "unmatched-definitions",
+            matched: false,
+            matchStrength: 0.03,
+            reason: "The question is not definition-seeking.",
+            triggerInstructionPreview: "Enact for pure definitions.",
+          },
+        ],
+        matchedRuleIds: ["matched-events"],
+        unmatchedRuleIds: ["unmatched-definitions"],
+        matchCount: 1,
+        matcherVersion: "test",
+      },
+    });
+
+    expect(result.appliedConstraints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ signalKey: "metadata.language", mode: "boost_only" }),
+        expect.objectContaining({ signalKey: "metadata.category", mode: "hard_filter" }),
+      ]),
+    );
+    expect(result.appliedConstraints).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ summary: "category equals glossary" })]),
+    );
+    expect(result.triggerBackoff).toMatchObject({
+      applied: true,
+      reason: "empty_filtered_candidates",
+      relaxedRuleIds: ["matched-events"],
+    });
+    expect(result.scoredCandidates).toHaveLength(1);
   });
 });

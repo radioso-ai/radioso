@@ -6,6 +6,7 @@ import type {
   MetadataValueType,
   RetrievalMetadataRule,
 } from "../../settings/domain/retrievalSettings.js";
+import { isDynamicDateToken, resolveDynamicDateTokenToEpochMs } from "../../settings/domain/dynamicDateToken.js";
 
 export class MetadataRuleScoringService {
   apply(input: {
@@ -89,7 +90,12 @@ const normalizeString = (value: string | number | boolean | null): string => Str
 const normalizeBoolean = (value: string | boolean): boolean =>
   typeof value === "boolean" ? value : value.trim().toLowerCase() === "true";
 const normalizeNumber = (value: string | number): number => (typeof value === "number" ? value : Number(value.trim()));
-const normalizeDate = (value: string | number): number => (typeof value === "number" ? value : Date.parse(String(value).trim()));
+const normalizeDate = (value: string | number): number =>
+  typeof value === "number"
+    ? value
+    : isDynamicDateToken(String(value))
+      ? resolveDynamicDateTokenToEpochMs(String(value))
+      : Date.parse(String(value).trim());
 const isStringBooleanValue = (value: string | number | boolean | null): value is string | boolean =>
   typeof value === "string" || typeof value === "boolean";
 const isStringNumberValue = (value: string | number | boolean | null): value is string | number =>

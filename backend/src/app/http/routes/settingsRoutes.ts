@@ -14,6 +14,7 @@ import {
   conversationModes,
   metadataRuleEffects,
   metadataRuleOperators,
+  metadataRuleTriggerModes,
   metadataValueTypes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 import {
@@ -51,6 +52,8 @@ export const updateSettingsSchema = z.object({
         value: z.string(),
         effect: z.enum(metadataRuleEffects),
         enabled: z.boolean(),
+        triggerMode: z.enum(metadataRuleTriggerModes).optional(),
+        triggerInstruction: z.string().max(500).optional(),
       }),
     )
     .optional(),

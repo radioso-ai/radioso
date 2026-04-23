@@ -6,6 +6,8 @@ import type {
   RetrievalSubquery,
   ResponseLanguagePolicy,
   RewrittenRetrievalQuery,
+  TriggerAnalysisResult,
+  TriggerBackoffDecision,
   RewriteContinuityState,
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
@@ -36,6 +38,7 @@ export interface QueryInterpretationStageResult extends RetrievalContextStageRes
   activeParsedQuery: ParsedQueryInterpretation;
   activeSemanticQuery: string;
   activeRetrievalSubqueries: RetrievalSubquery[];
+  triggerAnalysis: TriggerAnalysisResult;
   promptHistory: MessageRecord[];
   continuityDecision: "unchanged" | "updated" | "unresolved" | "rejected";
 }
@@ -68,6 +71,7 @@ export interface CandidatePreparationStageResult extends CandidateRetrievalStage
   scoredCandidates: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
   appliedConstraints: AppliedConstraint[];
   candidateFallbackApplied: boolean;
+  triggerBackoff: TriggerBackoffDecision;
 }
 
 export interface ContextSelectionStageResult extends CandidatePreparationStageResult {

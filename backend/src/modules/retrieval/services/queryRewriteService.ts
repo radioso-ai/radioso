@@ -1,11 +1,13 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import type { RetrievalMetadataRule } from "../../settings/domain/retrievalSettings.js";
 import type {
   ConversationContextWindow,
   RetrievalSubquery,
   RewrittenRetrievalQuery,
   ResponseLanguagePolicy,
+  TriggerAnalysisResult,
   RewriteContinuityState,
   RewriteTurnKind,
   StructuredRewriteResult,
@@ -23,6 +25,7 @@ export interface QueryRewriteGatewayFallbackResult {
 export type QueryRewriteGatewayResult = QueryRewriteGatewayFallbackResult | StructuredRewriteResult;
 
 const QUERY_REWRITE_SYSTEM_PROMPT = loadPromptTemplate("retrieval/query-rewrite-system.md");
+const TRIGGER_ANALYSIS_SYSTEM_PROMPT = loadPromptTemplate("retrieval/trigger-analysis-system.md");
 
 const DEFAULT_RESPONSE_LANGUAGE_POLICY: ResponseLanguagePolicy = "match_user_question";
 
@@ -46,6 +49,27 @@ const buildQueryRewritePrompt = (input: {
     query: input.query,
   });
 
+const buildTriggerAnalysisPrompt = (input: {
+  query: string;
+  rules: RetrievalMetadataRule[];
+}): string =>
+  renderPromptTemplate("retrieval/trigger-analysis-user.md", {
+    query: input.query,
+    rules_json: JSON.stringify(
+      input.rules.map((rule) => ({
+        ruleId: rule.id,
+        triggerInstruction: rule.triggerInstruction,
+        effect: rule.effect,
+        field: rule.field,
+        operator: rule.operator,
+        value: rule.value,
+        valueType: rule.valueType,
+      })),
+      null,
+      2,
+    ),
+  });
+
 export interface QueryRewriteGateway {
   rewrite(input: {
     query: string;
@@ -54,6 +78,29 @@ export interface QueryRewriteGateway {
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<QueryRewriteGatewayResult>;
+}
+
+export interface TriggerAnalysisGateway {
+  analyze(input: {
+    query: string;
+    rules: RetrievalMetadataRule[];
+  }): Promise<TriggerAnalysisResult>;
+}
+
+export class ModelTriggerAnalysisGateway implements TriggerAnalysisGateway {
+  constructor(private readonly client: TextGenerationClient) {}
+
+  async analyze(input: {
+    query: string;
+    rules: RetrievalMetadataRule[];
+  }): Promise<TriggerAnalysisResult> {
+    const raw = await this.client.complete({
+      systemPrompt: TRIGGER_ANALYSIS_SYSTEM_PROMPT,
+      prompt: buildTriggerAnalysisPrompt(input),
+    });
+
+    return parseStructuredTriggerAnalysis(raw, input.rules);
+  }
 }
 
 export class ModelQueryRewriteGateway implements QueryRewriteGateway {
@@ -147,7 +194,10 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
 export class QueryRewriteService {
   private readonly eligibilityService = new RewriteEligibilityService();
 
-  constructor(private readonly gateway?: QueryRewriteGateway) {}
+  constructor(
+    private readonly gateway?: QueryRewriteGateway,
+    private readonly triggerGateway?: TriggerAnalysisGateway,
+  ) {}
 
   async rewrite(input: {
     query: string;
@@ -225,6 +275,81 @@ export class QueryRewriteService {
       return this.fallback(input.query, "rewrite_unusable");
     } catch {
       return this.fallback(input.query, "rewrite_failed");
+    }
+  }
+
+  async analyzeTriggers(input: {
+    query: string;
+    metadataRules: RetrievalMetadataRule[];
+  }): Promise<TriggerAnalysisResult> {
+    const triggerableRules = input.metadataRules.filter(
+      (rule) => rule.enabled && rule.triggerMode === "match_turn" && typeof rule.triggerInstruction === "string",
+    );
+
+    if (triggerableRules.length === 0) {
+      return {
+        status: "skipped_not_configured",
+        consideredRules: [],
+        matchedRuleIds: [],
+        unmatchedRuleIds: [],
+        matchCount: 0,
+        matcherVersion: "none",
+      };
+    }
+
+    if (!this.triggerGateway) {
+      return {
+        status: "skipped_unavailable",
+        consideredRules: triggerableRules.map((rule) => ({
+          ruleId: rule.id,
+          matched: false,
+          matchStrength: 0,
+          reason: "Trigger analysis gateway unavailable.",
+          triggerInstructionPreview: rule.triggerInstruction ?? "",
+        })),
+        matchedRuleIds: [],
+        unmatchedRuleIds: triggerableRules.map((rule) => rule.id),
+        matchCount: 0,
+        matcherVersion: "unavailable",
+        failureReason: "trigger_gateway_unavailable",
+      };
+    }
+
+    try {
+      const result = await this.triggerGateway.analyze({
+        query: input.query,
+        rules: triggerableRules,
+      });
+
+      return {
+        status: result.status,
+        consideredRules: result.consideredRules.map((rule) => ({
+          ...rule,
+          reason: rule.reason.trim(),
+          triggerInstructionPreview: rule.triggerInstructionPreview.trim(),
+        })),
+        matchedRuleIds: [...result.matchedRuleIds],
+        unmatchedRuleIds: [...result.unmatchedRuleIds],
+        matchCount: result.matchCount,
+        matcherVersion: result.matcherVersion,
+        failureReason: result.failureReason,
+      };
+    } catch {
+      return {
+        status: "fallback",
+        consideredRules: triggerableRules.map((rule) => ({
+          ruleId: rule.id,
+          matched: false,
+          matchStrength: 0,
+          reason: "Trigger analysis failed; baseline retrieval preserved.",
+          triggerInstructionPreview: truncateTriggerInstruction(rule.triggerInstruction ?? ""),
+        })),
+        matchedRuleIds: [],
+        unmatchedRuleIds: triggerableRules.map((rule) => rule.id),
+        matchCount: 0,
+        matcherVersion: "fallback",
+        failureReason: "trigger_analysis_failed",
+      };
     }
   }
 
@@ -452,6 +577,15 @@ const tokenizeRewriteTerms = (value: string): string[] =>
     .map((term) => term.trim())
     .filter((term) => term.length >= 3);
 
+const truncateTriggerInstruction = (value: string): string => value.trim().replace(/\s+/g, " ").slice(0, 160);
+
+const stripJsonFence = (value: string): string =>
+  value
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
 const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
   const normalized = raw.trim().replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim();
   const parsed = JSON.parse(normalized) as Partial<StructuredRewriteResult>;
@@ -508,4 +642,79 @@ const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
     unresolved: Boolean(parsed.unresolved),
     confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
   };
+};
+
+const parseStructuredTriggerAnalysis = (
+  raw: string,
+  rules: RetrievalMetadataRule[],
+): TriggerAnalysisResult => {
+  const fallback = {
+    status: "fallback" as const,
+    consideredRules: rules.map((rule) => ({
+      ruleId: rule.id,
+      matched: false,
+      matchStrength: 0,
+      reason: "Trigger analysis response was malformed; baseline retrieval preserved.",
+      triggerInstructionPreview: truncateTriggerInstruction(rule.triggerInstruction ?? ""),
+    })),
+    matchedRuleIds: [] as string[],
+    unmatchedRuleIds: rules.map((rule) => rule.id),
+    matchCount: 0,
+    matcherVersion: "fallback",
+    failureReason: "trigger_analysis_malformed",
+  };
+
+  try {
+    const parsed = JSON.parse(stripJsonFence(raw)) as {
+      matches?: Array<{
+        ruleId?: string;
+        matched?: boolean;
+        matchStrength?: number;
+        reason?: string;
+      }>;
+      matcherVersion?: string;
+    };
+
+    const entryByRuleId = new Map(
+      Array.isArray(parsed.matches)
+        ? parsed.matches
+            .filter((entry) => typeof entry?.ruleId === "string")
+            .map((entry) => [entry.ruleId!, entry] as const)
+        : [],
+    );
+
+    const consideredRules = rules.map((rule) => {
+      const entry = entryByRuleId.get(rule.id);
+      return {
+        ruleId: rule.id,
+        matched: entry?.matched === true,
+        matchStrength:
+          typeof entry?.matchStrength === "number" && Number.isFinite(entry.matchStrength)
+            ? Math.max(0, Math.min(1, entry.matchStrength))
+            : 0,
+        reason:
+          typeof entry?.reason === "string" && entry.reason.trim().length > 0
+            ? entry.reason.trim().slice(0, 240)
+            : "No trigger match explanation returned.",
+        triggerInstructionPreview: truncateTriggerInstruction(rule.triggerInstruction ?? ""),
+      };
+    });
+
+    const matchedRuleIds = consideredRules.filter((rule) => rule.matched).map((rule) => rule.ruleId);
+    const unmatchedRuleIds = consideredRules.filter((rule) => !rule.matched).map((rule) => rule.ruleId);
+
+    return {
+      status: "applied",
+      consideredRules,
+      matchedRuleIds,
+      unmatchedRuleIds,
+      matchCount: matchedRuleIds.length,
+      matcherVersion:
+        typeof parsed.matcherVersion === "string" && parsed.matcherVersion.trim().length > 0
+          ? parsed.matcherVersion.trim()
+          : "model_v1",
+    };
+  } catch {
+    return fallback;
+  }
 };

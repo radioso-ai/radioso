@@ -48,6 +48,176 @@ describe("retrieval pipeline stages", () => {
     expect(result.activeParsedQuery.lexicalQuery).toBe("Find retreats in Estonia under 300 EUR");
     expect(result.activeQuery).toBe("Find retreats in Estonia under 300 EUR");
     expect(result.promptHistory).toEqual([]);
+    expect(result.triggerAnalysis).toMatchObject({
+      status: "skipped_not_configured",
+      matchedRuleIds: [],
+      matchCount: 0,
+    });
+  });
+
+  it("skips trigger matching when no triggerable rules are configured", async () => {
+    let triggerCalls = 0;
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService(undefined, {
+        async analyze() {
+          triggerCalls += 1;
+          return {
+            status: "applied",
+            consideredRules: [],
+            matchedRuleIds: [],
+            unmatchedRuleIds: [],
+            matchCount: 0,
+            matcherVersion: "test",
+          };
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "What is mononuclear disease?",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "always-on-language",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "boost",
+            enabled: true,
+            triggerMode: "always_on",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(triggerCalls).toBe(0);
+    expect(result.triggerAnalysis).toMatchObject({
+      status: "skipped_not_configured",
+      matchedRuleIds: [],
+      unmatchedRuleIds: [],
+      matchCount: 0,
+    });
+  });
+
+  it("records matched triggerable rules during query interpretation", async () => {
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService(undefined, {
+        async analyze() {
+          return {
+            status: "applied",
+            consideredRules: [
+              {
+                ruleId: "events-filter",
+                matched: true,
+                matchStrength: 0.93,
+                reason: "The user is asking for an upcoming event.",
+                triggerInstructionPreview: "Enact for upcoming events.",
+              },
+              {
+                ruleId: "definitions-filter",
+                matched: false,
+                matchStrength: 0.08,
+                reason: "The user is not asking for a definition-only answer.",
+                triggerInstructionPreview: "Enact for pure definitions.",
+              },
+            ],
+            matchedRuleIds: ["events-filter"],
+            unmatchedRuleIds: ["definitions-filter"],
+            matchCount: 1,
+            matcherVersion: "test",
+          };
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "When is the next conference?",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "events-filter",
+            field: "dateFrom",
+            valueType: "date",
+            operator: "gte",
+            value: "today()",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for upcoming events.",
+          },
+          {
+            id: "definitions-filter",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "glossary",
+            effect: "boost",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for pure definitions.",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.triggerAnalysis).toMatchObject({
+      status: "applied",
+      matchedRuleIds: ["events-filter"],
+      unmatchedRuleIds: ["definitions-filter"],
+      matchCount: 1,
+      matcherVersion: "test",
+    });
   });
 
   it("clears prompt history when rewrite marks a fresh subject", async () => {

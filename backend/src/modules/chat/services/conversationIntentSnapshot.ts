@@ -13,8 +13,6 @@ export interface ConversationIntentSnapshot {
   recentTurns: ConversationIntentTurn[];
   activeSubject?: string;
   activeGoal?: string;
-  latestQuery: string;
-  latestAnswer: string;
 }
 
 const MAX_RECENT_TURNS = 6;
@@ -123,7 +121,6 @@ const resolveActiveGoal = (input: {
 export const buildConversationIntentSnapshot = (input: {
   history: MessageRecord[];
   latestQuery: string;
-  latestAnswer: string;
   priorRewriteContinuityState?: RewriteContinuityState;
   rewriteProposal?: StructuredRewriteResult;
 }): ConversationIntentSnapshot => {
@@ -152,8 +149,6 @@ export const buildConversationIntentSnapshot = (input: {
       priorRewriteContinuityState: input.priorRewriteContinuityState,
       rewriteProposal: input.rewriteProposal,
     }),
-    latestQuery,
-    latestAnswer: normalizeWhitespace(input.latestAnswer),
   };
 };
 

@@ -15,7 +15,6 @@ import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/serv
 import type { AssistantTurnOutcome, ValidationDisposition } from "./answerSupportValidationTypes.js";
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
-import { normalizeChatSuggestion } from "./chatSuggestionUtils.js";
 
 export interface ChatConversationSummary {
   id: string;
@@ -153,6 +152,64 @@ interface AssistantTurnArtifacts {
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
 }
+
+const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
+
+const normalizeSuggestionCitation = (value: unknown): ChatCitation | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const candidate = value as { documentId?: unknown; chunkId?: unknown; title?: unknown };
+  if (
+    typeof candidate.documentId !== "string" ||
+    typeof candidate.chunkId !== "string" ||
+    typeof candidate.title !== "string"
+  ) {
+    return undefined;
+  }
+
+  return {
+    documentId: candidate.documentId,
+    chunkId: candidate.chunkId,
+    title: candidate.title,
+  };
+};
+
+const normalizeSuggestionKind = (value: unknown): ChatSuggestion["kind"] | null => {
+  if (value === undefined || value === "deeper") {
+    return "deeper";
+  }
+
+  return value === "broader" ? "broader" : null;
+};
+
+const normalizeChatSuggestion = (value: unknown): ChatSuggestion | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as { text?: unknown; kind?: unknown; citation?: unknown };
+  if (typeof candidate.text !== "string") {
+    return null;
+  }
+
+  const text = normalizeWhitespace(candidate.text);
+  if (!text) {
+    return null;
+  }
+
+  const kind = normalizeSuggestionKind(candidate.kind);
+  if (!kind) {
+    return null;
+  }
+
+  return {
+    text,
+    kind,
+    citation: normalizeSuggestionCitation(candidate.citation),
+  };
+};
 
 const toIsoString = (value: Date): string => value.toISOString();
 
@@ -403,7 +460,7 @@ export class ChatHistoryService {
         answerSegments: metadata.answerSegments,
         suggestions: Array.isArray(metadata.suggestions)
           ? metadata.suggestions.flatMap((suggestion) => {
-              const normalized = normalizeChatSuggestion(suggestion, "deeper");
+              const normalized = normalizeChatSuggestion(suggestion);
               return normalized ? [normalized] : [];
             })
           : undefined,

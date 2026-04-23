@@ -4,7 +4,6 @@ import type { ChatSuggestion, ChatSuggestionKind } from "../types/chatResponses.
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { ConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { formatConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
-import { normalizeChatSuggestionKind } from "./chatSuggestionUtils.js";
 
 interface ExpansionContext {
   documentId: string;
@@ -178,6 +177,14 @@ const parseSuggestionPayload = (value: string): unknown => {
   return JSON.parse(trimmed);
 };
 
+const normalizeSuggestionKind = (value: unknown): ChatSuggestionKind | null => {
+  if (value === undefined || value === "deeper") {
+    return "deeper";
+  }
+
+  return value === "broader" ? "broader" : null;
+};
+
 export class ConversationModeExpansionService {
   constructor(private readonly generateSuggestionText: SuggestionTextGenerator) {}
 
@@ -341,7 +348,7 @@ export class ConversationModeExpansionService {
       }
 
       const text = "text" in entry && typeof entry.text === "string" ? normalizeWhitespace(entry.text) : "";
-      const kind = normalizeChatSuggestionKind("kind" in entry ? entry.kind : undefined, "deeper");
+      const kind = normalizeSuggestionKind("kind" in entry ? entry.kind : undefined);
       const contextIndex = "contextIndex" in entry && typeof entry.contextIndex === "number"
         ? Math.trunc(entry.contextIndex)
         : NaN;

@@ -1145,6 +1145,235 @@ describe("chat integration", () => {
     });
   });
 
+  it("resolves a single assistant-offered branch after a bare acceptance", async () => {
+    const { app, dependencies } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite(input) {
+          if (input.query !== "go ahead") {
+            return {
+              rewrittenQuery: input.query,
+              semanticQuery: input.query,
+              lexicalQuery: input.query,
+              turnKind: "fresh_subject" as const,
+              relatedEntities: [],
+              unresolved: false,
+              confidence: 0.9,
+            };
+          }
+
+          return {
+            rewrittenQuery: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+            semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+            lexicalQuery: "\"RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking\"",
+            turnKind: "referential_followup" as const,
+            proposedActiveSubject: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.88,
+          };
+        },
+      },
+    });
+
+    const { token, workspaceId } = await issueTestToken(app, "assistant-acceptance-single@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+        content: "Simple Living and High Thinking explores the course themes, community ideals, and practical applications.",
+      });
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+      });
+
+    const conversation = await dependencies.conversationRepository.create(workspaceId);
+    await dependencies.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId,
+      role: "assistant",
+      content:
+        "I couldn't verify that from your workspace documents, but I did find related material in \"RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking\" if you'd like to explore that instead.",
+    });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: conversation.id,
+        query: "go ahead",
+        stream: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain("Simple Living and High Thinking explores the course themes");
+    expect(response.body.retrievalInfo.parsedQuery).toMatchObject({
+      originalQuery: "go ahead",
+      semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+    });
+    expect(response.body.retrievalInfo.rewrite).toMatchObject({
+      status: "applied",
+      eligible: true,
+      ran: true,
+    });
+  });
+
+  it("does not guess among multiple assistant-offered branches after a bare acceptance", async () => {
+    const { app, dependencies } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite(input) {
+          if (input.query !== "go ahead") {
+            return {
+              rewrittenQuery: input.query,
+              semanticQuery: input.query,
+              lexicalQuery: input.query,
+              turnKind: "fresh_subject" as const,
+              relatedEntities: [],
+              unresolved: false,
+              confidence: 0.9,
+            };
+          }
+
+          return {
+            rewrittenQuery: "go ahead",
+            semanticQuery: "go ahead",
+            lexicalQuery: "go ahead",
+            responseLanguagePolicy: "match_user_question" as const,
+            retrievalSubqueries: [
+              {
+                id: "",
+                label: "what I can do in this conversation",
+                semanticQuery: "what I can do in this conversation",
+                lexicalQuery: "\"what I can do in this conversation\"",
+                responseLanguagePolicy: "match_user_question" as const,
+              },
+              {
+                id: "",
+                label: "how I respond to your questions",
+                semanticQuery: "how I respond to your questions",
+                lexicalQuery: "\"how I respond to your questions\"",
+                responseLanguagePolicy: "match_user_question" as const,
+              },
+              {
+                id: "",
+                label: "Ananda course topics",
+                semanticQuery: "Ananda course topics",
+                lexicalQuery: "\"Ananda course topics\"",
+                responseLanguagePolicy: "match_user_question" as const,
+              },
+            ],
+            turnKind: "ambiguous" as const,
+            relatedEntities: ["what I can do in this conversation", "how I respond to your questions", "Ananda course topics"],
+            unresolved: false,
+            confidence: 0.84,
+          };
+        },
+      },
+    });
+
+    const { token, workspaceId } = await issueTestToken(app, "assistant-acceptance-multi@example.com");
+    const authorization = `Bearer ${token}`;
+
+    for (const document of [
+      {
+        title: "What I can do in this conversation",
+        content: "This document lists what the assistant can do in this conversation.",
+      },
+      {
+        title: "How I respond to your questions",
+        content: "This document describes how the assistant responds to questions.",
+      },
+      {
+        title: "Ananda course topics",
+        content: "This document summarizes the available Ananda course topics.",
+      },
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", authorization)
+        .send(document);
+    }
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        chunkingStrategy: "fixed_window",
+      });
+
+    const conversation = await dependencies.conversationRepository.create(workspaceId);
+    await dependencies.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId,
+      role: "assistant",
+      content:
+        "I can’t tell you my exact instruction set. If you want, I can still help with nearby things like: what I can do in this conversation, how I respond to your questions, or a brief summary of the Ananda course topics shown here.",
+    });
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({
+        conversationId: conversation.id,
+        query: "go ahead",
+        stream: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.retrievalInfo.parsedQuery).toMatchObject({
+      originalQuery: "go ahead",
+      semanticQuery: "go ahead",
+      lexicalQuery: "go ahead",
+    });
+    expect(response.body.retrievalInfo.retrievalSubqueries).toEqual([
+      {
+        id: "subquery_1",
+        label: "what I can do in this conversation",
+        semanticQuery: "what I can do in this conversation",
+        lexicalQuery: "what I can do in this conversation",
+        responseLanguagePolicy: "match_user_question",
+      },
+      {
+        id: "subquery_2",
+        label: "how I respond to your questions",
+        semanticQuery: "how I respond to your questions",
+        lexicalQuery: "how I respond to your questions",
+        responseLanguagePolicy: "match_user_question",
+      },
+      {
+        id: "subquery_3",
+        label: "Ananda course topics",
+        semanticQuery: "Ananda course topics",
+        lexicalQuery: "Ananda course topics",
+        responseLanguagePolicy: "match_user_question",
+      },
+    ]);
+    expect(response.body.retrievalInfo.rewrite).toMatchObject({
+      status: "applied",
+      eligible: true,
+      ran: true,
+    });
+    expect(response.body.answer).toContain("This document");
+  }, 10_000);
+
   it("returns the exact-match source for identifier-style queries", async () => {
     const { app } = createTestApp();
 

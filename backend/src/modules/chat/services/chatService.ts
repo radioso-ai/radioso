@@ -33,7 +33,6 @@ import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
-import { shouldSuppressOptionalSuggestions } from "./optionalSuggestionSuppression.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -60,6 +59,24 @@ export class BlankChatAnswerError extends Error {
 }
 
 const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError => error instanceof BlankChatAnswerError;
+
+const DIRECT_ANSWER_PATTERNS = [
+  /\bjust the answer\b/i,
+  /\bjust answer\b/i,
+  /\bbriefly\b/i,
+  /\bbe brief\b/i,
+  /\bshort answer\b/i,
+  /\bone sentence\b/i,
+  /\bconcise\b/i,
+  /\bsuccinct\b/i,
+  /\bno follow[- ]up\b/i,
+  /\bwithout extra detail/i,
+  /\bsolo la risposta\b/i,
+  /\bin breve\b/i,
+];
+
+const shouldSuppressOptionalSuggestions = (query: string): boolean =>
+  DIRECT_ANSWER_PATTERNS.some((pattern) => pattern.test(query));
 
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
@@ -533,7 +550,6 @@ export class ChatService {
       workspaceId: input.workspaceId,
       query: input.query,
       history,
-      rewriteContinuityState,
       metadataFilter: input.metadataFilter,
     });
     const persistedConversation =
@@ -760,7 +776,6 @@ export class ChatService {
     const conversationIntentSnapshot = buildConversationIntentSnapshot({
       history: session.history,
       latestQuery: session.userMessage.content,
-      latestAnswer: presentation.answer,
       priorRewriteContinuityState: session.priorRewriteContinuityState,
       rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
     });

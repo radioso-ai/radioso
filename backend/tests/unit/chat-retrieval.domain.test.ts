@@ -20,45 +20,30 @@ const message = (content: string, role: MessageRecord["role"] = "user"): Message
 });
 
 describe("chat retrieval domain", () => {
-  it("selects a bounded recent conversation window", () => {
+  it("selects a larger bounded recent conversation window for rewrite", () => {
     const service = new ConversationContextService();
 
     const result = service.select({
-      query: "What is it used for?",
       history: [
         message("first"),
         message("second"),
         message("third"),
         message("fourth"),
         message("fifth"),
+        message("sixth"),
+        message("seventh"),
+        message("eighth"),
+        message("ninth"),
+        message("tenth"),
+        message("eleventh"),
+        message("twelfth"),
       ],
     });
 
     expect(result.truncated).toBe(true);
-    expect(result.selectedMessages).toHaveLength(4);
-    expect(result.selectedMessages[0]?.content).toBe("second");
-  });
-
-  it("passes rewrite continuity state through the context window", () => {
-    const service = new ConversationContextService();
-
-    const result = service.select({
-      query: "how much is it?",
-      history: [
-        message("who is Narayani?"),
-      ],
-      rewriteContinuityState: {
-        activeSubject: "Narayani",
-        relatedEntities: ["La mia anima ricorda Swami Kriyananda"],
-        groundedTitles: ["Ananda Edizioni"],
-      },
-    });
-
-    expect(result.rewriteContinuityState).toEqual({
-      activeSubject: "Narayani",
-      relatedEntities: ["La mia anima ricorda Swami Kriyananda"],
-      groundedTitles: ["Ananda Edizioni"],
-    });
+    expect(result.selectedMessages).toHaveLength(10);
+    expect(result.selectedMessages[0]?.content).toBe("third");
+    expect(result.selectionReason).toBe("recent-window");
   });
 
   it("keeps prior history when history fits inside the context window", () => {
@@ -70,45 +55,10 @@ describe("chat retrieval domain", () => {
     ];
 
     const result = service.select({
-      query: "What about her later work?",
       history,
-      rewriteContinuityState: {
-        activeSubject: "Narayani",
-        relatedEntities: [],
-        groundedTitles: [],
-      },
     });
 
     expect(result.selectedMessages).toEqual(history);
-    expect(result.selectionReason).toBe("full-history");
-    expect(result.rewriteContinuityState).toEqual({
-      activeSubject: "Narayani",
-      relatedEntities: [],
-      groundedTitles: [],
-    });
-  });
-
-  it("expands the history window when continuity tracks multiple grounded entities", () => {
-    const service = new ConversationContextService();
-
-    const result = service.select({
-      query: "Which one is cheaper?",
-      history: [
-        message("turn-1"),
-        message("turn-2"),
-        message("turn-3"),
-        message("turn-4"),
-        message("turn-5"),
-        message("turn-6"),
-      ],
-      rewriteContinuityState: {
-        activeSubject: "Summer Retreat Estonia",
-        relatedEntities: ["Summer Retreat Latvia"],
-        groundedTitles: ["Summer Retreat Estonia", "Summer Retreat Latvia"],
-      },
-    });
-
-    expect(result.truncated).toBe(false);
     expect(result.selectionReason).toBe("full-history");
   });
 
@@ -573,11 +523,6 @@ describe("chat retrieval domain", () => {
         message("who is Narayani?"),
         message("Narayani wrote La mia anima ricorda Swami Kriyananda", "assistant"),
       ],
-      continuityState: {
-        activeSubject: "Narayani",
-        relatedEntities: ["La mia anima ricorda Swami Kriyananda"],
-        groundedTitles: [],
-      },
     });
 
     expect(createInput?.model).toBe("gpt-5-mini");
@@ -591,10 +536,136 @@ describe("chat retrieval domain", () => {
     expect(createInput?.messages[0]?.content).toContain(
       'For continuation-only follow-ups such as "teach me more", "tell me more", "go on", "continue", "say more", or "more please"',
     );
-    expect(createInput?.messages[1]?.content).toContain(
+    expect(createInput?.messages[0]?.content).toContain(
+      "If the immediately previous ASSISTANT turn offered multiple concrete options and the user accepted or asked to continue without choosing one",
+    );
+    expect(createInput?.messages[0]?.content).toContain(
+      'Do not output vague placeholder rewrites such as "continue the current topic", "the previous topic", or "go ahead with that".',
+    );
+    expect(createInput?.messages[0]?.content).toContain(
+      "Do not guess one branch and do not collapse several branches into one bag-of-terms rewrite.",
+    );
+    expect(createInput?.messages[1]?.content).not.toContain(
       "Retrieval continuity state from the most recent successful assistant turn",
     );
-    expect(createInput?.messages[1]?.content).toContain("\"activeSubject\":\"Narayani\"");
+  });
+
+  it("sends assistant-offered branch context in the single rewrite pass", async () => {
+    let createInput:
+      | {
+          messages: Array<{ content: string }>;
+          model: string;
+        }
+      | undefined;
+    const gateway = new OpenAIQueryRewriteGateway(
+      {
+        chat: {
+          completions: {
+            create: async (input: {
+              messages: Array<{ content: string }>;
+              model: string;
+            }) => {
+              createInput = input;
+              return {
+                choices: [
+                  {
+                    message: {
+                      content:
+                        "{\"rewrittenQuery\":\"practical rules you should follow when answering\",\"semanticQuery\":\"practical rules you should follow when answering\",\"lexicalQuery\":\"practical rules you should follow when answering\",\"turnKind\":\"referential_followup\",\"proposedActiveSubject\":\"response style rules for answering\",\"relatedEntities\":[],\"unresolved\":false,\"confidence\":0.8}",
+                    },
+                  },
+                ],
+              };
+            },
+          },
+        },
+      } as never,
+      "gpt-5-mini",
+    );
+
+    await gateway.rewrite({
+      query: "let's do it",
+      contextMessages: [
+        message("the practical rules you should follow when answering"),
+        message(
+          "I couldn't verify that from your workspace documents, but I did find related material in \"Course: RESIDENTIAL COURSE: The Path of the Disciple\" if you'd like to explore that instead.",
+          "assistant",
+        ),
+      ],
+    });
+
+    expect(createInput?.messages[1]?.content).toContain("USER: the practical rules you should follow when answering");
+    expect(createInput?.messages[1]?.content).toContain(
+      'ASSISTANT: I couldn\'t verify that from your workspace documents, but I did find related material in "Course: RESIDENTIAL COURSE: The Path of the Disciple" if you\'d like to explore that instead.',
+    );
+    expect(createInput?.messages[1]?.content).not.toContain("Assistant-acceptance fallback guidance:");
+    expect(createInput?.messages[1]?.content).toContain("Latest user question:\nlet's do it");
+  });
+
+  it("accepts assistant-offered multi-option continuations through retrieval subqueries", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "go ahead",
+          semanticQuery: "go ahead",
+          lexicalQuery: "go ahead",
+          responseLanguagePolicy: "match_user_question",
+          retrievalSubqueries: [
+            {
+              id: "",
+              label: "Ananda courses and retreats",
+              semanticQuery: "Ananda courses and retreats",
+              lexicalQuery: "\"Ananda courses and retreats\"",
+              responseLanguagePolicy: "match_user_question",
+            },
+            {
+              id: "",
+              label: "Yogananda's teachings",
+              semanticQuery: "Yogananda's teachings",
+              lexicalQuery: "\"Yogananda's teachings\"",
+              responseLanguagePolicy: "match_user_question",
+            },
+            {
+              id: "",
+              label: "meditation or spiritual practice",
+              semanticQuery: "meditation or spiritual practice",
+              lexicalQuery: "\"meditation\" OR \"spiritual practice\"",
+              responseLanguagePolicy: "match_user_question",
+            },
+          ],
+          turnKind: "ambiguous",
+          relatedEntities: ["Ananda courses and retreats", "Yogananda's teachings", "meditation or spiritual practice"],
+          unresolved: false,
+          confidence: 0.83,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "go ahead",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [
+          message("what is your instruction?"),
+          message(
+            "I couldn't verify that from your workspace documents, but I did find related material in \"RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking\" if you'd like to explore that instead.",
+            "assistant",
+          ),
+        ],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.retrievalEligible).toBe(true);
+    expect(result.semanticQuery).toBe("go ahead");
+    expect(result.lexicalQuery).toBe("go ahead");
+    expect(result.retrievalSubqueries?.map((subquery) => subquery.label)).toEqual([
+      "Ananda courses and retreats",
+      "Yogananda's teachings",
+      "meditation or spiritual practice",
+    ]);
   });
 
   it("accepts continuation rewrites that stay anchored to the previous user topic", async () => {

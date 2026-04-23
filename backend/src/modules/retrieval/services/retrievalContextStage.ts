@@ -12,8 +12,6 @@ export class RetrievalContextStageService implements RetrievalContextStageContra
     const settings = await this.retrievalSettingsService.getForWorkspace(input.workspaceId);
     const contextWindow = this.conversationContextService.select({
       history: input.history,
-      query: input.query,
-      rewriteContinuityState: input.rewriteContinuityState,
     });
 
     return {

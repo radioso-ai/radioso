@@ -60,13 +60,13 @@ describe('ChatMessageThread', () => {
     )
 
     expect(html).toContain('Answer text')
-    expect(html).toContain('Deeper')
-    expect(html).toContain('Broader')
     expect(html).toContain('What parser rules do the docs cover?')
     expect(html).toContain('Which onboarding questions are answered?')
+    expect(html).not.toContain('Deeper')
+    expect(html).not.toContain('Broader')
   })
 
-  it('treats legacy flat suggestions as deeper suggestions for history compatibility', () => {
+  it('renders legacy flat suggestions for history compatibility', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread
         messages={[
@@ -85,13 +85,13 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html).toContain('Deeper')
-    expect(html).not.toContain('Broader')
     expect(html).toContain('What parser rules do the docs cover?')
     expect(html).toContain('Which onboarding questions are answered?')
+    expect(html).not.toContain('Deeper')
+    expect(html).not.toContain('Broader')
   })
 
-  it('omits empty suggestion groups when only broader suggestions are supported', () => {
+  it('renders suggestions even when only broader items are provided', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread
         messages={[
@@ -109,35 +109,32 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html).not.toContain('Deeper')
-    expect(html).toContain('Broader')
     expect(html).toContain('How does this connect to the broader workflow?')
+    expect(html).not.toContain('Deeper')
+    expect(html).not.toContain('Broader')
   })
 
-  it('renders custom suggestion group labels when provided', () => {
+  it('omits empty suggestion text entries', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread
         messages={[
           {
             id: 'assistant-1',
             role: 'assistant',
-            content: 'Risposta',
+            content: 'Answer text',
             createdAt: '2026-04-02T10:00:00.000Z',
             suggestions: [
-              { text: 'Quali regole cita la guida?', kind: 'deeper' },
-              { text: 'Quali temi adiacenti sono supportati?', kind: 'broader' },
+              { text: '   ', kind: 'deeper' },
+              { text: 'Which onboarding questions are answered?', kind: 'broader' },
             ],
           },
         ]}
         onOpenDocument={async () => 'opened'}
-        suggestionGroupLabels={{ deeper: 'Approfondisci', broader: 'Allarga' }}
       />,
     )
 
-    expect(html).toContain('Approfondisci')
-    expect(html).toContain('Allarga')
-    expect(html).not.toContain('Deeper')
-    expect(html).not.toContain('Broader')
+    expect(html).toContain('Which onboarding questions are answered?')
+    expect(html.match(/rounded-md border border-border bg-muted\/40/g)?.length).toBe(1)
   })
 
   it('renders inline pseudo-lists as markdown lists for assistant messages', () => {

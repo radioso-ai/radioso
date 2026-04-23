@@ -3,6 +3,44 @@ title: Deployment topology
 description: The current Radioso production topology and where the docs portal fits.
 ---
 
+import { Callout } from 'nextra/components'
+
 # Deployment topology
 
-The production footprint currently includes separate Cloud Run services for the backend, frontend, and document worker. The docs portal should join that topology as its own public service rather than riding on the product frontend.
+Radioso is deployed as separate services with a shared PostgreSQL database and explicit separation between request-driven application traffic and background document work.
+
+## Main components
+
+- Backend API service: handles authenticated app traffic, workspace APIs, retrieval, chat, auth flows, and enqueueing document jobs.
+- Frontend app service: serves the product UI and proxies user-facing app traffic to the backend.
+- Document worker service: processes queued document jobs outside the request path.
+- PostgreSQL: stores application state, document metadata, chunks, sessions, settings, and audit data.
+- Object storage: uploaded source files use local filesystem storage in local development and GCS in cloud deployments.
+
+## Why the worker is separate
+
+Document parsing, chunking, embedding, and retry behavior are operationally different from chat requests. The worker service keeps those concerns isolated so chat does not inherit background-job latency and failure behavior.
+
+## Production shape
+
+The Terraform deployment uses separate Cloud Run services for backend, frontend, and worker. The backend connects to Cloud SQL through a VPC connector. Uploaded source files are stored in GCS, and request-driven document jobs are dispatched to the worker through Cloud Tasks.
+
+## Docs portal placement
+
+The docs portal should stay outside the product frontend runtime. It has its own Next.js app, its own build, and its own API-reference sync step. Treat it as a separate public service, not a route mounted inside the customer product app.
+
+<Callout type="info" emoji="i">
+  In local development, `./run-dev.sh` starts the app stack together with Docker Compose. In production, the same logical components stay split so scaling and failures remain easier to reason about.
+</Callout>
+
+## Operational consequences
+
+- backend scale settings and worker scale settings should be tuned independently
+- a document-processing incident should not require frontend changes
+- public docs deployment should not be coupled to the app frontend release
+- storage, secrets, and queue configuration belong to infrastructure, not app code
+
+## Related pages
+
+- [Deployment](/operators/deployment)
+- [Document processing lifecycle](/architecture/document-processing-lifecycle)

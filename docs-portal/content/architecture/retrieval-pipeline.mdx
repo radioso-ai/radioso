@@ -3,10 +3,70 @@ title: Retrieval pipeline
 description: A high-level explanation of how queries are interpreted, searched, filtered, and assembled into prompts.
 ---
 
+import { Callout, Steps } from 'nextra/components'
+
 # Retrieval pipeline
 
-At a high level, Radioso moves through query interpretation, candidate retrieval, selection, prompt assembly, and answer presentation. The retrieval settings surface exists to make those stages tunable.
+Radioso does not treat retrieval as a single search call. It runs a staged pipeline that turns a user message into a prompt, then validates the answer against the evidence that was actually retrieved.
 
-## Why this matters
+The key point is simple: if answer quality is off, you need to know which stage is failing before you change settings or prompts.
 
-If answer quality is off, retrieval tuning is usually the first place to look before prompt tweaking.
+## Stages
+
+<Steps>
+### Retrieval context
+
+The pipeline starts by loading workspace retrieval settings and a limited conversation window. This stage decides the behavioral frame for the turn before any search runs.
+
+### Query interpretation
+
+Radioso parses the original query, applies rewrite logic when enabled, and can split the request into retrieval subqueries. This is where semantic and lexical rewrite instructions matter.
+
+### Candidate retrieval
+
+The system runs both semantic and lexical retrieval. Semantic retrieval uses embeddings. Lexical retrieval uses search text built from the document title, chunk content, and metadata-derived text.
+
+### Candidate preparation
+
+Retrieved chunks are normalized, merged, and scored. Metadata rules and explicit metadata filters narrow or boost the candidate set here.
+
+### Context selection
+
+The system reranks candidates when reranking is enabled, then selects the final prompt contexts. `vectorTopK`, `similarityThreshold`, `rerankEnabled`, and `rerankTopK` all influence this stage.
+
+### Prompt assembly and diagnostics
+
+Radioso builds the final prompt, generates citations, and captures diagnostics and a retrieval trace. Chat then uses that result to generate the answer.
+</Steps>
+
+## What operators can tune
+
+The retrieval settings surface exists because the stages are intentionally adjustable.
+
+- `queryRewriteEnabled` and rewrite instructions affect how the active retrieval query is formed.
+- `vectorTopK` controls how many semantic candidates make it into later stages.
+- `similarityThreshold` filters weak semantic matches early.
+- `rerankEnabled` and `rerankTopK` control whether final ordering is delegated to the rerank model.
+- `metadataRules` and per-request `metadataFilter` constrain the candidate set before prompt assembly.
+- `customInstruction` influences how the final answer is written, but it cannot rescue bad retrieval.
+
+## What happens after retrieval
+
+Retrieval does not directly become the user-visible answer. The chat layer presents the model output as answer segments with citations, then runs answer-support validation. Unsupported substantive segments can be preserved or replaced depending on the workspace answer-support policy.
+
+<Callout type="info" emoji="i">
+  In practice, poor answers usually come from weak retrieval inputs, weak candidate selection, or overly aggressive filtering. Prompt tweaking should usually come after you verify those earlier stages.
+</Callout>
+
+## Debugging order
+
+1. Confirm the document was fully processed and chunked.
+2. Check whether the query needed rewriting or metadata filters.
+3. Increase candidate depth before loosening support policy.
+4. Revisit `customInstruction` only after retrieval evidence looks correct.
+
+Related pages:
+
+- [Document processing lifecycle](/architecture/document-processing-lifecycle)
+- [Retrieval tuning](/guides/retrieval-tuning)
+- [API settings reference](/api/settings)

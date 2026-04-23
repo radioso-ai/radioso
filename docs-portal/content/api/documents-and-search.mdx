@@ -3,6 +3,8 @@ title: Documents and search
 description: Upload documents, requeue processing, inspect search behavior, and replay historical searches.
 ---
 
+import { Callout, Steps } from 'nextra/components'
+
 # Documents and search
 
 This part of the API manages document content and the search layer that grounded answers depend on.
@@ -12,6 +14,7 @@ This part of the API manages document content and the search layer that grounded
 ```text
 GET    /api/v1/document/
 POST   /api/v1/document/
+POST   /api/v1/document/import
 GET    /api/v1/document/{documentId}
 PUT    /api/v1/document/{documentId}
 DELETE /api/v1/document/{documentId}
@@ -23,14 +26,27 @@ GET    /api/v1/document/search/history/{searchId}
 
 ## How it works
 
-1. Create a document with `title` and `content`.
-2. Wait for background processing to finish.
-3. Search the workspace to check whether the right evidence is being retrieved.
-4. Replay historical searches when you need to inspect past behavior.
+<Steps>
+### Ingest content
+
+Use inline document creation when you already have extracted text. Use multipart import when the source of truth is a file.
+
+### Wait for asynchronous processing
+
+Create, import, update, and reprocess flows return `202 Accepted` because indexing work runs in the background worker.
+
+### Verify retrieval behavior
+
+Use document search to inspect whether the expected evidence is reachable.
+
+### Replay historical searches
+
+Use search history when you need to compare current behavior with a previous search result set.
+</Steps>
 
 The key point is that document create and update are asynchronous. The API accepts the request first and processes the content in the background.
 
-## Create a document
+## Create a document from inline text
 
 ```bash
 curl -sS -X POST http://localhost:8080/api/v1/document/ \
@@ -40,6 +56,19 @@ curl -sS -X POST http://localhost:8080/api/v1/document/ \
 ```
 
 `title` and `content` are required. `metadata` and `externalDocumentId` are optional.
+
+## Import a file
+
+Use multipart import when you want Radioso to extract text from an uploaded source file.
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/document/import \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -F "file=@./handbook.pdf" \
+  -F "title=Support handbook"
+```
+
+The backend enforces a maximum upload size with `DOCUMENT_UPLOAD_MAX_BYTES`. The upload path is also rate-limited separately from normal auth flows.
 
 ## Update or reprocess a document
 
@@ -67,6 +96,10 @@ Use `GET /api/v1/document/search/history` to list previous searches.
 Use `GET /api/v1/document/search/history/{searchId}` to replay one historical search result set.
 
 In practice, this is useful when you are tuning retrieval and want to compare current behavior with a known past search.
+
+<Callout type="info" emoji="i">
+  A successful create or import response only means the document was accepted and queued. It does not mean the document is already available to grounded chat.
+</Callout>
 
 ## Common failure modes
 

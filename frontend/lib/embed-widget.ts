@@ -75,7 +75,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   embeddedChatUnavailableTitle: 'Embedded Chat Unavailable',
   embeddedChatUnavailableMessage: 'This embedded chat could not be started from this website.',
   embeddedChatLauncherRequiredMessage: 'This embedded chat must be opened from the launcher script.',
-  embeddedChatStartingMessage: 'Starting embedded chat...',
+  embeddedChatStartingMessage: 'Summoning {name}...',
   publicChatSubtitle: 'Ask questions and get AI-powered answers',
   publicChatEmptyTitle: 'Start a conversation',
   publicChatEmptyMessage: 'Ask a question and get an AI-powered answer.',
@@ -323,6 +323,10 @@ export const formatWebsiteEmbedRateLimitRetry = (
   copy: Pick<WebsiteEmbedCopy, 'publicChatRateLimitRetryTemplate'>,
   seconds: number,
 ) => copy.publicChatRateLimitRetryTemplate.replaceAll('{seconds}', String(seconds))
+
+export const formatWebsiteEmbedStartingMessage = (
+  copy: Pick<WebsiteEmbedCopy, 'embeddedChatStartingMessage' | 'embeddedChatTitle'>,
+) => copy.embeddedChatStartingMessage.replaceAll('{name}', copy.embeddedChatTitle)
 
 export const getWebsiteEmbedCopy = (
   _value: string | null | undefined,

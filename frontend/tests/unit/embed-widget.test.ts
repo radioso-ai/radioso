@@ -5,6 +5,7 @@ import {
   buildWebsiteEmbedSnippet,
   formatWebsiteEmbedOrigins,
   formatWebsiteEmbedRateLimitRetry,
+  formatWebsiteEmbedStartingMessage,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
   LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL,
@@ -195,6 +196,22 @@ describe('embed widget helpers', () => {
 
     expect(copy.publicChatEmptyTitle).toBe('Bonjour')
     expect(formatWebsiteEmbedRateLimitRetry(copy, 12)).toBe('Try again in 12s.')
+    expect(formatWebsiteEmbedStartingMessage(copy)).toBe('Summoning Radioso embedded chat...')
     expect(theme.accent).toBe('#224466')
+  })
+
+  it('formats the startup copy with the configured embedded chat name', () => {
+    expect(
+      formatWebsiteEmbedStartingMessage({
+        embeddedChatStartingMessage: 'Summoning {name}...',
+        embeddedChatTitle: 'Support concierge',
+      }),
+    ).toBe('Summoning Support concierge...')
+    expect(
+      formatWebsiteEmbedStartingMessage({
+        embeddedChatStartingMessage: 'Connecting now',
+        embeddedChatTitle: 'Ignored name',
+      }),
+    ).toBe('Connecting now')
   })
 })

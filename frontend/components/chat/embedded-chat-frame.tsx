@@ -7,6 +7,7 @@ import { AlertCircle } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
 import {
+  formatWebsiteEmbedStartingMessage,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
   type WebsiteEmbedCopyOverrides,
@@ -197,7 +198,7 @@ export function EmbeddedChatFrame({
       >
         <Spinner className="h-6 w-6" />
         <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
-          {copy.embeddedChatStartingMessage}
+          {formatWebsiteEmbedStartingMessage(copy)}
         </p>
       </div>
     )

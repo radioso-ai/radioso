@@ -35,12 +35,14 @@ describe('embed session storage helpers', () => {
     global.window = { sessionStorage: createSessionStorage() }
 
     storeEmbedBootstrapSession('embed-token', {
+      workspaceName: 'Support concierge',
       publicChatToken: 'public-token',
       embedSessionToken: 'grant-token',
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     })
 
     expect(readStoredEmbedBootstrapSession('embed-token')).toEqual({
+      workspaceName: 'Support concierge',
       publicChatToken: 'public-token',
       embedSessionToken: 'grant-token',
       expiresAt: expect.any(String),
@@ -55,6 +57,7 @@ describe('embed session storage helpers', () => {
     global.window = { sessionStorage: createSessionStorage() }
 
     storeEmbedBootstrapSession('embed-token', {
+      workspaceName: 'Support concierge',
       publicChatToken: 'public-token',
       embedSessionToken: 'grant-token',
       expiresAt: new Date(Date.now() - 60_000).toISOString(),

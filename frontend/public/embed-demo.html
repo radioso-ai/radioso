@@ -3,17 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Radioso Embed Test Site</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <title>Radioso Local Embed Demo</title>
+    <link rel="stylesheet" href="/embed-demo.css" />
   </head>
   <body>
     <div class="page-shell">
       <header class="hero">
-        <p class="eyebrow">Radioso Embed Harness</p>
-        <h1>Test the launcher on an approved origin and a blocked origin.</h1>
+        <p class="eyebrow">Radioso Embed Demo</p>
+        <h1>Try the website launcher immediately on the running app origin.</h1>
         <p class="lede">
-          Serve this page once, then open it as <code>http://127.0.0.1:4321</code> and
-          <code>http://localhost:4321</code>. The page origin changes, so the same widget install can verify both paths.
+          This page is served by the frontend itself, so it uses the same origin as the running app and can launch
+          the widget without a separate harness server. Adjust the fields below or open it from Website Embed settings
+          to arrive prefilled.
         </p>
       </header>
 
@@ -121,32 +122,28 @@
               <dd id="current-origin"></dd>
             </div>
             <div>
-              <dt>Expected allowlist entry</dt>
+              <dt>Required allowlist origin</dt>
               <dd id="allowlist-origin"></dd>
             </div>
             <div>
-              <dt>Approved test URL</dt>
-              <dd><a id="approved-link" href="http://127.0.0.1:4321">http://127.0.0.1:4321</a></dd>
-            </div>
-            <div>
-              <dt>Blocked test URL</dt>
-              <dd><a id="blocked-link" href="http://localhost:4321">http://localhost:4321</a></dd>
+              <dt>App origin in use</dt>
+              <dd id="app-origin-preview"></dd>
             </div>
           </dl>
 
           <div class="callout">
             <strong>Origin check:</strong>
             <span>
-              A normal local server will not match <code>http://127.0.0.1</code> unless it is actually serving on port
-              <code>80</code>. For this harness, allowlist the exact origin shown above, including <code>:4321</code>.
+              Because this page is served by the frontend app itself, approving the exact origin shown here is enough
+              for the widget to launch locally.
             </span>
           </div>
 
           <div class="callout">
             <strong>Cache busting:</strong>
             <span>
-              The harness appends <code>?v=&lt;script version&gt;</code> to <code>radioso-embed.js</code>. Change that value
-              whenever you want to force the page to fetch a fresh widget build.
+              Script version is optional. Leave it blank unless you explicitly need a cache-busting query on
+              <code>radioso-embed.js</code>.
             </span>
           </div>
 
@@ -158,27 +155,27 @@
             <h2>Host page</h2>
           </div>
           <p>
-            This content is just here to make the embed feel like a real customer-facing page. Open the launcher in the
-            corner, then try the same page under the alternate hostname to verify the denial state.
+            This page mimics a customer-facing surface so you can test the launcher, panel layout, avatar image or GIF,
+            and copy or theme overrides without leaving the running app.
           </p>
           <div class="feature-grid">
             <article>
-              <h3>Product tours</h3>
-              <p>Use the assistant to answer questions about pricing, onboarding, or uploaded documents.</p>
+              <h3>Immediate tryout</h3>
+              <p>Launch the widget directly from the same frontend origin instead of starting a second local server.</p>
             </article>
             <article>
-              <h3>Lead capture</h3>
-              <p>Check that the assistant appears on content pages without making you rebuild your site’s UI.</p>
+              <h3>Theme review</h3>
+              <p>Validate custom colors, assistant avatars, and English-default copy overrides against a realistic host page.</p>
             </article>
             <article>
-              <h3>Safe embedding</h3>
-              <p>The iframe stays hosted by Radioso, while origin checks decide which sites are allowed to launch it.</p>
+              <h3>Snippet parity</h3>
+              <p>The preview matches the script attributes passed into the mounted widget on this page.</p>
             </article>
           </div>
         </section>
       </main>
     </div>
 
-    <script src="./site.js"></script>
+    <script src="/embed-demo.js"></script>
   </body>
 </html>

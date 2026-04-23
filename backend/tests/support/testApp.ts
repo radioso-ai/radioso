@@ -175,7 +175,7 @@ class InMemoryPasswordResetTokenRepository implements PasswordResetTokenReposito
       tokenHash: params.tokenHash,
       expiresAt: params.expiresAt,
       usedAt: null,
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() + this.items.size),
       requestIp: params.requestIp ?? null,
       requestUserAgent: params.requestUserAgent ?? null,
     };
@@ -207,6 +207,19 @@ class InMemoryPasswordResetTokenRepository implements PasswordResetTokenReposito
       }
     }
   }
+
+  async markOlderActiveForUserUsed(userId: string, createdBefore: Date, usedAt: Date): Promise<void> {
+    for (const item of this.items.values()) {
+      if (
+        item.userId === userId &&
+        item.createdAt < createdBefore &&
+        item.usedAt === null &&
+        item.expiresAt > usedAt
+      ) {
+        item.usedAt = usedAt;
+      }
+    }
+  }
 }
 
 class InMemoryEmailVerificationTokenRepository implements EmailVerificationTokenRepositoryPort {
@@ -234,7 +247,7 @@ class InMemoryEmailVerificationTokenRepository implements EmailVerificationToken
       tokenHash: params.tokenHash,
       expiresAt: params.expiresAt,
       usedAt: null,
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() + this.items.size),
       requestIp: params.requestIp ?? null,
       requestUserAgent: params.requestUserAgent ?? null,
     };
@@ -262,6 +275,19 @@ class InMemoryEmailVerificationTokenRepository implements EmailVerificationToken
   async markAllActiveForUserUsed(userId: string, usedAt: Date): Promise<void> {
     for (const item of this.items.values()) {
       if (item.userId === userId && item.usedAt === null && item.expiresAt > usedAt) {
+        item.usedAt = usedAt;
+      }
+    }
+  }
+
+  async markOlderActiveForUserUsed(userId: string, createdBefore: Date, usedAt: Date): Promise<void> {
+    for (const item of this.items.values()) {
+      if (
+        item.userId === userId &&
+        item.createdAt < createdBefore &&
+        item.usedAt === null &&
+        item.expiresAt > usedAt
+      ) {
         item.usedAt = usedAt;
       }
     }

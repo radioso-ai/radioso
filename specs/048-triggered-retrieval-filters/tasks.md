@@ -134,7 +134,7 @@
 - [X] T037 Review `readme.md` and update it if the changed retrieval settings are part of the key operator-facing tuning flow
 - [X] T038 Run targeted backend and frontend validation for feature 048 and record residual risks in `specs/048-triggered-retrieval-filters/tasks.md`
 - [X] T039 Mark completed tasks and residual notes in `specs/048-triggered-retrieval-filters/tasks.md`
-- [ ] T040 Run senior engineer review loop, manager pass, and prepare PR summary linked to `specs/048-triggered-retrieval-filters/spec.md`, `plan.md`, and `tasks.md`
+- [X] T040 Run senior engineer review loop, manager pass, and prepare PR summary linked to `specs/048-triggered-retrieval-filters/spec.md`, `plan.md`, and `tasks.md`
 
 ---
 

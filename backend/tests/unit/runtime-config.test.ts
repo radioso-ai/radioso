@@ -115,14 +115,23 @@ describe("runtime configuration", () => {
     expect(env.SENTRY_DSN).toBe("https://public@example.ingest.sentry.io/123456");
   });
 
-  it("pins production observability identity for the Cloud Run API and worker services", async () => {
+  it("pins environment-aware observability identity and cloud runtime URLs for the Cloud Run API and worker services", async () => {
     const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
+    const terraformMain = await readFile(new URL("../../../infra/terraform/main.tf", import.meta.url), "utf8");
+    const stagingEnv = await readFile(new URL("../../../infra/terraform/environments/staging/main.tf", import.meta.url), "utf8");
+    const liveEnv = await readFile(new URL("../../../infra/terraform/environments/live/main.tf", import.meta.url), "utf8");
 
     expect(computeTf).toContain('name  = "OBSERVABILITY_ENVIRONMENT"');
-    expect(computeTf).toContain('value = "production"');
+    expect(computeTf).toContain('value = var.environment');
     expect(computeTf).toContain('name  = "OBSERVABILITY_SERVICE_NAME"');
     expect(computeTf).toContain('value = "radioso-api"');
     expect(computeTf).toContain('value = "radioso-worker"');
+    expect(computeTf).toContain('name  = "APP_BASE_URL"');
+    expect(computeTf).toContain('name  = "PUBLIC_CHAT_BASE_URL"');
+    expect(computeTf).toContain('name  = "MAIL_DRIVER"');
+    expect(terraformMain).toContain('resource_name_prefix         = "${local.service_name}-${var.environment}"');
+    expect(stagingEnv).toMatch(/environment\s+= "staging"/);
+    expect(liveEnv).toMatch(/environment\s+= "live"/);
   });
 
   it("defaults worker entrypoints to the worker observability service name", async () => {

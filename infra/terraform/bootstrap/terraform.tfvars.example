@@ -1,5 +1,9 @@
-project_id        = "your-gcp-project-id"
-state_bucket_name = "your-gcp-project-id-tfstate"
+project_id        = "radioso-staging"
+state_bucket_name = "radioso-staging-terraform-state"
 
 # Optional overrides (defaults shown)
 # region = "us-central1"
+
+# Live example:
+# project_id        = "radioso"
+# state_bucket_name = "radioso-terraform-state"

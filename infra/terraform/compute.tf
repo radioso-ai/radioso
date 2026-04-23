@@ -1,25 +1,25 @@
 # --- Service accounts ---
 
 resource "google_service_account" "backend" {
-  account_id   = "${local.service_name}-backend"
-  display_name = "Hivec Backend Cloud Run"
+  account_id   = "${local.resource_name_prefix}-backend"
+  display_name = "Radioso ${var.environment} backend Cloud Run"
 }
 
 resource "google_service_account" "frontend" {
-  account_id   = "${local.service_name}-frontend"
-  display_name = "Hivec Frontend Cloud Run"
+  account_id   = "${local.resource_name_prefix}-frontend"
+  display_name = "Radioso ${var.environment} frontend Cloud Run"
 }
 
 resource "google_service_account" "worker" {
-  account_id   = "${local.service_name}-worker"
-  display_name = "Radioso Document Worker"
+  account_id   = "${local.resource_name_prefix}-worker"
+  display_name = "Radioso ${var.environment} document worker"
 }
 
 # --- Backend Cloud Run service ---
 
 resource "google_cloud_run_v2_service" "backend" {
   count    = var.deploy_services ? 1 : 0
-  name     = "${local.service_name}-backend"
+  name     = "${local.resource_name_prefix}-backend"
   location = var.region
 
   template {
@@ -48,7 +48,7 @@ resource "google_cloud_run_v2_service" "backend" {
       }
       env {
         name  = "OBSERVABILITY_ENVIRONMENT"
-        value = "production"
+        value = var.environment
       }
       env {
         name  = "OBSERVABILITY_SERVICE_NAME"
@@ -122,6 +122,37 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "DOCUMENT_PROCESSING_JOB_LEASE_MS"
         value = tostring(var.document_processing_job_lease_ms)
       }
+      env {
+        name  = "APP_BASE_URL"
+        value = local.app_base_url
+      }
+      env {
+        name  = "MAIL_DRIVER"
+        value = var.mail_driver
+      }
+      env {
+        name  = "MAIL_FROM_EMAIL"
+        value = var.mail_from_email
+      }
+      env {
+        name  = "MAIL_FROM_NAME"
+        value = var.mail_from_name
+      }
+      dynamic "env" {
+        for_each = var.mail_smtp_host == null ? [] : [var.mail_smtp_host]
+        content {
+          name  = "MAIL_SMTP_HOST"
+          value = env.value
+        }
+      }
+      env {
+        name  = "MAIL_SMTP_PORT"
+        value = tostring(var.mail_smtp_port)
+      }
+      env {
+        name  = "MAIL_SMTP_SECURE"
+        value = tostring(var.mail_smtp_secure)
+      }
       dynamic "env" {
         for_each = var.connector_public_base_url == null ? [] : [var.connector_public_base_url]
         content {
@@ -130,7 +161,7 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
-        for_each = var.public_chat_base_url == null ? [] : [var.public_chat_base_url]
+        for_each = local.public_chat_base_url == null ? [] : [local.public_chat_base_url]
         content {
           name  = "PUBLIC_CHAT_BASE_URL"
           value = env.value
@@ -195,6 +226,30 @@ resource "google_cloud_run_v2_service" "backend" {
           }
         }
       }
+      dynamic "env" {
+        for_each = var.mail_smtp_username == null ? [] : [var.mail_smtp_username]
+        content {
+          name = "MAIL_SMTP_USERNAME"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["mail-smtp-username"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.mail_smtp_password == null ? [] : [var.mail_smtp_password]
+        content {
+          name = "MAIL_SMTP_PASSWORD"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["mail-smtp-password"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
     }
   }
 
@@ -218,7 +273,7 @@ resource "google_cloud_run_v2_service_iam_member" "backend_public" {
 
 resource "google_cloud_run_v2_service" "frontend" {
   count    = var.deploy_services ? 1 : 0
-  name     = "${local.service_name}-frontend"
+  name     = "${local.resource_name_prefix}-frontend"
   location = var.region
 
   template {
@@ -269,7 +324,7 @@ resource "google_cloud_run_v2_service_iam_member" "frontend_public" {
 
 resource "google_cloud_run_v2_service" "document_worker" {
   count    = var.deploy_services ? 1 : 0
-  name     = "${local.service_name}-worker"
+  name     = "${local.resource_name_prefix}-worker"
   location = var.region
 
   template {
@@ -296,7 +351,7 @@ resource "google_cloud_run_v2_service" "document_worker" {
       }
       env {
         name  = "OBSERVABILITY_ENVIRONMENT"
-        value = "production"
+        value = var.environment
       }
       env {
         name  = "OBSERVABILITY_SERVICE_NAME"
@@ -370,6 +425,51 @@ resource "google_cloud_run_v2_service" "document_worker" {
         name  = "DOCUMENT_PROCESSING_JOB_LEASE_MS"
         value = tostring(var.document_processing_job_lease_ms)
       }
+      env {
+        name  = "APP_BASE_URL"
+        value = local.app_base_url
+      }
+      env {
+        name  = "MAIL_DRIVER"
+        value = var.mail_driver
+      }
+      env {
+        name  = "MAIL_FROM_EMAIL"
+        value = var.mail_from_email
+      }
+      env {
+        name  = "MAIL_FROM_NAME"
+        value = var.mail_from_name
+      }
+      dynamic "env" {
+        for_each = var.mail_smtp_host == null ? [] : [var.mail_smtp_host]
+        content {
+          name  = "MAIL_SMTP_HOST"
+          value = env.value
+        }
+      }
+      env {
+        name  = "MAIL_SMTP_PORT"
+        value = tostring(var.mail_smtp_port)
+      }
+      env {
+        name  = "MAIL_SMTP_SECURE"
+        value = tostring(var.mail_smtp_secure)
+      }
+      dynamic "env" {
+        for_each = var.connector_public_base_url == null ? [] : [var.connector_public_base_url]
+        content {
+          name  = "CONNECTOR_PUBLIC_BASE_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.public_chat_base_url == null ? [] : [local.public_chat_base_url]
+        content {
+          name  = "PUBLIC_CHAT_BASE_URL"
+          value = env.value
+        }
+      }
 
       resources {
         cpu_idle = false
@@ -417,6 +517,30 @@ resource "google_cloud_run_v2_service" "document_worker" {
           secret_key_ref {
             secret  = google_secret_manager_secret.secrets["connector-encryption-key"].secret_id
             version = "latest"
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.mail_smtp_username == null ? [] : [var.mail_smtp_username]
+        content {
+          name = "MAIL_SMTP_USERNAME"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["mail-smtp-username"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.mail_smtp_password == null ? [] : [var.mail_smtp_password]
+        content {
+          name = "MAIL_SMTP_PASSWORD"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["mail-smtp-password"].secret_id
+              version = "latest"
+            }
           }
         }
       }

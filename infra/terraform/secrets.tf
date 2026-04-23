@@ -8,6 +8,12 @@ locals {
       "website-embed-secret"     = var.website_embed_secret
       "connector-encryption-key" = var.connector_encryption_key
     },
+    var.mail_smtp_username == null ? {} : {
+      "mail-smtp-username" = var.mail_smtp_username
+    },
+    var.mail_smtp_password == null ? {} : {
+      "mail-smtp-password" = var.mail_smtp_password
+    },
     var.metrics_auth_token == null ? {} : {
       "metrics-auth-token" = var.metrics_auth_token
     },
@@ -16,7 +22,7 @@ locals {
 
 resource "google_secret_manager_secret" "secrets" {
   for_each  = local.secrets
-  secret_id = "${local.service_name}-${each.key}"
+  secret_id = "${local.resource_name_prefix}-${each.key}"
 
   replication {
     auto {}

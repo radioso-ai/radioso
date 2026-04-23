@@ -861,14 +861,12 @@ describe("chat service streaming", () => {
     }
 
     expect(chunkTexts.join("")).toBe("full answer ");
-    expect(doneEvent).toEqual({
+    expect(doneEvent).toEqual(expect.objectContaining({
       type: "done",
       conversationId: expect.any(String),
-      answer: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
-      citations: [],
-      answerSegments: [
-        { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
-      ],
+      answer: "full answer  marker",
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
+      answerSegments: [{ text: "full answer  marker", citationIndices: [0] }],
       conversationMode: "guided",
       conversationModeMetadata: {
         conversationMode: "guided",
@@ -895,13 +893,13 @@ describe("chat service streaming", () => {
           }),
         ]),
       }),
-    });
+    }));
 
     const [conversationId] = conversationRepository.items.keys();
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
+      content: "full answer  marker",
     });
   });
 

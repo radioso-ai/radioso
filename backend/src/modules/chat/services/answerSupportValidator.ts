@@ -26,6 +26,31 @@ const NON_SUBSTANTIVE_PHRASES = new Set([
   "ok",
 ]);
 
+const LINK_SCAFFOLD_WORDS = new Set([
+  "you",
+  "can",
+  "read",
+  "more",
+  "here",
+  "and",
+  "or",
+  "see",
+  "source",
+  "sources",
+  "link",
+  "links",
+  "at",
+  "full",
+  "article",
+  "articles",
+  "visit",
+  "open",
+  "details",
+  "learn",
+  "about",
+  "the",
+]);
+
 const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
 
 const normalizeForMeaningCheck = (value: string): string =>
@@ -42,6 +67,43 @@ const hasWordLikeContent = (value: string): boolean => {
   }
 
   return false;
+};
+
+const extractSignificantTerms = (value: string): string[] => {
+  const terms: string[] = [];
+
+  for (const segment of wordSegmenter.segment(value.normalize("NFKC").toLowerCase())) {
+    if (!segment.isWordLike) {
+      continue;
+    }
+
+    const normalized = segment.segment.replace(/[^\p{L}\p{N}]+/gu, "");
+    if (normalized.length < 4) {
+      continue;
+    }
+    terms.push(normalized);
+  }
+
+  return [...new Set(terms)];
+};
+
+const extractWordTokens = (value: string): string[] => {
+  const tokens: string[] = [];
+
+  for (const segment of wordSegmenter.segment(value.normalize("NFKC").toLowerCase())) {
+    if (!segment.isWordLike) {
+      continue;
+    }
+
+    const normalized = segment.segment.replace(/[^\p{L}\p{N}]+/gu, "");
+    if (!normalized) {
+      continue;
+    }
+
+    tokens.push(normalized);
+  }
+
+  return tokens;
 };
 
 const isNonSubstantiveText = (value: string): boolean => {
@@ -96,6 +158,18 @@ const extractNormalizedUrls = (value: string): string[] =>
       .filter((url): url is string => Boolean(url)),
   )];
 
+const stripLinksAndUrls = (value: string): string =>
+  value
+    .replace(MARKDOWN_LINK_URL_PATTERN, "")
+    .replace(BARE_URL_PATTERN, "")
+    .replace(/\[[^\]]+\]\(\s*\)/g, "")
+    .trim();
+
+const isLinkScaffoldingText = (value: string): boolean => {
+  const tokens = extractWordTokens(value);
+  return tokens.length === 0 || tokens.every((token) => LINK_SCAFFOLD_WORDS.has(token));
+};
+
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
   chunkId: citation.chunkId,
@@ -103,6 +177,51 @@ const toChatCitation = (citation: CitationEvidence) => ({
 });
 
 export class AnswerSupportValidator {
+  private resolveImplicitCitationIndices(segment: AnswerSegment, citationEvidence: CitationEvidence[]): number[] | undefined {
+    if ((segment.citationIndices?.length ?? 0) > 0) {
+      return segment.citationIndices;
+    }
+
+    const segmentTerms = extractSignificantTerms(segment.text);
+    if (segmentTerms.length < 3) {
+      return undefined;
+    }
+
+    const scores = citationEvidence
+      .map((citation, index) => {
+        const citationTerms = new Set(extractSignificantTerms(`${citation.title} ${citation.content}`));
+        const matchedTerms = segmentTerms.filter((term) => citationTerms.has(term));
+        return {
+          index,
+          matches: matchedTerms.length,
+          ratio: matchedTerms.length / segmentTerms.length,
+        };
+      })
+      .filter((score) => score.matches >= 2)
+      .sort((left, right) => {
+        if (right.ratio !== left.ratio) {
+          return right.ratio - left.ratio;
+        }
+        return right.matches - left.matches;
+      });
+
+    const best = scores[0];
+    const second = scores[1];
+    if (!best) {
+      return undefined;
+    }
+
+    if (best.ratio < 0.5) {
+      return undefined;
+    }
+
+    if (second && best.ratio < 0.7 && best.matches <= second.matches) {
+      return undefined;
+    }
+
+    return [best.index];
+  }
+
   private resolveSourceUrlCitationIndices(segment: AnswerSegment, citationEvidence: CitationEvidence[]): number[] | undefined {
     if ((segment.citationIndices?.length ?? 0) > 0) {
       return segment.citationIndices;
@@ -111,6 +230,15 @@ export class AnswerSupportValidator {
     const normalizedUrls = extractNormalizedUrls(segment.text);
 
     if (normalizedUrls.length === 0) {
+      return undefined;
+    }
+
+    const residualText = stripLinksAndUrls(segment.text);
+    if (
+      hasWordLikeContent(residualText)
+      && !isNonSubstantiveText(residualText)
+      && !isLinkScaffoldingText(residualText)
+    ) {
       return undefined;
     }
 
@@ -166,7 +294,9 @@ export class AnswerSupportValidator {
     userExpectedLocale?: string | null;
   }): Promise<ValidatedAnswer> {
     const segmentResults = await Promise.all(input.answerSegments.map(async (segment) => {
-      const citationIndices = this.resolveSourceUrlCitationIndices(segment, input.citationEvidence);
+      const citationIndices =
+        this.resolveSourceUrlCitationIndices(segment, input.citationEvidence)
+        ?? this.resolveImplicitCitationIndices(segment, input.citationEvidence);
 
       if (isNonSubstantiveText(segment.text)) {
         return {

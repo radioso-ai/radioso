@@ -282,7 +282,101 @@ describe("answer support validator", () => {
     });
   });
 
-  it("treats link-only follow-up segments as supported when the URL matches cited source metadata", async () => {
+  it("recovers clearly grounded segments even when citation anchors are missing", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "How should I start meditating?",
+      answer: "Keep it short and simple. Begin with a few minutes each day.",
+      answerSegments: [
+        {
+          text: "Keep it short and simple. Begin with a few minutes each day.",
+        },
+      ],
+      citationEvidence: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Meditation Tips",
+          content: "Keep it short and simple. Begin with a few minutes each day instead of starting with a long session.",
+          sourceUrl: "https://example.com/meditation",
+        },
+      ],
+      retrievedContextSummaries: [
+        {
+          title: "Meditation Tips",
+          content: "Keep it short and simple. Begin with a few minutes each day instead of starting with a long session.",
+        },
+      ],
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("Keep it short and simple. Begin with a few minutes each day.");
+    expect(result.citations).toEqual([{ documentId: "doc-1", chunkId: "chunk-1", title: "Meditation Tips" }]);
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Keep it short and simple. Begin with a few minutes each day.",
+        citationIndices: [0],
+      },
+    ]);
+    expect(result.validation.answerModified).toBe(false);
+    expect(result.validation.supportedSegmentCount).toBe(1);
+  });
+
+  it("treats bare link-only follow-up segments as supported when the URL matches cited source metadata", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Where can I read more?",
+      answer: "The page explains testing and parsing content for users.\n\n[Guide](https://example.com/guide)",
+      answerSegments: [
+        {
+          text: "The page explains testing and parsing content for users",
+          citationIndices: [0],
+        },
+        {
+          text: "\n\n[Guide](https://example.com/guide)",
+        },
+      ],
+      citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe(
+      "The page explains testing and parsing content for users\n\n[Guide](https://example.com/guide)",
+    );
+    expect(result.answerSegments).toEqual([
+      {
+        text: "The page explains testing and parsing content for users",
+        citationIndices: [0],
+      },
+      {
+        text: "\n\n[Guide](https://example.com/guide)",
+        citationIndices: [0],
+      },
+    ]);
+    expect(result.validation).toEqual({
+      ran: true,
+      answerModified: false,
+      unsupportedSegmentCount: 0,
+      substantiveUnsupportedSegmentCount: 0,
+      supportedSegmentCount: 2,
+      nonSubstantiveSegmentCount: 0,
+      answerSupportPolicy: "strict",
+    });
+  });
+
+  it("treats link scaffolding around cited links as supported", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -487,6 +581,33 @@ describe("answer support validator", () => {
     ]);
     expect(result.validation.answerModified).toBe(false);
     expect(result.validation.supportedSegmentCount).toBe(1);
+  });
+
+  it("does not treat unsupported prose plus a cited URL as fully supported", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "What support is offered?",
+      answer: "The guide also offers 24/7 support: [Guide](https://example.com/guide)",
+      answerSegments: [
+        {
+          text: "The guide also offers 24/7 support: [Guide](https://example.com/guide)",
+        },
+      ],
+      citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("No se pudo verificar esa respuesta con los documentos recuperados.");
+    expect(result.validation.unsupportedSegmentCount).toBe(1);
+    expect(result.validation.supportedSegmentCount).toBe(0);
   });
 
   it("preserves model-marked unsupported notices under strict validation", async () => {

@@ -153,6 +153,45 @@ components:
           type: string
       required:
         - token
+    WorkspaceMcpContextResponse:
+      type: object
+      properties:
+        apiVersion:
+          type: string
+          enum:
+            - 0.1.0
+        mcpContextVersion:
+          type: string
+          enum:
+            - 2026-04-22
+        supportedTools:
+          type: array
+          items:
+            type: string
+            enum:
+              - answer_grounded
+              - create_document
+              - delete_document
+              - describe_capabilities
+              - get_document
+              - get_retrieval_settings
+              - list_documents
+              - reprocess_document
+              - search_documents
+              - update_document
+              - update_retrieval_settings
+        workspaceId:
+          type: string
+          format: uuid
+        workspaceName:
+          type: string
+          minLength: 1
+      required:
+        - apiVersion
+        - mcpContextVersion
+        - supportedTools
+        - workspaceId
+        - workspaceName
     RegisterRequest:
       type: object
       properties:
@@ -3124,8 +3163,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Workspace not found
+        "403":
+          description: Workspace token no longer resolves to an active workspace
           content:
             application/json:
               schema:
@@ -3136,6 +3175,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RateLimitExceededResponse"
+  /api/v1/workspace/mcp/context:
+    get:
+      tags:
+        - Workspace
+      summary: Get workspace MCP context for a bearer-authenticated workspace token
+      operationId: getWorkspaceMcpContext
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Workspace MCP context returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceMcpContextResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace token no longer resolves to an active workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspace:
     get:
       tags:

@@ -33,6 +33,7 @@ EXPECTED_SWC_PACKAGE="$(
 CURRENT_INSTALL_STATE="${CURRENT_HASH}:${NODE_VERSION}:${EXPECTED_SWC_PACKAGE}"
 SAVED_INSTALL_STATE=""
 SWC_READY=1
+NEXT_RUNTIME_READY=1
 
 if [ -f "$INSTALL_STATE_FILE" ]; then
   SAVED_INSTALL_STATE="$(cat "$INSTALL_STATE_FILE")"
@@ -44,7 +45,19 @@ if [ -n "$EXPECTED_SWC_PACKAGE" ]; then
   fi
 fi
 
-if [ ! -d node_modules ] || [ "$CURRENT_INSTALL_STATE" != "$SAVED_INSTALL_STATE" ] || [ "$SWC_READY" -ne 1 ]; then
+for required_module in \
+  "next/package.json" \
+  "next/dist/pages/_error" \
+  "next/dist/compiled/jest-worker/processChild.js" \
+  "@swc/helpers/package.json"
+do
+  if ! node -e "require.resolve('${required_module}')" >/dev/null 2>&1; then
+    NEXT_RUNTIME_READY=0
+    break
+  fi
+done
+
+if [ ! -d node_modules ] || [ "$CURRENT_INSTALL_STATE" != "$SAVED_INSTALL_STATE" ] || [ "$SWC_READY" -ne 1 ] || [ "$NEXT_RUNTIME_READY" -ne 1 ]; then
   echo "Installing frontend dependencies..."
   npm ci
   printf '%s' "$CURRENT_INSTALL_STATE" > "$INSTALL_STATE_FILE"

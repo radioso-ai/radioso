@@ -65,6 +65,7 @@ describe("password reset integration", () => {
     });
 
     expect(confirm.status).toBe(200);
+    expect(confirm.body.email).toBe("recover@example.com");
     expect(confirm.headers["set-cookie"]?.[0]).toContain("radioso_session=");
 
     const oldSessionResponse = await request(app)
@@ -77,5 +78,47 @@ describe("password reset integration", () => {
       password: "newsecurepassword",
     });
     expect(login.status).toBe(200);
+  });
+
+  it("rejects an older reset link after a replacement email is delivered", async () => {
+    const { app, dependencies } = createTestApp({
+      envOverrides: {
+        APP_BASE_URL: "http://localhost:3000",
+      },
+    });
+
+    await issueTestSession(app, "recover-replaced@example.com");
+
+    const firstRequest = await request(app).post("/api/v1/auth/password-reset/request").send({
+      email: "recover-replaced@example.com",
+    });
+    expect(firstRequest.status).toBe(202);
+
+    const firstUrl = dependencies.emailService.sentMessages.at(-1)?.metadata?.resetUrl;
+    const firstToken = firstUrl ? new URL(firstUrl).searchParams.get("token") : null;
+
+    const secondRequest = await request(app).post("/api/v1/auth/password-reset/request").send({
+      email: "recover-replaced@example.com",
+    });
+    expect(secondRequest.status).toBe(202);
+
+    const secondUrl = dependencies.emailService.sentMessages.at(-1)?.metadata?.resetUrl;
+    const secondToken = secondUrl ? new URL(secondUrl).searchParams.get("token") : null;
+
+    const staleConfirm = await request(app).post("/api/v1/auth/password-reset/confirm").send({
+      token: firstToken,
+      password: "newsecurepassword",
+    });
+
+    expect(staleConfirm.status).toBe(401);
+    expect(staleConfirm.body.error.code).toBe("unauthorized");
+
+    const freshConfirm = await request(app).post("/api/v1/auth/password-reset/confirm").send({
+      token: secondToken,
+      password: "newsecurepassword",
+    });
+
+    expect(freshConfirm.status).toBe(200);
+    expect(freshConfirm.body.email).toBe("recover-replaced@example.com");
   });
 });

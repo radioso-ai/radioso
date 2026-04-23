@@ -66,7 +66,7 @@ export function ResetPasswordScreen({ token }: { token?: string }) {
     try {
       const response = await authApi.confirmPasswordReset({ token: token ?? '', password })
       seedWorkspaceSession(response.workspaceId)
-      await login(email || '', response.userId, response.accountId)
+      await login(response.email, response.userId, response.accountId)
       router.replace(buildAccountRoute(response.accountId, 'chat', undefined, response.workspaceId))
     } catch (error) {
       setError(getErrorMessage(error, 'Password reset failed. Please request a new link.'))
@@ -91,17 +91,6 @@ export function ResetPasswordScreen({ token }: { token?: string }) {
 
         {isConfirmMode ? (
           <form onSubmit={handleConfirmSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-                disabled={isLoading}
-              />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="password">New Password</Label>
               <Input

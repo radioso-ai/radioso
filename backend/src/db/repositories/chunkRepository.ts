@@ -39,7 +39,8 @@ export class ChunkRepository implements ChunkRepositoryPort {
 
   async replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void> {
     await this.database.withTransaction(async (client) => {
-      await client.query("DELETE FROM chunks WHERE document_id = $1", [documentId]);
+      const workspaceId = chunks[0]?.workspaceId ?? (await lookupWorkspaceIdForDocument(client, documentId));
+      await client.query("DELETE FROM chunks WHERE document_id = $1 AND workspace_id = $2", [documentId, workspaceId]);
       await insertChunks(client, chunks);
     });
   }
@@ -65,7 +66,10 @@ export class ChunkRepository implements ChunkRepositoryPort {
         return false;
       }
 
-      await client.query("DELETE FROM chunks WHERE document_id = $1", [input.documentId]);
+      await client.query("DELETE FROM chunks WHERE document_id = $1 AND workspace_id = $2", [
+        input.documentId,
+        input.workspaceId,
+      ]);
       await insertChunks(client, input.chunks);
       await client.query(
         `UPDATE documents
@@ -83,3 +87,20 @@ export class ChunkRepository implements ChunkRepositoryPort {
     });
   }
 }
+
+const lookupWorkspaceIdForDocument = async (client: PoolClient, documentId: string): Promise<string> => {
+  const result = await client.query<{ workspace_id: string }>(
+    `SELECT workspace_id
+     FROM documents
+     WHERE id = $1`,
+    [documentId],
+  );
+
+  const workspaceId = result.rows[0]?.workspace_id;
+
+  if (!workspaceId) {
+    throw new Error(`Document ${documentId} not found while deleting chunks`);
+  }
+
+  return workspaceId;
+};

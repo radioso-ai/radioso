@@ -12,6 +12,7 @@ import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 import {
   buildWebsiteEmbedCssVars,
+  formatWebsiteEmbedStartingMessage,
   formatWebsiteEmbedRateLimitRetry,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
@@ -126,6 +127,7 @@ function RateLimitBanner({
 }
 
 function PublicChatContent({
+  initialWorkspaceName,
   localeOverride,
   onStartNewChat,
   onRequestCollapse,
@@ -133,6 +135,7 @@ function PublicChatContent({
   copyOverrides,
   themeOverrides,
 }: {
+  initialWorkspaceName?: string | null
   localeOverride?: string | null
   onStartNewChat?: () => Promise<void>
   onRequestCollapse?: () => void
@@ -158,6 +161,7 @@ function PublicChatContent({
     startNewChat,
   } = useAnonymousChat()
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const resolvedWorkspaceName = workspaceName ?? initialWorkspaceName ?? copy.embeddedChatTitle
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -212,8 +216,14 @@ function PublicChatContent({
 
   if (isHydrating) {
     return (
-      <div className="flex flex-1 items-center justify-center">
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
         <Spinner className="h-6 w-6" />
+        <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
+          {formatWebsiteEmbedStartingMessage({
+            embeddedChatStartingMessage: copy.embeddedChatStartingMessage,
+            embeddedChatTitle: resolvedWorkspaceName,
+          })}
+        </p>
       </div>
     )
   }
@@ -240,9 +250,9 @@ function PublicChatContent({
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <AssistantAvatar avatarUrl={avatarUrl} label={workspaceName ?? copy.embeddedChatTitle} themeOverrides={themeOverrides} />
+            <AssistantAvatar avatarUrl={avatarUrl} label={resolvedWorkspaceName} themeOverrides={themeOverrides} />
             <div>
-              <h1 className="text-lg font-medium">{workspaceName}</h1>
+              <h1 className="text-lg font-medium">{resolvedWorkspaceName}</h1>
               <p className="text-sm" style={{ color: theme.mutedForeground }}>
                 {copy.publicChatSubtitle}
               </p>
@@ -323,7 +333,7 @@ function PublicChatContent({
               onOpenDocument={async () => 'unavailable'}
               onSuggestionSelect={handleSuggestionSelect}
               assistantAvatarUrl={avatarUrl}
-              assistantAvatarLabel={workspaceName ?? copy.embeddedChatTitle}
+              assistantAvatarLabel={resolvedWorkspaceName}
               theme={theme}
             />
             <div ref={messagesEndRef} />
@@ -384,6 +394,7 @@ function PublicChatContent({
 
 export function PublicChatShell({
   token,
+  initialWorkspaceName,
   localeOverride,
   onStartNewChat,
   onRequestCollapse,
@@ -392,6 +403,7 @@ export function PublicChatShell({
   themeOverrides,
 }: {
   token: string
+  initialWorkspaceName?: string | null
   localeOverride?: string | null
   onStartNewChat?: () => Promise<void>
   onRequestCollapse?: () => void
@@ -412,6 +424,7 @@ export function PublicChatShell({
         }}
       >
         <PublicChatContent
+          initialWorkspaceName={initialWorkspaceName}
           localeOverride={localeOverride}
           onStartNewChat={onStartNewChat}
           onRequestCollapse={onRequestCollapse}

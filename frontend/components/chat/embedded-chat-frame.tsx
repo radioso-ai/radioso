@@ -51,9 +51,9 @@ function EmbeddedChatUnavailable({
 }
 
 type BootstrapState =
-  | { status: 'bootstrapping' }
+  | { status: 'bootstrapping'; workspaceName?: string | null }
   | { status: 'error'; message: string }
-  | { status: 'ready'; publicChatToken: string }
+  | { status: 'ready'; publicChatToken: string; workspaceName?: string | null }
 
 const READY_MESSAGE = 'radioso:embed:ready'
 const SESSION_MESSAGE = 'radioso:embed:session'
@@ -86,7 +86,8 @@ export function EmbeddedChatFrame({
       }
     }
 
-    return { status: 'bootstrapping' }
+    const storedSession = typeof window !== 'undefined' ? readStoredEmbedBootstrapSession(token) : null
+    return { status: 'bootstrapping', workspaceName: storedSession?.workspaceName ?? null }
   })
   const isBootstrappedRef = useRef(false)
 
@@ -127,6 +128,7 @@ export function EmbeddedChatFrame({
         const session =
           event.data.session &&
           typeof event.data.session === 'object' &&
+          typeof event.data.session.workspaceName === 'string' &&
           typeof event.data.session.publicChatToken === 'string' &&
           typeof event.data.session.embedSessionToken === 'string'
             ? event.data.session
@@ -139,11 +141,16 @@ export function EmbeddedChatFrame({
         isBootstrappedRef.current = true
         stopHandshake()
         storeEmbedBootstrapSession(token, {
+          workspaceName: session.workspaceName,
           publicChatToken: session.publicChatToken,
           embedSessionToken: session.embedSessionToken,
           expiresAt: typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString(),
         })
-        setState({ status: 'ready', publicChatToken: session.publicChatToken })
+        setState({
+          status: 'ready',
+          publicChatToken: session.publicChatToken,
+          workspaceName: session.workspaceName,
+        })
         return
       }
 
@@ -198,7 +205,10 @@ export function EmbeddedChatFrame({
       >
         <Spinner className="h-6 w-6" />
         <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
-          {formatWebsiteEmbedStartingMessage(copy)}
+          {formatWebsiteEmbedStartingMessage({
+            embeddedChatStartingMessage: copy.embeddedChatStartingMessage,
+            embeddedChatTitle: state.workspaceName?.trim() || copy.embeddedChatTitle,
+          })}
         </p>
       </div>
     )
@@ -219,7 +229,7 @@ export function EmbeddedChatFrame({
     clearStoredAnonymousSession(state.publicChatToken)
     clearStoredEmbedBootstrapSession(token)
     isBootstrappedRef.current = false
-    setState({ status: 'bootstrapping' })
+    setState({ status: 'bootstrapping', workspaceName: state.workspaceName ?? null })
     setResetNonce((current) => current + 1)
   }
 
@@ -235,6 +245,7 @@ export function EmbeddedChatFrame({
   return (
     <PublicChatShell
       token={state.publicChatToken}
+      initialWorkspaceName={state.workspaceName}
       localeOverride={localeOverride}
       onStartNewChat={handleStartNewChat}
       onRequestCollapse={handleRequestCollapse}

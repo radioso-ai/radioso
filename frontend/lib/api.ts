@@ -13,6 +13,7 @@ const EMBED_SESSION_STORAGE_PREFIX = 'radioso.embedSession.'
 const EMBED_BOOTSTRAP_STORAGE_PREFIX = 'radioso.embedBootstrap.'
 
 interface StoredEmbedBootstrapSession {
+  workspaceName?: string
   publicChatToken: string
   embedSessionToken: string
   expiresAt: string
@@ -150,6 +151,7 @@ export const readStoredEmbedBootstrapSession = (token: string): StoredEmbedBoots
     }
 
     return {
+      workspaceName: typeof parsed.workspaceName === 'string' ? parsed.workspaceName : undefined,
       publicChatToken: parsed.publicChatToken,
       embedSessionToken: parsed.embedSessionToken,
       expiresAt: parsed.expiresAt,

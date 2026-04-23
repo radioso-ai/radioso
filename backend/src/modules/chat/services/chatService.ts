@@ -593,7 +593,7 @@ export class ChatService {
       ? await this.messageRepository.listRecentByConversationId(
           input.workspaceId,
           conversation.id,
-          RETRIEVAL_BEHAVIOR.continuityContextMaxMessages,
+          RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
         )
       : [];
     const rewriteContinuityState = conversation

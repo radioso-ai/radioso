@@ -82,7 +82,6 @@ describe('embed widget helpers', () => {
       },
       undefined,
       {
-        locale: 'it-IT',
         initialState: 'open',
         avatarUrl: 'https://cdn.example.com/avatar.gif',
         copy: {
@@ -95,7 +94,6 @@ describe('embed widget helpers', () => {
       },
     )
 
-    expect(snippet).toContain('data-radioso-locale="it-IT"')
     expect(snippet).toContain('data-radioso-initial-state="open"')
     expect(snippet).toContain('data-radioso-avatar-url="https://cdn.example.com/avatar.gif"')
     expect(snippet).toContain('data-radioso-copy="{&quot;publicChatEmptyTitle&quot;:&quot;Ask us anything&quot;}"')
@@ -115,7 +113,6 @@ describe('embed widget helpers', () => {
       },
       undefined,
       {
-        locale: 'fr-FR',
         initialState: 'open',
         avatarUrl: 'https://cdn.example.com/avatar.gif',
         copy: { publicChatEmptyTitle: 'Bonjour' },
@@ -130,7 +127,6 @@ describe('embed widget helpers', () => {
     expect(url.searchParams.get('label')).toBe('Talk to us')
     expect(url.searchParams.get('icon')).toBe('message')
     expect(url.searchParams.get('position')).toBe('bottom-left')
-    expect(url.searchParams.get('locale')).toBe('fr-FR')
     expect(url.searchParams.get('initialState')).toBe('open')
     expect(url.searchParams.get('avatarUrl')).toBe('https://cdn.example.com/avatar.gif')
     expect(url.searchParams.get('copy')).toBe('{"publicChatEmptyTitle":"Bonjour"}')
@@ -156,8 +152,8 @@ describe('embed widget helpers', () => {
     )
   })
 
-  it('normalizes supported locale, initial-state, and avatar overrides', () => {
-    expect(normalizeWebsiteEmbedLocale(' it-IT ')).toBe('it')
+  it('normalizes locale, initial-state, and avatar overrides', () => {
+    expect(normalizeWebsiteEmbedLocale(' it-IT ')).toBe('it-IT')
     expect(normalizeWebsiteEmbedInitialState('OPEN')).toBe('open')
     expect(normalizeWebsiteEmbedAvatarUrl('https://cdn.example.com/avatar.gif')).toBe(
       'https://cdn.example.com/avatar.gif',
@@ -186,12 +182,12 @@ describe('embed widget helpers', () => {
     })
   })
 
-  it('merges locale copy and theme overrides into the resolved appearance', () => {
+  it('merges English-default copy and theme overrides into the resolved appearance', () => {
     const copy = getWebsiteEmbedCopy('fr-FR', { publicChatEmptyTitle: 'Bonjour' })
     const theme = getWebsiteEmbedTheme({ accent: '#224466' })
 
     expect(copy.publicChatEmptyTitle).toBe('Bonjour')
-    expect(formatWebsiteEmbedRateLimitRetry(copy, 12)).toBe('Reessayez dans 12s.')
+    expect(formatWebsiteEmbedRateLimitRetry(copy, 12)).toBe('Try again in 12s.')
     expect(theme.accent).toBe('#224466')
   })
 })

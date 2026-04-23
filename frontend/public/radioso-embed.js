@@ -7,33 +7,9 @@
   const READY_MESSAGE = 'radioso:embed:ready'
   const SESSION_MESSAGE = 'radioso:embed:session'
   const ERROR_MESSAGE = 'radioso:embed:error'
-  const LOCALE_PATTERN = /^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$/
-
-  const copyByLocale = {
-    de: {
-      launcherDefaultLabel: 'Chatte mit uns',
-      iframeTitle: 'Eingebetteter Radioso-Chat',
-    },
-    en: {
-      launcherDefaultLabel: 'Chat with us',
-      iframeTitle: 'Radioso embedded chat',
-    },
-    es: {
-      launcherDefaultLabel: 'Chatea con nosotros',
-      iframeTitle: 'Chat incrustado de Radioso',
-    },
-    fr: {
-      launcherDefaultLabel: 'Discutez avec nous',
-      iframeTitle: 'Chat integre Radioso',
-    },
-    it: {
-      launcherDefaultLabel: 'Chatta con noi',
-      iframeTitle: 'Chat incorporata Radioso',
-    },
-    pt: {
-      launcherDefaultLabel: 'Converse conosco',
-      iframeTitle: 'Chat incorporado do Radioso',
-    },
+  const defaultCopy = {
+    launcherDefaultLabel: 'Chat with us',
+    iframeTitle: 'Radioso embedded chat',
   }
 
   const defaultTheme = {
@@ -124,20 +100,6 @@
     }
   }
 
-  const normalizeLocale = (value) => {
-    if (!value) {
-      return null
-    }
-
-    const trimmed = value.trim()
-    if (!trimmed || trimmed.length > 35 || !LOCALE_PATTERN.test(trimmed)) {
-      return null
-    }
-
-    const language = trimmed.split('-')[0].toLowerCase()
-    return Object.prototype.hasOwnProperty.call(copyByLocale, language) ? language : null
-  }
-
   const normalizeInitialState = (value) => {
     if (!value) {
       return null
@@ -197,8 +159,8 @@
     return next
   }
 
-  const getCopy = (locale, overrides) => {
-    const next = { ...(copyByLocale[locale] ?? copyByLocale.en) }
+  const getCopy = (overrides) => {
+    const next = { ...defaultCopy }
     if (overrides && typeof overrides === 'object') {
       if (overrides.launcherDefaultLabel) {
         next.launcherDefaultLabel = overrides.launcherDefaultLabel
@@ -247,9 +209,6 @@
     iframe.style.background = options.theme.panelBackground
 
     const iframeUrl = new URL(`/embed/${encodeURIComponent(token)}`, scriptUrl)
-    if (options.locale) {
-      iframeUrl.searchParams.set('locale', options.locale)
-    }
     if (options.avatarUrl) {
       iframeUrl.searchParams.set('avatar', options.avatarUrl)
     }
@@ -371,10 +330,9 @@
     window.__radiosoEmbedMounted = true
 
     const scriptUrl = getScriptUrl(script)
-    const locale = normalizeLocale(script.dataset.radiosoLocale)
     const copyOverrides = sanitizeOverrides(parseJsonOverrides(script.dataset.radiosoCopy), copyOverrideKeys, 280)
     const themeOverrides = sanitizeOverrides(parseJsonOverrides(script.dataset.radiosoTheme), themeOverrideKeys, 160)
-    const copy = getCopy(locale, copyOverrides)
+    const copy = getCopy(copyOverrides)
     const theme = { ...defaultTheme, ...themeOverrides }
     const rawLabel = script.dataset.radiosoLauncherLabel
     const label =
@@ -420,7 +378,6 @@
       }
 
       iframe = createIframe(scriptUrl, token, {
-        locale,
         avatarUrl,
         copy,
         copyOverrides,

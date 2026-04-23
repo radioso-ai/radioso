@@ -34,7 +34,6 @@ import {
   formatWebsiteEmbedOrigins,
   normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedInitialState,
-  normalizeWebsiteEmbedLocale,
   parseWebsiteEmbedJsonOverrides,
   parseWebsiteEmbedOrigins,
   sanitizeWebsiteEmbedCopyOverrides,
@@ -97,7 +96,6 @@ export function GeneralTab({
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
   const [websiteEmbedOrigins, setWebsiteEmbedOrigins] = useState('')
-  const [websiteEmbedSnippetLocale, setWebsiteEmbedSnippetLocale] = useState('')
   const [websiteEmbedSnippetInitialState, setWebsiteEmbedSnippetInitialState] = useState('')
   const [websiteEmbedSnippetAvatarUrl, setWebsiteEmbedSnippetAvatarUrl] = useState('')
   const [websiteEmbedSnippetCopyJson, setWebsiteEmbedSnippetCopyJson] = useState('')
@@ -390,7 +388,6 @@ export function GeneralTab({
       return null
     }
 
-    const normalizedLocale = normalizeWebsiteEmbedLocale(websiteEmbedSnippetLocale) ?? undefined
     const normalizedInitialState = normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined
     const normalizedAvatarUrl =
       websiteEmbedSnippetAvatarUrl.trim().length > 0
@@ -404,7 +401,6 @@ export function GeneralTab({
     }
 
     const hasLocalSnippetOverrides =
-      Boolean(normalizedLocale) ||
       Boolean(normalizedInitialState) ||
       Boolean(normalizedAvatarUrl) ||
       websiteEmbedSnippetCopyJson.trim().length > 0 ||
@@ -421,7 +417,6 @@ export function GeneralTab({
         websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
         websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
       }, undefined, {
-        locale: normalizedLocale,
         initialState: normalizedInitialState,
         avatarUrl: normalizedAvatarUrl,
         copy: websiteEmbedSnippetCopyOverrides,
@@ -435,14 +430,15 @@ export function GeneralTab({
     websiteEmbedSnippetCopyJsonError,
     websiteEmbedSnippetCopyOverrides,
     websiteEmbedSnippetInitialState,
-    websiteEmbedSnippetLocale,
     websiteEmbedSnippetThemeJson,
     websiteEmbedSnippetThemeJsonError,
     websiteEmbedSnippetThemeOverrides,
   ])
 
   const hasWebsiteEmbedAdvancedOverrides =
-    websiteEmbedSnippetCopyJson.trim().length > 0 || websiteEmbedSnippetThemeJson.trim().length > 0
+    Boolean(websiteEmbedSnippetInitialState.trim()) ||
+    websiteEmbedSnippetCopyJson.trim().length > 0 ||
+    websiteEmbedSnippetThemeJson.trim().length > 0
 
   const websiteEmbedDemoUrl = useMemo(() => {
     if (
@@ -465,7 +461,6 @@ export function GeneralTab({
       },
       window.location.origin,
       {
-        locale: normalizeWebsiteEmbedLocale(websiteEmbedSnippetLocale) ?? undefined,
         initialState: normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined,
         avatarUrl: normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl) ?? undefined,
         copy: websiteEmbedSnippetCopyOverrides,
@@ -481,7 +476,6 @@ export function GeneralTab({
     websiteEmbedSnippetCopyJsonError,
     websiteEmbedSnippetCopyOverrides,
     websiteEmbedSnippetInitialState,
-    websiteEmbedSnippetLocale,
     websiteEmbedSnippetThemeJson,
     websiteEmbedSnippetThemeJsonError,
     websiteEmbedSnippetThemeOverrides,
@@ -1047,43 +1041,9 @@ export function GeneralTab({
                       <Label className="text-foreground">Install snippet</Label>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Keep this simple for most installs: pick the language, decide whether the panel starts open, and
-                      optionally add a custom avatar. Visible text and brand colors are tucked into short customize
-                      sections, and full JSON overrides stay available for edge cases.
+                      Most installs should keep the hosted widget defaults and only set an avatar when needed. Text,
+                      colors, and launch behavior stay tucked away under optional customize sections.
                     </p>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="websiteEmbedSnippetLocale" className="text-foreground">Language</Label>
-                        <select
-                          id="websiteEmbedSnippetLocale"
-                          value={websiteEmbedSnippetLocale}
-                          onChange={(event) => setWebsiteEmbedSnippetLocale(event.target.value)}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
-                        >
-                          <option value="">Use browser language</option>
-                          <option value="de-DE">German</option>
-                          <option value="en-US">English</option>
-                          <option value="es-ES">Spanish</option>
-                          <option value="fr-FR">French</option>
-                          <option value="it-IT">Italian</option>
-                          <option value="pt-BR">Portuguese</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="websiteEmbedSnippetInitialState" className="text-foreground">Open behavior</Label>
-                        <select
-                          id="websiteEmbedSnippetInitialState"
-                          value={websiteEmbedSnippetInitialState}
-                          onChange={(event) => setWebsiteEmbedSnippetInitialState(event.target.value)}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
-                        >
-                          <option value="">Use workspace default</option>
-                          <option value="collapsed">Start collapsed</option>
-                          <option value="open">Start open</option>
-                        </select>
-                      </div>
-                    </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="websiteEmbedSnippetAvatarUrl" className="text-foreground">Avatar image or GIF URL</Label>
@@ -1268,7 +1228,7 @@ export function GeneralTab({
                         <div>
                           <p className="text-sm font-medium text-foreground">Expert JSON overrides</p>
                           <p className="text-xs text-muted-foreground">
-                            Only use this when you need token-level control beyond the named fields above.
+                            Only use this when you need launch behavior or token-level control beyond the named fields above.
                           </p>
                         </div>
                         <span className="text-xs text-muted-foreground">
@@ -1277,6 +1237,23 @@ export function GeneralTab({
                       </summary>
 
                       <div className="mt-4 space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="websiteEmbedSnippetInitialState" className="text-foreground">Open behavior</Label>
+                          <select
+                            id="websiteEmbedSnippetInitialState"
+                            value={websiteEmbedSnippetInitialState}
+                            onChange={(event) => setWebsiteEmbedSnippetInitialState(event.target.value)}
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                          >
+                            <option value="">Use workspace default</option>
+                            <option value="collapsed">Start collapsed</option>
+                            <option value="open">Start open</option>
+                          </select>
+                          <p className="text-xs text-muted-foreground">
+                            Leave this unset unless the customer explicitly wants the panel to open immediately.
+                          </p>
+                        </div>
+
                         <div className="space-y-2">
                           <Label htmlFor="websiteEmbedSnippetCopyJson" className="text-foreground">Copy overrides JSON</Label>
                           <Textarea

@@ -12,13 +12,13 @@ describe('resolveAnonymousChatBootstrapLocale', () => {
     ).toBe('it-IT')
   })
 
-  it('falls back to the browser locale when the override is unsupported', () => {
+  it('ignores browser locales when no explicit override is provided', () => {
     expect(
       resolveAnonymousChatBootstrapLocale({
         localeOverride: 'bad_locale',
         browserLocales: ['fr-FR', 'en-US'],
       }),
-    ).toBe('fr-FR')
+    ).toBeUndefined()
   })
 
   it('returns undefined when neither override nor browser locales are usable', () => {

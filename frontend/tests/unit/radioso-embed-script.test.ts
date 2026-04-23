@@ -12,12 +12,9 @@ import {
 } from '@/lib/embed-widget'
 
 describe('website embed runtime helpers', () => {
-  it('resolves localized copy for supported locale overrides', () => {
-    expect(getWebsiteEmbedCopy('it-IT').launcherDefaultLabel).toBe('Chatta con noi')
-    expect(getWebsiteEmbedCopy('es-ES').startPrompt).toBe('Haz una pregunta...')
-  })
-
-  it('falls back to English copy for unsupported locale overrides', () => {
+  it('uses English copy by default, even when a locale hint is present', () => {
+    expect(getWebsiteEmbedCopy('it-IT').launcherDefaultLabel).toBe('Chat with us')
+    expect(getWebsiteEmbedCopy('es-ES').startPrompt).toBe('Ask a question...')
     expect(getWebsiteEmbedCopy('xx-ZZ').launcherDefaultLabel).toBe('Chat with us')
   })
 
@@ -28,7 +25,7 @@ describe('website embed runtime helpers', () => {
       'https://cdn.example.com/avatar.png',
     )
     expect(normalizeWebsiteEmbedAvatarUrl('data:image/png;base64,abc')).toBeNull()
-    expect(normalizeWebsiteEmbedLocale('de-DE')).toBe('de')
+    expect(normalizeWebsiteEmbedLocale('de-DE')).toBe('de-DE')
   })
 
   it('sanitizes copy and theme overrides and formats retry text', () => {

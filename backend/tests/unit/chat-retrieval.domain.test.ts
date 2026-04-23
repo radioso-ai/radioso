@@ -1001,7 +1001,13 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.prompt).toContain("Conversation mode: guided.");
-    expect(result.prompt).toContain("After the direct answer, you may optionally suggest one or two grounded adjacent directions.");
+    expect(result.prompt).toContain("Answer the user's question directly and concisely.");
+    expect(result.prompt).toContain(
+      "Do not append suggested next questions or adjacent directions in the answer body; those are surfaced separately when available.",
+    );
+    expect(result.prompt).toContain(
+      'Do not append suggested next questions, adjacent topics, or "you could also ask" lists after the answer; those are surfaced separately in the product UI.',
+    );
   });
 
   it("includes exploratory conversation-mode instructions in the prompt", () => {
@@ -1016,6 +1022,9 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.prompt).toContain("Conversation mode: exploratory.");
-    expect(result.prompt).toContain("After the direct answer, you may optionally mention two or three grounded adjacent directions");
+    expect(result.prompt).toContain("Answer the user's question directly, and stay grounded in the retrieved material.");
+    expect(result.prompt).toContain(
+      "Do not append suggested next questions or adjacent directions in the answer body; those are surfaced separately when available.",
+    );
   });
 });

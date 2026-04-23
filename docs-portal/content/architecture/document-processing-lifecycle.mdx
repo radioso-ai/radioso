@@ -3,10 +3,64 @@ title: Document processing lifecycle
 description: How documents move from uploaded files to searchable chunks.
 ---
 
+import { Callout, Steps } from 'nextra/components'
+
 # Document processing lifecycle
 
-Uploaded content is stored, parsed, chunked, embedded, and made available for retrieval. That pipeline is intentionally separate from the live chat path.
+Document processing is the path that turns raw document input into searchable chunks. It is intentionally separate from live chat so uploads can be durable, retryable, and explicit about status.
 
-## Operational implication
+## Lifecycle
 
-If chat returns nothing useful for a newly uploaded document, confirm processing has completed before treating it as a retrieval bug.
+<Steps>
+### Ingest or import the document
+
+Documents enter through either inline text ingestion or file import. Inline ingestion accepts title, content, optional metadata, and an optional external document id. File import accepts a multipart upload and preserves source file details.
+
+### Queue background work
+
+The API stores the document record and queues a processing job. The initial response is `202 Accepted`, not a completed indexing result.
+
+### Materialize source content
+
+For uploaded files, Radioso reads the stored source file and extracts normalized markdown or text content before chunking. Inline text documents skip this storage round-trip.
+
+### Chunk the content
+
+The worker loads workspace ingestion settings and applies the configured chunking strategy. Fixed-window and structured chunking both map to workspace-scoped settings.
+
+### Embed and publish chunks
+
+Each chunk gets search text and an embedding. Chunks are then published for the specific document revision so stale work does not overwrite newer content.
+
+### Mark the document ready for retrieval
+
+Once the worker publishes the chunks, the document becomes usable in document search and grounded chat.
+</Steps>
+
+## Why revisions matter
+
+Document processing is revision-aware. If a document is updated while an older job is still running, the older job is treated as stale and does not publish outdated chunks over the newer revision.
+
+## Source kinds
+
+- Inline text documents store their source content directly in the document record.
+- Uploaded files store source file details and are materialized during processing before chunking begins.
+
+## Failure and verification
+
+If a newly uploaded document does not influence answers yet, verify these in order:
+
+1. the document exists in the workspace
+2. its status moved out of pending or processing
+3. processing did not record a failure reason
+4. the document actually produced chunks for the latest revision
+
+<Callout type="warning" emoji="!">
+  A missing answer for a newly uploaded document is often a processing-status problem, not a retrieval-ranking problem.
+</Callout>
+
+## Related pages
+
+- [Document processing](/operators/document-processing)
+- [Document upload guide](/guides/document-upload)
+- [Retrieval pipeline](/architecture/retrieval-pipeline)

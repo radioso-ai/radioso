@@ -7,25 +7,41 @@ import { Cards, Callout, Steps } from 'nextra/components'
 
 # Radioso for teams that need answers they can defend
 
-Radioso is built for grounded answers, traceable citations, and embedded support experiences. The goal of this site is simple: get you from evaluation to first success quickly, then give you enough reference material to trust what you are deploying.
+Radioso is built for teams that need grounded answers, traceable citations, and embedded support experiences. The goal of this site is simple: help you reach a real first success, then explain the system well enough that you can trust it in production.
 
 <Callout type="info" emoji="↗">
-  Three paths matter most: run Radioso locally, embed it on a site, or upload docs and ask through the API.
+  Choose one path first: evaluate locally, integrate through the API, or launch the website embed.
 </Callout>
 
-## Start here
+## Choose your path
 
 <Cards num={3}>
-  <Cards.Card title="Run locally in 5 minutes" href="/quickstarts/run-locally">
-    Bring up the full stack with Docker, create a workspace, upload a document, and ask the first grounded question.
+  <Cards.Card title="Evaluate locally" href="/quickstarts/run-locally">
+    Bring up the full stack with Docker, create or join a workspace, upload a document, and verify one grounded answer in your own environment.
   </Cards.Card>
-  <Cards.Card title="Embed on your website" href="/quickstarts/website-embed">
-    Use Radioso as a support assistant on a public site with a hosted widget and workspace-scoped settings.
+  <Cards.Card title="Launch the website embed" href="/quickstarts/website-embed">
+    Configure allowed origins, enable the embed launcher, verify session bootstrap, and test both approved and blocked origins before rollout.
   </Cards.Card>
-  <Cards.Card title="API first success" href="/quickstarts/api-first-success">
-    Upload a document, index it, and ask a question with plain HTTP or the TypeScript SDK.
+  <Cards.Card title="Integrate API-first" href="/quickstarts/api-first-success">
+    Create an account, reveal a workspace token, upload content, and ask a question with plain HTTP or the TypeScript SDK.
   </Cards.Card>
 </Cards>
+
+## What success looks like
+
+<Steps>
+### Reach a visible result
+
+Do not stop at setup. Upload one real document, ask one real question, or load one real embedded launcher.
+
+### Check the evidence
+
+The answer should be grounded, the citations should be traceable, and the widget or API flow should behave the way the docs say it behaves.
+
+### Understand the system
+
+Use the architecture and operator guides to understand how retrieval, document processing, and deployment fit together.
+</Steps>
 
 ## Why teams choose Radioso
 
@@ -38,28 +54,18 @@ Radioso is built for grounded answers, traceable citations, and embedded support
   </Cards.Card>
 </Cards>
 
-## What success looks like
+## Learn the system
 
-<Steps>
-### Pick one path
-
-Choose the path that matches your intent: local setup, website embed, or API-first evaluation.
-
-### Reach a visible result
-
-Do not stop at setup. Upload one real document, ask one real question, and verify the answer is grounded.
-
-### Understand the system
-
-Use the architecture and operator guides to understand how retrieval, document processing, and deployment fit together.
-</Steps>
-
-## Proof before promises
-
-This docs site should help you verify the product, not just read about it. Expect copy-paste payloads, real examples, and explicit explanations of common failure modes.
+This docs site should help you verify the product, not just read about it. Expect copy-paste payloads, practical checks, and explicit explanations of common failure modes.
 
 <Cards num={3}>
   <Cards.Card title="API Reference" href="/api-reference" />
   <Cards.Card title="Architecture overview" href="/architecture" />
   <Cards.Card title="TypeScript SDK" href="/sdk/typescript-getting-started" />
 </Cards>
+
+## Where to go next
+
+- If you want the fastest product evaluation path, start with [Run locally in 5 minutes](/quickstarts/run-locally).
+- If you already know the product shape and want customer-facing rollout, go to [Embed on your website](/quickstarts/website-embed).
+- If you are integrating from your own application or scripts, use [API first success](/quickstarts/api-first-success).

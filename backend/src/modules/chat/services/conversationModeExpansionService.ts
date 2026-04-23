@@ -1,6 +1,9 @@
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { ChatSuggestion } from "../types/chatResponses.js";
+import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { ChatSuggestion, ChatSuggestionKind } from "../types/chatResponses.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
+import { formatConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 
 interface ExpansionContext {
   documentId: string;
@@ -9,7 +12,7 @@ interface ExpansionContext {
   content: string;
 }
 
-type SuggestionTextGenerator = (input: { query: string; prompt: string }) => Promise<string>;
+type SuggestionTextGenerator = (input: { query: string; history: MessageRecord[]; prompt: string }) => Promise<string>;
 
 export interface ConversationModeExpansionInput {
   query: string;
@@ -20,6 +23,9 @@ export interface ConversationModeExpansionInput {
   answer: string;
   contexts: ExpansionContext[];
   citations?: Array<{ documentId: string }>;
+  history: MessageRecord[];
+  conversationIntentSnapshot: ConversationIntentSnapshot;
+  suppressOptionalSuggestions?: boolean;
 }
 
 export interface ConversationModeExpansionResult {
@@ -28,6 +34,7 @@ export interface ConversationModeExpansionResult {
 
 interface PlannedSuggestion {
   text: string;
+  kind: ChatSuggestionKind;
   contextIndex: number;
 }
 
@@ -170,6 +177,14 @@ const parseSuggestionPayload = (value: string): unknown => {
   return JSON.parse(trimmed);
 };
 
+const normalizeSuggestionKind = (value: unknown): ChatSuggestionKind | null => {
+  if (value === undefined || value === "deeper") {
+    return "deeper";
+  }
+
+  return value === "broader" ? "broader" : null;
+};
+
 export class ConversationModeExpansionService {
   constructor(private readonly generateSuggestionText: SuggestionTextGenerator) {}
 
@@ -178,6 +193,7 @@ export class ConversationModeExpansionService {
       !input.groundedAnswerSupported ||
       input.conversationMode === "factual" ||
       !input.suggestedQuestionsEnabled ||
+      input.suppressOptionalSuggestions ||
       input.contexts.length === 0
     ) {
       return {};
@@ -198,16 +214,27 @@ export class ConversationModeExpansionService {
     try {
       const rawResponse = await this.generateSuggestionText({
         query: input.query,
+        history: input.history,
         prompt: renderPromptTemplate("chat/conversation-mode-suggestions.md", {
           conversation_mode: input.conversationMode,
           max_suggestions: String(maxSuggestions),
           query: input.query,
           answer: input.answer,
+          recent_turns_json: formatConversationIntentSnapshot(input.conversationIntentSnapshot),
+          active_subject: input.conversationIntentSnapshot.activeSubject ?? "None",
+          active_goal: input.conversationIntentSnapshot.activeGoal ?? "None",
           contexts_json: formatContextsJson(promptContexts),
         }),
       });
 
-      const suggestions = this.planSuggestions(rawResponse, promptContexts, maxSuggestions, input.query, input.answer);
+      const suggestions = this.planSuggestions(
+        rawResponse,
+        promptContexts,
+        maxSuggestions,
+        input.query,
+        input.answer,
+        input.conversationMode,
+      );
       return suggestions.length > 0 ? { suggestions } : {};
     } catch {
       return {};
@@ -220,6 +247,7 @@ export class ConversationModeExpansionService {
     maxSuggestions: number,
     query: string,
     answer: string,
+    conversationMode: ConversationMode,
   ): ChatSuggestion[] {
     let parsed: unknown;
     try {
@@ -231,13 +259,9 @@ export class ConversationModeExpansionService {
     const candidates = this.readSuggestions(parsed);
     const contextByIndex = new Map(contexts.map((context) => [context.contextIndex, context]));
     const seenTexts = new Set<string>();
-    const suggestions: ChatSuggestion[] = [];
+    const validatedSuggestions: ChatSuggestion[] = [];
 
     for (const candidate of candidates) {
-      if (suggestions.length >= maxSuggestions) {
-        break;
-      }
-
       const normalizedText = normalizeComparableText(candidate.text);
       if (
         !normalizedText ||
@@ -252,8 +276,13 @@ export class ConversationModeExpansionService {
         continue;
       }
 
-      suggestions.push({
+      if (conversationMode !== "exploratory" && candidate.kind === "broader") {
+        continue;
+      }
+
+      validatedSuggestions.push({
         text: normalizeWhitespace(candidate.text),
+        kind: candidate.kind,
         citation: {
           documentId: context.documentId,
           chunkId: context.chunkId,
@@ -263,7 +292,44 @@ export class ConversationModeExpansionService {
       seenTexts.add(normalizedText);
     }
 
-    return suggestions;
+    return this.selectSuggestions(validatedSuggestions, maxSuggestions, conversationMode);
+  }
+
+  private selectSuggestions(
+    suggestions: ChatSuggestion[],
+    maxSuggestions: number,
+    conversationMode: ConversationMode,
+  ): ChatSuggestion[] {
+    if (suggestions.length <= maxSuggestions) {
+      return suggestions;
+    }
+
+    if (conversationMode !== "exploratory" || maxSuggestions < 2) {
+      return suggestions.slice(0, maxSuggestions);
+    }
+
+    const firstDeeper = suggestions.find((suggestion) => suggestion.kind === "deeper");
+    const firstBroader = suggestions.find((suggestion) => suggestion.kind === "broader");
+
+    if (!firstDeeper || !firstBroader) {
+      return suggestions.slice(0, maxSuggestions);
+    }
+
+    const selected: ChatSuggestion[] = [firstDeeper, firstBroader];
+
+    for (const suggestion of suggestions) {
+      if (selected.length >= maxSuggestions) {
+        break;
+      }
+
+      if (selected.includes(suggestion)) {
+        continue;
+      }
+
+      selected.push(suggestion);
+    }
+
+    return selected;
   }
 
   private readSuggestions(parsed: unknown): PlannedSuggestion[] {
@@ -282,15 +348,16 @@ export class ConversationModeExpansionService {
       }
 
       const text = "text" in entry && typeof entry.text === "string" ? normalizeWhitespace(entry.text) : "";
+      const kind = normalizeSuggestionKind("kind" in entry ? entry.kind : undefined);
       const contextIndex = "contextIndex" in entry && typeof entry.contextIndex === "number"
         ? Math.trunc(entry.contextIndex)
         : NaN;
 
-      if (!text || !Number.isInteger(contextIndex) || contextIndex < 1) {
+      if (!text || !kind || !Number.isInteger(contextIndex) || contextIndex < 1) {
         return [];
       }
 
-      return [{ text, contextIndex }];
+      return [{ text, kind, contextIndex }];
     });
   }
 }

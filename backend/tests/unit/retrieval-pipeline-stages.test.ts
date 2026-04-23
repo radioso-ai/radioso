@@ -594,6 +594,52 @@ describe("retrieval pipeline stages", () => {
     expect(result.promptHistory).toEqual([]);
   });
 
+  it("keeps prompt history smaller than the rewrite context window", async () => {
+    const stage = new QueryInterpretationStageService(new QueryRewriteService());
+    const history = Array.from({ length: 10 }, (_, index) => ({
+      id: `m${index + 1}`,
+      conversationId: "c1",
+      workspaceId: "a1",
+      role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+      content: `turn-${index + 1}`,
+      createdAt: new Date(),
+    }));
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "tell me more",
+        history,
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: history,
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.promptHistory.map((message) => message.content)).toEqual(["turn-7", "turn-8", "turn-9", "turn-10"]);
+  });
+
   it("keeps decomposed retrieval branches for history-free comparative turns", async () => {
     const interpretationStage = new QueryInterpretationStageService(
       new QueryRewriteService({

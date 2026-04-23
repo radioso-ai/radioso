@@ -1,5 +1,5 @@
 import { notFound } from "../../../shared/domain/errors.js";
-import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
@@ -32,6 +32,7 @@ import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
+import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -59,9 +60,33 @@ export class BlankChatAnswerError extends Error {
 
 const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError => error instanceof BlankChatAnswerError;
 
+const DIRECT_ANSWER_PATTERNS = [
+  /\bjust the answer\b/i,
+  /\bjust answer\b/i,
+  /\bbriefly\b/i,
+  /\bbe brief\b/i,
+  /\bshort answer\b/i,
+  /\bone sentence\b/i,
+  /\bconcise\b/i,
+  /\bsuccinct\b/i,
+  /\bno follow[- ]up\b/i,
+  /\bwithout extra detail/i,
+  /\bsolo la risposta\b/i,
+  /\bin breve\b/i,
+];
+
+const shouldSuppressOptionalSuggestions = (query: string): boolean =>
+  DIRECT_ANSWER_PATTERNS.some((pattern) => pattern.test(query));
+
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
+  | {
+      type: "suggestions";
+      conversationId: string;
+      suggestions: ChatSuggestion[];
+      conversationModeMetadata: ConversationModeMetadata;
+    }
   | {
       type: "done";
       conversationId: string;
@@ -191,10 +216,10 @@ export class ChatService {
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
   ) {
-    this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, prompt }) =>
+    this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, history, prompt }) =>
       this.chatGateway.answer({
         query,
-        history: [],
+        history,
         prompt,
       }));
   }
@@ -375,6 +400,9 @@ export class ChatService {
   }): AsyncIterable<ChatStreamEvent> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
+    let lazySuggestionsPromise:
+      | Promise<Pick<PresentedAnswer, "suggestions" | "conversationModeMetadata">>
+      | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
 
     try {
@@ -437,7 +465,22 @@ export class ChatService {
         }
       }
 
-      const presentation = noContextPresentation ?? await this.presentAnswer(session, rawAnswer, input.query);
+      const presentationWithoutSuggestions = noContextPresentation ?? await this.presentAnswerWithoutSuggestions(
+        session,
+        rawAnswer,
+        input.query,
+      );
+      lazySuggestionsPromise = noContextPresentation
+        ? Promise.resolve({
+            suggestions: noContextPresentation.suggestions,
+            conversationModeMetadata: noContextPresentation.conversationModeMetadata,
+          })
+        : this.applyConversationMode(session, presentationWithoutSuggestions);
+      const presentation: PresentedAnswer = {
+        ...presentationWithoutSuggestions,
+        suggestions: undefined,
+        conversationModeMetadata: noContextPresentation?.conversationModeMetadata ?? this.getConversationModeMetadata(session),
+      };
 
       if (suppressRawStreaming && presentation.answer.length > 0) {
         yield {
@@ -494,16 +537,41 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
-        suggestions: presentation.suggestions,
+        suggestions: undefined,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
         retrievalInfo,
         retrievalTrace,
       };
+
     } catch (error) {
       const normalizedError = normalizeProviderCredentialError(error);
       await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
+    }
+
+    try {
+      const lazySuggestions = await lazySuggestionsPromise;
+      if (lazySuggestions.suggestions && lazySuggestions.suggestions.length > 0) {
+        if (assistantMessageId) {
+          await this.auditService.updateChatAnswerSuggestions({
+            workspaceId: input.workspaceId,
+            conversationId: session.conversation.id,
+            assistantMessageId,
+            suggestions: lazySuggestions.suggestions,
+            conversationModeMetadata: lazySuggestions.conversationModeMetadata,
+          });
+        }
+
+        yield {
+          type: "suggestions",
+          conversationId: session.conversation.id,
+          suggestions: lazySuggestions.suggestions,
+          conversationModeMetadata: lazySuggestions.conversationModeMetadata,
+        };
+      }
+    } catch {
+      // Lazy follow-up suggestions are best effort after the answer is already complete.
     }
   }
 
@@ -522,7 +590,11 @@ export class ChatService {
       ? await this.ensureConversation(input.conversationId, input.workspaceId, input.anonymousSessionId)
       : null;
     const history = conversation
-      ? await this.messageRepository.listByConversationId(input.workspaceId, conversation.id)
+      ? await this.messageRepository.listRecentByConversationId(
+          input.workspaceId,
+          conversation.id,
+          RETRIEVAL_BEHAVIOR.continuityContextMaxMessages,
+        )
       : [];
     const rewriteContinuityState = conversation
       ? await this.loadRewriteContinuityState(input.workspaceId, conversation.id)
@@ -531,7 +603,6 @@ export class ChatService {
       workspaceId: input.workspaceId,
       query: input.query,
       history,
-      rewriteContinuityState,
       metadataFilter: input.metadataFilter,
     });
     const persistedConversation =
@@ -582,6 +653,81 @@ export class ChatService {
         });
 
     return this.presentAnswer(session, answer, query);
+  }
+
+  private async presentAnswerWithoutSuggestions(
+    session: PreparedSession,
+    answer: string,
+    query: string,
+  ): Promise<PresentedAnswer> {
+    const citationEvidence = session.retrieval.contexts.map((context) => ({
+      documentId: context.documentId,
+      chunkId: context.chunkId,
+      title: context.title,
+      content: context.content,
+    }));
+    const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
+
+    if (session.retrieval.contexts.length === 0) {
+      const presented = this.answerPresentationService.present({
+        answer,
+        citations: citationEvidence,
+        citationDisplayEnabled,
+      });
+
+      return {
+        ...presented,
+        suggestions: undefined,
+        planningCitations: [],
+        answerOutcome: ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL,
+        validation: {
+          ran: false,
+          answerModified: false,
+          unsupportedSegmentCount: 0,
+          substantiveUnsupportedSegmentCount: 0,
+          supportedSegmentCount: 0,
+          nonSubstantiveSegmentCount: 0,
+          answerSupportPolicy: this.getAnswerSupportPolicy(session),
+        },
+        segmentResults: [],
+        conversationModeMetadata: this.getConversationModeMetadata(session),
+      };
+    }
+
+    const normalized = this.answerPresentationService.normalize({
+      answer,
+      citations: citationEvidence,
+    });
+
+    const validated = await this.answerSupportValidator.validate({
+      query,
+      answer: normalized.answer,
+      answerSegments: normalized.answerSegments,
+      citationEvidence: normalized.citationEvidence,
+      retrievedContextSummaries: citationEvidence.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled,
+      answerSupportPolicy: this.getAnswerSupportPolicy(session),
+      conversationMode: this.getConversationMode(session),
+      groundedMissResponseComposer: this.groundedMissResponseComposer,
+    });
+
+    return {
+      ...validated,
+      suggestions: undefined,
+      planningCitations: normalized.citationEvidence.map((citation) => ({
+        documentId: citation.documentId,
+        chunkId: citation.chunkId,
+        title: citation.title,
+      })),
+      answerOutcome: this.assistantTurnOutcomeClassifier.classify({
+        hadRetrievedContext: true,
+        validation: validated.validation,
+      }),
+      conversationModeMetadata: this.getConversationModeMetadata(session),
+    };
   }
 
   private async presentAnswer(session: PreparedSession, answer: string, query: string): Promise<PresentedAnswer> {
@@ -738,6 +884,29 @@ export class ChatService {
     presentation: Omit<PresentedAnswer, "conversationModeMetadata">,
   ): Promise<PresentedAnswer> {
     const conversationMode = this.getConversationMode(session);
+    const brevityOverrideApplied = shouldSuppressOptionalSuggestions(session.userMessage.content);
+
+    if (brevityOverrideApplied) {
+      return {
+        ...presentation,
+        suggestions: undefined,
+        conversationModeMetadata: this.getConversationModeMetadata(session, {
+          brevityOverrideApplied: true,
+          ...inferConversationModeMetadata({
+            conversationMode,
+            brevityOverrideApplied: true,
+            suggestionCount: 0,
+          }),
+        }),
+      };
+    }
+
+    const conversationIntentSnapshot = buildConversationIntentSnapshot({
+      history: session.history,
+      latestQuery: session.userMessage.content,
+      priorRewriteContinuityState: session.priorRewriteContinuityState,
+      rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
+    });
     const expanded = await this.conversationModeExpansionService.apply({
       query: session.userMessage.content,
       conversationMode,
@@ -752,6 +921,9 @@ export class ChatService {
         title: context.title,
         content: context.content,
       })),
+      history: session.history,
+      conversationIntentSnapshot,
+      suppressOptionalSuggestions: brevityOverrideApplied,
     });
     const suggestions = expanded.suggestions;
 
@@ -760,7 +932,7 @@ export class ChatService {
       suggestions,
       conversationModeMetadata: this.getConversationModeMetadata(session, inferConversationModeMetadata({
         conversationMode,
-        brevityOverrideApplied: false,
+        brevityOverrideApplied,
         suggestionCount: suggestions?.length ?? 0,
       })),
     };

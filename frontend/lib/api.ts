@@ -13,6 +13,7 @@ const EMBED_SESSION_STORAGE_PREFIX = 'radioso.embedSession.'
 const EMBED_BOOTSTRAP_STORAGE_PREFIX = 'radioso.embedBootstrap.'
 
 interface StoredEmbedBootstrapSession {
+  workspaceName?: string
   publicChatToken: string
   embedSessionToken: string
   expiresAt: string
@@ -150,6 +151,7 @@ export const readStoredEmbedBootstrapSession = (token: string): StoredEmbedBoots
     }
 
     return {
+      workspaceName: typeof parsed.workspaceName === 'string' ? parsed.workspaceName : undefined,
       publicChatToken: parsed.publicChatToken,
       embedSessionToken: parsed.embedSessionToken,
       expiresAt: parsed.expiresAt,
@@ -633,9 +635,12 @@ export interface AnswerSegment {
   citationIndices?: number[]
 }
 
+export type ChatSuggestionKind = 'deeper' | 'broader'
+
 export interface ChatSuggestion {
   text: string
   citation?: Citation
+  kind?: ChatSuggestionKind
 }
 
 export interface RetrievalInfo {
@@ -765,6 +770,12 @@ export interface ChatStreamConversation {
 
 export interface ChatStreamChunk {
   text: string
+}
+
+export interface ChatStreamSuggestions {
+  conversationId?: string
+  suggestions?: ChatSuggestion[]
+  conversationModeMetadata?: ChatResponse['conversationModeMetadata']
 }
 
 export interface ChatStreamCompletion {
@@ -1030,6 +1041,7 @@ interface ChatStreamHandlers {
   onConversation?: (payload: ChatStreamConversation) => void
   onChunk?: (payload: ChatStreamChunk) => void
   onDone?: (payload: ChatStreamCompletion) => void
+  onSuggestions?: (payload: ChatStreamSuggestions) => void
 }
 
 export interface ErrorResponse {
@@ -1158,6 +1170,7 @@ const streamChatEvents = async (
     const payload = JSON.parse(data) as
       | (ChatStreamConversation & { type?: 'conversation' })
       | (ChatStreamChunk & { type?: 'chunk' })
+      | (ChatStreamSuggestions & { type?: 'suggestions' })
       | (ChatStreamCompletion & { type?: 'done' })
 
     const normalizedEventName =
@@ -1200,6 +1213,19 @@ const streamChatEvents = async (
         conversationModeMetadata,
         retrievalInfo,
         retrievalTrace,
+      })
+      return
+    }
+
+    if (normalizedEventName === 'suggestions') {
+      const suggestionsPayload = payload as ChatStreamSuggestions
+      conversationId = suggestionsPayload.conversationId ?? conversationId
+      suggestions = suggestionsPayload.suggestions
+      conversationModeMetadata = suggestionsPayload.conversationModeMetadata ?? conversationModeMetadata
+      handlers.onSuggestions?.({
+        conversationId,
+        suggestions,
+        conversationModeMetadata,
       })
     }
   }
@@ -1309,6 +1335,10 @@ export interface PasswordResetConfirmRequest {
   password: string
 }
 
+export interface PasswordResetConfirmResponse extends LoginResponse {
+  email: string
+}
+
 // Workspace API
 export const workspaceApi = {
   async list(): Promise<Workspace[]> {
@@ -1375,8 +1405,8 @@ export const authApi = {
     }, { withSession: true })
   },
 
-  async confirmPasswordReset(data: PasswordResetConfirmRequest): Promise<LoginResponse> {
-    return request<LoginResponse>('/auth/password-reset/confirm', {
+  async confirmPasswordReset(data: PasswordResetConfirmRequest): Promise<PasswordResetConfirmResponse> {
+    return request<PasswordResetConfirmResponse>('/auth/password-reset/confirm', {
       method: 'POST',
       body: JSON.stringify(data),
     }, { withSession: true })

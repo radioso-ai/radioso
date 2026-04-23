@@ -96,4 +96,82 @@ describe("anonymous chat bootstrap integration", () => {
       ),
     ).toHaveLength(1);
   });
+
+  it("returns typed deeper and broader suggestions for public exploratory chat", async () => {
+    const publicGateway: ChatGateway = {
+      async answer({ prompt, query }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "Which input formats do the parser notes list?", kind: "deeper", contextIndex: 1 },
+              { text: "Which onboarding topics are related?", kind: "broader", contextIndex: 2 },
+            ],
+          });
+        }
+
+        if (query.length === 0) {
+          return "Hello! I'm Marta and I can help with your documents.";
+        }
+
+        return "The testing guide explains testing and parsing content for users[[1]].";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: publicGateway });
+    const session = await issueTestSession(app, "anon-chat-suggestions@example.com");
+    const headers = adminSessionHeaders(session);
+
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(headers)
+      .send({
+        anonymousChatEnabled: true,
+        assistantName: "Marta",
+        assistantRole: "Document assistant",
+        proactiveGreetingEnabled: false,
+      });
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set(headers)
+      .send({
+        queryRewriteEnabled: false,
+        conversationMode: "exploratory",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 4,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+      });
+    await request(app)
+      .post("/api/v1/document/")
+      .set(headers)
+      .send({ title: "Parser Notes", content: "The testing docs cover parser notes, supported input formats, and validation rules." });
+    await request(app)
+      .post("/api/v1/document/")
+      .set(headers)
+      .send({ title: "User FAQ", content: "The testing docs cover onboarding questions and common support issues." });
+
+    expect(settings.status).toBe(200);
+    const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1];
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .send({ query: "What do the testing docs cover?", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.suggestions.length).toBeGreaterThan(0);
+    expect(
+      response.body.suggestions.every((suggestion: { kind: string }) =>
+        suggestion.kind === "deeper" || suggestion.kind === "broader")
+    ).toBe(true);
+    expect(response.body.suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: "Which onboarding topics are related?", kind: "broader" }),
+      ]),
+    );
+  });
 });

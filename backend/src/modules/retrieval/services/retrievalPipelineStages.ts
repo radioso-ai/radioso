@@ -8,7 +8,6 @@ import type {
   RewrittenRetrievalQuery,
   TriggerAnalysisResult,
   TriggerBackoffDecision,
-  RewriteContinuityState,
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
@@ -20,7 +19,6 @@ export interface RetrievalPipelineRequest {
   history: MessageRecord[];
   assistantIdentity?: AssistantIdentityPromptInput | null;
   responseLanguagePolicy?: ResponseLanguagePolicy;
-  rewriteContinuityState?: RewriteContinuityState;
   metadataFilter?: Record<string, unknown>;
 }
 

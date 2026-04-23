@@ -4,9 +4,16 @@ import { useEffect, useRef, useState } from 'react'
 
 import { AlertCircle } from 'lucide-react'
 
-import { Spinner } from '@/components/ui/spinner'
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
-import { getWebsiteEmbedCopy } from '@/lib/embed-widget'
+import { Spinner } from '@/components/ui/spinner'
+import {
+  formatWebsiteEmbedStartingMessage,
+  getWebsiteEmbedCopy,
+  getWebsiteEmbedTheme,
+  normalizeWebsiteEmbedDisplayMode,
+  type WebsiteEmbedCopyOverrides,
+  type WebsiteEmbedThemeOverrides,
+} from '@/lib/embed-widget'
 import {
   clearStoredAnonymousSession,
   clearStoredEmbedBootstrapSession,
@@ -18,27 +25,35 @@ import {
 function EmbeddedChatUnavailable({
   localeOverride,
   message,
+  copyOverrides,
+  themeOverrides,
 }: {
   localeOverride?: string | null
   message: string
+  copyOverrides?: WebsiteEmbedCopyOverrides | null
+  themeOverrides?: WebsiteEmbedThemeOverrides | null
 }) {
-  const copy = getWebsiteEmbedCopy(localeOverride)
+  const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
+  const theme = getWebsiteEmbedTheme(themeOverrides)
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-        <AlertCircle className="h-5 w-5 text-muted-foreground" />
+    <div className="flex flex-1 flex-col items-center justify-center p-6 text-center" style={{ color: theme.panelForeground }}>
+      <div
+        className="mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+        style={{ background: theme.mutedBackground }}
+      >
+        <AlertCircle className="h-5 w-5" style={{ color: theme.mutedForeground }} />
       </div>
-      <h1 className="text-lg font-medium text-foreground">{copy.embeddedChatUnavailableTitle}</h1>
-      <p className="mt-1 max-w-sm text-sm text-muted-foreground">{message}</p>
+      <h1 className="text-lg font-medium">{copy.embeddedChatUnavailableTitle}</h1>
+      <p className="mt-1 max-w-sm text-sm" style={{ color: theme.mutedForeground }}>{message}</p>
     </div>
   )
 }
 
 type BootstrapState =
-  | { status: 'bootstrapping' }
+  | { status: 'bootstrapping'; workspaceName?: string | null }
   | { status: 'error'; message: string }
-  | { status: 'ready'; publicChatToken: string }
+  | { status: 'ready'; publicChatToken: string; workspaceName?: string | null }
 
 const READY_MESSAGE = 'radioso:embed:ready'
 const SESSION_MESSAGE = 'radioso:embed:session'
@@ -47,11 +62,21 @@ const ERROR_MESSAGE = 'radioso:embed:error'
 export function EmbeddedChatFrame({
   token,
   localeOverride,
+  displayMode,
+  avatarUrl,
+  copyOverrides,
+  themeOverrides,
 }: {
   token: string
   localeOverride?: string | null
+  displayMode?: string | null
+  avatarUrl?: string | null
+  copyOverrides?: WebsiteEmbedCopyOverrides | null
+  themeOverrides?: WebsiteEmbedThemeOverrides | null
 }) {
-  const copy = getWebsiteEmbedCopy(localeOverride)
+  const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
+  const theme = getWebsiteEmbedTheme(themeOverrides)
+  const normalizedDisplayMode = normalizeWebsiteEmbedDisplayMode(displayMode)
   const [resetNonce, setResetNonce] = useState(0)
   const [state, setState] = useState<BootstrapState>(() => {
     if (typeof window !== 'undefined' && window.parent === window) {
@@ -61,7 +86,8 @@ export function EmbeddedChatFrame({
       }
     }
 
-    return { status: 'bootstrapping' }
+    const storedSession = typeof window !== 'undefined' ? readStoredEmbedBootstrapSession(token) : null
+    return { status: 'bootstrapping', workspaceName: storedSession?.workspaceName ?? null }
   })
   const isBootstrappedRef = useRef(false)
 
@@ -102,6 +128,7 @@ export function EmbeddedChatFrame({
         const session =
           event.data.session &&
           typeof event.data.session === 'object' &&
+          typeof event.data.session.workspaceName === 'string' &&
           typeof event.data.session.publicChatToken === 'string' &&
           typeof event.data.session.embedSessionToken === 'string'
             ? event.data.session
@@ -114,11 +141,16 @@ export function EmbeddedChatFrame({
         isBootstrappedRef.current = true
         stopHandshake()
         storeEmbedBootstrapSession(token, {
+          workspaceName: session.workspaceName,
           publicChatToken: session.publicChatToken,
           embedSessionToken: session.embedSessionToken,
           expiresAt: typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString(),
         })
-        setState({ status: 'ready', publicChatToken: session.publicChatToken })
+        setState({
+          status: 'ready',
+          publicChatToken: session.publicChatToken,
+          workspaceName: session.workspaceName,
+        })
         return
       }
 
@@ -167,30 +199,60 @@ export function EmbeddedChatFrame({
 
   if (state.status === 'bootstrapping') {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+      <div
+        className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+        style={{ color: theme.panelForeground }}
+      >
         <Spinner className="h-6 w-6" />
-        <p className="max-w-sm text-sm text-muted-foreground">{copy.embeddedChatStartingMessage}</p>
+        <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
+          {formatWebsiteEmbedStartingMessage({
+            embeddedChatStartingMessage: copy.embeddedChatStartingMessage,
+            embeddedChatTitle: state.workspaceName?.trim() || copy.embeddedChatTitle,
+          })}
+        </p>
       </div>
     )
   }
 
   if (state.status === 'error') {
-    return <EmbeddedChatUnavailable localeOverride={localeOverride} message={state.message} />
+    return (
+      <EmbeddedChatUnavailable
+        localeOverride={localeOverride}
+        message={state.message}
+        copyOverrides={copyOverrides}
+        themeOverrides={themeOverrides}
+      />
+    )
   }
 
   const handleStartNewChat = async () => {
     clearStoredAnonymousSession(state.publicChatToken)
     clearStoredEmbedBootstrapSession(token)
     isBootstrappedRef.current = false
-    setState({ status: 'bootstrapping' })
+    setState({ status: 'bootstrapping', workspaceName: state.workspaceName ?? null })
     setResetNonce((current) => current + 1)
   }
 
+  const handleRequestCollapse =
+    normalizedDisplayMode === 'panel'
+      ? () => {
+          if (typeof window !== 'undefined' && window.parent !== window) {
+            window.parent.postMessage({ type: 'radioso:embed:collapse' }, '*')
+          }
+        }
+      : undefined
+
   return (
     <PublicChatShell
+      key={`${state.publicChatToken}:${resetNonce}`}
       token={state.publicChatToken}
+      initialWorkspaceName={state.workspaceName}
       localeOverride={localeOverride}
       onStartNewChat={handleStartNewChat}
+      onRequestCollapse={handleRequestCollapse}
+      avatarUrl={avatarUrl}
+      copyOverrides={copyOverrides}
+      themeOverrides={themeOverrides}
     />
   )
 }

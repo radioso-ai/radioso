@@ -412,6 +412,8 @@ In practice, trigger-based rules are easier to operate when the trigger instruct
 
 ### Ingestion Settings
 
+In exploratory mode, suggested follow-ups can separate into deeper and broader groups. Deeper suggestions keep drilling into the same active subject, while broader suggestions widen to nearby grounded territory that still fits the recent conversation intent. If the current evidence does not honestly support a broader branch, Radioso omits it instead of filling the UI with generic suggestions.
+
 | Setting | Good starting point | Change it when | Typical effect |
 | --- | --- | --- | --- |
 | `chunkingStrategy` | `structured_semantic` | document structure is poor or inconsistent | switches between structure-aware and windowed chunking |

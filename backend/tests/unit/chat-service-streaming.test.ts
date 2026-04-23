@@ -261,206 +261,6 @@ describe("chat service streaming", () => {
     );
   });
 
-  it("loads rewrite continuity state from the previous successful answer", async () => {
-    const conversationRepository = new InMemoryConversationRepository();
-    const messageRepository = new InMemoryMessageRepository();
-    const auditService = createAuditService();
-    const capturedInputs: Array<{ rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }> = [];
-    const retrievalPipeline = {
-      async run(input: { query: string; rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }) {
-        capturedInputs.push({ rewriteContinuityState: input.rewriteContinuityState });
-        return {
-          rewrittenQuery: input.query,
-          contexts: [
-            {
-              chunkId: "chunk-1",
-              documentId: "doc-1",
-              title: "La mia anima ricorda Swami Kriyananda",
-              content: "full answer",
-            },
-          ],
-          prompt: "prompt text",
-          citations: [
-            {
-              documentId: "doc-1",
-              chunkId: "chunk-1",
-              title: "La mia anima ricorda Swami Kriyananda",
-            },
-          ],
-          diagnostics: {
-            rewriteStatus: "applied",
-            rerankStatus: "skipped",
-            originalCandidateCount: 1,
-            rewrittenCandidateCount: 0,
-            lexicalCandidateCount: 1,
-            normalizedCandidateCount: 1,
-            finalContextCount: 1,
-            candidateFallbackApplied: false,
-            fallbackApplied: false,
-            rewriteProposal: {
-              rewrittenQuery: "Can I buy Narayani's book?",
-              turnKind: "referential_followup",
-              proposedActiveSubject: "Narayani",
-              relatedEntities: [],
-              unresolved: false,
-              confidence: 0.9,
-            },
-            parsedQuery: {
-              semanticQuery: "page do",
-              lexicalQuery: "page do",
-              constraints: [],
-            },
-          },
-          responseSettings: {
-            citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
-          },
-        };
-      },
-    } as const;
-    const chatGateway: ChatGateway = {
-      async answer() {
-        return "full answer[[1]]";
-      },
-      async *streamAnswer() {
-        yield "full answer[[1]]";
-      },
-    };
-    const service = new ChatService(
-      conversationRepository,
-      messageRepository,
-      retrievalPipeline as never,
-      chatGateway,
-      auditService,
-      groundedMissResponseComposer,
-    );
-
-    const first = await service.answer({
-      workspaceId: "workspace-1",
-      accountId: "account-1",
-      query: "Can I buy her book?",
-      stream: false,
-    });
-
-    await service.answer({
-      workspaceId: "workspace-1",
-      accountId: "account-1",
-      conversationId: first.conversationId,
-      query: "how much is it?",
-      stream: false,
-    });
-
-    expect(capturedInputs[0]?.rewriteContinuityState).toBeUndefined();
-    expect(capturedInputs[1]?.rewriteContinuityState).toEqual({
-      activeSubject: "Narayani",
-      relatedEntities: [],
-      groundedTitles: ["La mia anima ricorda Swami Kriyananda"],
-    });
-  });
-
-  it("normalizes malformed rewrite continuity state loaded from audit metadata", async () => {
-    const conversationRepository = new InMemoryConversationRepository();
-    const messageRepository = new InMemoryMessageRepository();
-    const auditEventRepository = new InMemoryAuditEventRepository();
-    const auditService = createAuditService(auditEventRepository);
-    const capturedInputs: Array<{ rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }> = [];
-    const retrievalPipeline = {
-      async run(input: { query: string; rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }) {
-        capturedInputs.push({ rewriteContinuityState: input.rewriteContinuityState });
-        return {
-          rewrittenQuery: input.query,
-          contexts: [
-            {
-              chunkId: "chunk-1",
-              documentId: "doc-1",
-              title: "La mia anima ricorda Swami Kriyananda",
-              content: "full answer",
-            },
-          ],
-          prompt: "prompt text",
-          citations: [
-            {
-              documentId: "doc-1",
-              chunkId: "chunk-1",
-              title: "La mia anima ricorda Swami Kriyananda",
-            },
-          ],
-          diagnostics: {
-            rewriteStatus: "applied",
-            rerankStatus: "skipped",
-            originalCandidateCount: 1,
-            rewrittenCandidateCount: 0,
-            lexicalCandidateCount: 1,
-            normalizedCandidateCount: 1,
-            finalContextCount: 1,
-            candidateFallbackApplied: false,
-            fallbackApplied: false,
-            rewriteProposal: {
-              rewrittenQuery: "Can I buy Narayani's book?",
-              turnKind: "referential_followup",
-              proposedActiveSubject: "Narayani",
-              relatedEntities: [],
-              unresolved: false,
-              confidence: 0.9,
-            },
-            parsedQuery: {
-              semanticQuery: "page do",
-              lexicalQuery: "page do",
-              constraints: [],
-            },
-          },
-          responseSettings: {
-            citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
-          },
-        };
-      },
-    } as const;
-    const chatGateway: ChatGateway = {
-      async answer() {
-        return "full answer[[1]]";
-      },
-      async *streamAnswer() {
-        yield "full answer[[1]]";
-      },
-    };
-    const service = new ChatService(
-      conversationRepository,
-      messageRepository,
-      retrievalPipeline as never,
-      chatGateway,
-      auditService,
-      groundedMissResponseComposer,
-    );
-
-    const first = await service.answer({
-      workspaceId: "workspace-1",
-      accountId: "account-1",
-      query: "Can I buy her book?",
-      stream: false,
-    });
-
-    auditEventRepository.items[0]!.metadata.rewriteContinuityState = {
-      activeSubject: 42,
-      relatedEntities: ["Narayani", 7, ""],
-      groundedTitles: ["La mia anima ricorda Swami Kriyananda", null],
-    };
-
-    await service.answer({
-      workspaceId: "workspace-1",
-      accountId: "account-1",
-      conversationId: first.conversationId,
-      query: "how much is it?",
-      stream: false,
-    });
-
-    expect(capturedInputs[1]?.rewriteContinuityState).toEqual({
-      activeSubject: "La mia anima ricorda Swami Kriyananda",
-      relatedEntities: [],
-      groundedTitles: ["La mia anima ricorda Swami Kriyananda"],
-    });
-  });
-
   it("answers assistant identity questions without retrieved document context", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
@@ -818,10 +618,8 @@ describe("chat service streaming", () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const capturedInputs: Array<{ rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }> = [];
     const retrievalPipeline = {
-      async run(input: { query: string; rewriteContinuityState?: { activeSubject?: string; relatedEntities: string[]; groundedTitles: string[] } }) {
-        capturedInputs.push({ rewriteContinuityState: input.rewriteContinuityState });
+      async run(input: { query: string }) {
         return {
           rewrittenQuery: input.query,
           contexts: [
@@ -904,11 +702,6 @@ describe("chat service streaming", () => {
     });
 
     expect(auditService.events[0]?.metadata?.rewriteContinuityState).toEqual({
-      activeSubject: "kaibemaksumaar Eestis",
-      relatedEntities: [],
-      groundedTitles: [],
-    });
-    expect(capturedInputs[1]?.rewriteContinuityState).toEqual({
       activeSubject: "kaibemaksumaar Eestis",
       relatedEntities: [],
       groundedTitles: [],
@@ -1750,9 +1543,9 @@ describe("chat service streaming", () => {
           suggestionPrompt = prompt;
           return JSON.stringify({
             suggestions: [
-              { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
-              { text: "Which books or projects is Mahiya associated with?", contextIndex: 2 },
-              { text: "What challenges does Mahiya describe in the other interview?", contextIndex: 3 },
+              { text: "What does the interview say about Mahiya's spiritual path?", kind: "deeper", contextIndex: 1 },
+              { text: "Which books or projects is Mahiya associated with?", kind: "broader", contextIndex: 2 },
+              { text: "What challenges does Mahiya describe in the other interview?", kind: "broader", contextIndex: 3 },
             ],
           });
         }
@@ -1785,6 +1578,7 @@ describe("chat service streaming", () => {
     expect(response.suggestions).toEqual([
       {
         text: "What does the interview say about Mahiya's spiritual path?",
+        kind: "deeper",
         citation: {
           documentId: "doc-1",
           chunkId: "chunk-1",
@@ -1793,6 +1587,7 @@ describe("chat service streaming", () => {
       },
       {
         text: "Which books or projects is Mahiya associated with?",
+        kind: "broader",
         citation: {
           documentId: "doc-2",
           chunkId: "chunk-2",
@@ -1801,6 +1596,7 @@ describe("chat service streaming", () => {
       },
       {
         text: "What challenges does Mahiya describe in the other interview?",
+        kind: "broader",
         citation: {
           documentId: "doc-3",
           chunkId: "chunk-3",
@@ -1819,6 +1615,209 @@ describe("chat service streaming", () => {
     expect(response.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" },
     ]);
+  });
+
+  it("streams the answer before emitting grounded follow-up suggestions", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "who is mahiya",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Mahiya",
+              content: "Mahiya is a teacher and author.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Mahiya interview",
+              content: "An interview about Mahiya's spiritual path.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "who is mahiya",
+              lexicalQuery: "mahiya",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+            suggestedQuestionsEnabled: true,
+            suggestedQuestionsCount: 2,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
+            ],
+          });
+        }
+        return "Mahiya is a teacher and author[[1]].";
+      },
+      async *streamAnswer() {
+        yield "Mahiya is a teacher and author[[1]].";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Who is Mahiya?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual(["conversation", "chunk", "done", "suggestions"]);
+    expect(events[2]).toMatchObject({
+      type: "done",
+      answer: "Mahiya is a teacher and author.",
+      suggestions: undefined,
+      conversationModeMetadata: {
+        conversationMode: "exploratory",
+        brevityOverrideApplied: false,
+        expansionApplied: false,
+        expansionKind: "none",
+        suggestionCount: 0,
+        followUpQuestionApplied: false,
+      },
+    });
+    expect(events[3]).toMatchObject({
+      type: "suggestions",
+      suggestions: [
+        {
+          text: "What does the interview say about Mahiya's spiritual path?",
+          citation: {
+            documentId: "doc-1",
+            chunkId: "chunk-1",
+            title: "Mahiya",
+          },
+        },
+      ],
+      conversationModeMetadata: {
+        conversationMode: "exploratory",
+        brevityOverrideApplied: false,
+        expansionApplied: true,
+        expansionKind: "expansive",
+        suggestionCount: 1,
+        followUpQuestionApplied: false,
+      },
+    });
+  });
+
+  it("does not convert a completed answer into a failure when lazy suggestions fail", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditEventRepository = new InMemoryAuditEventRepository();
+    const auditService = createAuditService(auditEventRepository);
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "who is mahiya",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Mahiya",
+              content: "Mahiya is a teacher and author.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "who is mahiya",
+              lexicalQuery: "mahiya",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+            suggestedQuestionsEnabled: true,
+            suggestedQuestionsCount: 2,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          throw new Error("suggestions unavailable");
+        }
+        return "Mahiya is a teacher and author[[1]].";
+      },
+      async *streamAnswer() {
+        yield "Mahiya is a teacher and author[[1]].";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Who is Mahiya?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual(["conversation", "chunk", "done"]);
+    expect(auditEventRepository.items.filter((event) => event.eventType === "chat.answer")).toHaveLength(1);
+    expect(auditEventRepository.items[0]?.eventStatus).toBe("success");
   });
 
   it("returns exploratory suggestions as structured multilingual continuations", async () => {
@@ -1874,7 +1873,7 @@ describe("chat service streaming", () => {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
           return JSON.stringify({
             suggestions: [
-              { text: "Quale altro libro o progetto è collegato a Narayani?", contextIndex: 1 },
+              { text: "Quale altro libro o progetto è collegato a Narayani?", kind: "broader", contextIndex: 1 },
             ],
           });
         }
@@ -1904,6 +1903,7 @@ describe("chat service streaming", () => {
     expect(response.suggestions).toEqual([
       {
         text: "Quale altro libro o progetto è collegato a Narayani?",
+        kind: "broader",
         citation: {
           documentId: "doc-1",
           chunkId: "chunk-1",
@@ -1966,8 +1966,8 @@ describe("chat service streaming", () => {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
           return JSON.stringify({
             suggestions: [
-              { text: "What videos are on page 3?", contextIndex: 2 },
-              { text: "How many Assisi archive pages are there?", contextIndex: 2 },
+              { text: "What videos are on page 3?", kind: "deeper", contextIndex: 2 },
+              { text: "How many Assisi archive pages are there?", kind: "broader", contextIndex: 2 },
             ],
           });
         }
@@ -1997,10 +1997,612 @@ describe("chat service streaming", () => {
     expect(response.suggestions).toEqual([
       {
         text: "How many Assisi archive pages are there?",
+        kind: "broader",
         citation: {
           documentId: "doc-2",
           chunkId: "chunk-2",
           title: "Assisi Archives - Page 3 of 14 - Ananda Europe",
+        },
+      },
+    ]);
+  });
+
+  it("feeds recent conversation context into exploratory suggestion planning", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run({ query }: { query: string }) {
+        return {
+          rewrittenQuery: query.toLowerCase(),
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Retreat Planning Guide",
+              content: "A beginner retreat should cover meditation, schedule planning, meals, and orientation.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Retreat Facilitation Notes",
+              content: "Facilitators should balance logistics, teaching goals, and attendee support.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Retreat Planning Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: query.toLowerCase(),
+              lexicalQuery: query.toLowerCase(),
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    let suggestionPrompt: string | undefined;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt, query }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          suggestionPrompt = prompt;
+          return JSON.stringify({
+            suggestions: [
+              { text: "What should a beginner retreat schedule include?", kind: "deeper", contextIndex: 1 },
+              { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
+            ],
+          });
+        }
+
+        if (query === "What should I include next?") {
+          return "You should include orientation and meals[[1]].";
+        }
+
+        return "Start with a beginner retreat schedule[[1]].";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const first = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Help me plan a beginner retreat",
+      stream: false,
+    });
+    const second = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: first.conversationId,
+      query: "What should I include next?",
+      stream: false,
+    });
+
+    expect(suggestionPrompt).toContain("Recent conversation context");
+    expect(suggestionPrompt).toContain("Help me plan a beginner retreat");
+    expect(suggestionPrompt).toContain("Start with a beginner retreat schedule.");
+    expect(second.suggestions).toEqual([
+      {
+        text: "What should a beginner retreat schedule include?",
+        kind: "deeper",
+        citation: {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Retreat Planning Guide",
+        },
+      },
+      {
+        text: "How should retreat facilitators support attendees?",
+        kind: "broader",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Retreat Facilitation Notes",
+        },
+      },
+    ]);
+  });
+
+  it("recenters exploratory planning when the user explicitly pivots subjects", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run({ query }: { query: string }) {
+        const pivotTurn = query === "What about facilitator support?";
+        return {
+          rewrittenQuery: pivotTurn ? "facilitator support" : "plan a beginner retreat",
+          contexts: pivotTurn
+            ? [
+                {
+                    chunkId: "chunk-2",
+                    documentId: "doc-2",
+                    title: "Retreat Facilitation Notes",
+                    content: "Facilitators should balance logistics, teaching goals, and attendee support.",
+                },
+                {
+                    chunkId: "chunk-3",
+                    documentId: "doc-3",
+                    title: "Retreat Support Roles",
+                    content: "Support roles include hospitality, orientation, and attendee care.",
+                },
+              ]
+            : [
+                {
+                    chunkId: "chunk-1",
+                    documentId: "doc-1",
+                    title: "Retreat Planning Guide",
+                    content: "A beginner retreat should cover meditation, schedule planning, meals, and orientation.",
+                },
+                {
+                    chunkId: "chunk-2",
+                    documentId: "doc-2",
+                    title: "Retreat Facilitation Notes",
+                    content: "Facilitators should balance logistics, teaching goals, and attendee support.",
+                },
+              ],
+          prompt: "prompt text",
+          citations: [
+            pivotTurn
+              ? { documentId: "doc-2", chunkId: "chunk-2", title: "Retreat Facilitation Notes" }
+              : { documentId: "doc-1", chunkId: "chunk-1", title: "Retreat Planning Guide" },
+          ],
+          diagnostics: {
+            rewriteStatus: "applied",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 1,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: query.toLowerCase(),
+              lexicalQuery: query.toLowerCase(),
+              constraints: [],
+            },
+            rewriteProposal: pivotTurn
+              ? {
+                  rewrittenQuery: "facilitator support",
+                  semanticQuery: "facilitator support retreat attendees",
+                  lexicalQuery: "facilitator support",
+                  turnKind: "explicit_recenter",
+                  proposedActiveSubject: "Facilitator support",
+                  relatedEntities: [],
+                  unresolved: false,
+                  confidence: 0.97,
+                }
+              : {
+                  rewrittenQuery: "plan a beginner retreat",
+                  semanticQuery: "beginner retreat planning",
+                  lexicalQuery: "beginner retreat planning",
+                  turnKind: "fresh_subject",
+                  proposedActiveSubject: "Beginner retreat planning",
+                  relatedEntities: [],
+                  unresolved: false,
+                  confidence: 0.94,
+                },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const suggestionPrompts: string[] = [];
+    const chatGateway: ChatGateway = {
+      async answer({ prompt, query }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          suggestionPrompts.push(prompt);
+
+          if (prompt.includes("Active subject:\nFacilitator support")) {
+            return JSON.stringify({
+              suggestions: [
+                { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
+                { text: "Which support roles should back up retreat facilitators?", kind: "broader", contextIndex: 2 },
+              ],
+            });
+          }
+
+          return JSON.stringify({
+            suggestions: [
+              { text: "What should a beginner retreat schedule include?", kind: "deeper", contextIndex: 1 },
+              { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
+            ],
+          });
+        }
+
+        if (query === "What about facilitator support?") {
+          return "Facilitators should balance logistics and attendee care[[1]].";
+        }
+
+        return "Start with a beginner retreat schedule[[1]].";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const first = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Help me plan a beginner retreat",
+      stream: false,
+    });
+    const second = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: first.conversationId,
+      query: "What about facilitator support?",
+      stream: false,
+    });
+
+    const latestSuggestionPrompt = suggestionPrompts.at(-1);
+    expect(latestSuggestionPrompt).toContain("Help me plan a beginner retreat");
+    expect(latestSuggestionPrompt).toContain("Active subject:\nFacilitator support");
+    expect(latestSuggestionPrompt).toContain("Active goal:\nWhat about facilitator support?");
+    expect(second.suggestions).toEqual([
+      {
+        text: "How should facilitators support retreat attendees?",
+        kind: "deeper",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Retreat Facilitation Notes",
+        },
+      },
+      {
+        text: "Which support roles should back up retreat facilitators?",
+        kind: "broader",
+        citation: {
+          documentId: "doc-3",
+          chunkId: "chunk-3",
+          title: "Retreat Support Roles",
+        },
+      },
+    ]);
+  });
+
+  it("suppresses exploratory suggestions when the user asks for just the answer", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "just the answer what does the guide cover",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The guide covers testing, onboarding, and parser rules.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "guide cover",
+              lexicalQuery: "guide cover",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    let suggestionCallCount = 0;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          suggestionCallCount += 1;
+          return JSON.stringify({
+            suggestions: [
+              { text: "What parser rules does the guide cover?", kind: "deeper", contextIndex: 1 },
+            ],
+          });
+        }
+
+        return "The guide covers testing, onboarding, and parser rules[[1]].";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Just the answer: what does the guide cover?",
+      stream: false,
+    });
+
+    expect(suggestionCallCount).toBe(0);
+    expect(response.suggestions).toBeUndefined();
+    expect(response.conversationModeMetadata).toEqual({
+      conversationMode: "exploratory",
+      brevityOverrideApplied: true,
+      expansionApplied: false,
+      expansionKind: "none",
+      suggestionCount: 0,
+      followUpQuestionApplied: false,
+    });
+  });
+
+  it("drops invalid grouped suggestions and removes duplicates across lanes", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does the archive cover",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Archive Guide",
+              content: "The archive covers videos, audio, and retreat notes.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Archive Notes",
+              content: "The notes explain how the archive is organized.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Archive Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 2,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 2,
+            normalizedCandidateCount: 2,
+            finalContextCount: 2,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "archive cover",
+              lexicalQuery: "archive cover",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "What does the archive cover?", kind: "deeper", contextIndex: 1 },
+              { text: "How is the archive organized?", kind: "broader", contextIndex: 2 },
+              { text: "How is the archive organized?", kind: "deeper", contextIndex: 2 },
+              { text: "Which archive videos are available?", kind: "invalid_kind", contextIndex: 1 },
+            ],
+          });
+        }
+
+        return "The archive covers videos, audio, and retreat notes[[1]].";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does the archive cover?",
+      stream: false,
+    });
+
+    expect(response.suggestions).toEqual([
+      {
+        text: "How is the archive organized?",
+        kind: "broader",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Archive Notes",
+        },
+      },
+    ]);
+  });
+
+  it("preserves a broader lane when valid broader suggestions arrive after deeper ones", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "retreat planning",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Retreat Planning Guide",
+              content: "The guide covers schedules, meals, and orientation.",
+            },
+            {
+              chunkId: "chunk-2",
+              documentId: "doc-2",
+              title: "Retreat Meal Guide",
+              content: "Meals should fit the retreat schedule and attendee needs.",
+            },
+            {
+              chunkId: "chunk-3",
+              documentId: "doc-3",
+              title: "Retreat Orientation Guide",
+              content: "Orientation should set expectations and welcome attendees.",
+            },
+            {
+              chunkId: "chunk-4",
+              documentId: "doc-4",
+              title: "Retreat Facilitation Notes",
+              content: "Facilitators should support attendee logistics and questions.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Retreat Planning Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 4,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 4,
+            normalizedCandidateCount: 4,
+            finalContextCount: 4,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "retreat planning",
+              lexicalQuery: "retreat planning",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "exploratory",
+            suggestedQuestionsCount: 3,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
+              { text: "How should retreat meals fit the schedule?", kind: "deeper", contextIndex: 2 },
+              { text: "What should orientation cover on day one?", kind: "deeper", contextIndex: 3 },
+              { text: "How should facilitators support retreat attendees?", kind: "broader", contextIndex: 4 },
+            ],
+          });
+        }
+
+        return "Start with the retreat schedule and day-one orientation[[1]].";
+      },
+      async *streamAnswer() {
+        yield "";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "Help me plan a retreat",
+      stream: false,
+    });
+
+    expect(response.suggestions).toEqual([
+      {
+        text: "What should the retreat schedule include?",
+        kind: "deeper",
+        citation: {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Retreat Planning Guide",
+        },
+      },
+      {
+        text: "How should facilitators support retreat attendees?",
+        kind: "broader",
+        citation: {
+          documentId: "doc-4",
+          chunkId: "chunk-4",
+          title: "Retreat Facilitation Notes",
+        },
+      },
+      {
+        text: "How should retreat meals fit the schedule?",
+        kind: "deeper",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Retreat Meal Guide",
         },
       },
     ]);

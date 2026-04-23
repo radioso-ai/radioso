@@ -28,8 +28,7 @@ export class EmailVerificationService {
     const token = generateEmailVerificationToken();
     const expiresAt = new Date(now.getTime() + this.dependencies.env.PASSWORD_RESET_TOKEN_TTL_MINUTES * 60 * 1000);
 
-    await this.dependencies.tokenRepository.markAllActiveForUserUsed(input.userId, now);
-    await this.dependencies.tokenRepository.create({
+    const createdToken = await this.dependencies.tokenRepository.create({
       userId: input.userId,
       tokenHash: sha256(token),
       expiresAt,
@@ -40,10 +39,21 @@ export class EmailVerificationService {
     const verificationUrl = new URL("/verify-email", this.dependencies.env.APP_BASE_URL);
     verificationUrl.searchParams.set("token", token);
 
-    await this.dependencies.emailService.sendEmailVerificationEmail({
-      to: input.email,
-      verificationUrl: verificationUrl.toString(),
-    });
+    try {
+      await this.dependencies.emailService.sendEmailVerificationEmail({
+        to: input.email,
+        verificationUrl: verificationUrl.toString(),
+      });
+    } catch (error) {
+      await this.dependencies.tokenRepository.markUsed(createdToken.id, now);
+      throw error;
+    }
+
+    await this.dependencies.tokenRepository.markOlderActiveForUserUsed(
+      input.userId,
+      createdToken.createdAt,
+      now,
+    );
 
     await this.dependencies.auditService.record({
       eventType: "auth.email_verification.issue",

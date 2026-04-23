@@ -26,7 +26,14 @@ Guided mode is the default because it adds a small amount of discovery without t
 
 Use this when discovery matters as much as the direct answer.
 
-Exploratory mode answers the question, then surfaces more of what the workspace covers nearby and may add one grounded follow-up prompt when the retrieved material supports it honestly.
+Exploratory mode answers the question, then uses the recent conversation to decide which grounded next steps are actually useful.
+
+When the workspace has honest support for it, the assistant can show two kinds of suggested questions:
+
+- deeper suggestions stay on the current subject and keep drilling into the same goal
+- broader suggestions widen to nearby grounded territory that still matches the conversation intent
+
+If the available material only supports one of those lanes, the assistant shows only that lane. It does not invent broader discovery prompts just to fill space.
 
 ### Per-Turn Override
 

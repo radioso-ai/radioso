@@ -179,7 +179,7 @@ class InMemoryPasswordResetTokenRepository implements PasswordResetTokenReposito
       tokenHash: params.tokenHash,
       expiresAt: params.expiresAt,
       usedAt: null,
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() + this.items.size),
       requestIp: params.requestIp ?? null,
       requestUserAgent: params.requestUserAgent ?? null,
     };
@@ -211,6 +211,19 @@ class InMemoryPasswordResetTokenRepository implements PasswordResetTokenReposito
       }
     }
   }
+
+  async markOlderActiveForUserUsed(userId: string, createdBefore: Date, usedAt: Date): Promise<void> {
+    for (const item of this.items.values()) {
+      if (
+        item.userId === userId &&
+        item.createdAt < createdBefore &&
+        item.usedAt === null &&
+        item.expiresAt > usedAt
+      ) {
+        item.usedAt = usedAt;
+      }
+    }
+  }
 }
 
 class InMemoryEmailVerificationTokenRepository implements EmailVerificationTokenRepositoryPort {
@@ -238,7 +251,7 @@ class InMemoryEmailVerificationTokenRepository implements EmailVerificationToken
       tokenHash: params.tokenHash,
       expiresAt: params.expiresAt,
       usedAt: null,
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() + this.items.size),
       requestIp: params.requestIp ?? null,
       requestUserAgent: params.requestUserAgent ?? null,
     };
@@ -266,6 +279,19 @@ class InMemoryEmailVerificationTokenRepository implements EmailVerificationToken
   async markAllActiveForUserUsed(userId: string, usedAt: Date): Promise<void> {
     for (const item of this.items.values()) {
       if (item.userId === userId && item.usedAt === null && item.expiresAt > usedAt) {
+        item.usedAt = usedAt;
+      }
+    }
+  }
+
+  async markOlderActiveForUserUsed(userId: string, createdBefore: Date, usedAt: Date): Promise<void> {
+    for (const item of this.items.values()) {
+      if (
+        item.userId === userId &&
+        item.createdAt < createdBefore &&
+        item.usedAt === null &&
+        item.expiresAt > usedAt
+      ) {
         item.usedAt = usedAt;
       }
     }
@@ -844,12 +870,18 @@ export const issueTestSession = async (
     email,
     password,
   });
+  if (register.status !== 201) {
+    throw new Error(`Registration failed with status ${register.status}`);
+  }
   const dependencies = appDependencyMap.get(app);
   if (!dependencies) {
     throw new Error("Test app dependencies were not registered for session issuance");
   }
 
-  const verificationUrl = dependencies.emailService.sentMessages.at(-1)?.metadata?.verificationUrl;
+  const verificationUrl = [...dependencies.emailService.sentMessages]
+    .reverse()
+    .find((message) => message.to === email && message.metadata?.kind === "email_verification")
+    ?.metadata?.verificationUrl;
   const token = verificationUrl ? new URL(verificationUrl).searchParams.get("token") : null;
   if (!token) {
     throw new Error("Registration did not produce an email verification token");

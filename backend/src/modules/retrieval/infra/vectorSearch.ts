@@ -47,42 +47,54 @@ export class PgVectorSearch implements VectorSearchPort {
     metadataFilter?: Record<string, unknown>;
   }): Promise<RetrievedChunk[]> {
     const maxDistance = 1 - input.similarityThreshold;
+    const hasMetadataFilter = hasNonEmptyFilter(input.metadataFilter);
     const params: unknown[] = [
       input.workspaceId,
       `[${input.queryEmbedding.join(",")}]`,
-      maxDistance,
       input.topK,
+      maxDistance,
     ];
-
-    const hasMetadataFilter = hasNonEmptyFilter(input.metadataFilter);
     const metadataClause = hasMetadataFilter ? `AND c.metadata @> $5::jsonb` : "";
 
     if (hasMetadataFilter) {
       params.push(JSON.stringify(input.metadataFilter));
     }
 
-    const rows = await this.database.query<VectorSearchRow>(
-      `SELECT c.id AS chunk_id,
-              c.document_id,
-              d.title,
-              c.content,
-              c.search_text,
-              c.chunk_index,
-              c.start_offset,
-              c.end_offset,
-              c.metadata,
-              1 - (c.embedding <=> $2::vector) AS similarity
-       FROM chunks c
-       JOIN documents d ON d.id = c.document_id
-       WHERE c.workspace_id = $1
-         AND d.status = 'ready'
-         AND c.embedding IS NOT NULL
-         AND c.embedding <=> $2::vector <= $3
-         ${metadataClause}
-       ORDER BY c.embedding <=> $2::vector ASC
-       LIMIT $4`,
-      params,
-    );
+    const sql = `WITH nearest_results AS MATERIALIZED (
+      SELECT c.id AS chunk_id,
+             c.document_id,
+             d.title,
+             c.content,
+             c.search_text,
+             c.chunk_index,
+             c.start_offset,
+             c.end_offset,
+             c.metadata,
+             c.embedding <=> $2::vector AS distance
+      FROM chunks c
+      JOIN documents d ON d.id = c.document_id
+      WHERE c.workspace_id = $1
+        AND d.status = 'ready'
+        AND c.embedding IS NOT NULL
+        ${metadataClause}
+      ORDER BY c.embedding <=> $2::vector ASC
+      LIMIT $3
+    )
+    SELECT chunk_id,
+           document_id,
+           title,
+           content,
+           search_text,
+           chunk_index,
+           start_offset,
+           end_offset,
+           metadata,
+           1 - distance AS similarity
+    FROM nearest_results
+    WHERE distance <= $4
+    ORDER BY distance ASC`;
+
+    const rows = await this.queryWithIterativeScan(sql, params);
 
     return rows.map((row) => ({
       chunkId: row.chunk_id,
@@ -97,7 +109,31 @@ export class PgVectorSearch implements VectorSearchPort {
       metadata: row.metadata ?? {},
     }));
   }
+
+  private async queryWithIterativeScan(sql: string, params: unknown[]): Promise<VectorSearchRow[]> {
+    try {
+      return await this.database.withTransaction(async (client) => {
+        await client.query("SET LOCAL hnsw.iterative_scan = strict_order");
+        const result = await client.query<VectorSearchRow>(sql, params);
+        return result.rows;
+      });
+    } catch (error) {
+      if (!isIterativeScanUnsupported(error)) {
+        throw error;
+      }
+
+      return this.database.query<VectorSearchRow>(sql, params);
+    }
+  }
 }
 
 export const hasNonEmptyFilter = (filter?: Record<string, unknown>): filter is Record<string, unknown> =>
   filter !== undefined && Object.keys(filter).length > 0;
+
+const isIterativeScanUnsupported = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.includes("unrecognized configuration parameter \"hnsw.iterative_scan\"");
+};

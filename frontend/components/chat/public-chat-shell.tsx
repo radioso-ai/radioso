@@ -385,8 +385,8 @@ function PublicChatContent({
             <span className="sr-only">{copy.publicChatSendMessageLabel}</span>
           </Button>
         </form>
-        <div className="mx-auto mt-3 flex max-w-3xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs" style={{ color: theme.mutedForeground }}>
+        <div className="mx-auto mt-3 flex max-w-3xl justify-center">
+          <p className="w-full text-center text-xs" style={{ color: theme.mutedForeground }}>
             {formatWebsiteEmbedDisclaimer(copy, resolvedWorkspaceName)}
           </p>
         </div>

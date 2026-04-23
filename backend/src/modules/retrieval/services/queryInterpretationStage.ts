@@ -1,4 +1,5 @@
 import type { ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
 import type { QueryInterpretationStage as QueryInterpretationStageContract, RetrievalContextStageResult } from "./retrievalPipelineStages.js";
 
@@ -60,7 +61,9 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       rewrittenQuery.retrievalEligible &&
       (rewrittenQuery.structuredResult?.turnKind === "fresh_subject" ||
         rewrittenQuery.structuredResult?.turnKind === "explicit_recenter");
-    const promptHistory = shouldResetPromptHistory ? [] : input.contextWindow.selectedMessages;
+    const promptHistory = shouldResetPromptHistory
+      ? []
+      : input.contextWindow.selectedMessages.slice(-RETRIEVAL_BEHAVIOR.promptHistoryMaxMessages);
     const activeRetrievalSubqueries =
       rewrittenQuery.retrievalEligible && rewrittenQuery.retrievalSubqueries && rewrittenQuery.retrievalSubqueries.length > 1
         ? rewrittenQuery.retrievalSubqueries.map((subquery) => ({

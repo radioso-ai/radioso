@@ -51,6 +51,7 @@ describe("chat presenter", () => {
         suggestions: [
           {
             text: "Ask about parser validation rules",
+            kind: "deeper",
             citation: {
               documentId: "doc-1",
               chunkId: "chunk-1",
@@ -96,5 +97,6 @@ describe("chat presenter", () => {
     expect(donePayload).toContain("\"conversationModeMetadata\":");
     expect(donePayload).toContain("\"expansionKind\":\"focused\"");
     expect(donePayload).toContain("\"suggestions\":[");
+    expect(donePayload).toContain("\"kind\":\"deeper\"");
   });
 });

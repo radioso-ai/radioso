@@ -863,12 +863,18 @@ export const issueTestSession = async (
     email,
     password,
   });
+  if (register.status !== 201) {
+    throw new Error(`Registration failed with status ${register.status}`);
+  }
   const dependencies = appDependencyMap.get(app);
   if (!dependencies) {
     throw new Error("Test app dependencies were not registered for session issuance");
   }
 
-  const verificationUrl = dependencies.emailService.sentMessages.at(-1)?.metadata?.verificationUrl;
+  const verificationUrl = [...dependencies.emailService.sentMessages]
+    .reverse()
+    .find((message) => message.to === email && message.metadata?.kind === "email_verification")
+    ?.metadata?.verificationUrl;
   const token = verificationUrl ? new URL(verificationUrl).searchParams.get("token") : null;
   if (!token) {
     throw new Error("Registration did not produce an email verification token");

@@ -137,6 +137,7 @@ describe("chat history service", () => {
     expect(assistantMessage?.suggestions).toEqual([
       {
         text: "What examples does it include?",
+        kind: "deeper",
         citation: {
           documentId: "doc-2",
           chunkId: "chunk-2",
@@ -169,5 +170,62 @@ describe("chat history service", () => {
         },
       ],
     });
+  });
+
+  it("normalizes legacy stored suggestions without kind as deeper suggestions", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditRepository = new InMemoryAuditEventRepository();
+    const service = new ChatHistoryService(conversationRepository, messageRepository, auditRepository);
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "What does this page do?",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "It answers questions.",
+    });
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        citationCount: 0,
+        suggestions: [
+          {
+            text: "What examples does it include?",
+            citation: {
+              documentId: "doc-2",
+              chunkId: "chunk-2",
+              title: "Examples",
+            },
+          },
+        ],
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const assistantMessage = detail.messages.find((message) => message.role === "assistant");
+
+    expect(assistantMessage?.suggestions).toEqual([
+      {
+        text: "What examples does it include?",
+        kind: "deeper",
+        citation: {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "Examples",
+        },
+      },
+    ]);
   });
 });

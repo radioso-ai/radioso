@@ -32,6 +32,7 @@ import { shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
+import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -58,6 +59,24 @@ export class BlankChatAnswerError extends Error {
 }
 
 const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError => error instanceof BlankChatAnswerError;
+
+const DIRECT_ANSWER_PATTERNS = [
+  /\bjust the answer\b/i,
+  /\bjust answer\b/i,
+  /\bbriefly\b/i,
+  /\bbe brief\b/i,
+  /\bshort answer\b/i,
+  /\bone sentence\b/i,
+  /\bconcise\b/i,
+  /\bsuccinct\b/i,
+  /\bno follow[- ]up\b/i,
+  /\bwithout extra detail/i,
+  /\bsolo la risposta\b/i,
+  /\bin breve\b/i,
+];
+
+const shouldSuppressOptionalSuggestions = (query: string): boolean =>
+  DIRECT_ANSWER_PATTERNS.some((pattern) => pattern.test(query));
 
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
@@ -197,10 +216,10 @@ export class ChatService {
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
   ) {
-    this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, prompt }) =>
+    this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, history, prompt }) =>
       this.chatGateway.answer({
         query,
-        history: [],
+        history,
         prompt,
       }));
   }
@@ -584,7 +603,6 @@ export class ChatService {
       workspaceId: input.workspaceId,
       query: input.query,
       history,
-      rewriteContinuityState,
       metadataFilter: input.metadataFilter,
     });
     const persistedConversation =
@@ -866,6 +884,29 @@ export class ChatService {
     presentation: Omit<PresentedAnswer, "conversationModeMetadata">,
   ): Promise<PresentedAnswer> {
     const conversationMode = this.getConversationMode(session);
+    const brevityOverrideApplied = shouldSuppressOptionalSuggestions(session.userMessage.content);
+
+    if (brevityOverrideApplied) {
+      return {
+        ...presentation,
+        suggestions: undefined,
+        conversationModeMetadata: this.getConversationModeMetadata(session, {
+          brevityOverrideApplied: true,
+          ...inferConversationModeMetadata({
+            conversationMode,
+            brevityOverrideApplied: true,
+            suggestionCount: 0,
+          }),
+        }),
+      };
+    }
+
+    const conversationIntentSnapshot = buildConversationIntentSnapshot({
+      history: session.history,
+      latestQuery: session.userMessage.content,
+      priorRewriteContinuityState: session.priorRewriteContinuityState,
+      rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
+    });
     const expanded = await this.conversationModeExpansionService.apply({
       query: session.userMessage.content,
       conversationMode,
@@ -880,6 +921,9 @@ export class ChatService {
         title: context.title,
         content: context.content,
       })),
+      history: session.history,
+      conversationIntentSnapshot,
+      suppressOptionalSuggestions: brevityOverrideApplied,
     });
     const suggestions = expanded.suggestions;
 
@@ -888,7 +932,7 @@ export class ChatService {
       suggestions,
       conversationModeMetadata: this.getConversationModeMetadata(session, inferConversationModeMetadata({
         conversationMode,
-        brevityOverrideApplied: false,
+        brevityOverrideApplied,
         suggestionCount: suggestions?.length ?? 0,
       })),
     };

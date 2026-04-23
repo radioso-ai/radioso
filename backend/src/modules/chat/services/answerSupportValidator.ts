@@ -7,7 +7,57 @@ import {
 } from "./answerSupportValidationTypes.js";
 import type { GroundedMissResponseComposer } from "./groundedMissResponseComposer.js";
 
+const NON_SUBSTANTIVE_PHRASES = new Set([
+  "hello",
+  "hi",
+  "hey",
+  "sure",
+  "of course",
+  "certainly",
+  "absolutely",
+  "thanks",
+  "thank you",
+  "glad to help",
+  "happy to help",
+  "no problem",
+  "you are welcome",
+  "youre welcome",
+  "okay",
+  "ok",
+]);
+
+const LINK_SCAFFOLD_WORDS = new Set([
+  "you",
+  "can",
+  "read",
+  "more",
+  "here",
+  "and",
+  "or",
+  "see",
+  "source",
+  "sources",
+  "link",
+  "links",
+  "at",
+  "full",
+  "article",
+  "articles",
+  "visit",
+  "open",
+  "details",
+  "learn",
+  "about",
+  "the",
+]);
+
 const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+
+const normalizeForMeaningCheck = (value: string): string =>
+  value
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim()
+    .toLowerCase();
 
 const hasWordLikeContent = (value: string): boolean => {
   for (const segment of wordSegmenter.segment(value)) {
@@ -37,19 +87,47 @@ const extractSignificantTerms = (value: string): string[] => {
   return [...new Set(terms)];
 };
 
+const extractWordTokens = (value: string): string[] => {
+  const tokens: string[] = [];
+
+  for (const segment of wordSegmenter.segment(value.normalize("NFKC").toLowerCase())) {
+    if (!segment.isWordLike) {
+      continue;
+    }
+
+    const normalized = segment.segment.replace(/[^\p{L}\p{N}]+/gu, "");
+    if (!normalized) {
+      continue;
+    }
+
+    tokens.push(normalized);
+  }
+
+  return tokens;
+};
+
 const isNonSubstantiveText = (value: string): boolean => {
-  return !hasWordLikeContent(value);
+  if (!hasWordLikeContent(value)) {
+    return true;
+  }
+
+  const normalized = normalizeForMeaningCheck(value);
+  return NON_SUBSTANTIVE_PHRASES.has(normalized);
 };
 
 const preservePrefix = (value: string): string => value.match(/^[\s,.;:!?()/-]*/)?.[0] ?? "";
 const OMITTED_UNSUPPORTED_SENTINEL = "__omitted_unsupported__";
 const MARKDOWN_LINK_URL_PATTERN = /\[[^\]]+\]\((https?:\/\/[^)\s]+)\)/gi;
 const BARE_URL_PATTERN = /https?:\/\/[^\s<>)"']+/gi;
+const trimBareUrlPunctuation = (value: string): string => value.replace(/[.,;:!?]+$/g, "");
 
 const normalizeUrl = (value: string): string | null => {
   try {
     const url = new URL(value.trim());
     url.hash = "";
+    if (url.pathname.length > 1) {
+      url.pathname = url.pathname.replace(/\/+$/g, "");
+    }
     return url.toString();
   } catch {
     return null;
@@ -67,11 +145,18 @@ const extractUrls = (value: string): string[] => {
 
   const withoutMarkdownLinks = value.replace(MARKDOWN_LINK_URL_PATTERN, "");
   for (const match of withoutMarkdownLinks.matchAll(BARE_URL_PATTERN)) {
-    urls.push(match[0]);
+    urls.push(trimBareUrlPunctuation(match[0]));
   }
 
   return urls;
 };
+
+const extractNormalizedUrls = (value: string): string[] =>
+  [...new Set(
+    extractUrls(value)
+      .map((url) => normalizeUrl(url))
+      .filter((url): url is string => Boolean(url)),
+  )];
 
 const stripLinksAndUrls = (value: string): string =>
   value
@@ -79,6 +164,11 @@ const stripLinksAndUrls = (value: string): string =>
     .replace(BARE_URL_PATTERN, "")
     .replace(/\[[^\]]+\]\(\s*\)/g, "")
     .trim();
+
+const isLinkScaffoldingText = (value: string): boolean => {
+  const tokens = extractWordTokens(value);
+  return tokens.length === 0 || tokens.every((token) => LINK_SCAFFOLD_WORDS.has(token));
+};
 
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
@@ -137,29 +227,55 @@ export class AnswerSupportValidator {
       return segment.citationIndices;
     }
 
-    const normalizedUrls = [...new Set(
-      extractUrls(segment.text)
-        .map((url) => normalizeUrl(url))
-        .filter((url): url is string => Boolean(url)),
-    )];
+    const normalizedUrls = extractNormalizedUrls(segment.text);
 
     if (normalizedUrls.length === 0) {
       return undefined;
     }
 
     const residualText = stripLinksAndUrls(segment.text);
-    if (hasWordLikeContent(residualText)) {
+    if (
+      hasWordLikeContent(residualText)
+      && !isNonSubstantiveText(residualText)
+      && !isLinkScaffoldingText(residualText)
+    ) {
       return undefined;
     }
 
-    const matchingIndices = citationEvidence.flatMap((citation, index) => {
+    const citationUrlSets = citationEvidence.map((citation) => {
+      const citationUrls = new Set<string>();
       const normalizedSourceUrl = citation.sourceUrl ? normalizeUrl(citation.sourceUrl) : null;
-      if (!normalizedSourceUrl) {
-        return [];
+      if (normalizedSourceUrl) {
+        citationUrls.add(normalizedSourceUrl);
+      }
+      for (const url of extractNormalizedUrls(citation.content)) {
+        citationUrls.add(url);
+      }
+      for (const url of extractNormalizedUrls(citation.title)) {
+        citationUrls.add(url);
+      }
+      return citationUrls;
+    });
+
+    const matchingIndices: number[] = [];
+
+    for (const url of normalizedUrls) {
+      const matchesForUrl = citationUrlSets.flatMap((citationUrls, index) => (
+        citationUrls.has(url) ? [index] : []
+      ));
+
+      if (matchesForUrl.length === 0) {
+        return undefined;
       }
 
-      return normalizedUrls.every((url) => url === normalizedSourceUrl) ? [index] : [];
-    });
+      const preferredIndex = matchesForUrl.find((index) => (
+        citationEvidence[index]?.sourceUrl ? normalizeUrl(citationEvidence[index].sourceUrl!) === url : false
+      )) ?? matchesForUrl[0];
+
+      if (!matchingIndices.includes(preferredIndex)) {
+        matchingIndices.push(preferredIndex);
+      }
+    }
 
     return matchingIndices.length > 0 ? matchingIndices : undefined;
   }
@@ -174,6 +290,8 @@ export class AnswerSupportValidator {
     answerSupportPolicy: AnswerSupportPolicy;
     conversationMode: ConversationMode;
     groundedMissResponseComposer: GroundedMissResponseComposer;
+    unsupportedNoticeMarked?: boolean;
+    userExpectedLocale?: string | null;
   }): Promise<ValidatedAnswer> {
     const segmentResults = await Promise.all(input.answerSegments.map(async (segment) => {
       const citationIndices =
@@ -230,18 +348,40 @@ export class AnswerSupportValidator {
     ).length;
     const nonSubstantiveSegmentCount = segmentResults.filter((segment) => segment.disposition === VALIDATION_DISPOSITION.NON_SUBSTANTIVE).length;
 
-    const visibleSegments = supportedSegmentCount === 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)
-      ? [{
-          text: await input.groundedMissResponseComposer.composeUnsupportedWithContext({
-            query: input.query,
-            unsupportedText: input.answer,
-            contexts: input.retrievedContextSummaries,
-            conversationMode: input.conversationMode,
-          }),
-        }]
-      : supportedSegmentCount > 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)
-        ? this.buildVisibleSegmentsWithoutUnsupported(segmentResults)
-        : this.buildVisibleSegments(segmentResults);
+    const preserveModelUnsupportedNotice =
+      Boolean(input.unsupportedNoticeMarked)
+      && supportedSegmentCount === 0
+      && substantiveUnsupportedSegmentCount > 0
+      && shouldReplaceUnsupportedSegments(input.answerSupportPolicy);
+
+    const effectiveSegmentResults = preserveModelUnsupportedNotice
+      ? segmentResults.map((segment) => (
+          segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED
+            ? {
+                ...segment,
+                text: segment.originalText,
+                replacementApplied: false,
+                reason: "model_marked_unsupported_notice",
+              }
+            : segment
+        ))
+      : segmentResults;
+
+    const visibleSegments = preserveModelUnsupportedNotice
+      ? this.buildVisibleSegments(effectiveSegmentResults)
+      : supportedSegmentCount === 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)
+        ? [{
+            text: await input.groundedMissResponseComposer.composeUnsupportedWithContext({
+              query: input.query,
+              unsupportedText: input.answer,
+              contexts: input.retrievedContextSummaries,
+              conversationMode: input.conversationMode,
+              userExpectedLocale: input.userExpectedLocale,
+            }),
+          }]
+        : supportedSegmentCount > 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)
+          ? this.buildVisibleSegmentsWithoutUnsupported(segmentResults)
+          : this.buildVisibleSegments(segmentResults);
 
     const { citations, answerSegments } = this.compactVisibleArtifacts(visibleSegments, input.citationEvidence);
     const answer = visibleSegments.map((segment) => segment.text).join("");
@@ -252,14 +392,14 @@ export class AnswerSupportValidator {
       answerSegments: input.citationDisplayEnabled ? answerSegments : undefined,
       validation: {
         ran: true,
-        answerModified: segmentResults.some((segment) => segment.replacementApplied),
+        answerModified: effectiveSegmentResults.some((segment) => segment.replacementApplied),
         unsupportedSegmentCount,
         substantiveUnsupportedSegmentCount,
         supportedSegmentCount,
         nonSubstantiveSegmentCount,
         answerSupportPolicy: input.answerSupportPolicy,
       },
-      segmentResults,
+      segmentResults: effectiveSegmentResults,
     };
   }
 

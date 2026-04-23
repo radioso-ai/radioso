@@ -333,6 +333,7 @@ function PublicChatContent({
               assistantAvatarUrl={avatarUrl}
               assistantAvatarLabel={resolvedWorkspaceName}
               theme={theme}
+              themedSuggestionButtons
             />
             <div ref={messagesEndRef} />
           </div>

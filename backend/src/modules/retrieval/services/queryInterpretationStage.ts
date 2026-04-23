@@ -81,6 +81,12 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
               responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
             },
           ];
+    const triggerAnalysis = await this.queryRewriteService.analyzeTriggers({
+      query: input.request.query,
+      activeQuery,
+      contextMessages: promptHistory,
+      metadataRules: input.settings.metadataRules ?? [],
+    });
 
     return {
       ...input,
@@ -91,6 +97,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       activeParsedQuery,
       activeSemanticQuery: activeParsedQuery.semanticQuery || activeQuery,
       activeRetrievalSubqueries,
+      triggerAnalysis,
       promptHistory,
       continuityDecision,
     };

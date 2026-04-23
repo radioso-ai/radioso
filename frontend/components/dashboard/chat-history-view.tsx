@@ -838,7 +838,7 @@ export function ChatHistoryView({
                           />
                         ) : (
                           <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-                            Detailed retrieval trace unavailable for this assistant turn.
+                            Detailed retrieval trace unavailable for this assistant turn. Trigger-analysis details only appear when the backend captured replayable diagnostics.
                           </div>
                         )
                       ) : null

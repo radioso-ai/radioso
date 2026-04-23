@@ -37,7 +37,7 @@ describe("grounded miss response composer", () => {
       },
       async complete(input) {
         request = input;
-        return "I couldn't verify a raspberry cake recipe here, but I did find material about vegetarian cuisine in Ananda Vegetarian Cuisine if you'd like to explore that instead.";
+        return "I couldn't verify a raspberry cake recipe here.\n\nIf you'd like, I can still help with:\n1. vegetarian cuisine\n2. mindful cooking";
       },
       async *stream() {
         yield "";
@@ -56,9 +56,7 @@ describe("grounded miss response composer", () => {
           },
         ],
       }),
-    ).resolves.toBe(
-      "I couldn't verify a raspberry cake recipe here, but I did find material about vegetarian cuisine in Ananda Vegetarian Cuisine if you'd like to explore that instead.",
-    );
+    ).resolves.toBe("I couldn't verify a raspberry cake recipe here.\n\nIf you'd like, I can still help with:\n1. vegetarian cuisine\n2. mindful cooking");
 
     expect(request?.systemPrompt).toContain(
       "naturally pivot to the strongest nearby topic you can honestly help with",
@@ -128,6 +126,30 @@ describe("grounded miss response composer", () => {
     ).resolves.toBe(
       "I couldn't verify that from your workspace documents, but I did find related material in \"Ananda Vegetarian Cuisine\" if you'd like to explore that instead.",
     );
+  });
+
+  it("preserves markdown-style structure in unsupported-with-context model output", async () => {
+    const composer = new ModelGroundedMissResponseComposer({
+      metadata: {
+        capability: "chat",
+        provider: "openai",
+        model: "test-model",
+      },
+      async complete() {
+        return "First paragraph.\n\n- one\n- two[[1]]";
+      },
+      async *stream() {
+        yield "";
+      },
+    });
+
+    await expect(
+      composer.composeUnsupportedWithContext({
+        query: "What now?",
+        unsupportedText: "unsupported",
+        contexts: [{ title: "Nearby", content: "Nearby content." }],
+      }),
+    ).resolves.toBe("First paragraph.\n\n- one\n- two");
   });
 
   it("uses the first titled context when earlier contexts are untitled", async () => {

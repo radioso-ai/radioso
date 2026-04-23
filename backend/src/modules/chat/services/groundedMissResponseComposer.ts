@@ -78,10 +78,17 @@ const formatContextsForPrompt = (contexts: GroundedMissContextSummary[]): string
     .join("\n\n");
 };
 
+// Keep model-authored markdown structure, but strip citation artifacts and noisy spacing
+// before the fallback response is shown to users.
 const normalizeModelResponse = (value: string | undefined): string => {
-  const normalized = normalizeWhitespace(value)
+  const normalized = (value ?? "")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/\r\n?/g, "\n")
     .replace(/\[\[[^\]]*\]\]/g, "")
-    .replace(/\s+([,.;:!?])/g, "$1");
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .trim();
 
   if (!normalized || normalized.length > MAX_RESPONSE_LENGTH) {
     return "";
@@ -154,7 +161,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
         systemPrompt: UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT,
         prompt: renderPromptTemplate("chat/unsupported-with-context-user.md", {
           query: input.query,
-          unsupported_text: normalizeWhitespace(input.unsupportedText),
+          unsupported_text: input.unsupportedText.trim(),
           contexts_section: formatContextsForPrompt(input.contexts),
           conversation_mode_guidance: buildConversationModeGuidance({
             conversationMode: input.conversationMode,

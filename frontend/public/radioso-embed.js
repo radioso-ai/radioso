@@ -212,14 +212,13 @@
       panel.style.height = '100%'
       panel.style.maxHeight = '100%'
       panel.style.display = 'block'
+      panel.style.borderRadius = '0'
       if (position === 'bottom-left') {
         panel.style.left = '0'
         panel.style.borderLeft = '0'
-        panel.style.borderRadius = '0 28px 28px 0'
       } else {
         panel.style.right = '0'
         panel.style.borderRight = '0'
-        panel.style.borderRadius = '28px 0 0 28px'
       }
       return panel
     }

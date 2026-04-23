@@ -35,6 +35,39 @@ describe("document source content service", () => {
     });
   });
 
+  it("re-sanitizes URL-backed inline documents during processing", async () => {
+    const service = new DocumentSourceContentService(new InMemoryDocumentStorage(), async () => {
+      throw new Error("parser should not run for inline text");
+    });
+
+    const content = await service.materialize({
+      id: "doc-1",
+      workspaceId: "workspace-1",
+      title: "Meditation Tips - Ananda Europe",
+      sourceContent: "SEARCH\n\n## Meditation Tips\n\nHelpful body\n\n## Next in Pearls from Ananda",
+      markdownContent: "SEARCH\n\n## Meditation Tips\n\nHelpful body\n\n## Next in Pearls from Ananda",
+      status: "queued",
+      revision: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      metadata: {
+        url: "https://example.com/meditation",
+      },
+      sourceKind: "inline_text",
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+
+    expect(content).toEqual({
+      sourceContent: "## Meditation Tips\n\nHelpful body",
+      markdownContent: "## Meditation Tips\n\nHelpful body",
+    });
+  });
+
   it("reads the stored object and parses uploaded files before processing", async () => {
     const storage = new InMemoryDocumentStorage();
     storage.objects.set("workspaces/workspace-1/documents/imported/report.txt", {

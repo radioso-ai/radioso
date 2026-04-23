@@ -282,6 +282,50 @@ describe("answer support validator", () => {
     });
   });
 
+  it("recovers clearly grounded segments even when citation anchors are missing", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "How should I start meditating?",
+      answer: "Keep it short and simple. Begin with a few minutes each day.",
+      answerSegments: [
+        {
+          text: "Keep it short and simple. Begin with a few minutes each day.",
+        },
+      ],
+      citationEvidence: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Meditation Tips",
+          content: "Keep it short and simple. Begin with a few minutes each day instead of starting with a long session.",
+          sourceUrl: "https://example.com/meditation",
+        },
+      ],
+      retrievedContextSummaries: [
+        {
+          title: "Meditation Tips",
+          content: "Keep it short and simple. Begin with a few minutes each day instead of starting with a long session.",
+        },
+      ],
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("Keep it short and simple. Begin with a few minutes each day.");
+    expect(result.citations).toEqual([{ documentId: "doc-1", chunkId: "chunk-1", title: "Meditation Tips" }]);
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Keep it short and simple. Begin with a few minutes each day.",
+        citationIndices: [0],
+      },
+    ]);
+    expect(result.validation.answerModified).toBe(false);
+    expect(result.validation.supportedSegmentCount).toBe(1);
+  });
+
   it("treats link-only follow-up segments as supported when the URL matches cited source metadata", async () => {
     const validator = new AnswerSupportValidator();
 

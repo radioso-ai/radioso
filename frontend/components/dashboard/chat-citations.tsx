@@ -115,6 +115,25 @@ const hasBlockMarkdown = (content: string) =>
   || /```/.test(content)
   || /^\s*\|.+\|\s*$/m.test(content)
 
+const ORDERED_LIST_ITEM_PATTERN = /^(\s*)(\d+)\.\s+([\s\S]+)$/
+
+const getSegmentCitationIndices = (segment: AnswerSegment, citations: Citation[]) =>
+  [...new Set(segment.citationIndices ?? [])].filter(
+    (index) => index >= 0 && index < citations.length,
+  )
+
+const getOrderedListItem = (segment: AnswerSegment) => {
+  const match = segment.text.match(ORDERED_LIST_ITEM_PATTERN)
+  if (!match) {
+    return null
+  }
+
+  return {
+    number: Number(match[2]),
+    content: match[3],
+  }
+}
+
 export function AssistantMessageContent({
   content,
   citations = [],
@@ -124,7 +143,6 @@ export function AssistantMessageContent({
   const [citationNotice, setCitationNotice] = useState<{ scope: string; message: string } | null>(null)
   const noticeScope = `${content}|${citations.length}|${answerSegments?.length ?? 0}`
   const segments = getRenderableSegments(content, answerSegments)
-  const contentNodes: ReactNode[] = []
 
   const handleCitationOpen = async (citation: Citation, index: number) => {
     try {
@@ -154,32 +172,74 @@ export function AssistantMessageContent({
     }
   }
 
-  segments.forEach((segment, segmentIndex) => {
-    const dedupedIndices = [...new Set(segment.citationIndices ?? [])].filter(
-      (index) => index >= 0 && index < citations.length,
-    )
+  const renderCitations = (citationIndices: number[]) =>
+    citationIndices.map((citationIndex) => {
+      const citation = citations[citationIndex]
+      if (!citation) {
+        return null
+      }
 
+      return (
+        <CitationMarker
+          key={`${citation.documentId}-${citation.chunkId}-${citationIndex}`}
+          citation={citation}
+          index={citationIndex}
+          onOpenDocument={handleCitationOpen}
+        />
+      )
+    })
+
+  const contentNodes: ReactNode[] = []
+
+  for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+    const segment = segments[segmentIndex]
+    const orderedListItem = getOrderedListItem(segment)
+
+    if (orderedListItem) {
+      const listItems: Array<{
+        key: string
+        number: number
+        content: string
+        citationIndices: number[]
+      }> = []
+
+      for (let listIndex = segmentIndex; listIndex < segments.length; listIndex += 1) {
+        const listSegment = segments[listIndex]
+        const listItem = getOrderedListItem(listSegment)
+        if (!listItem) {
+          break
+        }
+
+        listItems.push({
+          key: `segment-${listIndex}`,
+          number: listItem.number,
+          content: listItem.content,
+          citationIndices: getSegmentCitationIndices(listSegment, citations),
+        })
+        segmentIndex = listIndex
+      }
+
+      contentNodes.push(
+        <ol key={`ordered-list-${segmentIndex}`} className="ml-5 list-decimal space-y-1 text-foreground">
+          {listItems.map((item) => (
+            <li key={item.key} value={item.number} className="ml-1 text-foreground">
+              <AssistantMarkdownContent content={item.content} inline={!hasBlockMarkdown(item.content)} />
+              {renderCitations(item.citationIndices)}
+            </li>
+          ))}
+        </ol>,
+      )
+      continue
+    }
+
+    const dedupedIndices = getSegmentCitationIndices(segment, citations)
     contentNodes.push(
       <Fragment key={`segment-${segmentIndex}`}>
         <AssistantMarkdownContent content={segment.text} inline={dedupedIndices.length > 0 && !hasBlockMarkdown(segment.text)} />
-        {dedupedIndices.map((citationIndex) => {
-          const citation = citations[citationIndex]
-          if (!citation) {
-            return null
-          }
-
-          return (
-            <CitationMarker
-              key={`${citation.documentId}-${citation.chunkId}-${citationIndex}`}
-              citation={citation}
-              index={citationIndex}
-              onOpenDocument={handleCitationOpen}
-            />
-          )
-        })}
+        {renderCitations(dedupedIndices)}
       </Fragment>,
     )
-  })
+  }
 
   return (
     <div className="space-y-2">

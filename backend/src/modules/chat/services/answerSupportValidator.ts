@@ -30,7 +30,8 @@ const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
 
 const normalizeForMeaningCheck = (value: string): string =>
   value
-    .replace(/[^a-z0-9]+/gi, " ")
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
     .toLowerCase();
 
@@ -42,6 +43,24 @@ const hasWordLikeContent = (value: string): boolean => {
   }
 
   return false;
+};
+
+const extractSignificantTerms = (value: string): string[] => {
+  const terms: string[] = [];
+
+  for (const segment of wordSegmenter.segment(value.normalize("NFKC").toLowerCase())) {
+    if (!segment.isWordLike) {
+      continue;
+    }
+
+    const normalized = segment.segment.replace(/[^\p{L}\p{N}]+/gu, "");
+    if (normalized.length < 4) {
+      continue;
+    }
+    terms.push(normalized);
+  }
+
+  return [...new Set(terms)];
 };
 
 const isNonSubstantiveText = (value: string): boolean => {
@@ -92,6 +111,51 @@ const toChatCitation = (citation: CitationEvidence) => ({
 });
 
 export class AnswerSupportValidator {
+  private resolveImplicitCitationIndices(segment: AnswerSegment, citationEvidence: CitationEvidence[]): number[] | undefined {
+    if ((segment.citationIndices?.length ?? 0) > 0) {
+      return segment.citationIndices;
+    }
+
+    const segmentTerms = extractSignificantTerms(segment.text);
+    if (segmentTerms.length < 3) {
+      return undefined;
+    }
+
+    const scores = citationEvidence
+      .map((citation, index) => {
+        const citationTerms = new Set(extractSignificantTerms(`${citation.title} ${citation.content}`));
+        const matchedTerms = segmentTerms.filter((term) => citationTerms.has(term));
+        return {
+          index,
+          matches: matchedTerms.length,
+          ratio: matchedTerms.length / segmentTerms.length,
+        };
+      })
+      .filter((score) => score.matches >= 2)
+      .sort((left, right) => {
+        if (right.ratio !== left.ratio) {
+          return right.ratio - left.ratio;
+        }
+        return right.matches - left.matches;
+      });
+
+    const best = scores[0];
+    const second = scores[1];
+    if (!best) {
+      return undefined;
+    }
+
+    if (best.ratio < 0.5) {
+      return undefined;
+    }
+
+    if (second && best.ratio < 0.7 && best.matches <= second.matches) {
+      return undefined;
+    }
+
+    return [best.index];
+  }
+
   private resolveSourceUrlCitationIndices(segment: AnswerSegment, citationEvidence: CitationEvidence[]): number[] | undefined {
     if ((segment.citationIndices?.length ?? 0) > 0) {
       return segment.citationIndices;
@@ -131,7 +195,9 @@ export class AnswerSupportValidator {
     groundedMissResponseComposer: GroundedMissResponseComposer;
   }): Promise<ValidatedAnswer> {
     const segmentResults = await Promise.all(input.answerSegments.map(async (segment) => {
-      const citationIndices = this.resolveSourceUrlCitationIndices(segment, input.citationEvidence);
+      const citationIndices =
+        this.resolveSourceUrlCitationIndices(segment, input.citationEvidence)
+        ?? this.resolveImplicitCitationIndices(segment, input.citationEvidence);
 
       if (isNonSubstantiveText(segment.text)) {
         return {

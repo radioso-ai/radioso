@@ -266,4 +266,90 @@ describe("candidate preparation stage", () => {
     });
     expect(result.scoredCandidates).toHaveLength(1);
   });
+
+  it("backs off trigger hard filters when they leave only weak support", async () => {
+    const stage = new CandidatePreparationStageService(
+      new CandidatePreparationService(),
+      new MetadataRuleScoringService(),
+    );
+
+    const result = await stage.execute({
+      ...buildInput([
+        semanticChunk(1, {
+          metadata: {
+            category: "event",
+            language: "en",
+          },
+        }),
+        semanticChunk(2, {
+          metadata: {
+            category: "glossary",
+            language: "en",
+          },
+        }),
+        semanticChunk(3, {
+          metadata: {
+            category: "glossary",
+            language: "en",
+          },
+        }),
+        semanticChunk(4, {
+          metadata: {
+            category: "glossary",
+            language: "en",
+          },
+        }),
+      ]),
+      settings: {
+        ...buildInput([]).settings,
+        metadataRules: [
+          {
+            id: "always-on-language",
+            field: "language",
+            valueType: "string",
+            operator: "equals",
+            value: "en",
+            effect: "boost",
+            enabled: true,
+            triggerMode: "always_on",
+          },
+          {
+            id: "matched-events",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact when the user asks about upcoming events.",
+          },
+        ],
+      },
+      triggerAnalysis: {
+        status: "applied",
+        consideredRules: [
+          {
+            ruleId: "matched-events",
+            matched: true,
+            matchStrength: 0.94,
+            reason: "The question is clearly asking about upcoming events.",
+            triggerInstructionPreview: "Enact when the user asks about upcoming events.",
+          },
+        ],
+        matchedRuleIds: ["matched-events"],
+        unmatchedRuleIds: [],
+        matchCount: 1,
+        matcherVersion: "test",
+      },
+    });
+
+    expect(result.triggerBackoff).toMatchObject({
+      applied: true,
+      reason: "weak_filtered_support",
+      relaxedRuleIds: ["matched-events"],
+      restoredCandidateCount: 4,
+    });
+    expect(result.scoredCandidates).toHaveLength(4);
+  });
 });

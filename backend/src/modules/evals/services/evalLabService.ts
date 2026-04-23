@@ -69,6 +69,55 @@ const normalizeExpectedCitations = (
   });
 };
 
+const formatTriggerRuleReference = (rule: {
+  ruleId: string;
+  triggerInstructionPreview: string;
+}): string => {
+  const preview = rule.triggerInstructionPreview.trim();
+  return preview.length > 0 ? `"${preview}"` : `rule ${rule.ruleId}`;
+};
+
+const summarizeTriggerBehavior = (diagnostics: EvalCaseResultRecord["diagnostics"]): {
+  matchedRules: string[];
+  backoffReason?: "empty_filtered_candidates" | "weak_filtered_support";
+} => {
+  const triggerAnalysis = diagnostics.retrievalInfo.triggerAnalysis;
+  const consideredRules = triggerAnalysis?.consideredRules ?? [];
+  const matchedRules = consideredRules
+    .filter((rule) => triggerAnalysis?.matchedRuleIds.includes(rule.ruleId))
+    .map((rule) => formatTriggerRuleReference(rule));
+
+  return {
+    matchedRules,
+    backoffReason: diagnostics.retrievalInfo.triggerBackoff?.reason,
+  };
+};
+
+const buildTriggerComparisonReasons = (
+  baseline: EvalCaseResultRecord["diagnostics"],
+  candidate: EvalCaseResultRecord["diagnostics"],
+): string[] => {
+  const baselineTrigger = summarizeTriggerBehavior(baseline);
+  const candidateTrigger = summarizeTriggerBehavior(candidate);
+  const reasons: string[] = [];
+
+  const baselineMatched = baselineTrigger.matchedRules.join(", ");
+  const candidateMatched = candidateTrigger.matchedRules.join(", ");
+  if (baselineMatched !== candidateMatched) {
+    reasons.push(
+      `Trigger decision changed from ${baselineMatched || "no enacted trigger rules"} to ${candidateMatched || "no enacted trigger rules"}.`,
+    );
+  }
+
+  if (baselineTrigger.backoffReason !== candidateTrigger.backoffReason) {
+    reasons.push(
+      `Trigger backoff changed from ${baselineTrigger.backoffReason ?? "none"} to ${candidateTrigger.backoffReason ?? "none"}.`,
+    );
+  }
+
+  return reasons;
+};
+
 export class EvalLabService {
   constructor(
     private readonly repository: EvalRepositoryPort,
@@ -452,27 +501,33 @@ export class EvalLabService {
       }
 
       if (baseline.status === "pass" && result.status === "fail") {
+        const triggerReasons = buildTriggerComparisonReasons(baseline.diagnostics, result.diagnostics);
         return {
           ...result,
           comparisonOutcome: "regressed",
-          comparisonReasons: result.score.reasons.length > 0
+          comparisonReasons: [...triggerReasons, ...(result.score.reasons.length > 0
             ? result.score.reasons
             : [`${caseTitleById.get(result.caseId) ?? "Case"} regressed.`],
+          )],
         };
       }
 
       if (baseline.status === "fail" && result.status === "pass") {
+        const triggerReasons = buildTriggerComparisonReasons(baseline.diagnostics, result.diagnostics);
         return {
           ...result,
           comparisonOutcome: "improved",
-          comparisonReasons: ["Case now passes all configured expectations."],
+          comparisonReasons: [...triggerReasons, "Case now passes all configured expectations."],
         };
       }
 
+      const triggerReasons = buildTriggerComparisonReasons(baseline.diagnostics, result.diagnostics);
       return {
         ...result,
         comparisonOutcome: "unchanged",
-        comparisonReasons: ["Case outcome is unchanged from the baseline run."],
+        comparisonReasons: triggerReasons.length > 0
+          ? [...triggerReasons, "Case outcome is unchanged from the baseline run."]
+          : ["Case outcome is unchanged from the baseline run."],
       };
     });
   }

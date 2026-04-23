@@ -220,6 +220,175 @@ describe("retrieval pipeline stages", () => {
     });
   });
 
+  it("suppresses low-confidence trigger matches from enactment", async () => {
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService(undefined, {
+        async analyze() {
+          return {
+            status: "applied",
+            consideredRules: [
+              {
+                ruleId: "events-filter",
+                matched: true,
+                matchStrength: 0.42,
+                reason: "The query loosely overlaps with upcoming events.",
+                triggerInstructionPreview: "Enact for upcoming events.",
+              },
+            ],
+            matchedRuleIds: ["events-filter"],
+            unmatchedRuleIds: [],
+            matchCount: 1,
+            matcherVersion: "test",
+          };
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "Tell me something interesting happening soon.",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "events-filter",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for upcoming events.",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.triggerAnalysis.matchedRuleIds).toEqual([]);
+    expect(result.triggerAnalysis.unmatchedRuleIds).toEqual(["events-filter"]);
+    expect(result.triggerAnalysis.matchCount).toBe(0);
+    expect(result.triggerAnalysis.consideredRules[0]).toMatchObject({
+      ruleId: "events-filter",
+      matched: false,
+      matchStrength: 0.42,
+    });
+    expect(result.triggerAnalysis.consideredRules[0]?.reason).toContain("below the enactment threshold");
+  });
+
+  it("supports multiple trigger rules crossing the enactment threshold", async () => {
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService(undefined, {
+        async analyze() {
+          return {
+            status: "applied",
+            consideredRules: [
+              {
+                ruleId: "events-filter",
+                matched: true,
+                matchStrength: 0.94,
+                reason: "The user is asking about an upcoming event.",
+                triggerInstructionPreview: "Enact for upcoming events.",
+              },
+              {
+                ruleId: "active-registration-filter",
+                matched: true,
+                matchStrength: 0.88,
+                reason: "The question is also about currently open registration windows.",
+                triggerInstructionPreview: "Enact for active registrations.",
+              },
+            ],
+            matchedRuleIds: ["events-filter", "active-registration-filter"],
+            unmatchedRuleIds: [],
+            matchCount: 2,
+            matcherVersion: "test",
+          };
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "Which upcoming camps still have open registration?",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "events-filter",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for upcoming events.",
+          },
+          {
+            id: "active-registration-filter",
+            field: "registrationStatus",
+            valueType: "string",
+            operator: "equals",
+            value: "open",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for active registrations.",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.triggerAnalysis.matchedRuleIds).toEqual(["events-filter", "active-registration-filter"]);
+    expect(result.triggerAnalysis.matchCount).toBe(2);
+  });
+
   it("clears prompt history when rewrite marks a fresh subject", async () => {
     const stage = new QueryInterpretationStageService(
       new QueryRewriteService({

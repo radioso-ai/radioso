@@ -28,7 +28,13 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       metadataRules: activeRules,
     });
     const matchedHardFilterIds = matchedTriggeredRules.filter((rule) => rule.effect === "filter").map((rule) => rule.id);
-    const shouldBackOff = matchedHardFilterIds.length > 0 && metadataRuleCandidates.candidates.length === 0;
+    const emptyFilteredCandidates = matchedHardFilterIds.length > 0 && metadataRuleCandidates.candidates.length === 0;
+    const weakFilteredSupport =
+      matchedHardFilterIds.length > 0 &&
+      metadataRuleCandidates.candidates.length > 0 &&
+      metadataRuleCandidates.candidates.length < RETRIEVAL_BEHAVIOR.hybrid.minimumUsefulCandidateCount &&
+      normalizedCandidates.length >= RETRIEVAL_BEHAVIOR.hybrid.minimumUsefulCandidateCount;
+    const shouldBackOff = emptyFilteredCandidates || weakFilteredSupport;
     const relaxedRuleSet = shouldBackOff
       ? [...alwaysOnRules, ...matchedTriggeredRules.filter((rule) => rule.effect !== "filter")]
       : activeRules;
@@ -51,7 +57,11 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       candidateFallbackApplied: input.vectorFallbackApplied || shouldBackOff,
       triggerBackoff: {
         applied: shouldBackOff,
-        reason: shouldBackOff ? "empty_filtered_candidates" : undefined,
+        reason: emptyFilteredCandidates
+          ? "empty_filtered_candidates"
+          : weakFilteredSupport
+            ? "weak_filtered_support"
+            : undefined,
         relaxedRuleIds: shouldBackOff ? matchedHardFilterIds : [],
         restoredCandidateCount: shouldBackOff ? relaxedCandidates.candidates.length : undefined,
       },

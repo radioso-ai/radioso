@@ -1,4 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { RetrievalMetadataRule } from "../../settings/domain/retrievalSettings.js";
@@ -28,6 +29,7 @@ const QUERY_REWRITE_SYSTEM_PROMPT = loadPromptTemplate("retrieval/query-rewrite-
 const TRIGGER_ANALYSIS_SYSTEM_PROMPT = loadPromptTemplate("retrieval/trigger-analysis-system.md");
 
 const DEFAULT_RESPONSE_LANGUAGE_POLICY: ResponseLanguagePolicy = "match_user_question";
+const TRIGGER_MATCH_ENACTMENT_THRESHOLD = RETRIEVAL_BEHAVIOR.hybrid.triggerMatchEnactmentThreshold;
 
 const buildQueryRewritePrompt = (input: {
   context: string;
@@ -320,17 +322,30 @@ export class QueryRewriteService {
         query: input.query,
         rules: triggerableRules,
       });
+      const normalizedConsideredRules = result.consideredRules.map((rule) => {
+        const thresholdMet = rule.matchStrength >= TRIGGER_MATCH_ENACTMENT_THRESHOLD;
+        const thresholdGuardedMatch = rule.matched && thresholdMet;
+
+        return {
+          ...rule,
+          matched: thresholdGuardedMatch,
+          reason: thresholdGuardedMatch
+            ? rule.reason.trim()
+            : rule.matched
+              ? `${rule.reason.trim()} Match strength ${rule.matchStrength.toFixed(2)} is below the enactment threshold ${TRIGGER_MATCH_ENACTMENT_THRESHOLD.toFixed(2)}.`
+              : rule.reason.trim(),
+          triggerInstructionPreview: rule.triggerInstructionPreview.trim(),
+        };
+      });
+      const matchedRuleIds = normalizedConsideredRules.filter((rule) => rule.matched).map((rule) => rule.ruleId);
+      const unmatchedRuleIds = normalizedConsideredRules.filter((rule) => !rule.matched).map((rule) => rule.ruleId);
 
       return {
         status: result.status,
-        consideredRules: result.consideredRules.map((rule) => ({
-          ...rule,
-          reason: rule.reason.trim(),
-          triggerInstructionPreview: rule.triggerInstructionPreview.trim(),
-        })),
-        matchedRuleIds: [...result.matchedRuleIds],
-        unmatchedRuleIds: [...result.unmatchedRuleIds],
-        matchCount: result.matchCount,
+        consideredRules: normalizedConsideredRules,
+        matchedRuleIds,
+        unmatchedRuleIds,
+        matchCount: matchedRuleIds.length,
         matcherVersion: result.matcherVersion,
         failureReason: result.failureReason,
       };

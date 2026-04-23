@@ -20,6 +20,11 @@ export function ChatRetrievalInfo({
     return null
   }
 
+  const relaxedRuleLabels = retrievalInfo?.triggerBackoff?.relaxedRuleIds.map((ruleId) => {
+    const matchedRule = retrievalInfo.triggerAnalysis?.consideredRules.find((rule) => rule.ruleId === ruleId)
+    return matchedRule?.triggerInstructionPreview || ruleId
+  }) ?? []
+
   return (
     <div className="space-y-3">
       {retrievalInfo?.triggerAnalysis ? (
@@ -53,10 +58,12 @@ export function ChatRetrievalInfo({
         <section className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
           <p className="text-sm font-medium text-foreground">Trigger backoff</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Retrieval relaxed hard-filter trigger rules after they removed all prepared candidates.
+            {retrievalInfo.triggerBackoff.reason === 'weak_filtered_support'
+              ? 'Retrieval relaxed trigger-enacted hard filters because the narrowed candidate pool looked too weak to trust.'
+              : 'Retrieval relaxed trigger-enacted hard filters after they removed all prepared candidates.'}
           </p>
           <p className="mt-2 text-xs text-muted-foreground">
-            Relaxed rules: {retrievalInfo.triggerBackoff.relaxedRuleIds.join(', ') || 'none recorded'}
+            Relaxed rules: {relaxedRuleLabels.join(', ') || 'none recorded'}
             {typeof retrievalInfo.triggerBackoff.restoredCandidateCount === 'number'
               ? ` • Restored candidates: ${retrievalInfo.triggerBackoff.restoredCandidateCount}`
               : ''}

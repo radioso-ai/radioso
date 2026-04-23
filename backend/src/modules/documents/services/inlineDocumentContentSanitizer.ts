@@ -1,4 +1,3 @@
-const MIN_SUBSTANTIVE_WORDS = 4;
 const MAX_PREVIEW_LINE_LENGTH = 200;
 
 const NAMED_HTML_ENTITIES: Record<string, string> = {
@@ -14,8 +13,6 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
   ldquo: "\"",
   hellip: "...",
 };
-
-const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
 
 const normalizeInlineWhitespace = (value: string): string =>
   value
@@ -54,29 +51,6 @@ const isLikelyTagCloudLine = (value: string): boolean => {
 };
 
 const isLikelyTimecodeLine = (value: string): boolean => /^\d{1,2}:\d{2}(?::\d{2})?$/.test(value.trim());
-
-const countWordLikeSegments = (value: string): number => {
-  let count = 0;
-
-  for (const segment of wordSegmenter.segment(value)) {
-    if (segment.isWordLike) {
-      count += 1;
-    }
-  }
-
-  return count;
-};
-
-const isHeadingLine = (value: string): boolean => /^\s{0,3}#{1,6}\s+\S/u.test(value);
-
-const isLikelySubstantiveLine = (value: string): boolean => {
-  const trimmed = value.trim();
-  if (!trimmed || isHeadingLine(trimmed) || isLikelyTagCloudLine(trimmed) || isLikelyTimecodeLine(trimmed)) {
-    return false;
-  }
-
-  return countWordLikeSegments(trimmed) >= MIN_SUBSTANTIVE_WORDS;
-};
 
 const isNoiseLine = (value: string): boolean => {
   const trimmed = value.trim();
@@ -139,22 +113,6 @@ const cropAroundMatchedTitle = (lines: string[], title: string): string[] => {
   return lines.slice(titleIndex);
 };
 
-const trimTrailingNonSubstantiveTail = (lines: string[]): string[] => {
-  let lastSubstantiveIndex = -1;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    if (isLikelySubstantiveLine(lines[index] ?? "")) {
-      lastSubstantiveIndex = index;
-    }
-  }
-
-  if (lastSubstantiveIndex === -1) {
-    return lines;
-  }
-
-  return lines.slice(0, lastSubstantiveIndex + 1);
-};
-
 export const sanitizeInlineDocumentContent = (input: {
   title: string;
   sourceContent: string;
@@ -162,7 +120,8 @@ export const sanitizeInlineDocumentContent = (input: {
   metadata?: Record<string, unknown>;
 }): { sourceContent: string; markdownContent: string } => {
   const markdown = input.markdownContent ?? input.sourceContent;
-  const hasSourceUrl = typeof input.metadata?.url === "string" && input.metadata.url.trim().length > 0;
+  const hasSourceUrl =
+    typeof input.metadata?.sourceUrl === "string" && input.metadata.sourceUrl.trim().length > 0;
 
   const normalizedSource = decodeHtmlEntities(normalizeInlineWhitespace(input.sourceContent)).trim();
   const normalizedMarkdown = decodeHtmlEntities(normalizeInlineWhitespace(markdown)).trim();
@@ -177,7 +136,7 @@ export const sanitizeInlineDocumentContent = (input: {
   const croppedLines = cropAroundMatchedTitle(normalizedMarkdown.split("\n"), input.title)
     .map((line) => line.slice(0, MAX_PREVIEW_LINE_LENGTH * 20))
     .filter((line) => !isNoiseLine(line));
-  const cleanedLines = collapseBlankRuns(trimTrailingNonSubstantiveTail(croppedLines));
+  const cleanedLines = collapseBlankRuns(croppedLines);
   const cleanedMarkdown = cleanedLines.join("\n").trim();
 
   if (!cleanedMarkdown) {

@@ -51,7 +51,7 @@ describe("document source content service", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       metadata: {
-        url: "https://example.com/meditation",
+        sourceUrl: "https://example.com/meditation",
       },
       sourceKind: "inline_text",
       sourceFilename: null,

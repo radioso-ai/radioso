@@ -39,7 +39,7 @@ describe("inline document content sanitizer", () => {
       title: "How to begin with meditation? 5 Tips - Kirtani - Ananda Europe",
       sourceContent: content,
       metadata: {
-        url: "https://anandaeurope.org/video/how-to-begin-with-meditation-5-tips-kirtani",
+        sourceUrl: "https://anandaeurope.org/video/how-to-begin-with-meditation-5-tips-kirtani",
       },
     });
 
@@ -51,5 +51,27 @@ describe("inline document content sanitizer", () => {
       ].join("\n"),
     );
     expect(result.sourceContent).toBe(result.markdownContent);
+  });
+
+  it("preserves legitimate trailing short list items for sourceUrl-backed documents", () => {
+    const content = [
+      "## Meditation Benefits",
+      "",
+      "A short intro paragraph with enough detail to count as real content.",
+      "",
+      "- Calm mind",
+      "- Better focus",
+    ].join("\n");
+
+    const result = sanitizeInlineDocumentContent({
+      title: "Meditation Benefits",
+      sourceContent: content,
+      metadata: {
+        sourceUrl: "https://example.com/meditation-benefits",
+      },
+    });
+
+    expect(result.markdownContent).toBe(content);
+    expect(result.sourceContent).toBe(content);
   });
 });

@@ -93,4 +93,30 @@ describe('AssistantMessageContent', () => {
     expect(html).toMatch(/First sentence<button/)
     expect(html).toMatch(/Second sentence<button/)
   })
+
+  it('preserves paragraph markdown inside cited block segments', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          {
+            documentId: 'doc-1',
+            chunkId: 'chunk-1',
+            title: 'Source 1',
+          },
+        ]}
+        answerSegments={[
+          {
+            text: 'First paragraph.\n\nSecond paragraph with a [link](https://example.com).',
+            citationIndices: [0],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('<p')
+    expect(html).toContain('href="https://example.com"')
+    expect(html).toContain('Second paragraph')
+  })
 })

@@ -237,7 +237,7 @@ describe("resolveAnonymousSession", () => {
     );
   });
 
-  it("allows embedded chat sessions even when anonymous chat is disabled", async () => {
+  it("accepts a valid embed session when anonymous chat is disabled", async () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateGeneralSettings(workspace.id, {
       anonymousChatEnabled: false,
@@ -267,13 +267,57 @@ describe("resolveAnonymousSession", () => {
     const { req, res, next, getError } = createMockReqRes(
       { token: "test-token-1234567890" },
       {},
-      { [WEBSITE_EMBED_SESSION_HEADER]: embedSession.token },
+      {
+        [WEBSITE_EMBED_SESSION_HEADER]: embedSession.token,
+      },
     );
 
     await middleware(req, res, next);
 
     expect(getError()).toBeUndefined();
-    expect(res.locals.workspaceId).toBe(workspace.id);
     expect(res.locals.anonymousSessionId).toBe("67acb0c8-caad-4a1b-9fef-70cbca3f7d12");
+    expect(res.locals.sourceChannel).toBe("website_embed");
+    expect(res.locals.sourceOrigin).toBe("https://example.com");
+  });
+
+  it("rejects an invalid embed session when anonymous chat is disabled", async () => {
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateGeneralSettings(workspace.id, {
+      anonymousChatEnabled: false,
+      anonymousChatToken: "test-token-1234567890",
+      anonymousRateLimit: 10,
+      assistantName: "",
+      assistantRole: "",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      websiteEmbedEnabled: true,
+      websiteEmbedToken: "embed-token-123",
+      websiteEmbedAllowedOrigins: ["https://example.com"],
+      websiteEmbedLauncherLabel: "Chat with us",
+      websiteEmbedLauncherIcon: "chat",
+      websiteEmbedLauncherPosition: "bottom-right",
+    });
+
+    const embedSession = issueWebsiteEmbedSession(SESSION_SECRET, {
+      workspaceId: workspace.id,
+      publicChatToken: "test-token-1234567890",
+      anonymousSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+      sourceOrigin: "https://example.com",
+    });
+
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
+    const { req, res, next, getError } = createMockReqRes(
+      { token: "test-token-1234567890" },
+      {},
+      {
+        [WEBSITE_EMBED_SESSION_HEADER]: `${embedSession.token}tampered`,
+      },
+    );
+
+    await middleware(req, res, next);
+
+    expect(getError()).toBeDefined();
+    expect((getError() as any).statusCode).toBe(404);
   });
 });

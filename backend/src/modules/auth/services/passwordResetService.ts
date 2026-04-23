@@ -47,8 +47,7 @@ export class PasswordResetService {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + this.dependencies.env.PASSWORD_RESET_TOKEN_TTL_MINUTES * 60 * 1000);
 
-    await this.dependencies.passwordResetTokenRepository.markAllActiveForUserUsed(user.id, now);
-    await this.dependencies.passwordResetTokenRepository.create({
+    const createdToken = await this.dependencies.passwordResetTokenRepository.create({
       userId: user.id,
       tokenHash: sha256(token),
       expiresAt,
@@ -65,6 +64,7 @@ export class PasswordResetService {
         resetUrl: resetUrl.toString(),
       });
     } catch (error) {
+      await this.dependencies.passwordResetTokenRepository.markUsed(createdToken.id, now);
       await this.dependencies.auditService.record({
         eventType: "auth.password_reset.request",
         eventStatus: "failure",
@@ -72,6 +72,12 @@ export class PasswordResetService {
       });
       return { accepted: true };
     }
+
+    await this.dependencies.passwordResetTokenRepository.markOlderActiveForUserUsed(
+      user.id,
+      createdToken.createdAt,
+      now,
+    );
 
     await this.dependencies.auditService.record({
       eventType: "auth.password_reset.request",
@@ -85,6 +91,7 @@ export class PasswordResetService {
   async confirmReset(input: { token: string; password: string }): Promise<{
     userId: string;
     accountId: string;
+    email: string;
     organizationName: string;
     workspaceId: string;
     workspaceName: string;
@@ -147,6 +154,7 @@ export class PasswordResetService {
     return {
       userId: user.id,
       accountId: membership.accountId,
+      email: user.email,
       organizationName: account?.name ?? "Organization",
       workspaceId: workspace.id,
       workspaceName: workspace.name,

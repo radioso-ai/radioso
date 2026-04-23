@@ -13,6 +13,7 @@ const EMBED_SESSION_STORAGE_PREFIX = 'radioso.embedSession.'
 const EMBED_BOOTSTRAP_STORAGE_PREFIX = 'radioso.embedBootstrap.'
 
 interface StoredEmbedBootstrapSession {
+  workspaceName?: string
   publicChatToken: string
   embedSessionToken: string
   expiresAt: string
@@ -150,6 +151,7 @@ export const readStoredEmbedBootstrapSession = (token: string): StoredEmbedBoots
     }
 
     return {
+      workspaceName: typeof parsed.workspaceName === 'string' ? parsed.workspaceName : undefined,
       publicChatToken: parsed.publicChatToken,
       embedSessionToken: parsed.embedSessionToken,
       expiresAt: parsed.expiresAt,
@@ -1275,6 +1277,10 @@ export interface PasswordResetConfirmRequest {
   password: string
 }
 
+export interface PasswordResetConfirmResponse extends LoginResponse {
+  email: string
+}
+
 // Workspace API
 export const workspaceApi = {
   async list(): Promise<Workspace[]> {
@@ -1341,8 +1347,8 @@ export const authApi = {
     }, { withSession: true })
   },
 
-  async confirmPasswordReset(data: PasswordResetConfirmRequest): Promise<LoginResponse> {
-    return request<LoginResponse>('/auth/password-reset/confirm', {
+  async confirmPasswordReset(data: PasswordResetConfirmRequest): Promise<PasswordResetConfirmResponse> {
+    return request<PasswordResetConfirmResponse>('/auth/password-reset/confirm', {
       method: 'POST',
       body: JSON.stringify(data),
     }, { withSession: true })

@@ -66,6 +66,19 @@ class InMemoryPasswordResetTokenRepository implements PasswordResetTokenReposito
       }
     }
   }
+
+  async markOlderActiveForUserUsed(userId: string, createdBefore: Date, usedAt: Date): Promise<void> {
+    for (const record of this.items.values()) {
+      if (
+        record.userId === userId &&
+        record.createdAt < createdBefore &&
+        record.usedAt === null &&
+        record.expiresAt > usedAt
+      ) {
+        record.usedAt = usedAt;
+      }
+    }
+  }
 }
 
 class TrackingSessionRepository implements SessionRepositoryPort {
@@ -184,12 +197,16 @@ const createPasswordResetService = async (options?: {
 
   return {
     service,
+    env,
     user,
     auditService,
+    accountRepository,
+    accountAccessService,
     emailService,
     passwordResetTokenRepository,
     sessionRepository,
     userRepository,
+    workspaceService,
   };
 };
 
@@ -236,7 +253,7 @@ describe("PasswordResetService", () => {
     });
 
     expect(response).toEqual({ accepted: true });
-    expect(await passwordResetTokenRepository.findLatestActiveByUserId(user.id, new Date())).toBeTruthy();
+    expect(await passwordResetTokenRepository.findLatestActiveByUserId(user.id, new Date())).toBeNull();
     expect(auditService.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -251,21 +268,64 @@ describe("PasswordResetService", () => {
     );
   });
 
+  it("keeps an earlier reset link active when replacement email delivery fails", async () => {
+    const {
+      service,
+      env,
+      user,
+      accountRepository,
+      accountAccessService,
+      passwordResetTokenRepository,
+      sessionRepository,
+      userRepository,
+      workspaceService,
+    } = await createPasswordResetService();
+
+    await service.requestReset({
+      email: "reset@example.com",
+      requestIp: "127.0.0.1",
+    });
+
+    const existingToken = await passwordResetTokenRepository.findLatestActiveByUserId(user.id, new Date());
+    expect(existingToken).toBeTruthy();
+
+    const failingService = new PasswordResetService({
+      env,
+      auditService: createAuditService(),
+      accountRepository,
+      accountAccessService,
+      emailService: new FailingEmailService(),
+      passwordResetTokenRepository,
+      sessionRepository,
+      userRepository,
+      workspaceService,
+    });
+
+    await failingService.requestReset({
+      email: "reset@example.com",
+      requestIp: "127.0.0.1",
+    });
+
+    expect(await passwordResetTokenRepository.findLatestActiveByUserId(user.id, new Date())).toMatchObject({
+      id: existingToken?.id,
+    });
+  });
+
   it("rejects stale tokens after a newer request is issued", async () => {
     const { service, emailService } = await createPasswordResetService();
 
     await service.requestReset({ email: "reset@example.com" });
     await service.requestReset({ email: "reset@example.com" });
 
-    const staleToken = new URL(emailService.messages![0]!.resetUrl).searchParams.get("token");
+    const firstToken = new URL(emailService.messages![0]!.resetUrl).searchParams.get("token");
 
     await expect(
       service.confirmReset({
-        token: staleToken!,
+        token: firstToken!,
         password: "newsecurepassword",
       }),
     ).rejects.toMatchObject({
-      code: "unauthorized",
+      statusCode: 401,
     });
   });
 

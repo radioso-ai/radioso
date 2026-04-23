@@ -208,6 +208,9 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
       workspace.websiteEmbedAllowedOrigins.length > 0
         ? ` data-radioso-allowed-origins="${escapeHtmlAttribute(workspace.websiteEmbedAllowedOrigins.join(","))}"`
         : "";
+    const titleOverride = workspace.name.trim()
+      ? ` data-radioso-copy="${escapeHtmlAttribute(JSON.stringify({ embeddedChatTitle: workspace.name.trim() }))}"`
+      : "";
 
     return [
       `<script`,
@@ -216,7 +219,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
       `  data-radioso-token="${escapeHtmlAttribute(workspace.websiteEmbedToken)}"`,
       `  data-radioso-launcher-label="${escapeHtmlAttribute(workspace.websiteEmbedLauncherLabel)}"`,
       `  data-radioso-launcher-icon="${escapeHtmlAttribute(workspace.websiteEmbedLauncherIcon)}"`,
-      `  data-radioso-launcher-position="${escapeHtmlAttribute(workspace.websiteEmbedLauncherPosition)}"${originAttribute}`,
+      `  data-radioso-launcher-position="${escapeHtmlAttribute(workspace.websiteEmbedLauncherPosition)}"${originAttribute}${titleOverride}`,
       `></script>`,
     ].join("\n");
   };

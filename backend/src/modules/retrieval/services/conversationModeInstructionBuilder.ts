@@ -16,15 +16,17 @@ export class ConversationModeInstructionBuilder {
       case "exploratory":
         return [
           "Conversation mode: exploratory.",
-          "After the direct answer, you may optionally mention two or three grounded adjacent directions you can honestly help with from what you know here.",
-          "Any optional continuation must stay grounded and remain in the same language as the user's question.",
+          "Answer the user's question directly, and stay grounded in the retrieved material.",
+          "Do not append suggested next questions or adjacent directions in the answer body; those are surfaced separately when available.",
+          "Keep the answer in the same language as the user's question.",
         ].join("\n");
       case "guided":
       default:
         return [
           "Conversation mode: guided.",
-          "After the direct answer, you may optionally suggest one or two grounded adjacent directions.",
-          "Keep any optional continuation concise, clearly separate from the direct answer, and in the same language as the user's question.",
+          "Answer the user's question directly and concisely.",
+          "Do not append suggested next questions or adjacent directions in the answer body; those are surfaced separately when available.",
+          "Keep the answer in the same language as the user's question.",
         ].join("\n");
     }
   }

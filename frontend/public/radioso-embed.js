@@ -3,38 +3,84 @@
   const DEFAULT_LABEL = 'Chat with us'
   const DEFAULT_POSITION = 'bottom-right'
   const DEFAULT_ICON = 'chat'
+  const DEFAULT_DISPLAY_MODE = 'bubble'
   const DEFAULT_INITIAL_STATE = 'collapsed'
   const READY_MESSAGE = 'radioso:embed:ready'
   const SESSION_MESSAGE = 'radioso:embed:session'
   const ERROR_MESSAGE = 'radioso:embed:error'
-  const LOCALE_PATTERN = /^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$/
-
-  const copyByLocale = {
-    de: {
-      launcherDefaultLabel: 'Chatte mit uns',
-      iframeTitle: 'Eingebetteter Radioso-Chat',
-    },
-    en: {
-      launcherDefaultLabel: 'Chat with us',
-      iframeTitle: 'Radioso embedded chat',
-    },
-    es: {
-      launcherDefaultLabel: 'Chatea con nosotros',
-      iframeTitle: 'Chat incrustado de Radioso',
-    },
-    fr: {
-      launcherDefaultLabel: 'Discutez avec nous',
-      iframeTitle: 'Chat integre Radioso',
-    },
-    it: {
-      launcherDefaultLabel: 'Chatta con noi',
-      iframeTitle: 'Chat incorporata Radioso',
-    },
-    pt: {
-      launcherDefaultLabel: 'Converse conosco',
-      iframeTitle: 'Chat incorporado do Radioso',
-    },
+  const COLLAPSE_MESSAGE = 'radioso:embed:collapse'
+  const PANEL_HANDLE_WIDTH = 56
+  const defaultCopy = {
+    launcherDefaultLabel: 'Chat with us',
+    iframeTitle: 'Radioso embedded chat',
   }
+
+  const defaultTheme = {
+    launcherBackground: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+    launcherForeground: '#f8fafc',
+    launcherBorder: 'rgba(15, 23, 42, 0.16)',
+    launcherShadow: '0 18px 40px rgba(15, 23, 42, 0.24)',
+    panelBackground: '#ffffff',
+    panelForeground: '#0f172a',
+    panelBorder: 'rgba(148, 163, 184, 0.35)',
+    panelShadow: '0 24px 60px rgba(15, 23, 42, 0.28)',
+    accent: '#0f172a',
+    accentForeground: '#f8fafc',
+    mutedBackground: '#f8fafc',
+    mutedForeground: '#64748b',
+    inputBackground: '#ffffff',
+    inputForeground: '#0f172a',
+    inputBorder: '#cbd5e1',
+    inputPlaceholder: '#94a3b8',
+    assistantBubbleBackground: '#ffffff',
+    assistantBubbleForeground: '#0f172a',
+    userBubbleBackground: '#0f172a',
+    userBubbleForeground: '#f8fafc',
+  }
+
+  const copyOverrideKeys = [
+    'launcherDefaultLabel',
+    'embeddedChatTitle',
+    'embeddedChatUnavailableTitle',
+    'embeddedChatUnavailableMessage',
+    'embeddedChatLauncherRequiredMessage',
+    'embeddedChatStartingMessage',
+    'publicChatSubtitle',
+    'publicChatEmptyTitle',
+    'publicChatEmptyMessage',
+    'startPrompt',
+    'publicChatUnavailableTitle',
+    'publicChatUnavailableMessage',
+    'publicChatLoadOlderMessages',
+    'publicChatSendMessageLabel',
+    'publicChatNewChatLabel',
+    'publicChatCollapseLabel',
+    'publicChatDisclaimerTemplate',
+    'publicChatRateLimitRetryTemplate',
+  ]
+
+  const themeOverrideKeys = [
+    'launcherBackground',
+    'launcherForeground',
+    'launcherBorder',
+    'launcherShadow',
+    'panelBackground',
+    'panelForeground',
+    'panelBorder',
+    'panelShadow',
+    'accent',
+    'accentForeground',
+    'mutedBackground',
+    'mutedForeground',
+    'inputBackground',
+    'inputForeground',
+    'inputBorder',
+    'inputPlaceholder',
+    'assistantBubbleBackground',
+    'assistantBubbleForeground',
+    'userBubbleBackground',
+    'userBubbleForeground',
+  ]
 
   const iconMarkup = {
     chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 5.5A3.5 3.5 0 0 1 7.5 2h9A3.5 3.5 0 0 1 20 5.5v7A3.5 3.5 0 0 1 16.5 16H10l-4.5 4v-4.2A3.5 3.5 0 0 1 4 12.5z"/></svg>',
@@ -59,22 +105,6 @@
     }
   }
 
-  const normalizeLocale = (value) => {
-    if (!value) {
-      return null
-    }
-
-    const trimmed = value.trim()
-    if (!trimmed || trimmed.length > 35 || !LOCALE_PATTERN.test(trimmed)) {
-      return null
-    }
-
-    const language = trimmed.split('-')[0].toLowerCase()
-    return Object.prototype.hasOwnProperty.call(copyByLocale, language) ? language : null
-  }
-
-  const getCopy = (locale) => copyByLocale[locale] ?? copyByLocale.en
-
   const normalizeInitialState = (value) => {
     if (!value) {
       return null
@@ -82,6 +112,15 @@
 
     const normalized = value.trim().toLowerCase()
     return normalized === 'open' || normalized === 'collapsed' ? normalized : null
+  }
+
+  const normalizeDisplayMode = (value) => {
+    if (!value) {
+      return null
+    }
+
+    const normalized = value.trim().toLowerCase()
+    return normalized === 'bubble' || normalized === 'panel' ? normalized : null
   }
 
   const resolveAvatarUrl = (value) => {
@@ -102,36 +141,192 @@
     }
   }
 
-  const createPanel = () => {
-    const panel = document.createElement('div')
-    panel.setAttribute('aria-hidden', 'true')
-    panel.style.position = 'absolute'
-    panel.style.width = 'min(420px, calc(100vw - 1.5rem))'
-    panel.style.height = 'min(640px, calc(100vh - 6rem))'
-    panel.style.maxHeight = 'calc(100vh - 6rem)'
-    panel.style.borderRadius = '24px'
-    panel.style.overflow = 'hidden'
-    panel.style.boxShadow = '0 24px 60px rgba(15, 23, 42, 0.28)'
-    panel.style.background = 'hsl(0 0% 100%)'
-    panel.style.border = '1px solid rgba(148, 163, 184, 0.35)'
-    panel.style.display = 'none'
+  const parseJsonOverrides = (value) => {
+    if (!value || typeof value !== 'string') {
+      return null
+    }
 
+    try {
+      return JSON.parse(value.trim())
+    } catch {
+      return null
+    }
+  }
+
+  const sanitizeOverrides = (input, keys, maxLength) => {
+    if (!input || typeof input !== 'object') {
+      return {}
+    }
+
+    const next = {}
+    for (const key of keys) {
+      const value = input[key]
+      if (typeof value !== 'string') {
+        continue
+      }
+      const trimmed = value.trim()
+      if (!trimmed || trimmed.length > maxLength) {
+        continue
+      }
+      next[key] = trimmed
+    }
+    return next
+  }
+
+  const getCopy = (overrides) => {
+    const next = { ...defaultCopy }
+    if (overrides && typeof overrides === 'object') {
+      if (overrides.launcherDefaultLabel) {
+        next.launcherDefaultLabel = overrides.launcherDefaultLabel
+      }
+      if (overrides.embeddedChatTitle) {
+        next.iframeTitle = overrides.embeddedChatTitle
+      }
+    }
+    return next
+  }
+
+  const setIconMarkup = (container, icon) => {
+    container.innerHTML = iconMarkup[icon] ?? iconMarkup[DEFAULT_ICON]
+    const svg = container.querySelector('svg')
+    if (svg) {
+      svg.setAttribute('width', '18')
+      svg.setAttribute('height', '18')
+    }
+  }
+
+  const createPanel = (theme, displayMode, position) => {
+    const panel = document.createElement('div')
+    panel.setAttribute('aria-hidden', displayMode === 'bubble' ? 'true' : 'false')
+    panel.style.overflow = 'hidden'
+    panel.style.boxShadow = theme.panelShadow
+    panel.style.background = theme.panelBackground
+    panel.style.border = `1px solid ${theme.panelBorder}`
+    panel.style.pointerEvents = 'auto'
+
+    if (displayMode === 'panel') {
+      panel.style.position = 'absolute'
+      panel.style.top = '0'
+      panel.style.bottom = '0'
+      panel.style.width = `calc(100% - ${PANEL_HANDLE_WIDTH}px)`
+      panel.style.height = '100%'
+      panel.style.maxHeight = '100%'
+      panel.style.display = 'block'
+      panel.style.borderRadius = '0'
+      if (position === 'bottom-left') {
+        panel.style.left = '0'
+        panel.style.borderLeft = '0'
+      } else {
+        panel.style.right = '0'
+        panel.style.borderRight = '0'
+      }
+      return panel
+    }
+
+    panel.style.width = 'min(440px, calc(100vw - 2rem))'
+    panel.style.height = '100%'
+    panel.style.maxHeight = 'calc(100vh - 2rem)'
+    panel.style.borderRadius = '28px'
+    panel.style.display = 'none'
     return panel
   }
 
-  const createIframe = (scriptUrl, token, locale) => {
+  const createPanelHandle = (label, icon, avatarUrl, theme, position) => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.setAttribute('aria-label', label)
+    button.setAttribute('title', label)
+
+    const iconContainer = document.createElement('span')
+    iconContainer.setAttribute('aria-hidden', 'true')
+    iconContainer.style.display = 'inline-flex'
+    iconContainer.style.alignItems = 'center'
+    iconContainer.style.justifyContent = 'center'
+    iconContainer.style.width = '2rem'
+    iconContainer.style.height = '2rem'
+    iconContainer.style.overflow = 'hidden'
+    iconContainer.style.borderRadius = '9999px'
+    iconContainer.style.flexShrink = '0'
+    iconContainer.style.background = theme.mutedBackground
+    iconContainer.style.color = theme.accent
+
+    if (avatarUrl) {
+      const image = document.createElement('img')
+      image.alt = ''
+      image.src = avatarUrl
+      image.referrerPolicy = 'no-referrer'
+      image.style.width = '100%'
+      image.style.height = '100%'
+      image.style.objectFit = 'cover'
+      image.style.display = 'block'
+      image.addEventListener(
+        'error',
+        () => {
+          iconContainer.innerHTML = ''
+          setIconMarkup(iconContainer, icon)
+        },
+        { once: true },
+      )
+      iconContainer.appendChild(image)
+    } else {
+      setIconMarkup(iconContainer, icon)
+    }
+
+    button.appendChild(iconContainer)
+    button.style.all = 'unset'
+    button.style.boxSizing = 'border-box'
+    button.style.position = 'absolute'
+    button.style.top = '50%'
+    button.style.transform = 'translateY(-50%)'
+    button.style.width = `${PANEL_HANDLE_WIDTH}px`
+    button.style.height = '96px'
+    button.style.display = 'inline-flex'
+    button.style.alignItems = 'center'
+    button.style.justifyContent = 'center'
+    button.style.cursor = 'pointer'
+    button.style.background = theme.launcherBackground
+    button.style.color = theme.launcherForeground
+    button.style.border = `1px solid ${theme.launcherBorder}`
+    button.style.boxShadow = theme.launcherShadow
+    button.style.pointerEvents = 'auto'
+    button.style.transition = 'opacity 180ms ease'
+    if (position === 'bottom-left') {
+      button.style.right = '0'
+      button.style.borderRadius = '0 18px 18px 0'
+      button.style.borderLeft = '0'
+    } else {
+      button.style.left = '0'
+      button.style.borderRadius = '18px 0 0 18px'
+      button.style.borderRight = '0'
+    }
+    return button
+  }
+
+  const createIframe = (scriptUrl, token, options) => {
     const iframe = document.createElement('iframe')
-    iframe.title = getCopy(locale).iframeTitle
+    iframe.title = options.copy.iframeTitle
     iframe.loading = 'lazy'
     iframe.referrerPolicy = 'no-referrer-when-downgrade'
     iframe.allow = 'clipboard-read; clipboard-write'
     iframe.style.border = '0'
     iframe.style.width = '100%'
     iframe.style.height = '100%'
+    iframe.style.background = options.theme.panelBackground
+
     const iframeUrl = new URL(`/embed/${encodeURIComponent(token)}`, scriptUrl)
-    if (locale) {
-      iframeUrl.searchParams.set('locale', locale)
+    if (options.displayMode && options.displayMode !== DEFAULT_DISPLAY_MODE) {
+      iframeUrl.searchParams.set('displayMode', options.displayMode)
     }
+    if (options.avatarUrl) {
+      iframeUrl.searchParams.set('avatar', options.avatarUrl)
+    }
+    if (Object.keys(options.copyOverrides).length > 0) {
+      iframeUrl.searchParams.set('copy', JSON.stringify(options.copyOverrides))
+    }
+    if (Object.keys(options.themeOverrides).length > 0) {
+      iframeUrl.searchParams.set('theme', JSON.stringify(options.themeOverrides))
+    }
+
     iframe.src = iframeUrl.toString()
     return iframe
   }
@@ -157,16 +352,7 @@
     return payload
   }
 
-  const setIconMarkup = (container, icon) => {
-    container.innerHTML = iconMarkup[icon] ?? iconMarkup[DEFAULT_ICON]
-    const svg = container.querySelector('svg')
-    if (svg) {
-      svg.setAttribute('width', '18')
-      svg.setAttribute('height', '18')
-    }
-  }
-
-  const createButton = (label, icon, avatarUrl) => {
+  const createButton = (label, icon, avatarUrl, theme) => {
     const button = document.createElement('button')
     button.type = 'button'
     button.setAttribute('aria-label', label)
@@ -176,12 +362,13 @@
     iconContainer.style.display = 'inline-flex'
     iconContainer.style.alignItems = 'center'
     iconContainer.style.justifyContent = 'center'
-    iconContainer.style.width = '1.75rem'
-    iconContainer.style.height = '1.75rem'
+    iconContainer.style.width = '2rem'
+    iconContainer.style.height = '2rem'
     iconContainer.style.overflow = 'hidden'
     iconContainer.style.borderRadius = '9999px'
     iconContainer.style.flexShrink = '0'
-    iconContainer.style.background = 'rgba(248, 250, 252, 0.14)'
+    iconContainer.style.background = theme.mutedBackground
+    iconContainer.style.color = theme.accent
 
     if (avatarUrl) {
       const image = document.createElement('img')
@@ -207,32 +394,33 @@
 
     const labelNode = document.createElement('span')
     labelNode.textContent = label
+
     button.appendChild(iconContainer)
     button.appendChild(labelNode)
     button.style.all = 'unset'
     button.style.boxSizing = 'border-box'
     button.style.display = 'inline-flex'
     button.style.alignItems = 'center'
-    button.style.gap = '0.625rem'
+    button.style.gap = '0.75rem'
     button.style.padding = '0.875rem 1rem'
-    button.style.borderRadius = '9999px'
+    button.style.borderRadius = '18px'
     button.style.cursor = 'pointer'
-    button.style.background = 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'
-    button.style.color = '#f8fafc'
+    button.style.background = theme.launcherBackground
+    button.style.color = theme.launcherForeground
+    button.style.border = `1px solid ${theme.launcherBorder}`
     button.style.fontFamily = 'ui-sans-serif, system-ui, sans-serif'
     button.style.fontSize = '14px'
     button.style.fontWeight = '600'
     button.style.lineHeight = '1'
-    button.style.boxShadow = '0 12px 30px rgba(15, 23, 42, 0.25)'
-    button.style.transition = 'transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease'
+    button.style.boxShadow = theme.launcherShadow
+    button.style.transition = 'transform 140ms ease, opacity 140ms ease'
     button.style.userSelect = 'none'
+    button.style.pointerEvents = 'auto'
     button.addEventListener('mouseenter', () => {
       button.style.transform = 'translateY(-1px)'
-      button.style.boxShadow = '0 16px 34px rgba(15, 23, 42, 0.32)'
     })
     button.addEventListener('mouseleave', () => {
       button.style.transform = 'translateY(0)'
-      button.style.boxShadow = '0 12px 30px rgba(15, 23, 42, 0.25)'
     })
     return button
   }
@@ -244,54 +432,76 @@
     }
 
     const token = script.dataset.radiosoToken
-    if (!token) {
-      return
-    }
-
-    if (window.__radiosoEmbedMounted) {
+    if (!token || window.__radiosoEmbedMounted) {
       return
     }
     window.__radiosoEmbedMounted = true
 
     const scriptUrl = getScriptUrl(script)
-    const locale = normalizeLocale(script.dataset.radiosoLocale)
-    const copy = getCopy(locale)
+    const copyOverrides = sanitizeOverrides(parseJsonOverrides(script.dataset.radiosoCopy), copyOverrideKeys, 280)
+    const themeOverrides = sanitizeOverrides(parseJsonOverrides(script.dataset.radiosoTheme), themeOverrideKeys, 160)
+    const copy = getCopy(copyOverrides)
+    const theme = { ...defaultTheme, ...themeOverrides }
     const rawLabel = script.dataset.radiosoLauncherLabel
     const label =
       rawLabel && rawLabel.trim() && rawLabel.trim() !== DEFAULT_LABEL ? rawLabel.trim() : copy.launcherDefaultLabel
     const icon = script.dataset.radiosoLauncherIcon || DEFAULT_ICON
     const position = script.dataset.radiosoLauncherPosition || DEFAULT_POSITION
+    const displayMode = normalizeDisplayMode(script.dataset.radiosoDisplayMode) || DEFAULT_DISPLAY_MODE
     const initialState = normalizeInitialState(script.dataset.radiosoInitialState) || DEFAULT_INITIAL_STATE
-    const avatarUrl = resolveAvatarUrl(script.dataset.radiosoCollapsedAvatarUrl)
+    const avatarUrl = resolveAvatarUrl(
+      script.dataset.radiosoAvatarUrl || script.dataset.radiosoCollapsedAvatarUrl,
+    )
 
     const host = document.createElement('div')
     host.style.position = 'fixed'
     host.style.zIndex = '2147483647'
-    host.style.bottom = '24px'
-    host.style.right = '24px'
+    host.style.right = displayMode === 'panel' ? '0' : '16px'
     host.style.left = 'auto'
-    host.style.display = 'flex'
-    host.style.flexDirection = 'column'
-    host.style.alignItems = 'flex-end'
-    host.style.gap = '12px'
+    host.style.pointerEvents = 'none'
+    host.style.overflow = 'visible'
+
+    if (displayMode === 'panel') {
+      host.style.top = '0'
+      host.style.bottom = '0'
+      host.style.width = 'min(496px, 100vw)'
+      host.style.maxWidth = '100vw'
+    } else {
+      host.style.top = '16px'
+      host.style.bottom = '16px'
+      host.style.display = 'flex'
+      host.style.flexDirection = 'column'
+      host.style.alignItems = 'flex-end'
+      host.style.justifyContent = 'flex-end'
+      host.style.gap = '12px'
+      host.style.maxWidth = 'calc(100vw - 2rem)'
+    }
 
     if (position === 'bottom-left') {
-      host.style.left = '24px'
+      host.style.left = displayMode === 'panel' ? '0' : '16px'
       host.style.right = 'auto'
-      host.style.alignItems = 'flex-start'
+      if (displayMode !== 'panel') {
+        host.style.alignItems = 'flex-start'
+      }
     }
 
-    const panel = createPanel()
-    panel.style.bottom = '72px'
-    panel.style.right = '0'
-    panel.style.left = 'auto'
-
-    if (position === 'bottom-left') {
-      panel.style.left = '0'
-      panel.style.right = 'auto'
+    const panel = createPanel(theme, displayMode, position)
+    const button =
+      displayMode === 'panel'
+        ? createPanelHandle(label, icon, avatarUrl, theme, position)
+        : createButton(label, icon, avatarUrl, theme)
+    const shell = displayMode === 'panel' ? document.createElement('div') : null
+    if (shell) {
+      shell.style.position = 'absolute'
+      shell.style.top = '0'
+      shell.style.bottom = '0'
+      shell.style.left = '0'
+      shell.style.right = '0'
+      shell.style.transition = 'transform 220ms ease'
+      shell.style.willChange = 'transform'
+      shell.style.pointerEvents = 'none'
     }
 
-    const button = createButton(label, icon, avatarUrl)
     let isOpen = initialState === 'open'
     let bootstrapPromise = null
     let iframe = null
@@ -301,7 +511,14 @@
         return iframe
       }
 
-      iframe = createIframe(scriptUrl, token, locale)
+      iframe = createIframe(scriptUrl, token, {
+        displayMode,
+        avatarUrl,
+        copy,
+        copyOverrides,
+        theme,
+        themeOverrides,
+      })
       panel.appendChild(iframe)
       return iframe
     }
@@ -321,7 +538,17 @@
         return
       }
 
-      if (!event.data || typeof event.data !== 'object' || event.data.type !== READY_MESSAGE) {
+      if (!event.data || typeof event.data !== 'object') {
+        return
+      }
+
+      if (event.data.type === COLLAPSE_MESSAGE) {
+        isOpen = false
+        updatePanelVisibility()
+        return
+      }
+
+      if (event.data.type !== READY_MESSAGE) {
         return
       }
 
@@ -362,7 +589,21 @@
     }
 
     const updatePanelVisibility = () => {
-      panel.style.display = isOpen ? 'block' : 'none'
+      if (displayMode === 'panel' && shell) {
+        shell.style.transform =
+          isOpen
+            ? 'translateX(0)'
+            : position === 'bottom-left'
+              ? `translateX(calc(-100% + ${PANEL_HANDLE_WIDTH}px))`
+              : `translateX(calc(100% - ${PANEL_HANDLE_WIDTH}px))`
+        shell.style.pointerEvents = 'none'
+        button.style.opacity = isOpen ? '0' : '1'
+        button.style.pointerEvents = isOpen ? 'none' : 'auto'
+        panel.style.pointerEvents = isOpen ? 'auto' : 'none'
+      } else {
+        panel.style.display = isOpen ? 'block' : 'none'
+        button.style.opacity = isOpen ? '0.94' : '1'
+      }
       panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true')
       button.setAttribute('aria-expanded', isOpen ? 'true' : 'false')
     }
@@ -371,7 +612,7 @@
       isOpen = !isOpen
       if (isOpen) {
         ensureIframe()
-      } else {
+      } else if (displayMode === 'bubble') {
         destroyIframe()
       }
       updatePanelVisibility()
@@ -381,8 +622,14 @@
       ensureIframe()
     }
 
-    host.appendChild(panel)
-    host.appendChild(button)
+    if (shell) {
+      shell.appendChild(panel)
+      shell.appendChild(button)
+      host.appendChild(shell)
+    } else {
+      host.appendChild(panel)
+      host.appendChild(button)
+    }
     window.addEventListener('message', handleIframeMessage)
     updatePanelVisibility()
     document.body.appendChild(host)

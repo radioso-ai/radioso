@@ -1,4 +1,4 @@
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 
@@ -13,20 +13,36 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
   const embedBootstrapBodySchema = z.object({
     anonymousSessionId: z.string().uuid().optional(),
   });
+  const corsHeaders = {
+    "Access-Control-Allow-Methods": "OPTIONS, POST",
+    "Access-Control-Allow-Headers": "Content-Type",
+    Vary: "Origin",
+  } as const;
 
-  router.post("/:token/session", async (req, res, next) => {
+  const resolveOrigin = (value: string | undefined) => {
+    if (!value) {
+      return null;
+    }
+
     try {
-      const embedSecret = dependencies.env.WEBSITE_EMBED_SECRET;
-      if (!embedSecret) {
-        throw serviceUnavailable("Website embed sessions are not configured.", {
-          missingEnv: "WEBSITE_EMBED_SECRET",
-        });
-      }
+      return new URL(value).origin;
+    } catch {
+      return null;
+    }
+  };
 
-      const origin = req.header("x-radioso-embed-origin");
-      const signature = req.header("x-radioso-embed-signature");
+  const applyCorsHeaders = (response: { setHeader(name: string, value: string): unknown }, origin: string | null) => {
+    Object.entries(corsHeaders).forEach(([name, value]) => response.setHeader(name, value));
+    if (origin) {
+      response.setHeader("Access-Control-Allow-Origin", origin);
+    }
+  };
 
-      if (!origin || !signature) {
+  router.options("/:token/session", async (req, res, next) => {
+    try {
+      const origin = resolveOrigin(req.header("origin"));
+      if (!origin) {
+        applyCorsHeaders(res, null);
         res.status(400).json({
           error: {
             code: "bad_request",
@@ -36,26 +52,89 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
         return;
       }
 
-      const expectedSignature = createHmac("sha256", embedSecret)
-        .update(`${req.params.token}:${origin}`)
-        .digest("hex");
+      const workspace = await dependencies.workspaceRepository.findByWebsiteEmbedToken(req.params.token);
+      if (!workspace || !workspace.websiteEmbedEnabled || !workspace.anonymousChatToken) {
+        applyCorsHeaders(res, null);
+        res.status(404).json({
+          error: {
+            code: "not_found",
+            message: "Embedded chat not found",
+          },
+        });
+        return;
+      }
 
-      const providedSignature = Buffer.from(signature);
-      const expectedSignatureBuffer = Buffer.from(expectedSignature);
-      if (
-        providedSignature.length !== expectedSignatureBuffer.length ||
-        !timingSafeEqual(providedSignature, expectedSignatureBuffer)
-      ) {
+      if (!isAllowedWebsiteEmbedOrigin(workspace.websiteEmbedAllowedOrigins, origin)) {
+        applyCorsHeaders(res, null);
         res.status(403).json({
           error: {
             code: "forbidden",
-            message: "This embedded chat launch could not be verified.",
+            message: "This website is not approved to host the embedded assistant.",
+          },
+        });
+        return;
+      }
+
+      applyCorsHeaders(res, origin);
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/:token/session", async (req, res, next) => {
+    try {
+      const origin = resolveOrigin(req.header("origin"));
+      if (!origin) {
+        applyCorsHeaders(res, null);
+        res.status(400).json({
+          error: {
+            code: "bad_request",
+            message: "Invalid embed session request",
           },
         });
         return;
       }
 
       const workspace = await dependencies.workspaceRepository.findByWebsiteEmbedToken(req.params.token);
+      if (!workspace) {
+        applyCorsHeaders(res, null);
+        res.status(404).json({
+          error: {
+            code: "not_found",
+            message: "Embedded chat not found",
+          },
+        });
+        return;
+      }
+
+      if (!isAllowedWebsiteEmbedOrigin(workspace.websiteEmbedAllowedOrigins, origin)) {
+        await dependencies.auditService.record({
+          accountId: workspace.accountId,
+          workspaceId: workspace.id,
+          eventType: "website_embed.launch_denied",
+          eventStatus: "failure",
+          metadata: { origin },
+        });
+
+        applyCorsHeaders(res, null);
+        res.status(403).json({
+          error: {
+            code: "forbidden",
+            message: "This website is not approved to host the embedded assistant.",
+          },
+        });
+        return;
+      }
+
+      applyCorsHeaders(res, origin);
+
+      const embedSecret = dependencies.env.WEBSITE_EMBED_SECRET;
+      if (!embedSecret) {
+        throw serviceUnavailable("Website embed sessions are not configured.", {
+          missingEnv: "WEBSITE_EMBED_SECRET",
+        });
+      }
       const parsedBody = embedBootstrapBodySchema.safeParse(req.body ?? {});
 
       if (!parsedBody.success) {
@@ -63,16 +142,6 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
           error: {
             code: "bad_request",
             message: "Invalid embed session request",
-          },
-        });
-        return;
-      }
-
-      if (!workspace) {
-        res.status(404).json({
-          error: {
-            code: "not_found",
-            message: "Embedded chat not found",
           },
         });
         return;
@@ -94,24 +163,6 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
           error: {
             code: "not_found",
             message: "Embedded chat not found",
-          },
-        });
-        return;
-      }
-
-      if (!isAllowedWebsiteEmbedOrigin(workspace.websiteEmbedAllowedOrigins, origin)) {
-        await dependencies.auditService.record({
-          accountId: workspace.accountId,
-          workspaceId: workspace.id,
-          eventType: "website_embed.launch_denied",
-          eventStatus: "failure",
-          metadata: { origin },
-        });
-
-        res.status(403).json({
-          error: {
-            code: "forbidden",
-            message: "This website is not approved to host the embedded assistant.",
           },
         });
         return;

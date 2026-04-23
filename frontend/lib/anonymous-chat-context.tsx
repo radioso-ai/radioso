@@ -163,19 +163,12 @@ const isValidLocaleHint = (value: string | null | undefined): value is string =>
 
 export const resolveAnonymousChatBootstrapLocale = ({
   localeOverride,
-  browserLocales,
 }: {
   localeOverride?: string | null
   browserLocales?: readonly string[]
 }) => {
   if (isValidLocaleHint(localeOverride)) {
     return localeOverride.trim()
-  }
-
-  for (const locale of browserLocales ?? []) {
-    if (isValidLocaleHint(locale)) {
-      return locale.trim()
-    }
   }
 
   return undefined

@@ -23,7 +23,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useAuth } from '@/lib/auth-context'
-import { useTheme } from 'next-themes'
+import { useTheme } from '@/components/theme-provider'
 import {
   MessageSquare,
   History,

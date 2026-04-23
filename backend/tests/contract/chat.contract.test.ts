@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import http from "node:http";
 import { readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
@@ -669,14 +668,10 @@ describe("chat contract", () => {
 
     const embedToken = settings.body.websiteEmbedToken as string;
     const launchOrigin = "https://example.com";
-    const launchSignature = createHmac("sha256", "00112233445566778899aabbccddeeff")
-      .update(`${embedToken}:${launchOrigin}`)
-      .digest("hex");
 
     const embedSession = await request(app)
       .post(`/api/v1/public/embed/${embedToken}/session`)
-      .set("x-radioso-embed-origin", launchOrigin)
-      .set("x-radioso-embed-signature", launchSignature);
+      .set("Origin", launchOrigin);
 
     const embeddedChat = await request(app)
       .post(`/api/v1/public/chat/${embedSession.body.publicChatToken}`)

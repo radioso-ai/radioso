@@ -29,6 +29,7 @@ export interface ConversationMessageSummary {
 
 export interface MessageRepositoryPort {
   listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]>;
+  listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]>;
   listWindowByConversationId(
     workspaceId: string,
     conversationId: string,
@@ -100,6 +101,24 @@ export class MessageRepository implements MessageRepositoryPort {
     );
 
     return rows.map(mapMessage);
+  }
+
+  async listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]> {
+    if (limit <= 0) {
+      return [];
+    }
+
+    const rows = await this.database.query<MessageRow>(
+      `SELECT id, conversation_id, workspace_id, role, content, metadata_json, created_at
+       FROM messages
+       WHERE workspace_id = $1
+         AND conversation_id = $2
+       ORDER BY created_at DESC, id DESC
+       LIMIT $3`,
+      [workspaceId, conversationId, limit],
+    );
+
+    return rows.map(mapMessage).reverse();
   }
 
   async listWindowByConversationId(

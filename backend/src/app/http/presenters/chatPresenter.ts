@@ -59,6 +59,16 @@ export const sendChatSse = (
       return;
     }
 
+    if (event.type === "suggestions") {
+      res.write("event: suggestions\n");
+      res.write(`data: ${JSON.stringify({
+        conversationId: event.conversationId,
+        suggestions: event.suggestions,
+        conversationModeMetadata: event.conversationModeMetadata,
+      })}\n\n`);
+      return;
+    }
+
     res.write("event: done\n");
     res.write(`data: ${JSON.stringify({
       conversationId: event.conversationId,

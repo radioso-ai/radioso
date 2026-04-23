@@ -20,6 +20,7 @@ describe("chat stream", () => {
           [
             'event: conversation\ndata: {"conversationId":"c1"}\n\n',
             'event: chunk\ndata: {"text":"hello"}\n\n',
+            'event: suggestions\ndata: {"conversationId":"c1","suggestions":[{"text":"What next?"}],"conversationModeMetadata":{"conversationMode":"guided","brevityOverrideApplied":false,"expansionApplied":true,"expansionKind":"focused","suggestionCount":1,"followUpQuestionApplied":false}}\n\n',
             'event: done\ndata: {"conversationId":"c1","answer":"hello","retrievalInfo":{},"retrievalTrace":{}}\n\n',
           ].join(""),
         ),
@@ -44,6 +45,19 @@ describe("chat stream", () => {
     expect(events).toEqual([
       { type: "conversation", conversationId: "c1" },
       { type: "chunk", text: "hello" },
+      {
+        type: "suggestions",
+        conversationId: "c1",
+        suggestions: [{ text: "What next?" }],
+        conversationModeMetadata: {
+          conversationMode: "guided",
+          brevityOverrideApplied: false,
+          expansionApplied: true,
+          expansionKind: "focused",
+          suggestionCount: 1,
+          followUpQuestionApplied: false,
+        },
+      },
       { type: "done", conversationId: "c1", answer: "hello", retrievalInfo: {}, retrievalTrace: {} },
     ]);
   });

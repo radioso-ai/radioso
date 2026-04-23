@@ -13,6 +13,7 @@ describe("sdk stream integration", () => {
             controller.enqueue(encoder.encode('event: conversation\ndata: {"conversationId":"c1"}\n\n'));
             controller.enqueue(encoder.encode('event: chunk\ndata: {"text":"hel"}\n\n'));
             controller.enqueue(encoder.encode('event: chunk\ndata: {"text":"lo"}\n\n'));
+            controller.enqueue(encoder.encode('event: suggestions\ndata: {"conversationId":"c1","suggestions":[{"text":"Ask about sources"}],"conversationModeMetadata":{"conversationMode":"guided","brevityOverrideApplied":false,"expansionApplied":true,"expansionKind":"focused","suggestionCount":1,"followUpQuestionApplied":false}}\n\n'));
             controller.enqueue(encoder.encode('event: done\ndata: {"conversationId":"c1","answer":"hello","retrievalInfo":{},"retrievalTrace":{}}\n\n'));
             controller.close();
           },
@@ -35,6 +36,12 @@ describe("sdk stream integration", () => {
       events.push(event);
     }
 
-    expect(events.map((event) => event.type)).toEqual(["conversation", "chunk", "chunk", "done"]);
+    expect(events.map((event) => event.type)).toEqual(["conversation", "chunk", "chunk", "suggestions", "done"]);
+    expect(events[3]).toMatchObject({
+      type: "suggestions",
+      conversationId: "c1",
+      suggestions: [{ text: "Ask about sources" }],
+    });
+    expect(events[4]).toMatchObject({ type: "done", conversationId: "c1", answer: "hello" });
   });
 });

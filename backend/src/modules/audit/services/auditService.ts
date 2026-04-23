@@ -1,6 +1,6 @@
 import type { RetrievalExecutionDiagnostics } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { RewriteContinuityState } from "../../retrieval/domain/retrievalPipelineTypes.js";
-import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
+import type { AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type { ProductAnalyticsEvent } from "../../../shared/analytics/productAnalyticsTypes.js";
 import type { IncidentEvent } from "../../../shared/incidents/incidentTypes.js";
 import {
@@ -59,13 +59,11 @@ export class AuditService {
     workspaceId: string;
     conversationId: string;
   }): Promise<ChatAnswerAuditMetadata | null> {
-    const events = await this.auditEventRepository.listChatAnswerEventsByConversationId(
+    const latestSuccess = await this.auditEventRepository.findLatestChatAnswerEventByConversationId(
       input.workspaceId,
       input.conversationId,
+      "success",
     );
-    const latestSuccess = [...events]
-      .reverse()
-      .find((event) => event.eventStatus === "success" && this.matchesConversation(event, input.conversationId));
 
     if (!latestSuccess) {
       return null;
@@ -74,7 +72,19 @@ export class AuditService {
     return latestSuccess.metadata as ChatAnswerAuditMetadata;
   }
 
-  private matchesConversation(event: AuditEventRecord, conversationId: string): boolean {
-    return event.eventType === "chat.answer" && event.metadata.conversationId === conversationId;
+  async updateChatAnswerSuggestions(input: {
+    workspaceId: string;
+    conversationId: string;
+    assistantMessageId: string;
+    suggestions: unknown[];
+    conversationModeMetadata: unknown;
+  }): Promise<void> {
+    await this.auditEventRepository.updateChatAnswerSuggestions({
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+      assistantMessageId: input.assistantMessageId,
+      suggestions: input.suggestions,
+      conversationModeMetadata: input.conversationModeMetadata,
+    });
   }
 }

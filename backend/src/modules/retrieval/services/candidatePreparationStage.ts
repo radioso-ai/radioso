@@ -1,7 +1,12 @@
 import { CandidatePreparationService } from "./candidatePreparationService.js";
 import { buildAppliedConstraintForRule, MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import type { CandidatePreparationStage as CandidatePreparationStageContract, CandidateRetrievalStageResult } from "./retrievalPipelineStages.js";
+import type {
+  CandidatePreparationStage as CandidatePreparationStageContract,
+  CandidatePreparationStageResult,
+  CandidateRetrievalStageResult,
+} from "./retrievalPipelineStages.js";
+import type { TriggerBackoffDecision } from "../domain/retrievalPipelineTypes.js";
 
 export class CandidatePreparationStageService implements CandidatePreparationStageContract {
   constructor(
@@ -9,7 +14,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
     private readonly metadataRuleScoringService: MetadataRuleScoringService,
   ) {}
 
-  async execute(input: CandidateRetrievalStageResult) {
+  async execute(input: CandidateRetrievalStageResult): Promise<CandidatePreparationStageResult> {
     const normalizedCandidates = this.candidatePreparationService.prepare({
       original: input.originalContexts,
       rewritten: input.rewrittenContexts,
@@ -49,6 +54,11 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       .filter((rule) => relaxedRuleIds.has(rule.id))
       .map((rule) => buildAppliedConstraintForRule(rule, "relaxed"));
     const mergedCandidates = relaxedCandidates.candidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
+    const triggerBackoffReason: TriggerBackoffDecision["reason"] = emptyFilteredCandidates
+      ? "empty_filtered_candidates"
+      : weakFilteredSupport
+        ? "weak_filtered_support"
+        : undefined;
 
     return {
       ...input,
@@ -61,11 +71,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       candidateFallbackApplied: input.vectorFallbackApplied || shouldBackOff,
       triggerBackoff: {
         applied: shouldBackOff,
-        reason: emptyFilteredCandidates
-          ? "empty_filtered_candidates"
-          : weakFilteredSupport
-            ? "weak_filtered_support"
-            : undefined,
+        reason: triggerBackoffReason,
         relaxedRuleIds: shouldBackOff ? matchedHardFilterIds : [],
         restoredCandidateCount: shouldBackOff ? relaxedCandidates.candidates.length : undefined,
       },

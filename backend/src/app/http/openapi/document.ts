@@ -293,6 +293,16 @@ const RetrievalSettingsSchema = registry.register(
         valueType: z.enum(metadataValueTypes),
         operator: z.enum(metadataRuleOperators),
         value: z.string(),
+        combinator: z.enum(["and", "or"]).default("and"),
+        conditions: z.array(
+          z.object({
+            id: z.string(),
+            field: z.string(),
+            valueType: z.enum(metadataValueTypes),
+            operator: z.enum(metadataRuleOperators),
+            value: z.string(),
+          }),
+        ).default([]),
         effect: z.enum(metadataRuleEffects),
         enabled: z.boolean(),
         triggerMode: z.enum(metadataRuleTriggerModes),
@@ -337,6 +347,16 @@ const RetrievalMetadataRuleSchema = registry.register(
     valueType: z.enum(metadataValueTypes),
     operator: z.enum(metadataRuleOperators),
     value: z.string(),
+    combinator: z.enum(["and", "or"]).default("and"),
+    conditions: z.array(
+      z.object({
+        id: z.string(),
+        field: z.string(),
+        valueType: z.enum(metadataValueTypes),
+        operator: z.enum(metadataRuleOperators),
+        value: z.string(),
+      }),
+    ).default([]),
     effect: z.enum(metadataRuleEffects),
     enabled: z.boolean(),
     triggerMode: z.enum(metadataRuleTriggerModes),

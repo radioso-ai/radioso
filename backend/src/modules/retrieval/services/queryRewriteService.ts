@@ -3,6 +3,7 @@ import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { RetrievalMetadataRule } from "../../settings/domain/retrievalSettings.js";
+import { getNormalizedMetadataConditions } from "../../settings/domain/retrievalSettings.js";
 import type {
   ConversationContextWindow,
   RetrievalSubquery,
@@ -62,10 +63,13 @@ const buildTriggerAnalysisPrompt = (input: {
         ruleId: rule.id,
         triggerInstruction: rule.triggerInstruction,
         effect: rule.effect,
-        field: rule.field,
-        operator: rule.operator,
-        value: rule.value,
-        valueType: rule.valueType,
+        combinator: rule.combinator ?? "and",
+        conditions: getNormalizedMetadataConditions(rule).map((condition) => ({
+          field: condition.field,
+          operator: condition.operator,
+          value: condition.value,
+          valueType: condition.valueType,
+        })),
       })),
       null,
       2,

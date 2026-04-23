@@ -167,6 +167,15 @@ describe("settings contract", () => {
         valueType: "date",
         operator: "gte",
         value: "today()",
+        combinator: "and",
+        conditions: [
+          expect.objectContaining({
+            field: "dateFrom",
+            valueType: "date",
+            operator: "gte",
+            value: "today()",
+          }),
+        ],
         effect: "filter",
         enabled: true,
         triggerMode: "match_turn",

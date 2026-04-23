@@ -485,6 +485,15 @@ export type RetrievalMetadataRuleOperator =
   | 'gte'
 
 export type RetrievalMetadataRuleEffect = 'boost' | 'filter'
+export type RetrievalMetadataRuleCombinator = 'and' | 'or'
+
+export interface RetrievalMetadataCondition {
+  id: string
+  field: string
+  valueType: RetrievalMetadataValueType
+  operator: RetrievalMetadataRuleOperator
+  value: string
+}
 
 export interface IngestionSettings {
   workspaceId: string
@@ -510,6 +519,8 @@ export interface RetrievalMetadataRule {
   valueType: RetrievalMetadataValueType
   operator: RetrievalMetadataRuleOperator
   value: string
+  combinator?: RetrievalMetadataRuleCombinator
+  conditions?: RetrievalMetadataCondition[]
   effect: RetrievalMetadataRuleEffect
   enabled: boolean
   triggerMode: 'always_on' | 'match_turn'

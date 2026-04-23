@@ -112,6 +112,14 @@ describe("candidate retrieval branches", () => {
         { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani" },
         { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra" },
       ],
+      triggerAnalysis: {
+        status: "skipped_not_configured",
+        consideredRules: [],
+        matchedRuleIds: [],
+        unmatchedRuleIds: [],
+        matchCount: 0,
+        matcherVersion: "test",
+      },
       promptHistory: [],
       continuityDecision: "updated",
     });

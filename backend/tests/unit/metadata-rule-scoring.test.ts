@@ -40,6 +40,7 @@ describe("metadata rule scoring", () => {
           value: "en",
           effect: "filter",
           enabled: true,
+          triggerMode: "always_on",
         },
       ],
     });
@@ -65,6 +66,7 @@ describe("metadata rule scoring", () => {
           value: "example.com",
           effect: "boost",
           enabled: true,
+          triggerMode: "always_on",
         },
       ],
     });
@@ -98,6 +100,7 @@ describe("metadata rule scoring", () => {
           value: "today()",
           effect: "filter",
           enabled: true,
+          triggerMode: "always_on",
         },
       ],
     });
@@ -109,6 +112,55 @@ describe("metadata rule scoring", () => {
       mode: "hard_filter",
       outcome: "applied",
       summary: "dateFrom >= today()",
+    });
+  });
+
+  it("supports grouped OR conditions within a single rule", () => {
+    const service = new MetadataRuleScoringService();
+
+    const result = service.apply({
+      candidates: [
+        candidate({ chunkId: "events", metadata: { category: "event", language: "et" } }),
+        candidate({ chunkId: "english", metadata: { category: "article", language: "en" } }),
+        candidate({ chunkId: "other", metadata: { category: "article", language: "et" } }),
+      ],
+      metadataRules: [
+        {
+          id: "grouped-rule",
+          field: "category",
+          valueType: "string",
+          operator: "equals",
+          value: "event",
+          combinator: "or",
+          conditions: [
+            {
+              id: "condition-category",
+              field: "category",
+              valueType: "string",
+              operator: "equals",
+              value: "event",
+            },
+            {
+              id: "condition-language",
+              field: "language",
+              valueType: "string",
+              operator: "equals",
+              value: "en",
+            },
+          ],
+          effect: "filter",
+          enabled: true,
+          triggerMode: "always_on",
+        },
+      ],
+    });
+
+    expect(result.candidates.map((entry) => entry.chunkId)).toEqual(["events", "english"]);
+    expect(result.appliedRules).toContainEqual({
+      signalKey: "metadata.group.grouped-rule",
+      mode: "hard_filter",
+      outcome: "applied",
+      summary: "(category equals event) OR (language equals en)",
     });
   });
 });

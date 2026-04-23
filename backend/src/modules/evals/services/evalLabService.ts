@@ -507,7 +507,7 @@ export class EvalLabService {
           comparisonOutcome: "regressed",
           comparisonReasons: [...triggerReasons, ...(result.score.reasons.length > 0
             ? result.score.reasons
-            : [`${caseTitleById.get(result.caseId) ?? "Case"} regressed.`],
+            : [`${caseTitleById.get(result.caseId) ?? "Case"} regressed.`]
           )],
         };
       }

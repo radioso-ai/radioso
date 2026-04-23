@@ -6,10 +6,15 @@ import { Bot, Plus, Save, Search, SlidersHorizontal, Trash2 } from 'lucide-react
 
 import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
 import {
+  createMetadataCondition,
+  getOperatorLabel,
+  getRuleConditions,
   getRuleBehaviorLabel,
+  getRulePreviewLabel,
   getRuleValuePlaceholder,
-  isDynamicTodayValue,
+  isValidDateRuleValue,
   operatorOptionsForValueType,
+  syncRuleWithConditions,
 } from '@/components/dashboard/settings/retrieval-rule-helpers'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { retrievalSettingDocs } from '@/components/dashboard/settings/settings-docs'
@@ -33,43 +38,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { type RetrievalSettings, settingsApi } from '@/lib/api'
 
-const metadataRuleOperatorLabels: Record<
-  RetrievalSettings['metadataRules'][number]['operator'],
-  { label: string; description: string }
-> = {
-  equals: {
-    label: 'Equals',
-    description: 'Match when the metadata value equals the rule value.',
-  },
-  not_equals: {
-    label: 'Does Not Equal',
-    description: 'Match when the metadata value is different from the rule value.',
-  },
-  contains: {
-    label: 'Contains',
-    description: 'Match when the metadata value contains the rule value.',
-  },
-  not_contains: {
-    label: 'Does Not Contain',
-    description: 'Match when the metadata value does not contain the rule value.',
-  },
-  lt: {
-    label: 'Less Than',
-    description: 'Match when the metadata value is less than the rule value.',
-  },
-  lte: {
-    label: 'Less Than Or Equal',
-    description: 'Match when the metadata value is less than or equal to the rule value.',
-  },
-  gt: {
-    label: 'Greater Than',
-    description: 'Match when the metadata value is greater than the rule value.',
-  },
-  gte: {
-    label: 'Greater Than Or Equal',
-    description: 'Match when the metadata value is greater than or equal to the rule value.',
-  },
-}
+const metadataRuleCombinatorLabels = {
+  and: 'All conditions (AND)',
+  or: 'Any condition (OR)',
+} as const
 
 const metadataValueTypeLabels: Record<
   RetrievalSettings['metadataRules'][number]['valueType'],
@@ -98,12 +70,12 @@ const metadataRuleEffectLabels: Record<
   { label: string; description: string }
 > = {
   boost: {
-    label: 'Boost',
-    description: 'Prefer matching results without excluding other candidates.',
+    label: 'Prefer match',
+    description: 'Give matching results a ranking advantage without excluding other candidates.',
   },
   filter: {
-    label: 'Filter',
-    description: 'Only keep results that match this rule.',
+    label: 'Require match',
+    description: 'Only keep results that satisfy this rule.',
   },
 }
 
@@ -155,8 +127,8 @@ const triggerModeLabels: Record<
     description: 'Apply this rule on every retrieval-backed turn.',
   },
   match_turn: {
-    label: 'Trigger per turn',
-    description: 'Apply this rule only when the current question matches the trigger instruction.',
+    label: 'When matching intent',
+    description: 'Apply this rule only when the current question matches the intent.',
   },
 }
 
@@ -214,6 +186,7 @@ export function RetrievalSettingsPanel({
 
   const applyMetadataField = (
     ruleId: RetrievalSettings['metadataRules'][number]['id'],
+    conditionId: string,
     field: string
   ) => {
     if (!settings) return
@@ -221,36 +194,52 @@ export function RetrievalSettingsPanel({
     const suggestion = settings.metadataFieldSuggestions.find((candidate) => candidate.field === field)
     const valueType = suggestion?.inferredType
     const currentRule = settings.metadataRules.find((rule) => rule.id === ruleId)
-    const nextValueType = valueType ?? currentRule?.valueType ?? 'string'
+    if (!currentRule) return
+    const currentConditions = getRuleConditions(currentRule)
+    const currentCondition = currentConditions.find((condition) => condition.id === conditionId)
+    const nextValueType = valueType ?? currentCondition?.valueType ?? 'string'
     const allowedOperators = operatorOptionsForValueType(nextValueType)
 
-    updateMetadataRule(ruleId, {
-      field,
-      ...(valueType ? { valueType } : {}),
-      ...(currentRule && !allowedOperators.includes(currentRule.operator)
-        ? { operator: allowedOperators[0] }
-        : {}),
-    })
+    const nextConditions = currentConditions.map((condition) =>
+      condition.id === conditionId
+        ? {
+            ...condition,
+            field,
+            ...(valueType ? { valueType } : {}),
+            ...(!allowedOperators.includes(condition.operator) ? { operator: allowedOperators[0] } : {}),
+          }
+        : condition
+    )
+
+    updateMetadataRule(ruleId, syncRuleWithConditions(currentRule, nextConditions))
   }
 
   const applyMetadataValueType = (
     ruleId: RetrievalSettings['metadataRules'][number]['id'],
+    conditionId: string,
     valueType: RetrievalSettings['metadataRules'][number]['valueType']
   ) => {
     if (!settings) return
 
     const currentRule = settings.metadataRules.find((rule) => rule.id === ruleId)
+    if (!currentRule) return
+    const currentConditions = getRuleConditions(currentRule)
     const allowedOperators = operatorOptionsForValueType(valueType)
 
-    updateMetadataRule(ruleId, {
-      valueType,
-      ...(currentRule && !allowedOperators.includes(currentRule.operator)
-        ? { operator: allowedOperators[0] }
-        : {}),
-      ...(valueType === 'boolean' && currentRule?.value !== 'true' && currentRule?.value !== 'false'
-        ? { value: 'true' }
-        : {}),
-    })
+    const nextConditions = currentConditions.map((condition) =>
+      condition.id === conditionId
+        ? {
+            ...condition,
+            valueType,
+            ...(!allowedOperators.includes(condition.operator) ? { operator: allowedOperators[0] } : {}),
+            ...(valueType === 'boolean' && condition.value !== 'true' && condition.value !== 'false'
+              ? { value: 'true' }
+              : {}),
+          }
+        : condition
+    )
+
+    updateMetadataRule(ruleId, syncRuleWithConditions(currentRule, nextConditions))
   }
 
   const addMetadataRule = () => {
@@ -261,19 +250,65 @@ export function RetrievalSettingsPanel({
       ...settings,
       metadataRules: [
         ...settings.metadataRules,
-        {
+        syncRuleWithConditions({
           id: globalThis.crypto?.randomUUID?.() ?? `rule-${Date.now()}`,
           field: suggestedField?.field ?? '',
           valueType: suggestedField?.inferredType ?? 'string',
           operator: 'equals',
           value: suggestedField?.inferredType === 'boolean' ? 'true' : '',
+          combinator: 'and',
           effect: 'boost',
           enabled: true,
           triggerMode: 'always_on',
-        },
+        }, [
+          createMetadataCondition({
+            field: suggestedField?.field ?? '',
+            valueType: suggestedField?.inferredType ?? 'string',
+            operator: 'equals',
+            value: suggestedField?.inferredType === 'boolean' ? 'true' : '',
+          }),
+        ]),
       ],
     })
     setHasChanges(true)
+  }
+
+  const updateMetadataCondition = (
+    ruleId: RetrievalSettings['metadataRules'][number]['id'],
+    conditionId: string,
+    updates: Partial<ReturnType<typeof createMetadataCondition>>
+  ) => {
+    if (!settings) return
+
+    const currentRule = settings.metadataRules.find((rule) => rule.id === ruleId)
+    if (!currentRule) return
+
+    const nextConditions = getRuleConditions(currentRule).map((condition) =>
+      condition.id === conditionId ? { ...condition, ...updates } : condition
+    )
+
+    updateMetadataRule(ruleId, syncRuleWithConditions(currentRule, nextConditions))
+  }
+
+  const addMetadataCondition = (ruleId: RetrievalSettings['metadataRules'][number]['id']) => {
+    if (!settings) return
+    const currentRule = settings.metadataRules.find((rule) => rule.id === ruleId)
+    if (!currentRule) return
+
+    const nextConditions = [...getRuleConditions(currentRule), createMetadataCondition()]
+    updateMetadataRule(ruleId, syncRuleWithConditions(currentRule, nextConditions))
+  }
+
+  const removeMetadataCondition = (
+    ruleId: RetrievalSettings['metadataRules'][number]['id'],
+    conditionId: string
+  ) => {
+    if (!settings) return
+    const currentRule = settings.metadataRules.find((rule) => rule.id === ruleId)
+    if (!currentRule) return
+
+    const remainingConditions = getRuleConditions(currentRule).filter((condition) => condition.id !== conditionId)
+    updateMetadataRule(ruleId, syncRuleWithConditions(currentRule, remainingConditions))
   }
 
   const updateRuleTriggerMode = (
@@ -283,15 +318,6 @@ export function RetrievalSettingsPanel({
     updateMetadataRule(ruleId, {
       triggerMode,
       ...(triggerMode === 'always_on' ? { triggerInstruction: undefined } : {}),
-    })
-  }
-
-  const updateRuleDateValueMode = (
-    ruleId: RetrievalSettings['metadataRules'][number]['id'],
-    mode: 'literal' | 'today'
-  ) => {
-    updateMetadataRule(ruleId, {
-      value: mode === 'today' ? 'today()' : '',
     })
   }
 
@@ -537,276 +563,325 @@ export function RetrievalSettingsPanel({
           title="Prioritize by metadata"
           description="Use persistent metadata rules when retrieval should consistently prefer or filter results based on document attributes."
         >
-          <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <SettingFieldHeader
-                  label={retrievalSettingDocs.metadataRules.label}
-                  description={retrievalSettingDocs.metadataRules.summary}
-                  tooltip={retrievalSettingDocs.metadataRules.details}
-                  className="flex-1"
-                />
-                <Button type="button" variant="outline" size="sm" onClick={addMetadataRule}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add rule
-                </Button>
+          <div className="space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-medium text-foreground">{retrievalSettingDocs.metadataRules.label}</p>
+                  <SettingTooltip
+                    label={retrievalSettingDocs.metadataRules.label}
+                    content={retrievalSettingDocs.metadataRules.details}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground">{retrievalSettingDocs.metadataRules.summary}</p>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Suggested keys from this workspace:{' '}
-                {settings.metadataFieldSuggestions.length > 0
-                  ? settings.metadataFieldSuggestions
-                      .map((field) => `${field.field} (${field.inferredType})`)
-                      .join(', ')
-                  : 'none discovered yet'}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Format hints: dates use <code>YYYY-MM-DD</code>, numbers use plain values like <code>100</code> or <code>12.5</code>, and booleans use <code>true</code> or <code>false</code>.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Use <code>Always on</code> for global retrieval preferences. Use <code>Trigger per turn</code> when a rule should activate only for a matching kind of question, such as upcoming events or time-bound requests.
-              </p>
+              <Button type="button" variant="outline" size="sm" onClick={addMetadataRule}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add rule
+              </Button>
             </div>
 
             {settings.metadataRules.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
                 No metadata rules yet. Add a rule to always boost or filter results using a metadata key.
               </div>
             ) : (
               <div className="space-y-3">
-                {settings.metadataRules.map((rule) => (
-                  <div key={rule.id} className="space-y-3 rounded-md border border-border bg-card p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="grid flex-1 gap-3 md:grid-cols-2">
-                        <div className="space-y-2 md:col-span-2">
-                          <SettingFieldHeader
-                            label={retrievalSettingDocs.metadataTriggerMode.label}
-                            description={retrievalSettingDocs.metadataTriggerMode.summary}
-                            tooltip={retrievalSettingDocs.metadataTriggerMode.details}
-                          />
-                          <Select
-                            value={rule.triggerMode}
-                            onValueChange={(value) =>
-                              updateRuleTriggerMode(
-                                rule.id,
-                                value as RetrievalSettings['metadataRules'][number]['triggerMode']
-                              )
-                            }
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {Object.entries(triggerModeLabels).map(([value, meta]) => (
-                                <SelectItem key={value} value={value}>
-                                  {meta.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                {settings.metadataRules.map((rule, index) => (
+                  <div
+                    key={rule.id}
+                    className={
+                      index === 0
+                        ? 'space-y-4'
+                        : 'space-y-4 border-t border-border/70 pt-4'
+                      }
+                  >
+                    {(() => {
+                      const conditions = getRuleConditions(rule)
+                      return (
+                    <div className="space-y-4 rounded-md border border-border/70 bg-muted/15 p-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 space-y-3">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <Label className="text-sm font-medium text-foreground">When</Label>
+                            <Select
+                              value={rule.triggerMode}
+                              onValueChange={(value) =>
+                                updateRuleTriggerMode(
+                                  rule.id,
+                                  value as RetrievalSettings['metadataRules'][number]['triggerMode']
+                                )
+                              }
+                            >
+                              <SelectTrigger className="w-full sm:w-[220px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(triggerModeLabels).map(([value, meta]) => (
+                                  <SelectItem key={value} value={value}>
+                                    {meta.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                           <p className="text-sm text-muted-foreground">
                             {triggerModeLabels[rule.triggerMode].description}
                           </p>
                         </div>
-                        {rule.triggerMode === 'match_turn' ? (
-                          <div className="space-y-2 md:col-span-2">
-                            <SettingFieldHeader
-                              label={retrievalSettingDocs.metadataTriggerInstruction.label}
-                              description={retrievalSettingDocs.metadataTriggerInstruction.summary}
-                              tooltip={retrievalSettingDocs.metadataTriggerInstruction.details}
-                            />
-                            <Textarea
-                              value={rule.triggerInstruction ?? ''}
-                              onChange={(event) =>
-                                updateMetadataRule(rule.id, {
-                                  triggerInstruction: event.target.value.slice(0, 500),
-                                })
-                              }
-                              placeholder="e.g. Enact when the user is clearly asking about upcoming events, conferences, courses, or camps."
-                              rows={3}
-                            />
-                            <p className="text-sm text-muted-foreground">
-                              Trigger instructions change when the rule activates for a turn. They do not change the corpus itself.
-                            </p>
-                          </div>
-                        ) : null}
-                        <div className="space-y-2">
-                          <SettingFieldHeader
-                            label={retrievalSettingDocs.metadataKey.label}
-                            description={retrievalSettingDocs.metadataKey.summary}
-                            tooltip={retrievalSettingDocs.metadataKey.details}
+                        <div className="flex items-center gap-2">
+                          <SettingTooltip
+                            label={retrievalSettingDocs.metadataEnabled.label}
+                            content={retrievalSettingDocs.metadataEnabled.details}
                           />
-                          <Input
-                            value={rule.field}
-                            onChange={(event) => applyMetadataField(rule.id, event.target.value)}
-                            placeholder="e.g. language or parsedData.url"
-                            list="metadata-field-suggestions"
+                          <Switch
+                            checked={rule.enabled}
+                            onCheckedChange={(checked) => updateMetadataRule(rule.id, { enabled: checked })}
                           />
-                        </div>
-                        <div className="space-y-2">
-                          <SettingFieldHeader
-                            label={retrievalSettingDocs.metadataValueType.label}
-                            description={retrievalSettingDocs.metadataValueType.summary}
-                            tooltip={retrievalSettingDocs.metadataValueType.details}
-                          />
-                          <Select
-                            value={rule.valueType}
-                            onValueChange={(value) =>
-                              applyMetadataValueType(
-                                rule.id,
-                                value as RetrievalSettings['metadataRules'][number]['valueType']
-                              )
-                            }
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeMetadataRule(rule.id)}
                           >
-                            <SelectTrigger className="w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {Object.entries(metadataValueTypeLabels).map(([value, meta]) => (
-                                <SelectItem key={value} value={value}>
-                                  {meta.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-sm text-muted-foreground">
-                            {metadataValueTypeLabels[rule.valueType].description}
-                          </p>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
-                        <div className="space-y-2">
-                          <SettingFieldHeader
-                            label={retrievalSettingDocs.metadataValue.label}
-                            description={retrievalSettingDocs.metadataValue.summary}
-                            tooltip={retrievalSettingDocs.metadataValue.details}
+                      </div>
+
+                      {rule.triggerMode === 'match_turn' ? (
+                        <div className="space-y-2 border-t border-border/60 pt-3">
+                          <Label className="text-foreground">Intent</Label>
+                          <Textarea
+                            value={rule.triggerInstruction ?? ''}
+                            onChange={(event) =>
+                              updateMetadataRule(rule.id, {
+                                triggerInstruction: event.target.value.slice(0, 500),
+                              })
+                            }
+                            placeholder="e.g. Upcoming events, conferences, courses, or camps."
+                            rows={3}
                           />
-                          {rule.valueType === 'boolean' ? (
-                            <Select
-                              value={rule.value === 'false' ? 'false' : 'true'}
-                              onValueChange={(value) => updateMetadataRule(rule.id, { value })}
-                            >
-                              <SelectTrigger className="w-full">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="true">True</SelectItem>
-                                <SelectItem value="false">False</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          ) : rule.valueType === 'date' ? (
-                            <div className="space-y-2">
+                        </div>
+                      ) : null}
+
+                      <div className="border-t border-border/60 pt-3">
+                        <div className="space-y-3">
+                          {conditions.length > 1 ? (
+                            <div className="flex items-center gap-3">
+                              <Label className="text-foreground">Match</Label>
                               <Select
-                                value={isDynamicTodayValue(rule.value) ? 'today' : 'literal'}
+                                value={rule.combinator ?? 'and'}
                                 onValueChange={(value) =>
-                                  updateRuleDateValueMode(rule.id, value as 'literal' | 'today')
+                                  updateMetadataRule(rule.id, {
+                                    combinator: value as 'and' | 'or',
+                                  })
                                 }
                               >
-                                <SelectTrigger className="w-full">
+                                <SelectTrigger className="w-full sm:w-[220px]">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="literal">Specific date</SelectItem>
-                                  <SelectItem value="today">Dynamic today()</SelectItem>
+                                  {Object.entries(metadataRuleCombinatorLabels).map(([value, label]) => (
+                                    <SelectItem key={value} value={value}>
+                                      {label}
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
-                              {isDynamicTodayValue(rule.value) ? (
-                                <div className="rounded-md border border-border bg-background/60 p-3 text-sm text-muted-foreground">
-                                  <AssistantMarkdownContent content={retrievalSettingDocs.metadataDynamicDate.summary} inline />
-                                  <span className="block pt-2 text-xs">
-                                    {retrievalSettingDocs.metadataDynamicDate.details}
-                                  </span>
-                                </div>
-                              ) : (
-                                <Input
-                                  type="date"
-                                  value={rule.value}
-                                  onChange={(event) => updateMetadataRule(rule.id, { value: event.target.value })}
-                                />
-                              )}
                             </div>
-                          ) : (
-                            <Input
-                              type={rule.valueType === 'number' ? 'number' : 'text'}
-                              value={rule.value}
-                              onChange={(event) => updateMetadataRule(rule.id, { value: event.target.value })}
-                              placeholder={getRuleValuePlaceholder(rule.valueType)}
-                            />
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          <SettingFieldHeader
-                            label={retrievalSettingDocs.metadataOperator.label}
-                            description={retrievalSettingDocs.metadataOperator.summary}
-                            tooltip={retrievalSettingDocs.metadataOperator.details}
-                          />
-                          <Select
-                            value={rule.operator}
-                            onValueChange={(value) =>
-                              updateMetadataRule(rule.id, {
-                                operator: value as RetrievalSettings['metadataRules'][number]['operator'],
-                              })
-                            }
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {operatorOptionsForValueType(rule.valueType).map((value) => (
-                                <SelectItem key={value} value={value}>
-                                  {metadataRuleOperatorLabels[value].label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-sm text-muted-foreground">
-                            {metadataRuleOperatorLabels[rule.operator].description}
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          <SettingFieldHeader
-                            label={retrievalSettingDocs.metadataEffect.label}
-                            description={retrievalSettingDocs.metadataEffect.summary}
-                            tooltip={retrievalSettingDocs.metadataEffect.details}
-                          />
-                          <Select
-                            value={rule.effect}
-                            onValueChange={(value) =>
-                              updateMetadataRule(rule.id, {
-                                effect: value as RetrievalSettings['metadataRules'][number]['effect'],
-                              })
-                            }
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {Object.entries(metadataRuleEffectLabels).map(([value, meta]) => (
-                                <SelectItem key={value} value={value}>
-                                  {meta.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-sm text-muted-foreground">
-                            {metadataRuleEffectLabels[rule.effect].description}
-                          </p>
+                          ) : null}
+
+                          {conditions.map((condition, conditionIndex) => (
+                            <div
+                              key={condition.id}
+                              className={
+                                conditionIndex === 0
+                                  ? 'space-y-3'
+                                  : 'space-y-3 border-t border-border/60 pt-3'
+                              }
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-medium text-foreground">
+                                  {conditions.length > 1 ? `Condition ${conditionIndex + 1}` : 'Condition'}
+                                </p>
+                                <div className="flex items-center gap-2">
+                                  {conditions.length > 1 ? (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => removeMetadataCondition(rule.id, condition.id)}
+                                    >
+                                      Remove
+                                    </Button>
+                                  ) : null}
+                                  {conditionIndex === conditions.length - 1 ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => addMetadataCondition(rule.id)}
+                                    >
+                                      <Plus className="mr-2 h-4 w-4" />
+                                      Add condition
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              <div className="grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.05fr)]">
+                                <div className="space-y-2">
+                                  <Label htmlFor={`metadata-key-${rule.id}-${condition.id}`} className="text-foreground">
+                                    Field
+                                  </Label>
+                                  <Input
+                                    id={`metadata-key-${rule.id}-${condition.id}`}
+                                    value={condition.field}
+                                    onChange={(event) => applyMetadataField(rule.id, condition.id, event.target.value)}
+                                    placeholder="e.g. language or parsedData.url"
+                                    list="metadata-field-suggestions"
+                                  />
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label className="text-foreground">Value type</Label>
+                                  <Select
+                                    value={condition.valueType}
+                                    onValueChange={(value) =>
+                                      applyMetadataValueType(
+                                        rule.id,
+                                        condition.id,
+                                        value as RetrievalSettings['metadataRules'][number]['valueType']
+                                      )
+                                    }
+                                  >
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {Object.entries(metadataValueTypeLabels).map(([value, meta]) => (
+                                        <SelectItem key={value} value={value}>
+                                          {meta.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label className="text-foreground">Comparison</Label>
+                                  <Select
+                                    value={condition.operator}
+                                    onValueChange={(value) =>
+                                      updateMetadataCondition(rule.id, condition.id, {
+                                        operator: value as RetrievalSettings['metadataRules'][number]['operator'],
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {operatorOptionsForValueType(condition.valueType).map((value) => (
+                                        <SelectItem key={value} value={value}>
+                                          {getOperatorLabel(value, condition.valueType)}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label className="text-foreground">Value</Label>
+                                  {condition.valueType === 'boolean' ? (
+                                    <Select
+                                      value={condition.value === 'false' ? 'false' : 'true'}
+                                      onValueChange={(value) =>
+                                        updateMetadataCondition(rule.id, condition.id, { value })
+                                      }
+                                    >
+                                      <SelectTrigger className="w-full">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="true">True</SelectItem>
+                                        <SelectItem value="false">False</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  ) : condition.valueType === 'date' ? (
+                                    <div className="space-y-2">
+                                      <Input
+                                        type="text"
+                                        value={condition.value}
+                                        onChange={(event) =>
+                                          updateMetadataCondition(rule.id, condition.id, {
+                                            value: event.target.value,
+                                          })
+                                        }
+                                        placeholder="2026-03-26 or today()"
+                                        list="metadata-date-value-suggestions"
+                                      />
+                                      {condition.value.trim().length > 0 && !isValidDateRuleValue(condition.value) ? (
+                                        <p className="text-sm text-destructive">
+                                          Enter an ISO date like 2026-03-26 or use <code>today()</code>.
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      type={condition.valueType === 'number' ? 'number' : 'text'}
+                                      value={condition.value}
+                                      onChange={(event) =>
+                                        updateMetadataCondition(rule.id, condition.id, {
+                                          value: event.target.value,
+                                        })
+                                      }
+                                      placeholder={getRuleValuePlaceholder(condition.valueType)}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+
+                          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                            <div className="space-y-2">
+                              <Label className="text-foreground">Effect</Label>
+                              <Select
+                                value={rule.effect}
+                                onValueChange={(value) =>
+                                  updateMetadataRule(rule.id, {
+                                    effect: value as RetrievalSettings['metadataRules'][number]['effect'],
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="w-full sm:w-[220px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {Object.entries(metadataRuleEffectLabels).map(([value, meta]) => (
+                                    <SelectItem key={value} value={value}>
+                                      {meta.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <SettingTooltip
-                          label={retrievalSettingDocs.metadataEnabled.label}
-                          content={retrievalSettingDocs.metadataEnabled.details}
-                        />
-                        <Switch
-                          checked={rule.enabled}
-                          onCheckedChange={(checked) => updateMetadataRule(rule.id, { enabled: checked })}
-                        />
-                        <Button type="button" variant="ghost" size="icon" onClick={() => removeMetadataRule(rule.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+
+                      <div className="border-t border-border/60 pt-3">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                          Preview
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-foreground">{getRulePreviewLabel(rule)}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{getRuleBehaviorLabel(rule)}</p>
                       </div>
                     </div>
-                    <div className="rounded-md border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
-                      {getRuleBehaviorLabel(rule)}
-                    </div>
+                      )
+                    })()}
                   </div>
                 ))}
               </div>
@@ -816,6 +891,9 @@ export function RetrievalSettingsPanel({
               {settings.metadataFieldSuggestions.map((field) => (
                 <option key={field.field} value={field.field} />
               ))}
+            </datalist>
+            <datalist id="metadata-date-value-suggestions">
+              <option value="today()" />
             </datalist>
           </div>
         </SettingsCard>

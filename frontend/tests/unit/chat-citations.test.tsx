@@ -119,4 +119,41 @@ describe('AssistantMessageContent', () => {
     expect(html).toContain('href="https://example.com"')
     expect(html).toContain('Second paragraph')
   })
+
+  it('preserves ordered lists when citations are attached per item', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          {
+            documentId: 'doc-1',
+            chunkId: 'chunk-1',
+            title: 'Source 1',
+          },
+          {
+            documentId: 'doc-2',
+            chunkId: 'chunk-2',
+            title: 'Source 2',
+          },
+        ]}
+        answerSegments={[
+          {
+            text: '1. **Start small.** Begin with five minutes.',
+            citationIndices: [0],
+          },
+          {
+            text: '2. **Stay consistent.** Pick the same time each day.',
+            citationIndices: [1],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('<ol')
+    expect(html).toContain('<li')
+    expect(html).toContain('<strong>Start small.</strong>')
+    expect(html).toContain('<strong>Stay consistent.</strong>')
+    expect(html.match(/aria-label="Open source/g)?.length).toBe(2)
+  })
 })

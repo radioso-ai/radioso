@@ -11,6 +11,7 @@ import {
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
+import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 
 export type DocumentSourceKind = "inline_text" | "uploaded_file";
 
@@ -201,6 +202,11 @@ export class DocumentIngestionService {
     metadata?: Record<string, unknown>;
     externalDocumentId?: string | null;
   }): Promise<{ documentId: string; status: string }> {
+    const sanitizedContent = sanitizeInlineDocumentContent({
+      title: input.title,
+      sourceContent: input.content,
+      metadata: input.metadata,
+    });
     let document:
       | {
           id: string;
@@ -214,8 +220,8 @@ export class DocumentIngestionService {
       document = await this.documentRepository.createAndQueue({
         workspaceId: input.workspaceId,
         title: input.title,
-        sourceContent: input.content,
-        markdownContent: normalizeMarkdown(input.content),
+        sourceContent: sanitizedContent.sourceContent,
+        markdownContent: normalizeMarkdown(sanitizedContent.markdownContent),
         metadata: input.metadata,
         externalDocumentId: input.externalDocumentId,
         sourceKind: "inline_text",
@@ -301,6 +307,11 @@ export class DocumentIngestionService {
     metadata?: Record<string, unknown>;
     externalDocumentId?: string | null;
   }): Promise<{ documentId: string; status: string }> {
+    const sanitizedContent = sanitizeInlineDocumentContent({
+      title: input.title,
+      sourceContent: input.content,
+      metadata: input.metadata,
+    });
     let document:
       | {
           id: string;
@@ -327,8 +338,8 @@ export class DocumentIngestionService {
         documentId: input.documentId,
         workspaceId: input.workspaceId,
         title: input.title,
-        sourceContent: input.content,
-        markdownContent: normalizeMarkdown(input.content),
+        sourceContent: sanitizedContent.sourceContent,
+        markdownContent: normalizeMarkdown(sanitizedContent.markdownContent),
         metadata: input.metadata,
         externalDocumentId: input.externalDocumentId,
         sourceKind: "inline_text",

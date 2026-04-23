@@ -28,7 +28,7 @@ const groundedMissResponseComposer: GroundedMissResponseComposer = {
 };
 
 describe("answer support validator", () => {
-  it("keeps supported segments, omits unsupported substantive segments, and preserves non-substantive wrappers", async () => {
+  it("keeps supported segments and omits unsupported substantive tails", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -55,7 +55,7 @@ describe("answer support validator", () => {
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe("The page explains testing and parsing content for users. Thanks!");
+    expect(result.answer).toBe("The page explains testing and parsing content for users.");
     expect(result.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
     ]);
@@ -64,16 +64,15 @@ describe("answer support validator", () => {
         text: "The page explains testing and parsing content for users",
         citationIndices: [0],
       },
-      { text: ". " },
-      { text: "Thanks!" },
+      { text: "." },
     ]);
     expect(result.validation).toEqual({
       ran: true,
       answerModified: true,
-      unsupportedSegmentCount: 1,
-      substantiveUnsupportedSegmentCount: 1,
+      unsupportedSegmentCount: 2,
+      substantiveUnsupportedSegmentCount: 2,
       supportedSegmentCount: 1,
-      nonSubstantiveSegmentCount: 3,
+      nonSubstantiveSegmentCount: 2,
       answerSupportPolicy: "strict",
     });
     expect(result.segmentResults.map((segment) => segment.disposition)).toEqual([
@@ -81,7 +80,7 @@ describe("answer support validator", () => {
       "non_substantive",
       "unsupported",
       "non_substantive",
-      "non_substantive",
+      "unsupported",
     ]);
   });
 
@@ -148,19 +147,16 @@ describe("answer support validator", () => {
     expect(result.validation.supportedSegmentCount).toBe(1);
   });
 
-  it("treats common conversational wrappers as non-substantive", async () => {
+  it("treats punctuation-only wrappers as non-substantive", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
       query: "Can you help?",
-      answer: "Sure. Of course! Glad to help.",
+      answer: "... !?",
       answerSegments: [
-        { text: "Sure" },
-        { text: ". " },
-        { text: "Of course" },
-        { text: "! " },
-        { text: "Glad to help" },
-        { text: "." },
+        { text: "..." },
+        { text: " " },
+        { text: "!?" },
       ],
       citationEvidence: [],
       retrievedContextSummaries: [],
@@ -170,14 +166,11 @@ describe("answer support validator", () => {
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe("Sure. Of course! Glad to help.");
+    expect(result.answer).toBe("... !?");
     expect(result.answerSegments).toEqual([
-      { text: "Sure" },
-      { text: ". " },
-      { text: "Of course" },
-      { text: "! " },
-      { text: "Glad to help" },
-      { text: "." },
+      { text: "..." },
+      { text: " " },
+      { text: "!?" },
     ]);
     expect(result.validation).toEqual({
       ran: true,
@@ -185,7 +178,7 @@ describe("answer support validator", () => {
       unsupportedSegmentCount: 0,
       substantiveUnsupportedSegmentCount: 0,
       supportedSegmentCount: 0,
-      nonSubstantiveSegmentCount: 6,
+      nonSubstantiveSegmentCount: 3,
       answerSupportPolicy: "strict",
     });
   });
@@ -282,19 +275,63 @@ describe("answer support validator", () => {
     });
   });
 
-  it("treats link-only follow-up segments as supported when the URL matches cited source metadata", async () => {
+  it("recovers clearly grounded segments even when citation anchors are missing", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "How should I start meditating?",
+      answer: "Keep it short and simple. Begin with a few minutes each day.",
+      answerSegments: [
+        {
+          text: "Keep it short and simple. Begin with a few minutes each day.",
+        },
+      ],
+      citationEvidence: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Meditation Tips",
+          content: "Keep it short and simple. Begin with a few minutes each day instead of starting with a long session.",
+          sourceUrl: "https://example.com/meditation",
+        },
+      ],
+      retrievedContextSummaries: [
+        {
+          title: "Meditation Tips",
+          content: "Keep it short and simple. Begin with a few minutes each day instead of starting with a long session.",
+        },
+      ],
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("Keep it short and simple. Begin with a few minutes each day.");
+    expect(result.citations).toEqual([{ documentId: "doc-1", chunkId: "chunk-1", title: "Meditation Tips" }]);
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Keep it short and simple. Begin with a few minutes each day.",
+        citationIndices: [0],
+      },
+    ]);
+    expect(result.validation.answerModified).toBe(false);
+    expect(result.validation.supportedSegmentCount).toBe(1);
+  });
+
+  it("treats bare link-only follow-up segments as supported when the URL matches cited source metadata", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
       query: "Where can I read more?",
-      answer: "The page explains testing and parsing content for users.\n\nYou can read more here: [Guide](https://example.com/guide)",
+      answer: "The page explains testing and parsing content for users.\n\n[Guide](https://example.com/guide)",
       answerSegments: [
         {
           text: "The page explains testing and parsing content for users",
           citationIndices: [0],
         },
         {
-          text: "\n\nYou can read more here: [Guide](https://example.com/guide)",
+          text: "\n\n[Guide](https://example.com/guide)",
         },
       ],
       citationEvidence: citations,
@@ -309,7 +346,7 @@ describe("answer support validator", () => {
     });
 
     expect(result.answer).toBe(
-      "The page explains testing and parsing content for users.\n\nYou can read more here: [Guide](https://example.com/guide)",
+      "The page explains testing and parsing content for users.\n\n[Guide](https://example.com/guide)",
     );
     expect(result.answerSegments).toEqual([
       {
@@ -317,7 +354,7 @@ describe("answer support validator", () => {
         citationIndices: [0],
       },
       {
-        text: "\n\nYou can read more here: [Guide](https://example.com/guide)",
+        text: "\n\n[Guide](https://example.com/guide)",
         citationIndices: [0],
       },
     ]);
@@ -330,6 +367,33 @@ describe("answer support validator", () => {
       nonSubstantiveSegmentCount: 0,
       answerSupportPolicy: "strict",
     });
+  });
+
+  it("does not treat unsupported prose plus a cited URL as fully supported", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "What support is offered?",
+      answer: "The guide also offers 24/7 support: [Guide](https://example.com/guide)",
+      answerSegments: [
+        {
+          text: "The guide also offers 24/7 support: [Guide](https://example.com/guide)",
+        },
+      ],
+      citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("No se pudo verificar esa respuesta con los documentos recuperados.");
+    expect(result.validation.unsupportedSegmentCount).toBe(1);
+    expect(result.validation.supportedSegmentCount).toBe(0);
   });
 });
 

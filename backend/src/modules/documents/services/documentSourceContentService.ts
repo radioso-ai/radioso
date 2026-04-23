@@ -2,6 +2,7 @@ import { parseDocument, type ParsedDocument } from "@radioso/document-parser";
 
 import type { DocumentRecord } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../infra/gcsDocumentStorage.js";
+import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 
 export interface MaterializedDocumentContent {
   sourceContent: string;
@@ -22,10 +23,12 @@ export class DocumentSourceContentService {
 
   async materialize(document: DocumentRecord): Promise<MaterializedDocumentContent> {
     if (document.sourceKind === "inline_text") {
-      return {
+      return sanitizeInlineDocumentContent({
+        title: document.title,
         sourceContent: document.sourceContent,
         markdownContent: document.markdownContent,
-      };
+        metadata: document.metadata,
+      });
     }
 
     if (!document.sourceStorageBucket || !document.sourceStorageObject) {

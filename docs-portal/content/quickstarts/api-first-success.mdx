@@ -1,0 +1,149 @@
+---
+title: API first success
+description: Reach first success with plain HTTP by registering, getting a token, uploading content, and asking a grounded question.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# API first success
+
+You can use Radioso without opening the web app. This path is for teams that already know they want the product behavior but want to integrate it behind their own scripts, jobs, or UI first.
+
+## The happy path
+
+The shortest route to first success is:
+
+1. create or access an account
+2. establish a session
+3. reveal a workspace token
+4. upload one document
+5. ask one question whose answer should obviously come from that document
+
+<Steps>
+### Create or access an account
+
+Register a new user or log in with an existing one.
+
+### Establish a session
+
+If email verification is required, verify first and then log in to receive the session cookie.
+
+### Reveal the workspace token
+
+Use the session-authenticated workspace route to get the bearer token.
+
+### Upload content and ask a grounded question
+
+Use the workspace token for document and chat routes.
+</Steps>
+
+## One concrete example
+
+Suppose you upload a document that says:
+
+`Refunds are available within 14 days of purchase with proof of payment.`
+
+A good first API test is then:
+
+- upload that exact text
+- wait for processing to complete
+- ask, `What is the refund window?`
+
+If the system is working, the answer should come back grounded in that document rather than sounding generic.
+
+## Register
+
+```bash
+curl -sS \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
+  http://localhost:8080/api/v1/auth/register
+```
+
+In a normal verified-email deployment, registration returns bootstrap data such as `workspaceId` and `requiresEmailVerification`. It does not automatically establish a usable session cookie.
+
+If the user already exists, or once verification is complete, log in and save the session cookie:
+
+```bash
+curl -sS -c cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
+  http://localhost:8080/api/v1/auth/login
+```
+
+<Callout type="info" emoji="i">
+  Local `./run-dev.sh` setups usually write `AUTH_SKIP_EMAIL_VERIFICATION=true` into `backend/.env`, so local registration can be more permissive than production.
+</Callout>
+
+## Reveal the workspace token
+
+```bash
+curl -sS -b cookies.txt \
+  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
+```
+
+If you need to list workspaces first:
+
+```bash
+curl -sS -b cookies.txt \
+  http://localhost:8080/api/v1/workspace
+```
+
+The token response looks like:
+
+```json
+{"token":"sk_proj_..."}
+```
+
+If a workspace token or public embed link is ever exposed, rotate it from the settings screen instead of relying on disable and re-enable toggles.
+
+## Upload one document
+
+You can use the SDK:
+
+```ts
+import { createRadiosoClient } from '@radioso/typescript-sdk'
+
+const client = createRadiosoClient({
+  baseUrl: 'http://localhost:8080',
+  apiToken: process.env.RADIOSO_API_TOKEN!,
+})
+
+await client.documents.create({
+  title: 'Refund policy',
+  content: 'Refunds are available within 14 days of purchase with proof of payment.',
+})
+```
+
+You can also use the raw HTTP document routes directly, including the multipart `POST /api/v1/document/import` path when the source of truth is a file.
+
+## Ask one question that should have an obvious answer
+
+```ts
+const response = await client.chat.create({
+  query: 'What is the refund window?',
+  stream: false,
+})
+
+console.log(response.answer)
+```
+
+## What success looks like
+
+- you can establish a session and reveal a workspace token
+- the document is accepted and processed
+- the answer is about your uploaded document, not a generic policy guess
+- if citations are enabled for the workspace, the answer points back to the supporting content
+
+## Common failure mode
+
+If upload works but chat does not, one of these is usually true:
+
+- document processing is still running
+- the backend does not have a valid provider key
+- registration completed but no session cookie was established because email verification was still required
+
+## What to do next
+
+- If the API behavior looks right, continue with [TypeScript SDK getting started](/sdk/typescript-getting-started).
+- If the answer quality is weak, go to [Retrieval tuning](/guides/retrieval-tuning).

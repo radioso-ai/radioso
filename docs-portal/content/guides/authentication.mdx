@@ -1,0 +1,76 @@
+---
+title: Authentication
+description: Session, API token, and embed-facing access patterns in Radioso.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Authentication
+
+Radioso supports more than one authentication model because the product serves more than one surface. The web app, API, and public embed flows do not use the same credentials.
+
+## Main access modes
+
+- Session-based access for the product UI
+- Workspace API tokens for backend-to-backend or developer automation
+- Public embed and anonymous chat flows for customer-facing chat experiences
+
+## Session-based access
+
+Use sessions when a person is interacting with the product UI.
+
+The main auth routes are:
+
+- register
+- login
+- invitation accept
+- email verification resend and verify
+- password reset request and confirm
+
+The backend sets the session cookie on successful login, invitation acceptance, and password reset confirmation. New registrations can require email verification before the first real session is issued, unless local development explicitly enables `AUTH_SKIP_EMAIL_VERIFICATION=true`.
+
+## Workspace API tokens
+
+Use workspace tokens when you want to call the workspace-scoped API without a browser session. A common pattern is:
+
+<Steps>
+### Sign in with a normal user account
+
+Use session auth to reach the account and workspace APIs.
+
+### Reveal the workspace token
+
+Fetch the workspace token from the authenticated workspace route.
+
+### Call workspace-scoped APIs
+
+Use the bearer token for document, chat, settings, and related automation flows.
+</Steps>
+
+Workspace tokens are high-value credentials. If one leaks, rotate it from workspace settings rather than trying to work around the exposure.
+
+## Public chat and embed access
+
+Public website chat does not use a normal operator session. Instead, it relies on workspace-controlled public settings, public chat tokens, or embed session flows that are scoped to the workspace configuration.
+
+This is the right model for customer-facing support widgets, not for operator automation.
+
+## Local development behavior
+
+The default `./run-dev.sh` bootstrap flow writes `AUTH_SKIP_EMAIL_VERIFICATION=true` into `backend/.env` for faster local iteration. It also defaults `MAIL_DRIVER=log`, which means verification and password reset links are written to backend logs unless SMTP is configured.
+
+<Callout type="warning" emoji="!">
+  That local shortcut is a development convenience. It is not the production contract.
+</Callout>
+
+## Choose the right mode
+
+- Use sessions for humans in the app.
+- Use workspace bearer tokens for automation.
+- Use public chat or embed flows for customer-facing widgets.
+
+## Start points
+
+- [API first success](/quickstarts/api-first-success)
+- [API Reference](/api-reference)
+- [Public chat and embed API](/api/public-chat-and-embed)

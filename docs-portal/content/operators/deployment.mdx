@@ -1,0 +1,58 @@
+---
+title: Deployment
+description: Production deployment expectations for Radioso and the standalone docs portal.
+---
+
+import { Callout } from 'nextra/components'
+
+# Deployment
+
+Radioso’s production contract is a multi-service deployment. The backend, frontend, and document worker are separate runtime units, and the docs portal should stay separate as well.
+
+## Production contract
+
+- independent image per service
+- independent Cloud Run service for backend, frontend, and worker
+- Cloud SQL for application state
+- GCS for uploaded document source files
+- Cloud Tasks for request-driven worker dispatch
+- Secret Manager for runtime secrets
+
+## Required configuration categories
+
+At minimum, a production deployment needs:
+
+- database connectivity
+- model provider credentials
+- session and token secrets
+- storage configuration for uploaded files
+- public base URLs for customer-facing flows such as public chat, password reset, and email verification
+
+Relevant runtime flags are defined in `backend/.env.example` and enforced by `backend/src/app/config/env.ts`.
+
+## Runtime separation
+
+The backend owns migrations, auth, retrieval, chat, and API routes. The worker owns queued document processing. Keep those services independently deployable and independently scalable.
+
+That separation matters because worker traffic behaves differently from chat traffic:
+
+- worker jobs are durable and retryable
+- chat is synchronous and user-visible
+- worker resource pressure should not degrade app responsiveness
+
+## Docs portal deployment
+
+The docs portal is its own Next.js app under `docs-portal/`. It syncs the backend OpenAPI document during build and should be deployed as a separate public service instead of being mounted into the product frontend.
+
+## Rollout checklist
+
+1. Apply database migrations before or during backend rollout.
+2. Confirm backend can reach Cloud SQL and storage.
+3. Confirm worker runtime can claim or receive jobs.
+4. Confirm frontend points at the current backend service.
+5. Confirm public URLs used for auth and embed flows are correct.
+6. Confirm docs portal build synced the current OpenAPI document.
+
+<Callout type="info" emoji="i">
+  If the app is live but document uploads never become searchable, treat that as a worker-path or dispatch-path incident first.
+</Callout>

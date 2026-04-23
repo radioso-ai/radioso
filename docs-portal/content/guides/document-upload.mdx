@@ -1,0 +1,66 @@
+---
+title: Document upload
+description: Upload content into Radioso and understand what happens next.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Document upload
+
+Document upload is the start of grounded answer quality. If the wrong content enters the system, or processing never completes, retrieval quality will never recover later in the pipeline.
+
+## Two ingestion paths
+
+- Inline text ingestion: create a document from title, content, optional metadata, and optional external id.
+- File import: upload a file and let Radioso extract source content before chunking.
+
+## What happens after upload
+
+<Steps>
+### The API accepts the document
+
+The document is created or updated and the API responds with `202 Accepted`.
+
+### Processing is queued
+
+Document work moves to the background worker rather than being completed inline.
+
+### Source content is normalized
+
+Uploaded files are parsed into markdown or text content. Inline text documents already have their source content.
+
+### Chunks and embeddings are generated
+
+The worker applies workspace ingestion settings, creates searchable chunks, and generates embeddings.
+
+### Retrieval can use the document
+
+Only after processing completes should you expect grounded answers to cite that document.
+</Steps>
+
+## What to verify after import
+
+- the document exists in the workspace
+- processing finished successfully for the latest revision
+- the document metadata looks correct
+- at least one grounded query retrieves it when asked directly about the document
+
+## Metadata and external ids
+
+If you plan to filter or bias retrieval later, add metadata at ingestion time. Metadata becomes part of document and chunk search behavior and can be used by metadata rules and direct metadata filters.
+
+`externalDocumentId` is useful when Radioso mirrors documents that already exist in another system and you need a stable workspace-scoped reference for sync or reconciliation.
+
+## Common failure pattern
+
+The most common operator mistake is testing chat immediately after upload and assuming a weak answer means retrieval is broken. In practice, the document often just has not completed processing yet.
+
+<Callout type="info" emoji="i">
+  Treat document status as part of the ingestion contract. Upload success and retrieval readiness are not the same event.
+</Callout>
+
+## Related docs
+
+- [Run locally in 5 minutes](/quickstarts/run-locally)
+- [Document processing lifecycle](/architecture/document-processing-lifecycle)
+- [Document processing](/operators/document-processing)

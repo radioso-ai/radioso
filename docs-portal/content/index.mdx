@@ -1,0 +1,71 @@
+---
+title: Radioso Docs
+description: Grounded chat, citations, embeds, and operator controls for teams shipping AI support and knowledge experiences.
+---
+
+import { Cards, Callout, Steps } from 'nextra/components'
+
+# Radioso for teams that need answers they can defend
+
+Radioso is built for teams that need grounded answers, traceable citations, and embedded support experiences. The goal of this site is simple: help you reach a real first success, then explain the system well enough that you can trust it in production.
+
+<Callout type="info" emoji="↗">
+  Choose one path first: evaluate locally, integrate through the API, or launch the website embed.
+</Callout>
+
+## Choose your path
+
+<Cards num={3}>
+  <Cards.Card title="Evaluate locally" href="/quickstarts/run-locally">
+    Bring up the full stack with Docker, create or join a workspace, upload a document, and verify one grounded answer in your own environment.
+  </Cards.Card>
+  <Cards.Card title="Launch the website embed" href="/quickstarts/website-embed">
+    Configure allowed origins, enable the embed launcher, verify session bootstrap, and test both approved and blocked origins before rollout.
+  </Cards.Card>
+  <Cards.Card title="Integrate API-first" href="/quickstarts/api-first-success">
+    Create an account, reveal a workspace token, upload content, and ask a question with plain HTTP or the TypeScript SDK.
+  </Cards.Card>
+</Cards>
+
+## What success looks like
+
+<Steps>
+### Reach a visible result
+
+Do not stop at setup. Upload one real document, ask one real question, or load one real embedded launcher.
+
+### Check the evidence
+
+The answer should be grounded, the citations should be traceable, and the widget or API flow should behave the way the docs say it behaves.
+
+### Understand the system
+
+Use the architecture and operator guides to understand how retrieval, document processing, and deployment fit together.
+</Steps>
+
+## Why teams choose Radioso
+
+<Cards num={2}>
+  <Cards.Card title="Grounded answers with citations" href="/why-radioso/grounded-answers">
+    Retrieval settings, support validation, and citations are part of the product contract rather than optional ornamentation.
+  </Cards.Card>
+  <Cards.Card title="Built for embedded support" href="/why-radioso/use-cases">
+    Radioso supports workspaces, public embed, anonymous chat, and operator controls for teams running customer-facing assistants.
+  </Cards.Card>
+</Cards>
+
+## Learn the system
+
+This docs site should help you verify the product, not just read about it. Expect copy-paste payloads, practical checks, and explicit explanations of common failure modes.
+
+<Cards num={3}>
+  <Cards.Card title="API Reference" href="/api-reference" />
+  <Cards.Card title="Architecture overview" href="/architecture" />
+  <Cards.Card title="TypeScript SDK" href="/sdk/typescript-getting-started" />
+</Cards>
+
+## Where to go next
+
+- If you want the fastest product evaluation path, start with [Run locally in 5 minutes](/quickstarts/run-locally).
+- If you already know the product shape and want customer-facing rollout, go to [Embed on your website](/quickstarts/website-embed).
+- If you are integrating from your own application or scripts, use [API first success](/quickstarts/api-first-success).

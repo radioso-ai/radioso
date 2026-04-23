@@ -1,0 +1,73 @@
+---
+title: Document processing
+description: Operating the document worker and understanding the implications for user-visible behavior.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Document processing
+
+Document processing is durable background work. It should stay separate from interactive chat so uploads have explicit status and retries while user questions stay on the live request path.
+
+## What the operator owns
+
+Operators are responsible for three things:
+
+- keeping the worker path healthy
+- keeping source-file storage available
+- making sure ingestion settings match document shape
+
+## Processing flow in practice
+
+<Steps>
+### API accepts the upload
+
+`POST /api/v1/document/import` accepts a multipart file upload and returns `202 Accepted`. Inline text ingestion follows the same queue-first pattern.
+
+### A job is queued
+
+The document record is created or updated, then a processing job is queued for the current revision.
+
+### The worker claims the job
+
+In local mode, the worker can poll the durable queue directly. In cloud mode, the backend dispatches request-driven jobs through Cloud Tasks to the worker service.
+
+### The worker parses, chunks, and embeds
+
+The worker materializes the source content, applies workspace ingestion settings, generates embeddings, and publishes chunks for the latest revision only.
+</Steps>
+
+## What users will notice
+
+- New documents are not searchable immediately after upload.
+- Updated documents may briefly show an in-progress state before the new revision replaces the old one.
+- Failed processing shows up as a document state problem before it becomes a chat quality problem.
+
+## Important controls
+
+- `DOCUMENT_STORAGE_DRIVER` selects local filesystem or GCS storage for uploaded source files.
+- `DOCUMENT_UPLOAD_MAX_BYTES` limits accepted upload size.
+- workspace ingestion settings control chunking strategy and chunk sizes.
+- `WORKER_DISPATCH_DRIVER` decides whether jobs stay local or are dispatched to Cloud Tasks.
+- `DOCUMENT_PROCESSING_JOB_LEASE_MS` defines how long a claimed job stays leased before later recovery logic can reclaim it.
+
+## First checks during incidents
+
+1. Confirm the API is still accepting uploads.
+2. Confirm the worker runtime is alive.
+3. Confirm source-file storage is reachable.
+4. Confirm embeddings are succeeding for new jobs.
+5. Confirm the queue is draining rather than growing.
+
+<Callout type="warning" emoji="!">
+  Do not debug a missing answer from a fresh upload as a retrieval bug until processing has completed for that document revision.
+</Callout>
+
+## Local versus cloud mode
+
+Local development is optimized for a simple single-machine workflow. The bootstrap path writes `backend/.env`, starts Docker Compose, and defaults document storage to the local filesystem.
+
+Cloud deployment changes two important things:
+
+- uploaded files move to GCS
+- request-driven processing dispatch moves to Cloud Tasks and the dedicated worker service

@@ -7,7 +7,17 @@ import type { ChatGateway } from "../../src/modules/chat/services/chatService.js
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
+
+const MCP_SIGNING_SECRET = "smoke-signing-secret";
+
+const createMcpSourceHeaders = (bearerToken: string, timestamp = Date.now().toString()) => ({
+  "x-radioso-source-channel": "mcp",
+  "x-radioso-source-signature": createHmac("sha256", MCP_SIGNING_SECRET)
+    .update(`mcp\n\n${timestamp}\n${bearerToken}`)
+    .digest("hex"),
+  "x-radioso-source-timestamp": timestamp,
+});
 
 describe("chat contract", () => {
   it("lists chat history summaries for the active account", async () => {
@@ -747,6 +757,123 @@ describe("chat contract", () => {
         }),
       ]),
     );
+  });
+
+  it("marks MCP-originated conversations in chat history", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "mcp-history@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+
+    const chat = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .set(createMcpSourceHeaders(token))
+      .send({
+        query: "What does this page do?",
+        stream: false,
+      });
+
+    expect(chat.status).toBe(200);
+
+    const history = await request(app)
+      .get("/api/v1/chat/history")
+      .set("Authorization", authorization);
+
+    expect(history.status).toBe(200);
+    expect(history.body.conversations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: chat.body.conversationId,
+          sourceChannel: "mcp",
+          sourceOrigin: null,
+        }),
+      ]),
+    );
+
+    const detail = await request(app)
+      .get(`/api/v1/chat/history/${chat.body.conversationId}`)
+      .set("Authorization", authorization);
+
+    expect(detail.status).toBe(200);
+    expect(detail.body).toMatchObject({
+      conversationId: chat.body.conversationId,
+      sourceChannel: "mcp",
+      sourceOrigin: null,
+    });
+  });
+
+  it("rejects malformed MCP source verification headers with a 400", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "mcp-bad-header@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", `Bearer ${token}`)
+      .set("x-radioso-source-channel", "mcp")
+      .set("x-radioso-source-signature", "bad-signature")
+      .set("x-radioso-source-timestamp", "not-a-timestamp")
+      .send({
+        query: "What does this page do?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "bad_request",
+      },
+    });
+  });
+
+  it("rejects unverified MCP source claims from bearer clients", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "mcp-forbidden@example.com");
+    const timestamp = Date.now().toString();
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", `Bearer ${token}`)
+      .set("x-radioso-source-channel", "mcp")
+      .set("x-radioso-source-signature", createHmac("sha256", "wrong-secret").update(`mcp\n\n${timestamp}\n${token}`).digest("hex"))
+      .set("x-radioso-source-timestamp", timestamp)
+      .send({
+        query: "What does this page do?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "forbidden",
+      },
+    });
+  });
+
+  it("rejects MCP source signatures replayed with a different bearer token", async () => {
+    const { app } = createTestApp();
+    const tokenA = await issueTestToken(app, "mcp-replay-a@example.com");
+    const tokenB = await issueTestToken(app, "mcp-replay-b@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", `Bearer ${tokenB.token}`)
+      .set(createMcpSourceHeaders(tokenA.token))
+      .send({
+        query: "What does this page do?",
+        stream: false,
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "forbidden",
+      },
+    });
   });
 
   it("documents the chat history endpoints in the shared OpenAPI contract", () => {

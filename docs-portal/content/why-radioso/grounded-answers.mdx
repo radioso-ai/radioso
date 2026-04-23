@@ -1,0 +1,75 @@
+---
+title: Grounded answers
+description: Why Radioso emphasizes grounding, citations, and support validation.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Grounded answers
+
+Radioso is built for answers that people can check. The product stance is simple: if an answer matters, the system should be able to show what supported it, and it should fail honestly when that support is missing.
+
+## The product point of view
+
+Many AI products optimize first for fluency. Radioso optimizes first for defensibility.
+
+That changes the product in visible ways:
+
+- retrieval is tunable because retrieval quality changes answer quality
+- citations are part of the answer experience rather than a debugging extra
+- unsupported claims should degrade honestly instead of sounding confident
+- operators should be able to inspect why the system answered the way it did
+
+## A simple example
+
+Imagine a customer asks:
+
+`Do you offer refunds after 30 days?`
+
+There are two very different product behaviors:
+
+1. A generic assistant gives a polished answer based on patterns it has seen elsewhere.
+2. A grounded assistant answers from your workspace documents, cites the supporting source, or says it does not have support for that claim.
+
+Radioso is built for the second behavior.
+
+## How Radioso gets there
+
+<Steps>
+### Retrieve evidence
+
+The system searches workspace documents and applies retrieval settings to gather the best candidate context.
+
+### Build the answer with traceable support
+
+The answer path keeps track of which chunks support which parts of the response.
+
+### Validate support before presenting it
+
+If substantive parts of the answer are unsupported, Radioso can preserve them, trim them, or replace them depending on the workspace answer-support policy.
+</Steps>
+
+## Why this matters in practice
+
+- support teams need answers they can stand behind
+- embedded assistants need to avoid inventing policy
+- customers need a path back to the source of an important claim
+- operators need to improve quality by tuning retrieval, not by guessing blindly
+
+<Callout type="info" emoji="i">
+  The key point is that grounded answers are not one isolated feature. They are the contract that ties retrieval, citations, and unsupported-answer handling together.
+</Callout>
+
+## What success looks like
+
+- a user can ask a policy or product question and get an answer tied to workspace content
+- citations point to the material that actually supports the claim
+- unsupported questions degrade clearly instead of sounding authoritative
+- operators can improve quality by tuning retrieval rather than rewriting the whole system prompt
+
+## Related docs
+
+- [API first success](/quickstarts/api-first-success)
+- [Embed on your website](/quickstarts/website-embed)
+- [Retrieval tuning](/guides/retrieval-tuning)
+- [Architecture overview](/architecture)

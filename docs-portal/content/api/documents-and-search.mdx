@@ -1,0 +1,114 @@
+---
+title: Documents and search
+description: Upload documents, requeue processing, inspect search behavior, and replay historical searches.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Documents and search
+
+This part of the API manages document content and the search layer that grounded answers depend on.
+
+## Relevant endpoints
+
+```text
+GET    /api/v1/document/
+POST   /api/v1/document/
+POST   /api/v1/document/import
+GET    /api/v1/document/{documentId}
+PUT    /api/v1/document/{documentId}
+DELETE /api/v1/document/{documentId}
+POST   /api/v1/document/{documentId}/reprocess
+POST   /api/v1/document/search
+GET    /api/v1/document/search/history
+GET    /api/v1/document/search/history/{searchId}
+```
+
+## How it works
+
+<Steps>
+### Ingest content
+
+Use inline document creation when you already have extracted text. Use multipart import when the source of truth is a file.
+
+### Wait for asynchronous processing
+
+Create, import, update, and reprocess flows return `202 Accepted` because indexing work runs in the background worker.
+
+### Verify retrieval behavior
+
+Use document search to inspect whether the expected evidence is reachable.
+
+### Replay historical searches
+
+Use search history when you need to compare current behavior with a previous search result set.
+</Steps>
+
+The key point is that document create and update are asynchronous. The API accepts the request first and processes the content in the background.
+
+## Create a document from inline text
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/document/ \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"FAQ","content":"Radioso can answer questions grounded in uploaded content.","metadata":{"category":"support"},"externalDocumentId":"faq-001"}'
+```
+
+`title` and `content` are required. `metadata` and `externalDocumentId` are optional.
+
+## Import a file
+
+Use multipart import when you want Radioso to extract text from an uploaded source file.
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/document/import \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -F "file=@./handbook.pdf" \
+  -F "title=Support handbook"
+```
+
+The backend enforces a maximum upload size with `DOCUMENT_UPLOAD_MAX_BYTES`. The upload path is also rate-limited separately from normal auth flows.
+
+## Update or reprocess a document
+
+Use `PUT /api/v1/document/{documentId}` when the content changed.
+
+Use `POST /api/v1/document/{documentId}/reprocess` when you want to run the current stored content through the latest processing path again.
+
+Both flows return `202` because processing is queued.
+
+## Search documents
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/document/search \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"uploaded content","metadataFilter":{"category":"support"}}'
+```
+
+`query` is required. `metadataFilter` is optional.
+
+## Search history
+
+Use `GET /api/v1/document/search/history` to list previous searches.
+
+Use `GET /api/v1/document/search/history/{searchId}` to replay one historical search result set.
+
+In practice, this is useful when you are tuning retrieval and want to compare current behavior with a known past search.
+
+<Callout type="info" emoji="i">
+  A successful create or import response only means the document was accepted and queued. It does not mean the document is already available to grounded chat.
+</Callout>
+
+## Common failure modes
+
+- `400` usually means a required field is missing or the search body is invalid.
+- `401` means the workspace token is missing or invalid.
+- `404` means the document or search id does not exist in the current workspace context.
+
+## Read next
+
+- [Chat and history](/api/chat-and-history)
+- [Settings](/api/settings)
+- [API Reference](/api-reference)

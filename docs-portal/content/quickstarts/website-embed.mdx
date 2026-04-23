@@ -1,0 +1,151 @@
+---
+title: Embed on your website
+description: Launch the Radioso embed flow against a local test site, then adapt it for production.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Embed on your website
+
+Use this path when you want customer-facing chat on a public site. The important idea is that Radioso does not trust any site that knows the embed token. The launch also has to come from an approved origin.
+
+## The happy path
+
+The shortest route to first success is:
+
+1. enable anonymous chat and website embed for the workspace
+2. allow exactly one site origin
+3. install the launcher script on that site
+4. confirm the approved site can chat and an unapproved site cannot
+
+## What the embed flow does
+
+The hosted embed script launches a widget, asks the frontend for an embed session, and the frontend signs that bootstrap request before forwarding it to the backend. The backend then checks three things:
+
+1. the workspace embed token exists
+2. website embed is enabled for that workspace
+3. the browser origin exactly matches one of the allowed origins
+
+If those checks pass, Radioso issues a short-lived embed session token tied to the workspace, anonymous session, and source origin.
+
+## What you are trying to prove
+
+You are not only trying to make the launcher appear. You are proving that:
+
+- the right website can launch the assistant
+- the wrong website cannot impersonate it
+- the assistant answers from your workspace content once it is launched
+
+## Local embed harness
+
+Start the local harness from the repo root:
+
+```bash
+node scripts/serve-embed-test-site.mjs
+```
+
+Then open:
+
+- Approved origin: `http://127.0.0.1:4321`
+- Blocked origin: `http://localhost:4321`
+
+Those two URLs intentionally differ only by host. That is enough to prove that origin matching is exact.
+
+## Example launcher snippet
+
+In production, the launcher looks like a normal script include with workspace-scoped data attributes:
+
+```html
+<script
+  async
+  src="https://your-frontend.example.com/radioso-embed.js"
+  data-radioso-token="wksp_embed_example"
+  data-radioso-launcher-label="Chat with support"
+  data-radioso-launcher-icon="chat"
+  data-radioso-launcher-position="bottom-right"
+></script>
+```
+
+The exact snippet can be generated from workspace settings. The important detail is that the script origin and the allowed website origin are different concerns. The script can be hosted in one place while only approved customer-facing origins are allowed to bootstrap sessions.
+
+## Recommended launch sequence
+
+<Steps>
+### Enable anonymous chat and website embed
+
+The embed flow depends on workspace public-chat capability. If website embed is enabled but the workspace does not have a public chat token, launch will still fail.
+
+### Set the exact allowed origins
+
+Add the full origin, including protocol, host, and port. `http://127.0.0.1:4321` and `http://localhost:4321` are different origins.
+
+### Install the launcher snippet
+
+Use the workspace embed snippet or script URL exposed by settings. The script loads `/radioso-embed.js` and boots the widget with the workspace token and launcher settings.
+
+### Test bootstrap and session reuse
+
+Open the approved origin, confirm the launcher appears, open the widget, and confirm the chat can establish a session.
+
+The browser sends its `Origin` header to the frontend session route. The frontend signs that origin and forwards it to the backend, which decides whether the launch is allowed.
+
+### Test the blocked path
+
+Open the blocked origin and confirm the launcher cannot establish a valid embedded session there.
+</Steps>
+
+## One concrete test flow
+
+1. Add `http://127.0.0.1:4321` to the allowed-origin list.
+2. Enable anonymous chat and website embed.
+3. Load `http://127.0.0.1:4321` and open the launcher.
+4. Confirm the widget opens and a chat session is established.
+5. Ask a question that your workspace documents should answer.
+6. Load `http://localhost:4321`.
+7. Confirm that bootstrap is rejected there.
+
+## What to verify on an approved origin
+
+- The launcher appears only on approved origins
+- The embedded chat can establish a session through `POST /api/embed/session/{token}`
+- The backend accepts the forwarded request only when the origin is allowlisted
+- Responses stay aligned with your workspace content and settings
+- Returning users can resume the same anonymous session instead of starting from scratch each time
+
+## What to verify on a blocked origin
+
+- The launcher may load the script, but session bootstrap should fail
+- The backend should reject the launch with an origin error rather than silently falling back
+
+## Common failure modes
+
+- Allowlist mismatches are usually exact-origin problems. Include the full origin, including port.
+- If the widget loads but cannot chat, website embed may be enabled while anonymous chat is still missing or disabled.
+- If local embed works from one host but not another, that is usually the system behaving correctly.
+
+<Callout type="warning" emoji="!">
+  Treat the allowed-origin list as part of the security boundary, not as a cosmetic setting. Do not use broad host assumptions when the exact origin is what the backend enforces.
+</Callout>
+
+## What success looks like
+
+- The approved-origin test page can open chat and receive a valid response
+- The blocked-origin test page cannot bootstrap an embedded session
+- The widget behavior matches the workspace launcher label, icon, and position settings
+- the rollout gives you confidence that the embed is both usable and origin-scoped
+
+## Production adaptation
+
+When you move beyond the local harness:
+
+- point the script at your deployed frontend origin
+- keep the allowed-origin list narrow and explicit
+- verify the customer-facing site sends the expected browser `Origin` header
+- test both a working production origin and one intentionally unapproved origin before rollout
+
+In practice, the right production sign-off question is: “Can our approved site launch the assistant, and can a copy of the snippet on an unapproved site fail closed?”
+
+## What to do next
+
+- If the embed launches but answers are weak, go to [Document upload](/guides/document-upload) and [Retrieval tuning](/guides/retrieval-tuning).
+- If the widget should be live soon, review [Deployment](/operators/deployment).

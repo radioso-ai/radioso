@@ -53,6 +53,32 @@ describe("inline document content sanitizer", () => {
     expect(result.sourceContent).toBe(result.markdownContent);
   });
 
+  it("removes trailing related-content headings after the last real content line", () => {
+    const content = [
+      "## Article Title",
+      "",
+      "Real article body paragraph.",
+      "",
+      "## Related content",
+      "",
+      "## Another recommendation",
+    ].join("\n");
+
+    const result = sanitizeInlineDocumentContent({
+      title: "Article Title",
+      sourceContent: content,
+      metadata: {
+        sourceUrl: "https://example.com/article",
+      },
+    });
+
+    expect(result.markdownContent).toBe([
+      "## Article Title",
+      "",
+      "Real article body paragraph.",
+    ].join("\n"));
+  });
+
   it("preserves legitimate trailing short list items for sourceUrl-backed documents", () => {
     const content = [
       "## Meditation Benefits",

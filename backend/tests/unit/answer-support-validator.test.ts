@@ -319,19 +319,19 @@ describe("answer support validator", () => {
     expect(result.validation.supportedSegmentCount).toBe(1);
   });
 
-  it("treats link-only follow-up segments as supported when the URL matches cited source metadata", async () => {
+  it("treats bare link-only follow-up segments as supported when the URL matches cited source metadata", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
       query: "Where can I read more?",
-      answer: "The page explains testing and parsing content for users.\n\nYou can read more here: [Guide](https://example.com/guide)",
+      answer: "The page explains testing and parsing content for users.\n\n[Guide](https://example.com/guide)",
       answerSegments: [
         {
           text: "The page explains testing and parsing content for users",
           citationIndices: [0],
         },
         {
-          text: "\n\nYou can read more here: [Guide](https://example.com/guide)",
+          text: "\n\n[Guide](https://example.com/guide)",
         },
       ],
       citationEvidence: citations,
@@ -346,7 +346,7 @@ describe("answer support validator", () => {
     });
 
     expect(result.answer).toBe(
-      "The page explains testing and parsing content for users.\n\nYou can read more here: [Guide](https://example.com/guide)",
+      "The page explains testing and parsing content for users.\n\n[Guide](https://example.com/guide)",
     );
     expect(result.answerSegments).toEqual([
       {
@@ -354,7 +354,7 @@ describe("answer support validator", () => {
         citationIndices: [0],
       },
       {
-        text: "\n\nYou can read more here: [Guide](https://example.com/guide)",
+        text: "\n\n[Guide](https://example.com/guide)",
         citationIndices: [0],
       },
     ]);
@@ -367,6 +367,33 @@ describe("answer support validator", () => {
       nonSubstantiveSegmentCount: 0,
       answerSupportPolicy: "strict",
     });
+  });
+
+  it("does not treat unsupported prose plus a cited URL as fully supported", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "What support is offered?",
+      answer: "The guide also offers 24/7 support: [Guide](https://example.com/guide)",
+      answerSegments: [
+        {
+          text: "The guide also offers 24/7 support: [Guide](https://example.com/guide)",
+        },
+      ],
+      citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("No se pudo verificar esa respuesta con los documentos recuperados.");
+    expect(result.validation.unsupportedSegmentCount).toBe(1);
+    expect(result.validation.supportedSegmentCount).toBe(0);
   });
 });
 

@@ -73,6 +73,13 @@ const extractUrls = (value: string): string[] => {
   return urls;
 };
 
+const stripLinksAndUrls = (value: string): string =>
+  value
+    .replace(MARKDOWN_LINK_URL_PATTERN, "")
+    .replace(BARE_URL_PATTERN, "")
+    .replace(/\[[^\]]+\]\(\s*\)/g, "")
+    .trim();
+
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
   chunkId: citation.chunkId,
@@ -137,6 +144,11 @@ export class AnswerSupportValidator {
     )];
 
     if (normalizedUrls.length === 0) {
+      return undefined;
+    }
+
+    const residualText = stripLinksAndUrls(segment.text);
+    if (hasWordLikeContent(residualText)) {
       return undefined;
     }
 

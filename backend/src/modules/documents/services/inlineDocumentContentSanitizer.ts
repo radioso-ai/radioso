@@ -51,6 +51,7 @@ const isLikelyTagCloudLine = (value: string): boolean => {
 };
 
 const isLikelyTimecodeLine = (value: string): boolean => /^\d{1,2}:\d{2}(?::\d{2})?$/.test(value.trim());
+const isHeadingLine = (value: string): boolean => /^\s{0,3}#{1,6}\s+\S/u.test(value.trim());
 
 const isNoiseLine = (value: string): boolean => {
   const trimmed = value.trim();
@@ -113,6 +114,24 @@ const cropAroundMatchedTitle = (lines: string[], title: string): string[] => {
   return lines.slice(titleIndex);
 };
 
+const trimTrailingChrome = (lines: string[]): string[] => {
+  let lastContentIndex = -1;
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index] ?? "";
+    const trimmed = line.trim();
+
+    if (!trimmed || isNoiseLine(trimmed) || isHeadingLine(trimmed)) {
+      continue;
+    }
+
+    lastContentIndex = index;
+    break;
+  }
+
+  return lastContentIndex === -1 ? lines : lines.slice(0, lastContentIndex + 1);
+};
+
 export const sanitizeInlineDocumentContent = (input: {
   title: string;
   sourceContent: string;
@@ -136,7 +155,7 @@ export const sanitizeInlineDocumentContent = (input: {
   const croppedLines = cropAroundMatchedTitle(normalizedMarkdown.split("\n"), input.title)
     .map((line) => line.slice(0, MAX_PREVIEW_LINE_LENGTH * 20))
     .filter((line) => !isNoiseLine(line));
-  const cleanedLines = collapseBlankRuns(croppedLines);
+  const cleanedLines = collapseBlankRuns(trimTrailingChrome(croppedLines));
   const cleanedMarkdown = cleanedLines.join("\n").trim();
 
   if (!cleanedMarkdown) {

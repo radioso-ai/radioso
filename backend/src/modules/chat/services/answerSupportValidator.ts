@@ -7,33 +7,7 @@ import {
 } from "./answerSupportValidationTypes.js";
 import type { GroundedMissResponseComposer } from "./groundedMissResponseComposer.js";
 
-const NON_SUBSTANTIVE_PHRASES = new Set([
-  "hello",
-  "hi",
-  "hey",
-  "sure",
-  "of course",
-  "certainly",
-  "absolutely",
-  "thanks",
-  "thank you",
-  "glad to help",
-  "happy to help",
-  "no problem",
-  "you are welcome",
-  "youre welcome",
-  "okay",
-  "ok",
-]);
-
 const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
-
-const normalizeForMeaningCheck = (value: string): string =>
-  value
-    .normalize("NFKC")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .toLowerCase();
 
 const hasWordLikeContent = (value: string): boolean => {
   for (const segment of wordSegmenter.segment(value)) {
@@ -64,12 +38,7 @@ const extractSignificantTerms = (value: string): string[] => {
 };
 
 const isNonSubstantiveText = (value: string): boolean => {
-  if (!hasWordLikeContent(value)) {
-    return true;
-  }
-
-  const normalized = normalizeForMeaningCheck(value);
-  return NON_SUBSTANTIVE_PHRASES.has(normalized);
+  return !hasWordLikeContent(value);
 };
 
 const preservePrefix = (value: string): string => value.match(/^[\s,.;:!?()/-]*/)?.[0] ?? "";

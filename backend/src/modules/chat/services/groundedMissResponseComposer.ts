@@ -78,6 +78,8 @@ const formatContextsForPrompt = (contexts: GroundedMissContextSummary[]): string
     .join("\n\n");
 };
 
+// Keep model-authored markdown structure, but strip citation artifacts and noisy spacing
+// before the fallback response is shown to users.
 const normalizeModelResponse = (value: string | undefined): string => {
   const normalized = (value ?? "")
     .replace(/^["'`]+|["'`]+$/g, "")

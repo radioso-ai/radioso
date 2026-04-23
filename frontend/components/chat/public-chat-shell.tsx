@@ -259,19 +259,32 @@ function PublicChatContent({
               </p>
             </div>
           </div>
-          {onRequestCollapse ? (
+          <div className="flex items-center gap-1 self-start">
             <Button
               type="button"
-              size="icon"
+              size="sm"
               variant="ghost"
-              onClick={onRequestCollapse}
-              className="hover:opacity-90"
+              onClick={() => void handleStartNewChat()}
+              disabled={isLoading || isHydrating || isLoadingOlderMessages}
+              className="h-8 px-2 text-xs hover:opacity-90"
               style={{ color: theme.mutedForeground }}
             >
-              <X className="h-4 w-4" />
-              <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+              {copy.publicChatNewChatLabel}
             </Button>
-          ) : null}
+            {onRequestCollapse ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={onRequestCollapse}
+                className="hover:opacity-90"
+                style={{ color: theme.mutedForeground }}
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -374,17 +387,6 @@ function PublicChatContent({
           <p className="text-xs" style={{ color: theme.mutedForeground }}>
             {formatWebsiteEmbedDisclaimer(copy, resolvedWorkspaceName)}
           </p>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={() => void handleStartNewChat()}
-            disabled={isLoading || isHydrating || isLoadingOlderMessages}
-            className="h-8 self-start px-2 text-xs hover:opacity-90"
-            style={{ color: theme.mutedForeground }}
-          >
-            {copy.publicChatNewChatLabel}
-          </Button>
         </div>
       </div>
     </div>

@@ -90,6 +90,7 @@ describe("general settings contract", () => {
     expect(response.body.websiteEmbedToken).toEqual(expect.any(String));
     expect(response.body.websiteEmbedSnippet).toContain('data-radioso-token="');
     expect(response.body.websiteEmbedSnippet).toContain('data-radioso-launcher-position="bottom-left"');
+    expect(response.body.websiteEmbedSnippet).toContain('embeddedChatTitle');
   });
 
   it("escapes quote-bearing website embed values in the generated snippet", async () => {

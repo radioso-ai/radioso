@@ -103,6 +103,38 @@ describe("auth contract", () => {
     expect(dependencies.emailService.sentMessages.at(-1)?.metadata?.kind).toBe("email_verification");
   });
 
+  it("invalidates older verification links after resend delivers a newer one", async () => {
+    const { app, dependencies } = createTestApp();
+
+    await request(app).post("/api/v1/auth/register").send({
+      email: "resend-replaced@example.com",
+      password: "verysecurepassword",
+    });
+
+    const firstVerificationUrl = dependencies.emailService.sentMessages.at(-1)?.metadata?.verificationUrl;
+    const firstToken = firstVerificationUrl ? new URL(firstVerificationUrl).searchParams.get("token") : null;
+
+    const resend = await request(app).post("/api/v1/auth/email-verification/resend").send({
+      email: "resend-replaced@example.com",
+    });
+    expect(resend.status).toBe(202);
+
+    const secondVerificationUrl = dependencies.emailService.sentMessages.at(-1)?.metadata?.verificationUrl;
+    const secondToken = secondVerificationUrl ? new URL(secondVerificationUrl).searchParams.get("token") : null;
+
+    const staleVerify = await request(app).post("/api/v1/auth/email-verification/verify").send({
+      token: firstToken,
+    });
+    expect(staleVerify.status).toBe(401);
+    expect(staleVerify.body.error.code).toBe("unauthorized");
+
+    const freshVerify = await request(app).post("/api/v1/auth/email-verification/verify").send({
+      token: secondToken,
+    });
+    expect(freshVerify.status).toBe(200);
+    expect(freshVerify.body).toEqual({ verified: true });
+  });
+
   it("can skip email verification in local-dev mode and establish a session on registration", async () => {
     const { app } = createTestApp({
       envOverrides: {

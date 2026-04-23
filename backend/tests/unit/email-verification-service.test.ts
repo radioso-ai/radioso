@@ -59,6 +59,19 @@ class InMemoryEmailVerificationTokenRepository implements EmailVerificationToken
       }
     }
   }
+
+  async markOlderActiveForUserUsed(userId: string, createdBefore: Date, usedAt: Date): Promise<void> {
+    for (const record of this.items.values()) {
+      if (
+        record.userId === userId &&
+        record.createdAt < createdBefore &&
+        record.usedAt === null &&
+        record.expiresAt > usedAt
+      ) {
+        record.usedAt = usedAt;
+      }
+    }
+  }
 }
 
 class RecordingEmailService {
@@ -101,7 +114,7 @@ describe("EmailVerificationService", () => {
     });
 
     expect(response).toEqual({ accepted: true });
-    expect(await tokenRepository.findLatestActiveByUserId(user.id, new Date())).toBeTruthy();
+    expect(await tokenRepository.findLatestActiveByUserId(user.id, new Date())).toBeNull();
     expect(auditService.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -114,6 +127,54 @@ describe("EmailVerificationService", () => {
         }),
       ]),
     );
+  });
+
+  it("keeps an earlier verification link active when resend delivery fails", async () => {
+    const env = createTestEnv();
+    const auditService = createAuditService();
+    const userRepository = new InMemoryUserRepository();
+    const tokenRepository = new InMemoryEmailVerificationTokenRepository();
+    const emailService = new RecordingEmailService();
+
+    const user = await userRepository.create({
+      email: "verify@example.com",
+      passwordHash: "hash",
+      emailVerifiedAt: null,
+    });
+
+    const service = new EmailVerificationService({
+      env,
+      auditService,
+      emailService: emailService as never,
+      tokenRepository,
+      userRepository,
+    });
+
+    await service.issueVerification({
+      userId: user.id,
+      email: user.email,
+    });
+
+    const existingToken = await tokenRepository.findLatestActiveByUserId(user.id, new Date());
+    expect(existingToken).toBeTruthy();
+
+    const failingService = new EmailVerificationService({
+      env,
+      auditService: createAuditService(),
+      emailService: new FailingEmailService() as never,
+      tokenRepository,
+      userRepository,
+    });
+
+    const response = await failingService.resend({
+      email: "verify@example.com",
+      requestIp: "127.0.0.1",
+    });
+
+    expect(response).toEqual({ accepted: true });
+    expect(await tokenRepository.findLatestActiveByUserId(user.id, new Date())).toMatchObject({
+      id: existingToken?.id,
+    });
   });
 
   it("issues a verification email with a verify-email URL", async () => {
@@ -144,5 +205,45 @@ describe("EmailVerificationService", () => {
 
     expect(emailService.messages).toHaveLength(1);
     expect(emailService.messages[0]?.verificationUrl).toContain("/verify-email?token=");
+  });
+
+  it("rejects stale verification tokens after resend issues a newer link", async () => {
+    const env = createTestEnv();
+    const auditService = createAuditService();
+    const userRepository = new InMemoryUserRepository();
+    const tokenRepository = new InMemoryEmailVerificationTokenRepository();
+    const emailService = new RecordingEmailService();
+
+    const user = await userRepository.create({
+      email: "verify@example.com",
+      passwordHash: "hash",
+      emailVerifiedAt: null,
+    });
+
+    const service = new EmailVerificationService({
+      env,
+      auditService,
+      emailService: emailService as never,
+      tokenRepository,
+      userRepository,
+    });
+
+    await service.issueVerification({
+      userId: user.id,
+      email: user.email,
+    });
+    await service.resend({
+      email: user.email,
+    });
+
+    const firstToken = new URL(emailService.messages[0]!.verificationUrl).searchParams.get("token");
+
+    await expect(
+      service.verify({
+        token: firstToken!,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 401,
+    });
   });
 });

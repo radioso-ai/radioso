@@ -1,4 +1,3 @@
-import { createHmac } from 'node:crypto'
 import { z } from 'zod'
 
 export const runtime = 'nodejs'
@@ -50,22 +49,9 @@ export async function POST(
 ) {
   const { token } = await context.params
   const requestOrigin = resolveOrigin(request.headers.get('origin'))
-  const signatureSecret = process.env.WEBSITE_EMBED_SECRET
   const parsedBody = embedBootstrapRequestSchema.safeParse(
     await request.json().catch(() => ({})),
   )
-
-  if (!signatureSecret) {
-    return Response.json(
-      {
-        error: {
-          code: 'embed_unavailable',
-          message: 'This embedded chat launch could not be verified.',
-        },
-      },
-      { status: 503, headers: withCorsHeaders(requestOrigin) },
-    )
-  }
 
   if (!requestOrigin) {
     return Response.json(
@@ -91,18 +77,13 @@ export async function POST(
     )
   }
 
-  const signature = createHmac('sha256', signatureSecret)
-    .update(`${token}:${requestOrigin}`)
-    .digest('hex')
-
   try {
     const upstream = await fetch(`${BACKEND_BASE}/api/v1/public/embed/${encodeURIComponent(token)}/session`, {
       method: 'POST',
       cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
-        'x-radioso-embed-origin': requestOrigin,
-        'x-radioso-embed-signature': signature,
+        Origin: requestOrigin,
       },
       body: JSON.stringify(parsedBody.data),
     })

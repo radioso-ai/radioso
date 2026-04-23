@@ -3,12 +3,16 @@ import type { GeneralSettings } from '@/lib/api'
 export type WebsiteEmbedLauncherPosition = 'bottom-right' | 'bottom-left'
 export type WebsiteEmbedLauncherIcon = 'chat' | 'sparkles' | 'message'
 export type WebsiteEmbedInitialState = 'open' | 'collapsed'
-export type WebsiteEmbedSupportedLocale = 'de' | 'en' | 'es' | 'fr' | 'it' | 'pt'
+export type WebsiteEmbedDisplayMode = 'bubble' | 'panel'
 
 export interface WebsiteEmbedSnippetOverrides {
   locale?: string | null
   initialState?: string | null
+  displayMode?: string | null
+  avatarUrl?: string | null
   collapsedAvatarUrl?: string | null
+  copy?: WebsiteEmbedCopyOverrides | null
+  theme?: WebsiteEmbedThemeOverrides | null
 }
 
 export interface WebsiteEmbedCopy {
@@ -27,127 +31,133 @@ export interface WebsiteEmbedCopy {
   publicChatLoadOlderMessages: string
   publicChatSendMessageLabel: string
   publicChatNewChatLabel: string
-  publicChatRateLimitRetry: (seconds: number) => string
+  publicChatCollapseLabel: string
+  publicChatDisclaimerTemplate: string
+  publicChatRateLimitRetryTemplate: string
 }
+
+export interface WebsiteEmbedTheme {
+  launcherBackground: string
+  launcherForeground: string
+  launcherBorder: string
+  launcherShadow: string
+  panelBackground: string
+  panelForeground: string
+  panelBorder: string
+  panelShadow: string
+  accent: string
+  accentForeground: string
+  mutedBackground: string
+  mutedForeground: string
+  inputBackground: string
+  inputForeground: string
+  inputBorder: string
+  inputPlaceholder: string
+  assistantBubbleBackground: string
+  assistantBubbleForeground: string
+  userBubbleBackground: string
+  userBubbleForeground: string
+}
+
+export type WebsiteEmbedCopyOverrides = Partial<WebsiteEmbedCopy>
+export type WebsiteEmbedThemeOverrides = Partial<WebsiteEmbedTheme>
 
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL = 'Chat with us'
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON: WebsiteEmbedLauncherIcon = 'chat'
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION: WebsiteEmbedLauncherPosition = 'bottom-right'
 export const DEFAULT_WEBSITE_EMBED_SCRIPT_PATH = '/radioso-embed.js'
 export const DEFAULT_WEBSITE_EMBED_INITIAL_STATE: WebsiteEmbedInitialState = 'collapsed'
+export const DEFAULT_WEBSITE_EMBED_DISPLAY_MODE: WebsiteEmbedDisplayMode = 'bubble'
+export const APP_WEBSITE_EMBED_DEMO_PATH = '/embed-demo.html'
+export const LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL = 'http://127.0.0.1:4321'
+export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
+  launcherDefaultLabel: 'Chat with us',
+  embeddedChatTitle: 'Radioso embedded chat',
+  embeddedChatUnavailableTitle: 'Embedded Chat Unavailable',
+  embeddedChatUnavailableMessage: 'This embedded chat could not be started from this website.',
+  embeddedChatLauncherRequiredMessage: 'This embedded chat must be opened from the launcher script.',
+  embeddedChatStartingMessage: 'Summoning {name}...',
+  publicChatSubtitle: '',
+  publicChatEmptyTitle: 'Start a conversation',
+  publicChatEmptyMessage: 'Ask a question and get an AI-powered answer.',
+  startPrompt: 'Ask a question...',
+  publicChatUnavailableTitle: 'Chat Unavailable',
+  publicChatUnavailableMessage: 'This chat link is no longer active. Please contact the workspace administrator for access.',
+  publicChatLoadOlderMessages: 'Load older messages',
+  publicChatSendMessageLabel: 'Send message',
+  publicChatNewChatLabel: 'Clear chat',
+  publicChatCollapseLabel: 'Collapse chat',
+  publicChatDisclaimerTemplate: '{name} uses AI and can make mistakes.',
+  publicChatRateLimitRetryTemplate: 'Try again in {seconds}s.',
+}
+export const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
+  launcherBackground: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+  launcherForeground: '#f8fafc',
+  launcherBorder: 'rgba(15, 23, 42, 0.16)',
+  launcherShadow: '0 18px 40px rgba(15, 23, 42, 0.24)',
+  panelBackground: '#ffffff',
+  panelForeground: '#0f172a',
+  panelBorder: 'rgba(148, 163, 184, 0.35)',
+  panelShadow: '0 24px 60px rgba(15, 23, 42, 0.28)',
+  accent: '#0f172a',
+  accentForeground: '#f8fafc',
+  mutedBackground: '#f8fafc',
+  mutedForeground: '#64748b',
+  inputBackground: '#ffffff',
+  inputForeground: '#0f172a',
+  inputBorder: '#cbd5e1',
+  inputPlaceholder: '#94a3b8',
+  assistantBubbleBackground: '#ffffff',
+  assistantBubbleForeground: '#0f172a',
+  userBubbleBackground: '#0f172a',
+  userBubbleForeground: '#f8fafc',
+}
 
 const LOCALE_PATTERN = /^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$/
 
-const websiteEmbedCopyByLocale: Record<WebsiteEmbedSupportedLocale, WebsiteEmbedCopy> = {
-  de: {
-    launcherDefaultLabel: 'Chatte mit uns',
-    embeddedChatTitle: 'Eingebetteter Radioso-Chat',
-    embeddedChatUnavailableTitle: 'Eingebetteter Chat nicht verfugbar',
-    embeddedChatUnavailableMessage: 'Dieser eingebettete Chat konnte auf dieser Website nicht gestartet werden.',
-    embeddedChatLauncherRequiredMessage: 'Dieser eingebettete Chat muss uber das Launcher-Skript geoffnet werden.',
-    embeddedChatStartingMessage: 'Eingebetteter Chat wird gestartet...',
-    publicChatSubtitle: 'Stelle Fragen und erhalte KI-gestutzte Antworten',
-    publicChatEmptyTitle: 'Starte ein Gesprach',
-    publicChatEmptyMessage: 'Stelle eine Frage und erhalte eine KI-gestutzte Antwort.',
-    startPrompt: 'Stelle eine Frage...',
-    publicChatUnavailableTitle: 'Chat nicht verfugbar',
-    publicChatUnavailableMessage: 'Dieser Chat-Link ist nicht mehr aktiv. Bitte kontaktiere die Workspace-Administration.',
-    publicChatLoadOlderMessages: 'Altere Nachrichten laden',
-    publicChatSendMessageLabel: 'Nachricht senden',
-    publicChatNewChatLabel: 'Neuer Chat',
-    publicChatRateLimitRetry: (seconds) => `Versuche es in ${seconds}s erneut.`,
-  },
-  en: {
-    launcherDefaultLabel: 'Chat with us',
-    embeddedChatTitle: 'Radioso embedded chat',
-    embeddedChatUnavailableTitle: 'Embedded Chat Unavailable',
-    embeddedChatUnavailableMessage: 'This embedded chat could not be started from this website.',
-    embeddedChatLauncherRequiredMessage: 'This embedded chat must be opened from the launcher script.',
-    embeddedChatStartingMessage: 'Starting embedded chat...',
-    publicChatSubtitle: 'Ask questions and get AI-powered answers',
-    publicChatEmptyTitle: 'Start a conversation',
-    publicChatEmptyMessage: 'Ask a question and get an AI-powered answer.',
-    startPrompt: 'Ask a question...',
-    publicChatUnavailableTitle: 'Chat Unavailable',
-    publicChatUnavailableMessage: 'This chat link is no longer active. Please contact the workspace administrator for access.',
-    publicChatLoadOlderMessages: 'Load older messages',
-    publicChatSendMessageLabel: 'Send message',
-    publicChatNewChatLabel: 'New chat',
-    publicChatRateLimitRetry: (seconds) => `Try again in ${seconds}s.`,
-  },
-  es: {
-    launcherDefaultLabel: 'Chatea con nosotros',
-    embeddedChatTitle: 'Chat incrustado de Radioso',
-    embeddedChatUnavailableTitle: 'Chat incrustado no disponible',
-    embeddedChatUnavailableMessage: 'No se pudo iniciar este chat incrustado desde este sitio web.',
-    embeddedChatLauncherRequiredMessage: 'Este chat incrustado debe abrirse desde el script del lanzador.',
-    embeddedChatStartingMessage: 'Iniciando chat incrustado...',
-    publicChatSubtitle: 'Haz preguntas y recibe respuestas con IA',
-    publicChatEmptyTitle: 'Empieza una conversacion',
-    publicChatEmptyMessage: 'Haz una pregunta y recibe una respuesta con IA.',
-    startPrompt: 'Haz una pregunta...',
-    publicChatUnavailableTitle: 'Chat no disponible',
-    publicChatUnavailableMessage: 'Este enlace de chat ya no esta activo. Ponte en contacto con la administracion del workspace para obtener acceso.',
-    publicChatLoadOlderMessages: 'Cargar mensajes anteriores',
-    publicChatSendMessageLabel: 'Enviar mensaje',
-    publicChatNewChatLabel: 'Nuevo chat',
-    publicChatRateLimitRetry: (seconds) => `Vuelve a intentarlo en ${seconds}s.`,
-  },
-  fr: {
-    launcherDefaultLabel: 'Discutez avec nous',
-    embeddedChatTitle: 'Chat integre Radioso',
-    embeddedChatUnavailableTitle: 'Chat integre indisponible',
-    embeddedChatUnavailableMessage: 'Ce chat integre na pas pu etre demarre depuis ce site.',
-    embeddedChatLauncherRequiredMessage: 'Ce chat integre doit etre ouvert depuis le script du lanceur.',
-    embeddedChatStartingMessage: 'Demarrage du chat integre...',
-    publicChatSubtitle: 'Posez des questions et obtenez des reponses avec l IA',
-    publicChatEmptyTitle: 'Commencez une conversation',
-    publicChatEmptyMessage: 'Posez une question et obtenez une reponse avec l IA.',
-    startPrompt: 'Posez une question...',
-    publicChatUnavailableTitle: 'Chat indisponible',
-    publicChatUnavailableMessage: 'Ce lien de chat nest plus actif. Contactez ladministration du workspace pour obtenir lacces.',
-    publicChatLoadOlderMessages: 'Charger les anciens messages',
-    publicChatSendMessageLabel: 'Envoyer le message',
-    publicChatNewChatLabel: 'Nouveau chat',
-    publicChatRateLimitRetry: (seconds) => `Reessayez dans ${seconds}s.`,
-  },
-  it: {
-    launcherDefaultLabel: 'Chatta con noi',
-    embeddedChatTitle: 'Chat incorporata Radioso',
-    embeddedChatUnavailableTitle: 'Chat incorporata non disponibile',
-    embeddedChatUnavailableMessage: 'Questa chat incorporata non puo essere avviata da questo sito.',
-    embeddedChatLauncherRequiredMessage: 'Questa chat incorporata deve essere aperta dallo script del launcher.',
-    embeddedChatStartingMessage: 'Avvio della chat incorporata...',
-    publicChatSubtitle: 'Fai domande e ottieni risposte con l AI',
-    publicChatEmptyTitle: 'Inizia una conversazione',
-    publicChatEmptyMessage: 'Fai una domanda e ottieni una risposta con l AI.',
-    startPrompt: 'Fai una domanda...',
-    publicChatUnavailableTitle: 'Chat non disponibile',
-    publicChatUnavailableMessage: 'Questo link chat non e piu attivo. Contatta lamministrazione del workspace per ottenere accesso.',
-    publicChatLoadOlderMessages: 'Carica messaggi precedenti',
-    publicChatSendMessageLabel: 'Invia messaggio',
-    publicChatNewChatLabel: 'Nuova chat',
-    publicChatRateLimitRetry: (seconds) => `Riprova tra ${seconds}s.`,
-  },
-  pt: {
-    launcherDefaultLabel: 'Converse conosco',
-    embeddedChatTitle: 'Chat incorporado do Radioso',
-    embeddedChatUnavailableTitle: 'Chat incorporado indisponivel',
-    embeddedChatUnavailableMessage: 'Nao foi possivel iniciar este chat incorporado neste site.',
-    embeddedChatLauncherRequiredMessage: 'Este chat incorporado precisa ser aberto pelo script do launcher.',
-    embeddedChatStartingMessage: 'Iniciando chat incorporado...',
-    publicChatSubtitle: 'Faca perguntas e receba respostas com IA',
-    publicChatEmptyTitle: 'Comece uma conversa',
-    publicChatEmptyMessage: 'Faca uma pergunta e receba uma resposta com IA.',
-    startPrompt: 'Faca uma pergunta...',
-    publicChatUnavailableTitle: 'Chat indisponivel',
-    publicChatUnavailableMessage: 'Este link de chat nao esta mais ativo. Fale com a administracao do workspace para obter acesso.',
-    publicChatLoadOlderMessages: 'Carregar mensagens anteriores',
-    publicChatSendMessageLabel: 'Enviar mensagem',
-    publicChatNewChatLabel: 'Nova conversa',
-    publicChatRateLimitRetry: (seconds) => `Tente novamente em ${seconds}s.`,
-  },
-}
+const COPY_OVERRIDE_KEYS = [
+  'launcherDefaultLabel',
+  'embeddedChatTitle',
+  'embeddedChatUnavailableTitle',
+  'embeddedChatUnavailableMessage',
+  'embeddedChatLauncherRequiredMessage',
+  'embeddedChatStartingMessage',
+  'publicChatSubtitle',
+  'publicChatEmptyTitle',
+  'publicChatEmptyMessage',
+  'startPrompt',
+  'publicChatUnavailableTitle',
+  'publicChatUnavailableMessage',
+  'publicChatLoadOlderMessages',
+  'publicChatSendMessageLabel',
+  'publicChatNewChatLabel',
+  'publicChatCollapseLabel',
+  'publicChatDisclaimerTemplate',
+  'publicChatRateLimitRetryTemplate',
+] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
+
+const THEME_OVERRIDE_KEYS = [
+  'launcherBackground',
+  'launcherForeground',
+  'launcherBorder',
+  'launcherShadow',
+  'panelBackground',
+  'panelForeground',
+  'panelBorder',
+  'panelShadow',
+  'accent',
+  'accentForeground',
+  'mutedBackground',
+  'mutedForeground',
+  'inputBackground',
+  'inputForeground',
+  'inputBorder',
+  'inputPlaceholder',
+  'assistantBubbleBackground',
+  'assistantBubbleForeground',
+  'userBubbleBackground',
+  'userBubbleForeground',
+] as const satisfies readonly (keyof WebsiteEmbedTheme)[]
 
 const escapeHtmlAttribute = (value: string) =>
   value
@@ -156,6 +166,42 @@ const escapeHtmlAttribute = (value: string) =>
     .replaceAll("'", '&#39;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
+
+const pickFirstValue = (value: string | string[] | null | undefined) =>
+  Array.isArray(value) ? value[0] : value
+
+const sanitizeOverrideValue = (value: unknown, maxLength: number) => {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.length > maxLength) {
+    return null
+  }
+
+  return trimmed
+}
+
+const sanitizeStringOverrides = <K extends string>(
+  input: unknown,
+  keys: readonly K[],
+  maxLength: number,
+) => {
+  if (!input || typeof input !== 'object') {
+    return {}
+  }
+
+  const next: Partial<Record<K, string>> = {}
+  for (const key of keys) {
+    const sanitized = sanitizeOverrideValue((input as Record<string, unknown>)[key], maxLength)
+    if (sanitized) {
+      next[key] = sanitized
+    }
+  }
+
+  return next
+}
 
 const normalizeOrigin = (origin: string) => {
   const trimmed = origin.trim()
@@ -178,7 +224,7 @@ export const parseWebsiteEmbedOrigins = (value: string) =>
 
 export const formatWebsiteEmbedOrigins = (origins: string[]) => origins.join('\n')
 
-export const normalizeWebsiteEmbedLocale = (value: string | null | undefined): WebsiteEmbedSupportedLocale | null => {
+export const normalizeWebsiteEmbedLocale = (value: string | null | undefined): string | null => {
   if (!value) {
     return null
   }
@@ -188,12 +234,7 @@ export const normalizeWebsiteEmbedLocale = (value: string | null | undefined): W
     return null
   }
 
-  const language = trimmed.split('-')[0]?.toLowerCase()
-  if (!language) {
-    return null
-  }
-
-  return language in websiteEmbedCopyByLocale ? (language as WebsiteEmbedSupportedLocale) : null
+  return trimmed
 }
 
 export const normalizeWebsiteEmbedInitialState = (value: string | null | undefined): WebsiteEmbedInitialState | null => {
@@ -203,6 +244,19 @@ export const normalizeWebsiteEmbedInitialState = (value: string | null | undefin
 
   const normalized = value.trim().toLowerCase()
   if (normalized === 'open' || normalized === 'collapsed') {
+    return normalized
+  }
+
+  return null
+}
+
+export const normalizeWebsiteEmbedDisplayMode = (value: string | null | undefined): WebsiteEmbedDisplayMode | null => {
+  if (!value) {
+    return null
+  }
+
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'bubble' || normalized === 'panel') {
     return normalized
   }
 
@@ -239,10 +293,87 @@ export const normalizeWebsiteEmbedAvatarUrl = (value: string | null | undefined)
   }
 }
 
-export const getWebsiteEmbedCopy = (value: string | null | undefined): WebsiteEmbedCopy => {
-  const locale = normalizeWebsiteEmbedLocale(value) ?? 'en'
-  return websiteEmbedCopyByLocale[locale]
+export const sanitizeWebsiteEmbedCopyOverrides = (input: unknown): WebsiteEmbedCopyOverrides =>
+  sanitizeStringOverrides<keyof WebsiteEmbedCopy>(input, COPY_OVERRIDE_KEYS, 280) as WebsiteEmbedCopyOverrides
+
+export const sanitizeWebsiteEmbedThemeOverrides = (input: unknown): WebsiteEmbedThemeOverrides =>
+  sanitizeStringOverrides<keyof WebsiteEmbedTheme>(input, THEME_OVERRIDE_KEYS, 160) as WebsiteEmbedThemeOverrides
+
+export const parseWebsiteEmbedJsonOverrides = (value: string | null | undefined) => {
+  if (!value) {
+    return null
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  try {
+    return JSON.parse(trimmed) as unknown
+  } catch {
+    return null
+  }
 }
+
+export const parseWebsiteEmbedCopyOverridesParam = (value: string | string[] | null | undefined) =>
+  sanitizeWebsiteEmbedCopyOverrides(parseWebsiteEmbedJsonOverrides(pickFirstValue(value)))
+
+export const parseWebsiteEmbedThemeOverridesParam = (value: string | string[] | null | undefined) =>
+  sanitizeWebsiteEmbedThemeOverrides(parseWebsiteEmbedJsonOverrides(pickFirstValue(value)))
+
+export const formatWebsiteEmbedRateLimitRetry = (
+  copy: Pick<WebsiteEmbedCopy, 'publicChatRateLimitRetryTemplate'>,
+  seconds: number,
+) => copy.publicChatRateLimitRetryTemplate.replaceAll('{seconds}', String(seconds))
+
+export const formatWebsiteEmbedStartingMessage = (
+  copy: Pick<WebsiteEmbedCopy, 'embeddedChatStartingMessage' | 'embeddedChatTitle'>,
+) => copy.embeddedChatStartingMessage.replaceAll('{name}', copy.embeddedChatTitle)
+
+export const formatWebsiteEmbedDisclaimer = (
+  copy: Pick<WebsiteEmbedCopy, 'publicChatDisclaimerTemplate'>,
+  name: string,
+) => copy.publicChatDisclaimerTemplate.replaceAll('{name}', name)
+
+export const getWebsiteEmbedCopy = (
+  _value: string | null | undefined,
+  overrides?: WebsiteEmbedCopyOverrides | null,
+): WebsiteEmbedCopy => {
+  return {
+    ...DEFAULT_WEBSITE_EMBED_COPY,
+    ...sanitizeWebsiteEmbedCopyOverrides(overrides),
+  }
+}
+
+export const getWebsiteEmbedTheme = (overrides?: WebsiteEmbedThemeOverrides | null): WebsiteEmbedTheme => ({
+  ...DEFAULT_WEBSITE_EMBED_THEME,
+  ...sanitizeWebsiteEmbedThemeOverrides(overrides),
+})
+
+export const buildWebsiteEmbedCssVars = (theme: WebsiteEmbedTheme) =>
+  ({
+    '--radioso-launcher-background': theme.launcherBackground,
+    '--radioso-launcher-foreground': theme.launcherForeground,
+    '--radioso-launcher-border': theme.launcherBorder,
+    '--radioso-launcher-shadow': theme.launcherShadow,
+    '--radioso-panel-background': theme.panelBackground,
+    '--radioso-panel-foreground': theme.panelForeground,
+    '--radioso-panel-border': theme.panelBorder,
+    '--radioso-panel-shadow': theme.panelShadow,
+    '--radioso-accent': theme.accent,
+    '--radioso-accent-foreground': theme.accentForeground,
+    '--radioso-muted-background': theme.mutedBackground,
+    '--radioso-muted-foreground': theme.mutedForeground,
+    '--radioso-input-background': theme.inputBackground,
+    '--radioso-input-foreground': theme.inputForeground,
+    '--radioso-input-border': theme.inputBorder,
+    '--radioso-input-placeholder': theme.inputPlaceholder,
+    '--radioso-assistant-bubble-background': theme.assistantBubbleBackground,
+    '--radioso-assistant-bubble-foreground': theme.assistantBubbleForeground,
+    '--radioso-user-bubble-background': theme.userBubbleBackground,
+    '--radioso-user-bubble-foreground': theme.userBubbleForeground,
+  }) as Record<string, string>
 
 export const resolveWebsiteEmbedScriptUrl = (scriptUrl?: string | null, baseUrl?: string) => {
   const normalizedScriptUrl = scriptUrl?.trim()
@@ -259,6 +390,87 @@ export const resolveWebsiteEmbedScriptUrl = (scriptUrl?: string | null, baseUrl?
   }
 
   return DEFAULT_WEBSITE_EMBED_SCRIPT_PATH
+}
+
+export const resolveWebsiteEmbedAppOrigin = (scriptUrl?: string | null, baseUrl?: string) => {
+  const resolvedScriptUrl = resolveWebsiteEmbedScriptUrl(scriptUrl, baseUrl)
+
+  try {
+    return new URL(resolvedScriptUrl, baseUrl).origin
+  } catch {
+    if (baseUrl) {
+      try {
+        return new URL(baseUrl).origin
+      } catch {
+        return baseUrl
+      }
+    }
+
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin
+    }
+
+    return 'http://localhost:3000'
+  }
+}
+
+export const buildWebsiteEmbedTestHarnessUrl = (
+  settings: Pick<
+    GeneralSettings,
+    | 'websiteEmbedToken'
+    | 'websiteEmbedScriptUrl'
+    | 'websiteEmbedLauncherLabel'
+    | 'websiteEmbedLauncherIcon'
+    | 'websiteEmbedLauncherPosition'
+  >,
+  appBaseUrl?: string,
+  overrides?: WebsiteEmbedSnippetOverrides,
+  harnessBaseUrl: string = LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL,
+) => {
+  if (!settings.websiteEmbedToken) {
+    return null
+  }
+
+  const params = new URLSearchParams()
+  params.set('appOrigin', resolveWebsiteEmbedAppOrigin(settings.websiteEmbedScriptUrl, appBaseUrl))
+  params.set('token', settings.websiteEmbedToken)
+  params.set(
+    'label',
+    settings.websiteEmbedLauncherLabel?.trim() || DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL,
+  )
+  params.set('icon', settings.websiteEmbedLauncherIcon ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON)
+  params.set(
+    'position',
+    settings.websiteEmbedLauncherPosition ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION,
+  )
+
+  const displayMode = normalizeWebsiteEmbedDisplayMode(overrides?.displayMode)
+  const initialState = normalizeWebsiteEmbedInitialState(overrides?.initialState)
+  const avatarUrl = normalizeWebsiteEmbedAvatarUrl(overrides?.avatarUrl ?? overrides?.collapsedAvatarUrl)
+  const copyOverrides = sanitizeWebsiteEmbedCopyOverrides(overrides?.copy)
+  const themeOverrides = sanitizeWebsiteEmbedThemeOverrides(overrides?.theme)
+
+  if (displayMode && displayMode !== DEFAULT_WEBSITE_EMBED_DISPLAY_MODE) {
+    params.set('displayMode', displayMode)
+  }
+
+  if (initialState) {
+    params.set('initialState', initialState)
+  }
+
+  if (avatarUrl) {
+    params.set('avatarUrl', avatarUrl)
+  }
+
+  if (Object.keys(copyOverrides).length > 0) {
+    params.set('copy', JSON.stringify(copyOverrides))
+  }
+
+  if (Object.keys(themeOverrides).length > 0) {
+    params.set('theme', JSON.stringify(themeOverrides))
+  }
+
+  return `${harnessBaseUrl}/?${params.toString()}`
 }
 
 export const buildWebsiteEmbedSnippet = (
@@ -285,14 +497,27 @@ export const buildWebsiteEmbedSnippet = (
   const launcherPosition = settings.websiteEmbedLauncherPosition ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION
   const allowedOrigins = (settings.websiteEmbedAllowedOrigins ?? []).map(normalizeOrigin).filter((origin): origin is string => Boolean(origin))
   const originAttribute = allowedOrigins.length > 0 ? ` data-radioso-allowed-origins="${escapeHtmlAttribute(allowedOrigins.join(','))}"` : ''
-  const locale = normalizeWebsiteEmbedLocale(overrides?.locale)
+  const displayMode = normalizeWebsiteEmbedDisplayMode(overrides?.displayMode)
   const initialState = normalizeWebsiteEmbedInitialState(overrides?.initialState)
-  const collapsedAvatarUrl = normalizeWebsiteEmbedAvatarUrl(overrides?.collapsedAvatarUrl)
-  const localeAttribute = locale ? ` data-radioso-locale="${escapeHtmlAttribute(overrides?.locale?.trim() ?? locale)}"` : ''
+  const avatarUrl = normalizeWebsiteEmbedAvatarUrl(overrides?.avatarUrl ?? overrides?.collapsedAvatarUrl)
+  const copyOverrides = sanitizeWebsiteEmbedCopyOverrides(overrides?.copy)
+  const themeOverrides = sanitizeWebsiteEmbedThemeOverrides(overrides?.theme)
+  const displayModeAttribute =
+    displayMode && displayMode !== DEFAULT_WEBSITE_EMBED_DISPLAY_MODE
+      ? ` data-radioso-display-mode="${escapeHtmlAttribute(displayMode)}"`
+      : ''
   const initialStateAttribute = initialState ? ` data-radioso-initial-state="${escapeHtmlAttribute(initialState)}"` : ''
-  const collapsedAvatarAttribute = collapsedAvatarUrl
-    ? ` data-radioso-collapsed-avatar-url="${escapeHtmlAttribute(collapsedAvatarUrl)}"`
+  const avatarAttribute = avatarUrl
+    ? ` data-radioso-avatar-url="${escapeHtmlAttribute(avatarUrl)}"`
     : ''
+  const copyAttribute =
+    Object.keys(copyOverrides).length > 0
+      ? ` data-radioso-copy="${escapeHtmlAttribute(JSON.stringify(copyOverrides))}"`
+      : ''
+  const themeAttribute =
+    Object.keys(themeOverrides).length > 0
+      ? ` data-radioso-theme="${escapeHtmlAttribute(JSON.stringify(themeOverrides))}"`
+      : ''
 
   return [
     `<script`,
@@ -301,7 +526,7 @@ export const buildWebsiteEmbedSnippet = (
     `  data-radioso-token="${escapeHtmlAttribute(settings.websiteEmbedToken)}"`,
     `  data-radioso-launcher-label="${escapeHtmlAttribute(launcherLabel)}"`,
     `  data-radioso-launcher-icon="${escapeHtmlAttribute(launcherIcon)}"`,
-    `  data-radioso-launcher-position="${escapeHtmlAttribute(launcherPosition)}"${originAttribute}${localeAttribute}${initialStateAttribute}${collapsedAvatarAttribute}`,
+    `  data-radioso-launcher-position="${escapeHtmlAttribute(launcherPosition)}"${originAttribute}${displayModeAttribute}${initialStateAttribute}${avatarAttribute}${copyAttribute}${themeAttribute}`,
     `></script>`,
   ].join('\n')
 }

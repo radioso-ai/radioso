@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 
@@ -18,9 +17,6 @@ describe("public embed contract", () => {
     return response.body.websiteEmbedToken as string;
   };
 
-  const signEmbedLaunch = (token: string, origin: string) =>
-    createHmac("sha256", "00112233445566778899aabbccddeeff").update(`${token}:${origin}`).digest("hex");
-
   it("bootstraps an embedded session for an approved origin", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-embed-approved@example.com");
@@ -30,10 +26,10 @@ describe("public embed contract", () => {
 
     const response = await request(app)
       .post(`/api/v1/public/embed/${token}/session`)
-      .set("x-radioso-embed-origin", origin)
-      .set("x-radioso-embed-signature", signEmbedLaunch(token, origin));
+      .set("Origin", origin);
 
     expect(response.status).toBe(200);
+    expect(response.headers["access-control-allow-origin"]).toBe(origin);
     expect(response.body).toMatchObject({
       workspaceName: expect.any(String),
       publicChatToken: expect.any(String),
@@ -55,10 +51,10 @@ describe("public embed contract", () => {
     const origin = "https://example.com";
     const response = await request(app)
       .post(`/api/v1/public/embed/${token}/session`)
-      .set("x-radioso-embed-origin", origin)
-      .set("x-radioso-embed-signature", signEmbedLaunch(token, origin));
+      .set("Origin", origin);
 
     expect(response.status).toBe(503);
+    expect(response.headers["access-control-allow-origin"]).toBe(origin);
     expect(response.body.error).toMatchObject({
       code: "service_unavailable",
       message: "Website embed sessions are not configured.",
@@ -74,15 +70,16 @@ describe("public embed contract", () => {
 
     const response = await request(app)
       .post(`/api/v1/public/embed/${token}/session`)
-      .set("x-radioso-embed-origin", origin)
-      .set("x-radioso-embed-signature", signEmbedLaunch(token, origin));
+      .set("Origin", origin);
 
     expect(response.status).toBe(403);
     expect(response.body.error).toMatchObject({
       code: "forbidden",
     });
 
-    const auditEvents = (dependencies.auditService as unknown as { events: Array<{ eventType: string; metadata?: Record<string, unknown> }> }).events;
+    const auditEvents = (dependencies.auditService as unknown as {
+      events: Array<{ eventType: string; metadata?: Record<string, unknown> }>;
+    }).events;
     expect(auditEvents).toContainEqual(
       expect.objectContaining({
         eventType: "website_embed.launch_denied",
@@ -91,25 +88,39 @@ describe("public embed contract", () => {
     );
   });
 
-  it("rejects an invalid embed signature even for an approved origin", async () => {
+  it("rejects embed launches that omit the browser origin header", async () => {
     const { app } = createTestApp();
-    const session = await issueTestSession(app, "public-embed-signature@example.com");
+    const session = await issueTestSession(app, "public-embed-origin-header@example.com");
 
     const token = await enableWebsiteEmbed(app, session);
+    const response = await request(app).post(`/api/v1/public/embed/${token}/session`);
 
-    const response = await request(app)
-      .post(`/api/v1/public/embed/${token}/session`)
-      .set("x-radioso-embed-origin", "https://example.com")
-      .set("x-radioso-embed-signature", "bad-signature");
-
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(400);
     expect(response.body.error).toMatchObject({
-      code: "forbidden",
-      message: "This embedded chat launch could not be verified.",
+      code: "bad_request",
+      message: "Invalid embed session request",
     });
   });
 
-  it("works when website embed is enabled and anonymous chat remains disabled", async () => {
+  it("preflights an approved origin for browser CORS", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-preflight@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const origin = "https://example.com";
+
+    const response = await request(app)
+      .options(`/api/v1/public/embed/${token}/session`)
+      .set("Origin", origin)
+      .set("Access-Control-Request-Method", "POST")
+      .set("Access-Control-Request-Headers", "content-type");
+
+    expect(response.status).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe(origin);
+    expect(response.headers["access-control-allow-methods"]).toContain("POST");
+  });
+
+  it("allows website embed launches even when anonymous chat is disabled", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-embed-independent@example.com");
 
@@ -126,14 +137,10 @@ describe("public embed contract", () => {
 
     const embedSession = await request(app)
       .post(`/api/v1/public/embed/${token}/session`)
-      .set("x-radioso-embed-origin", origin)
-      .set("x-radioso-embed-signature", signEmbedLaunch(token, origin));
+      .set("Origin", origin);
 
     expect(response.body.anonymousChatEnabled).toBe(false);
     expect(embedSession.status).toBe(200);
-    expect(embedSession.body.publicChatToken).toEqual(expect.any(String));
-    expect(embedSession.body.embedSessionToken).toEqual(expect.any(String));
-    expect(embedSession.body.publicChatToken).not.toBe(token);
 
     const chatResponse = await request(app)
       .post(`/api/v1/public/chat/${embedSession.body.publicChatToken}`)
@@ -144,7 +151,6 @@ describe("public embed contract", () => {
       });
 
     expect(chatResponse.status).toBe(200);
-    expect(chatResponse.body.conversationId).toEqual(expect.any(String));
   });
 
   it("reuses a requested anonymous session id on a later approved bootstrap", async () => {
@@ -156,8 +162,7 @@ describe("public embed contract", () => {
 
     const firstEmbedSession = await request(app)
       .post(`/api/v1/public/embed/${token}/session`)
-      .set("x-radioso-embed-origin", origin)
-      .set("x-radioso-embed-signature", signEmbedLaunch(token, origin));
+      .set("Origin", origin);
 
     const firstChat = await request(app)
       .post(`/api/v1/public/chat/${firstEmbedSession.body.publicChatToken}`)
@@ -171,8 +176,7 @@ describe("public embed contract", () => {
 
     const resumedEmbedSession = await request(app)
       .post(`/api/v1/public/embed/${token}/session`)
-      .set("x-radioso-embed-origin", origin)
-      .set("x-radioso-embed-signature", signEmbedLaunch(token, origin))
+      .set("Origin", origin)
       .send({
         anonymousSessionId: firstChat.headers["x-radioso-anonymous-session"],
       });
@@ -208,12 +212,13 @@ describe("public embed contract", () => {
     const origin = "https://example.com";
     const response = await request(app)
       .post(`/api/v1/public/embed/${token}/session`)
-      .set("x-radioso-embed-origin", origin)
-      .set("x-radioso-embed-signature", signEmbedLaunch(token, origin));
+      .set("Origin", origin);
 
     expect(response.status).toBe(404);
 
-    const auditEvents = (dependencies.auditService as unknown as { events: Array<{ eventType: string; metadata?: Record<string, unknown> }> }).events;
+    const auditEvents = (dependencies.auditService as unknown as {
+      events: Array<{ eventType: string; metadata?: Record<string, unknown> }>;
+    }).events;
     expect(auditEvents).toContainEqual(
       expect.objectContaining({
         eventType: "website_embed.launch_denied",

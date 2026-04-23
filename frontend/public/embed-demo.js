@@ -1,5 +1,5 @@
 (function () {
-  const STORAGE_KEY = 'radioso.embedTest.config'
+  const STORAGE_KEY = 'radioso.embedDemo.config'
   const params = new URLSearchParams(window.location.search)
 
   const form = document.getElementById('config-form')
@@ -7,8 +7,7 @@
   const snippet = document.getElementById('snippet-preview')
   const currentOrigin = document.getElementById('current-origin')
   const allowlistOrigin = document.getElementById('allowlist-origin')
-  const approvedLink = document.getElementById('approved-link')
-  const blockedLink = document.getElementById('blocked-link')
+  const appOriginPreview = document.getElementById('app-origin-preview')
   const clearButton = document.getElementById('clear-config')
 
   const appOriginInput = document.getElementById('app-origin')
@@ -41,7 +40,7 @@
   }
 
   const config = {
-    appOrigin: params.get('appOrigin') || readStoredConfig().appOrigin || 'http://localhost:3000',
+    appOrigin: params.get('appOrigin') || readStoredConfig().appOrigin || window.location.origin,
     token: params.get('token') || readStoredConfig().token || '',
     scriptVersion: params.get('scriptVersion') || readStoredConfig().scriptVersion || '',
     label: params.get('label') || readStoredConfig().label || 'Chat with us',
@@ -50,14 +49,8 @@
     displayMode: params.get('displayMode') || readStoredConfig().displayMode || '',
     initialState: params.get('initialState') || readStoredConfig().initialState || '',
     avatarUrl: params.get('avatarUrl') || readStoredConfig().avatarUrl || '',
-    copyJson:
-      params.get('copy') ||
-      readStoredConfig().copyJson ||
-      '',
-    themeJson:
-      params.get('theme') ||
-      readStoredConfig().themeJson ||
-      '',
+    copyJson: params.get('copy') || readStoredConfig().copyJson || '',
+    themeJson: params.get('theme') || readStoredConfig().themeJson || '',
   }
 
   appOriginInput.value = config.appOrigin
@@ -74,8 +67,7 @@
 
   currentOrigin.textContent = window.location.origin
   allowlistOrigin.textContent = window.location.origin
-  approvedLink.href = `http://127.0.0.1:${window.location.port || '4321'}${window.location.pathname}`
-  blockedLink.href = `http://localhost:${window.location.port || '4321'}${window.location.pathname}`
+  appOriginPreview.textContent = normalizeOrigin(config.appOrigin)
 
   const buildSnippet = (settings) => {
     const scriptOrigin = normalizeOrigin(settings.appOrigin)
@@ -104,6 +96,7 @@
 
   const updatePreview = (settings) => {
     snippet.textContent = buildSnippet(settings)
+    appOriginPreview.textContent = normalizeOrigin(settings.appOrigin)
   }
 
   const mountWidget = (settings) => {
@@ -144,10 +137,10 @@
       script.dataset.radiosoTheme = settings.themeJson
     }
     script.dataset.radiosoAllowedOrigins = window.location.origin
-    script.addEventListener('load', () => {
+    script.addEventListener('load', function () {
       status.textContent = 'Launcher mounted'
     })
-    script.addEventListener('error', () => {
+    script.addEventListener('error', function () {
       status.textContent = 'Failed to load launcher script'
     })
     document.body.appendChild(script)
@@ -158,7 +151,7 @@
     mountWidget(config)
   }
 
-  form.addEventListener('submit', (event) => {
+  form.addEventListener('submit', function (event) {
     event.preventDefault()
 
     const nextConfig = {
@@ -180,7 +173,9 @@
     const nextParams = new URLSearchParams()
     nextParams.set('appOrigin', nextConfig.appOrigin)
     nextParams.set('token', nextConfig.token)
-    nextParams.set('scriptVersion', nextConfig.scriptVersion)
+    if (nextConfig.scriptVersion) {
+      nextParams.set('scriptVersion', nextConfig.scriptVersion)
+    }
     nextParams.set('label', nextConfig.label)
     nextParams.set('icon', nextConfig.icon)
     nextParams.set('position', nextConfig.position)
@@ -190,7 +185,9 @@
     if (nextConfig.initialState) {
       nextParams.set('initialState', nextConfig.initialState)
     }
-    nextParams.set('avatarUrl', nextConfig.avatarUrl)
+    if (nextConfig.avatarUrl) {
+      nextParams.set('avatarUrl', nextConfig.avatarUrl)
+    }
     if (nextConfig.copyJson) {
       nextParams.set('copy', nextConfig.copyJson)
     }
@@ -200,7 +197,7 @@
     window.location.search = nextParams.toString()
   })
 
-  clearButton.addEventListener('click', () => {
+  clearButton.addEventListener('click', function () {
     window.localStorage.removeItem(STORAGE_KEY)
     window.location.search = ''
   })

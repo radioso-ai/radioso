@@ -1,6 +1,6 @@
 'use client'
 
-import type { KeyboardEvent } from 'react'
+import type { CSSProperties, KeyboardEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
@@ -45,6 +45,7 @@ export function ChatMessageThread({
   assistantAvatarUrl,
   assistantAvatarLabel,
   theme,
+  themedSuggestionButtons = false,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -54,6 +55,7 @@ export function ChatMessageThread({
   assistantAvatarUrl?: string | null
   assistantAvatarLabel?: string
   theme?: WebsiteEmbedTheme | null
+  themedSuggestionButtons?: boolean
 }) {
   const handleSelectMessage = (messageId: string) => {
     const selection = typeof window !== 'undefined' ? window.getSelection()?.toString().trim() : ''
@@ -81,6 +83,16 @@ export function ChatMessageThread({
       },
     }
   }
+
+  const suggestionThemeVars = theme
+    ? ({
+        '--suggestion-bg': theme.mutedBackground,
+        '--suggestion-border': theme.panelBorder,
+        '--suggestion-fg': theme.panelForeground,
+        '--suggestion-hover-bg': theme.assistantBubbleBackground,
+        '--suggestion-hover-border': theme.accent,
+      } as CSSProperties)
+    : undefined
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -209,16 +221,12 @@ export function ChatMessageThread({
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="h-auto max-w-full whitespace-normal px-3 py-2 text-left"
-                              style={
-                                theme
-                                  ? {
-                                      background: theme.mutedBackground,
-                                      borderColor: theme.panelBorder,
-                                      color: theme.panelForeground,
-                                    }
-                                  : undefined
-                              }
+                              className={`h-auto max-w-full whitespace-normal px-3 py-2 text-left ${
+                                themedSuggestionButtons
+                                  ? 'border-[var(--suggestion-border)] bg-[var(--suggestion-bg)] text-[var(--suggestion-fg)] transition-colors hover:border-[var(--suggestion-hover-border)] hover:bg-[var(--suggestion-hover-bg)]'
+                                  : ''
+                              }`}
+                              style={themedSuggestionButtons ? suggestionThemeVars : undefined}
                               onClick={(event) => {
                                 event.stopPropagation()
                                 onSuggestionSelect(suggestion.text, message.id)

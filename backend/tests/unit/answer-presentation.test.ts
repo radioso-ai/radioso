@@ -37,6 +37,7 @@ describe("answer presentation service", () => {
           text: ".",
         },
       ],
+      unsupportedNoticeMarked: false,
     });
     expect(
       service.present({
@@ -74,6 +75,26 @@ describe("answer presentation service", () => {
 
     expect(result).toEqual({
       answer: "Arudra is a leader.",
+    });
+  });
+
+  it("strips unsupported notice markers while preserving the notice text", () => {
+    const service = new AnswerPresentationService();
+
+    const normalized = service.normalize({
+      answer: "No puedo verificar eso con certeza.<<UNSUPPORTED>>",
+      citations: [],
+    });
+
+    expect(normalized).toEqual({
+      answer: "No puedo verificar eso con certeza.",
+      citationEvidence: [],
+      answerSegments: [
+        {
+          text: "No puedo verificar eso con certeza.",
+        },
+      ],
+      unsupportedNoticeMarked: true,
     });
   });
 

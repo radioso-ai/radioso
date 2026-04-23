@@ -114,6 +114,9 @@ const restoreMessageSuggestions = (
   )
 }
 
+const resolveBrowserLocale = (): string | undefined =>
+  typeof navigator !== 'undefined' ? navigator.languages?.[0] ?? navigator.language : undefined
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<Record<string, ChatSession>>({})
 
@@ -215,6 +218,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             stream: true,
             conversationId: currentSession.conversationId,
             inputMetadata,
+            userExpectedLocale: resolveBrowserLocale(),
           },
           {
             onConversation: ({ conversationId }) => {

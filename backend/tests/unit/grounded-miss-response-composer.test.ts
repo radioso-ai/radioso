@@ -99,6 +99,40 @@ describe("grounded miss response composer", () => {
     expect(request?.prompt).toContain("one concise next-step hint");
   });
 
+  it("passes explicit locale guidance into grounded-miss generation", async () => {
+    let request: TextGenerationRequest | undefined;
+    const composer = new ModelGroundedMissResponseComposer({
+      metadata: {
+        capability: "chat",
+        provider: "openai",
+        model: "test-model",
+      },
+      async complete(input) {
+        request = input;
+        return "Non posso verificarlo con certezza.";
+      },
+      async *stream() {
+        yield "";
+      },
+    });
+
+    await expect(
+      composer.composeUnsupportedWithContext({
+        query: "Qual e il prezzo del corso?",
+        unsupportedText: "Non posso verificarlo con certezza.",
+        userExpectedLocale: "it-IT",
+        contexts: [
+          {
+            title: "Programma",
+            content: "Il programma descrive il corso ma non include prezzi.",
+          },
+        ],
+      }),
+    ).resolves.toBe("Non posso verificarlo con certezza.");
+
+    expect(request?.systemPrompt).toContain("Write the response in locale it-IT.");
+  });
+
   it("falls back when unsupported-with-context generation fails", async () => {
     const composer = new ModelGroundedMissResponseComposer({
       metadata: {

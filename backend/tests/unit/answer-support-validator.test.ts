@@ -309,7 +309,7 @@ describe("answer support validator", () => {
     });
 
     expect(result.answer).toBe(
-      "The page explains testing and parsing content for users.\n\nYou can read more here: [Guide](https://example.com/guide)",
+      "The page explains testing and parsing content for users\n\nYou can read more here: [Guide](https://example.com/guide)",
     );
     expect(result.answerSegments).toEqual([
       {
@@ -327,6 +327,211 @@ describe("answer support validator", () => {
       unsupportedSegmentCount: 0,
       substantiveUnsupportedSegmentCount: 0,
       supportedSegmentCount: 2,
+      nonSubstantiveSegmentCount: 0,
+      answerSupportPolicy: "strict",
+    });
+  });
+
+  it("treats trailing-slash variants of cited source links as supported", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Where can I read more?",
+      answer: "Read more here: [Guide](https://example.com/guide)",
+      answerSegments: [
+        {
+          text: "Read more here: [Guide](https://example.com/guide)",
+        },
+      ],
+      citationEvidence: [
+        {
+          ...citations[0],
+          sourceUrl: "https://example.com/guide/",
+        },
+      ],
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("Read more here: [Guide](https://example.com/guide)");
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Read more here: [Guide](https://example.com/guide)",
+        citationIndices: [0],
+      },
+    ]);
+    expect(result.validation.answerModified).toBe(false);
+    expect(result.validation.supportedSegmentCount).toBe(1);
+  });
+
+  it("treats links as supported when the cited content contains the same URL", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Where can I read more?",
+      answer: "You can read more here: [Guide](https://example.com/content-link)",
+      answerSegments: [
+        {
+          text: "You can read more here: [Guide](https://example.com/content-link)",
+        },
+      ],
+      citationEvidence: [
+        {
+          ...citations[0],
+          sourceUrl: undefined,
+          content: "Full article: https://example.com/content-link",
+        },
+      ],
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("You can read more here: [Guide](https://example.com/content-link)");
+    expect(result.answerSegments).toEqual([
+      {
+        text: "You can read more here: [Guide](https://example.com/content-link)",
+        citationIndices: [0],
+      },
+    ]);
+    expect(result.validation.answerModified).toBe(false);
+    expect(result.validation.supportedSegmentCount).toBe(1);
+  });
+
+  it("treats multiple grounded links from different citations as supported", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Where can I read more?",
+      answer: "You can read [Guide](https://example.com/guide) and [FAQ](https://example.com/faq).",
+      answerSegments: [
+        {
+          text: "You can read [Guide](https://example.com/guide) and [FAQ](https://example.com/faq)",
+        },
+        { text: "." },
+      ],
+      citationEvidence: [
+        {
+          ...citations[0],
+          sourceUrl: "https://example.com/guide",
+        },
+        {
+          documentId: "doc-2",
+          chunkId: "chunk-2",
+          title: "FAQ",
+          content: "More answers for users.",
+          sourceUrl: "https://example.com/faq",
+        },
+      ],
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("You can read [Guide](https://example.com/guide) and [FAQ](https://example.com/faq).");
+    expect(result.answerSegments).toEqual([
+      {
+        text: "You can read [Guide](https://example.com/guide) and [FAQ](https://example.com/faq)",
+        citationIndices: [0, 1],
+      },
+      { text: "." },
+    ]);
+    expect(result.validation.answerModified).toBe(false);
+    expect(result.validation.supportedSegmentCount).toBe(1);
+  });
+
+  it("treats bare URLs with trailing sentence punctuation as supported", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Where can I read more?",
+      answer: "Read more at https://example.com/guide.",
+      answerSegments: [
+        {
+          text: "Read more at https://example.com/guide.",
+        },
+      ],
+      citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("Read more at https://example.com/guide.");
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Read more at https://example.com/guide.",
+        citationIndices: [0],
+      },
+    ]);
+    expect(result.validation.answerModified).toBe(false);
+    expect(result.validation.supportedSegmentCount).toBe(1);
+  });
+
+  it("preserves model-marked unsupported notices under strict validation", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Cual es el precio del curso?",
+      answer: "No puedo verificar ese precio con lo que tengo aquí.",
+      answerSegments: [
+        {
+          text: "No puedo verificar ese precio con lo que tengo aquí.",
+        },
+      ],
+      citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer: {
+        async composeUnsupportedWithContext() {
+          return "I couldn't verify that from your workspace documents.";
+        },
+        async composeNoContext() {
+          return "I couldn't find supporting material.";
+        },
+      },
+      unsupportedNoticeMarked: true,
+      userExpectedLocale: "es-ES",
+    });
+
+    expect(result.answer).toBe("No puedo verificar ese precio con lo que tengo aquí.");
+    expect(result.answerSegments).toEqual([
+      {
+        text: "No puedo verificar ese precio con lo que tengo aquí.",
+      },
+    ]);
+    expect(result.validation).toEqual({
+      ran: true,
+      answerModified: false,
+      unsupportedSegmentCount: 1,
+      substantiveUnsupportedSegmentCount: 1,
+      supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 0,
       answerSupportPolicy: "strict",
     });

@@ -55,6 +55,35 @@ const isNonSubstantiveText = (value: string): boolean => {
 
 const preservePrefix = (value: string): string => value.match(/^[\s,.;:!?()/-]*/)?.[0] ?? "";
 const OMITTED_UNSUPPORTED_SENTINEL = "__omitted_unsupported__";
+const MARKDOWN_LINK_URL_PATTERN = /\[[^\]]+\]\((https?:\/\/[^)\s]+)\)/gi;
+const BARE_URL_PATTERN = /https?:\/\/[^\s<>)"']+/gi;
+
+const normalizeUrl = (value: string): string | null => {
+  try {
+    const url = new URL(value.trim());
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
+
+const extractUrls = (value: string): string[] => {
+  const urls: string[] = [];
+
+  for (const match of value.matchAll(MARKDOWN_LINK_URL_PATTERN)) {
+    if (match[1]) {
+      urls.push(match[1]);
+    }
+  }
+
+  const withoutMarkdownLinks = value.replace(MARKDOWN_LINK_URL_PATTERN, "");
+  for (const match of withoutMarkdownLinks.matchAll(BARE_URL_PATTERN)) {
+    urls.push(match[0]);
+  }
+
+  return urls;
+};
 
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
@@ -63,6 +92,33 @@ const toChatCitation = (citation: CitationEvidence) => ({
 });
 
 export class AnswerSupportValidator {
+  private resolveSourceUrlCitationIndices(segment: AnswerSegment, citationEvidence: CitationEvidence[]): number[] | undefined {
+    if ((segment.citationIndices?.length ?? 0) > 0) {
+      return segment.citationIndices;
+    }
+
+    const normalizedUrls = [...new Set(
+      extractUrls(segment.text)
+        .map((url) => normalizeUrl(url))
+        .filter((url): url is string => Boolean(url)),
+    )];
+
+    if (normalizedUrls.length === 0) {
+      return undefined;
+    }
+
+    const matchingIndices = citationEvidence.flatMap((citation, index) => {
+      const normalizedSourceUrl = citation.sourceUrl ? normalizeUrl(citation.sourceUrl) : null;
+      if (!normalizedSourceUrl) {
+        return [];
+      }
+
+      return normalizedUrls.every((url) => url === normalizedSourceUrl) ? [index] : [];
+    });
+
+    return matchingIndices.length > 0 ? matchingIndices : undefined;
+  }
+
   async validate(input: {
     query: string;
     answer: string;
@@ -75,23 +131,25 @@ export class AnswerSupportValidator {
     groundedMissResponseComposer: GroundedMissResponseComposer;
   }): Promise<ValidatedAnswer> {
     const segmentResults = await Promise.all(input.answerSegments.map(async (segment) => {
+      const citationIndices = this.resolveSourceUrlCitationIndices(segment, input.citationEvidence);
+
       if (isNonSubstantiveText(segment.text)) {
         return {
           originalText: segment.text,
           text: segment.text,
           disposition: VALIDATION_DISPOSITION.NON_SUBSTANTIVE,
-          citationIndices: segment.citationIndices,
+          citationIndices,
           replacementApplied: false,
           reason: "non_substantive_text",
         } as const;
       }
 
-      if ((segment.citationIndices?.length ?? 0) > 0) {
+      if ((citationIndices?.length ?? 0) > 0) {
         return {
           originalText: segment.text,
           text: segment.text,
           disposition: VALIDATION_DISPOSITION.SUPPORTED,
-          citationIndices: segment.citationIndices,
+          citationIndices,
           replacementApplied: false,
           reason: "has_support_reference",
         } as const;

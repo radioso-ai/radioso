@@ -8,6 +8,7 @@ export interface ChatCitation {
 
 export interface CitationEvidence extends ChatCitation {
   content: string;
+  sourceUrl?: string;
 }
 
 export interface AnswerSegment {

@@ -665,6 +665,7 @@ export class ChatService {
       chunkId: context.chunkId,
       title: context.title,
       content: context.content,
+      sourceUrl: typeof context.metadata?.sourceUrl === "string" ? context.metadata.sourceUrl : undefined,
     }));
     const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
 
@@ -736,6 +737,7 @@ export class ChatService {
       chunkId: context.chunkId,
       title: context.title,
       content: context.content,
+      sourceUrl: typeof context.metadata?.sourceUrl === "string" ? context.metadata.sourceUrl : undefined,
     }));
     const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
 

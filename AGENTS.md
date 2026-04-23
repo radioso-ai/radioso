@@ -72,6 +72,13 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL 16 with `pgvector`; existing `document_processing_jobs`, `documents`, `chunks`, and audit events; Google Cloud Tasks for delivery only (042-autoscale-workers)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives (041-conversation-modes)
 - PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence inside existing `attribute_controls` JSON plus additive assistant-turn audit metadata (041-conversation-modes)
+- TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, Zod v4, first-party Radioso HTTP/SDK client adapter, Vitest, tsx (043-mcp-context-server)
+- No new persistence; existing Radioso PostgreSQL state accessed only through existing HTTP APIs (043-mcp-context-server)
+- TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, `@modelcontextprotocol/node`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`) (043-mcp-context-server)
+- No new database persistence; existing Radioso PostgreSQL state is accessed only through existing HTTP APIs. MCP access sessions and approval grants are package-owned in-memory state behind replaceable store interfaces. (043-mcp-context-server)
+- TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`) (043-mcp-context-server)
+- TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`), a Redis client for optional shared-store mode (043-mcp-context-server)
+- Existing Radioso PostgreSQL state remains behind HTTP APIs; package-owned MCP session and approval state must support both in-memory local mode and shared-store mode for multi-instance hosting (043-mcp-context-server)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend for later analytics emitters only) + Express, `pg`, Pino, Zod, OpenAI SDK, Vitest, Supertest, existing audit and retrieval modules; planned vendor-neutral telemetry and metrics libraries only when implementation begins (045-oss-observability)
 - PostgreSQL 16 with `pgvector`; existing `audit_events` as the initial durable event sink; no new external storage required for the planning phase (045-oss-observability)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing dashboard settings docs pipeline (044-async-chat-jobs)
@@ -108,5 +115,5 @@ tests/
 - 045-oss-observability: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend for later analytics emitters only) + Express, `pg`, Pino, Zod, OpenAI SDK, Vitest, Supertest, existing audit and retrieval modules; planned vendor-neutral telemetry and metrics libraries only when implementation begins
 - 045-password-reset-email: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, Vitest, Supertest, Next.js App Router, shadcn/Radix UI primitives
 - 044-async-chat-jobs: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing dashboard settings docs pipeline
+- 043-mcp-context-server: Added TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`), a Redis client for optional shared-store mode
 - 042-autoscale-workers: Added TypeScript 5.x on Node.js 22 + Express, `pg`, Zod, Pino, Vitest, Supertest, `@google-cloud/tasks`, existing local connector/document packages
-- 041-conversation-modes: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives

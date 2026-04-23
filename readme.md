@@ -136,6 +136,123 @@ If a workspace token or public embed link is ever exposed, rotate it from the se
 
 A valid provider key is required for both document processing and chat responses.
 
+### Use The MCP Server
+
+If you want Radioso to act as a context layer for MCP-capable clients, use the standalone package in `packages/radioso-mcp-server/`.
+
+Install and build it from the repo:
+
+```bash
+cd packages/radioso-mcp-server
+npm install
+npm run build
+```
+
+The package also includes safe smoke commands that do not touch the local Radioso PostgreSQL volume:
+
+```bash
+cd packages/radioso-mcp-server
+npm run smoke:http
+npm run smoke:redis
+```
+
+`smoke:http` uses the backend's in-memory test app. `smoke:redis` uses the same in-memory backend plus a shared Redis runtime, sourcing Redis from `RADIOSO_MCP_SMOKE_REDIS_URL` when provided or from a disposable local Redis process/container otherwise.
+
+Start the remote HTTP server against a running Radioso instance:
+
+```bash
+RADIOSO_BASE_URL=http://localhost:8080 \
+RADIOSO_MCP_BIND_HOST=127.0.0.1 \
+RADIOSO_MCP_BIND_PORT=8787 \
+RADIOSO_MCP_SIGNING_SECRET=dev-signing-secret \
+node dist/src/cli/http.js
+```
+
+`RADIOSO_MCP_SIGNING_SECRET` is mandatory in remote mode and must be a real deployment secret. The reserved stdio compatibility secret is only valid for the local stdio entrypoint.
+
+The backend and the remote MCP server must share the same `RADIOSO_MCP_SIGNING_SECRET`. The MCP package uses it to sign MCP-attributed chat traffic, and the backend verifies that signature before marking a conversation as MCP-originated in history.
+
+Set `RADIOSO_MCP_REDIS_URL` to move MCP access sessions and approval grants into a shared Redis store for multi-instance deployments. Leave it blank to stay in the documented in-memory single-node mode. You can also point `RADIOSO_MCP_WORKSPACE_POLICIES_PATH` at a JSON file with workspace-specific tool overrides when different workspaces need different MCP catalogs.
+
+Exchange a workspace token for an MCP access token:
+
+```bash
+ACCESS_TOKEN=$(
+  curl -s http://127.0.0.1:8787/v1/auth/exchange \
+    -H 'content-type: application/json' \
+    -d '{
+      "radiosoApiToken": "sk_proj_example",
+      "clientName": "operator-shell",
+      "requestedTools": ["describe_capabilities","list_documents","answer_grounded","create_document"]
+    }' \
+  | jq -r '.accessToken'
+)
+```
+
+For project-local clients such as Cursor, generate or update your local client config and export a short-lived bearer token with:
+
+```bash
+eval "$(
+  RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
+  npm --prefix packages/radioso-mcp-server run -s token:exchange
+)"
+```
+
+See [docs/mcp-client-setup.md](./docs/mcp-client-setup.md) for the current client matrix:
+- Cursor can use the local HTTP server directly.
+- Anthropic API clients can use a public deployment plus a pre-minted bearer token.
+- Claude and Claude Desktop remote connectors require a public HTTPS deployment plus connector-compatible auth.
+- ChatGPT apps and OpenAI-hosted remote MCP flows also require a public HTTPS deployment plus app-compatible auth, and OpenAI API deep-research use should stay read-only unless you intentionally relax approval policy.
+
+Initialize MCP and list the granted tools:
+
+```bash
+curl -s http://127.0.0.1:8787/mcp \
+  -H "authorization: Bearer $ACCESS_TOKEN" \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'mcp-protocol-version: 2025-11-25' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "init-1",
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-11-25",
+      "capabilities": {},
+      "clientInfo": { "name": "operator-shell", "version": "1.0.0" }
+    }
+  }'
+
+curl -s http://127.0.0.1:8787/mcp \
+  -H "authorization: Bearer $ACCESS_TOKEN" \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'mcp-protocol-version: 2025-11-25' \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "notifications/initialized",
+    "params": {}
+  }'
+
+curl -s http://127.0.0.1:8787/mcp \
+  -H "authorization: Bearer $ACCESS_TOKEN" \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'mcp-protocol-version: 2025-11-25' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "tools-1",
+    "method": "tools/list",
+    "params": {}
+  }'
+```
+
+Governed write tools use the same endpoint, but require an approval token from `POST /v1/approvals` before the `tools/call`.
+
+The remote package keeps MCP transport, session exchange, approval gating, audit logging, workspace policy resolution, and shared-store runtime concerns separate from backend application modules. It requires `GET /api/v1/workspace/mcp/context` on the target backend and uses that route to negotiate workspace identity and supported MCP capabilities before a session grants tools. The local stdio mode still exists for compatibility, but remote HTTP is now the primary MCP surface.
+
+If you also use stdio mode and want those MCP conversations labeled in history, set `RADIOSO_MCP_SIGNING_SECRET` for the stdio process to the same non-default secret used by the backend.
+
 ## Assistant Execution Model
 
 Radioso deliberately codifies a separation between live chat and any future background assistant work.
@@ -230,6 +347,7 @@ backend/         Express API and background document worker
 frontend/        Next.js application
 typescript-sdk/  First-party SDK for the public API
 packages/        Shared local packages
+packages/radioso-mcp-server/  Standalone MCP server package for workspace-scoped context access
 infra/           Docker Compose and Terraform
 docs/            Product and SDK guides
 ```

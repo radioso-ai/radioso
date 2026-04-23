@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import type { ChatConversationSummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
+import { getConversationSourceBadge } from '@/lib/history-source'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
@@ -70,6 +71,7 @@ function ConversationCard({
         }
       })()
     : null
+  const sourceBadge = getConversationSourceBadge(conversation.sourceChannel)
 
   return (
     <button
@@ -90,16 +92,7 @@ function ConversationCard({
         <p className="text-xs text-muted-foreground">Updated {formatTimestamp(conversation.updatedAt)}</p>
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-        {conversation.sourceChannel === 'anonymous' ? (
-          <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-amber-700 dark:text-amber-400">
-            Anonymous
-          </span>
-        ) : null}
-        {conversation.sourceChannel === 'website_embed' ? (
-          <span className="rounded-full bg-sky-500/15 px-2.5 py-1 text-sky-700 dark:text-sky-300">
-            Embedded
-          </span>
-        ) : null}
+        {sourceBadge ? <span className={sourceBadge.className}>{sourceBadge.label}</span> : null}
         {sourceHost ? <span className="rounded-full bg-muted px-2.5 py-1">{sourceHost}</span> : null}
         <span className="rounded-full bg-muted px-2.5 py-1">{conversation.messageCount} messages</span>
         <span className="rounded-full bg-muted px-2.5 py-1">{conversation.userMessageCount} user</span>

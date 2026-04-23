@@ -42,6 +42,7 @@ import { AddToEvalDialog } from '@/components/dashboard/history/add-to-eval-dial
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { formatConversationSource } from '@/lib/history-source'
 
 const HISTORY_PAGE_SIZE = 50
 const MESSAGE_WINDOW_SIZE = 50
@@ -51,26 +52,6 @@ interface HistoryPageSnapshot<T> {
   total: number
   hasMore: boolean
   nextCursor: string | null
-}
-
-const formatConversationSource = (sourceChannel: string | null, sourceOrigin: string | null) => {
-  if (sourceChannel === 'website_embed' && sourceOrigin) {
-    try {
-      return `Embedded from ${new URL(sourceOrigin).host}`
-    } catch {
-      return `Embedded from ${sourceOrigin}`
-    }
-  }
-
-  if (sourceChannel === 'website_embed') {
-    return 'Embedded chat'
-  }
-
-  if (sourceChannel === 'anonymous') {
-    return 'Anonymous public chat'
-  }
-
-  return sourceChannel
 }
 
 export function ChatHistoryView({

@@ -1,0 +1,44 @@
+{
+  "name": "@radioso/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "bin": {
+    "radioso-mcp-http": "./dist/src/cli/http.js",
+    "radioso-mcp-server": "./dist/src/cli/http.js",
+    "radioso-mcp-stdio": "./dist/src/cli/stdio.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "cursor:prepare": "node --import tsx ./scripts/prepareCursorSession.ts",
+    "cursor:mcp-stdio": "node --import tsx ./src/cli/stdio.ts",
+    "smoke:all": "npm run smoke:http && npm run smoke:redis",
+    "smoke:http": "node --import tsx ./scripts/smokeHttp.ts",
+    "smoke:redis": "node --import tsx ./scripts/smokeRedis.ts",
+    "token:exchange": "node --import tsx ./scripts/exchangeAccessToken.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cfworker/json-schema": "^4.1.1",
+    "@modelcontextprotocol/server": "^2.0.0-alpha.2",
+    "redis": "^4.7.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

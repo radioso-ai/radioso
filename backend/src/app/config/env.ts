@@ -66,6 +66,7 @@ const envSchema = z.object({
   SESSION_COOKIE_SECRET: z.string().min(16),
   WORKSPACE_TOKEN_SECRET: emptyStringToUndefined(z.string().min(16)),
   WEBSITE_EMBED_SECRET: emptyStringToUndefined(z.string().min(16)),
+  RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(16)),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
   AUTH_SKIP_EMAIL_VERIFICATION: z
     .union([z.boolean(), z.enum(["true", "false"])])

@@ -47,7 +47,10 @@ export class PgLexicalSearch implements LexicalSearchPort {
     }
 
     const rows = await this.database.query<LexicalSearchRow>(
-      `SELECT c.id AS chunk_id,
+      `WITH search_query AS (
+         SELECT plainto_tsquery('simple', $2) AS query
+       )
+       SELECT c.id AS chunk_id,
               c.document_id,
               d.title,
               c.content,
@@ -58,13 +61,14 @@ export class PgLexicalSearch implements LexicalSearchPort {
               c.metadata,
               ts_rank_cd(
                 to_tsvector('simple', coalesce(c.search_text, c.content, '')),
-                plainto_tsquery('simple', $2)
+                search_query.query
               ) AS rank
        FROM chunks c
+       CROSS JOIN search_query
        JOIN documents d ON d.id = c.document_id
        WHERE c.workspace_id = $1
          AND d.status = 'ready'
-         AND plainto_tsquery('simple', $2) @@ to_tsvector('simple', coalesce(c.search_text, c.content, ''))
+         AND search_query.query @@ to_tsvector('simple', coalesce(c.search_text, c.content, ''))
          ${metadataClause}
        ORDER BY rank DESC, c.chunk_index ASC
        LIMIT $3`,

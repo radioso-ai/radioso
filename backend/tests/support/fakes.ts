@@ -2113,6 +2113,13 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
   }
 
+  async listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]> {
+    return [...(this.items.get(conversationId) ?? [])]
+      .filter((message) => message.workspaceId === workspaceId)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .slice(-limit);
+  }
+
   async listWindowByConversationId(
     workspaceId: string,
     conversationId: string,
@@ -2221,6 +2228,57 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
         event.metadata.conversationId === conversationId
       );
     });
+  }
+
+  async findLatestChatAnswerEventByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    status?: "success" | "failure",
+  ): Promise<AuditEventRecord | null> {
+    const matches = this.items
+      .filter((event) => {
+        return (
+          event.workspaceId === workspaceId &&
+          event.eventType === "chat.answer" &&
+          event.metadata.conversationId === conversationId &&
+          (!status || event.eventStatus === status)
+        );
+      })
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id));
+
+    return matches[0] ?? null;
+  }
+
+  async updateChatAnswerSuggestions(input: {
+    workspaceId: string;
+    conversationId: string;
+    assistantMessageId: string;
+    suggestions: unknown[];
+    conversationModeMetadata: unknown;
+  }): Promise<boolean> {
+    const match = this.items
+      .filter((event) => {
+        return (
+          event.workspaceId === input.workspaceId &&
+          event.eventType === "chat.answer" &&
+          event.eventStatus === "success" &&
+          event.metadata.conversationId === input.conversationId &&
+          event.metadata.assistantMessageId === input.assistantMessageId
+        );
+      })
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id))[0];
+
+    if (!match) {
+      return false;
+    }
+
+    match.metadata = {
+      ...match.metadata,
+      suggestions: input.suggestions,
+      conversationModeMetadata: input.conversationModeMetadata,
+    };
+
+    return true;
   }
 
   async listChatAnswerEventsByAssistantMessageIds(

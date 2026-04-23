@@ -630,6 +630,15 @@ const DocumentSearchResponseSchema = registry.register(
   }),
 );
 
+const ChatSuggestionSchema = registry.register(
+  "ChatSuggestion",
+  z.object({
+    text: z.string(),
+    kind: z.enum(["deeper", "broader"]),
+    citation: CitationSchema.optional(),
+  }),
+);
+
 const ChatResponseSchema = registry.register(
   "ChatResponse",
   z.object({
@@ -637,10 +646,7 @@ const ChatResponseSchema = registry.register(
     answer: z.string(),
     citations: z.array(CitationSchema).optional(),
     answerSegments: z.array(AnswerSegmentSchema).optional(),
-    suggestions: z.array(z.object({
-      text: z.string(),
-      citation: CitationSchema.optional(),
-    })).optional(),
+    suggestions: z.array(ChatSuggestionSchema).optional(),
     conversationMode: z.enum(conversationModes),
     conversationModeMetadata: z.object({
       conversationMode: z.enum(conversationModes),
@@ -753,10 +759,7 @@ const ChatConversationMessageSchema = registry.register(
     }).optional(),
     citations: z.array(CitationSchema).optional(),
     answerSegments: z.array(AnswerSegmentSchema).optional(),
-    suggestions: z.array(z.object({
-      text: z.string(),
-      citation: CitationSchema.optional(),
-    })).optional(),
+    suggestions: z.array(ChatSuggestionSchema).optional(),
     debug: ChatConversationMessageDebugSchema.optional(),
   }),
 );

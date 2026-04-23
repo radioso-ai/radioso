@@ -8,7 +8,12 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Sparkles } from 'lucide-react'
 import type { WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
-import type { AnswerSegment, ChatSuggestion, ChatUserInputMetadata, Citation } from '@/lib/api'
+import type {
+  AnswerSegment,
+  ChatSuggestion,
+  ChatUserInputMetadata,
+  Citation,
+} from '@/lib/api'
 
 const dayFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -193,49 +198,53 @@ export function ChatMessageThread({
                   </div>
                 )}
                 {message.role === 'assistant' && message.suggestions && message.suggestions.length > 0 ? (
-                  <div className="flex max-w-full flex-wrap gap-2 px-1">
-                    {message.suggestions.map((suggestion, suggestionIndex) =>
-                      onSuggestionSelect ? (
-                        <Button
-                          key={`${message.id}-suggestion-${suggestionIndex}`}
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-auto max-w-full whitespace-normal px-3 py-2 text-left"
-                          style={
-                            theme
-                              ? {
-                                  background: theme.mutedBackground,
-                                  borderColor: theme.panelBorder,
-                                  color: theme.panelForeground,
-                                }
-                              : undefined
-                          }
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            onSuggestionSelect(suggestion.text, message.id)
-                          }}
-                        >
-                          {suggestion.text}
-                        </Button>
-                      ) : (
-                        <div
-                          key={`${message.id}-suggestion-${suggestionIndex}`}
-                          className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground"
-                          style={
-                            theme
-                              ? {
-                                  background: theme.mutedBackground,
-                                  borderColor: theme.panelBorder,
-                                  color: theme.panelForeground,
-                                }
-                              : undefined
-                          }
-                        >
-                          {suggestion.text}
-                        </div>
-                      ),
-                    )}
+                  <div className="px-1">
+                    <div className="flex max-w-full flex-wrap gap-2">
+                      {message.suggestions
+                        .filter((suggestion) => suggestion.text.trim())
+                        .map((suggestion, suggestionIndex) =>
+                          onSuggestionSelect ? (
+                            <Button
+                              key={`${message.id}-suggestion-${suggestionIndex}`}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-auto max-w-full whitespace-normal px-3 py-2 text-left"
+                              style={
+                                theme
+                                  ? {
+                                      background: theme.mutedBackground,
+                                      borderColor: theme.panelBorder,
+                                      color: theme.panelForeground,
+                                    }
+                                  : undefined
+                              }
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                onSuggestionSelect(suggestion.text, message.id)
+                              }}
+                            >
+                              {suggestion.text}
+                            </Button>
+                          ) : (
+                            <div
+                              key={`${message.id}-suggestion-${suggestionIndex}`}
+                              className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground"
+                              style={
+                                theme
+                                  ? {
+                                      background: theme.mutedBackground,
+                                      borderColor: theme.panelBorder,
+                                      color: theme.panelForeground,
+                                    }
+                                  : undefined
+                              }
+                            >
+                              {suggestion.text}
+                            </div>
+                          ),
+                        )}
+                    </div>
                   </div>
                 ) : null}
                 <p

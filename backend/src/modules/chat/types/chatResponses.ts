@@ -3,8 +3,11 @@ import type { RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTyp
 import type { RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 
+export type ChatSuggestionKind = "deeper" | "broader";
+
 export interface ChatSuggestion {
   text: string;
+  kind: ChatSuggestionKind;
   citation?: ChatCitation;
 }
 

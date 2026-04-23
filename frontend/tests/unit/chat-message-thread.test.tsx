@@ -50,8 +50,8 @@ describe('ChatMessageThread', () => {
             content: 'Answer text',
             createdAt: '2026-04-02T10:00:00.000Z',
             suggestions: [
-              { text: 'What parser rules do the docs cover?' },
-              { text: 'Which onboarding questions are answered?' },
+              { text: 'What parser rules do the docs cover?', kind: 'deeper' },
+              { text: 'Which onboarding questions are answered?', kind: 'broader' },
             ],
           },
         ]}
@@ -62,6 +62,79 @@ describe('ChatMessageThread', () => {
     expect(html).toContain('Answer text')
     expect(html).toContain('What parser rules do the docs cover?')
     expect(html).toContain('Which onboarding questions are answered?')
+    expect(html).not.toContain('Deeper')
+    expect(html).not.toContain('Broader')
+  })
+
+  it('renders legacy flat suggestions for history compatibility', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            suggestions: [
+              { text: 'What parser rules do the docs cover?' },
+              { text: 'Which onboarding questions are answered?' },
+            ],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('What parser rules do the docs cover?')
+    expect(html).toContain('Which onboarding questions are answered?')
+    expect(html).not.toContain('Deeper')
+    expect(html).not.toContain('Broader')
+  })
+
+  it('renders suggestions even when only broader items are provided', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            suggestions: [
+              { text: 'How does this connect to the broader workflow?', kind: 'broader' },
+            ],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('How does this connect to the broader workflow?')
+    expect(html).not.toContain('Deeper')
+    expect(html).not.toContain('Broader')
+  })
+
+  it('omits empty suggestion text entries', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            suggestions: [
+              { text: '   ', kind: 'deeper' },
+              { text: 'Which onboarding questions are answered?', kind: 'broader' },
+            ],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Which onboarding questions are answered?')
+    expect(html.match(/rounded-md border border-border bg-muted\/40/g)?.length).toBe(1)
   })
 
   it('renders inline pseudo-lists as markdown lists for assistant messages', () => {

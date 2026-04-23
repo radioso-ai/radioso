@@ -1,5 +1,5 @@
 Conversation context:
-{{context_section}}{{continuity_state_block}}
+{{context_section}}
 
 Semantic rewrite instructions:
 {{semantic_rewrite_instructions}}

@@ -6,7 +6,6 @@ export interface ConversationContextWindow {
   selectedMessages: MessageRecord[];
   truncated: boolean;
   selectionReason: string;
-  rewriteContinuityState?: RewriteContinuityState;
 }
 
 export interface RewriteContinuityState {

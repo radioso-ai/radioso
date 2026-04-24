@@ -14,22 +14,35 @@ export interface SettingsTabDescriptor {
 }
 
 export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
-  general: {
-    id: 'general',
-    title: 'General Settings',
-    summary:
-      'Manage workspace identity, operator access, assistant setup, public chat, and website embed from one control surface.',
+  workspace: {
+    id: 'workspace',
+    title: 'Workspace',
+    summary: 'Control workspace identity, access, and lifecycle.',
     sections: [
       {
         id: 'workspace-access',
         label: 'Workspace and access',
         summary: 'Organization label, workspace naming, API access, and destructive actions.',
       },
+    ],
+  },
+  assistant: {
+    id: 'assistant',
+    title: 'Assistant',
+    summary: 'Control the assistant’s public identity, answer behavior, and first-message defaults.',
+    sections: [
       {
         id: 'assistant-identity',
         label: 'Assistant Identity',
-        summary: 'Assistant identity, locale fallback, and greeting behavior.',
+        summary: 'Public identity, answer behavior, locale fallback, and first-message settings.',
       },
+    ],
+  },
+  channels: {
+    id: 'channels',
+    title: 'Channels',
+    summary: 'Control where users can access this assistant across public chat, website embed, and WhatsApp.',
+    sections: [
       {
         id: 'anonymous-chat',
         label: 'Anonymous Chat Access',
@@ -40,13 +53,17 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
         label: 'Website embed',
         summary: 'Launcher settings, approved origins, and install snippet.',
       },
+      {
+        id: 'whatsapp-channel',
+        label: 'WhatsApp',
+        summary: 'Configure the WhatsApp channel for this workspace.',
+      },
     ],
   },
   ingestion: {
     id: 'ingestion',
-    title: 'Ingestion Settings',
-    summary:
-      'Choose how documents are chunked before retrieval and control when existing documents should be reprocessed.',
+    title: 'Ingestion',
+    summary: 'Control how documents are split before they become searchable.',
     sections: [
       {
         id: 'chunking-strategy',
@@ -62,9 +79,8 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
   },
   retrieval: {
     id: 'retrieval',
-    title: 'Retrieval Settings',
-    summary:
-      'Tune how Radioso rewrites, retrieves, filters, and presents grounded answers without changing the underlying corpus.',
+    title: 'Retrieval',
+    summary: 'Control how this workspace finds evidence and shows grounded citations and suggestions.',
     sections: [
       {
         id: 'query-rewrite',
@@ -83,21 +99,8 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
       },
       {
         id: 'answer-behavior',
-        label: 'Shape the final answer',
-        summary: 'Shape grounded answer style, suggestions, and support validation.',
-      },
-    ],
-  },
-  connectors: {
-    id: 'connectors',
-    title: 'Chat Connectors',
-    summary:
-      'Connect external chat channels to this workspace and manage each connector configuration from the same settings area.',
-    sections: [
-      {
-        id: 'connectors',
-        label: 'Connector list',
-        summary: 'Browse, connect, and configure the available chat channels for this workspace.',
+        label: 'Answer presentation',
+        summary: 'Control citations and grounded follow-up suggestions.',
       },
     ],
   },

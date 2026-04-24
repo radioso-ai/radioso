@@ -1892,6 +1892,68 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/v1/account/workspaces/{workspaceId}/token/rotate",
+  tags: ["Account"],
+  summary: "Rotate the workspace API token",
+  operationId: "rotateWorkspaceApiToken",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    params: workspaceParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Workspace token rotated",
+      content: {
+        "application/json": {
+          schema: WorkspaceTokenResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Invalid workspace id",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: "Workspace does not belong to the current account",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Too many rotate attempts",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    503: {
+      description: "Workspace token secret is not configured",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/v1/workspace/mcp/context",
   tags: ["Workspace"],

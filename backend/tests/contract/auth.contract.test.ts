@@ -256,6 +256,26 @@ describe("auth contract", () => {
     expect(response.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
   });
 
+  it("rotates a workspace token through an explicit session-authenticated account route", async () => {
+    const { app } = createTestApp();
+
+    const registration = await issueTestSession(app, "rotate-token-route@example.com");
+    const cookie = registration.cookie;
+
+    const revealed = await request(app)
+      .get(`/api/v1/account/workspaces/${registration.workspaceId}/token`)
+      .set("Cookie", cookie);
+
+    const rotated = await request(app)
+      .post(`/api/v1/account/workspaces/${registration.workspaceId}/token/rotate`)
+      .set("Cookie", cookie);
+
+    expect(revealed.status).toBe(200);
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
+    expect(rotated.body.token).not.toBe(revealed.body.token);
+  });
+
   it("creates and accepts account invitations", async () => {
     const { app } = createTestApp();
 

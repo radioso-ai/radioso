@@ -1,7 +1,7 @@
 export type DashboardSection = 'chat' | 'history' | 'documents' | 'evals' | 'settings' | 'users'
 export type HistoryFilter = 'all' | 'chat' | 'search'
 export type HistoryItemKind = 'chat' | 'search'
-export type SettingsTab = 'general' | 'ingestion' | 'retrieval' | 'connectors'
+export type SettingsTab = 'workspace' | 'assistant' | 'channels' | 'ingestion' | 'retrieval'
 
 export interface DashboardRouteState {
   section: DashboardSection
@@ -16,12 +16,11 @@ export interface DashboardRouteState {
   evalDatasetId?: string
   settingsTab?: SettingsTab
   settingsAnchor?: string
-  connectorId?: string
 }
 
 const DEFAULT_SECTION: DashboardSection = 'chat'
 const DEFAULT_HISTORY_FILTER: HistoryFilter = 'all'
-const DEFAULT_SETTINGS_TAB: SettingsTab = 'general'
+const DEFAULT_SETTINGS_TAB: SettingsTab = 'workspace'
 
 const parsePositiveInt = (value: string | null): number | undefined => {
   if (!value) {
@@ -57,8 +56,14 @@ const parseHistoryItemKind = (value: string | null): HistoryItemKind | undefined
 }
 
 const parseSettingsTab = (value: string | null): SettingsTab | undefined => {
-  if (value === 'general' || value === 'ingestion' || value === 'retrieval' || value === 'connectors') {
+  if (value === 'workspace' || value === 'assistant' || value === 'channels' || value === 'ingestion' || value === 'retrieval') {
     return value
+  }
+  if (value === 'general') {
+    return 'workspace'
+  }
+  if (value === 'connectors') {
+    return 'channels'
   }
 
   return undefined
@@ -127,12 +132,6 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.settingsAnchor) {
       normalized.settingsAnchor = state.settingsAnchor
     }
-    if (
-      (state.settingsTab ?? DEFAULT_SETTINGS_TAB) === 'connectors' &&
-      state.connectorId
-    ) {
-      normalized.connectorId = state.connectorId
-    }
     return normalized
   }
 
@@ -173,9 +172,6 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.settingsAnchor) {
       searchParams.set('anchor', normalized.settingsAnchor)
-    }
-    if (normalized.connectorId) {
-      searchParams.set('connector', normalized.connectorId)
     }
   }
 
@@ -283,7 +279,6 @@ export const parseDashboardRoute = (
       workspaceId,
       settingsTab: parseSettingsTab(searchParams?.get('tab') ?? null),
       settingsAnchor: parseAnchor(searchParams?.get('anchor') ?? null),
-      connectorId: searchParams?.get('connector') ?? undefined,
     })
   }
 

@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { AuthPage } from '@/components/auth/auth-page'
 import { Spinner } from '@/components/ui/spinner'
-import { buildAccountRoute } from '@/lib/dashboard-routes'
-import { getStoredActiveWorkspaceId } from '@/lib/api'
+import { buildDashboardHref } from '@/lib/dashboard-routes'
+import { getStoredActiveWorkspaceId, getStoredActiveWorkspacePublicRouteKey } from '@/lib/api'
 
 export default function Home() {
   const router = useRouter()
@@ -17,7 +17,13 @@ export default function Home() {
     if (!isBootstrapping && user) {
       const workspaceId =
         typeof window !== 'undefined' ? getStoredActiveWorkspaceId() ?? undefined : undefined
-      router.replace(buildAccountRoute(user.accountId, 'chat', undefined, workspaceId))
+      const workspacePublicRouteKey =
+        typeof window !== 'undefined' ? getStoredActiveWorkspacePublicRouteKey() ?? undefined : undefined
+      router.replace(buildDashboardHref(user.accountId, {
+        section: 'chat',
+        workspaceId,
+        workspacePublicRouteKey,
+      }))
     }
   }, [isBootstrapping, router, user])
 

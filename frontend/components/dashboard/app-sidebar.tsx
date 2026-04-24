@@ -60,7 +60,7 @@ const navItems = [
 
 export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
   const { user, logout } = useAuth()
-  const { activeWorkspaceId } = useWorkspace()
+  const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const { theme, setTheme } = useTheme()
 
   return (
@@ -95,6 +95,7 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
                       href={buildDashboardHref(accountId, {
                         section: item.id,
                         workspaceId: activeWorkspaceId ?? undefined,
+                        workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
                       })}
                     >
                       <item.icon className="w-4 h-4" />
@@ -156,6 +157,7 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
                     href={buildDashboardHref(accountId, {
                       section: 'users',
                       workspaceId: activeWorkspaceId ?? undefined,
+                      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
                     })}
                   >
                     <Users className="w-4 h-4 mr-2" />

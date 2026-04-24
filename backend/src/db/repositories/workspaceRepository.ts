@@ -11,6 +11,7 @@ import {
   type WebsiteEmbedLauncherPosition,
   type WebsiteEmbedSettingsRecord,
 } from "../../modules/settings/domain/websiteEmbedSettings.js";
+import { createWorkspacePublicRouteKey } from "../../modules/workspace/domain/publicRouteKey.js";
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
@@ -19,6 +20,7 @@ export interface WorkspaceRecord extends AssistantBootstrapSettingsRecord, Websi
   id: string;
   accountId: string;
   name: string;
+  publicRouteKey: string;
   anonymousChatEnabled: boolean;
   anonymousChatToken: string | null;
   anonymousRateLimit: number;
@@ -30,6 +32,7 @@ interface WorkspaceRow {
   id: string;
   account_id: string;
   name: string;
+  public_route_key: string;
   assistant_name: string | null;
   assistant_role: string | null;
   greeting_instruction: string | null;
@@ -72,6 +75,7 @@ const mapWorkspace = (row: WorkspaceRow): WorkspaceRecord => {
     id: row.id,
     accountId: row.account_id,
     name: row.name,
+    publicRouteKey: row.public_route_key,
     ...bootstrap,
     ...websiteEmbed,
     anonymousChatEnabled: row.anonymous_chat_enabled ?? false,
@@ -83,9 +87,10 @@ const mapWorkspace = (row: WorkspaceRow): WorkspaceRecord => {
 };
 
 export interface WorkspaceRepositoryPort {
-  create(accountId: string, name: string): Promise<WorkspaceRecord>;
+  create(accountId: string, name: string, publicRouteKey?: string): Promise<WorkspaceRecord>;
   findById(id: string): Promise<WorkspaceRecord | null>;
   findByIdAndAccountId(workspaceId: string, accountId: string): Promise<WorkspaceRecord | null>;
+  findByPublicRouteKey(publicRouteKey: string): Promise<WorkspaceRecord | null>;
   findByAnonymousChatToken(token: string): Promise<WorkspaceRecord | null>;
   findByWebsiteEmbedToken(token: string): Promise<WorkspaceRecord | null>;
   listByAccountId(accountId: string): Promise<WorkspaceRecord[]>;
@@ -126,15 +131,15 @@ export interface WorkspaceRepositoryPort {
 export class WorkspaceRepository implements WorkspaceRepositoryPort {
   constructor(private readonly database: Database) {}
 
-  async create(accountId: string, name: string): Promise<WorkspaceRecord> {
+  async create(accountId: string, name: string, publicRouteKey?: string): Promise<WorkspaceRecord> {
     const [row] = await this.database.query<WorkspaceRow>(
-      `INSERT INTO workspaces (id, account_id, name)
-       VALUES ($1, $2, $3)
-       RETURNING id, account_id, name, assistant_name, assistant_role, greeting_instruction, assistant_default_locale,
+      `INSERT INTO workspaces (id, account_id, name, public_route_key)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, account_id, name, public_route_key, assistant_name, assistant_role, greeting_instruction, assistant_default_locale,
                  proactive_greeting_enabled, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit,
                  website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
                  website_embed_launcher_icon, website_embed_launcher_position, created_at, updated_at`,
-      [randomUUID(), accountId, name],
+      [randomUUID(), accountId, name, publicRouteKey ?? createWorkspacePublicRouteKey(name)],
     );
 
     return mapWorkspace(row);
@@ -142,7 +147,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
 
   async findById(id: string): Promise<WorkspaceRecord | null> {
     const [row] = await this.database.query<WorkspaceRow>(
-      `SELECT id, account_id, name, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
+      `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
              , assistant_name, assistant_role, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
              , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
                website_embed_launcher_icon, website_embed_launcher_position
@@ -156,7 +161,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
 
   async findByIdAndAccountId(workspaceId: string, accountId: string): Promise<WorkspaceRecord | null> {
     const [row] = await this.database.query<WorkspaceRow>(
-      `SELECT id, account_id, name, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
+      `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
              , assistant_name, assistant_role, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
              , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
                website_embed_launcher_icon, website_embed_launcher_position
@@ -168,9 +173,23 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
     return row ? mapWorkspace(row) : null;
   }
 
+  async findByPublicRouteKey(publicRouteKey: string): Promise<WorkspaceRecord | null> {
+    const [row] = await this.database.query<WorkspaceRow>(
+      `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
+             , assistant_name, assistant_role, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
+             , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
+               website_embed_launcher_icon, website_embed_launcher_position
+       FROM workspaces
+       WHERE public_route_key = $1`,
+      [publicRouteKey],
+    );
+
+    return row ? mapWorkspace(row) : null;
+  }
+
   async listByAccountId(accountId: string): Promise<WorkspaceRecord[]> {
     const rows = await this.database.query<WorkspaceRow>(
-      `SELECT id, account_id, name, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
+      `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
              , assistant_name, assistant_role, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
              , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
                website_embed_launcher_icon, website_embed_launcher_position
@@ -196,7 +215,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
     const [row] = await this.database.query<WorkspaceRow>(
       `UPDATE workspaces SET name = $1, updated_at = NOW()
        WHERE id = $2
-       RETURNING id, account_id, name, assistant_name, assistant_role, greeting_instruction, assistant_default_locale,
+       RETURNING id, account_id, name, public_route_key, assistant_name, assistant_role, greeting_instruction, assistant_default_locale,
                  proactive_greeting_enabled, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit,
                  website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
                  website_embed_launcher_icon, website_embed_launcher_position, created_at, updated_at`,
@@ -212,7 +231,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
 
   async findByAnonymousChatToken(token: string): Promise<WorkspaceRecord | null> {
     const [row] = await this.database.query<WorkspaceRow>(
-      `SELECT id, account_id, name, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
+      `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
              , assistant_name, assistant_role, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
              , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
                website_embed_launcher_icon, website_embed_launcher_position
@@ -226,7 +245,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
 
   async findByWebsiteEmbedToken(token: string): Promise<WorkspaceRecord | null> {
     const [row] = await this.database.query<WorkspaceRow>(
-      `SELECT id, account_id, name, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
+      `SELECT id, account_id, name, public_route_key, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit, created_at, updated_at
              , assistant_name, assistant_role, greeting_instruction, assistant_default_locale, proactive_greeting_enabled
              , website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
                website_embed_launcher_icon, website_embed_launcher_position
@@ -248,7 +267,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       `UPDATE workspaces
        SET anonymous_chat_enabled = $1, anonymous_chat_token = $2, anonymous_rate_limit = $3, updated_at = NOW()
        WHERE id = $4
-       RETURNING id, account_id, name, assistant_name, assistant_role, greeting_instruction, assistant_default_locale,
+       RETURNING id, account_id, name, public_route_key, assistant_name, assistant_role, greeting_instruction, assistant_default_locale,
                  proactive_greeting_enabled, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit,
                  website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
                  website_embed_launcher_icon, website_embed_launcher_position, created_at, updated_at`,
@@ -279,7 +298,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
            proactive_greeting_enabled = $5,
            updated_at = NOW()
        WHERE id = $6
-       RETURNING id, account_id, name, assistant_name, assistant_role, greeting_instruction, assistant_default_locale,
+       RETURNING id, account_id, name, public_route_key, assistant_name, assistant_role, greeting_instruction, assistant_default_locale,
                  proactive_greeting_enabled, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit,
                  website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
                  website_embed_launcher_icon, website_embed_launcher_position, created_at, updated_at`,
@@ -337,7 +356,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
            website_embed_launcher_position = $14,
            updated_at = NOW()
        WHERE id = $15
-       RETURNING id, account_id, name, assistant_name, assistant_role, greeting_instruction, assistant_default_locale,
+       RETURNING id, account_id, name, public_route_key, assistant_name, assistant_role, greeting_instruction, assistant_default_locale,
                  proactive_greeting_enabled, anonymous_chat_enabled, anonymous_chat_token, anonymous_rate_limit,
                  website_embed_enabled, website_embed_token, website_embed_allowed_origins, website_embed_launcher_label,
                  website_embed_launcher_icon, website_embed_launcher_position, created_at, updated_at`,

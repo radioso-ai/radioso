@@ -62,6 +62,55 @@ The backend stores application state, document metadata, chunks, and vectors in 
 
 One script tag. Paste it on any page of an approved origin. The launcher opens a Radioso-hosted chat iframe — no backend work required on the host site, and origin policy stays under your control.
 
+### Web app
+
+1. Run `./run-dev.sh`.
+2. Open `http://localhost:3000`.
+3. Register or sign in.
+4. Let Radioso seed the starter documents for the workspace.
+5. Wait for document processing to finish.
+6. Ask one of the suggested questions in chat.
+
+New accounts must verify their email before the first sign-in completes, except in the default `./run-dev.sh` local setup where `AUTH_SKIP_EMAIL_VERIFICATION=true` is written into `backend/.env` for faster local iteration. Local runs also default to `MAIL_DRIVER=log`, so verification and password reset links are written to backend logs unless you point the app at a real SMTP server.
+
+Authenticated dashboard URLs are workspace-first. After sign-in, the app navigates under `/w/<workspace-public-route-key>/...`. Older `/account/<account-id>/...` dashboard links still work, but they redirect to the canonical workspace URL after the app restores the correct organization and workspace context.
+
+### API auth flow
+
+Register a user:
+
+```bash
+curl -sS \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
+  http://localhost:8080/api/v1/auth/register
+```
+
+That response includes `workspaceId`, `workspacePublicRouteKey`, and `requiresEmailVerification`. Verify the email first when required, then log in to save the session cookie:
+
+```bash
+curl -sS -c cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
+  http://localhost:8080/api/v1/auth/login
+```
+
+The login response also includes `workspacePublicRouteKey`. Browser URLs use that public route key, while backend workspace APIs and token reveal flows continue to use the internal `workspaceId`.
+
+List workspaces or reveal the workspace API token with the session cookie:
+
+```bash
+curl -sS -b cookies.txt \
+  http://localhost:8080/api/v1/workspace
+
+curl -sS -b cookies.txt \
+  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
+```
+
+Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to inspect or build the canonical dashboard URL.
+
+If a workspace token or public embed link is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
+
 ### TypeScript SDK
 
 ```ts

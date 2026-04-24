@@ -10,7 +10,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { useAuth } from '@/lib/auth-context'
-import { buildAccountRoute } from '@/lib/dashboard-routes'
+import { buildDashboardHref } from '@/lib/dashboard-routes'
 
 export function InvitationAcceptForm({
   invitationToken,
@@ -44,9 +44,13 @@ export function InvitationAcceptForm({
     setIsSubmitting(true)
     try {
       const response = await authApi.acceptInvitation(invitationToken, { email, password })
-      seedWorkspaceSession(response.workspaceId)
+      seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       await login(email, response.userId, response.accountId)
-      router.replace(buildAccountRoute(response.accountId, 'chat', undefined, response.workspaceId))
+      router.replace(buildDashboardHref(response.accountId, {
+        section: 'chat',
+        workspaceId: response.workspaceId,
+        workspacePublicRouteKey: response.workspacePublicRouteKey,
+      }))
     } catch (nextError) {
       setError(getApiErrorMessage(nextError, 'Failed to accept invitation.'))
     } finally {

@@ -263,7 +263,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
       llmRegistry.createGroundedMissResponseComposer(),
     ),
   );
-  const workspaceService = new WorkspaceService(workspaceRepository, auditService);
+  const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(database));
   const connectorRegistry = new ConnectorRegistry();
@@ -340,6 +340,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     chatBootstrapService,
     chatHistoryService,
     evalLabService,
+    accountRepository,
     workspaceRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,

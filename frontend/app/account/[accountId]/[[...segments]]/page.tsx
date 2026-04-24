@@ -4,14 +4,10 @@ import { useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 
 import { AuthPage } from '@/components/auth/auth-page'
-import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { Spinner } from '@/components/ui/spinner'
+import { accountApi, getStoredActiveWorkspaceId, getStoredActiveWorkspacePublicRouteKey, seedWorkspaceSession, workspaceApi } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
-import {
-  buildDashboardHref,
-  parseDashboardRoute,
-} from '@/lib/dashboard-routes'
-import { getStoredActiveWorkspaceId } from '@/lib/api'
+import { buildDashboardHref, parseDashboardRoute } from '@/lib/dashboard-routes'
 
 const getParamValue = (value: string | string[] | undefined) => {
   if (Array.isArray(value)) {
@@ -29,34 +25,79 @@ const getParamList = (value: string | string[] | undefined) => {
   return Array.isArray(value) ? value : [value]
 }
 
-export default function AccountDashboardPage() {
+export default function LegacyAccountDashboardPage() {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { user, isAuthenticated, isBootstrapping } = useAuth()
+  const auth = useAuth()
 
   const routeAccountId = getParamValue(params.accountId)
   const segments = getParamList(params.segments)
   const parsedRoute = parseDashboardRoute(segments, searchParams)
 
   useEffect(() => {
-    if (isBootstrapping || !user || !routeAccountId) {
+    if (auth.isBootstrapping || !auth.user) {
       return
     }
 
-    if (!parsedRoute) {
-      const workspaceId =
-        typeof window !== 'undefined' ? getStoredActiveWorkspaceId() ?? undefined : undefined
-      router.replace(buildDashboardHref(user.accountId, { section: 'chat', workspaceId }))
-      return
+    const redirectToCanonical = async () => {
+      if (!parsedRoute) {
+        const workspaceId = getStoredActiveWorkspaceId() ?? undefined
+        const workspacePublicRouteKey = getStoredActiveWorkspacePublicRouteKey() ?? undefined
+        router.replace(buildDashboardHref(auth.user.accountId, {
+          section: 'chat',
+          workspaceId,
+          workspacePublicRouteKey,
+        }))
+        return
+      }
+
+      if (routeAccountId && routeAccountId !== auth.user.accountId) {
+        try {
+          const response = await accountApi.switchAccount(routeAccountId, parsedRoute.workspaceId)
+          seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
+          await auth.login(auth.user.email, response.userId, response.accountId)
+          router.replace(buildDashboardHref(response.accountId, {
+            ...parsedRoute,
+            workspaceId: response.workspaceId,
+            workspacePublicRouteKey: response.workspacePublicRouteKey,
+          }))
+          return
+        } catch {
+          router.replace('/')
+          return
+        }
+      }
+
+      const targetWorkspaceId = parsedRoute.workspaceId ?? getStoredActiveWorkspaceId() ?? undefined
+      if (!targetWorkspaceId) {
+        router.replace('/')
+        return
+      }
+
+      try {
+        const workspaces = await workspaceApi.list()
+        const workspace = workspaces.find((candidate) => candidate.id === targetWorkspaceId)
+        if (!workspace) {
+          router.replace('/')
+          return
+        }
+
+        seedWorkspaceSession(workspace.id, workspace.publicRouteKey)
+        router.replace(buildDashboardHref(auth.user.accountId, {
+          ...parsedRoute,
+          workspaceId: workspace.id,
+          workspacePublicRouteKey: workspace.publicRouteKey,
+        }))
+      } catch {
+        router.replace('/')
+      }
     }
 
-    if (routeAccountId !== user.accountId) {
-      router.replace(buildDashboardHref(user.accountId, parsedRoute))
-    }
-  }, [isBootstrapping, parsedRoute, routeAccountId, router, user])
+    void redirectToCanonical()
+  }, [auth, parsedRoute, routeAccountId, router])
 
-  if (isBootstrapping) {
+  if (auth.isBootstrapping) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner className="h-6 w-6" />
@@ -64,22 +105,13 @@ export default function AccountDashboardPage() {
     )
   }
 
-  if (!isAuthenticated || !user) {
+  if (!auth.isAuthenticated || !auth.user) {
     return <AuthPage />
   }
 
-  if (!routeAccountId || !parsedRoute || routeAccountId !== user.accountId) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Spinner className="h-6 w-6" />
-      </div>
-    )
-  }
-
   return (
-    <DashboardShell
-      accountId={user.accountId}
-      routeState={parsedRoute}
-    />
+    <div className="flex min-h-screen items-center justify-center">
+      <Spinner className="h-6 w-6" />
+    </div>
   )
 }

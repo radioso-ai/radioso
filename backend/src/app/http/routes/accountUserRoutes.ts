@@ -84,6 +84,7 @@ export const createAccountUserRoutes = (dependencies: AppDependencies): Router =
         organizationName: result.organizationName,
         workspaceId: result.workspaceId,
         workspaceName: result.workspaceName,
+        workspacePublicRouteKey: result.workspacePublicRouteKey,
       });
     } catch (error) {
       next(error);
@@ -120,6 +121,7 @@ export const createAccountUserRoutes = (dependencies: AppDependencies): Router =
         organizationName: result.organizationName,
         workspaceId: result.workspaceId,
         workspaceName: result.workspaceName,
+        workspacePublicRouteKey: result.workspacePublicRouteKey,
       });
     } catch (error) {
       next(error);

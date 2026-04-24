@@ -19,6 +19,7 @@ import { accountMembershipParamsSchema, accountSwitchSchema, createAccountInvita
 import {
   createWorkspaceSchema,
   renameWorkspaceSchema,
+  workspaceKeyParamsSchema,
   workspaceParamsSchema,
 } from "../routes/workspaceRoutes.js";
 import { workspaceMcpContextSchema } from "../routes/mcpContextRoutes.js";
@@ -124,6 +125,7 @@ const RegisterResponseSchema = registry.register(
     organizationName: z.string(),
     workspaceId: z.string().uuid(),
     workspaceName: z.string(),
+    workspacePublicRouteKey: z.string(),
     requiresEmailVerification: z.boolean(),
   }),
 );
@@ -136,6 +138,7 @@ const LoginResponseSchema = registry.register(
     organizationName: z.string(),
     workspaceId: z.string().uuid(),
     workspaceName: z.string(),
+    workspacePublicRouteKey: z.string(),
   }),
 );
 
@@ -152,8 +155,20 @@ const WorkspaceSchema = registry.register(
     id: z.string().uuid(),
     accountId: z.string().uuid(),
     name: z.string(),
+    publicRouteKey: z.string(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
+  }),
+);
+
+const WorkspaceRouteResolutionResponseSchema = registry.register(
+  "WorkspaceRouteResolutionResponse",
+  z.object({
+    workspaceKey: z.string(),
+    workspaceId: z.string().uuid(),
+    workspaceName: z.string(),
+    accountId: z.string().uuid(),
+    organizationName: z.string(),
   }),
 );
 
@@ -229,6 +244,7 @@ const AccessibleAccountSchema = registry.register(
     role: z.enum(["owner", "member"]),
     workspaceId: z.string().uuid(),
     workspaceName: z.string(),
+    workspacePublicRouteKey: z.string(),
   }),
 );
 
@@ -1990,6 +2006,44 @@ registry.registerPath({
     },
     401: {
       description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/workspace/resolve/{workspaceKey}",
+  tags: ["Workspace"],
+  summary: "Resolve a workspace public route key for the authenticated user",
+  operationId: "resolveWorkspaceRouteKey",
+  security: [{ [sessionCookieScheme.name]: [] }],
+  request: {
+    params: workspaceKeyParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Workspace route key resolved",
+      content: {
+        "application/json": {
+          schema: WorkspaceRouteResolutionResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Workspace not found or inaccessible",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

@@ -23,7 +23,7 @@ interface ChatViewProps {
 export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProps) {
   const router = useRouter()
   const [input, setInput] = useState('')
-  const { activeWorkspaceId } = useWorkspace()
+  const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const { messages, isLoading, isBootstrapping, initializeSession, sendMessage, startNewChat } = useChatSession(activeWorkspaceId ?? accountId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -111,6 +111,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
             onClick={() => router.push(buildDashboardHref(accountId, {
               section: 'documents',
               workspaceId: activeWorkspaceId ?? undefined,
+              workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
             }))}
           >
             <FileText className="mr-2 h-4 w-4" />
@@ -136,6 +137,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
                 onClick={() => router.push(buildDashboardHref(accountId, {
                   section: 'documents',
                   workspaceId: activeWorkspaceId ?? undefined,
+                  workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
                 }))}
               >
                 <FileText className="mr-2 h-4 w-4" />

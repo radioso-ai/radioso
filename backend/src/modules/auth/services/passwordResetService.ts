@@ -95,6 +95,7 @@ export class PasswordResetService {
     organizationName: string;
     workspaceId: string;
     workspaceName: string;
+    workspacePublicRouteKey: string;
     sessionCookie: string;
   }> {
     const now = new Date();
@@ -158,6 +159,7 @@ export class PasswordResetService {
       organizationName: account?.name ?? "Organization",
       workspaceId: workspace.id,
       workspaceName: workspace.name,
+      workspacePublicRouteKey: workspace.publicRouteKey,
       sessionCookie,
     };
   }

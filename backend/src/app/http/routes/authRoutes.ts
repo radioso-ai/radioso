@@ -126,6 +126,7 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
         organizationName: result.organizationName,
         workspaceId: result.workspaceId,
         workspaceName: result.workspaceName,
+        workspacePublicRouteKey: result.workspacePublicRouteKey,
         requiresEmailVerification: result.requiresEmailVerification,
       });
     } catch (error) {
@@ -143,6 +144,7 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
         organizationName: result.organizationName,
         workspaceId: result.workspaceId,
         workspaceName: result.workspaceName,
+        workspacePublicRouteKey: result.workspacePublicRouteKey,
       });
     } catch (error) {
       next(error);
@@ -214,6 +216,7 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
           organizationName: result.organizationName,
           workspaceId: result.workspaceId,
           workspaceName: result.workspaceName,
+          workspacePublicRouteKey: result.workspacePublicRouteKey,
         });
       } catch (error) {
         next(error);
@@ -249,6 +252,7 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
           organizationName: result.organizationName,
           workspaceId: result.workspaceId,
           workspaceName: result.workspaceName,
+          workspacePublicRouteKey: result.workspacePublicRouteKey,
         });
       } catch (error) {
         next(error);

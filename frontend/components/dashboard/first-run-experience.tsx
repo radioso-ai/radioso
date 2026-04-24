@@ -60,6 +60,7 @@ export function FirstRunExperience({ accountId, onboarding }: FirstRunExperience
     router.push(buildDashboardHref(accountId, {
       section: 'documents',
       workspaceId: activeWorkspaceId ?? undefined,
+      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
     }))
   }
 

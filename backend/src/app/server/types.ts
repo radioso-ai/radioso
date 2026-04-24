@@ -20,6 +20,7 @@ import type { EmailService } from "../../modules/email/services/emailService.js"
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
+import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
@@ -65,6 +66,7 @@ export interface AppDependencies {
   chatHistoryService: ChatHistoryService;
   evalLabService: EvalLabService;
   workspaceRepository: WorkspaceRepositoryPort;
+  accountRepository: AccountRepositoryPort;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
   messageRepository: MessageRepositoryPort;

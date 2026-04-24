@@ -3,9 +3,19 @@ output "frontend_url" {
   value       = try(google_cloud_run_v2_service.frontend[0].uri, null)
 }
 
+output "frontend_service_name" {
+  description = "Cloud Run service name for the Radioso frontend"
+  value       = try(google_cloud_run_v2_service.frontend[0].name, null)
+}
+
 output "backend_url" {
   description = "Public URL of the Radioso backend API"
   value       = try(google_cloud_run_v2_service.backend[0].uri, null)
+}
+
+output "backend_service_name" {
+  description = "Cloud Run service name for the Radioso backend API"
+  value       = try(google_cloud_run_v2_service.backend[0].name, null)
 }
 
 output "cloud_sql_connection_name" {
@@ -16,6 +26,11 @@ output "cloud_sql_connection_name" {
 output "artifact_registry_url" {
   description = "Artifact Registry repository URL for pushing Docker images"
   value       = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.radioso.repository_id}"
+}
+
+output "artifact_registry_repository_id" {
+  description = "Artifact Registry Docker repository ID used for application images"
+  value       = google_artifact_registry_repository.radioso.repository_id
 }
 
 output "environment" {
@@ -46,4 +61,14 @@ output "worker_service_url" {
 output "worker_task_queue_name" {
   description = "Cloud Tasks queue name used for document processing dispatch"
   value       = try(google_cloud_tasks_queue.document_processing[0].name, null)
+}
+
+output "github_actions_workload_identity_provider" {
+  description = "Fully qualified Workload Identity Provider resource name for GitHub Actions OIDC."
+  value       = google_iam_workload_identity_pool_provider.github_actions.name
+}
+
+output "github_actions_service_account_email" {
+  description = "Service account email that GitHub Actions should impersonate for deployments."
+  value       = google_service_account.github_actions_deployer.email
 }

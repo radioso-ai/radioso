@@ -262,6 +262,14 @@ resource "google_cloud_run_v2_service" "backend" {
     google_secret_manager_secret_iam_member.backend_access,
     google_storage_bucket_iam_member.backend_documents_access,
   ]
+
+  lifecycle {
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].containers[0].image,
+    ]
+  }
 }
 
 # Public access for backend (needed for webhook connectors)
@@ -315,6 +323,14 @@ resource "google_cloud_run_v2_service" "frontend" {
     google_secret_manager_secret_version.secrets,
     google_secret_manager_secret_iam_member.frontend_website_embed_access,
   ]
+
+  lifecycle {
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].containers[0].image,
+    ]
+  }
 }
 
 # Public access for frontend
@@ -556,6 +572,14 @@ resource "google_cloud_run_v2_service" "document_worker" {
     google_secret_manager_secret_iam_member.worker_access,
     google_storage_bucket_iam_member.worker_documents_access,
   ]
+
+  lifecycle {
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].containers[0].image,
+    ]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "document_worker_invoker" {

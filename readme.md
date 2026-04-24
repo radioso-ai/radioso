@@ -619,6 +619,58 @@ terraform plan -var-file=terraform.tfvars
 
 In CI, prefer `TF_VAR_*` environment variables for secrets instead of committed tfvars files. The wrapper directories are designed so the same `terraform init`, `plan`, and `apply` commands can later be reused in GitHub Actions without restructuring the module.
 
+### GitHub Actions Deploys
+
+The repo now includes GitHub Actions workflows for app deploys and Terraform operations:
+
+- `.github/workflows/deploy-staging.yml`
+- `.github/workflows/deploy-live.yml`
+- `.github/workflows/terraform.yml`
+
+In practice, code deploys and infrastructure deploys are now separate:
+
+- App deploys build backend and frontend images, push them to Artifact Registry, and update the existing Cloud Run services.
+- Terraform still owns Cloud Run configuration, networking, secrets, buckets, queues, and database resources.
+- Terraform ignores Cloud Run container image changes so a later `terraform apply` does not roll back a code deploy.
+
+The Terraform module now creates a GitHub Actions deployer service account plus a Workload Identity Federation provider in each project. After `terraform apply`, capture these outputs from the wrapper directory:
+
+- `github_actions_workload_identity_provider`
+- `github_actions_service_account_email`
+- `artifact_registry_repository_id`
+- `backend_service_name`
+- `frontend_service_name`
+- `worker_service_name`
+
+Create two GitHub environments named `staging` and `live`. Set these environment variables in each one:
+
+- `GCP_PROJECT_ID`
+- `GCP_REGION`
+- `ARTIFACT_REGISTRY_REGION`
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`
+- `GCP_DEPLOY_SERVICE_ACCOUNT`
+
+The checked-in app deploy workflows assume the current service and repository names:
+
+- staging: `radioso-staging` repository, `radioso-staging-backend`, `radioso-staging-frontend`, `radioso-staging-worker`
+- live: `radioso-live` repository, `radioso-live-backend`, `radioso-live-frontend`, `radioso-live-worker`
+
+Set these GitHub environment secrets for the Terraform workflow:
+
+- `OPENAI_API_KEY`
+- `SESSION_COOKIE_SECRET`
+- `WORKSPACE_TOKEN_SECRET`
+- `WEBSITE_EMBED_SECRET`
+- `CONNECTOR_ENCRYPTION_KEY`
+
+Optional Terraform-only GitHub environment secrets:
+
+- `METRICS_AUTH_TOKEN`
+- `MAIL_SMTP_USERNAME`
+- `MAIL_SMTP_PASSWORD`
+
+`deploy-staging.yml` runs automatically on pushes to `main` when app files change, and can also be triggered manually. `deploy-live.yml` is manual-only and is intended to be protected by GitHub environment approvals on the `live` environment. `terraform.yml` is manual and reuses the current deployed image URLs so infra applies can run without reintroducing Terraform-managed image tags.
+
 The key point is cost: Cloud Run can scale the frontend and backend to zero, but Cloud SQL cannot auto-scale to zero. Staging keeps costs down by using the smallest practical database tier plus `backend_min_instances = 0` and `frontend_min_instances = 0`. If staging is idle for long periods, stop the Cloud SQL instance manually to reduce compute cost further.
 
 Cloud email delivery is not configured yet. Both cloud environments keep `MAIL_DRIVER=log`, so verification and password reset delivery stay deferred until a later SMTP setup. Staging sets `AUTH_SKIP_EMAIL_VERIFICATION=true` so it is usable before SMTP exists; live keeps email verification enabled, which means fresh signup and password reset flows are not production-ready until SMTP is configured. The Terraform wrappers already expose the mail inputs for that future step.

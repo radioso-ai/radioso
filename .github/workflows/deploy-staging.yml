@@ -1,0 +1,25 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .dockerignore
+      - backend/**
+      - frontend/**
+      - infra/backend.Dockerfile
+      - frontend/Dockerfile
+      - packages/connector-api/**
+      - packages/document-parser/**
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_deploy-cloud-run.yml
+    with:
+      github_environment: staging
+      artifact_repository: radioso-staging
+      backend_service: radioso-staging-backend
+      frontend_service: radioso-staging-frontend
+      worker_service: radioso-staging-worker

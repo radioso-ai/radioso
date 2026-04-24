@@ -85,16 +85,32 @@ output "frontend_url" {
   value = module.radioso.frontend_url
 }
 
+output "frontend_service_name" {
+  value = module.radioso.frontend_service_name
+}
+
 output "backend_url" {
   value = module.radioso.backend_url
+}
+
+output "backend_service_name" {
+  value = module.radioso.backend_service_name
 }
 
 output "worker_service_url" {
   value = module.radioso.worker_service_url
 }
 
+output "worker_service_name" {
+  value = module.radioso.worker_service_name
+}
+
 output "artifact_registry_url" {
   value = module.radioso.artifact_registry_url
+}
+
+output "artifact_registry_repository_id" {
+  value = module.radioso.artifact_registry_repository_id
 }
 
 output "document_storage_bucket_name" {
@@ -107,4 +123,12 @@ output "cloud_sql_connection_name" {
 
 output "app_base_url" {
   value = module.radioso.app_base_url
+}
+
+output "github_actions_workload_identity_provider" {
+  value = module.radioso.github_actions_workload_identity_provider
+}
+
+output "github_actions_service_account_email" {
+  value = module.radioso.github_actions_service_account_email
 }

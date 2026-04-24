@@ -313,3 +313,27 @@ variable "mail_smtp_password" {
     error_message = "mail_smtp_host, mail_smtp_username, and mail_smtp_password must be set when mail_driver is smtp."
   }
 }
+
+variable "github_repository_owner" {
+  description = "GitHub organization or user that owns the repository allowed to deploy via GitHub Actions."
+  type        = string
+  default     = "radioso-ai"
+}
+
+variable "github_repository_name" {
+  description = "GitHub repository name allowed to deploy via GitHub Actions."
+  type        = string
+  default     = "radioso"
+}
+
+variable "github_actions_workload_identity_pool_id" {
+  description = "Workload Identity Pool ID used by GitHub Actions OIDC."
+  type        = string
+  default     = "github-actions"
+}
+
+variable "github_actions_workload_identity_provider_id" {
+  description = "Workload Identity Pool Provider ID used by GitHub Actions OIDC."
+  type        = string
+  default     = "github-actions"
+}

@@ -22,6 +22,7 @@ import {
 import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
 import { type IngestionSettings, settingsApi } from '@/lib/api'
+import { useWorkspace } from '@/lib/workspace-context'
 
 export function IngestionSettingsPanel({
   onSaveStateChange,
@@ -29,6 +30,7 @@ export function IngestionSettingsPanel({
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
   const descriptor = getSettingsTabDescriptor('ingestion')
+  const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [settings, setSettings] = useState<IngestionSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [lastSavedSettings, setLastSavedSettings] = useState<IngestionSettings | null>(null)
@@ -45,21 +47,34 @@ export function IngestionSettingsPanel({
   }, [onSaveStateChange, saveError, saveState])
 
   useEffect(() => {
+    if (isWorkspaceLoading || !activeWorkspaceId) {
+      setIsLoading(true)
+      return
+    }
+
+    let active = true
     const loadSettings = async () => {
       try {
         const data = await settingsApi.getIngestionSettings()
+        if (!active) return
         setSettings(data)
         setLastSavedSettings(data)
         setSaveState('idle')
       } catch (error) {
+        if (!active) return
         console.error('Failed to load ingestion settings:', error)
       } finally {
-        setIsLoading(false)
-        hasLoadedRef.current = true
+        if (active) {
+          setIsLoading(false)
+          hasLoadedRef.current = true
+        }
       }
     }
     void loadSettings()
-  }, [])
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId, isWorkspaceLoading])
 
   const updateSettingsDraft = (updater: (current: IngestionSettings) => IngestionSettings) => {
     draftVersionRef.current += 1

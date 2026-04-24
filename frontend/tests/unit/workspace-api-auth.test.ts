@@ -25,6 +25,15 @@ const createJsonResponse = (payload: unknown) => ({
   json: async () => payload,
 })
 
+const createErrorResponse = (status: number, payload: unknown) => ({
+  ok: false,
+  status,
+  headers: {
+    get: () => 'application/json',
+  },
+  json: async () => payload,
+})
+
 describe('workspace API auth', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -59,7 +68,7 @@ describe('workspace API auth', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(requestUrl).toBe('/backend/api/v1/settings/general')
-    expect(requestInit.credentials).toBeUndefined()
+    expect(requestInit.credentials).toBe('omit')
     expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer sk_proj_cached_token')
   })
 
@@ -99,8 +108,49 @@ describe('workspace API auth', () => {
 
     const [requestUrl, requestInit] = fetchMock.mock.calls[1] as [string, RequestInit]
     expect(requestUrl).toBe('/backend/api/v1/settings/general')
-    expect(requestInit.credentials).toBeUndefined()
+    expect(requestInit.credentials).toBe('omit')
     expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer sk_proj_fetched_token')
     expect(localStorage.getItem('radioso.workspaceTokens')).toContain('workspace-1')
+  })
+
+  it('refreshes a stale cached workspace token after a bearer 401', async () => {
+    const localStorage = createLocalStorage({
+      'radioso.activeWorkspaceId': 'workspace-1',
+      'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'sk_proj_stale_token' }),
+    })
+    vi.stubGlobal('window', { localStorage })
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(createErrorResponse(401, {
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Invalid workspace token.',
+        },
+      }))
+      .mockResolvedValueOnce(createJsonResponse({ token: 'sk_proj_fresh_token' }))
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          anonymousChatEnabled: false,
+          anonymousRateLimit: 10,
+          anonymousChatUrl: null,
+          anonymousChatToken: null,
+          assistantName: '',
+          assistantRole: '',
+          greetingInstruction: '',
+          assistantDefaultLocale: null,
+          proactiveGreetingEnabled: false,
+          assistantBootstrapActive: false,
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generalSettingsApi.getGeneralSettings()
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe('Bearer sk_proj_stale_token')
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/backend/api/v1/account/workspaces/workspace-1/token')
+    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get('Authorization')).toBe('Bearer sk_proj_fresh_token')
+    expect(localStorage.getItem('radioso.workspaceTokens')).toContain('sk_proj_fresh_token')
   })
 })

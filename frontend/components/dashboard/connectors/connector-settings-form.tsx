@@ -180,11 +180,11 @@ export function ConnectorSettingsForm({
         updatedConnector = await persistDraft(pendingDraftValues)
       }
       updatedConnector = await onSetEnabled(enabled)
-      setValues(withDefaults(updatedConnector))
-      setDirty(false)
       setValidationIssues([])
       setFormError(null)
       if (draftVersionRef.current === draftVersionAtRequestStart) {
+        setValues(withDefaults(updatedConnector))
+        setDirty(false)
         onSaveStateChange?.({ state: 'saved', message: null })
       }
     } catch (error) {

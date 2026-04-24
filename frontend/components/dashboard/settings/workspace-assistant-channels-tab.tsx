@@ -97,7 +97,7 @@ export function WorkspaceAssistantChannelsTab({
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
   const descriptor = getSettingsTabDescriptor(mode)
-  const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace } = useWorkspace()
+  const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
   const [workspaceName, setWorkspaceName] = useState(activeWorkspace?.name ?? '')
   const [organizationName, setOrganizationName] = useState('')
   const [savedOrganizationName, setSavedOrganizationName] = useState('')
@@ -221,28 +221,46 @@ export function WorkspaceAssistantChannelsTab({
   }, [activeWorkspaceId])
 
   useEffect(() => {
+    if (isWorkspaceLoading || !activeWorkspaceId) {
+      setIsAnonLoading(true)
+      return
+    }
+
+    let active = true
     setIsAnonLoading(true)
     const loadAnonSettings = async () => {
       try {
         const data = await generalSettingsApi.getGeneralSettings()
+        if (!active) return
         setAnonSettings(data)
         setSavedAnonSettings(data)
         setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(data.websiteEmbedAllowedOrigins ?? []))
         setAssistantSettingsError(null)
       } catch (error) {
+        if (!active) return
         console.error('Failed to load anonymous chat settings:', error)
       } finally {
-        setIsAnonLoading(false)
+        if (active) {
+          setIsAnonLoading(false)
+        }
       }
     }
     void loadAnonSettings()
-  }, [activeWorkspaceId])
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId, isWorkspaceLoading])
 
   useEffect(() => {
     if (mode !== 'assistant') {
       setAssistantBehaviorSettings(null)
       setSavedAssistantBehaviorSettings(null)
       setIsAssistantBehaviorLoading(false)
+      return
+    }
+
+    if (isWorkspaceLoading || !activeWorkspaceId) {
+      setIsAssistantBehaviorLoading(true)
       return
     }
 
@@ -270,7 +288,7 @@ export function WorkspaceAssistantChannelsTab({
     return () => {
       active = false
     }
-  }, [activeWorkspaceId, mode])
+  }, [activeWorkspaceId, isWorkspaceLoading, mode])
 
   const handleAnonToggle = async (enabled: boolean) => {
     setIsAnonSaving(true)
@@ -467,6 +485,39 @@ export function WorkspaceAssistantChannelsTab({
     [websiteEmbedSnippetParsedThemeJson],
   )
 
+  const websiteEmbedSnippetResolvedThemeOverrides = useMemo(() => {
+    const nextOverrides = { ...websiteEmbedSnippetThemeOverrides }
+
+    if (nextOverrides.panelBackground) {
+      if (nextOverrides.assistantBubbleBackground === nextOverrides.panelBackground) {
+        delete nextOverrides.assistantBubbleBackground
+      }
+      if (nextOverrides.inputBackground === nextOverrides.panelBackground) {
+        delete nextOverrides.inputBackground
+      }
+      if (nextOverrides.mutedBackground === nextOverrides.panelBackground) {
+        delete nextOverrides.mutedBackground
+      }
+    }
+
+    if (nextOverrides.panelForeground) {
+      if (nextOverrides.assistantBubbleForeground === nextOverrides.panelForeground) {
+        delete nextOverrides.assistantBubbleForeground
+      }
+      if (nextOverrides.inputForeground === nextOverrides.panelForeground) {
+        delete nextOverrides.inputForeground
+      }
+      if (nextOverrides.inputPlaceholder === nextOverrides.panelForeground) {
+        delete nextOverrides.inputPlaceholder
+      }
+      if (nextOverrides.mutedForeground === nextOverrides.panelForeground) {
+        delete nextOverrides.mutedForeground
+      }
+    }
+
+    return nextOverrides
+  }, [websiteEmbedSnippetThemeOverrides])
+
   const hasWebsiteEmbedVisibleTextOverrides = Boolean(
     websiteEmbedSnippetCopyOverrides.publicChatSubtitle ||
     websiteEmbedSnippetCopyOverrides.publicChatEmptyTitle ||
@@ -521,7 +572,7 @@ export function WorkspaceAssistantChannelsTab({
         initialState: normalizedInitialState,
         avatarUrl: normalizedAvatarUrl,
         copy: websiteEmbedSnippetResolvedCopyOverrides,
-        theme: websiteEmbedSnippetThemeOverrides,
+        theme: websiteEmbedSnippetResolvedThemeOverrides,
       })
     )
   }, [
@@ -536,6 +587,7 @@ export function WorkspaceAssistantChannelsTab({
     websiteEmbedSnippetInitialState,
     websiteEmbedSnippetThemeJson,
     websiteEmbedSnippetThemeJsonError,
+    websiteEmbedSnippetResolvedThemeOverrides,
     websiteEmbedSnippetThemeOverrides,
   ])
 
@@ -569,7 +621,7 @@ export function WorkspaceAssistantChannelsTab({
         initialState: normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined,
         avatarUrl: normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl) ?? undefined,
         copy: websiteEmbedSnippetResolvedCopyOverrides,
-        theme: websiteEmbedSnippetThemeOverrides,
+        theme: websiteEmbedSnippetResolvedThemeOverrides,
       },
       new URL(APP_WEBSITE_EMBED_DEMO_PATH, window.location.origin).toString(),
     )
@@ -586,6 +638,7 @@ export function WorkspaceAssistantChannelsTab({
     websiteEmbedSnippetInitialState,
     websiteEmbedSnippetThemeJson,
     websiteEmbedSnippetThemeJsonError,
+    websiteEmbedSnippetResolvedThemeOverrides,
     websiteEmbedSnippetThemeOverrides,
   ])
 

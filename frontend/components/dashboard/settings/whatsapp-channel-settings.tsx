@@ -11,6 +11,8 @@ import {
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 
+const WHATSAPP_CONNECTOR_ID = 'whatsapp'
+
 export function WhatsAppChannelSettings({
   onSaveStateChange,
 }: {
@@ -28,7 +30,8 @@ export function WhatsAppChannelSettings({
     const load = async () => {
       try {
         const list = await connectorsApi.listConnectors()
-        const resolvedChannelId = list[0]?.id ?? null
+        const resolvedChannelId =
+          list.find((connector) => connector.id === WHATSAPP_CONNECTOR_ID)?.id ?? null
         setChannelId(resolvedChannelId)
 
         if (resolvedChannelId) {

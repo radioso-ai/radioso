@@ -36,6 +36,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { type RetrievalSettings, settingsApi } from '@/lib/api'
+import { useWorkspace } from '@/lib/workspace-context'
 
 const metadataRuleCombinatorLabels = {
   and: 'All conditions (AND)',
@@ -101,6 +102,7 @@ export function RetrievalSettingsPanel({
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
   const descriptor = getSettingsTabDescriptor('retrieval')
+  const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [settings, setSettings] = useState<RetrievalSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [lastSavedSettings, setLastSavedSettings] = useState<RetrievalSettings | null>(null)
@@ -116,21 +118,34 @@ export function RetrievalSettingsPanel({
   }, [onSaveStateChange, saveError, saveState])
 
   useEffect(() => {
+    if (isWorkspaceLoading || !activeWorkspaceId) {
+      setIsLoading(true)
+      return
+    }
+
+    let active = true
     const loadSettings = async () => {
       try {
         const data = await settingsApi.getRetrievalSettings()
+        if (!active) return
         setSettings(data)
         setLastSavedSettings(data)
         setSaveState('idle')
       } catch (error) {
+        if (!active) return
         console.error('Failed to load settings:', error)
       } finally {
-        setIsLoading(false)
-        hasLoadedRef.current = true
+        if (active) {
+          setIsLoading(false)
+          hasLoadedRef.current = true
+        }
       }
     }
     void loadSettings()
-  }, [])
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId, isWorkspaceLoading])
 
   const updateSettingsDraft = (updater: (current: RetrievalSettings) => RetrievalSettings) => {
     draftVersionRef.current += 1

@@ -448,6 +448,20 @@ const requireWorkspaceApiToken = async (): Promise<string> => {
   }
 }
 
+const canRetryWithFreshWorkspaceToken = (response: Response): boolean =>
+  response.status === 401 && Boolean(getStoredActiveWorkspaceId())
+
+const refreshWorkspaceApiToken = async (headers: Headers): Promise<boolean> => {
+  const workspaceId = getStoredActiveWorkspaceId()
+  if (!workspaceId) {
+    return false
+  }
+
+  clearStoredWorkspaceToken(workspaceId)
+  headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken()}`)
+  return true
+}
+
 const request = async <T>(
   path: string,
   init: RequestInit = {},
@@ -467,12 +481,17 @@ const request = async <T>(
     headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken()}`);
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const executeFetch = () => fetch(`${API_BASE}${path}`, {
     ...init,
     cache: "no-store",
     headers,
-    credentials: options.withSession ? "include" : init.credentials,
+    credentials: options.withSession ? "include" : options.withApiToken ? "omit" : init.credentials,
   });
+
+  let response = await executeFetch()
+  if (options.withApiToken && canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers)) {
+    response = await executeFetch()
+  }
 
   if (!response.ok) {
     throw await buildError(response);
@@ -506,12 +525,17 @@ const requestLongRunning = async <T>(
     headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken()}`);
   }
 
-  const response = await fetch(path, {
+  const executeFetch = () => fetch(path, {
     ...init,
     cache: "no-store",
     headers,
-    credentials: options.withSession ? "include" : init.credentials,
+    credentials: options.withSession ? "include" : options.withApiToken ? "omit" : init.credentials,
   });
+
+  let response = await executeFetch()
+  if (options.withApiToken && canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers)) {
+    response = await executeFetch()
+  }
 
   if (!response.ok) {
     throw await buildError(response);
@@ -1729,16 +1753,21 @@ export const chatApi = {
     data: ChatRequest,
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
-    const workspaceToken = await requireWorkspaceApiToken()
-    const response = await fetch(STREAMING_API_PATH, {
+    const headers = new Headers({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${await requireWorkspaceApiToken()}`,
+    })
+    const executeFetch = () => fetch(STREAMING_API_PATH, {
       method: "POST",
       cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${workspaceToken}`,
-      },
+      credentials: "omit",
+      headers,
       body: JSON.stringify(data),
     })
+    let response = await executeFetch()
+    if (canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers)) {
+      response = await executeFetch()
+    }
 
     if (!response.ok) {
       throw await buildError(response)

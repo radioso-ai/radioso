@@ -38,7 +38,7 @@ When it finishes successfully, open:
 
 - App: `http://localhost:3000`
 - API: `http://localhost:8080`
-- Embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
+- Embed test harness: available separately at `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
 
 ### Success Looks Like This
 
@@ -138,7 +138,7 @@ A valid provider key is required for both document processing and chat responses
 
 ### Use The MCP Server
 
-If you want Radioso to act as a context layer for MCP-capable clients, use the standalone package in `packages/radioso-mcp-server/`.
+If you want Radioso to act as a context layer for MCP-capable clients, use the standalone package in `packages/radioso-mcp-server/`. Local clients such as Cursor can use a local server directly, while hosted Claude and OpenAI connector flows require a public HTTPS deployment plus compatible auth.
 
 Install and build it from the repo:
 

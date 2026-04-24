@@ -101,6 +101,7 @@ describe('accountApi.getWorkspaceToken', () => {
             role: 'owner',
             workspaceId: 'workspace-1',
             workspaceName: 'Default',
+            workspacePublicRouteKey: 'default-abc123',
           },
         ],
       }),
@@ -133,6 +134,7 @@ describe('accountApi.getWorkspaceToken', () => {
         organizationName: 'Shared Org',
         workspaceId: 'workspace-2',
         workspaceName: 'Shared',
+        workspacePublicRouteKey: 'shared-abc123',
       }),
     })
 
@@ -163,6 +165,7 @@ describe('accountApi.getWorkspaceToken', () => {
         organizationName: 'Third Org',
         workspaceId: 'workspace-3',
         workspaceName: 'Default',
+        workspacePublicRouteKey: 'default-def456',
       }),
     })
 

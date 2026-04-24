@@ -77,6 +77,8 @@ Important: the website embed allowlist must include the exact origin, including 
 
 New accounts must verify their email before the first sign-in completes, except in the default `./run-dev.sh` local setup where `AUTH_SKIP_EMAIL_VERIFICATION=true` is written into `backend/.env` for faster local iteration. Local runs also default to `MAIL_DRIVER=log`, so verification and password reset links are written to backend logs unless you point the app at a real SMTP server.
 
+In practice, authenticated dashboard URLs are now workspace-first. Once you are signed in, the app navigates under `/w/<workspace-public-route-key>/...`. Older `/account/<account-id>/...` dashboard links still work, but they redirect to the canonical workspace URL after the app restores the correct organization and workspace context.
+
 This is the fastest path if you want to click around the product and verify that the full app works.
 
 ### Use The API Or SDK Only
@@ -92,7 +94,7 @@ curl -sS \
   http://localhost:8080/api/v1/auth/register
 ```
 
-That response includes `workspaceId` plus `requiresEmailVerification: true`, but it does not create a session. Verify the email first, then log in to save the session cookie:
+That response includes `workspaceId`, `workspacePublicRouteKey`, and `requiresEmailVerification: true`, but it does not create a session. Verify the email first, then log in to save the session cookie:
 
 ```bash
 curl -sS -c cookies.txt \
@@ -100,6 +102,8 @@ curl -sS -c cookies.txt \
   -d '{"email":"you@example.com","password":"verysecurepassword"}' \
   http://localhost:8080/api/v1/auth/login
 ```
+
+The login response also includes `workspacePublicRouteKey`. The key point is that browser URLs use that public route key, while backend workspace APIs and token reveal flows continue to use the internal `workspaceId`.
 
 Request a password reset email:
 
@@ -125,6 +129,8 @@ If you need to list workspaces first:
 curl -sS -b cookies.txt \
   http://localhost:8080/api/v1/workspace
 ```
+
+Each workspace in that list now includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to build or inspect the canonical dashboard URL.
 
 The token response looks like:
 

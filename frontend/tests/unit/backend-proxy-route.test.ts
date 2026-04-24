@@ -20,6 +20,7 @@ describe('backend proxy route', () => {
           organizationName: 'Acme',
           workspaceId: 'workspace-1',
           workspaceName: 'Default',
+          workspacePublicRouteKey: 'default-abc123',
           requiresEmailVerification: false,
         }),
         {
@@ -77,6 +78,7 @@ describe('backend proxy route', () => {
       organizationName: 'Acme',
       workspaceId: 'workspace-1',
       workspaceName: 'Default',
+      workspacePublicRouteKey: 'default-abc123',
       requiresEmailVerification: false,
     })
   })

@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
-import { buildAccountRoute } from '@/lib/dashboard-routes'
+import { buildDashboardHref } from '@/lib/dashboard-routes'
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (
@@ -65,9 +65,13 @@ export function ResetPasswordScreen({ token }: { token?: string }) {
 
     try {
       const response = await authApi.confirmPasswordReset({ token: token ?? '', password })
-      seedWorkspaceSession(response.workspaceId)
+      seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       await login(response.email, response.userId, response.accountId)
-      router.replace(buildAccountRoute(response.accountId, 'chat', undefined, response.workspaceId))
+      router.replace(buildDashboardHref(response.accountId, {
+        section: 'chat',
+        workspaceId: response.workspaceId,
+        workspacePublicRouteKey: response.workspacePublicRouteKey,
+      }))
     } catch (error) {
       setError(getErrorMessage(error, 'Password reset failed. Please request a new link.'))
     } finally {

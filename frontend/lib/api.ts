@@ -4,6 +4,7 @@ const PUBLIC_CHAT_STREAMING_API_PATH = '/api/public/chat'
 const API_TOKEN_STORAGE_KEY = "radioso.apiToken";
 const WORKSPACE_TOKENS_STORAGE_KEY = "radioso.workspaceTokens";
 const ACTIVE_WORKSPACE_STORAGE_KEY = "radioso.activeWorkspaceId";
+const ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY = "radioso.activeWorkspacePublicRouteKey";
 const WORKSPACE_HEADER = 'X-Workspace-Id'
 const ANONYMOUS_SESSION_HEADER = 'X-Radioso-Anonymous-Session'
 const ANONYMOUS_SESSION_RESET_HEADER = 'X-Radioso-Reset-Anonymous-Session'
@@ -25,16 +26,26 @@ interface StoredEmbedSessionToken {
   expiresAt: string
 }
 
-export const activateWorkspaceToken = (workspaceId: string): boolean => {
+export const activateWorkspaceToken = (workspaceId: string, workspacePublicRouteKey?: string): boolean => {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
+    if (workspacePublicRouteKey) {
+      window.localStorage.setItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY, workspacePublicRouteKey);
+    } else {
+      window.localStorage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
+    }
   }
   return true;
 };
 
-export const seedWorkspaceSession = (workspaceId: string, _token?: string) => {
+export const seedWorkspaceSession = (workspaceId: string, workspacePublicRouteKey?: string, _token?: string) => {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
+    if (workspacePublicRouteKey) {
+      window.localStorage.setItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY, workspacePublicRouteKey);
+    } else {
+      window.localStorage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
+    }
   }
 };
 
@@ -43,17 +54,24 @@ export const getStoredActiveWorkspaceId = (): string | null => {
   return window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
 };
 
+export const getStoredActiveWorkspacePublicRouteKey = (): string | null => {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
+};
+
 export const clearWorkspaceStorage = () => {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(API_TOKEN_STORAGE_KEY);
   window.localStorage.removeItem(WORKSPACE_TOKENS_STORAGE_KEY);
   window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+  window.localStorage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
 };
 
 export const removeWorkspaceToken = (workspaceId: string) => {
   if (typeof window === "undefined") return;
   if (getStoredActiveWorkspaceId() === workspaceId) {
     window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+    window.localStorage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
   }
 };
 
@@ -418,6 +436,7 @@ export interface RegisterResponse {
   organizationName: string
   workspaceId: string
   workspaceName: string
+  workspacePublicRouteKey: string
   requiresEmailVerification: boolean
 }
 
@@ -434,6 +453,7 @@ export interface LoginResponse {
   organizationName: string
   workspaceId: string
   workspaceName: string
+  workspacePublicRouteKey: string
 }
 
 export interface EmailVerificationVerifyRequest {
@@ -1270,6 +1290,7 @@ export interface Workspace {
   id: string
   accountId: string
   name: string
+  publicRouteKey: string
   createdAt: string
   updatedAt: string
 }
@@ -1305,6 +1326,7 @@ export interface AccessibleAccountSummary {
   role: 'owner' | 'member'
   workspaceId: string
   workspaceName: string
+  workspacePublicRouteKey: string
 }
 
 export interface AccessibleAccountsResponse {
@@ -1340,6 +1362,14 @@ export interface PasswordResetConfirmResponse extends LoginResponse {
   email: string
 }
 
+export interface WorkspaceRouteResolutionResponse {
+  workspaceKey: string
+  workspaceId: string
+  workspaceName: string
+  accountId: string
+  organizationName: string
+}
+
 // Workspace API
 export const workspaceApi = {
   async list(): Promise<Workspace[]> {
@@ -1366,6 +1396,12 @@ export const workspaceApi = {
   async delete(workspaceId: string): Promise<void> {
     await request<void>(`/workspace/${workspaceId}`, {
       method: "DELETE",
+    }, { withSession: true })
+  },
+
+  async resolve(workspaceKey: string): Promise<WorkspaceRouteResolutionResponse> {
+    return request<WorkspaceRouteResolutionResponse>(`/workspace/resolve/${encodeURIComponent(workspaceKey)}`, {
+      method: "GET",
     }, { withSession: true })
   },
 }

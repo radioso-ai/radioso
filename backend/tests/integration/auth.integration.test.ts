@@ -66,6 +66,7 @@ describe("auth integration", () => {
     expect(response.body.accountId).toBeDefined();
     expect(response.body.organizationName).toBe("Bootstrap Organization");
     expect(response.body.workspaceName).toBe("Default");
+    expect(response.body.workspacePublicRouteKey).toMatch(/^default-[a-z0-9]{6}$/);
     expect(response.body.workspaceId).toBeDefined();
     expect(response.body.token).toBeUndefined();
     expect(response.body.requiresEmailVerification).toBe(true);
@@ -319,6 +320,7 @@ describe("auth integration", () => {
     expect(response.body.organizationName).toBe("Multi Workspace Organization");
     expect(response.body.workspaceId).toBe(created.body.id);
     expect(response.body.workspaceName).toBe("Research");
+    expect(response.body.workspacePublicRouteKey).toMatch(/^research-[a-z0-9]{6}$/);
     expect(response.body.token).toBeUndefined();
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
@@ -373,6 +375,7 @@ describe("auth integration", () => {
     expect(response.body.accountId).not.toBe(registration.accountId);
     expect(response.body.organizationName).toBe("Second Organization");
     expect(response.body.workspaceName).toBe("Default");
+    expect(response.body.workspacePublicRouteKey).toMatch(/^default-[a-z0-9]{6}$/);
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
 

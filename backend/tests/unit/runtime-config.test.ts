@@ -115,14 +115,33 @@ describe("runtime configuration", () => {
     expect(env.SENTRY_DSN).toBe("https://public@example.ingest.sentry.io/123456");
   });
 
-  it("pins production observability identity for the Cloud Run API and worker services", async () => {
+  it("pins environment-aware observability identity and cloud runtime URLs for the Cloud Run API and worker services", async () => {
     const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
+    const githubActionsTf = await readFile(new URL("../../../infra/terraform/github_actions.tf", import.meta.url), "utf8");
+    const terraformMain = await readFile(new URL("../../../infra/terraform/main.tf", import.meta.url), "utf8");
+    const stagingEnv = await readFile(new URL("../../../infra/terraform/environments/staging/main.tf", import.meta.url), "utf8");
+    const liveEnv = await readFile(new URL("../../../infra/terraform/environments/live/main.tf", import.meta.url), "utf8");
 
     expect(computeTf).toContain('name  = "OBSERVABILITY_ENVIRONMENT"');
-    expect(computeTf).toContain('value = "production"');
+    expect(computeTf).toContain('value = var.environment');
     expect(computeTf).toContain('name  = "OBSERVABILITY_SERVICE_NAME"');
     expect(computeTf).toContain('value = "radioso-api"');
     expect(computeTf).toContain('value = "radioso-worker"');
+    expect(computeTf).toContain('name  = "APP_BASE_URL"');
+    expect(computeTf).toContain('name  = "PUBLIC_CHAT_BASE_URL"');
+    expect(computeTf).toContain('name  = "WORKER_TASKS_SERVICE_URL"');
+    expect(computeTf).toContain('name  = "MAIL_DRIVER"');
+    expect(computeTf).toContain('name  = "AUTH_SKIP_EMAIL_VERIFICATION"');
+    expect(computeTf).toContain('ignore_changes = [');
+    expect(computeTf).toContain('client_version,');
+    expect(computeTf).toContain('template[0].containers[0].image,');
+    expect(githubActionsTf).toContain('roles/run.admin');
+    expect(githubActionsTf).toContain('roles/artifactregistry.writer');
+    expect(githubActionsTf).toContain('https://token.actions.githubusercontent.com');
+    expect(terraformMain).toContain('worker_tasks_service_url = coalesce(var.worker_tasks_service_url_override, "https://example.invalid")');
+    expect(terraformMain).toContain('resource_name_prefix         = "${local.service_name}-${var.environment}"');
+    expect(stagingEnv).toMatch(/environment\s+= "staging"/);
+    expect(liveEnv).toMatch(/environment\s+= "live"/);
   });
 
   it("defaults worker entrypoints to the worker observability service name", async () => {

@@ -1,6 +1,6 @@
 resource "google_service_account" "worker_task_invoker" {
-  account_id   = "${local.service_name}-worker-task"
-  display_name = "Radioso Worker Task Invoker"
+  account_id   = "${local.resource_name_prefix}-worker-task"
+  display_name = "Radioso ${var.environment} worker task invoker"
 }
 
 resource "google_cloud_tasks_queue" "document_processing" {

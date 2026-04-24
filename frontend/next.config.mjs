@@ -18,15 +18,6 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  async rewrites() {
-    const backendUrl = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8080"
-    return [
-      {
-        source: "/backend/:path*",
-        destination: `${backendUrl}/:path*`,
-      },
-    ]
-  },
   webpack(config) {
     config.module.rules.push({
       test: /\.md$/i,

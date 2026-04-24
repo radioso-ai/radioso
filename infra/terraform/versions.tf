@@ -15,8 +15,4 @@ terraform {
       version = "~> 3.0"
     }
   }
-
-  backend "gcs" {
-    # Configured via: terraform init -backend-config="bucket=YOUR_STATE_BUCKET"
-  }
 }

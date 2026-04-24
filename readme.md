@@ -585,6 +585,98 @@ DOCUMENT_PROCESSING_JOB_LEASE_MS=300000
 
 Backend-serving and worker-serving capacity are configured independently in Terraform via `backend_min_instances` / `backend_max_instances` and `worker_min_instances` / `worker_max_instances`. Keep `worker_min_instances >= 1`; the worker service relies on one always-on instance so the durable queue can recover enqueue or retry dispatch failures.
 
+### GCP Staging And Live
+
+The Terraform module now lives at `infra/terraform/`, with environment wrappers at:
+
+- `infra/terraform/environments/staging`
+- `infra/terraform/environments/live`
+
+Those wrappers target GCP projects `radioso-staging` and `radioso-494120` (display name `radioso`).
+
+Bootstrap the remote state bucket once per project:
+
+```bash
+cd infra/terraform/bootstrap
+terraform init
+terraform apply -var='project_id=radioso-staging' -var='state_bucket_name=radioso-staging-terraform-state'
+terraform apply -var='project_id=radioso-494120' -var='state_bucket_name=radioso-494120-terraform-state'
+```
+
+Then initialize and plan an environment:
+
+```bash
+cd infra/terraform/environments/staging
+terraform init -reconfigure -backend-config=backend.hcl
+terraform plan -var-file=terraform.tfvars
+```
+
+```bash
+cd infra/terraform/environments/live
+terraform init -reconfigure -backend-config=backend.hcl
+terraform plan -var-file=terraform.tfvars
+```
+
+In CI, prefer `TF_VAR_*` environment variables for secrets instead of committed tfvars files. The wrapper directories are designed so the same `terraform init`, `plan`, and `apply` commands can later be reused in GitHub Actions without restructuring the module.
+
+### GitHub Actions Deploys
+
+The repo now includes GitHub Actions workflows for app deploys and Terraform operations:
+
+- `.github/workflows/deploy-staging.yml`
+- `.github/workflows/deploy-live.yml`
+- `.github/workflows/terraform.yml`
+
+In practice, code deploys and infrastructure deploys are now separate:
+
+- App deploys build backend and frontend images, push them to Artifact Registry, and update the existing Cloud Run services.
+- Terraform still owns Cloud Run configuration, networking, secrets, buckets, queues, and database resources.
+- Terraform ignores Cloud Run container image changes so a later `terraform apply` does not roll back a code deploy.
+
+The Terraform module now creates a GitHub Actions deployer service account plus a Workload Identity Federation provider in each project. After `terraform apply`, capture these outputs from the wrapper directory:
+
+- `github_actions_workload_identity_provider`
+- `github_actions_service_account_email`
+- `artifact_registry_repository_id`
+- `backend_service_name`
+- `frontend_service_name`
+- `worker_service_name`
+
+Create two GitHub environments named `staging` and `live`. Set these environment variables in each one:
+
+- `GCP_PROJECT_ID`
+- `GCP_REGION`
+- `ARTIFACT_REGISTRY_REGION`
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`
+- `GCP_DEPLOY_SERVICE_ACCOUNT`
+
+The checked-in app deploy workflows assume the current service and repository names:
+
+- staging: `radioso-staging` repository, `radioso-staging-backend`, `radioso-staging-frontend`, `radioso-staging-worker`
+- live: `radioso-live` repository, `radioso-live-backend`, `radioso-live-frontend`, `radioso-live-worker`
+
+Set these GitHub environment secrets for the Terraform workflow:
+
+- `OPENAI_API_KEY`
+- `SESSION_COOKIE_SECRET`
+- `WORKSPACE_TOKEN_SECRET`
+- `WEBSITE_EMBED_SECRET`
+- `CONNECTOR_ENCRYPTION_KEY`
+
+Optional Terraform-only GitHub environment secrets:
+
+- `METRICS_AUTH_TOKEN`
+- `MAIL_SMTP_USERNAME`
+- `MAIL_SMTP_PASSWORD`
+
+`deploy-staging.yml` runs automatically on pushes to `main` when app files change, and can also be triggered manually. `deploy-live.yml` is manual-only and is intended to be protected by GitHub environment approvals on the `live` environment. `terraform.yml` is manual and reuses the current deployed image URLs so infra applies can run without reintroducing Terraform-managed image tags.
+
+The key point is cost: Cloud Run can scale the frontend and backend to zero, but Cloud SQL cannot auto-scale to zero. Staging keeps costs down by using the smallest practical database tier plus `backend_min_instances = 0` and `frontend_min_instances = 0`. If staging is idle for long periods, stop the Cloud SQL instance manually to reduce compute cost further.
+
+Cloud email delivery is not configured yet. Both cloud environments keep `MAIL_DRIVER=log`, so verification and password reset delivery stay deferred until a later SMTP setup. Staging sets `AUTH_SKIP_EMAIL_VERIFICATION=true` so it is usable before SMTP exists; live keeps email verification enabled, which means fresh signup and password reset flows are not production-ready until SMTP is configured. The Terraform wrappers already expose the mail inputs for that future step.
+
+`APP_BASE_URL`, `PUBLIC_CHAT_BASE_URL`, and `WORKER_TASKS_SERVICE_URL` can be overridden from Terraform. In practice, after the first deploy reveals the frontend and worker `run.app` URLs, set `app_base_url_override`, `public_chat_base_url_override`, and `worker_tasks_service_url_override` on a second apply. Terraform cannot derive those URLs inside the first service apply without creating dependency cycles or self-references, so the wrapper keeps placeholder URLs until that second pass runs.
+
 If you already know what you need, you can pre-populate `backend/.env` before running the stack.
 
 The bootstrap expects ports `3000`, `5432`, and `8080` to be free unless they are already used by this Radioso stack.

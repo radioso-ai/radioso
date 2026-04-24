@@ -1,8 +1,8 @@
 resource "google_artifact_registry_repository" "radioso" {
   location      = var.region
-  repository_id = local.service_name
+  repository_id = local.resource_name_prefix
   format        = "DOCKER"
-  description   = "Container images for Hivec frontend and backend"
+  description   = "Container images for Radioso ${var.environment}"
 
   cleanup_policies {
     id     = "keep-recent"

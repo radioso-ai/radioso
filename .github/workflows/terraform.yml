@@ -1,0 +1,129 @@
+name: Terraform
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Terraform action to run.
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+      environment:
+        description: Deployment environment to target.
+        required: true
+        type: choice
+        options:
+          - staging
+          - live
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.action }} (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: terraform-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      TF_IN_AUTOMATION: true
+      TF_VAR_connector_encryption_key: ${{ secrets.CONNECTOR_ENCRYPTION_KEY }}
+      TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      TF_VAR_region: ${{ vars.GCP_REGION }}
+      TF_VAR_session_cookie_secret: ${{ secrets.SESSION_COOKIE_SECRET }}
+      TF_VAR_website_embed_secret: ${{ secrets.WEBSITE_EMBED_SECRET }}
+      TF_VAR_workspace_token_secret: ${{ secrets.WORKSPACE_TOKEN_SECRET }}
+
+    steps:
+      - name: Require configured GitHub environment variables
+        run: |
+          for key in \
+            GCP_DEPLOY_SERVICE_ACCOUNT \
+            GCP_PROJECT_ID \
+            GCP_REGION \
+            GCP_WORKLOAD_IDENTITY_PROVIDER \
+            TF_VAR_connector_encryption_key \
+            TF_VAR_openai_api_key \
+            TF_VAR_session_cookie_secret \
+            TF_VAR_website_embed_secret \
+            TF_VAR_workspace_token_secret
+          do
+            if [ -z "${!key}" ]; then
+              echo "Missing required GitHub environment value: $key" >&2
+              exit 1
+            fi
+          done
+
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Export optional Terraform secrets
+        env:
+          MAIL_SMTP_PASSWORD: ${{ secrets.MAIL_SMTP_PASSWORD }}
+          MAIL_SMTP_USERNAME: ${{ secrets.MAIL_SMTP_USERNAME }}
+          METRICS_AUTH_TOKEN: ${{ secrets.METRICS_AUTH_TOKEN }}
+        run: |
+          if [ -n "${METRICS_AUTH_TOKEN}" ]; then
+            echo "TF_VAR_metrics_auth_token=${METRICS_AUTH_TOKEN}" >> "$GITHUB_ENV"
+          fi
+
+          if [ -n "${MAIL_SMTP_USERNAME}" ]; then
+            echo "TF_VAR_mail_smtp_username=${MAIL_SMTP_USERNAME}" >> "$GITHUB_ENV"
+          fi
+
+          if [ -n "${MAIL_SMTP_PASSWORD}" ]; then
+            echo "TF_VAR_mail_smtp_password=${MAIL_SMTP_PASSWORD}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Capture current deployment values
+        env:
+          ENVIRONMENT_NAME: ${{ inputs.environment }}
+        run: |
+          SERVICE_PREFIX="radioso-${ENVIRONMENT_NAME}"
+
+          BACKEND_IMAGE="$(gcloud run services describe "${SERVICE_PREFIX}-backend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(spec.template.spec.containers[0].image)')"
+          FRONTEND_IMAGE="$(gcloud run services describe "${SERVICE_PREFIX}-frontend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(spec.template.spec.containers[0].image)')"
+          FRONTEND_URL="$(gcloud run services describe "${SERVICE_PREFIX}-frontend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
+          WORKER_URL="$(gcloud run services describe "${SERVICE_PREFIX}-worker" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
+
+          echo "TF_VAR_backend_image=${BACKEND_IMAGE}" >> "$GITHUB_ENV"
+          echo "TF_VAR_frontend_image=${FRONTEND_IMAGE}" >> "$GITHUB_ENV"
+          echo "TF_VAR_app_base_url_override=${FRONTEND_URL}" >> "$GITHUB_ENV"
+          echo "TF_VAR_public_chat_base_url_override=${FRONTEND_URL}/chat" >> "$GITHUB_ENV"
+          echo "TF_VAR_worker_tasks_service_url_override=${WORKER_URL}" >> "$GITHUB_ENV"
+
+      - name: Terraform init
+        run: terraform -chdir="infra/terraform/environments/${{ inputs.environment }}" init -reconfigure -backend-config=backend.hcl
+
+      - name: Terraform fmt
+        run: terraform -chdir="infra/terraform" fmt -check -recursive
+
+      - name: Terraform validate
+        run: terraform -chdir="infra/terraform/environments/${{ inputs.environment }}" validate
+
+      - name: Terraform plan
+        run: terraform -chdir="infra/terraform/environments/${{ inputs.environment }}" plan -input=false -out=tfplan
+
+      - name: Terraform apply
+        if: ${{ inputs.action == 'apply' }}
+        run: terraform -chdir="infra/terraform/environments/${{ inputs.environment }}" apply -input=false -auto-approve tfplan

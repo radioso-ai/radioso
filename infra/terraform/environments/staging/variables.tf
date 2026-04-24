@@ -116,13 +116,13 @@ variable "metrics_auth_token" {
 variable "openai_chat_model" {
   description = "OpenAI chat model name."
   type        = string
-  default     = "gpt-5-mini"
+  default     = "gpt-5.4-mini"
 }
 
 variable "openai_rerank_model" {
   description = "OpenAI rerank model name."
   type        = string
-  default     = "gpt-4.1-mini"
+  default     = "gpt-5.4-nano"
 }
 
 variable "openai_vector_model" {

@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Building2, Code2, ExternalLink, FolderOpen, Globe, KeyRound, MessageSquare, RefreshCw, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
 
+import { ConnectorsTab } from '@/components/dashboard/connectors/connectors-tab'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { Button } from '@/components/ui/button'
@@ -25,7 +25,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { type DashboardRouteState } from '@/lib/dashboard-routes'
-import { accountApi, generalSettingsApi, type GeneralSettings } from '@/lib/api'
+import { accountApi, generalSettingsApi, settingsApi, type GeneralSettings, type RetrievalSettings } from '@/lib/api'
 import {
   APP_WEBSITE_EMBED_DEMO_PATH,
   DEFAULT_WEBSITE_EMBED_THEME,
@@ -69,17 +69,36 @@ const updateWebsiteEmbedJsonOverrideValue = (currentValue: string, key: string, 
   return stringifyWebsiteEmbedJsonOverrideRecord(nextOverrides)
 }
 
+const assistantConversationModeLabels: Record<
+  RetrievalSettings['conversationMode'],
+  { label: string; description: string }
+> = {
+  factual: {
+    label: 'Factual',
+    description: 'Answer the current question directly and stop unless clarification is required.',
+  },
+  guided: {
+    label: 'Guided',
+    description: 'Answer directly, then suggest one or two grounded nearby directions when useful.',
+  },
+  exploratory: {
+    label: 'Exploratory',
+    description: 'Answer directly, then surface more of what the workspace covers and invite grounded follow-up.',
+  },
+}
+
 export function GeneralTab({
   accountId,
   routeState,
+  mode,
   onSaveStateChange,
 }: {
   accountId: string
   routeState: DashboardRouteState
+  mode: 'workspace' | 'assistant' | 'channels'
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
-  const router = useRouter()
-  const descriptor = getSettingsTabDescriptor('general')
+  const descriptor = getSettingsTabDescriptor(mode)
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace } = useWorkspace()
   const [workspaceName, setWorkspaceName] = useState(activeWorkspace?.name ?? '')
   const [organizationName, setOrganizationName] = useState('')
@@ -97,6 +116,9 @@ export function GeneralTab({
   const [savedAnonSettings, setSavedAnonSettings] = useState<GeneralSettings | null>(null)
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
+  const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<RetrievalSettings | null>(null)
+  const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<RetrievalSettings | null>(null)
+  const [isAssistantBehaviorLoading, setIsAssistantBehaviorLoading] = useState(mode === 'assistant')
   const [saveState, setSaveState] = useState<'idle' | 'saved' | 'saving' | 'error'>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [websiteEmbedOrigins, setWebsiteEmbedOrigins] = useState('')
@@ -173,6 +195,40 @@ export function GeneralTab({
     }
     void loadAnonSettings()
   }, [activeWorkspaceId])
+
+  useEffect(() => {
+    if (mode !== 'assistant') {
+      setAssistantBehaviorSettings(null)
+      setSavedAssistantBehaviorSettings(null)
+      setIsAssistantBehaviorLoading(false)
+      return
+    }
+
+    let active = true
+    setIsAssistantBehaviorLoading(true)
+    const loadAssistantBehaviorSettings = async () => {
+      try {
+        const data = await settingsApi.getRetrievalSettings()
+        if (!active) return
+        setAssistantBehaviorSettings(data)
+        setSavedAssistantBehaviorSettings(data)
+        setAssistantSettingsError(null)
+      } catch (error) {
+        if (!active) return
+        console.error('Failed to load assistant behavior settings:', error)
+        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to load assistant settings.'))
+      } finally {
+        if (active) {
+          setIsAssistantBehaviorLoading(false)
+        }
+      }
+    }
+
+    void loadAssistantBehaviorSettings()
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId, mode])
 
   const handleAnonToggle = async (enabled: boolean) => {
     setIsAnonSaving(true)
@@ -251,9 +307,16 @@ export function GeneralTab({
       ? (
           anonSettings.assistantName !== savedAnonSettings.assistantName ||
           anonSettings.assistantRole !== savedAnonSettings.assistantRole ||
-          anonSettings.greetingInstruction !== savedAnonSettings.greetingInstruction ||
           anonSettings.assistantDefaultLocale !== savedAnonSettings.assistantDefaultLocale ||
           anonSettings.proactiveGreetingEnabled !== savedAnonSettings.proactiveGreetingEnabled
+        )
+      : false
+
+  const hasAssistantBehaviorChanges =
+    assistantBehaviorSettings && savedAssistantBehaviorSettings
+      ? (
+          assistantBehaviorSettings.conversationMode !== savedAssistantBehaviorSettings.conversationMode ||
+          assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction
         )
       : false
 
@@ -316,7 +379,7 @@ export function GeneralTab({
   )
 
   const websiteEmbedSnippetResolvedCopyOverrides = useMemo(() => {
-    const fallbackEmbeddedChatTitle = activeWorkspace?.name?.trim()
+    const fallbackEmbeddedChatTitle = anonSettings?.assistantName?.trim() || activeWorkspace?.name?.trim()
     if (!fallbackEmbeddedChatTitle || websiteEmbedSnippetCopyOverrides.embeddedChatTitle) {
       return websiteEmbedSnippetCopyOverrides
     }
@@ -325,7 +388,7 @@ export function GeneralTab({
       ...websiteEmbedSnippetCopyOverrides,
       embeddedChatTitle: fallbackEmbeddedChatTitle,
     }
-  }, [activeWorkspace?.name, websiteEmbedSnippetCopyOverrides])
+  }, [activeWorkspace?.name, anonSettings?.assistantName, websiteEmbedSnippetCopyOverrides])
 
   const websiteEmbedSnippetThemeOverrides = useMemo(
     () => sanitizeWebsiteEmbedThemeOverrides(websiteEmbedSnippetParsedThemeJson),
@@ -544,7 +607,6 @@ export function GeneralTab({
         const updated = await generalSettingsApi.updateGeneralSettings({
           assistantName: anonSettings.assistantName,
           assistantRole: anonSettings.assistantRole,
-          greetingInstruction: anonSettings.greetingInstruction,
           assistantDefaultLocale: anonSettings.assistantDefaultLocale,
           proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
         })
@@ -556,8 +618,8 @@ export function GeneralTab({
         setSaveState('saved')
       } catch (error) {
         if (saveSequenceRef.current !== saveId) return
-        console.error('Failed to update assistant bootstrap settings:', error)
-        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant bootstrap settings.'))
+        console.error('Failed to update assistant settings:', error)
+        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant settings.'))
         setSaveState('error')
         setSaveError('Failed to save changes')
       } finally {
@@ -605,6 +667,35 @@ export function GeneralTab({
     }, 700)
     return () => window.clearTimeout(timeout)
   }, [anonSettings, hasWebsiteEmbedChanges, savedAnonSettings, websiteEmbedOrigins])
+
+  useEffect(() => {
+    if (!assistantBehaviorSettings || !savedAssistantBehaviorSettings || !hasAssistantBehaviorChanges) {
+      return
+    }
+
+    const timeout = window.setTimeout(async () => {
+      const saveId = saveSequenceRef.current + 1
+      saveSequenceRef.current = saveId
+      setSaveState('saving')
+      setSaveError(null)
+      try {
+        const updated = await settingsApi.updateRetrievalSettings(assistantBehaviorSettings)
+        if (saveSequenceRef.current !== saveId) return
+        setAssistantBehaviorSettings(updated)
+        setSavedAssistantBehaviorSettings(updated)
+        setAssistantSettingsError(null)
+        setSaveState('saved')
+      } catch (error) {
+        if (saveSequenceRef.current !== saveId) return
+        console.error('Failed to update assistant behavior settings:', error)
+        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant settings.'))
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+      }
+    }, 700)
+
+    return () => window.clearTimeout(timeout)
+  }, [assistantBehaviorSettings, hasAssistantBehaviorChanges, savedAssistantBehaviorSettings])
 
   const handleOpenWebsiteEmbedDemo = async () => {
     if (!anonSettings?.websiteEmbedEnabled || !websiteEmbedDemoUrl || typeof window === 'undefined') {
@@ -703,21 +794,14 @@ export function GeneralTab({
   }
 
   return (
-    <SettingsTabShell
-      accountId={accountId}
-      routeState={routeState}
-      descriptor={descriptor}
-      onNavigate={(href) => router.push(href)}
-    >
-      <div className="mx-auto max-w-4xl space-y-8">
-        <section id="workspace-access" className="space-y-6 scroll-mt-24">
-          <div className="space-y-2">
-            <h2 className="text-xl font-semibold text-foreground">Workspace and access</h2>
-            <p className="text-sm text-muted-foreground">
-              Core operator controls for naming, admin API access, and workspace lifecycle.
-            </p>
-          </div>
+    <SettingsTabShell>
+      <div className="space-y-8">
+        <section className="space-y-1 px-1">
+          <p className="text-sm text-muted-foreground">{descriptor.summary}</p>
+        </section>
 
+        {mode === 'workspace' ? (
+        <section id="workspace-access" className="space-y-6 scroll-mt-24">
             {isOrganizationLoading ? (
               <div className="flex items-center justify-center py-4">
                 <Spinner className="w-5 h-5" />
@@ -730,9 +814,9 @@ export function GeneralTab({
                   </div>
                   <div className="min-w-0 flex-1 space-y-3">
                     <div>
-                      <p className="text-sm font-medium text-foreground">Organization Name</p>
+                      <p className="text-sm font-medium text-foreground">Organization name</p>
                       <p className="text-sm text-muted-foreground">
-                        Update the label shown in the organization picker and invite flows.
+                        Label shown in the organization picker and invite flows.
                       </p>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row">
@@ -760,7 +844,7 @@ export function GeneralTab({
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground">Workspace name</p>
                   <p className="text-sm text-muted-foreground">
-                    Rename the active workspace without changing any of its data or settings.
+                    Internal workspace label used in the dashboard, workspace switcher, and admin tools.
                   </p>
                 </div>
               </div>
@@ -841,14 +925,15 @@ export function GeneralTab({
               </details>
 
         </section>
+        ) : null}
 
+          {mode === 'assistant' ? (
           <section id="assistant-identity" className="space-y-6 scroll-mt-24">
-            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Assistant Identity</h2>
-            {isAnonLoading ? (
+            {isAnonLoading || isAssistantBehaviorLoading ? (
               <div className="flex items-center justify-center py-4">
                 <Spinner className="w-5 h-5" />
               </div>
-            ) : anonSettings ? (
+            ) : anonSettings && assistantBehaviorSettings ? (
               <div className="rounded-lg border border-border bg-card p-4 space-y-4">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex min-w-0 items-start gap-3">
@@ -856,9 +941,9 @@ export function GeneralTab({
                       <Sparkles className="h-5 w-5 text-primary" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-base font-medium text-foreground">Assistant bootstrap</p>
+                      <p className="text-base font-medium text-foreground">Assistant behavior</p>
                       <p className="text-sm text-muted-foreground mt-0.5">
-                        Define the assistant&apos;s stable identity here. The active chat language can still be overridden per session, for example by an embedded website popup.
+                        Public identity, answer behavior, and first-message defaults.
                       </p>
                     </div>
                   </div>
@@ -877,9 +962,12 @@ export function GeneralTab({
                       onChange={(event) => handleAssistantSettingChange('assistantName', event.target.value)}
                       placeholder="e.g. Marta"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Visible chat title in Public Chat and Website Embed. Falls back to the workspace name when left blank.
+                    </p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="assistantDefaultLocale" className="text-foreground">Default locale fallback</Label>
+                    <Label htmlFor="assistantDefaultLocale" className="text-foreground">First-message locale fallback</Label>
                     <Input
                       id="assistantDefaultLocale"
                       value={anonSettings.assistantDefaultLocale ?? ''}
@@ -892,39 +980,78 @@ export function GeneralTab({
                       }
                       placeholder="e.g. it-IT"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Used when the first greeting needs a language and the channel does not provide one.
+                    </p>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="assistantRole" className="text-foreground">Assistant role</Label>
+                  <Label htmlFor="assistantRole" className="text-foreground">What this assistant helps with</Label>
                   <Input
                     id="assistantRole"
                     value={anonSettings.assistantRole}
                     maxLength={200}
                     onChange={(event) => handleAssistantSettingChange('assistantRole', event.target.value)}
-                    placeholder="e.g. Museum guide"
+                    placeholder="e.g. Guidance on meditation, philosophy, and self-inquiry"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Public description of the assistant’s scope. Used in identity answers and the first greeting.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="greetingInstruction" className="text-foreground">Greeting style</Label>
-                  <Input
-                    id="greetingInstruction"
-                    value={anonSettings.greetingInstruction}
-                    maxLength={200}
-                    onChange={(event) => handleAssistantSettingChange('greetingInstruction', event.target.value)}
-                    placeholder="e.g. Warm and concise"
+                  <Label htmlFor="assistantAnswerInstruction" className="text-foreground">Answer instruction</Label>
+                  <Textarea
+                    id="assistantAnswerInstruction"
+                    value={assistantBehaviorSettings.customInstruction}
+                    onChange={(event) =>
+                      setAssistantBehaviorSettings({
+                        ...assistantBehaviorSettings,
+                        customInstruction: event.target.value.slice(0, 2000),
+                      })
+                    }
+                    placeholder="e.g. Keep answers concise, practical, and concrete."
+                    rows={4}
                   />
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Additional answer guidance applied to grounded responses.</span>
+                    <span>{assistantBehaviorSettings.customInstruction.length} / 2000</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="assistantConversationMode" className="text-foreground">Conversation mode</Label>
+                  <select
+                    id="assistantConversationMode"
+                    value={assistantBehaviorSettings.conversationMode}
+                    onChange={(event) =>
+                      setAssistantBehaviorSettings({
+                        ...assistantBehaviorSettings,
+                        conversationMode: event.target.value as RetrievalSettings['conversationMode'],
+                      })
+                    }
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                  >
+                    {Object.entries(assistantConversationModeLabels).map(([value, meta]) => (
+                      <option key={value} value={value}>
+                        {meta.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-sm text-muted-foreground">
+                    {assistantConversationModeLabels[assistantBehaviorSettings.conversationMode].description}
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-4 rounded bg-muted/50 p-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <Label htmlFor="proactiveGreetingEnabled" className="text-foreground">Proactive first greeting</Label>
                     <p className="text-sm text-muted-foreground mt-0.5">
-                      When enabled, a brand-new chat can begin with an assistant-first greeting. Leave the identity fields blank if you prefer silent startup.
+                      Whether a brand-new chat begins with an assistant-first greeting.
                     </p>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Status: {anonSettings.assistantBootstrapActive ? 'active' : 'inactive until enough identity is configured'}
+                      Status: {anonSettings.assistantBootstrapActive ? 'active' : 'inactive until name or purpose is configured'}
                     </p>
                   </div>
                   <Switch
@@ -936,12 +1063,13 @@ export function GeneralTab({
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">Failed to load assistant bootstrap settings.</p>
+              <p className="text-sm text-muted-foreground">Failed to load assistant settings.</p>
             )}
           </section>
+          ) : null}
 
+          {mode === 'channels' ? (
           <section id="anonymous-chat" className="space-y-6 scroll-mt-24">
-            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Anonymous Chat Access</h2>
             {isAnonLoading ? (
               <div className="flex items-center justify-center py-4">
                 <Spinner className="w-5 h-5" />
@@ -958,7 +1086,7 @@ export function GeneralTab({
                         Anonymous Chat
                       </Label>
                       <p className="text-sm text-muted-foreground mt-0.5">
-                        Allow unauthenticated users to chat via a public link.
+                        Public link access for unauthenticated visitors.
                       </p>
                     </div>
                   </div>
@@ -989,7 +1117,7 @@ export function GeneralTab({
                         </Button>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        Share this link with anyone you want to give chat access to.
+                        Anyone with this link can open the assistant.
                       </p>
                       <div className="flex justify-end">
                         <Button variant="outline" onClick={handleAnonymousChatTokenRotate} disabled={isAnonSaving}>
@@ -1027,9 +1155,10 @@ export function GeneralTab({
               <p className="text-sm text-muted-foreground">Failed to load anonymous chat settings.</p>
             )}
           </section>
+          ) : null}
 
+          {mode === 'channels' ? (
           <section id="website-embed" className="space-y-6 scroll-mt-24">
-            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Website Embed</h2>
             {isAnonLoading ? (
               <div className="flex items-center justify-center py-4">
                 <Spinner className="w-5 h-5" />
@@ -1046,7 +1175,7 @@ export function GeneralTab({
                         Hosted website widget
                       </Label>
                       <p className="text-sm text-muted-foreground mt-0.5">
-                        Install a Radioso-owned launcher script that opens a hosted iframe assistant on approved sites.
+                        Radioso-hosted launcher script and iframe chat for approved sites.
                       </p>
                     </div>
                   </div>
@@ -1112,7 +1241,7 @@ export function GeneralTab({
                     className="min-h-[132px]"
                   />
                   <p className="text-sm text-muted-foreground">
-                    Enter one website origin per line. Only these sites can launch the embedded assistant.
+                    Approved site origins for the embedded assistant, one per line.
                   </p>
                 </div>
 
@@ -1455,7 +1584,17 @@ export function GeneralTab({
               <p className="text-sm text-muted-foreground">Failed to load website embed settings.</p>
             )}
           </section>
+          ) : null}
 
+          {mode === 'channels' ? (
+          <section id="connectors" className="space-y-6 scroll-mt-24">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <ConnectorsTab accountId={accountId} routeState={routeState} />
+            </div>
+          </section>
+          ) : null}
+
+          {mode === 'workspace' ? (
           <section className="space-y-4 rounded-md border border-destructive/50 p-4">
             <h2 className="text-sm font-medium text-destructive uppercase tracking-wide">Danger Zone</h2>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -1535,6 +1674,7 @@ export function GeneralTab({
               </p>
             ) : null}
           </section>
+          ) : null}
 
       </div>
     </SettingsTabShell>

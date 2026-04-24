@@ -82,7 +82,7 @@ export const validateAssistantBootstrapSettings = (
 });
 
 export const isAssistantBootstrapConfigured = (input: AssistantBootstrapSettingsRecord): boolean =>
-  input.assistantName.length > 0 || input.assistantRole.length > 0 || input.greetingInstruction.length > 0;
+  input.assistantName.length > 0 || input.assistantRole.length > 0;
 
 export const isAssistantBootstrapActive = (input: AssistantBootstrapSettingsRecord): boolean =>
   input.proactiveGreetingEnabled && isAssistantBootstrapConfigured(input);
@@ -97,3 +97,23 @@ export const toAssistantIdentityPromptInput = (
         greetingInstruction: input.greetingInstruction,
       }
     : null;
+
+export const resolveAssistantDisplayName = (input: {
+  assistantName: string;
+  workspaceName: string;
+}): string => {
+  const assistantName = input.assistantName.trim();
+  if (assistantName.length > 0) {
+    return assistantName;
+  }
+
+  return input.workspaceName.trim();
+};
+
+export const buildPublicAssistantIdentityLines = (
+  input: Pick<AssistantIdentityPromptInput, "assistantName" | "assistantRole">,
+): string[] =>
+  [
+    input.assistantName ? `Assistant name: ${input.assistantName}` : null,
+    input.assistantRole ? `What this assistant helps with: ${input.assistantRole}` : null,
+  ].filter((line): line is string => line !== null);

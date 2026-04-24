@@ -98,7 +98,7 @@ export function ConnectorsTab({
   }, [loadConnectors, loadDetail, routeState.connectorId])
 
   useEffect(() => {
-    if (routeState.settingsTab !== 'connectors') {
+    if (routeState.settingsTab !== 'channels') {
       return
     }
 
@@ -113,7 +113,7 @@ export function ConnectorsTab({
     router.replace(buildDashboardHref(accountId, {
       ...routeState,
       section: 'settings',
-      settingsTab: 'connectors',
+      settingsTab: 'channels',
       connectorId: selectedConnectorId,
     }))
   }, [accountId, connectors.length, routeState, router, selectedConnectorId])
@@ -127,7 +127,7 @@ export function ConnectorsTab({
       router.push(buildDashboardHref(accountId, {
         ...routeState,
         section: 'settings',
-        settingsTab: 'connectors',
+        settingsTab: 'channels',
         connectorId,
       }))
     } catch (error) {

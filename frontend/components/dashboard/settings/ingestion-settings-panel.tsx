@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { RefreshCw, Search, Settings2, SlidersHorizontal } from 'lucide-react'
 
 import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
@@ -22,19 +21,13 @@ import {
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
-import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { type IngestionSettings, settingsApi } from '@/lib/api'
 
 export function IngestionSettingsPanel({
-  accountId,
-  routeState,
   onSaveStateChange,
 }: {
-  accountId: string
-  routeState: DashboardRouteState
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
-  const router = useRouter()
   const descriptor = getSettingsTabDescriptor('ingestion')
   const [settings, setSettings] = useState<IngestionSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -168,70 +161,63 @@ export function IngestionSettingsPanel({
   }
 
   return (
-    <SettingsTabShell
-      accountId={accountId}
-      routeState={routeState}
-      descriptor={descriptor}
-      onNavigate={(href) => router.push(href)}
-    >
-      <div className="mx-auto max-w-4xl space-y-6">
-          <section className="space-y-1 px-1">
-            <p className="text-sm text-muted-foreground">
-              Control how documents are split before they become searchable.
-            </p>
-          </section>
+    <SettingsTabShell>
+      <div className="space-y-6">
+        <section className="space-y-1 px-1">
+          <p className="text-sm text-muted-foreground">{descriptor.summary}</p>
+        </section>
 
-          <SettingsCard
-            id="chunking-strategy"
-            icon={<Settings2 className="h-5 w-5 text-primary" />}
-            title="Chunking"
-            description="Choose how documents are split before they become searchable, then tune the active strategy."
-          >
-            <div className="space-y-4">
-              <SettingFieldHeader
-                htmlFor="chunkingStrategy"
-                label={ingestionSettingDocs.chunkingStrategy.label}
-                description="Choose the chunking approach for future uploads and updates."
-                tooltip={ingestionSettingDocs.chunkingStrategy.details}
-              />
-              <Select
-                value={settings.chunkingStrategy}
-                onValueChange={(value) =>
-                  updateSetting('chunkingStrategy', value as IngestionSettings['chunkingStrategy'])
-                }
-              >
-                <SelectTrigger id="chunkingStrategy" className="w-full">
-                  <SelectValue placeholder="Select a chunking strategy" />
-                </SelectTrigger>
-                <SelectContent>
-                  {chunkingStrategyOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="space-y-2">
-                {chunkingStrategyOptions
-                  .filter((option) => option.value === settings.chunkingStrategy)
-                  .map((option) => (
-                    <div key={option.value}>
-                      <p className="text-sm font-medium text-foreground">{option.label}</p>
-                      <p className="text-sm text-muted-foreground">{option.description}</p>
-                    </div>
-                  ))}
+        <SettingsCard
+          id="chunking-strategy"
+          icon={<Settings2 className="h-5 w-5 text-primary" />}
+          title="Chunking"
+          description="How documents are split before they become searchable, along with the active strategy settings."
+        >
+          <div className="space-y-4">
+            <SettingFieldHeader
+              htmlFor="chunkingStrategy"
+              label={ingestionSettingDocs.chunkingStrategy.label}
+              description="Chunking approach used for future uploads and document updates."
+              tooltip={ingestionSettingDocs.chunkingStrategy.details}
+            />
+            <Select
+              value={settings.chunkingStrategy}
+              onValueChange={(value) =>
+                updateSetting('chunkingStrategy', value as IngestionSettings['chunkingStrategy'])
+              }
+            >
+              <SelectTrigger id="chunkingStrategy" className="w-full">
+                <SelectValue placeholder="Select a chunking strategy" />
+              </SelectTrigger>
+              <SelectContent>
+                {chunkingStrategyOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="space-y-2">
+              {chunkingStrategyOptions
+                .filter((option) => option.value === settings.chunkingStrategy)
+                .map((option) => (
+                  <div key={option.value}>
+                    <p className="text-sm font-medium text-foreground">{option.label}</p>
+                    <p className="text-sm text-muted-foreground">{option.description}</p>
+                  </div>
+                ))}
+            </div>
+            <div className="space-y-4 border-t border-border/70 pt-4">
+              <div className="flex items-center gap-2">
+                {settings.chunkingStrategy === 'fixed_window' ? (
+                  <SlidersHorizontal className="h-4 w-4 text-primary" />
+                ) : (
+                  <Search className="h-4 w-4 text-primary" />
+                )}
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {settings.chunkingStrategy === 'fixed_window' ? 'Fixed-size chunk tuning' : 'Semantic chunk tuning'}
+                </p>
               </div>
-              <div className="space-y-4 border-t border-border/70 pt-4">
-                <div className="flex items-center gap-2">
-                  {settings.chunkingStrategy === 'fixed_window' ? (
-                    <SlidersHorizontal className="h-4 w-4 text-primary" />
-                  ) : (
-                    <Search className="h-4 w-4 text-primary" />
-                  )}
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {settings.chunkingStrategy === 'fixed_window' ? 'Fixed-size chunk tuning' : 'Semantic chunk tuning'}
-                  </p>
-                </div>
 
                 {settings.chunkingStrategy === 'fixed_window' ? (
                   <>

@@ -3,12 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { ConnectorsTab } from '@/components/dashboard/connectors/connectors-tab'
 import { GeneralTab } from '@/components/dashboard/settings/general-tab'
 import { IngestionSettingsPanel } from '@/components/dashboard/settings/ingestion-settings-panel'
 import { RetrievalSettingsPanel } from '@/components/dashboard/settings/retrieval-settings-panel'
-import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
-import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   buildDashboardHref,
@@ -24,7 +21,7 @@ export function SettingsView({
   routeState: DashboardRouteState
 }) {
   const router = useRouter()
-  const activeTab = routeState.settingsTab ?? 'general'
+  const activeTab = routeState.settingsTab ?? 'workspace'
   const [retrievalSaveState, setRetrievalSaveState] = useState<{
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
@@ -66,20 +63,21 @@ export function SettingsView({
             section: 'settings',
             settingsTab: value as SettingsTab,
             settingsAnchor: undefined,
-            connectorId: value === 'connectors' ? routeState.connectorId : undefined,
+            connectorId: value === 'channels' ? routeState.connectorId : undefined,
           }))
         }}
         className="flex flex-1 flex-col"
       >
-        <div className="sticky top-0 z-20 border-b border-border bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="flex items-center justify-between gap-4">
+        <div className="sticky top-0 z-20 border-b border-border bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
             <TabsList>
-              <TabsTrigger value="general">General</TabsTrigger>
+              <TabsTrigger value="workspace">Workspace</TabsTrigger>
+              <TabsTrigger value="assistant">Assistant</TabsTrigger>
+              <TabsTrigger value="channels">Channels</TabsTrigger>
               <TabsTrigger value="ingestion">Ingestion</TabsTrigger>
               <TabsTrigger value="retrieval">Retrieval</TabsTrigger>
-              <TabsTrigger value="connectors">Chat Connectors</TabsTrigger>
             </TabsList>
-            {activeTab === 'general' ? (
+            {activeTab === 'workspace' || activeTab === 'assistant' || activeTab === 'channels' ? (
               <div className="text-sm">
                 {generalSaveState.state === 'saving' ? (
                   <span className="text-muted-foreground">Saving…</span>
@@ -119,38 +117,24 @@ export function SettingsView({
           </div>
         </div>
 
-        <TabsContent value="general" className="flex-1 overflow-hidden">
-          <GeneralTab accountId={accountId} routeState={routeState} onSaveStateChange={setGeneralSaveState} />
+        <TabsContent value="workspace" className="flex-1 overflow-hidden">
+          <GeneralTab accountId={accountId} routeState={routeState} mode="workspace" onSaveStateChange={setGeneralSaveState} />
+        </TabsContent>
+
+        <TabsContent value="assistant" className="flex-1 overflow-hidden">
+          <GeneralTab accountId={accountId} routeState={routeState} mode="assistant" onSaveStateChange={setGeneralSaveState} />
+        </TabsContent>
+
+        <TabsContent value="channels" className="flex-1 overflow-hidden">
+          <GeneralTab accountId={accountId} routeState={routeState} mode="channels" onSaveStateChange={setGeneralSaveState} />
         </TabsContent>
 
         <TabsContent value="ingestion" className="flex-1 overflow-hidden">
-          <IngestionSettingsPanel
-            accountId={accountId}
-            routeState={routeState}
-            onSaveStateChange={setIngestionSaveState}
-          />
+          <IngestionSettingsPanel onSaveStateChange={setIngestionSaveState} />
         </TabsContent>
 
         <TabsContent value="retrieval" className="flex-1 overflow-hidden">
-          <RetrievalSettingsPanel
-            accountId={accountId}
-            routeState={routeState}
-            onSaveStateChange={setRetrievalSaveState}
-          />
-        </TabsContent>
-
-        <TabsContent value="connectors" className="flex-1 overflow-hidden">
-          <SettingsTabShell
-            accountId={accountId}
-            routeState={routeState}
-            descriptor={getSettingsTabDescriptor('connectors')}
-            onNavigate={(href) => router.push(href)}
-            showSidebar={false}
-          >
-            <div id="connectors" className="mx-auto max-w-5xl scroll-mt-24">
-              <ConnectorsTab accountId={accountId} routeState={routeState} />
-            </div>
-          </SettingsTabShell>
+          <RetrievalSettingsPanel onSaveStateChange={setRetrievalSaveState} />
         </TabsContent>
       </Tabs>
     </div>

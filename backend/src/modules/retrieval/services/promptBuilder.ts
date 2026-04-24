@@ -1,6 +1,9 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
+import {
+  buildPublicAssistantIdentityLines,
+  type AssistantIdentityPromptInput,
+} from "../../settings/domain/assistantBootstrapSettings.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { ConversationModeInstructionBuilder } from "./conversationModeInstructionBuilder.js";
@@ -75,11 +78,7 @@ export class PromptBuilder {
       return null;
     }
 
-    const identityLines = [
-      assistantIdentity.assistantName ? `Assistant name: ${assistantIdentity.assistantName}` : null,
-      assistantIdentity.assistantRole ? `Assistant role: ${assistantIdentity.assistantRole}` : null,
-      assistantIdentity.greetingInstruction ? `Assistant style: ${assistantIdentity.greetingInstruction}` : null,
-    ].filter(Boolean);
+    const identityLines = buildPublicAssistantIdentityLines(assistantIdentity);
 
     if (identityLines.length === 0) {
       return null;

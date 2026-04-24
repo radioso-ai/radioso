@@ -15,7 +15,6 @@ export interface DashboardRouteState {
   evalDatasetId?: string
   settingsTab?: SettingsTab
   settingsAnchor?: string
-  connectorId?: string
 }
 
 const DEFAULT_SECTION: DashboardSection = 'chat'
@@ -131,12 +130,6 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.settingsAnchor) {
       normalized.settingsAnchor = state.settingsAnchor
     }
-    if (
-      (state.settingsTab ?? DEFAULT_SETTINGS_TAB) === 'channels' &&
-      state.connectorId
-    ) {
-      normalized.connectorId = state.connectorId
-    }
     return normalized
   }
 
@@ -188,9 +181,6 @@ export const buildDashboardHref = (
     }
     if (normalized.settingsAnchor) {
       searchParams.set('anchor', normalized.settingsAnchor)
-    }
-    if (normalized.connectorId) {
-      searchParams.set('connector', normalized.connectorId)
     }
   }
 
@@ -263,7 +253,6 @@ export const parseDashboardRoute = (
       workspaceId,
       settingsTab: parseSettingsTab(searchParams?.get('tab') ?? null),
       settingsAnchor: parseAnchor(searchParams?.get('anchor') ?? null),
-      connectorId: searchParams?.get('connector') ?? undefined,
     })
   }
 

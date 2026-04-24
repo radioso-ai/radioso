@@ -63,7 +63,6 @@ export function SettingsView({
             section: 'settings',
             settingsTab: value as SettingsTab,
             settingsAnchor: undefined,
-            connectorId: value === 'channels' ? routeState.connectorId : undefined,
           }))
         }}
         className="flex flex-1 flex-col"
@@ -118,15 +117,15 @@ export function SettingsView({
         </div>
 
         <TabsContent value="workspace" className="flex-1 overflow-hidden">
-          <WorkspaceAssistantChannelsTab accountId={accountId} routeState={routeState} mode="workspace" onSaveStateChange={setGeneralSaveState} />
+          <WorkspaceAssistantChannelsTab accountId={accountId} mode="workspace" onSaveStateChange={setGeneralSaveState} />
         </TabsContent>
 
         <TabsContent value="assistant" className="flex-1 overflow-hidden">
-          <WorkspaceAssistantChannelsTab accountId={accountId} routeState={routeState} mode="assistant" onSaveStateChange={setGeneralSaveState} />
+          <WorkspaceAssistantChannelsTab accountId={accountId} mode="assistant" onSaveStateChange={setGeneralSaveState} />
         </TabsContent>
 
         <TabsContent value="channels" className="flex-1 overflow-hidden">
-          <WorkspaceAssistantChannelsTab accountId={accountId} routeState={routeState} mode="channels" onSaveStateChange={setGeneralSaveState} />
+          <WorkspaceAssistantChannelsTab accountId={accountId} mode="channels" onSaveStateChange={setGeneralSaveState} />
         </TabsContent>
 
         <TabsContent value="ingestion" className="flex-1 overflow-hidden">

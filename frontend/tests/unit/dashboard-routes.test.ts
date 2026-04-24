@@ -48,16 +48,15 @@ describe('dashboard route state', () => {
     })
   })
 
-  it('builds settings links with targeted anchor and connector selection', () => {
+  it('builds settings links with targeted channel anchor', () => {
     const href = buildDashboardHref('account-2', {
       section: 'settings',
       workspaceId: 'workspace-9',
-      settingsTab: 'connectors',
-      settingsAnchor: 'connectors',
-      connectorId: 'whatsapp',
+      settingsTab: 'channels',
+      settingsAnchor: 'whatsapp-channel',
     })
 
-    expect(href).toBe('/account/account-2/settings?workspace=workspace-9&tab=connectors&anchor=connectors&connector=whatsapp')
+    expect(href).toBe('/account/account-2/settings?workspace=workspace-9&tab=channels&anchor=whatsapp-channel')
   })
 
   it('parses and builds the users route without extra state', () => {

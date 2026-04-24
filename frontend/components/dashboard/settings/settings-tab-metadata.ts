@@ -54,7 +54,7 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
         summary: 'Launcher settings, approved origins, and install snippet.',
       },
       {
-        id: 'connectors',
+        id: 'whatsapp-channel',
         label: 'WhatsApp',
         summary: 'Configure the WhatsApp channel for this workspace.',
       },

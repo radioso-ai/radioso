@@ -4,7 +4,6 @@ const PUBLIC_CHAT_STREAMING_API_PATH = '/api/public/chat'
 const API_TOKEN_STORAGE_KEY = "radioso.apiToken";
 const WORKSPACE_TOKENS_STORAGE_KEY = "radioso.workspaceTokens";
 const ACTIVE_WORKSPACE_STORAGE_KEY = "radioso.activeWorkspaceId";
-const WORKSPACE_HEADER = 'X-Workspace-Id'
 const ANONYMOUS_SESSION_HEADER = 'X-Radioso-Anonymous-Session'
 const ANONYMOUS_SESSION_RESET_HEADER = 'X-Radioso-Reset-Anonymous-Session'
 const ANONYMOUS_SESSION_STORAGE_PREFIX = 'radioso.anonymousSession.'
@@ -23,6 +22,93 @@ interface StoredEmbedBootstrapSession {
 interface StoredEmbedSessionToken {
   token: string
   expiresAt: string
+}
+
+const workspaceTokenRequests = new Map<string, Promise<string>>()
+
+const readStoredWorkspaceTokens = (): Record<string, string> => {
+  if (typeof window === "undefined") {
+    return {}
+  }
+
+  const rawValue = window.localStorage.getItem(WORKSPACE_TOKENS_STORAGE_KEY)
+  if (!rawValue) {
+    return {}
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as unknown
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      window.localStorage.removeItem(WORKSPACE_TOKENS_STORAGE_KEY)
+      return {}
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    )
+  } catch {
+    window.localStorage.removeItem(WORKSPACE_TOKENS_STORAGE_KEY)
+    return {}
+  }
+}
+
+const writeStoredWorkspaceTokens = (tokens: Record<string, string>) => {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  const entries = Object.entries(tokens).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  if (entries.length === 0) {
+    window.localStorage.removeItem(WORKSPACE_TOKENS_STORAGE_KEY)
+  } else {
+    window.localStorage.setItem(WORKSPACE_TOKENS_STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)))
+  }
+
+  window.localStorage.removeItem(API_TOKEN_STORAGE_KEY)
+}
+
+const readStoredWorkspaceToken = (workspaceId: string): string | null => {
+  if (typeof window === "undefined") {
+    return null
+  }
+
+  const storedTokens = readStoredWorkspaceTokens()
+  const cachedToken = storedTokens[workspaceId]
+  if (typeof cachedToken === "string" && cachedToken.length > 0) {
+    return cachedToken
+  }
+
+  const legacyToken = window.localStorage.getItem(API_TOKEN_STORAGE_KEY)
+  if (legacyToken && getStoredActiveWorkspaceId() === workspaceId) {
+    writeStoredWorkspaceTokens({
+      ...storedTokens,
+      [workspaceId]: legacyToken,
+    })
+    return legacyToken
+  }
+
+  return null
+}
+
+const storeWorkspaceToken = (workspaceId: string, token: string) => {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  writeStoredWorkspaceTokens({
+    ...readStoredWorkspaceTokens(),
+    [workspaceId]: token,
+  })
+}
+
+const clearStoredWorkspaceToken = (workspaceId: string) => {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  const nextTokens = { ...readStoredWorkspaceTokens() }
+  delete nextTokens[workspaceId]
+  writeStoredWorkspaceTokens(nextTokens)
 }
 
 export const activateWorkspaceToken = (workspaceId: string): boolean => {
@@ -52,6 +138,7 @@ export const clearWorkspaceStorage = () => {
 
 export const removeWorkspaceToken = (workspaceId: string) => {
   if (typeof window === "undefined") return;
+  clearStoredWorkspaceToken(workspaceId)
   if (getStoredActiveWorkspaceId() === workspaceId) {
     window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
   }
@@ -302,6 +389,65 @@ const buildError = async (response: Response): Promise<ErrorResponse> => {
   }
 };
 
+const requireWorkspaceApiToken = async (): Promise<string> => {
+  const workspaceId = getStoredActiveWorkspaceId()
+
+  if (!workspaceId) {
+    throw {
+      error: {
+        code: "UNAUTHORIZED",
+        message: "Sign in again to continue.",
+      },
+    } satisfies ErrorResponse
+  }
+
+  const cachedToken = readStoredWorkspaceToken(workspaceId)
+  if (cachedToken) {
+    return cachedToken
+  }
+
+  const inFlightRequest = workspaceTokenRequests.get(workspaceId)
+  if (inFlightRequest) {
+    return inFlightRequest
+  }
+
+  const tokenRequest = (async () => {
+    const response = await fetch(`${API_BASE}/account/workspaces/${workspaceId}/token`, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "include",
+      headers: {
+        "X-Forwarded-Prefix": "/backend",
+      },
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    const payload = (await response.json()) as Partial<WorkspaceTokenResponse>
+    if (typeof payload.token !== "string" || payload.token.length === 0) {
+      throw {
+        error: {
+          code: "HTTP_ERROR",
+          message: "Workspace token response was invalid.",
+        },
+      } satisfies ErrorResponse
+    }
+
+    storeWorkspaceToken(workspaceId, payload.token)
+    return payload.token
+  })()
+
+  workspaceTokenRequests.set(workspaceId, tokenRequest)
+
+  try {
+    return await tokenRequest
+  } finally {
+    workspaceTokenRequests.delete(workspaceId)
+  }
+}
+
 const request = async <T>(
   path: string,
   init: RequestInit = {},
@@ -318,25 +464,14 @@ const request = async <T>(
   }
 
   if (options.withApiToken) {
-    const workspaceId = getStoredActiveWorkspaceId();
-
-    if (!workspaceId) {
-      throw {
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Sign in again to continue.",
-        },
-      } satisfies ErrorResponse;
-    }
-
-    headers.set(WORKSPACE_HEADER, workspaceId);
+    headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken()}`);
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     cache: "no-store",
     headers,
-    credentials: options.withSession || options.withApiToken ? "include" : init.credentials,
+    credentials: options.withSession ? "include" : init.credentials,
   });
 
   if (!response.ok) {
@@ -368,25 +503,14 @@ const requestLongRunning = async <T>(
   }
 
   if (options.withApiToken) {
-    const workspaceId = getStoredActiveWorkspaceId();
-
-    if (!workspaceId) {
-      throw {
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Sign in again to continue.",
-        },
-      } satisfies ErrorResponse;
-    }
-
-    headers.set(WORKSPACE_HEADER, workspaceId);
+    headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken()}`);
   }
 
   const response = await fetch(path, {
     ...init,
     cache: "no-store",
     headers,
-    credentials: options.withSession || options.withApiToken ? "include" : init.credentials,
+    credentials: options.withSession ? "include" : init.credentials,
   });
 
   if (!response.ok) {
@@ -1098,21 +1222,6 @@ export interface ConnectorConflictErrorResponse {
   detail: string
 }
 
-const requireActiveWorkspaceId = () => {
-  const workspaceId = getStoredActiveWorkspaceId()
-
-  if (!workspaceId) {
-    throw {
-      error: {
-        code: "UNAUTHORIZED",
-        message: "Sign in again to continue.",
-      },
-    } satisfies ErrorResponse
-  }
-
-  return workspaceId
-}
-
 const parseSseEvent = (rawEvent: string) => {
   const normalized = rawEvent.replaceAll('\r', '')
   const lines = normalized.split('\n')
@@ -1620,13 +1729,13 @@ export const chatApi = {
     data: ChatRequest,
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
+    const workspaceToken = await requireWorkspaceApiToken()
     const response = await fetch(STREAMING_API_PATH, {
       method: "POST",
       cache: "no-store",
-      credentials: 'include',
       headers: {
         "Content-Type": "application/json",
-        [WORKSPACE_HEADER]: requireActiveWorkspaceId(),
+        Authorization: `Bearer ${workspaceToken}`,
       },
       body: JSON.stringify(data),
     })
@@ -1901,9 +2010,19 @@ export const accountApi = {
   },
 
   async getWorkspaceToken(workspaceId: string): Promise<WorkspaceTokenResponse> {
-    return request<WorkspaceTokenResponse>(`/account/workspaces/${workspaceId}/token`, {
+    const response = await request<WorkspaceTokenResponse>(`/account/workspaces/${workspaceId}/token`, {
       method: 'GET',
     }, { withSession: true })
+    storeWorkspaceToken(workspaceId, response.token)
+    return response
+  },
+
+  async rotateWorkspaceToken(workspaceId: string): Promise<WorkspaceTokenResponse> {
+    const response = await request<WorkspaceTokenResponse>(`/account/workspaces/${workspaceId}/token/rotate`, {
+      method: 'POST',
+    }, { withSession: true })
+    storeWorkspaceToken(workspaceId, response.token)
+    return response
   },
 }
 

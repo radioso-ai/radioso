@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Building2, Code2, ExternalLink, FolderOpen, Globe, KeyRound, MessageSquare, RefreshCw, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
 
-import { ConnectorsTab } from '@/components/dashboard/connectors/connectors-tab'
+import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
+import { WhatsAppChannelSettings } from '@/components/dashboard/settings/whatsapp-channel-settings'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
@@ -24,7 +25,6 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { accountApi, generalSettingsApi, settingsApi, type GeneralSettings, type RetrievalSettings } from '@/lib/api'
 import {
   APP_WEBSITE_EMBED_DEMO_PATH,
@@ -89,12 +89,10 @@ const assistantConversationModeLabels: Record<
 
 export function WorkspaceAssistantChannelsTab({
   accountId,
-  routeState,
   mode,
   onSaveStateChange,
 }: {
   accountId: string
-  routeState: DashboardRouteState
   mode: 'workspace' | 'assistant' | 'channels'
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
@@ -110,6 +108,9 @@ export function WorkspaceAssistantChannelsTab({
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [rotateApiTokenDialogOpen, setRotateApiTokenDialogOpen] = useState(false)
+  const [isRotatingApiToken, setIsRotatingApiToken] = useState(false)
+  const [rotateApiTokenError, setRotateApiTokenError] = useState<string | null>(null)
   const isLastWorkspace = workspaces.length <= 1
   const deleteConfirmValid = deleteConfirmName === activeWorkspace?.name
   const [anonSettings, setAnonSettings] = useState<GeneralSettings | null>(null)
@@ -133,6 +134,10 @@ export function WorkspaceAssistantChannelsTab({
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
+  const [whatsAppSaveState, setWhatsAppSaveState] = useState<{
+    state: 'idle' | 'saved' | 'saving' | 'error'
+    message?: string | null
+  }>({ state: 'idle' })
   const saveSequenceRef = useRef(0)
   const organizationDraftVersionRef = useRef(0)
   const workspaceDraftVersionRef = useRef(0)
@@ -140,8 +145,36 @@ export function WorkspaceAssistantChannelsTab({
   const assistantBehaviorDraftVersionRef = useRef(0)
 
   useEffect(() => {
-    onSaveStateChange?.({ state: saveState, message: saveError })
-  }, [onSaveStateChange, saveError, saveState])
+    const primaryState = { state: saveState, message: saveError }
+
+    if (primaryState.state === 'error') {
+      onSaveStateChange?.(primaryState)
+      return
+    }
+
+    if (whatsAppSaveState.state === 'error') {
+      onSaveStateChange?.(whatsAppSaveState)
+      return
+    }
+
+    if (primaryState.state === 'saving' || whatsAppSaveState.state === 'saving') {
+      onSaveStateChange?.({ state: 'saving', message: null })
+      return
+    }
+
+    if (primaryState.state === 'saved' || whatsAppSaveState.state === 'saved') {
+      onSaveStateChange?.({ state: 'saved', message: null })
+      return
+    }
+
+    onSaveStateChange?.({ state: 'idle', message: null })
+  }, [onSaveStateChange, saveError, saveState, whatsAppSaveState])
+
+  useEffect(() => {
+    if (mode !== 'channels' && whatsAppSaveState.state !== 'idle') {
+      setWhatsAppSaveState({ state: 'idle' })
+    }
+  }, [mode, whatsAppSaveState.state])
 
   useEffect(() => {
     if (!hasNameChange) {
@@ -182,6 +215,9 @@ export function WorkspaceAssistantChannelsTab({
     setApiToken(null)
     setApiTokenError(null)
     setIsApiTokenLoading(false)
+    setRotateApiTokenDialogOpen(false)
+    setRotateApiTokenError(null)
+    setIsRotatingApiToken(false)
   }, [activeWorkspaceId])
 
   useEffect(() => {
@@ -301,6 +337,30 @@ export function WorkspaceAssistantChannelsTab({
       setIsApiTokenLoading(false)
     }
   }
+
+  const handleRotateApiToken = async () => {
+    if (!activeWorkspaceId) return
+
+    setIsRotatingApiToken(true)
+    setRotateApiTokenError(null)
+
+    try {
+      const response = await accountApi.rotateWorkspaceToken(activeWorkspaceId)
+      setApiToken(response.token)
+      setRotateApiTokenDialogOpen(false)
+    } catch (error) {
+      console.error('Failed to rotate workspace token:', error)
+      setRotateApiTokenError(getApiErrorMessage(error, 'Failed to rotate the workspace token.'))
+    } finally {
+      setIsRotatingApiToken(false)
+    }
+  }
+
+  const apiAccessExample = useMemo(() => {
+    const apiBasePath = process.env.NEXT_PUBLIC_API_BASE_PATH ?? '/backend/api/v1'
+    const origin = typeof window === 'undefined' ? 'https://your-radioso-host' : window.location.origin
+    return `curl ${origin}${apiBasePath}/settings/retrieval \\\n  -H "Authorization: Bearer <token>"`
+  }, [])
 
   const handleAssistantSettingChange = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
     if (!anonSettings) return
@@ -834,49 +894,33 @@ export function WorkspaceAssistantChannelsTab({
                 <Spinner className="w-5 h-5" />
               </div>
             ) : (
-              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                    <Building2 className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="min-w-0 flex-1 space-y-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Organization name</p>
-                      <p className="text-sm text-muted-foreground">
-                        Label shown in the organization picker and invite flows.
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <Input
-                        value={organizationName}
-                        onChange={(event) => {
-                          organizationDraftVersionRef.current += 1
-                          setOrganizationName(event.target.value)
-                          setOrganizationError(null)
-                        }}
-                        maxLength={80}
-                        className="flex-1"
-                      />
-                    </div>
-                    {organizationError ? <p className="text-sm text-destructive">{organizationError}</p> : null}
-                  </div>
+              <SettingsCard
+                icon={<Building2 className="h-5 w-5 text-primary" />}
+                title="Organization name"
+                description="Label shown in the organization picker and invite flows."
+              >
+                <div className="space-y-2">
+                  <Input
+                    value={organizationName}
+                    onChange={(event) => {
+                      organizationDraftVersionRef.current += 1
+                      setOrganizationName(event.target.value)
+                      setOrganizationError(null)
+                    }}
+                    maxLength={80}
+                    className="flex-1"
+                  />
+                  {organizationError ? <p className="text-sm text-destructive">{organizationError}</p> : null}
                 </div>
-              </div>
+              </SettingsCard>
             )}
 
-            <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                  <FolderOpen className="h-5 w-5 text-primary" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">Workspace name</p>
-                  <p className="text-sm text-muted-foreground">
-                    Internal workspace label used in the dashboard, workspace switcher, and admin tools.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
+            <SettingsCard
+              icon={<FolderOpen className="h-5 w-5 text-primary" />}
+              title="Workspace name"
+              description="Internal workspace label used in the dashboard, workspace switcher, and admin tools."
+            >
+              <div className="space-y-2">
                 <Input
                   id="workspaceName"
                   value={workspaceName}
@@ -888,70 +932,52 @@ export function WorkspaceAssistantChannelsTab({
                   maxLength={100}
                   className="flex-1"
                 />
+                {renameError ? <p className="text-sm text-destructive">{renameError}</p> : null}
               </div>
-              {renameError ? <p className="text-sm text-destructive">{renameError}</p> : null}
-            </div>
+            </SettingsCard>
 
-            <details className="rounded-lg border border-border bg-card p-4">
-                <summary className="cursor-pointer list-none">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <KeyRound className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-medium text-foreground">Session-authenticated admin API</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Admin requests now use the browser session cookie together with the active workspace id.
-                      </p>
-                    </div>
-                  </div>
-                </summary>
-
-                <div className="mt-4 space-y-4">
-                  <div className="rounded bg-muted/50 p-3 space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                      The web app keeps admin access on the session cookie. Reveal the workspace API token only when
-                      you need to paste it into curl, an SDK, or another client.
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleRevealApiToken}
-                        disabled={!activeWorkspaceId || isApiTokenLoading}
-                      >
-                        {isApiTokenLoading ? <Spinner className="mr-2" /> : null}
-                        Reveal API token
-                      </Button>
-                      {apiToken ? (
-                        <Button size="sm" variant="ghost" onClick={() => setApiToken(null)}>
-                          Hide token
-                        </Button>
-                      ) : null}
-                    </div>
-                    {apiToken ? (
-                      <CopyValueField value={apiToken} ariaLabel="Copy API token" wrap className="w-full" />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        The token is fetched on demand, shown only in this tab, and cleared when you switch workspaces
-                        or reload.
-                      </p>
-                    )}
-                    {apiTokenError ? <p className="text-sm text-destructive">{apiTokenError}</p> : null}
-                    <p className="text-sm text-muted-foreground">
-                      Session-authenticated clients can also call admin routes with the active workspace id header.
-                    </p>
-                    {activeWorkspaceId ? (
-                      <>
-                        <CopyValueField value={activeWorkspaceId} ariaLabel="Copy workspace id" />
-                        <code className="block p-2 bg-card border border-border rounded text-sm font-mono text-foreground overflow-x-auto">
-                          X-Workspace-Id: {activeWorkspaceId}
-                        </code>
-                      </>
-                    ) : null}
-                  </div>
+            <SettingsCard
+              icon={<KeyRound className="h-5 w-5 text-primary" />}
+              title="API access"
+              description="Use this workspace token for API calls and SDK clients."
+            >
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  The dashboard uses your signed-in session. External clients should authenticate with the workspace
+                  token below.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRevealApiToken}
+                    disabled={!activeWorkspaceId || isApiTokenLoading}
+                  >
+                    {isApiTokenLoading ? <Spinner className="mr-2" /> : null}
+                    Reveal API token
+                  </Button>
+                  {apiToken ? (
+                    <Button size="sm" variant="ghost" onClick={() => setApiToken(null)}>
+                      Hide token
+                    </Button>
+                  ) : null}
                 </div>
-              </details>
+                {apiToken ? (
+                  <CopyValueField value={apiToken} ariaLabel="Copy API token" wrap className="w-full" />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Reveal the token only when you need to copy it into another client.
+                  </p>
+                )}
+                {apiTokenError ? <p className="text-sm text-destructive">{apiTokenError}</p> : null}
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Example</p>
+                  <code className="block overflow-x-auto whitespace-pre-wrap rounded border border-border bg-muted/40 p-3 text-sm font-mono text-foreground">
+                    {apiAccessExample}
+                  </code>
+                </div>
+              </div>
+            </SettingsCard>
 
         </section>
         ) : null}
@@ -963,20 +989,11 @@ export function WorkspaceAssistantChannelsTab({
                 <Spinner className="w-5 h-5" />
               </div>
             ) : anonSettings && assistantBehaviorSettings ? (
-              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <Sparkles className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-base font-medium text-foreground">Assistant behavior</p>
-                      <p className="text-sm text-muted-foreground mt-0.5">
-                        Public identity, answer behavior, and first-message defaults.
-                      </p>
-                    </div>
-                  </div>
-                </div>
+              <SettingsCard
+                icon={<Sparkles className="h-5 w-5 text-primary" />}
+                title="Assistant behavior"
+                description="Public identity, answer behavior, and first-message defaults."
+              >
                 {assistantSettingsError ? (
                   <p className="text-sm text-destructive" role="alert">{assistantSettingsError}</p>
                 ) : null}
@@ -1090,7 +1107,7 @@ export function WorkspaceAssistantChannelsTab({
                     disabled={isAnonSaving}
                   />
                 </div>
-              </div>
+              </SettingsCard>
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load assistant settings.</p>
             )}
@@ -1104,20 +1121,17 @@ export function WorkspaceAssistantChannelsTab({
                 <Spinner className="w-5 h-5" />
               </div>
             ) : anonSettings ? (
-              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <MessageSquare className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <Label htmlFor="anonChatToggle" className="text-base font-medium text-foreground">
-                        Anonymous Chat
-                      </Label>
-                      <p className="text-sm text-muted-foreground mt-0.5">
-                        Public link access for unauthenticated visitors.
-                      </p>
-                    </div>
+              <SettingsCard
+                icon={<MessageSquare className="h-5 w-5 text-primary" />}
+                title="Anonymous chat"
+                description="Public link access for unauthenticated visitors."
+              >
+                <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/20 p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">Enable anonymous chat</p>
+                    <p className="text-sm text-muted-foreground">
+                      Turn on a public link that opens this assistant without signing in.
+                    </p>
                   </div>
                   <Switch
                     id="anonChatToggle"
@@ -1179,7 +1193,7 @@ export function WorkspaceAssistantChannelsTab({
                     </div>
                   </>
                 ) : null}
-              </div>
+              </SettingsCard>
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load anonymous chat settings.</p>
             )}
@@ -1193,20 +1207,17 @@ export function WorkspaceAssistantChannelsTab({
                 <Spinner className="w-5 h-5" />
               </div>
             ) : anonSettings ? (
-              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <Globe className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <Label htmlFor="websiteEmbedToggle" className="text-base font-medium text-foreground">
-                        Hosted website widget
-                      </Label>
-                      <p className="text-sm text-muted-foreground mt-0.5">
-                        Radioso-hosted launcher script and iframe chat for approved sites.
-                      </p>
-                    </div>
+              <SettingsCard
+                icon={<Globe className="h-5 w-5 text-primary" />}
+                title="Hosted website widget"
+                description="Radioso-hosted launcher script and iframe chat for approved sites."
+              >
+                <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/20 p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">Enable website widget</p>
+                    <p className="text-sm text-muted-foreground">
+                      Control whether approved sites can load the hosted embed.
+                    </p>
                   </div>
                   <Switch
                     id="websiteEmbedToggle"
@@ -1611,7 +1622,7 @@ export function WorkspaceAssistantChannelsTab({
                   </div>
                 ) : null}
 
-              </div>
+              </SettingsCard>
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load website embed settings.</p>
             )}
@@ -1619,27 +1630,85 @@ export function WorkspaceAssistantChannelsTab({
           ) : null}
 
           {mode === 'channels' ? (
-          <section id="connectors" className="space-y-6 scroll-mt-24">
-            <div className="rounded-lg border border-border bg-card p-4">
-              <ConnectorsTab accountId={accountId} routeState={routeState} />
-            </div>
+          <section id="whatsapp-channel" className="space-y-6 scroll-mt-24">
+            <SettingsCard
+              icon={<MessageSquare className="h-5 w-5 text-primary" />}
+              title="WhatsApp"
+              description="Configure the WhatsApp channel for this workspace."
+            >
+              <WhatsAppChannelSettings onSaveStateChange={setWhatsAppSaveState} />
+            </SettingsCard>
           </section>
           ) : null}
 
           {mode === 'workspace' ? (
-          <section className="space-y-4 rounded-md border border-destructive/50 p-4">
-            <h2 className="text-sm font-medium text-destructive uppercase tracking-wide">Danger Zone</h2>
+          <section>
+            <SettingsCard
+              icon={<ShieldAlert className="h-5 w-5 text-destructive" />}
+              iconClassName="border-destructive/20 bg-destructive/10"
+              className="border-destructive/50"
+              title="Danger zone"
+              description="Permanent workspace actions that cannot be undone."
+            >
+            <div className="flex flex-col gap-4 border-b border-destructive/20 pb-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Rotate workspace API token</p>
+                <p className="text-sm text-muted-foreground">
+                  Immediately revoke the current token and issue a new one for this workspace. Any scripts, SDK
+                  clients, or automations using the current token will need to be updated.
+                </p>
+              </div>
+
+              <Dialog
+                open={rotateApiTokenDialogOpen}
+                onOpenChange={(open) => {
+                  setRotateApiTokenDialogOpen(open)
+                  if (!open) {
+                    setRotateApiTokenError(null)
+                    setIsRotatingApiToken(false)
+                  }
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button variant="destructive" size="sm" className="sm:self-start">
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Rotate token
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Rotate workspace API token</DialogTitle>
+                    <DialogDescription>
+                      The current workspace token will stop working immediately. Any scripts, SDK clients, or
+                      automations using it must be updated to the new token.
+                    </DialogDescription>
+                  </DialogHeader>
+                  {rotateApiTokenError ? (
+                    <p className="text-sm text-destructive">{rotateApiTokenError}</p>
+                  ) : null}
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => setRotateApiTokenDialogOpen(false)}
+                      disabled={isRotatingApiToken}
+                    >
+                      Cancel
+                    </Button>
+                    <Button variant="destructive" onClick={handleRotateApiToken} disabled={isRotatingApiToken}>
+                      {isRotatingApiToken ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                      Rotate token
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex min-w-0 items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
-                  <ShieldAlert className="h-5 w-5 text-destructive" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">Delete this workspace</p>
-                  <p className="text-sm text-muted-foreground">
-                    Permanently delete this workspace and all its documents, chats, and settings. This action cannot be undone.
-                  </p>
-                </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Delete this workspace</p>
+                <p className="text-sm text-muted-foreground">
+                  Permanently delete this workspace and all its documents, chats, and settings. This action cannot be undone.
+                </p>
               </div>
 
               <Dialog
@@ -1705,6 +1774,7 @@ export function WorkspaceAssistantChannelsTab({
                 You cannot delete your only workspace. Create another workspace first.
               </p>
             ) : null}
+            </SettingsCard>
           </section>
           ) : null}
 

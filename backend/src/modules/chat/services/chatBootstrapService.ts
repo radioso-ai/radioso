@@ -7,7 +7,10 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatGateway } from "./chatService.js";
 import type { ChatResponse } from "../types/chatResponses.js";
-import { isAssistantBootstrapActive } from "../../settings/domain/assistantBootstrapSettings.js";
+import {
+  buildPublicAssistantIdentityLines,
+  isAssistantBootstrapActive,
+} from "../../settings/domain/assistantBootstrapSettings.js";
 import { DEFAULT_CONVERSATION_MODE } from "../../settings/domain/retrievalSettings.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { resolveChatLocale } from "./chatLocale.js";
@@ -82,7 +85,6 @@ export class ChatBootstrapService {
     const fingerprint = createBootstrapFingerprint({
       assistantName: workspace.assistantName,
       assistantRole: workspace.assistantRole,
-      greetingInstruction: workspace.greetingInstruction,
       assistantDefaultLocale: workspace.assistantDefaultLocale,
       localeUsed,
     });
@@ -99,7 +101,6 @@ export class ChatBootstrapService {
           prompt: buildBootstrapPrompt({
             assistantName: workspace.assistantName,
             assistantRole: workspace.assistantRole,
-            greetingInstruction: workspace.greetingInstruction,
             localeUsed,
           }),
         })).trim();
@@ -167,17 +168,15 @@ export class ChatBootstrapService {
 const buildBootstrapPrompt = (input: {
   assistantName: string;
   assistantRole: string;
-  greetingInstruction: string;
   localeUsed: string | null;
 }): string => {
   const localeInstruction = input.localeUsed
     ? `Write the greeting in locale ${input.localeUsed}.`
     : "Write the greeting in the best available language for the workspace.";
-  const identityLines = [
-    input.assistantName ? `Assistant name: ${input.assistantName}` : null,
-    input.assistantRole ? `Assistant role: ${input.assistantRole}` : null,
-    input.greetingInstruction ? `Greeting style: ${input.greetingInstruction}` : null,
-  ].filter(Boolean);
+  const identityLines = buildPublicAssistantIdentityLines({
+    assistantName: input.assistantName,
+    assistantRole: input.assistantRole,
+  });
 
   return renderPromptTemplate("chat/bootstrap-greeting.md", {
     locale_instruction: localeInstruction,
@@ -188,7 +187,6 @@ const buildBootstrapPrompt = (input: {
 const createBootstrapFingerprint = (input: {
   assistantName: string;
   assistantRole: string;
-  greetingInstruction: string;
   assistantDefaultLocale: string | null;
   localeUsed: string | null;
 }): string =>
@@ -196,7 +194,6 @@ const createBootstrapFingerprint = (input: {
     .update(JSON.stringify({
       assistantName: input.assistantName,
       assistantRole: input.assistantRole,
-      greetingInstruction: input.greetingInstruction,
       assistantDefaultLocale: input.assistantDefaultLocale,
       localeUsed: input.localeUsed,
     }))

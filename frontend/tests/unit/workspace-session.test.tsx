@@ -42,7 +42,7 @@ describe('workspace session bootstrap', () => {
     expect(localStorage.getItem('radioso.workspaceTokens')).toBeNull()
   })
 
-  it('removes the active workspace id and clears leftover legacy token storage', () => {
+  it('removes the active workspace id and clears cached workspace tokens', () => {
     const localStorage = createLocalStorage({
       'radioso.apiToken': 'sk_proj_legacy',
       'radioso.workspaceTokens': JSON.stringify({ 'workspace-a': 'sk_proj_workspace' }),
@@ -52,8 +52,8 @@ describe('workspace session bootstrap', () => {
 
     removeWorkspaceToken('workspace-a')
     expect(getStoredActiveWorkspaceId()).toBeNull()
-    expect(localStorage.getItem('radioso.apiToken')).toBe('sk_proj_legacy')
-    expect(localStorage.getItem('radioso.workspaceTokens')).toContain('workspace-a')
+    expect(localStorage.getItem('radioso.apiToken')).toBeNull()
+    expect(localStorage.getItem('radioso.workspaceTokens')).toBeNull()
 
     clearWorkspaceStorage()
     expect(localStorage.getItem('radioso.apiToken')).toBeNull()

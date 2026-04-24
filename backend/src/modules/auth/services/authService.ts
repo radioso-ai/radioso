@@ -517,6 +517,20 @@ export class AuthService {
     return this.issueWorkspaceToken(workspaceId, accountId);
   }
 
+  async rotateTokenForWorkspace(workspaceId: string, accountId: string): Promise<{ token: string }> {
+    await this.dependencies.workspaceService.validateOwnership(workspaceId, accountId);
+    const token = await this.issueWorkspaceToken(workspaceId, accountId);
+
+    await this.dependencies.auditService.record({
+      accountId,
+      workspaceId,
+      eventType: "auth.token.rotate",
+      eventStatus: "success",
+    });
+
+    return token;
+  }
+
   async authenticateApiToken(token: string): Promise<{ workspaceId: string; accountId: string }> {
     const tokenHash = sha256(token);
     const workspaceToken = await this.dependencies.workspaceTokenRepository.findByTokenHash(tokenHash);

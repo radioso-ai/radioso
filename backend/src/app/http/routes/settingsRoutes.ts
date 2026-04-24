@@ -20,6 +20,7 @@ import {
 } from "../../../modules/settings/domain/retrievalSettings.js";
 import {
   isAssistantBootstrapActive,
+  resolveAssistantDisplayName,
   validateAssistantBootstrapSettings,
 } from "../../../modules/settings/domain/assistantBootstrapSettings.js";
 import {
@@ -222,8 +223,12 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
       workspace.websiteEmbedAllowedOrigins.length > 0
         ? ` data-radioso-allowed-origins="${escapeHtmlAttribute(workspace.websiteEmbedAllowedOrigins.join(","))}"`
         : "";
-    const titleOverride = workspace.name.trim()
-      ? ` data-radioso-copy="${escapeHtmlAttribute(JSON.stringify({ embeddedChatTitle: workspace.name.trim() }))}"`
+    const displayName = resolveAssistantDisplayName({
+      assistantName: workspace.assistantName,
+      workspaceName: workspace.name,
+    });
+    const titleOverride = displayName
+      ? ` data-radioso-copy="${escapeHtmlAttribute(JSON.stringify({ embeddedChatTitle: displayName }))}"`
       : "";
 
     return [

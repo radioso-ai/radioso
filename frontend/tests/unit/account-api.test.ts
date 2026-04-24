@@ -63,6 +63,30 @@ describe('accountApi.getWorkspaceToken', () => {
     )
   })
 
+  it('rotates the workspace token with session credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+      },
+      json: async () => ({ token: 'sk_proj_rotated_token' }),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await accountApi.rotateWorkspaceToken('workspace-123')
+
+    expect(response).toEqual({ token: 'sk_proj_rotated_token' })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/account/workspaces/workspace-123/token/rotate',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+      }),
+    )
+  })
+
   it('removes account users with session credentials', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

@@ -4,7 +4,10 @@ import { z } from "zod";
 
 import { notFound } from "../../../shared/domain/errors.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
-import { isAssistantBootstrapActive } from "../../../modules/settings/domain/assistantBootstrapSettings.js";
+import {
+  isAssistantBootstrapActive,
+  resolveAssistantDisplayName,
+} from "../../../modules/settings/domain/assistantBootstrapSettings.js";
 import { verifyWebsiteEmbedSession } from "../../../modules/settings/domain/websiteEmbedSession.js";
 
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
@@ -87,7 +90,10 @@ export const resolveAnonymousSession = (
       res.setHeader(ANONYMOUS_SESSION_HEADER, sessionId);
 
       res.locals.workspaceId = workspace.id;
-      res.locals.workspaceName = workspace.name;
+      res.locals.workspaceName = resolveAssistantDisplayName({
+        assistantName: workspace.assistantName,
+        workspaceName: workspace.name,
+      });
       res.locals.anonymousSessionId = sessionId;
       res.locals.anonymousRateLimit = workspace.anonymousRateLimit;
       res.locals.sourceChannel = hasValidEmbedSession ? "website_embed" : "anonymous";

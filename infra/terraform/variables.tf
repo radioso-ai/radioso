@@ -214,6 +214,12 @@ variable "session_ttl_hours" {
   default     = 168
 }
 
+variable "auth_skip_email_verification" {
+  description = "Whether the deployment should skip email verification before first login."
+  type        = bool
+  default     = false
+}
+
 variable "metrics_enabled" {
   description = "Whether to expose the Prometheus metrics endpoint on the backend service."
   type        = bool
@@ -234,6 +240,12 @@ variable "app_base_url_override" {
 
 variable "public_chat_base_url_override" {
   description = "Optional override for the public chat base URL. Defaults to app_base_url_override + /chat when that override is set."
+  type        = string
+  default     = null
+}
+
+variable "worker_tasks_service_url_override" {
+  description = "Optional override for the worker Cloud Run public URL. Set this after the first deploy so retry dispatches target the worker run.app URL."
   type        = string
   default     = null
 }

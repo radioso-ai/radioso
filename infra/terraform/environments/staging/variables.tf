@@ -161,6 +161,12 @@ variable "public_chat_base_url_override" {
   default     = null
 }
 
+variable "worker_tasks_service_url_override" {
+  description = "Optional override for the worker service public URL."
+  type        = string
+  default     = null
+}
+
 variable "mail_from_email" {
   description = "Default from-address for future cloud email delivery."
   type        = string

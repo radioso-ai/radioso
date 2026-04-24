@@ -592,7 +592,7 @@ The Terraform module now lives at `infra/terraform/`, with environment wrappers 
 - `infra/terraform/environments/staging`
 - `infra/terraform/environments/live`
 
-Those wrappers target GCP projects `radioso-staging` and `radioso`.
+Those wrappers target GCP projects `radioso-staging` and `radioso-494120` (display name `radioso`).
 
 Bootstrap the remote state bucket once per project:
 
@@ -600,7 +600,7 @@ Bootstrap the remote state bucket once per project:
 cd infra/terraform/bootstrap
 terraform init
 terraform apply -var='project_id=radioso-staging' -var='state_bucket_name=radioso-staging-terraform-state'
-terraform apply -var='project_id=radioso' -var='state_bucket_name=radioso-terraform-state'
+terraform apply -var='project_id=radioso-494120' -var='state_bucket_name=radioso-494120-terraform-state'
 ```
 
 Then initialize and plan an environment:
@@ -621,9 +621,9 @@ In CI, prefer `TF_VAR_*` environment variables for secrets instead of committed 
 
 The key point is cost: Cloud Run can scale the frontend and backend to zero, but Cloud SQL cannot auto-scale to zero. Staging keeps costs down by using the smallest practical database tier plus `backend_min_instances = 0` and `frontend_min_instances = 0`. If staging is idle for long periods, stop the Cloud SQL instance manually to reduce compute cost further.
 
-Cloud email delivery is not configured yet. Both cloud environments keep `MAIL_DRIVER=log`, so verification and password reset delivery stay deferred until a later SMTP setup. The Terraform wrappers already expose the mail inputs for that future step.
+Cloud email delivery is not configured yet. Both cloud environments keep `MAIL_DRIVER=log`, so verification and password reset delivery stay deferred until a later SMTP setup. Staging sets `AUTH_SKIP_EMAIL_VERIFICATION=true` so it is usable before SMTP exists; live keeps email verification enabled, which means fresh signup and password reset flows are not production-ready until SMTP is configured. The Terraform wrappers already expose the mail inputs for that future step.
 
-`APP_BASE_URL` and `PUBLIC_CHAT_BASE_URL` can be overridden from Terraform. In practice, if you want backend-generated links to use the frontend `run.app` URL, set `app_base_url_override` after the first deploy reveals that URL. Terraform cannot derive the frontend URL by default in the same apply without creating a dependency cycle, because the frontend already depends on the backend service URL. Until you set that override, the cloud wrapper keeps `APP_BASE_URL` on a safe placeholder URL and leaves `PUBLIC_CHAT_BASE_URL` unset.
+`APP_BASE_URL`, `PUBLIC_CHAT_BASE_URL`, and `WORKER_TASKS_SERVICE_URL` can be overridden from Terraform. In practice, after the first deploy reveals the frontend and worker `run.app` URLs, set `app_base_url_override`, `public_chat_base_url_override`, and `worker_tasks_service_url_override` on a second apply. Terraform cannot derive those URLs inside the first service apply without creating dependency cycles or self-references, so the wrapper keeps placeholder URLs until that second pass runs.
 
 If you already know what you need, you can pre-populate `backend/.env` before running the stack.
 

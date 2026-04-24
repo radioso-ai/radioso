@@ -87,6 +87,10 @@ resource "google_cloud_run_v2_service" "backend" {
         value = tostring(var.session_ttl_hours)
       }
       env {
+        name  = "AUTH_SKIP_EMAIL_VERIFICATION"
+        value = tostring(var.auth_skip_email_verification)
+      }
+      env {
         name  = "DOCUMENT_STORAGE_DRIVER"
         value = "gcs"
       }
@@ -112,7 +116,7 @@ resource "google_cloud_run_v2_service" "backend" {
       }
       env {
         name  = "WORKER_TASKS_SERVICE_URL"
-        value = google_cloud_run_v2_service.document_worker[0].uri
+        value = local.worker_tasks_service_url
       }
       env {
         name  = "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
@@ -362,10 +366,6 @@ resource "google_cloud_run_v2_service" "document_worker" {
         value = var.project_id
       }
       env {
-        name  = "PORT"
-        value = "8080"
-      }
-      env {
         name  = "DATABASE_URL"
         value = "postgres://${google_sql_user.radioso.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.radioso.name}"
       }
@@ -388,6 +388,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "SESSION_TTL_HOURS"
         value = tostring(var.session_ttl_hours)
+      }
+      env {
+        name  = "AUTH_SKIP_EMAIL_VERIFICATION"
+        value = tostring(var.auth_skip_email_verification)
       }
       env {
         name  = "DOCUMENT_STORAGE_DRIVER"
@@ -415,7 +419,7 @@ resource "google_cloud_run_v2_service" "document_worker" {
       }
       env {
         name  = "WORKER_TASKS_SERVICE_URL"
-        value = google_cloud_run_v2_service.document_worker[0].uri
+        value = local.worker_tasks_service_url
       }
       env {
         name  = "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"

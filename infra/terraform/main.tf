@@ -7,6 +7,9 @@ locals {
   # creating a backend<->frontend dependency cycle. Keep a valid placeholder until
   # the wrapper supplies the discovered frontend run.app URL on a later apply.
   app_base_url = coalesce(var.app_base_url_override, "https://example.invalid")
+  # The worker service needs its own public URL for Cloud Tasks retry dispatch, but
+  # Terraform cannot reference that URL from inside the worker resource itself.
+  worker_tasks_service_url = coalesce(var.worker_tasks_service_url_override, "https://example.invalid")
   public_chat_base_url = (
     var.public_chat_base_url_override != null
     ? var.public_chat_base_url_override

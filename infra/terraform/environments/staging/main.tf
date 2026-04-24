@@ -65,10 +65,12 @@ module "radioso" {
   openai_rerank_model                   = var.openai_rerank_model
   openai_vector_model                   = var.openai_vector_model
   session_ttl_hours                     = var.session_ttl_hours
+  auth_skip_email_verification          = true
   metrics_enabled                       = var.metrics_enabled
   connector_public_base_url             = var.connector_public_base_url
   app_base_url_override                 = var.app_base_url_override
   public_chat_base_url_override         = var.public_chat_base_url_override
+  worker_tasks_service_url_override     = var.worker_tasks_service_url_override
   mail_driver                           = "log"
   mail_from_email                       = var.mail_from_email
   mail_from_name                        = var.mail_from_name

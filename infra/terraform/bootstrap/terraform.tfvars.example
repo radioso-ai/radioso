@@ -5,5 +5,5 @@ state_bucket_name = "radioso-staging-terraform-state"
 # region = "us-central1"
 
 # Live example:
-# project_id        = "radioso"
-# state_bucket_name = "radioso-terraform-state"
+# project_id        = "radioso-494120"
+# state_bucket_name = "radioso-494120-terraform-state"

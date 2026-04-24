@@ -50,17 +50,12 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
     sections: [
       {
         id: 'chunking-strategy',
-        label: 'Choose a chunking strategy',
-        summary: 'Pick the chunking approach used for future ingests.',
-      },
-      {
-        id: 'chunking-tuning',
-        label: 'Tune active chunking',
-        summary: 'Adjust the parameters for the currently selected strategy.',
+        label: 'Chunking',
+        summary: 'Pick the chunking approach and tune the active strategy in one place.',
       },
       {
         id: 'existing-documents',
-        label: 'Apply changes to existing documents',
+        label: 'Reprocess existing documents',
         summary: 'Re-queue current documents when you want stored chunks rewritten.',
       },
     ],

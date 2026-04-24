@@ -87,7 +87,7 @@ const assistantConversationModeLabels: Record<
   },
 }
 
-export function GeneralTab({
+export function WorkspaceAssistantChannelsTab({
   accountId,
   routeState,
   mode,
@@ -134,14 +134,20 @@ export function GeneralTab({
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
   const saveSequenceRef = useRef(0)
+  const organizationDraftVersionRef = useRef(0)
+  const workspaceDraftVersionRef = useRef(0)
+  const anonDraftVersionRef = useRef(0)
+  const assistantBehaviorDraftVersionRef = useRef(0)
 
   useEffect(() => {
     onSaveStateChange?.({ state: saveState, message: saveError })
   }, [onSaveStateChange, saveError, saveState])
 
   useEffect(() => {
-    setWorkspaceName(activeWorkspace?.name ?? '')
-  }, [activeWorkspace?.name])
+    if (!hasNameChange) {
+      setWorkspaceName(activeWorkspace?.name ?? '')
+    }
+  }, [activeWorkspace?.name, hasNameChange])
 
   useEffect(() => {
     let active = true
@@ -298,8 +304,14 @@ export function GeneralTab({
 
   const handleAssistantSettingChange = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
     if (!anonSettings) return
+    anonDraftVersionRef.current += 1
     setAssistantSettingsError(null)
     setAnonSettings({ ...anonSettings, [key]: value })
+  }
+
+  const updateAssistantBehaviorDraft = (updater: (current: RetrievalSettings) => RetrievalSettings) => {
+    assistantBehaviorDraftVersionRef.current += 1
+    setAssistantBehaviorSettings((current) => (current ? updater(current) : current))
   }
 
   const hasAssistantChanges =
@@ -540,6 +552,7 @@ export function GeneralTab({
         setSaveError('Failed to save changes')
         return
       }
+      const draftVersionAtRequestStart = organizationDraftVersionRef.current
       const saveId = saveSequenceRef.current + 1
       saveSequenceRef.current = saveId
       setSaveState('saving')
@@ -548,10 +561,12 @@ export function GeneralTab({
       try {
         const updated = await accountApi.renameOrganization(trimmed)
         if (saveSequenceRef.current !== saveId) return
-        setOrganizationName(updated.organizationName)
         setSavedOrganizationName(updated.organizationName)
+        if (organizationDraftVersionRef.current === draftVersionAtRequestStart) {
+          setOrganizationName(updated.organizationName)
+          setSaveState('saved')
+        }
         window.dispatchEvent(new Event('radioso:accounts-updated'))
-        setSaveState('saved')
       } catch {
         if (saveSequenceRef.current !== saveId) return
         setOrganizationError('Failed to rename organization')
@@ -574,6 +589,7 @@ export function GeneralTab({
         setSaveError('Failed to save changes')
         return
       }
+      const draftVersionAtRequestStart = workspaceDraftVersionRef.current
       const saveId = saveSequenceRef.current + 1
       saveSequenceRef.current = saveId
       setSaveState('saving')
@@ -582,7 +598,9 @@ export function GeneralTab({
       try {
         await renameWorkspace(activeWorkspace.id, trimmed)
         if (saveSequenceRef.current !== saveId) return
-        setSaveState('saved')
+        if (workspaceDraftVersionRef.current === draftVersionAtRequestStart) {
+          setSaveState('saved')
+        }
       } catch {
         if (saveSequenceRef.current !== saveId) return
         setRenameError('Failed to rename workspace')
@@ -598,6 +616,7 @@ export function GeneralTab({
       return
     }
     const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = anonDraftVersionRef.current
       const saveId = saveSequenceRef.current + 1
       saveSequenceRef.current = saveId
       setIsAnonSaving(true)
@@ -611,11 +630,13 @@ export function GeneralTab({
           proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
         })
         if (saveSequenceRef.current !== saveId) return
-        setAnonSettings(updated)
         setSavedAnonSettings(updated)
-        setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
         setAssistantSettingsError(null)
-        setSaveState('saved')
+        if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
+          setAnonSettings(updated)
+          setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
+          setSaveState('saved')
+        }
       } catch (error) {
         if (saveSequenceRef.current !== saveId) return
         console.error('Failed to update assistant settings:', error)
@@ -636,6 +657,7 @@ export function GeneralTab({
       return
     }
     const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = anonDraftVersionRef.current
       const saveId = saveSequenceRef.current + 1
       saveSequenceRef.current = saveId
       setIsAnonSaving(true)
@@ -650,10 +672,12 @@ export function GeneralTab({
           websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
         })
         if (saveSequenceRef.current !== saveId) return
-        setAnonSettings(updated)
         setSavedAnonSettings(updated)
-        setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
-        setSaveState('saved')
+        if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
+          setAnonSettings(updated)
+          setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
+          setSaveState('saved')
+        }
       } catch (error) {
         if (saveSequenceRef.current !== saveId) return
         console.error('Failed to update website embed settings:', error)
@@ -674,6 +698,7 @@ export function GeneralTab({
     }
 
     const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = assistantBehaviorDraftVersionRef.current
       const saveId = saveSequenceRef.current + 1
       saveSequenceRef.current = saveId
       setSaveState('saving')
@@ -681,10 +706,12 @@ export function GeneralTab({
       try {
         const updated = await settingsApi.updateRetrievalSettings(assistantBehaviorSettings)
         if (saveSequenceRef.current !== saveId) return
-        setAssistantBehaviorSettings(updated)
         setSavedAssistantBehaviorSettings(updated)
         setAssistantSettingsError(null)
-        setSaveState('saved')
+        if (assistantBehaviorDraftVersionRef.current === draftVersionAtRequestStart) {
+          setAssistantBehaviorSettings(updated)
+          setSaveState('saved')
+        }
       } catch (error) {
         if (saveSequenceRef.current !== saveId) return
         console.error('Failed to update assistant behavior settings:', error)
@@ -823,6 +850,7 @@ export function GeneralTab({
                       <Input
                         value={organizationName}
                         onChange={(event) => {
+                          organizationDraftVersionRef.current += 1
                           setOrganizationName(event.target.value)
                           setOrganizationError(null)
                         }}
@@ -853,6 +881,7 @@ export function GeneralTab({
                   id="workspaceName"
                   value={workspaceName}
                   onChange={(event) => {
+                    workspaceDraftVersionRef.current += 1
                     setWorkspaceName(event.target.value)
                     setRenameError(null)
                   }}
@@ -1006,10 +1035,10 @@ export function GeneralTab({
                     id="assistantAnswerInstruction"
                     value={assistantBehaviorSettings.customInstruction}
                     onChange={(event) =>
-                      setAssistantBehaviorSettings({
-                        ...assistantBehaviorSettings,
+                      updateAssistantBehaviorDraft((current) => ({
+                        ...current,
                         customInstruction: event.target.value.slice(0, 2000),
-                      })
+                      }))
                     }
                     placeholder="e.g. Keep answers concise, practical, and concrete."
                     rows={4}
@@ -1026,10 +1055,10 @@ export function GeneralTab({
                     id="assistantConversationMode"
                     value={assistantBehaviorSettings.conversationMode}
                     onChange={(event) =>
-                      setAssistantBehaviorSettings({
-                        ...assistantBehaviorSettings,
+                      updateAssistantBehaviorDraft((current) => ({
+                        ...current,
                         conversationMode: event.target.value as RetrievalSettings['conversationMode'],
-                      })
+                      }))
                     }
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
                   >
@@ -1236,7 +1265,10 @@ export function GeneralTab({
                   <Textarea
                     id="websiteEmbedAllowedOrigins"
                     value={websiteEmbedOrigins}
-                    onChange={(event) => setWebsiteEmbedOrigins(event.target.value)}
+                    onChange={(event) => {
+                      anonDraftVersionRef.current += 1
+                      setWebsiteEmbedOrigins(event.target.value)
+                    }}
                     placeholder={`https://example.com\nhttps://docs.example.com`}
                     className="min-h-[132px]"
                   />

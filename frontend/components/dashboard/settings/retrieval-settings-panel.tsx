@@ -109,6 +109,7 @@ export function RetrievalSettingsPanel({
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const hasLoadedRef = useRef(false)
   const saveSequenceRef = useRef(0)
+  const draftVersionRef = useRef(0)
 
   useEffect(() => {
     onSaveStateChange?.({ state: saveState, message: saveError })
@@ -131,9 +132,13 @@ export function RetrievalSettingsPanel({
     void loadSettings()
   }, [])
 
+  const updateSettingsDraft = (updater: (current: RetrievalSettings) => RetrievalSettings) => {
+    draftVersionRef.current += 1
+    setSettings((current) => (current ? updater(current) : current))
+  }
+
   const updateSetting = <K extends keyof RetrievalSettings>(key: K, value: RetrievalSettings[K]) => {
-    if (!settings) return
-    setSettings({ ...settings, [key]: value })
+    updateSettingsDraft((current) => ({ ...current, [key]: value }))
   }
 
   const updateMetadataRule = (
@@ -142,12 +147,12 @@ export function RetrievalSettingsPanel({
   ) => {
     if (!settings) return
 
-    setSettings({
-      ...settings,
-      metadataRules: settings.metadataRules.map((rule) =>
+    updateSettingsDraft((current) => ({
+      ...current,
+      metadataRules: current.metadataRules.map((rule) =>
         rule.id === ruleId ? { ...rule, ...updates } : rule
       ),
-    })
+    }))
   }
 
   const applyMetadataField = (
@@ -212,10 +217,10 @@ export function RetrievalSettingsPanel({
     if (!settings) return
 
     const suggestedField = settings.metadataFieldSuggestions[0]
-    setSettings({
-      ...settings,
+    updateSettingsDraft((current) => ({
+      ...current,
       metadataRules: [
-        ...settings.metadataRules,
+        ...current.metadataRules,
         syncRuleWithConditions({
           id: globalThis.crypto?.randomUUID?.() ?? `rule-${Date.now()}`,
           field: suggestedField?.field ?? '',
@@ -235,7 +240,7 @@ export function RetrievalSettingsPanel({
           }),
         ]),
       ],
-    })
+    }))
   }
 
   const updateMetadataCondition = (
@@ -289,10 +294,10 @@ export function RetrievalSettingsPanel({
   const removeMetadataRule = (ruleId: string) => {
     if (!settings) return
 
-    setSettings({
-      ...settings,
-      metadataRules: settings.metadataRules.filter((rule) => rule.id !== ruleId),
-    })
+    updateSettingsDraft((current) => ({
+      ...current,
+      metadataRules: current.metadataRules.filter((rule) => rule.id !== ruleId),
+    }))
   }
 
   const settingsSignature = useMemo(() => JSON.stringify(settings), [settings])
@@ -313,14 +318,17 @@ export function RetrievalSettingsPanel({
     setSaveError(null)
 
     const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = draftVersionRef.current
       try {
         const saved = await settingsApi.updateRetrievalSettings(settings)
         if (saveSequenceRef.current !== saveId) {
           return
         }
-        setSettings(saved)
         setLastSavedSettings(saved)
-        setSaveState('saved')
+        if (draftVersionRef.current === draftVersionAtRequestStart) {
+          setSettings(saved)
+          setSaveState('saved')
+        }
       } catch (error) {
         if (saveSequenceRef.current !== saveId) {
           return

@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { GeneralTab } from '@/components/dashboard/settings/general-tab'
 import { IngestionSettingsPanel } from '@/components/dashboard/settings/ingestion-settings-panel'
 import { RetrievalSettingsPanel } from '@/components/dashboard/settings/retrieval-settings-panel'
+import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   buildDashboardHref,
@@ -118,15 +118,15 @@ export function SettingsView({
         </div>
 
         <TabsContent value="workspace" className="flex-1 overflow-hidden">
-          <GeneralTab accountId={accountId} routeState={routeState} mode="workspace" onSaveStateChange={setGeneralSaveState} />
+          <WorkspaceAssistantChannelsTab accountId={accountId} routeState={routeState} mode="workspace" onSaveStateChange={setGeneralSaveState} />
         </TabsContent>
 
         <TabsContent value="assistant" className="flex-1 overflow-hidden">
-          <GeneralTab accountId={accountId} routeState={routeState} mode="assistant" onSaveStateChange={setGeneralSaveState} />
+          <WorkspaceAssistantChannelsTab accountId={accountId} routeState={routeState} mode="assistant" onSaveStateChange={setGeneralSaveState} />
         </TabsContent>
 
         <TabsContent value="channels" className="flex-1 overflow-hidden">
-          <GeneralTab accountId={accountId} routeState={routeState} mode="channels" onSaveStateChange={setGeneralSaveState} />
+          <WorkspaceAssistantChannelsTab accountId={accountId} routeState={routeState} mode="channels" onSaveStateChange={setGeneralSaveState} />
         </TabsContent>
 
         <TabsContent value="ingestion" className="flex-1 overflow-hidden">

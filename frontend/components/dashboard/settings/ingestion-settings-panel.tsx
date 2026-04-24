@@ -38,6 +38,7 @@ export function IngestionSettingsPanel({
   const [reprocessMessage, setReprocessMessage] = useState<string | null>(null)
   const hasLoadedRef = useRef(false)
   const saveSequenceRef = useRef(0)
+  const draftVersionRef = useRef(0)
 
   useEffect(() => {
     onSaveStateChange?.({ state: saveState, message: saveError })
@@ -60,15 +61,18 @@ export function IngestionSettingsPanel({
     void loadSettings()
   }, [])
 
+  const updateSettingsDraft = (updater: (current: IngestionSettings) => IngestionSettings) => {
+    draftVersionRef.current += 1
+    setSettings((current) => (current ? updater(current) : current))
+  }
+
   const updateSetting = <K extends keyof IngestionSettings>(key: K, value: IngestionSettings[K]) => {
-    if (!settings) return
-    setSettings({ ...settings, [key]: value })
+    updateSettingsDraft((current) => ({ ...current, [key]: value }))
     setReprocessMessage(null)
   }
 
   const persistSettings = async (draft: IngestionSettings) => {
     const updated = await settingsApi.updateIngestionSettings(draft)
-    setSettings(updated)
     setLastSavedSettings(updated)
     return updated
   }
@@ -91,12 +95,16 @@ export function IngestionSettingsPanel({
     setSaveError(null)
 
     const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = draftVersionRef.current
       try {
-        await persistSettings(settings)
+        const updated = await persistSettings(settings)
         if (saveSequenceRef.current !== saveId) {
           return
         }
-        setSaveState('saved')
+        if (draftVersionRef.current === draftVersionAtRequestStart) {
+          setSettings(updated)
+          setSaveState('saved')
+        }
       } catch (error) {
         if (saveSequenceRef.current !== saveId) {
           return
@@ -116,10 +124,14 @@ export function IngestionSettingsPanel({
     setReprocessMessage(null)
     try {
       if (settingsSignature !== lastSavedSignature) {
+        const draftVersionAtRequestStart = draftVersionRef.current
         setSaveState('saving')
         setSaveError(null)
-        await persistSettings(settings)
-        setSaveState('saved')
+        const updated = await persistSettings(settings)
+        if (draftVersionRef.current === draftVersionAtRequestStart) {
+          setSettings(updated)
+          setSaveState('saved')
+        }
       }
 
       const response = await settingsApi.reprocessWorkspaceIngestion()

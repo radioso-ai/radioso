@@ -1,8 +1,9 @@
 # <img src="./frontend/public/radioso-logo.png" alt="Radioso logo" width="44" align="center" /> Radioso
 
-**The opinionated context platform for rapid assistant integrations.**
+**The opinionated context platform for delightful assistants.**
 
-You can wire up LangChain. You can drag nodes around a low-code agent canvas. Or you can run Radioso, upload your documents, and have an assistant that actually knows what it's talking about — self-hosted, multi-provider, API-first, today.
+You can wire up LangChain and build a rocketship. You can get a PhD in dragging nodes around a low-code agent canvas. 
+Or you can run Radioso, upload your documents, and have an assistant that knows what it's talking about — self-hosted, multi-provider, API-first, today. That is why we built Radioso. 
 
 ## Quick Start
 

@@ -1,4 +1,5 @@
 # Required
+environment = "staging"
 project_id = "your-gcp-project-id"
 
 # Secrets — set via TF_VAR_* env vars or a .tfvars file NOT committed to git
@@ -12,8 +13,8 @@ project_id = "your-gcp-project-id"
 # Optional overrides (defaults shown)
 # region                  = "us-central1"
 # deploy_services         = false
-# backend_image           = "us-central1-docker.pkg.dev/your-project/radioso/backend:latest"
-# frontend_image          = "us-central1-docker.pkg.dev/your-project/radioso/frontend:latest"
+# backend_image           = "us-central1-docker.pkg.dev/your-project/radioso-staging/backend:latest"
+# frontend_image          = "us-central1-docker.pkg.dev/your-project/radioso-staging/frontend:latest"
 # worker_min_instances   = 1
 # worker_max_instances   = 5
 # db_tier                 = "db-f1-micro"
@@ -34,4 +35,13 @@ project_id = "your-gcp-project-id"
 # session_ttl_hours       = 168
 # metrics_enabled         = false
 # connector_public_base_url = "https://your-backend-url"
-# public_chat_base_url    = "https://your-frontend-url/chat"
+# app_base_url_override   = "https://your-frontend-url.a.run.app"
+# public_chat_base_url_override = "https://your-frontend-url.a.run.app/chat"
+# mail_driver             = "log"
+# mail_from_email         = "noreply@example.com"
+# mail_from_name          = "Radioso"
+# mail_smtp_host          = "smtp.example.com"
+# mail_smtp_port          = 587
+# mail_smtp_secure        = false
+# mail_smtp_username      = ""
+# mail_smtp_password      = ""

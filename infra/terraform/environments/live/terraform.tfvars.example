@@ -1,0 +1,21 @@
+backend_image  = "us-central1-docker.pkg.dev/radioso-494120/radioso-live/backend:latest"
+frontend_image = "us-central1-docker.pkg.dev/radioso-494120/radioso-live/frontend:latest"
+
+# Required secrets: prefer TF_VAR_* in CI instead of committing tfvars.
+# openai_api_key           = ""
+# session_cookie_secret    = ""
+# workspace_token_secret   = ""
+# website_embed_secret     = ""
+# connector_encryption_key = ""
+
+# Optional overrides
+# region                      = "us-central1"
+# deploy_services             = false
+# db_tier                     = "db-f1-micro"
+# backend_max_instances       = 2
+# frontend_max_instances      = 2
+# worker_max_instances        = 5
+# document_storage_bucket_name = "radioso-radioso-live-documents"
+# app_base_url_override       = "https://your-frontend-url.a.run.app"
+# public_chat_base_url_override = "https://your-frontend-url.a.run.app/chat"
+# worker_tasks_service_url_override = "https://your-worker-url.a.run.app"

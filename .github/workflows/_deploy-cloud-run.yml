@@ -1,0 +1,123 @@
+name: Deploy Cloud Run Services
+
+on:
+  workflow_call:
+    inputs:
+      artifact_repository:
+        description: Artifact Registry Docker repository ID.
+        required: true
+        type: string
+      backend_service:
+        description: Cloud Run backend service name.
+        required: true
+        type: string
+      frontend_service:
+        description: Cloud Run frontend service name.
+        required: true
+        type: string
+      github_environment:
+        description: GitHub environment that holds the deploy variables.
+        required: true
+        type: string
+      require_main_branch:
+        description: Whether this deployment must run from refs/heads/main.
+        required: false
+        default: false
+        type: boolean
+      worker_service:
+        description: Cloud Run worker service name.
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.github_environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-${{ inputs.github_environment }}
+      cancel-in-progress: false
+    env:
+      ARTIFACT_REGISTRY_REGION: ${{ vars.ARTIFACT_REGISTRY_REGION }}
+      ARTIFACT_REPOSITORY: ${{ inputs.artifact_repository }}
+      BACKEND_SERVICE: ${{ inputs.backend_service }}
+      FRONTEND_SERVICE: ${{ inputs.frontend_service }}
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      WORKER_SERVICE: ${{ inputs.worker_service }}
+
+    steps:
+      - name: Require configured GitHub environment variables
+        run: |
+          for key in \
+            ARTIFACT_REGISTRY_REGION \
+            GCP_DEPLOY_SERVICE_ACCOUNT \
+            GCP_PROJECT_ID \
+            GCP_REGION \
+            GCP_WORKLOAD_IDENTITY_PROVIDER
+          do
+            if [ -z "${!key}" ]; then
+              echo "Missing required GitHub environment variable: $key" >&2
+              exit 1
+            fi
+          done
+
+      - name: Require main branch
+        if: ${{ inputs.require_main_branch }}
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "Live deploys must run from refs/heads/main. Got ${GITHUB_REF}." >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${ARTIFACT_REGISTRY_REGION}-docker.pkg.dev" --quiet
+
+      - name: Compute image tags
+        run: |
+          echo "BACKEND_IMAGE=${ARTIFACT_REGISTRY_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/backend:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "FRONTEND_IMAGE=${ARTIFACT_REGISTRY_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/frontend:${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Build backend image
+        run: docker build --platform linux/amd64 -f infra/backend.Dockerfile -t "${BACKEND_IMAGE}" .
+
+      - name: Push backend image
+        run: docker push "${BACKEND_IMAGE}"
+
+      - name: Build frontend image
+        run: docker build --platform linux/amd64 -f frontend/Dockerfile -t "${FRONTEND_IMAGE}" ./frontend
+
+      - name: Push frontend image
+        run: docker push "${FRONTEND_IMAGE}"
+
+      - name: Deploy backend service
+        run: gcloud run services update "${BACKEND_SERVICE}" --image "${BACKEND_IMAGE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+
+      - name: Deploy worker service
+        run: gcloud run services update "${WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+
+      - name: Deploy frontend service
+        run: gcloud run services update "${FRONTEND_SERVICE}" --image "${FRONTEND_IMAGE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+
+      - name: Print deployed service URLs
+        run: |
+          echo "backend_url=$(gcloud run services describe "${BACKEND_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
+          echo "worker_url=$(gcloud run services describe "${WORKER_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
+          echo "frontend_url=$(gcloud run services describe "${FRONTEND_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"

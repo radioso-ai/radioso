@@ -4,7 +4,7 @@ resource "random_password" "db_password" {
 }
 
 resource "google_sql_database_instance" "postgres" {
-  name                = "${local.service_name}-db"
+  name                = "${local.resource_name_prefix}-db"
   database_version    = "POSTGRES_16"
   region              = var.region
   deletion_protection = var.db_deletion_protection

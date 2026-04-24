@@ -6,6 +6,7 @@ const workspace = (id: string, name: string) => ({
   id,
   accountId: 'account-1',
   name,
+  publicRouteKey: `${name.toLowerCase()}-${id}`,
   createdAt: '2026-04-11T00:00:00.000Z',
   updatedAt: '2026-04-11T00:00:00.000Z',
 })

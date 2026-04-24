@@ -63,7 +63,7 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       if (response.requiresEmailVerification) {
         setPendingEmail(email)
       } else {
-        seedWorkspaceSession(response.workspaceId)
+        seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
         if (!auth) {
           throw new Error('Registration is unavailable outside the auth shell')
         }

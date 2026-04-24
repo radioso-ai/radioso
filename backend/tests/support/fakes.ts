@@ -85,6 +85,7 @@ import type {
   EvalRunRecord,
 } from "../../src/modules/evals/domain/evalTypes.js";
 import type { EvalRepositoryPort } from "../../src/modules/evals/services/evalLabService.js";
+import { createWorkspacePublicRouteKey } from "../../src/modules/workspace/domain/publicRouteKey.js";
 import { conflict, notFound } from "../../src/shared/domain/errors.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
@@ -468,11 +469,12 @@ export class InMemoryWorkspaceTokenRepository implements WorkspaceTokenRepositor
 export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
   private readonly items = new Map<string, WorkspaceRecord>();
 
-  async create(accountId: string, name: string): Promise<WorkspaceRecord> {
+  async create(accountId: string, name: string, publicRouteKey?: string): Promise<WorkspaceRecord> {
     const record: WorkspaceRecord = {
       id: randomUUID(),
       accountId,
       name,
+      publicRouteKey: publicRouteKey ?? createWorkspacePublicRouteKey(name, randomUUID),
       assistantName: "",
       assistantRole: "",
       greetingInstruction: "",
@@ -501,6 +503,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
   async findByIdAndAccountId(workspaceId: string, accountId: string): Promise<WorkspaceRecord | null> {
     const item = this.items.get(workspaceId);
     return item && item.accountId === accountId ? item : null;
+  }
+
+  async findByPublicRouteKey(publicRouteKey: string): Promise<WorkspaceRecord | null> {
+    return [...this.items.values()].find((w) => w.publicRouteKey === publicRouteKey) ?? null;
   }
 
   async findByAnonymousChatToken(token: string): Promise<WorkspaceRecord | null> {

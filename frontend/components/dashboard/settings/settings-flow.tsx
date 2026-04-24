@@ -73,7 +73,7 @@ export function SettingFieldHeader({
   className,
 }: {
   label: string
-  tooltip: string | ReactNode
+  tooltip?: string | ReactNode
   description?: string
   htmlFor?: string
   className?: string
@@ -84,7 +84,7 @@ export function SettingFieldHeader({
         <Label htmlFor={htmlFor} className="text-foreground">
           {label}
         </Label>
-        <SettingTooltip label={label} content={tooltip} />
+        {tooltip ? <SettingTooltip label={label} content={tooltip} /> : null}
       </div>
       {description ? (
         <div className="text-sm text-muted-foreground">

@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, Code2, Globe, ExternalLink, MessageSquare, RefreshCw, Save, Trash2 } from 'lucide-react'
+import { Building2, Code2, ExternalLink, FolderOpen, Globe, KeyRound, MessageSquare, RefreshCw, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
 
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
@@ -72,19 +72,20 @@ const updateWebsiteEmbedJsonOverrideValue = (currentValue: string, key: string, 
 export function GeneralTab({
   accountId,
   routeState,
+  onSaveStateChange,
 }: {
   accountId: string
   routeState: DashboardRouteState
+  onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
   const router = useRouter()
   const descriptor = getSettingsTabDescriptor('general')
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace } = useWorkspace()
   const [workspaceName, setWorkspaceName] = useState(activeWorkspace?.name ?? '')
   const [organizationName, setOrganizationName] = useState('')
+  const [savedOrganizationName, setSavedOrganizationName] = useState('')
   const [isOrganizationLoading, setIsOrganizationLoading] = useState(true)
-  const [isOrganizationSaving, setIsOrganizationSaving] = useState(false)
   const [organizationError, setOrganizationError] = useState<string | null>(null)
-  const [isRenameSaving, setIsRenameSaving] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
   const hasNameChange = workspaceName.trim() !== (activeWorkspace?.name ?? '')
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
@@ -96,6 +97,8 @@ export function GeneralTab({
   const [savedAnonSettings, setSavedAnonSettings] = useState<GeneralSettings | null>(null)
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
+  const [saveState, setSaveState] = useState<'idle' | 'saved' | 'saving' | 'error'>('idle')
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [websiteEmbedOrigins, setWebsiteEmbedOrigins] = useState('')
   const [websiteEmbedSnippetDisplayMode, setWebsiteEmbedSnippetDisplayMode] = useState('')
   const [websiteEmbedSnippetInitialState, setWebsiteEmbedSnippetInitialState] = useState('')
@@ -108,6 +111,11 @@ export function GeneralTab({
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
+  const saveSequenceRef = useRef(0)
+
+  useEffect(() => {
+    onSaveStateChange?.({ state: saveState, message: saveError })
+  }, [onSaveStateChange, saveError, saveState])
 
   useEffect(() => {
     setWorkspaceName(activeWorkspace?.name ?? '')
@@ -122,7 +130,9 @@ export function GeneralTab({
         const response = await accountApi.listAccounts()
         if (!active) return
         const current = response.accounts.find((account) => account.accountId === accountId)
-        setOrganizationName(current?.organizationName ?? '')
+        const nextOrganizationName = current?.organizationName ?? ''
+        setOrganizationName(nextOrganizationName)
+        setSavedOrganizationName(nextOrganizationName)
         setOrganizationError(null)
       } catch {
         if (!active) return
@@ -203,44 +213,6 @@ export function GeneralTab({
     }
   }
 
-  const handleRename = async () => {
-    if (!activeWorkspace || !hasNameChange) return
-    const trimmed = workspaceName.trim()
-    if (!trimmed || trimmed.length > 100) {
-      setRenameError('Name must be between 1 and 100 characters')
-      return
-    }
-    setIsRenameSaving(true)
-    setRenameError(null)
-    try {
-      await renameWorkspace(activeWorkspace.id, trimmed)
-    } catch {
-      setRenameError('Failed to rename workspace')
-    } finally {
-      setIsRenameSaving(false)
-    }
-  }
-
-  const handleOrganizationRename = async () => {
-    const trimmed = organizationName.trim()
-    if (!trimmed || trimmed.length > 80) {
-      setOrganizationError('Organization name must be between 1 and 80 characters')
-      return
-    }
-
-    setIsOrganizationSaving(true)
-    setOrganizationError(null)
-    try {
-      const updated = await accountApi.renameOrganization(trimmed)
-      setOrganizationName(updated.organizationName)
-      window.dispatchEvent(new Event('radioso:accounts-updated'))
-    } catch {
-      setOrganizationError('Failed to rename organization')
-    } finally {
-      setIsOrganizationSaving(false)
-    }
-  }
-
   const handleDelete = async () => {
     if (!activeWorkspace || !deleteConfirmValid) return
     setIsDeleting(true)
@@ -284,29 +256,6 @@ export function GeneralTab({
           anonSettings.proactiveGreetingEnabled !== savedAnonSettings.proactiveGreetingEnabled
         )
       : false
-
-  const handleAssistantSave = async () => {
-    if (!anonSettings) return
-    setIsAnonSaving(true)
-    try {
-      const updated = await generalSettingsApi.updateGeneralSettings({
-        assistantName: anonSettings.assistantName,
-        assistantRole: anonSettings.assistantRole,
-        greetingInstruction: anonSettings.greetingInstruction,
-        assistantDefaultLocale: anonSettings.assistantDefaultLocale,
-        proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
-      })
-      setAnonSettings(updated)
-      setSavedAnonSettings(updated)
-      setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
-      setAssistantSettingsError(null)
-    } catch (error) {
-      console.error('Failed to update assistant bootstrap settings:', error)
-      setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant bootstrap settings.'))
-    } finally {
-      setIsAnonSaving(false)
-    }
-  }
 
   const hasWebsiteEmbedChanges =
     anonSettings && savedAnonSettings
@@ -513,26 +462,149 @@ export function GeneralTab({
     [websiteEmbedDemoOrigin, websiteEmbedOrigins],
   )
 
-  const handleWebsiteEmbedSave = async () => {
-    if (!anonSettings) return
-    setIsAnonSaving(true)
-    try {
-      const updated = await generalSettingsApi.updateGeneralSettings({
-        websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
-        websiteEmbedAllowedOrigins: parseWebsiteEmbedOrigins(websiteEmbedOrigins),
-        websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
-        websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
-        websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
-      })
-      setAnonSettings(updated)
-      setSavedAnonSettings(updated)
-      setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
-    } catch (error) {
-      console.error('Failed to update website embed settings:', error)
-    } finally {
-      setIsAnonSaving(false)
+  useEffect(() => {
+    if (!accountId || isOrganizationLoading) {
+      return
     }
-  }
+    const trimmed = organizationName.trim()
+    if (trimmed === '' || trimmed === savedOrganizationName) {
+      return
+    }
+    const timeout = window.setTimeout(async () => {
+      if (trimmed.length > 80) {
+        setOrganizationError('Organization name must be between 1 and 80 characters')
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+        return
+      }
+      const saveId = saveSequenceRef.current + 1
+      saveSequenceRef.current = saveId
+      setSaveState('saving')
+      setSaveError(null)
+      setOrganizationError(null)
+      try {
+        const updated = await accountApi.renameOrganization(trimmed)
+        if (saveSequenceRef.current !== saveId) return
+        setOrganizationName(updated.organizationName)
+        setSavedOrganizationName(updated.organizationName)
+        window.dispatchEvent(new Event('radioso:accounts-updated'))
+        setSaveState('saved')
+      } catch {
+        if (saveSequenceRef.current !== saveId) return
+        setOrganizationError('Failed to rename organization')
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+      }
+    }, 700)
+    return () => window.clearTimeout(timeout)
+  }, [accountId, isOrganizationLoading, organizationName, savedOrganizationName])
+
+  useEffect(() => {
+    if (!activeWorkspace || !hasNameChange) {
+      return
+    }
+    const trimmed = workspaceName.trim()
+    const timeout = window.setTimeout(async () => {
+      if (!trimmed || trimmed.length > 100) {
+        setRenameError('Name must be between 1 and 100 characters')
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+        return
+      }
+      const saveId = saveSequenceRef.current + 1
+      saveSequenceRef.current = saveId
+      setSaveState('saving')
+      setSaveError(null)
+      setRenameError(null)
+      try {
+        await renameWorkspace(activeWorkspace.id, trimmed)
+        if (saveSequenceRef.current !== saveId) return
+        setSaveState('saved')
+      } catch {
+        if (saveSequenceRef.current !== saveId) return
+        setRenameError('Failed to rename workspace')
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+      }
+    }, 700)
+    return () => window.clearTimeout(timeout)
+  }, [activeWorkspace, hasNameChange, renameWorkspace, workspaceName])
+
+  useEffect(() => {
+    if (!anonSettings || !savedAnonSettings || !hasAssistantChanges) {
+      return
+    }
+    const timeout = window.setTimeout(async () => {
+      const saveId = saveSequenceRef.current + 1
+      saveSequenceRef.current = saveId
+      setIsAnonSaving(true)
+      setSaveState('saving')
+      setSaveError(null)
+      try {
+        const updated = await generalSettingsApi.updateGeneralSettings({
+          assistantName: anonSettings.assistantName,
+          assistantRole: anonSettings.assistantRole,
+          greetingInstruction: anonSettings.greetingInstruction,
+          assistantDefaultLocale: anonSettings.assistantDefaultLocale,
+          proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
+        })
+        if (saveSequenceRef.current !== saveId) return
+        setAnonSettings(updated)
+        setSavedAnonSettings(updated)
+        setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
+        setAssistantSettingsError(null)
+        setSaveState('saved')
+      } catch (error) {
+        if (saveSequenceRef.current !== saveId) return
+        console.error('Failed to update assistant bootstrap settings:', error)
+        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant bootstrap settings.'))
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+      } finally {
+        if (saveSequenceRef.current === saveId) {
+          setIsAnonSaving(false)
+        }
+      }
+    }, 700)
+    return () => window.clearTimeout(timeout)
+  }, [anonSettings, hasAssistantChanges, savedAnonSettings])
+
+  useEffect(() => {
+    if (!anonSettings || !savedAnonSettings || !hasWebsiteEmbedChanges) {
+      return
+    }
+    const timeout = window.setTimeout(async () => {
+      const saveId = saveSequenceRef.current + 1
+      saveSequenceRef.current = saveId
+      setIsAnonSaving(true)
+      setSaveState('saving')
+      setSaveError(null)
+      try {
+        const updated = await generalSettingsApi.updateGeneralSettings({
+          websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
+          websiteEmbedAllowedOrigins: parseWebsiteEmbedOrigins(websiteEmbedOrigins),
+          websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
+          websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
+          websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
+        })
+        if (saveSequenceRef.current !== saveId) return
+        setAnonSettings(updated)
+        setSavedAnonSettings(updated)
+        setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
+        setSaveState('saved')
+      } catch (error) {
+        if (saveSequenceRef.current !== saveId) return
+        console.error('Failed to update website embed settings:', error)
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+      } finally {
+        if (saveSequenceRef.current === saveId) {
+          setIsAnonSaving(false)
+        }
+      }
+    }, 700)
+    return () => window.clearTimeout(timeout)
+  }, [anonSettings, hasWebsiteEmbedChanges, savedAnonSettings, websiteEmbedOrigins])
 
   const handleOpenWebsiteEmbedDemo = async () => {
     if (!anonSettings?.websiteEmbedEnabled || !websiteEmbedDemoUrl || typeof window === 'undefined') {
@@ -673,15 +745,6 @@ export function GeneralTab({
                         maxLength={80}
                         className="flex-1"
                       />
-                      <Button
-                        size="sm"
-                        className="sm:self-start"
-                        onClick={handleOrganizationRename}
-                        disabled={!organizationName.trim() || isOrganizationSaving}
-                      >
-                        {isOrganizationSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                        Save
-                      </Button>
                     </div>
                     {organizationError ? <p className="text-sm text-destructive">{organizationError}</p> : null}
                   </div>
@@ -690,11 +753,16 @@ export function GeneralTab({
             )}
 
             <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-              <div>
-                <p className="text-sm font-medium text-foreground">Workspace name</p>
-                <p className="text-sm text-muted-foreground">
-                  Rename the active workspace without changing any of its data or settings.
-                </p>
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                  <FolderOpen className="h-5 w-5 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-foreground">Workspace name</p>
+                  <p className="text-sm text-muted-foreground">
+                    Rename the active workspace without changing any of its data or settings.
+                  </p>
+                </div>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
@@ -707,15 +775,6 @@ export function GeneralTab({
                   maxLength={100}
                   className="flex-1"
                 />
-                <Button
-                  size="sm"
-                  className="sm:self-start"
-                  onClick={handleRename}
-                  disabled={!hasNameChange || isRenameSaving}
-                >
-                  {isRenameSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                  Save
-                </Button>
               </div>
               {renameError ? <p className="text-sm text-destructive">{renameError}</p> : null}
             </div>
@@ -723,7 +782,10 @@ export function GeneralTab({
             <details className="rounded-lg border border-border bg-card p-4">
                 <summary className="cursor-pointer list-none">
                   <div className="flex items-center gap-3">
-                    <div>
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <KeyRound className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="min-w-0">
                       <h3 className="font-medium text-foreground">Session-authenticated admin API</h3>
                       <p className="text-sm text-muted-foreground">
                         Admin requests now use the browser session cookie together with the active workspace id.
@@ -789,21 +851,17 @@ export function GeneralTab({
             ) : anonSettings ? (
               <div className="rounded-lg border border-border bg-card p-4 space-y-4">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-base font-medium text-foreground">Assistant bootstrap</p>
-                    <p className="text-sm text-muted-foreground mt-0.5">
-                      Define the assistant&apos;s stable identity here. The active chat language can still be overridden per session, for example by an embedded website popup.
-                    </p>
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <Sparkles className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-base font-medium text-foreground">Assistant bootstrap</p>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        Define the assistant&apos;s stable identity here. The active chat language can still be overridden per session, for example by an embedded website popup.
+                      </p>
+                    </div>
                   </div>
-                  <Button
-                    size="sm"
-                    className="sm:self-start"
-                    onClick={handleAssistantSave}
-                    disabled={!hasAssistantChanges || isAnonSaving}
-                  >
-                    {isAnonSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                    Save
-                  </Button>
                 </div>
                 {assistantSettingsError ? (
                   <p className="text-sm text-destructive" role="alert">{assistantSettingsError}</p>
@@ -1392,12 +1450,6 @@ export function GeneralTab({
                   </div>
                 ) : null}
 
-                <div className="flex justify-end">
-                  <Button onClick={handleWebsiteEmbedSave} disabled={!hasWebsiteEmbedChanges || isAnonSaving}>
-                    {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save embed settings
-                  </Button>
-                </div>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load website embed settings.</p>
@@ -1407,11 +1459,16 @@ export function GeneralTab({
           <section className="space-y-4 rounded-md border border-destructive/50 p-4">
             <h2 className="text-sm font-medium text-destructive uppercase tracking-wide">Danger Zone</h2>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">Delete this workspace</p>
-                <p className="text-sm text-muted-foreground">
-                  Permanently delete this workspace and all its documents, chats, and settings. This action cannot be undone.
-                </p>
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
+                  <ShieldAlert className="h-5 w-5 text-destructive" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">Delete this workspace</p>
+                  <p className="text-sm text-muted-foreground">
+                    Permanently delete this workspace and all its documents, chats, and settings. This action cannot be undone.
+                  </p>
+                </div>
               </div>
 
               <Dialog

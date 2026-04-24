@@ -17,6 +17,9 @@ on:
 jobs:
   deploy:
     uses: ./.github/workflows/_deploy-cloud-run.yml
+    permissions:
+      contents: read
+      id-token: write
     with:
       github_environment: staging
       artifact_repository: radioso-staging

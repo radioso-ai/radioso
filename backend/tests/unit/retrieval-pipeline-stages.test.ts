@@ -416,15 +416,19 @@ describe("retrieval pipeline stages", () => {
           },
         },
         {
-          async analyze({ query, activeQuery, contextMessages }) {
-            triggerAnalysisInput = {
-              query,
-              activeQuery,
-              contextMessages: contextMessages.map((message) => ({
-                role: message.role,
-                content: message.content,
-              })),
-            };
+	          async analyze({ query, activeQuery, contextMessages }) {
+	            const normalizedContextMessages: Array<{ role: "user" | "assistant"; content: string }> = contextMessages
+	              .filter((message) => message.role === "user" || message.role === "assistant")
+	              .map((message) => ({
+	                role: message.role as "user" | "assistant",
+	                content: message.content,
+	              }));
+
+	            triggerAnalysisInput = {
+	              query,
+	              activeQuery,
+	              contextMessages: normalizedContextMessages,
+	            };
 
             return {
               status: "applied",

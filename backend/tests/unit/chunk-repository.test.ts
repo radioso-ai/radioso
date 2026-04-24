@@ -9,7 +9,7 @@ describe("chunk repository", () => {
       async query() {
         throw new Error("unused");
       },
-      async withTransaction(callback) {
+      async withTransaction(callback: (client: { query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }> }) => Promise<unknown>) {
         const client = {
           async query(sql: string, params?: unknown[]) {
             calls.push({ sql, params });
@@ -49,7 +49,7 @@ describe("chunk repository", () => {
       async query() {
         throw new Error("unused");
       },
-      async withTransaction(callback) {
+      async withTransaction(callback: (client: { query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }> }) => Promise<unknown>) {
         const client = {
           async query(sql: string, params?: unknown[]) {
             calls.push({ sql, params });
@@ -86,7 +86,7 @@ describe("chunk repository", () => {
       async query() {
         throw new Error("unused");
       },
-      async withTransaction(callback) {
+      async withTransaction(callback: (client: { query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }> }) => Promise<unknown>) {
         const client = {
           async query(sql: string, params?: unknown[]) {
             calls.push({ sql, params });

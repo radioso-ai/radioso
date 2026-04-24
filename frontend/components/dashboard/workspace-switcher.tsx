@@ -116,11 +116,12 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
     setIsSwitchingAccountId(targetAccountId)
     try {
       const response = await accountApi.switchAccount(targetAccountId, preferredWorkspaceId)
-      seedWorkspaceSession(response.workspaceId)
+      seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       await login(user.email, response.userId, response.accountId)
       router.replace(buildDashboardHref(response.accountId, {
         section: currentView,
         workspaceId: response.workspaceId,
+        workspacePublicRouteKey: response.workspacePublicRouteKey,
       }))
     } finally {
       setIsSwitchingAccountId(null)
@@ -138,13 +139,14 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
     setCreateOrganizationError(null)
     try {
       const response = await accountApi.createOrganization(trimmed)
-      seedWorkspaceSession(response.workspaceId)
+      seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       await login(user.email, response.userId, response.accountId)
       setNewOrganizationName('')
       setIsCreateOrganizationOpen(false)
       router.replace(buildDashboardHref(response.accountId, {
         section: currentView,
         workspaceId: response.workspaceId,
+        workspacePublicRouteKey: response.workspacePublicRouteKey,
       }))
     } catch {
       setCreateOrganizationError('Failed to create organization')

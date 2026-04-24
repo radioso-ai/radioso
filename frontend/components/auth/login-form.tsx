@@ -49,7 +49,7 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
       const preferredAccountId =
         typeof window !== 'undefined' ? getStoredLastAccountId(window.localStorage) ?? undefined : undefined
       const response = await authApi.login({ email, password, preferredWorkspaceId, preferredAccountId })
-      seedWorkspaceSession(response.workspaceId)
+      seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       if (!auth) {
         throw new Error('Login is unavailable outside the auth shell')
       }

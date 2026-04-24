@@ -107,6 +107,7 @@ export class AuthService {
     role: "owner" | "member";
     workspaceId: string;
     workspaceName: string;
+    workspacePublicRouteKey: string;
   }>> {
     const memberships = await this.dependencies.accountAccessService.listUserMemberships(userId);
 
@@ -120,6 +121,7 @@ export class AuthService {
           role: membership.role,
           workspaceId: workspace.id,
           workspaceName: workspace.name,
+          workspacePublicRouteKey: workspace.publicRouteKey,
         };
       }),
     );
@@ -137,6 +139,7 @@ export class AuthService {
     organizationName: string;
     workspaceId: string;
     workspaceName: string;
+    workspacePublicRouteKey: string;
     requiresEmailVerification: boolean;
     sessionCookie?: string;
   }> {
@@ -194,6 +197,7 @@ export class AuthService {
         organizationName: account.name,
         workspaceId: workspace.id,
         workspaceName: workspace.name,
+        workspacePublicRouteKey: workspace.publicRouteKey,
         requiresEmailVerification: !this.dependencies.env.AUTH_SKIP_EMAIL_VERIFICATION,
         sessionCookie,
       };
@@ -212,6 +216,7 @@ export class AuthService {
     organizationName: string;
     workspaceId: string;
     workspaceName: string;
+    workspacePublicRouteKey: string;
     sessionCookie: string;
   }> {
     const user = await this.dependencies.userRepository.findById(input.userId);
@@ -250,6 +255,7 @@ export class AuthService {
         organizationName: account.name,
         workspaceId: workspace.id,
         workspaceName: workspace.name,
+        workspacePublicRouteKey: workspace.publicRouteKey,
         sessionCookie,
       };
     } catch (error) {
@@ -269,6 +275,7 @@ export class AuthService {
     organizationName: string;
     workspaceId: string;
     workspaceName: string;
+    workspacePublicRouteKey: string;
     sessionCookie: string;
   }> {
     const email = normalizeEmail(input.email);
@@ -312,6 +319,7 @@ export class AuthService {
         ?? deriveOrganizationName(email),
       workspaceId: workspace.id,
       workspaceName: workspace.name,
+      workspacePublicRouteKey: workspace.publicRouteKey,
       sessionCookie,
     };
   }
@@ -335,6 +343,7 @@ export class AuthService {
     organizationName: string;
     workspaceId: string;
     workspaceName: string;
+    workspacePublicRouteKey: string;
     sessionCookie: string;
   }> {
     const email = normalizeEmail(input.email);
@@ -398,6 +407,7 @@ export class AuthService {
         organizationName: account?.name ?? deriveOrganizationName(email),
         workspaceId: workspace.id,
         workspaceName: workspace.name,
+        workspacePublicRouteKey: workspace.publicRouteKey,
         sessionCookie,
       };
     } catch (error) {
@@ -419,6 +429,7 @@ export class AuthService {
     organizationName: string;
     workspaceId: string;
     workspaceName: string;
+    workspacePublicRouteKey: string;
     sessionCookie: string;
   }> {
     const membership = await this.dependencies.accountAccessService.requireActiveMembership(
@@ -446,6 +457,7 @@ export class AuthService {
       organizationName: account?.name ?? deriveOrganizationName(account?.email ?? "organization@example.com"),
       workspaceId: workspace.id,
       workspaceName: workspace.name,
+      workspacePublicRouteKey: workspace.publicRouteKey,
       sessionCookie,
     };
   }

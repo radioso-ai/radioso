@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Bot, ChevronDown, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
 
 import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
@@ -36,8 +35,8 @@ import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { type RetrievalSettings, settingsApi } from '@/lib/api'
+import { useWorkspace } from '@/lib/workspace-context'
 
 const metadataRuleCombinatorLabels = {
   and: 'All conditions (AND)',
@@ -80,24 +79,6 @@ const metadataRuleEffectLabels: Record<
   },
 }
 
-const conversationModeLabels: Record<
-  RetrievalSettings['conversationMode'],
-  { label: string; description: string }
-> = {
-  factual: {
-    label: 'Factual',
-    description: 'Answer the current question directly and stop unless clarification is required.',
-  },
-  guided: {
-    label: 'Guided',
-    description: 'Answer directly, then suggest one or two grounded nearby directions when useful.',
-  },
-  exploratory: {
-    label: 'Exploratory',
-    description: 'Answer directly, then surface more of what the workspace covers and invite grounded follow-up.',
-  },
-}
-
 const triggerModeLabels: Record<
   RetrievalSettings['metadataRules'][number]['triggerMode'],
   { label: string; description: string }
@@ -116,16 +97,12 @@ const suggestedQuestionCountLabel = (count: number) =>
   `${count} suggested question${count === 1 ? '' : 's'}`
 
 export function RetrievalSettingsPanel({
-  accountId,
-  routeState,
   onSaveStateChange,
 }: {
-  accountId: string
-  routeState: DashboardRouteState
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
-  const router = useRouter()
   const descriptor = getSettingsTabDescriptor('retrieval')
+  const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [settings, setSettings] = useState<RetrievalSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [lastSavedSettings, setLastSavedSettings] = useState<RetrievalSettings | null>(null)
@@ -134,31 +111,49 @@ export function RetrievalSettingsPanel({
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const hasLoadedRef = useRef(false)
   const saveSequenceRef = useRef(0)
+  const draftVersionRef = useRef(0)
 
   useEffect(() => {
     onSaveStateChange?.({ state: saveState, message: saveError })
   }, [onSaveStateChange, saveError, saveState])
 
   useEffect(() => {
+    if (isWorkspaceLoading || !activeWorkspaceId) {
+      setIsLoading(true)
+      return
+    }
+
+    let active = true
     const loadSettings = async () => {
       try {
         const data = await settingsApi.getRetrievalSettings()
+        if (!active) return
         setSettings(data)
         setLastSavedSettings(data)
         setSaveState('idle')
       } catch (error) {
+        if (!active) return
         console.error('Failed to load settings:', error)
       } finally {
-        setIsLoading(false)
-        hasLoadedRef.current = true
+        if (active) {
+          setIsLoading(false)
+          hasLoadedRef.current = true
+        }
       }
     }
     void loadSettings()
-  }, [])
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId, isWorkspaceLoading])
+
+  const updateSettingsDraft = (updater: (current: RetrievalSettings) => RetrievalSettings) => {
+    draftVersionRef.current += 1
+    setSettings((current) => (current ? updater(current) : current))
+  }
 
   const updateSetting = <K extends keyof RetrievalSettings>(key: K, value: RetrievalSettings[K]) => {
-    if (!settings) return
-    setSettings({ ...settings, [key]: value })
+    updateSettingsDraft((current) => ({ ...current, [key]: value }))
   }
 
   const updateMetadataRule = (
@@ -167,12 +162,12 @@ export function RetrievalSettingsPanel({
   ) => {
     if (!settings) return
 
-    setSettings({
-      ...settings,
-      metadataRules: settings.metadataRules.map((rule) =>
+    updateSettingsDraft((current) => ({
+      ...current,
+      metadataRules: current.metadataRules.map((rule) =>
         rule.id === ruleId ? { ...rule, ...updates } : rule
       ),
-    })
+    }))
   }
 
   const applyMetadataField = (
@@ -237,10 +232,10 @@ export function RetrievalSettingsPanel({
     if (!settings) return
 
     const suggestedField = settings.metadataFieldSuggestions[0]
-    setSettings({
-      ...settings,
+    updateSettingsDraft((current) => ({
+      ...current,
       metadataRules: [
-        ...settings.metadataRules,
+        ...current.metadataRules,
         syncRuleWithConditions({
           id: globalThis.crypto?.randomUUID?.() ?? `rule-${Date.now()}`,
           field: suggestedField?.field ?? '',
@@ -260,7 +255,7 @@ export function RetrievalSettingsPanel({
           }),
         ]),
       ],
-    })
+    }))
   }
 
   const updateMetadataCondition = (
@@ -314,10 +309,10 @@ export function RetrievalSettingsPanel({
   const removeMetadataRule = (ruleId: string) => {
     if (!settings) return
 
-    setSettings({
-      ...settings,
-      metadataRules: settings.metadataRules.filter((rule) => rule.id !== ruleId),
-    })
+    updateSettingsDraft((current) => ({
+      ...current,
+      metadataRules: current.metadataRules.filter((rule) => rule.id !== ruleId),
+    }))
   }
 
   const settingsSignature = useMemo(() => JSON.stringify(settings), [settings])
@@ -338,14 +333,17 @@ export function RetrievalSettingsPanel({
     setSaveError(null)
 
     const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = draftVersionRef.current
       try {
         const saved = await settingsApi.updateRetrievalSettings(settings)
         if (saveSequenceRef.current !== saveId) {
           return
         }
-        setSettings(saved)
         setLastSavedSettings(saved)
-        setSaveState('saved')
+        if (draftVersionRef.current === draftVersionAtRequestStart) {
+          setSettings(saved)
+          setSaveState('saved')
+        }
       } catch (error) {
         if (saveSequenceRef.current !== saveId) {
           return
@@ -376,17 +374,10 @@ export function RetrievalSettingsPanel({
   }
 
   return (
-    <SettingsTabShell
-      accountId={accountId}
-      routeState={routeState}
-      descriptor={descriptor}
-      onNavigate={(href) => router.push(href)}
-    >
-      <div className="mx-auto max-w-5xl space-y-6">
+    <SettingsTabShell>
+      <div className="space-y-6">
         <section className="space-y-1 px-1">
-          <p className="text-sm text-muted-foreground">
-            Tune how this workspace finds evidence and how grounded answers are presented.
-          </p>
+          <p className="text-sm text-muted-foreground">{descriptor.summary}</p>
         </section>
 
         <SettingsCard
@@ -765,8 +756,8 @@ export function RetrievalSettingsPanel({
           id="answer-behavior"
           icon={<Bot className="h-5 w-5 text-primary" />}
           eyebrow="Shape The Answer"
-          title="Answer behavior"
-          description="Configure how grounded answers are presented once evidence is assembled."
+          title="Answer presentation"
+          description="Control how grounded answers show citations and follow-up suggestions."
         >
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -789,35 +780,6 @@ export function RetrievalSettingsPanel({
                 checked={settings.citationDisplayEnabled}
                 onCheckedChange={(checked) => updateSetting('citationDisplayEnabled', checked)}
               />
-            </div>
-
-            <div className="space-y-2 border-t border-border/70 pt-4">
-              <SettingFieldHeader
-                htmlFor="conversationMode"
-                label={retrievalSettingDocs.conversationMode.label}
-                description={retrievalSettingDocs.conversationMode.summary}
-                tooltip={retrievalSettingDocs.conversationMode.details}
-              />
-              <Select
-                value={settings.conversationMode}
-                onValueChange={(value) =>
-                  updateSetting('conversationMode', value as RetrievalSettings['conversationMode'])
-                }
-              >
-                <SelectTrigger id="conversationMode" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(conversationModeLabels).map(([value, meta]) => (
-                    <SelectItem key={value} value={value}>
-                      {meta.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                {conversationModeLabels[settings.conversationMode].description}
-              </p>
             </div>
 
             <div className="flex items-center justify-between border-t border-border/70 pt-4">
@@ -865,28 +827,6 @@ export function RetrievalSettingsPanel({
               </div>
             ) : null}
 
-            <div className="space-y-3">
-              <SettingFieldHeader
-                htmlFor="customInstruction"
-                label={retrievalSettingDocs.customInstruction.label}
-                description={retrievalSettingDocs.customInstruction.summary}
-                tooltip={retrievalSettingDocs.customInstruction.details}
-              />
-              <Textarea
-                id="customInstruction"
-                value={settings.customInstruction}
-                onChange={(event) => updateSetting('customInstruction', event.target.value.slice(0, 2000))}
-                placeholder="e.g. Always cite the specific section of the Act when referencing legal provisions."
-                rows={4}
-              />
-              <p className="text-right text-xs text-muted-foreground">
-                {settings.customInstruction.length} / 2000
-              </p>
-            </div>
-
-            <p className="text-sm text-muted-foreground">
-              The assistant may still ask a clarification question when your request is missing information needed for a reliable answer.
-            </p>
           </div>
         </SettingsCard>
 

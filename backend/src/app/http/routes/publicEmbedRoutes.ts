@@ -4,7 +4,10 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/domain/websiteEmbedSettings.js";
-import { isAssistantBootstrapActive } from "../../../modules/settings/domain/assistantBootstrapSettings.js";
+import {
+  isAssistantBootstrapActive,
+  resolveAssistantDisplayName,
+} from "../../../modules/settings/domain/assistantBootstrapSettings.js";
 import { issueWebsiteEmbedSession } from "../../../modules/settings/domain/websiteEmbedSession.js";
 import { serviceUnavailable } from "../../../shared/domain/errors.js";
 
@@ -184,7 +187,10 @@ export const createPublicEmbedRoutes = (dependencies: AppDependencies): Router =
       });
 
       res.status(200).json({
-        workspaceName: workspace.name,
+        workspaceName: resolveAssistantDisplayName({
+          assistantName: workspace.assistantName,
+          workspaceName: workspace.name,
+        }),
         publicChatToken: workspace.anonymousChatToken,
         embedSessionToken: embedSession.token,
         assistantBootstrapActive: isAssistantBootstrapActive(workspace),

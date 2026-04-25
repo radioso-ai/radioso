@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 
 import { useAuth } from '@/lib/auth-context'
 import { AuthPage } from '@/components/auth/auth-page'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { getStoredActiveWorkspaceId, getStoredActiveWorkspacePublicRouteKey } from '@/lib/api'
 
@@ -30,7 +30,7 @@ export default function Home() {
   if (isBootstrapping) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Spinner className="w-6 h-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }
@@ -41,7 +41,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <Spinner className="h-6 w-6" />
+      <LogoSpinner imageClassName="h-7 w-7" />
     </div>
   )
 }

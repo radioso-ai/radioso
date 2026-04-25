@@ -75,7 +75,10 @@ const MarkdownLink = ({
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className={cn('text-primary underline underline-offset-4 hover:text-primary/80', className)}
+      className={cn(
+        'text-[var(--message-link-fg,var(--color-primary))] underline underline-offset-4 hover:text-[var(--message-link-hover-fg,var(--color-primary))]',
+        className,
+      )}
     >
       {children}
     </a>

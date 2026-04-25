@@ -2,7 +2,7 @@ import { notFound } from "../../../shared/domain/errors.js";
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
-import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -1232,6 +1232,10 @@ const buildAssistantIdentityAnswerPrompt = (input: {
   const identityLines = buildPublicAssistantIdentityLines(input.assistantIdentity);
 
   return renderPromptTemplate("chat/assistant-identity-answer.md", {
+    response_formatting_guidelines_block: (() => {
+      const guidelines = loadPromptTemplate("chat/response-formatting-guidelines.md").trim();
+      return guidelines ? `Response formatting guidance:\n${guidelines}\n` : "";
+    })(),
     identity_lines: identityLines.join("\n"),
     history_section: historySection || "No prior history",
     query: input.query,

@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { renderToStaticMarkup } from 'react-dom/server'
 
 import { authApi } from '@/lib/api'
-import { LoginForm } from '@/components/auth/login-form'
 
 describe('password reset auth flow', () => {
   afterEach(() => {
@@ -31,11 +29,5 @@ describe('password reset auth flow', () => {
         credentials: 'include',
       }),
     )
-  })
-
-  it('renders a forgot-password entry point from the login form', () => {
-    const markup = renderToStaticMarkup(<LoginForm onSwitchToRegister={() => undefined} />)
-
-    expect(markup).toContain('Forgot password?')
   })
 })

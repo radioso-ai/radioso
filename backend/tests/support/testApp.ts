@@ -951,22 +951,17 @@ const keywordEmbedding = (text: string): number[] => {
   return vector;
 };
 
+const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+
 const normalizeTerms = (text: string): string[] =>
-  text
-    .toLowerCase()
-    .split(/\W+/)
-    .filter(Boolean)
-    .map((term) => term.replace(/(ing|ed|es|s)$/i, ""))
-    .filter((term) => term.length > 2)
-    .filter((term) => !STOP_WORDS.has(term));
+  [...wordSegmenter.segment(text.normalize("NFKC").toLowerCase())]
+    .filter((segment) => segment.isWordLike)
+    .map((segment) => segment.segment.replace(/[^\p{L}\p{N}]+/gu, ""))
+    .filter((term) => term.length > 2);
 
 const normalizeRewriteContext = (text: string): string =>
   text
     .trim()
-    .replace(/^tell me about\s+/i, "")
-    .replace(/^what is\s+/i, "")
-    .replace(/^what does\s+/i, "")
-    .replace(/\s+explain\??$/i, "")
     .replace(/[?.!]+$/g, "")
     .trim();
 
@@ -979,37 +974,3 @@ const hashTerm = (term: string): number => {
 
   return hash;
 };
-
-const STOP_WORDS = new Set([
-  "the",
-  "and",
-  "for",
-  "with",
-  "that",
-  "this",
-  "what",
-  "when",
-  "where",
-  "which",
-  "who",
-  "how",
-  "why",
-  "are",
-  "was",
-  "were",
-  "is",
-  "it",
-  "its",
-  "a",
-  "an",
-  "to",
-  "of",
-  "in",
-  "on",
-  "at",
-  "by",
-  "be",
-  "or",
-  "do",
-  "doe",
-]);

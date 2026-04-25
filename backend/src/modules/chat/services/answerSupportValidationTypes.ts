@@ -25,6 +25,8 @@ export interface AnswerValidationSummary {
   supportedSegmentCount: number;
   nonSubstantiveSegmentCount: number;
   answerSupportPolicy?: AnswerSupportPolicy;
+  hiddenSupportUsed?: boolean;
+  hiddenSupportKindsUsed?: HiddenSupportEvidence["kind"][];
 }
 
 export interface AnswerSegmentValidationResult {
@@ -34,6 +36,11 @@ export interface AnswerSegmentValidationResult {
   citationIndices?: number[];
   replacementApplied: boolean;
   reason: string;
+}
+
+export interface HiddenSupportEvidence {
+  kind: "assistant_name" | "assistant_role";
+  content: string;
 }
 
 export interface ValidatedAnswer {

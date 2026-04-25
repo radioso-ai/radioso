@@ -1959,6 +1959,15 @@ components:
         answerSupportPolicy:
           type: string
           enum: *a3
+        hiddenSupportUsed:
+          type: boolean
+        hiddenSupportKindsUsed:
+          type: array
+          items:
+            type: string
+            enum:
+              - assistant_name
+              - assistant_role
         segmentResults:
           type: array
           items:
@@ -3406,6 +3415,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RateLimitExceededResponse"
+  /api/v1/account/workspaces/{workspaceId}/token/rotate:
+    post:
+      tags:
+        - Account
+      summary: Rotate the workspace API token
+      operationId: rotateWorkspaceApiToken
+      security:
+        - sessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+      responses:
+        "200":
+          description: Workspace token rotated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceTokenResponse"
+        "400":
+          description: Invalid workspace id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace does not belong to the current account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many rotate attempts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Workspace token secret is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspace/mcp/context:
     get:
       tags:

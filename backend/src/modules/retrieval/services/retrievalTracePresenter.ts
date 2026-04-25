@@ -15,7 +15,10 @@ export interface AnswerOutcomeInput {
     ran: boolean;
     answerModified: boolean;
     unsupportedSegmentCount: number;
+    supportedSegmentCount?: number;
     substantiveUnsupportedSegmentCount?: number;
+    hiddenSupportUsed?: boolean;
+    hiddenSupportKindsUsed?: string[];
   };
 }
 
@@ -86,7 +89,10 @@ export class RetrievalTracePresenter {
         validationRan: input.outcome.validation?.ran,
         answerModified: input.outcome.validation?.answerModified,
         unsupportedSegmentCount: input.outcome.validation?.unsupportedSegmentCount,
+        supportedSegmentCount: input.outcome.validation?.supportedSegmentCount,
         substantiveUnsupportedSegmentCount: input.outcome.validation?.substantiveUnsupportedSegmentCount,
+        hiddenSupportUsed: input.outcome.validation?.hiddenSupportUsed,
+        hiddenSupportKindsUsed: input.outcome.validation?.hiddenSupportKindsUsed,
       },
       metrics: {
         answerLength: input.outcome.answer.length,

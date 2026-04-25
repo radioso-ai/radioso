@@ -999,10 +999,14 @@ export interface ChatConversationTurnDebug {
     ran: boolean
     answerModified: boolean
     unsupportedSegmentCount: number
+    substantiveUnsupportedSegmentCount: number
     supportedSegmentCount: number
     nonSubstantiveSegmentCount: number
     answerSupportPolicy?: 'strict' | 'warn' | 'off'
+    hiddenSupportUsed?: boolean
+    hiddenSupportKindsUsed?: Array<'assistant_name' | 'assistant_role'>
     segmentResults: Array<{
+      originalText?: string
       text: string
       disposition: 'supported' | 'unsupported' | 'non_substantive'
       replacementApplied: boolean

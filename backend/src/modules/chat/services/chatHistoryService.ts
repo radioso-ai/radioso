@@ -12,7 +12,7 @@ import type {
 import type { RetrievalExecutionDiagnostics, RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
-import type { AssistantTurnOutcome, ValidationDisposition } from "./answerSupportValidationTypes.js";
+import type { AssistantTurnOutcome, HiddenSupportEvidence, ValidationDisposition } from "./answerSupportValidationTypes.js";
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 
@@ -46,6 +46,8 @@ export interface ChatConversationTurnDebug {
     supportedSegmentCount: number;
     nonSubstantiveSegmentCount: number;
     answerSupportPolicy?: AnswerSupportPolicy;
+    hiddenSupportUsed?: boolean;
+    hiddenSupportKindsUsed?: HiddenSupportEvidence["kind"][];
     segmentResults: Array<{
       originalText: string;
       text: string;
@@ -133,6 +135,8 @@ interface ChatAuditMetadata {
     supportedSegmentCount?: number;
     nonSubstantiveSegmentCount?: number;
     answerSupportPolicy?: AnswerSupportPolicy;
+    hiddenSupportUsed?: boolean;
+    hiddenSupportKindsUsed?: unknown[];
     segmentResults?: Array<{
       originalText?: string;
       text?: string;
@@ -421,6 +425,13 @@ export class ChatHistoryService {
                 metadata.validation.answerSupportPolicy === "off"
                   ? metadata.validation.answerSupportPolicy
                   : undefined,
+              hiddenSupportUsed: metadata.validation.hiddenSupportUsed === true ? true : undefined,
+              hiddenSupportKindsUsed: Array.isArray(metadata.validation.hiddenSupportKindsUsed)
+                ? metadata.validation.hiddenSupportKindsUsed.filter(
+                    (kind): kind is HiddenSupportEvidence["kind"] =>
+                      kind === "assistant_name" || kind === "assistant_role",
+                  )
+                : undefined,
               segmentResults: (metadata.validation.segmentResults ?? []).map((segment) => ({
                 originalText: typeof segment.originalText === "string" ? segment.originalText : "",
                 text: typeof segment.text === "string" ? segment.text : "",

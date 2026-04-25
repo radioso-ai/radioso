@@ -46,6 +46,10 @@ import { formatConversationSource } from '@/lib/history-source'
 
 const HISTORY_PAGE_SIZE = 50
 const MESSAGE_WINDOW_SIZE = 50
+const HIDDEN_SUPPORT_LABELS = {
+  assistant_name: 'Assistant name',
+  assistant_role: 'Assistant role',
+} as const
 
 interface HistoryPageSnapshot<T> {
   items: T[]
@@ -1069,6 +1073,49 @@ function ChatDiagnosticsPanel({
                 ? `The assistant added ${diagnosticsDebug.conversationModeMetadata.suggestionCount} grounded continuation${diagnosticsDebug.conversationModeMetadata.suggestionCount === 1 ? '' : 's'}${diagnosticsDebug.conversationModeMetadata.followUpQuestionApplied ? ' and a grounded follow-up prompt.' : '.'}`
                 : 'No optional grounded continuation was added for this turn.'}
           </p>
+        </div>
+      ) : null}
+
+      {diagnosticsDebug?.validation ? (
+        <div className="rounded-lg border border-border/70 bg-background/70 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-foreground">Validation</p>
+            {diagnosticsDebug.validation.answerSupportPolicy ? (
+              <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {diagnosticsDebug.validation.answerSupportPolicy}
+              </span>
+            ) : null}
+            <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              {diagnosticsDebug.validation.answerModified ? 'Answer modified' : 'Answer unchanged'}
+            </span>
+            {diagnosticsDebug.validation.hiddenSupportUsed ? (
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                Hidden support used
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Supported segments: {diagnosticsDebug.validation.supportedSegmentCount}. Unsupported segments:{' '}
+            {diagnosticsDebug.validation.unsupportedSegmentCount}. Non-substantive segments:{' '}
+            {diagnosticsDebug.validation.nonSubstantiveSegmentCount}.
+          </p>
+          {diagnosticsDebug.validation.hiddenSupportUsed ? (
+            <>
+              <p className="mt-2 text-sm text-muted-foreground">
+                This turn used non-citable setup evidence during validation. Document citations remain unchanged.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(diagnosticsDebug.validation.hiddenSupportKindsUsed ?? []).map((kind) => (
+                  <span
+                    key={kind}
+                    className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300"
+                  >
+                    {HIDDEN_SUPPORT_LABELS[kind]}
+                  </span>
+                ))}
+              </div>
+            </>
+          ) : null}
         </div>
       ) : null}
 

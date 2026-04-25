@@ -836,7 +836,7 @@ export interface ChatConversationTurnDebug {
     nonSubstantiveSegmentCount: number
     answerSupportPolicy?: 'strict' | 'warn' | 'off'
     hiddenSupportUsed?: boolean
-    hiddenSupportKindsUsed?: Array<'assistant_name' | 'assistant_role' | 'answer_instruction'>
+    hiddenSupportKindsUsed?: Array<'assistant_name' | 'assistant_role'>
     segmentResults: Array<{
       originalText?: string
       text: string

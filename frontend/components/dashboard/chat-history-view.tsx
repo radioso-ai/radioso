@@ -49,7 +49,6 @@ const MESSAGE_WINDOW_SIZE = 50
 const HIDDEN_SUPPORT_LABELS = {
   assistant_name: 'Assistant name',
   assistant_role: 'Assistant role',
-  answer_instruction: 'Answer instruction',
 } as const
 
 interface HistoryPageSnapshot<T> {

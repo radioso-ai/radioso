@@ -39,6 +39,39 @@ const extractSignificantTerms = (value: string): string[] => {
   return [...new Set(terms)];
 };
 
+const extractNormalizedWordTokens = (value: string): string[] => {
+  const tokens: string[] = [];
+
+  for (const segment of wordSegmenter.segment(value.normalize("NFKC").toLowerCase())) {
+    if (!segment.isWordLike) {
+      continue;
+    }
+
+    const normalized = segment.segment.replace(/[^\p{L}\p{N}]+/gu, "");
+    if (normalized.length === 0) {
+      continue;
+    }
+
+    tokens.push(normalized);
+  }
+
+  return tokens;
+};
+
+const containsTokenSequence = (tokens: string[], sequence: string[]): boolean => {
+  if (sequence.length === 0 || sequence.length > tokens.length) {
+    return false;
+  }
+
+  for (let index = 0; index <= tokens.length - sequence.length; index += 1) {
+    if (sequence.every((token, offset) => tokens[index + offset] === token)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const countWordLikeTokens = (value: string): number => {
   let count = 0;
 
@@ -52,17 +85,7 @@ const countWordLikeTokens = (value: string): number => {
 };
 
 const isNonSubstantiveText = (value: string): boolean => {
-  if (!hasWordLikeContent(value)) {
-    return true;
-  }
-
-  const trimmed = value.trim();
-  const tokenCount = countWordLikeTokens(trimmed);
-
-  return tokenCount === 1
-    && trimmed.length <= 24
-    && !/\d/u.test(trimmed)
-    && /[.!?…]$/u.test(trimmed);
+  return !hasWordLikeContent(value);
 };
 
 const splitIntoSentenceLikeSegments = (value: string): string[] => {
@@ -159,39 +182,57 @@ const sameCitationIndices = (left?: number[], right?: number[]): boolean => {
 
 const hasParagraphBreak = (text: string): boolean => /\r?\n\r?\n/.test(text);
 
-const isReferenceOnlyLinkText = (value: string): boolean => {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return true;
+const collectLinkSpans = (value: string): Array<{ start: number; end: number }> => {
+  const spans: Array<{ start: number; end: number }> = [];
+  const markdownLinkPattern = new RegExp(MARKDOWN_LINK_URL_PATTERN.source, "gi");
+
+  for (const match of value.matchAll(markdownLinkPattern)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    spans.push({
+      start: match.index,
+      end: match.index + match[0].length,
+    });
   }
 
-  if (/\d/u.test(trimmed)) {
-    return false;
+  const bareUrlPattern = new RegExp(BARE_URL_PATTERN.source, "gi");
+  for (const match of value.matchAll(bareUrlPattern)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    const start = match.index;
+    if (spans.some((span) => start >= span.start && start < span.end)) {
+      continue;
+    }
+
+    spans.push({
+      start,
+      end: start + trimBareUrlPunctuation(match[0]).length,
+    });
   }
 
-  const tokenCount = countWordLikeTokens(trimmed);
-  if (tokenCount === 0) {
-    return true;
-  }
-
-  if (tokenCount > 6) {
-    return false;
-  }
-
-  const sentenceCount = splitIntoSentenceLikeSegments(trimmed).filter((segment) => hasWordLikeContent(segment)).length;
-  if (sentenceCount > 1) {
-    return false;
-  }
-
-  return !/[.!?…]$/u.test(trimmed) || /:$/u.test(trimmed);
+  return spans.sort((left, right) => left.start - right.start);
 };
 
-const normalizeSupportPhrase = (value: string): string =>
-  value
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
+const extractSupportedLinkText = (value: string): string | null => {
+  const linkSpans = collectLinkSpans(value);
+  if (linkSpans.length === 0) {
+    return null;
+  }
+
+  const firstSpan = linkSpans[0];
+  const lastSpan = linkSpans[linkSpans.length - 1];
+  let trailingIndex = lastSpan.end;
+
+  while (trailingIndex < value.length && /[\s,.;:!?()/-]/.test(value[trailingIndex] ?? "")) {
+    trailingIndex += 1;
+  }
+
+  return `${preservePrefix(value.slice(0, firstSpan.start))}${value.slice(firstSpan.start, trailingIndex)}`;
+};
 
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
@@ -262,23 +303,21 @@ export class AnswerSupportValidator {
     return [best.index];
   }
 
-  private resolveSourceUrlCitationIndices(segment: AnswerSegment, citationEvidence: CitationEvidence[]): number[] | undefined {
+  private resolveSourceUrlCitationSupport(
+    segment: AnswerSegment,
+    citationEvidence: CitationEvidence[],
+  ): { citationIndices: number[]; supportedText: string; replacementApplied: boolean } | undefined {
     if ((segment.citationIndices?.length ?? 0) > 0) {
-      return segment.citationIndices;
+      return {
+        citationIndices: segment.citationIndices ?? [],
+        supportedText: segment.text,
+        replacementApplied: false,
+      };
     }
 
     const normalizedUrls = extractNormalizedUrls(segment.text);
 
     if (normalizedUrls.length === 0) {
-      return undefined;
-    }
-
-    const residualText = stripLinksAndUrls(segment.text);
-    if (
-      hasWordLikeContent(residualText)
-      && !isNonSubstantiveText(residualText)
-      && !isReferenceOnlyLinkText(residualText)
-    ) {
       return undefined;
     }
 
@@ -317,7 +356,27 @@ export class AnswerSupportValidator {
       }
     }
 
-    return matchingIndices.length > 0 ? matchingIndices : undefined;
+    const residualText = stripLinksAndUrls(segment.text);
+    if (!hasWordLikeContent(residualText) || isNonSubstantiveText(residualText)) {
+      return matchingIndices.length > 0
+        ? {
+            citationIndices: matchingIndices,
+            supportedText: segment.text,
+            replacementApplied: false,
+          }
+        : undefined;
+    }
+
+    const supportedLinkText = extractSupportedLinkText(segment.text);
+    if (!supportedLinkText) {
+      return undefined;
+    }
+
+    return {
+      citationIndices: matchingIndices,
+      supportedText: supportedLinkText,
+      replacementApplied: supportedLinkText !== segment.text,
+    };
   }
 
   private resolveHiddenSupportEvidenceKinds(
@@ -328,65 +387,38 @@ export class AnswerSupportValidator {
       return undefined;
     }
 
-    const normalizedSegment = normalizeSupportPhrase(segment.text);
-    if (!normalizedSegment) {
+    const segmentTokens = extractNormalizedWordTokens(segment.text);
+    if (segmentTokens.length === 0) {
       return undefined;
     }
 
     const supportKinds = new Set<HiddenSupportEvidence["kind"]>();
-    let supportUnits = 0;
-    const segmentWordCount = countWordLikeTokens(segment.text);
-    const segmentTerms = extractSignificantTerms(segment.text);
+    const coveredTokens = new Set<string>();
 
     for (const evidence of hiddenSupportEvidence) {
-      const normalizedEvidence = normalizeSupportPhrase(evidence.content);
-      if (!normalizedEvidence) {
+      const evidenceTokens = extractNormalizedWordTokens(evidence.content);
+      if (evidenceTokens.length === 0) {
         continue;
       }
 
-      if (evidence.kind === "assistant_name" && normalizedSegment.includes(normalizedEvidence)) {
+      if (containsTokenSequence(segmentTokens, evidenceTokens)) {
         supportKinds.add(evidence.kind);
-        supportUnits += 1;
+        for (const token of evidenceTokens) {
+          coveredTokens.add(token);
+        }
       }
     }
 
-    const hiddenEvidenceTerms = hiddenSupportEvidence.flatMap((evidence) => (
-      evidence.kind === "assistant_name" ? [] : extractSignificantTerms(evidence.content)
-    ));
-    const hiddenEvidenceTermSet = new Set(hiddenEvidenceTerms);
-
-    for (const term of segmentTerms) {
-      if (hiddenEvidenceTermSet.has(term)) {
-        supportUnits += 1;
-      }
-    }
-
-    for (const evidence of hiddenSupportEvidence) {
-      if (evidence.kind === "assistant_name") {
-        continue;
-      }
-
-      const evidenceTerms = new Set(extractSignificantTerms(evidence.content));
-      const hasMatch = segmentTerms.some((term) => evidenceTerms.has(term));
-      if (hasMatch) {
-        supportKinds.add(evidence.kind);
-      }
-    }
-
-    if (supportKinds.has("assistant_name") && segmentWordCount <= 4) {
-      return [...supportKinds];
-    }
-
-    const segmentSupportUnits = segmentTerms.length + (supportKinds.has("assistant_name") ? 1 : 0);
-    if (segmentSupportUnits === 0) {
+    if (supportKinds.size === 0) {
       return undefined;
     }
 
-    if (supportUnits >= 2 && supportUnits >= Math.ceil(segmentSupportUnits / 2)) {
-      return [...supportKinds];
+    const unsupportedTokens = segmentTokens.filter((token) => token.length > 4 && !coveredTokens.has(token));
+    if (unsupportedTokens.length > 0) {
+      return undefined;
     }
 
-    return undefined;
+    return [...supportKinds];
   }
 
   async validate(input: {
@@ -405,8 +437,9 @@ export class AnswerSupportValidator {
   }): Promise<ValidatedAnswer> {
     const validationSegments = this.expandValidationSegments(input.answerSegments);
     const segmentResults = await Promise.all(validationSegments.map(async (segment) => {
+      const sourceUrlSupport = this.resolveSourceUrlCitationSupport(segment, input.citationEvidence);
       const citationIndices =
-        this.resolveSourceUrlCitationIndices(segment, input.citationEvidence)
+        sourceUrlSupport?.citationIndices
         ?? this.resolveImplicitCitationIndices(segment, input.citationEvidence);
       const hiddenSupportKinds = this.resolveHiddenSupportEvidenceKinds(
         segment,
@@ -427,21 +460,22 @@ export class AnswerSupportValidator {
       if ((citationIndices?.length ?? 0) > 0) {
         return {
           originalText: segment.text,
-          text: segment.text,
+          text: sourceUrlSupport?.supportedText ?? segment.text,
           disposition: VALIDATION_DISPOSITION.SUPPORTED,
           citationIndices,
-          replacementApplied: false,
-          reason: "has_support_reference",
+          replacementApplied: sourceUrlSupport?.replacementApplied ?? false,
+          reason: sourceUrlSupport?.replacementApplied ? "has_support_reference_link_only" : "has_support_reference",
         } as const;
       }
 
       if ((hiddenSupportKinds?.length ?? 0) > 0) {
+        const presentHiddenSupportKinds = hiddenSupportKinds ?? [];
         return {
           originalText: segment.text,
           text: segment.text,
           disposition: VALIDATION_DISPOSITION.SUPPORTED,
           replacementApplied: false,
-          reason: `has_hidden_support_reference:${hiddenSupportKinds.join(",")}`,
+          reason: `has_hidden_support_reference:${presentHiddenSupportKinds.join(",")}`,
         } as const;
       }
 
@@ -482,7 +516,7 @@ export class AnswerSupportValidator {
           .slice("has_hidden_support_reference:".length)
           .split(",")
           .filter((kind): kind is HiddenSupportEvidence["kind"] => (
-            kind === "assistant_name" || kind === "assistant_role" || kind === "answer_instruction"
+            kind === "assistant_name" || kind === "assistant_role"
           ));
       }),
     )];

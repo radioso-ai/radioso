@@ -18,15 +18,16 @@ describe("conversation intent snapshot", () => {
       latestQuery: "what about pricing",
       priorRewriteContinuityState: {
         activeSubject: "membership plans",
+        relatedEntities: [],
         groundedTitles: [],
       },
       rewriteProposal: {
         rewrittenQuery: "membership plan pricing",
-        referencedMessageIds: [],
-        justification: "carry over active subject",
         turnKind: "referential_followup",
         proposedActiveSubject: undefined,
-        rewriteApplied: true,
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.92,
       },
     });
 

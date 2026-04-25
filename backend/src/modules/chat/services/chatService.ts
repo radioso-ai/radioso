@@ -1215,13 +1215,6 @@ const buildHiddenSupportEvidence = (
     });
   }
 
-  if (assistantIdentity.greetingInstruction) {
-    evidence.push({
-      kind: "answer_instruction",
-      content: assistantIdentity.greetingInstruction,
-    });
-  }
-
   return evidence;
 };
 

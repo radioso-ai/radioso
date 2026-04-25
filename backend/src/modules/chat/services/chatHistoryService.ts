@@ -429,7 +429,7 @@ export class ChatHistoryService {
               hiddenSupportKindsUsed: Array.isArray(metadata.validation.hiddenSupportKindsUsed)
                 ? metadata.validation.hiddenSupportKindsUsed.filter(
                     (kind): kind is HiddenSupportEvidence["kind"] =>
-                      kind === "assistant_name" || kind === "assistant_role" || kind === "answer_instruction",
+                      kind === "assistant_name" || kind === "assistant_role",
                   )
                 : undefined,
               segmentResults: (metadata.validation.segmentResults ?? []).map((segment) => ({

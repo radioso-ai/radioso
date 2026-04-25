@@ -1246,7 +1246,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "I'm Vikram, your museum guide, here to help with reflection and questions. The page explains testing and parsing content for users.";
+        return "I'm Vikram, your museum guide. The page explains testing and parsing content for users.";
       },
       async *streamAnswer() {
         yield "unused";
@@ -1268,12 +1268,12 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(response.answer).toBe("I'm Vikram, your museum guide, here to help with reflection and questions. The page explains testing and parsing content for users.");
+    expect(response.answer).toBe("I'm Vikram, your museum guide. The page explains testing and parsing content for users.");
     expect(response.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
     ]);
     expect(response.answerSegments).toEqual([
-      { text: "I'm Vikram, your museum guide, here to help with reflection and questions. " },
+      { text: "I'm Vikram, your museum guide. " },
       { text: "The page explains testing and parsing content for users.", citationIndices: [0] },
     ]);
 
@@ -2688,7 +2688,7 @@ describe("chat service streaming", () => {
     ]);
   });
 
-  it("preserves unanchored grounded markdown links during strict validation", async () => {
+  it("preserves grounded markdown links while dropping uncited wrappers during strict validation", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2756,13 +2756,13 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(response.answer).toBe("Read more here: [Guide](https://example.com/guide)");
+    expect(response.answer).toBe("[Guide](https://example.com/guide)");
     expect(response.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
     ]);
     expect(response.answerSegments).toEqual([
       {
-        text: "Read more here: [Guide](https://example.com/guide)",
+        text: "[Guide](https://example.com/guide)",
         citationIndices: [0],
       },
     ]);

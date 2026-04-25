@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { PoolClient } from "pg";
 
 import { ChunkRepository } from "../../src/db/repositories/chunkRepository.js";
 
@@ -9,7 +10,7 @@ describe("chunk repository", () => {
       async query() {
         throw new Error("unused");
       },
-      async withTransaction(callback) {
+      async withTransaction(callback: (client: PoolClient) => Promise<unknown>) {
         const client = {
           async query(sql: string, params?: unknown[]) {
             calls.push({ sql, params });
@@ -49,7 +50,7 @@ describe("chunk repository", () => {
       async query() {
         throw new Error("unused");
       },
-      async withTransaction(callback) {
+      async withTransaction(callback: (client: PoolClient) => Promise<unknown>) {
         const client = {
           async query(sql: string, params?: unknown[]) {
             calls.push({ sql, params });
@@ -86,7 +87,7 @@ describe("chunk repository", () => {
       async query() {
         throw new Error("unused");
       },
-      async withTransaction(callback) {
+      async withTransaction(callback: (client: PoolClient) => Promise<unknown>) {
         const client = {
           async query(sql: string, params?: unknown[]) {
             calls.push({ sql, params });

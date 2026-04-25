@@ -54,7 +54,7 @@ describe("edge cases", () => {
 
     expect(result.prompt).toContain("Stable assistant identity:");
     expect(result.prompt).toContain("Assistant name: Marta");
-    expect(result.prompt).toContain("Assistant role: Museum guide");
+    expect(result.prompt).toContain("What this assistant helps with: Museum guide");
   });
 
   it("falls back to the original query when rewrite assistance errors", async () => {

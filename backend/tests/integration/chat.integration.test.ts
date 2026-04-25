@@ -1355,6 +1355,224 @@ describe("chat integration", () => {
     });
   });
 
+  it("routes social-only turns away from retrieval while keeping answer instructions available", async () => {
+    let observedPrompt = "";
+    const { app } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite(input) {
+          return {
+            rewrittenQuery: input.query,
+            semanticQuery: input.query,
+            lexicalQuery: input.query,
+            responseIntent: "social_only" as const,
+            turnKind: "ambiguous" as const,
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.95,
+          };
+        },
+      },
+      chatGateway: {
+        async answer({ prompt }) {
+          observedPrompt = prompt;
+          return "Thanks. Ask me about retreats or courses whenever you like.";
+        },
+        async *streamAnswer() {
+          yield "unused";
+        },
+      },
+    });
+
+    const { token } = await issueTestToken(app, "social-only@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "Keep the reply warm and short.",
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Thanks for the help", stream: false })
+      .expect(200);
+
+    expect(response.body.answer).toBe("Thanks. Ask me about retreats or courses whenever you like.");
+    expect(response.body.retrievalInfo).toMatchObject({
+      responseIntent: "social_only",
+      retrievalSkipped: true,
+      intentConfidence: 0.95,
+    });
+    expect(response.body.retrievalInfo.candidateCounts).toEqual({
+      semantic: 0,
+      lexical: 0,
+      merged: 0,
+      final: 0,
+    });
+    expect(observedPrompt).toContain("Keep the reply warm and short.");
+    expect(observedPrompt).toContain("Answer Instructions:");
+  });
+
+  it("routes assistant-identity-only turns through the same non-retrieval path", async () => {
+    let observedPrompt = "";
+    const { app } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite(input) {
+          return {
+            rewrittenQuery: input.query,
+            semanticQuery: input.query,
+            lexicalQuery: input.query,
+            responseIntent: "assistant_identity" as const,
+            turnKind: "ambiguous" as const,
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.91,
+          };
+        },
+      },
+      chatGateway: {
+        async answer({ prompt }) {
+          observedPrompt = prompt;
+          return "I'm the workspace assistant, and I help answer questions from this workspace.";
+        },
+        async *streamAnswer() {
+          yield "unused";
+        },
+      },
+    });
+
+    const { token } = await issueTestToken(app, "assistant-identity@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "Keep identity replies direct.",
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Remind me what you do around here", stream: false })
+      .expect(200);
+
+    expect(response.body.answer).toBe("I'm the workspace assistant, and I help answer questions from this workspace.");
+    expect(response.body.retrievalInfo).toMatchObject({
+      responseIntent: "assistant_identity",
+      retrievalSkipped: true,
+      intentConfidence: 0.91,
+    });
+    expect(observedPrompt).toContain("Keep identity replies direct.");
+    expect(observedPrompt).toContain("Answer Instructions:");
+  });
+
+  it("keeps mixed social-plus-substantive turns on the retrieval path", async () => {
+    const deterministicGateway: ChatGateway = {
+      async answer() {
+        return "The next retreat is the Spring Retreat.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const { app } = createTestApp({
+      chatGateway: deterministicGateway,
+      queryRewriteGateway: {
+        async rewrite(input) {
+          return {
+            rewrittenQuery: "what retreats are coming up Spring Retreat",
+            semanticQuery: "what retreats are coming up Spring Retreat",
+            lexicalQuery: "\"Spring Retreat\" retreats",
+            responseIntent: "retrieval" as const,
+            turnKind: "fresh_subject" as const,
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.88,
+          };
+        },
+      },
+    });
+
+    const { token } = await issueTestToken(app, "mixed-turn@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Spring Retreat",
+        content: "The next retreat is the Spring Retreat.",
+      })
+      .expect(202);
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Thanks, what retreats are coming up?", stream: false })
+      .expect(200);
+
+    expect(response.body.answer).toContain("Spring Retreat");
+    expect(response.body.citations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Spring Retreat",
+        }),
+      ]),
+    );
+    expect(response.body.retrievalInfo).toMatchObject({
+      responseIntent: "retrieval",
+      retrievalSkipped: false,
+    });
+  });
+
   it("resolves a single assistant-offered branch after a bare acceptance", async () => {
     const { app, dependencies } = createTestApp({
       queryRewriteGateway: {

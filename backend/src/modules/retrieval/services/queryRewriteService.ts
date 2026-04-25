@@ -6,6 +6,7 @@ import type { RetrievalMetadataRule } from "../../settings/domain/retrievalSetti
 import { getNormalizedMetadataConditions } from "../../settings/domain/retrievalSettings.js";
 import type {
   ConversationContextWindow,
+  ResponseIntent,
   RetrievalSubquery,
   RewrittenRetrievalQuery,
   ResponseLanguagePolicy,
@@ -13,7 +14,7 @@ import type {
   RewriteTurnKind,
   StructuredRewriteResult,
 } from "../domain/retrievalPipelineTypes.js";
-import { REWRITE_STATUS, REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
+import { RESPONSE_INTENT, REWRITE_STATUS, REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
 import { RewriteEligibilityService } from "./rewritePolicyService.js";
 
 export interface QueryRewriteGatewayFallbackResult {
@@ -230,18 +231,31 @@ export class QueryRewriteService {
         result.lexicalQuery ?? result.rewrittenQuery,
         hasConversationContext,
       );
+      const responseIntent = this.normalizeResponseIntent(result.responseIntent);
       const compatibilityRewrite = semanticQuery;
       const applied =
-        semanticQuery !== input.query ||
-        lexicalQuery !== input.query ||
-        Boolean(result.retrievalSubqueries && result.retrievalSubqueries.length > 1);
+        responseIntent !== RESPONSE_INTENT.RETRIEVAL
+        || semanticQuery !== input.query
+        || lexicalQuery !== input.query
+        || Boolean(result.retrievalSubqueries && result.retrievalSubqueries.length > 1);
 
       if (!applied) {
-        return this.fallback(input.query, "rewrite_unusable");
+        return {
+          ...this.fallback(input.query, "rewrite_unusable"),
+          responseIntent,
+          structuredResult: {
+            ...result,
+            responseIntent,
+            rewrittenQuery: compatibilityRewrite,
+            semanticQuery,
+            lexicalQuery,
+          },
+        };
       }
 
       const structuredResult = {
         ...result,
+        responseIntent,
         rewrittenQuery: compatibilityRewrite,
         semanticQuery,
         lexicalQuery,
@@ -250,21 +264,25 @@ export class QueryRewriteService {
         originalQuery: input.query,
         rewrite: structuredResult,
       });
+      const retrievalEligible = responseIntent === RESPONSE_INTENT.RETRIEVAL
+        ? eligibility.eligible
+        : false;
 
       return {
         originalQuery: input.query,
         rewrittenQuery: compatibilityRewrite,
-        effectiveQuery: eligibility.eligible ? semanticQuery : input.query,
-        semanticQuery: eligibility.eligible ? semanticQuery : input.query,
-        lexicalQuery: eligibility.eligible ? lexicalQuery : input.query,
+        effectiveQuery: retrievalEligible ? semanticQuery : input.query,
+        semanticQuery: retrievalEligible ? semanticQuery : input.query,
+        lexicalQuery: retrievalEligible ? lexicalQuery : input.query,
+        responseIntent,
         responseLanguagePolicy: result.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY,
-        retrievalSubqueries: eligibility.eligible ? result.retrievalSubqueries : undefined,
-        rewriteApplied: eligibility.eligible,
-        retrievalEligible: eligibility.eligible,
-        status: eligibility.eligible ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
+        retrievalSubqueries: retrievalEligible ? result.retrievalSubqueries : undefined,
+        rewriteApplied: retrievalEligible,
+        retrievalEligible,
+        status: retrievalEligible || responseIntent !== RESPONSE_INTENT.RETRIEVAL ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
         confidence: result.confidence ?? 0.5,
         structuredResult,
-        rejectionReason: eligibility.rejectionReason,
+        rejectionReason: responseIntent === RESPONSE_INTENT.RETRIEVAL ? eligibility.rejectionReason : undefined,
       };
     } catch {
       return this.fallback(input.query, "rewrite_failed");
@@ -380,6 +398,7 @@ export class QueryRewriteService {
       retrievalEligible: false,
       status: REWRITE_STATUS.SKIPPED,
       confidence: 0,
+      responseIntent: RESPONSE_INTENT.RETRIEVAL,
     };
   }
 
@@ -396,6 +415,7 @@ export class QueryRewriteService {
       retrievalEligible: false,
       status: REWRITE_STATUS.FALLBACK,
       confidence: 0,
+      responseIntent: RESPONSE_INTENT.RETRIEVAL,
       fallbackReason: reason,
     };
   }
@@ -421,6 +441,7 @@ export class QueryRewriteService {
         rewrittenQuery: this.normalizeRewrite(result.rewrittenQuery),
         semanticQuery: this.normalizeRewrite(result.semanticQuery ?? result.rewrittenQuery),
         lexicalQuery: this.normalizeRewrite(result.lexicalQuery ?? result.rewrittenQuery),
+        responseIntent: this.normalizeResponseIntent(result.responseIntent),
         responseLanguagePolicy: this.normalizeResponseLanguagePolicy(result.responseLanguagePolicy),
         retrievalSubqueries: this.normalizeRetrievalSubqueries(result.retrievalSubqueries),
         turnKind: this.normalizeTurnKind(result.turnKind),
@@ -435,6 +456,7 @@ export class QueryRewriteService {
       rewrittenQuery: this.normalizeRewrite(result?.rewrittenQuery ?? originalQuery),
       semanticQuery: this.normalizeRewrite(result?.semanticQuery ?? result?.rewrittenQuery ?? originalQuery),
       lexicalQuery: this.normalizeRewrite(result?.lexicalQuery ?? result?.rewrittenQuery ?? originalQuery),
+      responseIntent: RESPONSE_INTENT.RETRIEVAL,
       responseLanguagePolicy: DEFAULT_RESPONSE_LANGUAGE_POLICY,
       retrievalSubqueries: undefined,
       turnKind: REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP,
@@ -495,6 +517,17 @@ export class QueryRewriteService {
 
   private normalizeResponseLanguagePolicy(value?: string): ResponseLanguagePolicy {
     return value === "match_user_question" ? value : DEFAULT_RESPONSE_LANGUAGE_POLICY;
+  }
+
+  private normalizeResponseIntent(value?: string): ResponseIntent {
+    switch (value) {
+      case RESPONSE_INTENT.SOCIAL_ONLY:
+      case RESPONSE_INTENT.ASSISTANT_IDENTITY:
+      case RESPONSE_INTENT.RETRIEVAL:
+        return value;
+      default:
+        return RESPONSE_INTENT.RETRIEVAL;
+    }
   }
 
   private isUsableRewrite(originalQuery: string, rewrittenQuery: string): boolean {
@@ -610,6 +643,16 @@ const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
         : typeof parsed.rewrittenQuery === "string"
           ? parsed.rewrittenQuery
           : "",
+    responseIntent:
+      typeof parsed.responseIntent === "string"
+        ? (
+            parsed.responseIntent === RESPONSE_INTENT.SOCIAL_ONLY
+            || parsed.responseIntent === RESPONSE_INTENT.ASSISTANT_IDENTITY
+            || parsed.responseIntent === RESPONSE_INTENT.RETRIEVAL
+              ? parsed.responseIntent
+              : RESPONSE_INTENT.RETRIEVAL
+          )
+        : RESPONSE_INTENT.RETRIEVAL,
     responseLanguagePolicy:
       typeof parsed.responseLanguagePolicy === "string" && parsed.responseLanguagePolicy === "match_user_question"
         ? parsed.responseLanguagePolicy

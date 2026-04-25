@@ -264,6 +264,104 @@ describe("chat retrieval domain", () => {
     expect(result.status).toBe("applied");
     expect(result.retrievalEligible).toBe(true);
     expect(result.effectiveQuery).toBe("What did Arudra publish later?");
+    expect(result.responseIntent).toBe("retrieval");
+  });
+
+  it("defaults responseIntent to retrieval when older rewrite output omits it", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "What did Arudra publish later?",
+          semanticQuery: "What did Arudra publish later?",
+          lexicalQuery: "\"Arudra\" later publish",
+          turnKind: "referential_followup",
+          proposedActiveSubject: "Arudra",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.78,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "What about her later work?",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [message("Who is Arudra?")],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.retrievalEligible).toBe(true);
+    expect(result.responseIntent).toBe("retrieval");
+    expect(result.structuredResult?.responseIntent).toBe("retrieval");
+  });
+
+  it("keeps social-only intent on a non-retrieval path even when no rewrite is needed", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Thanks for the help",
+          semanticQuery: "Thanks for the help",
+          lexicalQuery: "Thanks for the help",
+          responseIntent: "social_only" as const,
+          turnKind: "ambiguous",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.93,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Thanks for the help",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [message("Tell me about the retreat")],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.retrievalEligible).toBe(false);
+    expect(result.responseIntent).toBe("social_only");
+    expect(result.effectiveQuery).toBe("Thanks for the help");
+    expect(result.fallbackReason).toBeUndefined();
+  });
+
+  it("keeps assistant-identity intent on a non-retrieval path even when no rewrite is needed", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Who are you?",
+          semanticQuery: "Who are you?",
+          lexicalQuery: "Who are you?",
+          responseIntent: "assistant_identity" as const,
+          turnKind: "ambiguous",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Who are you?",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [message("Hi there")],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.retrievalEligible).toBe(false);
+    expect(result.responseIntent).toBe("assistant_identity");
+    expect(result.fallbackReason).toBeUndefined();
   });
 
   it("deduplicates candidates across original and rewritten retrieval paths", () => {
@@ -539,6 +637,7 @@ describe("chat retrieval domain", () => {
     expect(createInput?.messages[0]?.content).toContain(
       "If the immediately previous ASSISTANT turn offered multiple concrete options and the user accepted or asked to continue without choosing one",
     );
+    expect(createInput?.messages[0]?.content).toContain('"responseIntent":"retrieval|social_only|assistant_identity"');
     expect(createInput?.messages[0]?.content).toContain(
       'Do not output vague placeholder rewrites such as "continue the current topic", "the previous topic", or "go ahead with that".',
     );

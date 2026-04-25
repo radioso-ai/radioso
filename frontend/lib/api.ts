@@ -5,6 +5,7 @@ const API_TOKEN_STORAGE_KEY = "radioso.apiToken";
 const WORKSPACE_TOKENS_STORAGE_KEY = "radioso.workspaceTokens";
 const ACTIVE_WORKSPACE_STORAGE_KEY = "radioso.activeWorkspaceId";
 const ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY = "radioso.activeWorkspacePublicRouteKey";
+const PENDING_ACCOUNT_SWITCH_STORAGE_KEY = 'radioso.pendingAccountSwitchId'
 const ANONYMOUS_SESSION_HEADER = 'X-Radioso-Anonymous-Session'
 const ANONYMOUS_SESSION_RESET_HEADER = 'X-Radioso-Reset-Anonymous-Session'
 const ANONYMOUS_SESSION_STORAGE_PREFIX = 'radioso.anonymousSession.'
@@ -145,12 +146,27 @@ export const getStoredActiveWorkspacePublicRouteKey = (): string | null => {
   return window.localStorage.getItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
 };
 
+export const setPendingAccountSwitchId = (accountId: string | null) => {
+  if (typeof window === 'undefined') return
+  if (accountId) {
+    window.sessionStorage.setItem(PENDING_ACCOUNT_SWITCH_STORAGE_KEY, accountId)
+  } else {
+    window.sessionStorage.removeItem(PENDING_ACCOUNT_SWITCH_STORAGE_KEY)
+  }
+}
+
+export const getPendingAccountSwitchId = (): string | null => {
+  if (typeof window === 'undefined') return null
+  return window.sessionStorage.getItem(PENDING_ACCOUNT_SWITCH_STORAGE_KEY)
+}
+
 export const clearWorkspaceStorage = () => {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(API_TOKEN_STORAGE_KEY);
   window.localStorage.removeItem(WORKSPACE_TOKENS_STORAGE_KEY);
   window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
   window.localStorage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
+  window.sessionStorage.removeItem(PENDING_ACCOUNT_SWITCH_STORAGE_KEY)
 };
 
 export const removeWorkspaceToken = (workspaceId: string) => {

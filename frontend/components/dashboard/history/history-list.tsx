@@ -4,7 +4,7 @@ import { FileText, History, MessageSquareText } from 'lucide-react'
 
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import type { ChatConversationSummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getConversationSourceBadge } from '@/lib/history-source'
@@ -273,7 +273,7 @@ export function HistoryList({
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
-            <Spinner className="h-6 w-6" />
+            <LogoSpinner imageClassName="h-7 w-7" />
           </div>
         ) : !hasAnyHistory ? (
           <div className="space-y-6">

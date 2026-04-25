@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { useWorkspace } from '@/lib/workspace-context'
-import { accountApi, seedWorkspaceSession } from '@/lib/api'
+import { accountApi, seedWorkspaceSession, setPendingAccountSwitchId } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref, type DashboardSection } from '@/lib/dashboard-routes'
 import { Building2, ChevronsUpDown, Check, Plus, Layers } from 'lucide-react'
@@ -115,6 +115,7 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
 
     setIsSwitchingAccountId(targetAccountId)
     try {
+      setPendingAccountSwitchId(targetAccountId)
       const response = await accountApi.switchAccount(targetAccountId, preferredWorkspaceId)
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       await login(user.email, response.userId, response.accountId)
@@ -139,6 +140,7 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
     setCreateOrganizationError(null)
     try {
       const response = await accountApi.createOrganization(trimmed)
+      setPendingAccountSwitchId(response.accountId)
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       await login(user.email, response.userId, response.accountId)
       setNewOrganizationName('')

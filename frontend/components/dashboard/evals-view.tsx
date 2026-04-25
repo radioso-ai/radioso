@@ -16,7 +16,7 @@ import {
   DrawerTitle,
 } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import {
   type EvalCase,
   type EvalCaseResult,
@@ -268,7 +268,7 @@ export function EvalsView({
             <p className="text-sm font-medium text-foreground">Datasets</p>
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
-                <Spinner className="h-5 w-5" />
+                <LogoSpinner imageClassName="h-6 w-6" />
               </div>
             ) : datasets.length === 0 ? (
               <p className="text-sm text-muted-foreground">No eval datasets yet.</p>

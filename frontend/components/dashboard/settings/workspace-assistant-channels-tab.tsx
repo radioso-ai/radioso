@@ -21,7 +21,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
@@ -944,7 +944,7 @@ export function WorkspaceAssistantChannelsTab({
         <section id="workspace-access" className="space-y-6 scroll-mt-24">
             {isOrganizationLoading ? (
               <div className="flex items-center justify-center py-4">
-                <Spinner className="w-5 h-5" />
+                <LogoSpinner imageClassName="h-6 w-6" />
               </div>
             ) : (
               <SettingsCard
@@ -1039,7 +1039,7 @@ export function WorkspaceAssistantChannelsTab({
           <section id="assistant-identity" className="space-y-6 scroll-mt-24">
             {isAnonLoading || isAssistantBehaviorLoading ? (
               <div className="flex items-center justify-center py-4">
-                <Spinner className="w-5 h-5" />
+                <LogoSpinner imageClassName="h-6 w-6" />
               </div>
             ) : anonSettings && assistantBehaviorSettings ? (
               <SettingsCard
@@ -1171,7 +1171,7 @@ export function WorkspaceAssistantChannelsTab({
           <section id="anonymous-chat" className="space-y-6 scroll-mt-24">
             {isAnonLoading ? (
               <div className="flex items-center justify-center py-4">
-                <Spinner className="w-5 h-5" />
+                <LogoSpinner imageClassName="h-6 w-6" />
               </div>
             ) : anonSettings ? (
               <SettingsCard
@@ -1257,7 +1257,7 @@ export function WorkspaceAssistantChannelsTab({
           <section id="website-embed" className="space-y-6 scroll-mt-24">
             {isAnonLoading ? (
               <div className="flex items-center justify-center py-4">
-                <Spinner className="w-5 h-5" />
+                <LogoSpinner imageClassName="h-6 w-6" />
               </div>
             ) : anonSettings ? (
               <SettingsCard

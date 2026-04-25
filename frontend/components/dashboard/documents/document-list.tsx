@@ -3,7 +3,7 @@
 import { FileText, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { DocumentStatus } from '@/components/dashboard/document-status'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
@@ -190,7 +190,7 @@ export function DocumentList({
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }

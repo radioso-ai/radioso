@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 
 import { InvitationAcceptForm } from '@/components/auth/invitation-accept-form'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { authApi, type InvitationDetailsResponse } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 
@@ -58,7 +58,7 @@ export default function InvitationPage() {
         <CardContent className="space-y-4">
           {isLoading ? (
             <div className="flex justify-center py-8">
-              <Spinner className="h-6 w-6" />
+              <LogoSpinner imageClassName="h-7 w-7" />
             </div>
           ) : error ? (
             <p className="text-sm text-destructive">{error}</p>

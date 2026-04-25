@@ -5,8 +5,16 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 
 import { AuthPage } from '@/components/auth/auth-page'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
-import { Spinner } from '@/components/ui/spinner'
-import { accountApi, seedWorkspaceSession, workspaceApi } from '@/lib/api'
+import { LogoSpinner } from '@/components/ui/spinner'
+import {
+  accountApi,
+  getPendingAccountSwitchId,
+  getStoredActiveWorkspaceId,
+  getStoredActiveWorkspacePublicRouteKey,
+  setPendingAccountSwitchId,
+  seedWorkspaceSession,
+  workspaceApi,
+} from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 import { parseDashboardRoute, withDashboardWorkspace } from '@/lib/dashboard-routes'
 
@@ -31,12 +39,27 @@ export default function WorkspaceDashboardPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { isAuthenticated, isBootstrapping, login, user } = useAuth()
+  const workspaceKey = useMemo(() => getParamValue(params.workspaceKey), [params.workspaceKey])
   const [resolvedWorkspace, setResolvedWorkspace] = useState<{
     workspaceId: string
     workspacePublicRouteKey: string
-  } | null>(null)
+  } | null>(() => {
+    if (typeof window === 'undefined') {
+      return null
+    }
 
-  const workspaceKey = useMemo(() => getParamValue(params.workspaceKey), [params.workspaceKey])
+    const storedWorkspaceId = getStoredActiveWorkspaceId()
+    const storedWorkspacePublicRouteKey = getStoredActiveWorkspacePublicRouteKey()
+    if (!storedWorkspaceId || !storedWorkspacePublicRouteKey || storedWorkspacePublicRouteKey !== workspaceKey) {
+      return null
+    }
+
+    return {
+      workspaceId: storedWorkspaceId,
+      workspacePublicRouteKey: storedWorkspacePublicRouteKey,
+    }
+  })
+
   const segments = useMemo(() => getParamList(params.segments), [params.segments])
   const searchParamsString = searchParams.toString()
   const parsedRoute = useMemo(
@@ -60,6 +83,17 @@ export default function WorkspaceDashboardPage() {
       router.replace('/')
     }
   }, [isBootstrapping, parsedRoute, router, user])
+
+  useEffect(() => {
+    if (!user) {
+      return
+    }
+
+    const pendingAccountSwitchId = getPendingAccountSwitchId()
+    if (pendingAccountSwitchId === user.accountId) {
+      setPendingAccountSwitchId(null)
+    }
+  }, [user])
 
   useEffect(() => {
     if (isBootstrapping || !user || !workspaceKey || !parsedRoute) {
@@ -108,7 +142,7 @@ export default function WorkspaceDashboardPage() {
   if (isBootstrapping) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }
@@ -125,7 +159,7 @@ export default function WorkspaceDashboardPage() {
   ) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }

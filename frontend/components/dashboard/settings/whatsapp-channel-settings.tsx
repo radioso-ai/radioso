@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { ConnectorSettingsForm } from '@/components/dashboard/connectors/connector-settings-form'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import {
   connectorsApi,
   type ConnectorDetail,
@@ -78,7 +78,7 @@ export function WhatsAppChannelSettings({
   if (isLoading) {
     return (
       <div className="flex min-h-[320px] items-center justify-center">
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }
@@ -97,7 +97,7 @@ export function WhatsAppChannelSettings({
   return (
     !channel ? (
       <div className="flex min-h-[220px] items-center justify-center rounded-xl border border-border bg-muted/20">
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     ) : (
       <ConnectorSettingsForm

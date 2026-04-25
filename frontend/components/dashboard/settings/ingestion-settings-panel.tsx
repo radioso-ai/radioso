@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { type IngestionSettings, settingsApi } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -174,7 +174,7 @@ export function IngestionSettingsPanel({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Spinner className="w-6 h-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }

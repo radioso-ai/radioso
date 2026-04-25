@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { type RetrievalSettings, settingsApi } from '@/lib/api'
@@ -360,7 +360,7 @@ export function RetrievalSettingsPanel({
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }

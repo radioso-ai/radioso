@@ -73,6 +73,7 @@ export function DocumentsView({
   const documentWorkspaceKeyRef = useRef(`${accountId}:${routeState.workspaceId ?? ''}`)
   const documentCursorByPageRef = useRef(new Map<number, string | null>([[1, null]]))
   const documentPageCacheRef = useRef(new Map<number, DocumentPageSnapshot>())
+  const documentLoadRequestIdRef = useRef(0)
   const documentSearch = useDocumentSearch()
 
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
@@ -112,6 +113,10 @@ export function DocumentsView({
     page: number,
     options?: { background?: boolean; reset?: boolean },
   ) => {
+    const requestId = documentLoadRequestIdRef.current + 1
+    documentLoadRequestIdRef.current = requestId
+    const requestWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
+
     if (!options?.background) {
       setIsLoading(true)
     }
@@ -174,18 +179,33 @@ export function DocumentsView({
         nextCursor: null,
       }
 
+      if (documentLoadRequestIdRef.current !== requestId || documentWorkspaceKeyRef.current !== requestWorkspaceKey) {
+        return
+      }
+
       setDocuments(pageSnapshot.documents)
       setTotalDocuments(pageSnapshot.total)
       setHasNextPage(pageSnapshot.hasMore)
     } catch (error) {
-      console.error('Failed to load documents:', error)
+      if (documentLoadRequestIdRef.current !== requestId || documentWorkspaceKeyRef.current !== requestWorkspaceKey) {
+        return
+      }
+
+      console.error('Failed to load documents:', {
+        message: getApiErrorMessage(error, 'Failed to load documents.'),
+        error,
+        workspaceId: routeState.workspaceId ?? null,
+        page,
+      })
     } finally {
-      setHasLoadedDocuments(true)
-      if (!options?.background) {
-        setIsLoading(false)
+      if (documentLoadRequestIdRef.current === requestId && documentWorkspaceKeyRef.current === requestWorkspaceKey) {
+        setHasLoadedDocuments(true)
+        if (!options?.background) {
+          setIsLoading(false)
+        }
       }
     }
-  }, [resetDocumentPagination])
+  }, [accountId, resetDocumentPagination, routeState.workspaceId])
 
   useEffect(() => {
     const nextWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`

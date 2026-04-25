@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 
 import { FileText, RotateCcw, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { type CitationOpenResult } from './chat-citations'
 import { documentsApi } from '@/lib/api'
@@ -24,8 +25,9 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
   const router = useRouter()
   const [input, setInput] = useState('')
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
-  const { messages, isLoading, isBootstrapping, initializeSession, sendMessage, startNewChat } = useChatSession(activeWorkspaceId ?? accountId)
+  const { messages, isLoading, isInitialized, isBootstrapping, initializeSession, sendMessage, startNewChat } = useChatSession(activeWorkspaceId ?? accountId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const isInitializingView = (onboarding.isLoading || isBootstrapping || !isInitialized) && messages.length === 0
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -160,7 +162,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
             size="sm"
             variant="outline"
             onClick={() => void handleStartNewChat()}
-            disabled={isLoading || isBootstrapping}
+            disabled={isLoading || isBootstrapping || isInitializingView}
           >
             <RotateCcw className="mr-2 h-4 w-4" />
             New chat
@@ -169,7 +171,11 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        {messages.length === 0 ? (
+        {isInitializingView ? (
+          <div className="flex h-full items-center justify-center">
+            <LogoSpinner imageClassName="h-7 w-7" />
+          </div>
+        ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
               <Send className="w-5 h-5 text-primary" />
@@ -194,21 +200,23 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
         )}
       </div>
 
-      <div className="shrink-0 border-t border-border bg-background p-4">
-        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto flex items-end gap-3">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask a question..."
-            className="min-h-[44px] max-h-32 resize-none"
-          />
-          <Button type="submit" size="icon" className="h-[44px] w-[44px] shrink-0" disabled={isLoading || isBootstrapping || !input.trim()}>
-            <Send className="w-4 h-4" />
-            <span className="sr-only">Send message</span>
-          </Button>
-        </form>
-      </div>
+      {isInitializingView ? null : (
+        <div className="shrink-0 border-t border-border bg-background p-4">
+          <form onSubmit={handleSubmit} className="max-w-3xl mx-auto flex items-end gap-3">
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask a question..."
+              className="min-h-[44px] max-h-32 resize-none"
+            />
+            <Button type="submit" size="icon" className="h-[44px] w-[44px] shrink-0" disabled={isLoading || isBootstrapping || !input.trim()}>
+              <Send className="w-4 h-4" />
+              <span className="sr-only">Send message</span>
+            </Button>
+          </form>
+        </div>
+      )}
     </div>
   )
 }

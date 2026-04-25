@@ -23,9 +23,10 @@ export const detectEnvState = async (envPath, contract = getEnvContract()) => {
 export const runPreflightChecks = async (options = {}) => {
   const run = options.run ?? runCommand;
   const portCheck = options.portCheck ?? isPortAvailable;
+  const commandTimeoutMs = options.commandTimeoutMs ?? 5_000;
   const results = [];
 
-  const dockerVersion = await run("docker", ["--version"]);
+  const dockerVersion = await run("docker", ["--version"], { timeoutMs: commandTimeoutMs });
   results.push({
     name: "docker",
     status: dockerVersion.ok ? "pass" : "fail",
@@ -37,7 +38,7 @@ export const runPreflightChecks = async (options = {}) => {
     return results;
   }
 
-  const composeVersion = await run("docker", ["compose", "version"]);
+  const composeVersion = await run("docker", ["compose", "version"], { timeoutMs: commandTimeoutMs });
   results.push({
     name: "docker-compose",
     status: composeVersion.ok ? "pass" : "fail",
@@ -49,19 +50,31 @@ export const runPreflightChecks = async (options = {}) => {
     return results;
   }
 
-  const dockerInfo = await run("docker", ["info"]);
+  const dockerInfo = await run("docker", ["info"], { timeoutMs: commandTimeoutMs });
   results.push({
     name: "docker-daemon",
     status: dockerInfo.ok ? "pass" : "fail",
-    summary: dockerInfo.ok ? "Docker daemon is running." : "Docker is installed, but the daemon is not reachable.",
-    recoveryAction: dockerInfo.ok ? null : "Start Docker Desktop or your container runtime, then retry.",
+    summary: dockerInfo.ok
+      ? "Docker daemon is running."
+      : dockerInfo.timedOut
+        ? "Docker daemon check timed out."
+        : "Docker is installed, but the daemon is not reachable.",
+    recoveryAction: dockerInfo.ok
+      ? null
+      : dockerInfo.timedOut
+        ? "Start Docker Desktop or check why `docker info` is hanging, then retry."
+        : "Start Docker Desktop or your container runtime, then retry.",
     isBlocking: !dockerInfo.ok,
   });
   if (!dockerInfo.ok) {
     return results;
   }
 
-  const projectPs = await run("docker", [...composeArgs, "ps", "--services", "--status", "running"]);
+  const projectPs = await run(
+    "docker",
+    [...composeArgs, "ps", "--services", "--status", "running"],
+    { timeoutMs: commandTimeoutMs },
+  );
   const projectAlreadyRunning = projectPs.ok && projectPs.stdout.trim().length > 0;
 
   for (const port of [3000, 5432, 8080]) {

@@ -117,6 +117,57 @@ describe("answer support validator", () => {
     });
   });
 
+  it("keeps assistant bootstrap claims when hidden support evidence substantiates them", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Who are you and what does the page explain?",
+      answer: "I'm Vikram, your museum guide, here to help with reflection and questions. The page explains testing and parsing content for users.",
+      answerSegments: [
+        {
+          text: "I'm Vikram, your museum guide, here to help with reflection and questions. The page explains testing and parsing content for users.",
+        },
+      ],
+      citationEvidence: citations,
+      hiddenSupportEvidence: [
+        { kind: "assistant_name", content: "Vikram" },
+        { kind: "assistant_role", content: "Museum guide" },
+        { kind: "answer_instruction", content: "Help with reflection and questions" },
+      ],
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("I'm Vikram, your museum guide, here to help with reflection and questions. The page explains testing and parsing content for users.");
+    expect(result.citations).toEqual([
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
+    ]);
+    expect(result.answerSegments).toEqual([
+      { text: "I'm Vikram, your museum guide, here to help with reflection and questions. " },
+      {
+        text: "The page explains testing and parsing content for users.",
+        citationIndices: [0],
+      },
+    ]);
+    expect(result.validation).toEqual({
+      ran: true,
+      answerModified: false,
+      unsupportedSegmentCount: 0,
+      substantiveUnsupportedSegmentCount: 0,
+      supportedSegmentCount: 2,
+      nonSubstantiveSegmentCount: 0,
+      answerSupportPolicy: "strict",
+      hiddenSupportUsed: true,
+      hiddenSupportKindsUsed: ["assistant_name", "assistant_role", "answer_instruction"],
+    });
+  });
+
   it("omits visible citation artifacts when citation display is disabled but still classifies support correctly", async () => {
     const validator = new AnswerSupportValidator();
 
@@ -146,48 +197,6 @@ describe("answer support validator", () => {
     expect(result.answerSegments).toBeUndefined();
     expect(result.validation.answerModified).toBe(false);
     expect(result.validation.supportedSegmentCount).toBe(1);
-  });
-
-  it("treats common conversational wrappers as non-substantive", async () => {
-    const validator = new AnswerSupportValidator();
-
-    const result = await validator.validate({
-      query: "Can you help?",
-      answer: "Sure. Of course! Glad to help.",
-      answerSegments: [
-        { text: "Sure" },
-        { text: ". " },
-        { text: "Of course" },
-        { text: "! " },
-        { text: "Glad to help" },
-        { text: "." },
-      ],
-      citationEvidence: [],
-      retrievedContextSummaries: [],
-      citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
-      conversationMode: "guided",
-      groundedMissResponseComposer,
-    });
-
-    expect(result.answer).toBe("Sure. Of course! Glad to help.");
-    expect(result.answerSegments).toEqual([
-      { text: "Sure" },
-      { text: ". " },
-      { text: "Of course" },
-      { text: "! " },
-      { text: "Glad to help" },
-      { text: "." },
-    ]);
-    expect(result.validation).toEqual({
-      ran: true,
-      answerModified: false,
-      unsupportedSegmentCount: 0,
-      substantiveUnsupportedSegmentCount: 0,
-      supportedSegmentCount: 0,
-      nonSubstantiveSegmentCount: 6,
-      answerSupportPolicy: "strict",
-    });
   });
 
   it("omits consecutive unsupported claims within mixed answers", async () => {
@@ -323,7 +332,57 @@ describe("answer support validator", () => {
       },
     ]);
     expect(result.validation.answerModified).toBe(false);
-    expect(result.validation.supportedSegmentCount).toBe(1);
+    expect(result.validation.supportedSegmentCount).toBe(2);
+  });
+
+  it("drops unsupported uncited lead-ins while preserving later grounded sentences", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "Ciao Claudio",
+      answer: "Ciao Claudio. Posso aiutarti con informazioni su Ananda e sui corsi residenziali.",
+      answerSegments: [
+        {
+          text: "Ciao Claudio. Posso aiutarti con informazioni su Ananda e sui corsi residenziali.",
+        },
+      ],
+      citationEvidence: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Ananda",
+          content: "Ananda offre informazioni introduttive e corsi residenziali per i visitatori interessati.",
+          sourceUrl: "https://example.com/ananda",
+        },
+      ],
+      retrievedContextSummaries: [
+        {
+          title: "Ananda",
+          content: "Ananda offre informazioni introduttive e corsi residenziali per i visitatori interessati.",
+        },
+      ],
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe("Posso aiutarti con informazioni su Ananda e sui corsi residenziali.");
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Posso aiutarti con informazioni su Ananda e sui corsi residenziali.",
+        citationIndices: [0],
+      },
+    ]);
+    expect(result.validation).toEqual({
+      ran: true,
+      answerModified: true,
+      unsupportedSegmentCount: 1,
+      substantiveUnsupportedSegmentCount: 1,
+      supportedSegmentCount: 1,
+      nonSubstantiveSegmentCount: 0,
+      answerSupportPolicy: "strict",
+    });
   });
 
   it("treats bare link-only follow-up segments as supported when the URL matches cited source metadata", async () => {
@@ -376,19 +435,19 @@ describe("answer support validator", () => {
     });
   });
 
-  it("treats link scaffolding around cited links as supported", async () => {
+  it("treats short structural link lead-ins around cited links as supported", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
       query: "Where can I read more?",
-      answer: "The page explains testing and parsing content for users.\n\nYou can read more here: [Guide](https://example.com/guide)",
+      answer: "The page explains testing and parsing content for users.\n\nRead more: [Guide](https://example.com/guide)",
       answerSegments: [
         {
           text: "The page explains testing and parsing content for users",
           citationIndices: [0],
         },
         {
-          text: "\n\nYou can read more here: [Guide](https://example.com/guide)",
+          text: "\n\nRead more: [Guide](https://example.com/guide)",
         },
       ],
       citationEvidence: citations,
@@ -403,7 +462,7 @@ describe("answer support validator", () => {
     });
 
     expect(result.answer).toBe(
-      "The page explains testing and parsing content for users\n\nYou can read more here: [Guide](https://example.com/guide)",
+      "The page explains testing and parsing content for users\n\nRead more: [Guide](https://example.com/guide)",
     );
     expect(result.answerSegments).toEqual([
       {
@@ -411,7 +470,7 @@ describe("answer support validator", () => {
         citationIndices: [0],
       },
       {
-        text: "\n\nYou can read more here: [Guide](https://example.com/guide)",
+        text: "\n\nRead more: [Guide](https://example.com/guide)",
         citationIndices: [0],
       },
     ]);
@@ -464,15 +523,15 @@ describe("answer support validator", () => {
     expect(result.validation.supportedSegmentCount).toBe(1);
   });
 
-  it("treats links as supported when the cited content contains the same URL", async () => {
+  it("treats structurally brief link references as supported when the cited content contains the same URL", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
       query: "Where can I read more?",
-      answer: "You can read more here: [Guide](https://example.com/content-link)",
+      answer: "Read more: [Guide](https://example.com/content-link)",
       answerSegments: [
         {
-          text: "You can read more here: [Guide](https://example.com/content-link)",
+          text: "Read more: [Guide](https://example.com/content-link)",
         },
       ],
       citationEvidence: [
@@ -492,10 +551,10 @@ describe("answer support validator", () => {
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe("You can read more here: [Guide](https://example.com/content-link)");
+    expect(result.answer).toBe("Read more: [Guide](https://example.com/content-link)");
     expect(result.answerSegments).toEqual([
       {
-        text: "You can read more here: [Guide](https://example.com/content-link)",
+        text: "Read more: [Guide](https://example.com/content-link)",
         citationIndices: [0],
       },
     ]);

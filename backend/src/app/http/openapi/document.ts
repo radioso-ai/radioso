@@ -778,6 +778,8 @@ const ValidationDebugSchema = registry.register(
     supportedSegmentCount: z.number().int().min(0),
     nonSubstantiveSegmentCount: z.number().int().min(0),
     answerSupportPolicy: z.enum(answerSupportPolicies).optional(),
+    hiddenSupportUsed: z.boolean().optional(),
+    hiddenSupportKindsUsed: z.array(z.enum(["assistant_name", "assistant_role", "answer_instruction"])).optional(),
     segmentResults: z.array(ValidationSegmentResultSchema),
   }),
 );

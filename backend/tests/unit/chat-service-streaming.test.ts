@@ -1197,6 +1197,91 @@ describe("chat service streaming", () => {
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 
+  it("preserves assistant bootstrap claims alongside grounded document claims in non-streaming answers", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The page explains testing and parsing content for users.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          assistantIdentity: {
+            assistantName: "Vikram",
+            assistantRole: "Museum guide",
+            greetingInstruction: "Help with reflection and questions",
+          },
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "page do",
+              lexicalQuery: "page do",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "factual",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "I'm Vikram, your museum guide, here to help with reflection and questions. The page explains testing and parsing content for users.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does this page do?",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("I'm Vikram, your museum guide, here to help with reflection and questions. The page explains testing and parsing content for users.");
+    expect(response.citations).toEqual([
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
+    ]);
+    expect(response.answerSegments).toEqual([
+      { text: "I'm Vikram, your museum guide, here to help with reflection and questions. " },
+      { text: "The page explains testing and parsing content for users.", citationIndices: [0] },
+    ]);
+
+    const [conversationId] = conversationRepository.items.keys();
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    expect(persisted.at(-1)?.content).toBe(response.answer);
+  });
+
   it("streams provisional strict-mode chunks and still finishes with the validated final answer", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

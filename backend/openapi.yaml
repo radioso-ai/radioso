@@ -114,6 +114,16 @@ components:
         - organizationName
         - workspaceId
         - workspaceName
+    PasswordResetConfirmResponse:
+      allOf:
+        - $ref: "#/components/schemas/LoginResponse"
+        - type: object
+          properties:
+            email:
+              type: string
+              format: email
+          required:
+            - email
     Workspace:
       type: object
       properties:
@@ -491,13 +501,13 @@ components:
           maxLength: 2000
         answerSupportPolicy:
           type: string
-          enum: &a2
+          enum: &a3
             - strict
             - warn
             - off
         conversationMode:
           type: string
-          enum: &a3
+          enum: &a4
             - factual
             - guided
             - exploratory
@@ -554,7 +564,7 @@ components:
                 enum: *a1
               operator:
                 type: string
-                enum: &a4
+                enum: &a2
                   - equals
                   - not_equals
                   - contains
@@ -565,6 +575,36 @@ components:
                   - gte
               value:
                 type: string
+              combinator:
+                type: string
+                enum:
+                  - and
+                  - or
+                default: and
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    field:
+                      type: string
+                    valueType:
+                      type: string
+                      enum: *a1
+                    operator:
+                      type: string
+                      enum: *a2
+                    value:
+                      type: string
+                  required:
+                    - id
+                    - field
+                    - valueType
+                    - operator
+                    - value
+                default: []
               effect:
                 type: string
                 enum: &a5
@@ -628,10 +668,10 @@ components:
           maxLength: 2000
         answerSupportPolicy:
           type: string
-          enum: *a2
+          enum: *a3
         conversationMode:
           type: string
-          enum: *a3
+          enum: *a4
         suggestedQuestionsEnabled:
           type: boolean
         suggestedQuestionsCount:
@@ -664,9 +704,39 @@ components:
                 enum: *a1
               operator:
                 type: string
-                enum: *a4
+                enum: *a2
               value:
                 type: string
+              combinator:
+                type: string
+                enum:
+                  - and
+                  - or
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                    field:
+                      type: string
+                      minLength: 1
+                    valueType:
+                      type: string
+                      enum: *a1
+                    operator:
+                      type: string
+                      enum: *a2
+                    value:
+                      type: string
+                  required:
+                    - id
+                    - field
+                    - valueType
+                    - operator
+                    - value
               effect:
                 type: string
                 enum: *a5
@@ -680,10 +750,6 @@ components:
                 maxLength: 500
             required:
               - id
-              - field
-              - valueType
-              - operator
-              - value
               - effect
               - enabled
         customInstruction:
@@ -770,9 +836,39 @@ components:
           enum: *a1
         operator:
           type: string
-          enum: *a4
+          enum: *a2
         value:
           type: string
+        combinator:
+          type: string
+          enum:
+            - and
+            - or
+          default: and
+        conditions:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              field:
+                type: string
+              valueType:
+                type: string
+                enum: *a1
+              operator:
+                type: string
+                enum: *a2
+              value:
+                type: string
+            required:
+              - id
+              - field
+              - valueType
+              - operator
+              - value
+          default: []
         effect:
           type: string
           enum: *a5
@@ -1605,13 +1701,13 @@ components:
             $ref: "#/components/schemas/ChatSuggestion"
         conversationMode:
           type: string
-          enum: *a3
+          enum: *a4
         conversationModeMetadata:
           type: object
           properties:
             conversationMode:
               type: string
-              enum: *a3
+              enum: *a4
             brevityOverrideApplied:
               type: boolean
             expansionApplied:
@@ -1829,7 +1925,17 @@ components:
           minimum: 0
         answerSupportPolicy:
           type: string
-          enum: *a2
+          enum: *a3
+        hiddenSupportUsed:
+          type: boolean
+        hiddenSupportKindsUsed:
+          type: array
+          items:
+            type: string
+            enum:
+              - assistant_name
+              - assistant_role
+              - answer_instruction
         segmentResults:
           type: array
           items:
@@ -1866,16 +1972,16 @@ components:
             - no_context_refusal
         answerSupportPolicy:
           type: string
-          enum: *a2
+          enum: *a3
         conversationMode:
           type: string
-          enum: *a3
+          enum: *a4
         conversationModeMetadata:
           type: object
           properties:
             conversationMode:
               type: string
-              enum: *a3
+              enum: *a4
             brevityOverrideApplied:
               type: boolean
             expansionApplied:
@@ -2989,7 +3095,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LoginResponse"
+                $ref: "#/components/schemas/PasswordResetConfirmResponse"
         "400":
           description: Request validation failed
           content:

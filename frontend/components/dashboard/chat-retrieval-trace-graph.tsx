@@ -79,7 +79,9 @@ const summaryLine = (stage: RetrievalTraceStage) => {
   }
 
   if (stage.stageId === 'answer') {
-    return String((stage.outputs as { outcome?: string } | undefined)?.outcome ?? 'Answer outcome').replaceAll('_', ' ')
+    const outputs = stage.outputs as { outcome?: string; hiddenSupportUsed?: boolean } | undefined
+    const outcome = String(outputs?.outcome ?? 'Answer outcome').replaceAll('_', ' ')
+    return outputs?.hiddenSupportUsed ? `${outcome} • hidden support` : outcome
   }
 
   const count = chunkCount(stage)

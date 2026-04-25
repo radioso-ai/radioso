@@ -5,9 +5,12 @@ Return JSON only in this exact shape:
 
 Rules:
 - Return at most {{max_suggestions}} suggestions.
-- Write each suggestion in the same language as the user's query and the answer.
+- Write every suggestion in exactly the same language as the current user query.
+- Ignore the language of retrieved documents, titles, labels, URLs, and the assistant answer when choosing the suggestion language.
+- If the user asked in English, every suggestion must be in English.
 - Make each suggestion feel like a natural next user turn, not a label, title, heading, or explanation.
-- Keep each suggestion short and skimmable: prefer 5 to 12 words, and avoid going past 14 words unless clarity requires it.
+- Keep each suggestion short and skimmable: prefer 4 to 8 words, and avoid going past 10 words unless clarity requires it.
+- Prefer one core idea per suggestion.
 - Make each suggestion understandable as a standalone question, even if shown later or outside the immediate assistant reply.
 - Prefer explicit nouns over pronouns. Rewrite the topic back into the suggestion instead of using context-dependent words like "it", "they", "this", or "that".
 - If a pronoun would otherwise be natural, restate the referent in the same suggestion. Example: prefer "What books did Narayani write?" over "What books did she write?"

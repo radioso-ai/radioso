@@ -671,15 +671,19 @@ export function ChatHistoryView({
       <HistoryList
         accountId={accountId}
         workspaceId={routeState.workspaceId}
+        routeState={routeState}
         onboarding={onboarding}
         filter={filter}
         isLoading={isListLoading}
         hasAnyHistory={hasAnyHistory}
         listError={listError}
+        pageSize={HISTORY_PAGE_SIZE}
         conversations={conversationPageItems}
+        conversationTotal={conversationTotal}
         conversationPage={conversationPage}
         conversationTotalPages={conversationTotalPages}
         searches={searchPageItems}
+        searchTotal={searchTotal}
         searchPage={searchPage}
         searchTotalPages={searchTotalPages}
         allHistoryItems={allHistoryItems}

@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The examples below include test tasks. Backend tests are REQUIRED and MUST appear before implementation tasks. Frontend tests follow the feature specification.
+**Tests**: The examples below include test tasks. Backend tests are REQUIRED and MUST appear before implementation tasks. Frontend user-visible flows SHOULD default to Playwright tasks, while frontend unit tests should only cover non-visual logic called for by the feature specification.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -181,7 +181,7 @@ Examples of foundational tasks (adjust based on your project):
 ### Within Each User Story
 
 - Backend tests MUST be written and FAIL before implementation
-- Frontend tests follow the feature specification
+- Frontend Playwright coverage comes first for user-visible behavior; add frontend unit tests only for non-visual logic
 - Complete required architecture/refactor stories first when the plan flags unclear structure or oversized files
 - Extract or create focused modules before wiring orchestration
 - Models before services

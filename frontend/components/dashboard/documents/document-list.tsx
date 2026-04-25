@@ -3,15 +3,9 @@
 import { FileText, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination'
 import { Spinner } from '@/components/ui/spinner'
 import { DocumentStatus } from '@/components/dashboard/document-status'
+import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import type { DocumentSummary } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -41,50 +35,25 @@ function DocumentsPagination({
   onNext: () => void
 }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm text-muted-foreground">
-        Showing {pageStart + 1}-{pageEnd} of {totalDocuments} documents
-      </p>
-      <Pagination className="mx-0 w-auto justify-start sm:justify-end">
-        <PaginationContent>
-          <PaginationItem>
-            <PaginationPrevious
-              href={buildDashboardHref(accountId, {
-                ...routeState,
-                section: 'documents',
-                documentsPage: Math.max(1, safeCurrentPage - 1),
-              })}
-              onClick={(event) => {
-                event.preventDefault()
-                onPrevious()
-              }}
-              aria-disabled={safeCurrentPage === 1}
-              className={safeCurrentPage === 1 ? 'pointer-events-none opacity-50' : undefined}
-            />
-          </PaginationItem>
-          <PaginationItem>
-            <span className="px-3 text-sm text-muted-foreground">
-              Page {safeCurrentPage} of {totalPages}
-            </span>
-          </PaginationItem>
-          <PaginationItem>
-            <PaginationNext
-              href={buildDashboardHref(accountId, {
-                ...routeState,
-                section: 'documents',
-                documentsPage: Math.min(totalPages, safeCurrentPage + 1),
-              })}
-              onClick={(event) => {
-                event.preventDefault()
-                onNext()
-              }}
-              aria-disabled={!hasNextPage}
-              className={!hasNextPage ? 'pointer-events-none opacity-50' : undefined}
-            />
-          </PaginationItem>
-        </PaginationContent>
-      </Pagination>
-    </div>
+    <DashboardPagination
+      summary={`Showing ${pageStart + 1}-${pageEnd} of ${totalDocuments} documents`}
+      currentPage={safeCurrentPage}
+      totalPages={totalPages}
+      previousHref={buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'documents',
+        documentsPage: Math.max(1, safeCurrentPage - 1),
+      })}
+      nextHref={buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'documents',
+        documentsPage: Math.min(totalPages, safeCurrentPage + 1),
+      })}
+      onPrevious={onPrevious}
+      onNext={onNext}
+      canPrevious={safeCurrentPage > 1}
+      canNext={hasNextPage}
+    />
   )
 }
 

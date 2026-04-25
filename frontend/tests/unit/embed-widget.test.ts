@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildWebsiteEmbedSurfaceCssVars,
   buildWebsiteEmbedTestHarnessUrl,
   buildWebsiteEmbedSnippet,
   formatWebsiteEmbedDisclaimer,
@@ -202,6 +203,32 @@ describe('embed widget helpers', () => {
       'Support concierge uses AI and can make mistakes.',
     )
     expect(theme.accent).toBe('#224466')
+  })
+
+  it('maps the embed theme onto route-scoped surface tokens', () => {
+    const cssVars = buildWebsiteEmbedSurfaceCssVars(
+      getWebsiteEmbedTheme({
+        panelBackground: '#faf7f2',
+        panelForeground: '#1c2434',
+        accent: '#335577',
+        accentForeground: '#f7fbff',
+        mutedBackground: '#f2ede5',
+        mutedForeground: '#6a7280',
+        panelBorder: '#d7d0c6',
+        inputBorder: '#c4b9aa',
+      }),
+    )
+
+    expect(cssVars['--background']).toBe('#faf7f2')
+    expect(cssVars['--foreground']).toBe('#1c2434')
+    expect(cssVars['--primary']).toBe('#335577')
+    expect(cssVars['--primary-foreground']).toBe('#f7fbff')
+    expect(cssVars['--muted']).toBe('#f2ede5')
+    expect(cssVars['--muted-foreground']).toBe('#6a7280')
+    expect(cssVars['--accent']).toBe('#f2ede5')
+    expect(cssVars['--accent-foreground']).toBe('#1c2434')
+    expect(cssVars['--border']).toBe('#d7d0c6')
+    expect(cssVars['--input']).toBe('#c4b9aa')
   })
 
   it('formats the startup copy with the configured embedded chat name', () => {

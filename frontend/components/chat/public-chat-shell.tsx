@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 import {
-  buildWebsiteEmbedCssVars,
+  buildWebsiteEmbedSurfaceCssVars,
   formatWebsiteEmbedDisclaimer,
   formatWebsiteEmbedStartingMessage,
   formatWebsiteEmbedRateLimitRetry,
@@ -422,7 +422,7 @@ export function PublicChatShell({
       <div
         className="flex min-h-0 flex-1 flex-col overflow-hidden"
         style={{
-          ...buildWebsiteEmbedCssVars(theme),
+          ...buildWebsiteEmbedSurfaceCssVars(theme),
           background: theme.panelBackground,
           color: theme.panelForeground,
         }}

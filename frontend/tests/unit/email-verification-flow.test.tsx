@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { renderToStaticMarkup } from 'react-dom/server'
 
 import { authApi } from '@/lib/api'
-import { VerifyEmailScreen } from '@/components/auth/verify-email-screen'
 
 describe('email verification auth flow', () => {
   afterEach(() => {
@@ -55,12 +53,5 @@ describe('email verification auth flow', () => {
         credentials: 'include',
       }),
     )
-  })
-
-  it('renders a fallback state when the verification token is missing', () => {
-    const markup = renderToStaticMarkup(<VerifyEmailScreen />)
-
-    expect(markup).toContain('Verify your email')
-    expect(markup).toContain('Verification link is missing or incomplete.')
   })
 })

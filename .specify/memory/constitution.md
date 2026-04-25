@@ -1,10 +1,10 @@
 <!--
 Sync Impact Report
-- Version change: 1.5.0 to 1.6.0
-- Modified principles: IX. Documentation Parity
-- Added sections: X. Prompt Asset Ownership
+- Version change: 1.6.0 to 1.7.0
+- Modified principles: none
+- Added sections: XI. Frontend Testing Discipline
 - Removed sections: none
-- Templates requiring updates: `.specify/templates/plan-template.md` ✅ updated; `.codex/prompts/speckit.specify.md` ✅ updated; `.codex/prompts/speckit.plan.md` ✅ updated; `.codex/prompts/speckit.implement.md` ✅ updated
+- Templates requiring updates: `.specify/templates/plan-template.md` ✅ updated; `.specify/templates/spec-template.md` ✅ updated; `.specify/templates/tasks-template.md` ✅ updated; `AGENTS.md` ✅ updated
 - Follow-up TODOs: none
 -->
 # Botobot Front Desk AI Constitution
@@ -79,6 +79,14 @@ feature introduces, extracts, or revises model-facing prompt assets used by the
 backend at runtime, the spec, plan, tasks, and implementation MUST treat
 `backend/prompts/` as the canonical location. 
 
+### XI. Frontend Testing Discipline
+Frontend work MUST prefer Playwright coverage for user-visible behavior, flows,
+and presentation-sensitive regressions. Frontend unit tests MUST be limited to
+non-visual functionality such as state transitions, data transforms, routing
+logic, API adapters, and parsing helpers. Unit tests MUST NOT lock in markup
+structure, class names, design-token choices, or other cosmetic output that is
+better validated through end-to-end coverage.
+
 ## Additional Constraints
 
 No additional constraints beyond the Core Principles at this time.
@@ -99,6 +107,8 @@ No additional constraints beyond the Core Principles at this time.
   in the same feature work.
 - Backend runtime prompt extraction or creation MUST use `backend/prompts/` and
   keep code, packaging, and tests aligned with that location.
+- Frontend planning and review MUST justify any new unit tests for UI code and
+  prefer Playwright whenever the behavior is primarily user-visible.
 - PR review MUST verify compliance with these principles before merge.
 
 ## Governance
@@ -113,4 +123,4 @@ Compliance is enforced during plan/spec/task reviews and PR reviews. The
 constitution version, ratification date, and last amended date MUST be updated
 whenever changes are made.
 
-**Version**: 1.6.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-04-16
+**Version**: 1.7.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-04-25

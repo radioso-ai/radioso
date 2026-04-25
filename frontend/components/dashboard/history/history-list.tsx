@@ -2,10 +2,11 @@
 
 import { FileText, History, MessageSquareText } from 'lucide-react'
 
+import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import type { ChatConversationSummary, DocumentSearchHistoryEntry } from '@/lib/api'
-import { buildDashboardHref } from '@/lib/dashboard-routes'
+import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getConversationSourceBadge } from '@/lib/history-source'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
@@ -25,33 +26,80 @@ export type HistoryListItem =
 
 const formatTimestamp = (value: string) => formatter.format(new Date(value))
 
-function SectionPagination({
-  page,
+const formatPageSummary = ({
+  currentPage,
+  pageSize,
+  pageItemCount,
+  totalItems,
+  label,
+}: {
+  currentPage: number
+  pageSize: number
+  pageItemCount: number
+  totalItems: number
+  label: string
+}) => {
+  const pageStart = totalItems === 0 ? 0 : (currentPage - 1) * pageSize
+  const pageEnd = Math.min(pageStart + pageItemCount, totalItems)
+
+  return `Showing ${pageStart + 1}-${pageEnd} of ${totalItems} ${label}`
+}
+
+function HistoryPagination({
+  accountId,
+  workspaceId,
+  routeState,
+  filter,
+  currentPage,
   totalPages,
+  pageSize,
+  pageItemCount,
+  totalItems,
+  label,
   onPrevious,
   onNext,
 }: {
-  page: number
+  accountId: string
+  workspaceId?: string
+  routeState: DashboardRouteState
+  filter: HistoryFilter
+  currentPage: number
   totalPages: number
+  pageSize: number
+  pageItemCount: number
+  totalItems: number
+  label: string
   onPrevious: () => void
   onNext: () => void
 }) {
-  if (totalPages <= 1) {
-    return null
-  }
-
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-sm">
-      <span className="text-muted-foreground">Page {page} of {totalPages}</span>
-      <div className="flex items-center gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={onPrevious} disabled={page === 1}>
-          Previous
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onNext} disabled={page === totalPages}>
-          Next
-        </Button>
-      </div>
-    </div>
+    <DashboardPagination
+      summary={formatPageSummary({
+        currentPage,
+        pageSize,
+        pageItemCount,
+        totalItems,
+        label,
+      })}
+      currentPage={currentPage}
+      totalPages={totalPages}
+      previousHref={buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'history',
+        workspaceId,
+        historyFilter: filter,
+        historyPage: Math.max(1, currentPage - 1),
+      })}
+      nextHref={buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'history',
+        workspaceId,
+        historyFilter: filter,
+        historyPage: Math.min(totalPages, currentPage + 1),
+      })}
+      onPrevious={onPrevious}
+      onNext={onNext}
+    />
   )
 }
 
@@ -142,15 +190,19 @@ function SearchCard({
 export function HistoryList({
   accountId,
   workspaceId,
+  routeState,
   onboarding,
   filter,
   isLoading,
   hasAnyHistory,
   listError,
+  pageSize,
   conversations,
+  conversationTotal,
   conversationPage,
   conversationTotalPages,
   searches,
+  searchTotal,
   searchPage,
   searchTotalPages,
   allHistoryItems,
@@ -165,15 +217,19 @@ export function HistoryList({
 }: {
   accountId: string
   workspaceId?: string
+  routeState: DashboardRouteState
   onboarding: WorkspaceOnboardingState
   filter: HistoryFilter
   isLoading: boolean
   hasAnyHistory: boolean
   listError: string | null
+  pageSize: number
   conversations: ChatConversationSummary[]
+  conversationTotal: number
   conversationPage: number
   conversationTotalPages: number
   searches: DocumentSearchHistoryEntry[]
+  searchTotal: number
   searchPage: number
   searchTotalPages: number
   allHistoryItems: HistoryListItem[]
@@ -186,6 +242,8 @@ export function HistoryList({
   onAllPageChange: (page: number) => void
   onNavigate: (href: string) => void
 }) {
+  const allTotal = conversationTotal + searchTotal
+
   return (
     <>
       <div className="shrink-0 border-b border-border px-6 py-4">
@@ -277,9 +335,17 @@ export function HistoryList({
             ) : null}
             {filter === 'all' ? (
               <>
-                <SectionPagination
-                  page={allPage}
+                <HistoryPagination
+                  accountId={accountId}
+                  workspaceId={workspaceId}
+                  routeState={routeState}
+                  filter="all"
+                  currentPage={allPage}
                   totalPages={allTotalPages}
+                  pageSize={pageSize}
+                  pageItemCount={allHistoryItems.length}
+                  totalItems={allTotal}
+                  label="history items"
                   onPrevious={() => onAllPageChange(Math.max(1, allPage - 1))}
                   onNext={() => onAllPageChange(Math.min(allTotalPages, allPage + 1))}
                 />
@@ -294,9 +360,17 @@ export function HistoryList({
                     <SearchCard key={item.id} search={item.search} onSelect={onSelectItem} />
                   ),
                 )}
-                <SectionPagination
-                  page={allPage}
+                <HistoryPagination
+                  accountId={accountId}
+                  workspaceId={workspaceId}
+                  routeState={routeState}
+                  filter="all"
+                  currentPage={allPage}
                   totalPages={allTotalPages}
+                  pageSize={pageSize}
+                  pageItemCount={allHistoryItems.length}
+                  totalItems={allTotal}
+                  label="history items"
                   onPrevious={() => onAllPageChange(Math.max(1, allPage - 1))}
                   onNext={() => onAllPageChange(Math.min(allTotalPages, allPage + 1))}
                 />
@@ -304,6 +378,20 @@ export function HistoryList({
             ) : null}
             {filter === 'chat' ? (
               <section className="space-y-3">
+                <HistoryPagination
+                  accountId={accountId}
+                  workspaceId={workspaceId}
+                  routeState={routeState}
+                  filter="chat"
+                  currentPage={conversationPage}
+                  totalPages={conversationTotalPages}
+                  pageSize={pageSize}
+                  pageItemCount={conversations.length}
+                  totalItems={conversationTotal}
+                  label="conversations"
+                  onPrevious={() => onConversationPageChange(Math.max(1, conversationPage - 1))}
+                  onNext={() => onConversationPageChange(Math.min(conversationTotalPages, conversationPage + 1))}
+                />
                 {conversations.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
                     No saved chats on this page.
@@ -317,9 +405,17 @@ export function HistoryList({
                     />
                   ))
                 )}
-                <SectionPagination
-                  page={conversationPage}
+                <HistoryPagination
+                  accountId={accountId}
+                  workspaceId={workspaceId}
+                  routeState={routeState}
+                  filter="chat"
+                  currentPage={conversationPage}
                   totalPages={conversationTotalPages}
+                  pageSize={pageSize}
+                  pageItemCount={conversations.length}
+                  totalItems={conversationTotal}
+                  label="conversations"
                   onPrevious={() => onConversationPageChange(Math.max(1, conversationPage - 1))}
                   onNext={() => onConversationPageChange(Math.min(conversationTotalPages, conversationPage + 1))}
                 />
@@ -327,6 +423,20 @@ export function HistoryList({
             ) : null}
             {filter === 'search' ? (
               <section className="space-y-3">
+                <HistoryPagination
+                  accountId={accountId}
+                  workspaceId={workspaceId}
+                  routeState={routeState}
+                  filter="search"
+                  currentPage={searchPage}
+                  totalPages={searchTotalPages}
+                  pageSize={pageSize}
+                  pageItemCount={searches.length}
+                  totalItems={searchTotal}
+                  label="searches"
+                  onPrevious={() => onSearchPageChange(Math.max(1, searchPage - 1))}
+                  onNext={() => onSearchPageChange(Math.min(searchTotalPages, searchPage + 1))}
+                />
                 {searches.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
                     No saved searches on this page.
@@ -334,9 +444,17 @@ export function HistoryList({
                 ) : (
                   searches.map((search) => <SearchCard key={search.searchId} search={search} onSelect={onSelectItem} />)
                 )}
-                <SectionPagination
-                  page={searchPage}
+                <HistoryPagination
+                  accountId={accountId}
+                  workspaceId={workspaceId}
+                  routeState={routeState}
+                  filter="search"
+                  currentPage={searchPage}
                   totalPages={searchTotalPages}
+                  pageSize={pageSize}
+                  pageItemCount={searches.length}
+                  totalItems={searchTotal}
+                  label="searches"
                   onPrevious={() => onSearchPageChange(Math.max(1, searchPage - 1))}
                   onNext={() => onSearchPageChange(Math.min(searchTotalPages, searchPage + 1))}
                 />

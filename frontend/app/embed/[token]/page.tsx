@@ -1,5 +1,7 @@
 import { EmbeddedChatFrame } from '@/components/chat/embedded-chat-frame'
 import {
+  buildWebsiteEmbedSurfaceCssVars,
+  getWebsiteEmbedTheme,
   normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedDisplayMode,
   parseWebsiteEmbedCopyOverridesParam,
@@ -30,15 +32,25 @@ export default async function EmbeddedChatPage({
   const resolvedAvatarUrl = normalizeWebsiteEmbedAvatarUrl(firstSearchValue(avatarUrl) ?? firstSearchValue(avatar))
   const copyOverrides = parseWebsiteEmbedCopyOverridesParam(copy)
   const themeOverrides = parseWebsiteEmbedThemeOverridesParam(theme)
+  const resolvedTheme = getWebsiteEmbedTheme(themeOverrides)
 
   return (
-    <EmbeddedChatFrame
-      token={token}
-      localeOverride={localeOverride}
-      displayMode={resolvedDisplayMode}
-      avatarUrl={resolvedAvatarUrl}
-      copyOverrides={copyOverrides}
-      themeOverrides={themeOverrides}
-    />
+    <div
+      className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden"
+      style={{
+        ...buildWebsiteEmbedSurfaceCssVars(resolvedTheme),
+        background: resolvedTheme.panelBackground,
+        color: resolvedTheme.panelForeground,
+      }}
+    >
+      <EmbeddedChatFrame
+        token={token}
+        localeOverride={localeOverride}
+        displayMode={resolvedDisplayMode}
+        avatarUrl={resolvedAvatarUrl}
+        copyOverrides={copyOverrides}
+        themeOverrides={themeOverrides}
+      />
+    </div>
   )
 }

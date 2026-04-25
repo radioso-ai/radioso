@@ -375,6 +375,28 @@ export const buildWebsiteEmbedCssVars = (theme: WebsiteEmbedTheme) =>
     '--radioso-user-bubble-foreground': theme.userBubbleForeground,
   }) as Record<string, string>
 
+export const buildWebsiteEmbedSurfaceCssVars = (theme: WebsiteEmbedTheme) =>
+  ({
+    ...buildWebsiteEmbedCssVars(theme),
+    '--background': theme.panelBackground,
+    '--foreground': theme.panelForeground,
+    '--card': theme.panelBackground,
+    '--card-foreground': theme.panelForeground,
+    '--popover': theme.panelBackground,
+    '--popover-foreground': theme.panelForeground,
+    '--primary': theme.accent,
+    '--primary-foreground': theme.accentForeground,
+    '--secondary': theme.mutedBackground,
+    '--secondary-foreground': theme.panelForeground,
+    '--muted': theme.mutedBackground,
+    '--muted-foreground': theme.mutedForeground,
+    '--accent': theme.mutedBackground,
+    '--accent-foreground': theme.panelForeground,
+    '--border': theme.panelBorder,
+    '--input': theme.inputBorder,
+    '--ring': theme.accent,
+  }) as Record<string, string>
+
 export const resolveWebsiteEmbedScriptUrl = (scriptUrl?: string | null, baseUrl?: string) => {
   const normalizedScriptUrl = scriptUrl?.trim()
   if (normalizedScriptUrl) {

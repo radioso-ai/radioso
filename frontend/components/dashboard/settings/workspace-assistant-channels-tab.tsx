@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Building2, Code2, Globe, ExternalLink, MessageSquare, RefreshCw, Save, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Building2, Code2, ExternalLink, FolderOpen, Globe, KeyRound, MessageSquare, RefreshCw, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
 
+import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
+import { WhatsAppChannelSettings } from '@/components/dashboard/settings/whatsapp-channel-settings'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
@@ -24,8 +25,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { type DashboardRouteState } from '@/lib/dashboard-routes'
-import { accountApi, generalSettingsApi, type GeneralSettings } from '@/lib/api'
+import { accountApi, generalSettingsApi, settingsApi, type GeneralSettings, type RetrievalSettings } from '@/lib/api'
 import {
   APP_WEBSITE_EMBED_DEMO_PATH,
   DEFAULT_WEBSITE_EMBED_THEME,
@@ -69,33 +69,59 @@ const updateWebsiteEmbedJsonOverrideValue = (currentValue: string, key: string, 
   return stringifyWebsiteEmbedJsonOverrideRecord(nextOverrides)
 }
 
-export function GeneralTab({
+const assistantConversationModeLabels: Record<
+  RetrievalSettings['conversationMode'],
+  { label: string; description: string }
+> = {
+  factual: {
+    label: 'Factual',
+    description: 'Answer the current question directly and stop unless clarification is required.',
+  },
+  guided: {
+    label: 'Guided',
+    description: 'Answer directly, then suggest one or two grounded nearby directions when useful.',
+  },
+  exploratory: {
+    label: 'Exploratory',
+    description: 'Answer directly, then surface more of what the workspace covers and invite grounded follow-up.',
+  },
+}
+
+export function WorkspaceAssistantChannelsTab({
   accountId,
-  routeState,
+  mode,
+  onSaveStateChange,
 }: {
   accountId: string
-  routeState: DashboardRouteState
+  mode: 'workspace' | 'assistant' | 'channels'
+  onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
-  const router = useRouter()
-  const descriptor = getSettingsTabDescriptor('general')
-  const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace } = useWorkspace()
+  const descriptor = getSettingsTabDescriptor(mode)
+  const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
   const [workspaceName, setWorkspaceName] = useState(activeWorkspace?.name ?? '')
   const [organizationName, setOrganizationName] = useState('')
+  const [savedOrganizationName, setSavedOrganizationName] = useState('')
   const [isOrganizationLoading, setIsOrganizationLoading] = useState(true)
-  const [isOrganizationSaving, setIsOrganizationSaving] = useState(false)
   const [organizationError, setOrganizationError] = useState<string | null>(null)
-  const [isRenameSaving, setIsRenameSaving] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
   const hasNameChange = workspaceName.trim() !== (activeWorkspace?.name ?? '')
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [rotateApiTokenDialogOpen, setRotateApiTokenDialogOpen] = useState(false)
+  const [isRotatingApiToken, setIsRotatingApiToken] = useState(false)
+  const [rotateApiTokenError, setRotateApiTokenError] = useState<string | null>(null)
   const isLastWorkspace = workspaces.length <= 1
   const deleteConfirmValid = deleteConfirmName === activeWorkspace?.name
   const [anonSettings, setAnonSettings] = useState<GeneralSettings | null>(null)
   const [savedAnonSettings, setSavedAnonSettings] = useState<GeneralSettings | null>(null)
   const [isAnonLoading, setIsAnonLoading] = useState(true)
   const [isAnonSaving, setIsAnonSaving] = useState(false)
+  const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<RetrievalSettings | null>(null)
+  const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<RetrievalSettings | null>(null)
+  const [isAssistantBehaviorLoading, setIsAssistantBehaviorLoading] = useState(mode === 'assistant')
+  const [saveState, setSaveState] = useState<'idle' | 'saved' | 'saving' | 'error'>('idle')
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [websiteEmbedOrigins, setWebsiteEmbedOrigins] = useState('')
   const [websiteEmbedSnippetDisplayMode, setWebsiteEmbedSnippetDisplayMode] = useState('')
   const [websiteEmbedSnippetInitialState, setWebsiteEmbedSnippetInitialState] = useState('')
@@ -108,10 +134,53 @@ export function GeneralTab({
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
+  const [whatsAppSaveState, setWhatsAppSaveState] = useState<{
+    state: 'idle' | 'saved' | 'saving' | 'error'
+    message?: string | null
+  }>({ state: 'idle' })
+  const saveSequenceRef = useRef(0)
+  const organizationDraftVersionRef = useRef(0)
+  const workspaceDraftVersionRef = useRef(0)
+  const anonDraftVersionRef = useRef(0)
+  const assistantBehaviorDraftVersionRef = useRef(0)
 
   useEffect(() => {
-    setWorkspaceName(activeWorkspace?.name ?? '')
-  }, [activeWorkspace?.name])
+    const primaryState = { state: saveState, message: saveError }
+
+    if (primaryState.state === 'error') {
+      onSaveStateChange?.(primaryState)
+      return
+    }
+
+    if (whatsAppSaveState.state === 'error') {
+      onSaveStateChange?.(whatsAppSaveState)
+      return
+    }
+
+    if (primaryState.state === 'saving' || whatsAppSaveState.state === 'saving') {
+      onSaveStateChange?.({ state: 'saving', message: null })
+      return
+    }
+
+    if (primaryState.state === 'saved' || whatsAppSaveState.state === 'saved') {
+      onSaveStateChange?.({ state: 'saved', message: null })
+      return
+    }
+
+    onSaveStateChange?.({ state: 'idle', message: null })
+  }, [onSaveStateChange, saveError, saveState, whatsAppSaveState])
+
+  useEffect(() => {
+    if (mode !== 'channels' && whatsAppSaveState.state !== 'idle') {
+      setWhatsAppSaveState({ state: 'idle' })
+    }
+  }, [mode, whatsAppSaveState.state])
+
+  useEffect(() => {
+    if (!hasNameChange) {
+      setWorkspaceName(activeWorkspace?.name ?? '')
+    }
+  }, [activeWorkspace?.name, hasNameChange])
 
   useEffect(() => {
     let active = true
@@ -122,7 +191,9 @@ export function GeneralTab({
         const response = await accountApi.listAccounts()
         if (!active) return
         const current = response.accounts.find((account) => account.accountId === accountId)
-        setOrganizationName(current?.organizationName ?? '')
+        const nextOrganizationName = current?.organizationName ?? ''
+        setOrganizationName(nextOrganizationName)
+        setSavedOrganizationName(nextOrganizationName)
         setOrganizationError(null)
       } catch {
         if (!active) return
@@ -144,25 +215,80 @@ export function GeneralTab({
     setApiToken(null)
     setApiTokenError(null)
     setIsApiTokenLoading(false)
+    setRotateApiTokenDialogOpen(false)
+    setRotateApiTokenError(null)
+    setIsRotatingApiToken(false)
   }, [activeWorkspaceId])
 
   useEffect(() => {
+    if (isWorkspaceLoading || !activeWorkspaceId) {
+      setIsAnonLoading(true)
+      return
+    }
+
+    let active = true
     setIsAnonLoading(true)
     const loadAnonSettings = async () => {
       try {
         const data = await generalSettingsApi.getGeneralSettings()
+        if (!active) return
         setAnonSettings(data)
         setSavedAnonSettings(data)
         setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(data.websiteEmbedAllowedOrigins ?? []))
         setAssistantSettingsError(null)
       } catch (error) {
+        if (!active) return
         console.error('Failed to load anonymous chat settings:', error)
       } finally {
-        setIsAnonLoading(false)
+        if (active) {
+          setIsAnonLoading(false)
+        }
       }
     }
     void loadAnonSettings()
-  }, [activeWorkspaceId])
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId, isWorkspaceLoading])
+
+  useEffect(() => {
+    if (mode !== 'assistant') {
+      setAssistantBehaviorSettings(null)
+      setSavedAssistantBehaviorSettings(null)
+      setIsAssistantBehaviorLoading(false)
+      return
+    }
+
+    if (isWorkspaceLoading || !activeWorkspaceId) {
+      setIsAssistantBehaviorLoading(true)
+      return
+    }
+
+    let active = true
+    setIsAssistantBehaviorLoading(true)
+    const loadAssistantBehaviorSettings = async () => {
+      try {
+        const data = await settingsApi.getRetrievalSettings()
+        if (!active) return
+        setAssistantBehaviorSettings(data)
+        setSavedAssistantBehaviorSettings(data)
+        setAssistantSettingsError(null)
+      } catch (error) {
+        if (!active) return
+        console.error('Failed to load assistant behavior settings:', error)
+        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to load assistant settings.'))
+      } finally {
+        if (active) {
+          setIsAssistantBehaviorLoading(false)
+        }
+      }
+    }
+
+    void loadAssistantBehaviorSettings()
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId, isWorkspaceLoading, mode])
 
   const handleAnonToggle = async (enabled: boolean) => {
     setIsAnonSaving(true)
@@ -203,44 +329,6 @@ export function GeneralTab({
     }
   }
 
-  const handleRename = async () => {
-    if (!activeWorkspace || !hasNameChange) return
-    const trimmed = workspaceName.trim()
-    if (!trimmed || trimmed.length > 100) {
-      setRenameError('Name must be between 1 and 100 characters')
-      return
-    }
-    setIsRenameSaving(true)
-    setRenameError(null)
-    try {
-      await renameWorkspace(activeWorkspace.id, trimmed)
-    } catch {
-      setRenameError('Failed to rename workspace')
-    } finally {
-      setIsRenameSaving(false)
-    }
-  }
-
-  const handleOrganizationRename = async () => {
-    const trimmed = organizationName.trim()
-    if (!trimmed || trimmed.length > 80) {
-      setOrganizationError('Organization name must be between 1 and 80 characters')
-      return
-    }
-
-    setIsOrganizationSaving(true)
-    setOrganizationError(null)
-    try {
-      const updated = await accountApi.renameOrganization(trimmed)
-      setOrganizationName(updated.organizationName)
-      window.dispatchEvent(new Event('radioso:accounts-updated'))
-    } catch {
-      setOrganizationError('Failed to rename organization')
-    } finally {
-      setIsOrganizationSaving(false)
-    }
-  }
-
   const handleDelete = async () => {
     if (!activeWorkspace || !deleteConfirmValid) return
     setIsDeleting(true)
@@ -268,10 +356,40 @@ export function GeneralTab({
     }
   }
 
+  const handleRotateApiToken = async () => {
+    if (!activeWorkspaceId) return
+
+    setIsRotatingApiToken(true)
+    setRotateApiTokenError(null)
+
+    try {
+      const response = await accountApi.rotateWorkspaceToken(activeWorkspaceId)
+      setApiToken(response.token)
+      setRotateApiTokenDialogOpen(false)
+    } catch (error) {
+      console.error('Failed to rotate workspace token:', error)
+      setRotateApiTokenError(getApiErrorMessage(error, 'Failed to rotate the workspace token.'))
+    } finally {
+      setIsRotatingApiToken(false)
+    }
+  }
+
+  const apiAccessExample = useMemo(() => {
+    const apiBasePath = process.env.NEXT_PUBLIC_API_BASE_PATH ?? '/backend/api/v1'
+    const origin = typeof window === 'undefined' ? 'https://your-radioso-host' : window.location.origin
+    return `curl ${origin}${apiBasePath}/settings/retrieval \\\n  -H "Authorization: Bearer <token>"`
+  }, [])
+
   const handleAssistantSettingChange = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
     if (!anonSettings) return
+    anonDraftVersionRef.current += 1
     setAssistantSettingsError(null)
     setAnonSettings({ ...anonSettings, [key]: value })
+  }
+
+  const updateAssistantBehaviorDraft = (updater: (current: RetrievalSettings) => RetrievalSettings) => {
+    assistantBehaviorDraftVersionRef.current += 1
+    setAssistantBehaviorSettings((current) => (current ? updater(current) : current))
   }
 
   const hasAssistantChanges =
@@ -279,34 +397,18 @@ export function GeneralTab({
       ? (
           anonSettings.assistantName !== savedAnonSettings.assistantName ||
           anonSettings.assistantRole !== savedAnonSettings.assistantRole ||
-          anonSettings.greetingInstruction !== savedAnonSettings.greetingInstruction ||
           anonSettings.assistantDefaultLocale !== savedAnonSettings.assistantDefaultLocale ||
           anonSettings.proactiveGreetingEnabled !== savedAnonSettings.proactiveGreetingEnabled
         )
       : false
 
-  const handleAssistantSave = async () => {
-    if (!anonSettings) return
-    setIsAnonSaving(true)
-    try {
-      const updated = await generalSettingsApi.updateGeneralSettings({
-        assistantName: anonSettings.assistantName,
-        assistantRole: anonSettings.assistantRole,
-        greetingInstruction: anonSettings.greetingInstruction,
-        assistantDefaultLocale: anonSettings.assistantDefaultLocale,
-        proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
-      })
-      setAnonSettings(updated)
-      setSavedAnonSettings(updated)
-      setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
-      setAssistantSettingsError(null)
-    } catch (error) {
-      console.error('Failed to update assistant bootstrap settings:', error)
-      setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant bootstrap settings.'))
-    } finally {
-      setIsAnonSaving(false)
-    }
-  }
+  const hasAssistantBehaviorChanges =
+    assistantBehaviorSettings && savedAssistantBehaviorSettings
+      ? (
+          assistantBehaviorSettings.conversationMode !== savedAssistantBehaviorSettings.conversationMode ||
+          assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction
+        )
+      : false
 
   const hasWebsiteEmbedChanges =
     anonSettings && savedAnonSettings
@@ -367,7 +469,7 @@ export function GeneralTab({
   )
 
   const websiteEmbedSnippetResolvedCopyOverrides = useMemo(() => {
-    const fallbackEmbeddedChatTitle = activeWorkspace?.name?.trim()
+    const fallbackEmbeddedChatTitle = anonSettings?.assistantName?.trim() || activeWorkspace?.name?.trim()
     if (!fallbackEmbeddedChatTitle || websiteEmbedSnippetCopyOverrides.embeddedChatTitle) {
       return websiteEmbedSnippetCopyOverrides
     }
@@ -376,12 +478,45 @@ export function GeneralTab({
       ...websiteEmbedSnippetCopyOverrides,
       embeddedChatTitle: fallbackEmbeddedChatTitle,
     }
-  }, [activeWorkspace?.name, websiteEmbedSnippetCopyOverrides])
+  }, [activeWorkspace?.name, anonSettings?.assistantName, websiteEmbedSnippetCopyOverrides])
 
   const websiteEmbedSnippetThemeOverrides = useMemo(
     () => sanitizeWebsiteEmbedThemeOverrides(websiteEmbedSnippetParsedThemeJson),
     [websiteEmbedSnippetParsedThemeJson],
   )
+
+  const websiteEmbedSnippetResolvedThemeOverrides = useMemo(() => {
+    const nextOverrides = { ...websiteEmbedSnippetThemeOverrides }
+
+    if (nextOverrides.panelBackground) {
+      if (nextOverrides.assistantBubbleBackground === nextOverrides.panelBackground) {
+        delete nextOverrides.assistantBubbleBackground
+      }
+      if (nextOverrides.inputBackground === nextOverrides.panelBackground) {
+        delete nextOverrides.inputBackground
+      }
+      if (nextOverrides.mutedBackground === nextOverrides.panelBackground) {
+        delete nextOverrides.mutedBackground
+      }
+    }
+
+    if (nextOverrides.panelForeground) {
+      if (nextOverrides.assistantBubbleForeground === nextOverrides.panelForeground) {
+        delete nextOverrides.assistantBubbleForeground
+      }
+      if (nextOverrides.inputForeground === nextOverrides.panelForeground) {
+        delete nextOverrides.inputForeground
+      }
+      if (nextOverrides.inputPlaceholder === nextOverrides.panelForeground) {
+        delete nextOverrides.inputPlaceholder
+      }
+      if (nextOverrides.mutedForeground === nextOverrides.panelForeground) {
+        delete nextOverrides.mutedForeground
+      }
+    }
+
+    return nextOverrides
+  }, [websiteEmbedSnippetThemeOverrides])
 
   const hasWebsiteEmbedVisibleTextOverrides = Boolean(
     websiteEmbedSnippetCopyOverrides.publicChatSubtitle ||
@@ -437,7 +572,7 @@ export function GeneralTab({
         initialState: normalizedInitialState,
         avatarUrl: normalizedAvatarUrl,
         copy: websiteEmbedSnippetResolvedCopyOverrides,
-        theme: websiteEmbedSnippetThemeOverrides,
+        theme: websiteEmbedSnippetResolvedThemeOverrides,
       })
     )
   }, [
@@ -452,6 +587,7 @@ export function GeneralTab({
     websiteEmbedSnippetInitialState,
     websiteEmbedSnippetThemeJson,
     websiteEmbedSnippetThemeJsonError,
+    websiteEmbedSnippetResolvedThemeOverrides,
     websiteEmbedSnippetThemeOverrides,
   ])
 
@@ -485,7 +621,7 @@ export function GeneralTab({
         initialState: normalizeWebsiteEmbedInitialState(websiteEmbedSnippetInitialState) ?? undefined,
         avatarUrl: normalizeWebsiteEmbedAvatarUrl(websiteEmbedSnippetAvatarUrl) ?? undefined,
         copy: websiteEmbedSnippetResolvedCopyOverrides,
-        theme: websiteEmbedSnippetThemeOverrides,
+        theme: websiteEmbedSnippetResolvedThemeOverrides,
       },
       new URL(APP_WEBSITE_EMBED_DEMO_PATH, window.location.origin).toString(),
     )
@@ -502,6 +638,7 @@ export function GeneralTab({
     websiteEmbedSnippetInitialState,
     websiteEmbedSnippetThemeJson,
     websiteEmbedSnippetThemeJsonError,
+    websiteEmbedSnippetResolvedThemeOverrides,
     websiteEmbedSnippetThemeOverrides,
   ])
 
@@ -513,26 +650,192 @@ export function GeneralTab({
     [websiteEmbedDemoOrigin, websiteEmbedOrigins],
   )
 
-  const handleWebsiteEmbedSave = async () => {
-    if (!anonSettings) return
-    setIsAnonSaving(true)
-    try {
-      const updated = await generalSettingsApi.updateGeneralSettings({
-        websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
-        websiteEmbedAllowedOrigins: parseWebsiteEmbedOrigins(websiteEmbedOrigins),
-        websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
-        websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
-        websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
-      })
-      setAnonSettings(updated)
-      setSavedAnonSettings(updated)
-      setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
-    } catch (error) {
-      console.error('Failed to update website embed settings:', error)
-    } finally {
-      setIsAnonSaving(false)
+  useEffect(() => {
+    if (!accountId || isOrganizationLoading) {
+      return
     }
-  }
+    const trimmed = organizationName.trim()
+    if (trimmed === '' || trimmed === savedOrganizationName) {
+      return
+    }
+    const timeout = window.setTimeout(async () => {
+      if (trimmed.length > 80) {
+        setOrganizationError('Organization name must be between 1 and 80 characters')
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+        return
+      }
+      const draftVersionAtRequestStart = organizationDraftVersionRef.current
+      const saveId = saveSequenceRef.current + 1
+      saveSequenceRef.current = saveId
+      setSaveState('saving')
+      setSaveError(null)
+      setOrganizationError(null)
+      try {
+        const updated = await accountApi.renameOrganization(trimmed)
+        if (saveSequenceRef.current !== saveId) return
+        setSavedOrganizationName(updated.organizationName)
+        if (organizationDraftVersionRef.current === draftVersionAtRequestStart) {
+          setOrganizationName(updated.organizationName)
+          setSaveState('saved')
+        }
+        window.dispatchEvent(new Event('radioso:accounts-updated'))
+      } catch {
+        if (saveSequenceRef.current !== saveId) return
+        setOrganizationError('Failed to rename organization')
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+      }
+    }, 700)
+    return () => window.clearTimeout(timeout)
+  }, [accountId, isOrganizationLoading, organizationName, savedOrganizationName])
+
+  useEffect(() => {
+    if (!activeWorkspace || !hasNameChange) {
+      return
+    }
+    const trimmed = workspaceName.trim()
+    const timeout = window.setTimeout(async () => {
+      if (!trimmed || trimmed.length > 100) {
+        setRenameError('Name must be between 1 and 100 characters')
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+        return
+      }
+      const draftVersionAtRequestStart = workspaceDraftVersionRef.current
+      const saveId = saveSequenceRef.current + 1
+      saveSequenceRef.current = saveId
+      setSaveState('saving')
+      setSaveError(null)
+      setRenameError(null)
+      try {
+        await renameWorkspace(activeWorkspace.id, trimmed)
+        if (saveSequenceRef.current !== saveId) return
+        if (workspaceDraftVersionRef.current === draftVersionAtRequestStart) {
+          setSaveState('saved')
+        }
+      } catch {
+        if (saveSequenceRef.current !== saveId) return
+        setRenameError('Failed to rename workspace')
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+      }
+    }, 700)
+    return () => window.clearTimeout(timeout)
+  }, [activeWorkspace, hasNameChange, renameWorkspace, workspaceName])
+
+  useEffect(() => {
+    if (!anonSettings || !savedAnonSettings || !hasAssistantChanges) {
+      return
+    }
+    const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = anonDraftVersionRef.current
+      const saveId = saveSequenceRef.current + 1
+      saveSequenceRef.current = saveId
+      setIsAnonSaving(true)
+      setSaveState('saving')
+      setSaveError(null)
+      try {
+        const updated = await generalSettingsApi.updateGeneralSettings({
+          assistantName: anonSettings.assistantName,
+          assistantRole: anonSettings.assistantRole,
+          assistantDefaultLocale: anonSettings.assistantDefaultLocale,
+          proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
+        })
+        if (saveSequenceRef.current !== saveId) return
+        setSavedAnonSettings(updated)
+        setAssistantSettingsError(null)
+        if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
+          setAnonSettings(updated)
+          setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
+          setSaveState('saved')
+        }
+      } catch (error) {
+        if (saveSequenceRef.current !== saveId) return
+        console.error('Failed to update assistant settings:', error)
+        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant settings.'))
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+      } finally {
+        if (saveSequenceRef.current === saveId) {
+          setIsAnonSaving(false)
+        }
+      }
+    }, 700)
+    return () => window.clearTimeout(timeout)
+  }, [anonSettings, hasAssistantChanges, savedAnonSettings])
+
+  useEffect(() => {
+    if (!anonSettings || !savedAnonSettings || !hasWebsiteEmbedChanges) {
+      return
+    }
+    const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = anonDraftVersionRef.current
+      const saveId = saveSequenceRef.current + 1
+      saveSequenceRef.current = saveId
+      setIsAnonSaving(true)
+      setSaveState('saving')
+      setSaveError(null)
+      try {
+        const updated = await generalSettingsApi.updateGeneralSettings({
+          websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
+          websiteEmbedAllowedOrigins: parseWebsiteEmbedOrigins(websiteEmbedOrigins),
+          websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
+          websiteEmbedLauncherIcon: anonSettings.websiteEmbedLauncherIcon ?? 'chat',
+          websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
+        })
+        if (saveSequenceRef.current !== saveId) return
+        setSavedAnonSettings(updated)
+        if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
+          setAnonSettings(updated)
+          setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))
+          setSaveState('saved')
+        }
+      } catch (error) {
+        if (saveSequenceRef.current !== saveId) return
+        console.error('Failed to update website embed settings:', error)
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+      } finally {
+        if (saveSequenceRef.current === saveId) {
+          setIsAnonSaving(false)
+        }
+      }
+    }, 700)
+    return () => window.clearTimeout(timeout)
+  }, [anonSettings, hasWebsiteEmbedChanges, savedAnonSettings, websiteEmbedOrigins])
+
+  useEffect(() => {
+    if (!assistantBehaviorSettings || !savedAssistantBehaviorSettings || !hasAssistantBehaviorChanges) {
+      return
+    }
+
+    const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = assistantBehaviorDraftVersionRef.current
+      const saveId = saveSequenceRef.current + 1
+      saveSequenceRef.current = saveId
+      setSaveState('saving')
+      setSaveError(null)
+      try {
+        const updated = await settingsApi.updateRetrievalSettings(assistantBehaviorSettings)
+        if (saveSequenceRef.current !== saveId) return
+        setSavedAssistantBehaviorSettings(updated)
+        setAssistantSettingsError(null)
+        if (assistantBehaviorDraftVersionRef.current === draftVersionAtRequestStart) {
+          setAssistantBehaviorSettings(updated)
+          setSaveState('saved')
+        }
+      } catch (error) {
+        if (saveSequenceRef.current !== saveId) return
+        console.error('Failed to update assistant behavior settings:', error)
+        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant settings.'))
+        setSaveState('error')
+        setSaveError('Failed to save changes')
+      }
+    }, 700)
+
+    return () => window.clearTimeout(timeout)
+  }, [assistantBehaviorSettings, hasAssistantBehaviorChanges, savedAssistantBehaviorSettings])
 
   const handleOpenWebsiteEmbedDemo = async () => {
     if (!anonSettings?.websiteEmbedEnabled || !websiteEmbedDemoUrl || typeof window === 'undefined') {
@@ -631,180 +934,119 @@ export function GeneralTab({
   }
 
   return (
-    <SettingsTabShell
-      accountId={accountId}
-      routeState={routeState}
-      descriptor={descriptor}
-      onNavigate={(href) => router.push(href)}
-    >
-      <div className="mx-auto max-w-4xl space-y-8">
-        <section id="workspace-access" className="space-y-6 scroll-mt-24">
-          <div className="space-y-2">
-            <h2 className="text-xl font-semibold text-foreground">Workspace and access</h2>
-            <p className="text-sm text-muted-foreground">
-              Core operator controls for naming, admin API access, and workspace lifecycle.
-            </p>
-          </div>
+    <SettingsTabShell>
+      <div className="space-y-8">
+        <section className="space-y-1 px-1">
+          <p className="text-sm text-muted-foreground">{descriptor.summary}</p>
+        </section>
 
+        {mode === 'workspace' ? (
+        <section id="workspace-access" className="space-y-6 scroll-mt-24">
             {isOrganizationLoading ? (
               <div className="flex items-center justify-center py-4">
                 <Spinner className="w-5 h-5" />
               </div>
             ) : (
-              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                    <Building2 className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="min-w-0 flex-1 space-y-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Organization Name</p>
-                      <p className="text-sm text-muted-foreground">
-                        Update the label shown in the organization picker and invite flows.
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <Input
-                        value={organizationName}
-                        onChange={(event) => {
-                          setOrganizationName(event.target.value)
-                          setOrganizationError(null)
-                        }}
-                        maxLength={80}
-                        className="flex-1"
-                      />
-                      <Button
-                        size="sm"
-                        className="sm:self-start"
-                        onClick={handleOrganizationRename}
-                        disabled={!organizationName.trim() || isOrganizationSaving}
-                      >
-                        {isOrganizationSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                        Save
-                      </Button>
-                    </div>
-                    {organizationError ? <p className="text-sm text-destructive">{organizationError}</p> : null}
-                  </div>
+              <SettingsCard
+                icon={<Building2 className="h-5 w-5 text-primary" />}
+                title="Organization name"
+                description="Label shown in the organization picker and invite flows."
+              >
+                <div className="space-y-2">
+                  <Input
+                    value={organizationName}
+                    onChange={(event) => {
+                      organizationDraftVersionRef.current += 1
+                      setOrganizationName(event.target.value)
+                      setOrganizationError(null)
+                    }}
+                    maxLength={80}
+                    className="flex-1"
+                  />
+                  {organizationError ? <p className="text-sm text-destructive">{organizationError}</p> : null}
                 </div>
-              </div>
+              </SettingsCard>
             )}
 
-            <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-              <div>
-                <p className="text-sm font-medium text-foreground">Workspace name</p>
-                <p className="text-sm text-muted-foreground">
-                  Rename the active workspace without changing any of its data or settings.
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
+            <SettingsCard
+              icon={<FolderOpen className="h-5 w-5 text-primary" />}
+              title="Workspace name"
+              description="Internal workspace label used in the dashboard, workspace switcher, and admin tools."
+            >
+              <div className="space-y-2">
                 <Input
                   id="workspaceName"
                   value={workspaceName}
                   onChange={(event) => {
+                    workspaceDraftVersionRef.current += 1
                     setWorkspaceName(event.target.value)
                     setRenameError(null)
                   }}
                   maxLength={100}
                   className="flex-1"
                 />
-                <Button
-                  size="sm"
-                  className="sm:self-start"
-                  onClick={handleRename}
-                  disabled={!hasNameChange || isRenameSaving}
-                >
-                  {isRenameSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                  Save
-                </Button>
+                {renameError ? <p className="text-sm text-destructive">{renameError}</p> : null}
               </div>
-              {renameError ? <p className="text-sm text-destructive">{renameError}</p> : null}
-            </div>
+            </SettingsCard>
 
-            <details className="rounded-lg border border-border bg-card p-4">
-                <summary className="cursor-pointer list-none">
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <h3 className="font-medium text-foreground">Session-authenticated admin API</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Admin requests now use the browser session cookie together with the active workspace id.
-                      </p>
-                    </div>
-                  </div>
-                </summary>
-
-                <div className="mt-4 space-y-4">
-                  <div className="rounded bg-muted/50 p-3 space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                      The web app keeps admin access on the session cookie. Reveal the workspace API token only when
-                      you need to paste it into curl, an SDK, or another client.
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleRevealApiToken}
-                        disabled={!activeWorkspaceId || isApiTokenLoading}
-                      >
-                        {isApiTokenLoading ? <Spinner className="mr-2" /> : null}
-                        Reveal API token
-                      </Button>
-                      {apiToken ? (
-                        <Button size="sm" variant="ghost" onClick={() => setApiToken(null)}>
-                          Hide token
-                        </Button>
-                      ) : null}
-                    </div>
-                    {apiToken ? (
-                      <CopyValueField value={apiToken} ariaLabel="Copy API token" wrap className="w-full" />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        The token is fetched on demand, shown only in this tab, and cleared when you switch workspaces
-                        or reload.
-                      </p>
-                    )}
-                    {apiTokenError ? <p className="text-sm text-destructive">{apiTokenError}</p> : null}
-                    <p className="text-sm text-muted-foreground">
-                      Session-authenticated clients can also call admin routes with the active workspace id header.
-                    </p>
-                    {activeWorkspaceId ? (
-                      <>
-                        <CopyValueField value={activeWorkspaceId} ariaLabel="Copy workspace id" />
-                        <code className="block p-2 bg-card border border-border rounded text-sm font-mono text-foreground overflow-x-auto">
-                          X-Workspace-Id: {activeWorkspaceId}
-                        </code>
-                      </>
-                    ) : null}
-                  </div>
+            <SettingsCard
+              icon={<KeyRound className="h-5 w-5 text-primary" />}
+              title="API access"
+              description="Use this workspace token for API calls and SDK clients."
+            >
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  The dashboard uses your signed-in session. External clients should authenticate with the workspace
+                  token below.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRevealApiToken}
+                    disabled={!activeWorkspaceId || isApiTokenLoading}
+                  >
+                    {isApiTokenLoading ? <Spinner className="mr-2" /> : null}
+                    Reveal API token
+                  </Button>
+                  {apiToken ? (
+                    <Button size="sm" variant="ghost" onClick={() => setApiToken(null)}>
+                      Hide token
+                    </Button>
+                  ) : null}
                 </div>
-              </details>
+                {apiToken ? (
+                  <CopyValueField value={apiToken} ariaLabel="Copy API token" wrap className="w-full" />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Reveal the token only when you need to copy it into another client.
+                  </p>
+                )}
+                {apiTokenError ? <p className="text-sm text-destructive">{apiTokenError}</p> : null}
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Example</p>
+                  <code className="block overflow-x-auto whitespace-pre-wrap rounded border border-border bg-muted/40 p-3 text-sm font-mono text-foreground">
+                    {apiAccessExample}
+                  </code>
+                </div>
+              </div>
+            </SettingsCard>
 
         </section>
+        ) : null}
 
+          {mode === 'assistant' ? (
           <section id="assistant-identity" className="space-y-6 scroll-mt-24">
-            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Assistant Identity</h2>
-            {isAnonLoading ? (
+            {isAnonLoading || isAssistantBehaviorLoading ? (
               <div className="flex items-center justify-center py-4">
                 <Spinner className="w-5 h-5" />
               </div>
-            ) : anonSettings ? (
-              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-base font-medium text-foreground">Assistant bootstrap</p>
-                    <p className="text-sm text-muted-foreground mt-0.5">
-                      Define the assistant&apos;s stable identity here. The active chat language can still be overridden per session, for example by an embedded website popup.
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    className="sm:self-start"
-                    onClick={handleAssistantSave}
-                    disabled={!hasAssistantChanges || isAnonSaving}
-                  >
-                    {isAnonSaving ? <Spinner className="mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                    Save
-                  </Button>
-                </div>
+            ) : anonSettings && assistantBehaviorSettings ? (
+              <SettingsCard
+                icon={<Sparkles className="h-5 w-5 text-primary" />}
+                title="Assistant behavior"
+                description="Public identity, answer behavior, and first-message defaults."
+              >
                 {assistantSettingsError ? (
                   <p className="text-sm text-destructive" role="alert">{assistantSettingsError}</p>
                 ) : null}
@@ -819,9 +1061,12 @@ export function GeneralTab({
                       onChange={(event) => handleAssistantSettingChange('assistantName', event.target.value)}
                       placeholder="e.g. Marta"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Visible chat title in Public Chat and Website Embed. Falls back to the workspace name when left blank.
+                    </p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="assistantDefaultLocale" className="text-foreground">Default locale fallback</Label>
+                    <Label htmlFor="assistantDefaultLocale" className="text-foreground">First-message locale fallback</Label>
                     <Input
                       id="assistantDefaultLocale"
                       value={anonSettings.assistantDefaultLocale ?? ''}
@@ -834,39 +1079,78 @@ export function GeneralTab({
                       }
                       placeholder="e.g. it-IT"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Used when the first greeting needs a language and the channel does not provide one.
+                    </p>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="assistantRole" className="text-foreground">Assistant role</Label>
+                  <Label htmlFor="assistantRole" className="text-foreground">What this assistant helps with</Label>
                   <Input
                     id="assistantRole"
                     value={anonSettings.assistantRole}
                     maxLength={200}
                     onChange={(event) => handleAssistantSettingChange('assistantRole', event.target.value)}
-                    placeholder="e.g. Museum guide"
+                    placeholder="e.g. Guidance on meditation, philosophy, and self-inquiry"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Public description of the assistant’s scope. Used in identity answers and the first greeting.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="greetingInstruction" className="text-foreground">Greeting style</Label>
-                  <Input
-                    id="greetingInstruction"
-                    value={anonSettings.greetingInstruction}
-                    maxLength={200}
-                    onChange={(event) => handleAssistantSettingChange('greetingInstruction', event.target.value)}
-                    placeholder="e.g. Warm and concise"
+                  <Label htmlFor="assistantAnswerInstruction" className="text-foreground">Answer instruction</Label>
+                  <Textarea
+                    id="assistantAnswerInstruction"
+                    value={assistantBehaviorSettings.customInstruction}
+                    onChange={(event) =>
+                      updateAssistantBehaviorDraft((current) => ({
+                        ...current,
+                        customInstruction: event.target.value.slice(0, 2000),
+                      }))
+                    }
+                    placeholder="e.g. Keep answers concise, practical, and concrete."
+                    rows={4}
                   />
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Additional answer guidance applied to grounded responses.</span>
+                    <span>{assistantBehaviorSettings.customInstruction.length} / 2000</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="assistantConversationMode" className="text-foreground">Conversation mode</Label>
+                  <select
+                    id="assistantConversationMode"
+                    value={assistantBehaviorSettings.conversationMode}
+                    onChange={(event) =>
+                      updateAssistantBehaviorDraft((current) => ({
+                        ...current,
+                        conversationMode: event.target.value as RetrievalSettings['conversationMode'],
+                      }))
+                    }
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                  >
+                    {Object.entries(assistantConversationModeLabels).map(([value, meta]) => (
+                      <option key={value} value={value}>
+                        {meta.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-sm text-muted-foreground">
+                    {assistantConversationModeLabels[assistantBehaviorSettings.conversationMode].description}
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-4 rounded bg-muted/50 p-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <Label htmlFor="proactiveGreetingEnabled" className="text-foreground">Proactive first greeting</Label>
                     <p className="text-sm text-muted-foreground mt-0.5">
-                      When enabled, a brand-new chat can begin with an assistant-first greeting. Leave the identity fields blank if you prefer silent startup.
+                      Whether a brand-new chat begins with an assistant-first greeting.
                     </p>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Status: {anonSettings.assistantBootstrapActive ? 'active' : 'inactive until enough identity is configured'}
+                      Status: {anonSettings.assistantBootstrapActive ? 'active' : 'inactive until name or purpose is configured'}
                     </p>
                   </div>
                   <Switch
@@ -876,33 +1160,31 @@ export function GeneralTab({
                     disabled={isAnonSaving}
                   />
                 </div>
-              </div>
+              </SettingsCard>
             ) : (
-              <p className="text-sm text-muted-foreground">Failed to load assistant bootstrap settings.</p>
+              <p className="text-sm text-muted-foreground">Failed to load assistant settings.</p>
             )}
           </section>
+          ) : null}
 
+          {mode === 'channels' ? (
           <section id="anonymous-chat" className="space-y-6 scroll-mt-24">
-            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Anonymous Chat Access</h2>
             {isAnonLoading ? (
               <div className="flex items-center justify-center py-4">
                 <Spinner className="w-5 h-5" />
               </div>
             ) : anonSettings ? (
-              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <MessageSquare className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <Label htmlFor="anonChatToggle" className="text-base font-medium text-foreground">
-                        Anonymous Chat
-                      </Label>
-                      <p className="text-sm text-muted-foreground mt-0.5">
-                        Allow unauthenticated users to chat via a public link.
-                      </p>
-                    </div>
+              <SettingsCard
+                icon={<MessageSquare className="h-5 w-5 text-primary" />}
+                title="Anonymous chat"
+                description="Public link access for unauthenticated visitors."
+              >
+                <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/20 p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">Enable anonymous chat</p>
+                    <p className="text-sm text-muted-foreground">
+                      Turn on a public link that opens this assistant without signing in.
+                    </p>
                   </div>
                   <Switch
                     id="anonChatToggle"
@@ -931,7 +1213,7 @@ export function GeneralTab({
                         </Button>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        Share this link with anyone you want to give chat access to.
+                        Anyone with this link can open the assistant.
                       </p>
                       <div className="flex justify-end">
                         <Button variant="outline" onClick={handleAnonymousChatTokenRotate} disabled={isAnonSaving}>
@@ -964,33 +1246,31 @@ export function GeneralTab({
                     </div>
                   </>
                 ) : null}
-              </div>
+              </SettingsCard>
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load anonymous chat settings.</p>
             )}
           </section>
+          ) : null}
 
+          {mode === 'channels' ? (
           <section id="website-embed" className="space-y-6 scroll-mt-24">
-            <h2 className="text-sm font-medium text-foreground uppercase tracking-wide">Website Embed</h2>
             {isAnonLoading ? (
               <div className="flex items-center justify-center py-4">
                 <Spinner className="w-5 h-5" />
               </div>
             ) : anonSettings ? (
-              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <Globe className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <Label htmlFor="websiteEmbedToggle" className="text-base font-medium text-foreground">
-                        Hosted website widget
-                      </Label>
-                      <p className="text-sm text-muted-foreground mt-0.5">
-                        Install a Radioso-owned launcher script that opens a hosted iframe assistant on approved sites.
-                      </p>
-                    </div>
+              <SettingsCard
+                icon={<Globe className="h-5 w-5 text-primary" />}
+                title="Hosted website widget"
+                description="Radioso-hosted launcher script and iframe chat for approved sites."
+              >
+                <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/20 p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">Enable website widget</p>
+                    <p className="text-sm text-muted-foreground">
+                      Control whether approved sites can load the hosted embed.
+                    </p>
                   </div>
                   <Switch
                     id="websiteEmbedToggle"
@@ -1049,12 +1329,15 @@ export function GeneralTab({
                   <Textarea
                     id="websiteEmbedAllowedOrigins"
                     value={websiteEmbedOrigins}
-                    onChange={(event) => setWebsiteEmbedOrigins(event.target.value)}
+                    onChange={(event) => {
+                      anonDraftVersionRef.current += 1
+                      setWebsiteEmbedOrigins(event.target.value)
+                    }}
                     placeholder={`https://example.com\nhttps://docs.example.com`}
                     className="min-h-[132px]"
                   />
                   <p className="text-sm text-muted-foreground">
-                    Enter one website origin per line. Only these sites can launch the embedded assistant.
+                    Approved site origins for the embedded assistant, one per line.
                   </p>
                 </div>
 
@@ -1392,20 +1675,87 @@ export function GeneralTab({
                   </div>
                 ) : null}
 
-                <div className="flex justify-end">
-                  <Button onClick={handleWebsiteEmbedSave} disabled={!hasWebsiteEmbedChanges || isAnonSaving}>
-                    {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save embed settings
-                  </Button>
-                </div>
-              </div>
+              </SettingsCard>
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load website embed settings.</p>
             )}
           </section>
+          ) : null}
 
-          <section className="space-y-4 rounded-md border border-destructive/50 p-4">
-            <h2 className="text-sm font-medium text-destructive uppercase tracking-wide">Danger Zone</h2>
+          {mode === 'channels' ? (
+          <section id="whatsapp-channel" className="space-y-6 scroll-mt-24">
+            <SettingsCard
+              icon={<MessageSquare className="h-5 w-5 text-primary" />}
+              title="WhatsApp"
+              description="Configure the WhatsApp channel for this workspace."
+            >
+              <WhatsAppChannelSettings onSaveStateChange={setWhatsAppSaveState} />
+            </SettingsCard>
+          </section>
+          ) : null}
+
+          {mode === 'workspace' ? (
+          <section>
+            <SettingsCard
+              icon={<ShieldAlert className="h-5 w-5 text-destructive" />}
+              iconClassName="border-destructive/20 bg-destructive/10"
+              className="border-destructive/50"
+              title="Danger zone"
+              description="Permanent workspace actions that cannot be undone."
+            >
+            <div className="flex flex-col gap-4 border-b border-destructive/20 pb-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Rotate workspace API token</p>
+                <p className="text-sm text-muted-foreground">
+                  Immediately revoke the current token and issue a new one for this workspace. Any scripts, SDK
+                  clients, or automations using the current token will need to be updated.
+                </p>
+              </div>
+
+              <Dialog
+                open={rotateApiTokenDialogOpen}
+                onOpenChange={(open) => {
+                  setRotateApiTokenDialogOpen(open)
+                  if (!open) {
+                    setRotateApiTokenError(null)
+                    setIsRotatingApiToken(false)
+                  }
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button variant="destructive" size="sm" className="sm:self-start">
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Rotate token
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Rotate workspace API token</DialogTitle>
+                    <DialogDescription>
+                      The current workspace token will stop working immediately. Any scripts, SDK clients, or
+                      automations using it must be updated to the new token.
+                    </DialogDescription>
+                  </DialogHeader>
+                  {rotateApiTokenError ? (
+                    <p className="text-sm text-destructive">{rotateApiTokenError}</p>
+                  ) : null}
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => setRotateApiTokenDialogOpen(false)}
+                      disabled={isRotatingApiToken}
+                    >
+                      Cancel
+                    </Button>
+                    <Button variant="destructive" onClick={handleRotateApiToken} disabled={isRotatingApiToken}>
+                      {isRotatingApiToken ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                      Rotate token
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">Delete this workspace</p>
@@ -1477,7 +1827,9 @@ export function GeneralTab({
                 You cannot delete your only workspace. Create another workspace first.
               </p>
             ) : null}
+            </SettingsCard>
           </section>
+          ) : null}
 
       </div>
     </SettingsTabShell>

@@ -8,16 +8,22 @@ import {
 
 describe('settings tab metadata', () => {
   it('defines ordered section navigation for the main settings tabs', () => {
-    expect(settingsTabMetadata.general.sections.map((section) => section.id)).toEqual([
+    expect(settingsTabMetadata.workspace.sections.map((section) => section.id)).toEqual([
       'workspace-access',
+    ])
+
+    expect(settingsTabMetadata.assistant.sections.map((section) => section.id)).toEqual([
       'assistant-identity',
+    ])
+
+    expect(settingsTabMetadata.channels.sections.map((section) => section.id)).toEqual([
       'anonymous-chat',
       'website-embed',
+      'whatsapp-channel',
     ])
 
     expect(settingsTabMetadata.ingestion.sections.map((section) => section.id)).toEqual([
       'chunking-strategy',
-      'chunking-tuning',
       'existing-documents',
     ])
 
@@ -30,13 +36,15 @@ describe('settings tab metadata', () => {
   })
 
   it('returns tab descriptors and resolves only known sections', () => {
-    expect(getSettingsTabDescriptor('connectors').title).toBe('Chat Connectors')
-    expect(getSettingsSectionDescriptor('general', 'workspace-access')?.label).toBe('Workspace and access')
+    expect(getSettingsTabDescriptor('channels').title).toBe('Channels')
+    expect(getSettingsSectionDescriptor('workspace', 'workspace-access')?.label).toBe('Workspace and access')
     expect(getSettingsSectionDescriptor('ingestion', 'existing-documents')?.label).toBe(
-      'Apply changes to existing documents'
+      'Reprocess existing documents'
     )
-    expect(getSettingsSectionDescriptor('retrieval', 'metadata-rules')?.label).toBe('Prioritize by metadata')
+    expect(getSettingsSectionDescriptor('retrieval', 'metadata-rules')?.label).toBe(
+      'Prioritize by metadata'
+    )
     expect(getSettingsSectionDescriptor('retrieval', 'missing-section')).toBeNull()
-    expect(getSettingsSectionDescriptor('general', undefined)).toBeNull()
+    expect(getSettingsSectionDescriptor('workspace', undefined)).toBeNull()
   })
 })

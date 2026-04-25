@@ -1,15 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp } from "../support/testApp.js";
-
-const registerAndGetCookie = async (app: ReturnType<typeof createTestApp>["app"]) => {
-  const res = await request(app).post("/api/v1/auth/register").send({
-    email: `ws-test-${Date.now()}@example.com`,
-    password: "verysecurepassword",
-  });
-  return res.headers["set-cookie"][0] as string;
-};
+import { createTestApp, issueTestSession } from "../support/testApp.js";
 
 const getWorkspaces = async (app: ReturnType<typeof createTestApp>["app"], cookie: string) => {
   const res = await request(app).get("/api/v1/workspace").set("Cookie", cookie);
@@ -20,7 +12,7 @@ describe("workspace management", () => {
   describe("PATCH /api/v1/workspace/:workspaceId (rename)", () => {
     it("renames a workspace successfully", async () => {
       const { app } = createTestApp();
-      const cookie = await registerAndGetCookie(app);
+      const { cookie } = await issueTestSession(app, `ws-test-${Date.now()}@example.com`);
       const workspaces = await getWorkspaces(app, cookie);
       const workspace = workspaces[0];
 
@@ -32,11 +24,12 @@ describe("workspace management", () => {
       expect(res.status).toBe(200);
       expect(res.body.name).toBe("Renamed Workspace");
       expect(res.body.id).toBe(workspace.id);
+      expect(res.body.publicRouteKey).toBeDefined();
     });
 
     it("trims whitespace from workspace name", async () => {
       const { app } = createTestApp();
-      const cookie = await registerAndGetCookie(app);
+      const { cookie } = await issueTestSession(app, `ws-test-${Date.now()}@example.com`);
       const workspaces = await getWorkspaces(app, cookie);
 
       const res = await request(app)
@@ -46,11 +39,12 @@ describe("workspace management", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.name).toBe("Trimmed Name");
+      expect(res.body.publicRouteKey).toBeDefined();
     });
 
     it("rejects empty workspace name", async () => {
       const { app } = createTestApp();
-      const cookie = await registerAndGetCookie(app);
+      const { cookie } = await issueTestSession(app, `ws-test-${Date.now()}@example.com`);
       const workspaces = await getWorkspaces(app, cookie);
 
       const res = await request(app)
@@ -63,7 +57,7 @@ describe("workspace management", () => {
 
     it("rejects workspace name over 100 characters", async () => {
       const { app } = createTestApp();
-      const cookie = await registerAndGetCookie(app);
+      const { cookie } = await issueTestSession(app, `ws-test-${Date.now()}@example.com`);
       const workspaces = await getWorkspaces(app, cookie);
 
       const res = await request(app)
@@ -76,7 +70,7 @@ describe("workspace management", () => {
 
     it("returns 404 for non-existent workspace", async () => {
       const { app } = createTestApp();
-      const cookie = await registerAndGetCookie(app);
+      const { cookie } = await issueTestSession(app, `ws-test-${Date.now()}@example.com`);
 
       const res = await request(app)
         .patch("/api/v1/workspace/00000000-0000-0000-0000-000000000000")
@@ -88,8 +82,8 @@ describe("workspace management", () => {
 
     it("returns 404 for workspace not owned by account", async () => {
       const { app } = createTestApp();
-      const cookie1 = await registerAndGetCookie(app);
-      const cookie2 = await registerAndGetCookie(app);
+      const { cookie: cookie1 } = await issueTestSession(app, `ws-test-a-${Date.now()}@example.com`);
+      const { cookie: cookie2 } = await issueTestSession(app, `ws-test-b-${Date.now()}@example.com`);
       const workspaces1 = await getWorkspaces(app, cookie1);
 
       const res = await request(app)
@@ -104,7 +98,7 @@ describe("workspace management", () => {
   describe("DELETE /api/v1/workspace/:workspaceId", () => {
     it("deletes a workspace successfully when multiple exist", async () => {
       const { app } = createTestApp();
-      const cookie = await registerAndGetCookie(app);
+      const { cookie } = await issueTestSession(app, `ws-test-${Date.now()}@example.com`);
 
       // Create a second workspace
       await request(app)
@@ -128,7 +122,7 @@ describe("workspace management", () => {
 
     it("rejects deletion of the last workspace", async () => {
       const { app } = createTestApp();
-      const cookie = await registerAndGetCookie(app);
+      const { cookie } = await issueTestSession(app, `ws-test-${Date.now()}@example.com`);
       const workspaces = await getWorkspaces(app, cookie);
       expect(workspaces).toHaveLength(1);
 
@@ -142,7 +136,7 @@ describe("workspace management", () => {
 
     it("returns 404 for non-existent workspace", async () => {
       const { app } = createTestApp();
-      const cookie = await registerAndGetCookie(app);
+      const { cookie } = await issueTestSession(app, `ws-test-${Date.now()}@example.com`);
 
       const res = await request(app)
         .delete("/api/v1/workspace/00000000-0000-0000-0000-000000000000")
@@ -153,8 +147,8 @@ describe("workspace management", () => {
 
     it("returns 404 for workspace not owned by account", async () => {
       const { app } = createTestApp();
-      const cookie1 = await registerAndGetCookie(app);
-      const cookie2 = await registerAndGetCookie(app);
+      const { cookie: cookie1 } = await issueTestSession(app, `ws-test-a-${Date.now()}@example.com`);
+      const { cookie: cookie2 } = await issueTestSession(app, `ws-test-b-${Date.now()}@example.com`);
       const workspaces1 = await getWorkspaces(app, cookie1);
 
       // Create second workspace for user1 so they have 2

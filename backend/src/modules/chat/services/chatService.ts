@@ -36,7 +36,10 @@ import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domai
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import type { RetrievalTrace, RewriteContinuityState } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
-import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
+import {
+  buildPublicAssistantIdentityLines,
+  type AssistantIdentityPromptInput,
+} from "../../settings/domain/assistantBootstrapSettings.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import {
@@ -1226,11 +1229,7 @@ const buildAssistantIdentityAnswerPrompt = (input: {
   const historySection = input.history
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
     .join("\n");
-  const identityLines = [
-    input.assistantIdentity.assistantName ? `Assistant name: ${input.assistantIdentity.assistantName}` : null,
-    input.assistantIdentity.assistantRole ? `Assistant role: ${input.assistantIdentity.assistantRole}` : null,
-    input.assistantIdentity.greetingInstruction ? `Assistant style: ${input.assistantIdentity.greetingInstruction}` : null,
-  ].filter((line): line is string => line !== null);
+  const identityLines = buildPublicAssistantIdentityLines(input.assistantIdentity);
 
   return renderPromptTemplate("chat/assistant-identity-answer.md", {
     identity_lines: identityLines.join("\n"),

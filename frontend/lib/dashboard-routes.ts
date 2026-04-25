@@ -1,11 +1,12 @@
 export type DashboardSection = 'chat' | 'history' | 'documents' | 'evals' | 'settings' | 'users'
 export type HistoryFilter = 'all' | 'chat' | 'search'
 export type HistoryItemKind = 'chat' | 'search'
-export type SettingsTab = 'general' | 'ingestion' | 'retrieval' | 'connectors'
+export type SettingsTab = 'workspace' | 'assistant' | 'channels' | 'ingestion' | 'retrieval'
 
 export interface DashboardRouteState {
   section: DashboardSection
   workspaceId?: string
+  workspacePublicRouteKey?: string
   documentId?: string
   documentsPage?: number
   historyFilter?: HistoryFilter
@@ -15,12 +16,11 @@ export interface DashboardRouteState {
   evalDatasetId?: string
   settingsTab?: SettingsTab
   settingsAnchor?: string
-  connectorId?: string
 }
 
 const DEFAULT_SECTION: DashboardSection = 'chat'
 const DEFAULT_HISTORY_FILTER: HistoryFilter = 'all'
-const DEFAULT_SETTINGS_TAB: SettingsTab = 'general'
+const DEFAULT_SETTINGS_TAB: SettingsTab = 'workspace'
 
 const parsePositiveInt = (value: string | null): number | undefined => {
   if (!value) {
@@ -56,8 +56,14 @@ const parseHistoryItemKind = (value: string | null): HistoryItemKind | undefined
 }
 
 const parseSettingsTab = (value: string | null): SettingsTab | undefined => {
-  if (value === 'general' || value === 'ingestion' || value === 'retrieval' || value === 'connectors') {
+  if (value === 'workspace' || value === 'assistant' || value === 'channels' || value === 'ingestion' || value === 'retrieval') {
     return value
+  }
+  if (value === 'general') {
+    return 'workspace'
+  }
+  if (value === 'connectors') {
+    return 'channels'
   }
 
   return undefined
@@ -85,6 +91,7 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
   const normalized: DashboardRouteState = {
     section: state.section,
     ...(state.workspaceId ? { workspaceId: state.workspaceId } : {}),
+    ...(state.workspacePublicRouteKey ? { workspacePublicRouteKey: state.workspacePublicRouteKey } : {}),
   }
 
   if (state.section === 'documents') {
@@ -125,33 +132,16 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.settingsAnchor) {
       normalized.settingsAnchor = state.settingsAnchor
     }
-    if (
-      (state.settingsTab ?? DEFAULT_SETTINGS_TAB) === 'connectors' &&
-      state.connectorId
-    ) {
-      normalized.connectorId = state.connectorId
-    }
     return normalized
   }
 
   return normalized
 }
 
-export const buildDashboardHref = (
-  accountId: string,
-  state: DashboardRouteState,
-) => {
-  const normalized = normalizeState(state)
-  const basePath = `/account/${accountId}`
-  let pathname = `${basePath}/${normalized.section}`
-
-  if (normalized.section === 'documents' && normalized.documentId) {
-    pathname = `${basePath}/documents/${normalized.documentId}`
-  }
-
+const buildQueryString = (normalized: DashboardRouteState) => {
   const searchParams = new URLSearchParams()
 
-  if (normalized.workspaceId) {
+  if (normalized.workspaceId && !normalized.workspacePublicRouteKey) {
     searchParams.set('workspace', normalized.workspaceId)
   }
 
@@ -183,13 +173,45 @@ export const buildDashboardHref = (
     if (normalized.settingsAnchor) {
       searchParams.set('anchor', normalized.settingsAnchor)
     }
-    if (normalized.connectorId) {
-      searchParams.set('connector', normalized.connectorId)
-    }
   }
 
   const query = searchParams.toString()
-  return query ? `${pathname}?${query}` : pathname
+  return query ? `?${query}` : ''
+}
+
+export const buildLegacyDashboardHref = (
+  accountId: string,
+  state: DashboardRouteState,
+) => {
+  const normalized = normalizeState(state)
+  const basePath = `/account/${accountId}`
+  let pathname = `${basePath}/${normalized.section}`
+
+  if (normalized.section === 'documents' && normalized.documentId) {
+    pathname = `${basePath}/documents/${normalized.documentId}`
+  }
+
+  return `${pathname}${buildQueryString(normalized)}`
+}
+
+export const buildDashboardHref = (
+  accountId: string,
+  state: DashboardRouteState,
+) => {
+  const normalized = normalizeState(state)
+
+  if (!normalized.workspacePublicRouteKey) {
+    return buildLegacyDashboardHref(accountId, normalized)
+  }
+
+  const basePath = `/w/${normalized.workspacePublicRouteKey}`
+  let pathname = `${basePath}/${normalized.section}`
+
+  if (normalized.section === 'documents' && normalized.documentId) {
+    pathname = `${basePath}/documents/${normalized.documentId}`
+  }
+
+  return `${pathname}${buildQueryString(normalized)}`
 }
 
 export const buildAccountRoute = (
@@ -257,7 +279,6 @@ export const parseDashboardRoute = (
       workspaceId,
       settingsTab: parseSettingsTab(searchParams?.get('tab') ?? null),
       settingsAnchor: parseAnchor(searchParams?.get('anchor') ?? null),
-      connectorId: searchParams?.get('connector') ?? undefined,
     })
   }
 
@@ -267,7 +288,9 @@ export const parseDashboardRoute = (
 export const withDashboardWorkspace = (
   state: DashboardRouteState,
   workspaceId?: string | null,
+  workspacePublicRouteKey?: string | null,
 ): DashboardRouteState => normalizeState({
   ...state,
   ...(workspaceId ? { workspaceId } : {}),
+  ...(workspacePublicRouteKey ? { workspacePublicRouteKey } : {}),
 })

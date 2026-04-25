@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Bot, Plus, Save, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Bot, ChevronDown, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
 
 import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
 import {
@@ -22,6 +21,7 @@ import { SettingFieldHeader, SettingTooltip } from '@/components/dashboard/setti
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -35,8 +35,8 @@ import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { type RetrievalSettings, settingsApi } from '@/lib/api'
+import { useWorkspace } from '@/lib/workspace-context'
 
 const metadataRuleCombinatorLabels = {
   and: 'All conditions (AND)',
@@ -79,45 +79,6 @@ const metadataRuleEffectLabels: Record<
   },
 }
 
-const answerSupportPolicyLabels: Record<
-  RetrievalSettings['answerSupportPolicy'],
-  { label: string; description: string }
-> = {
-  strict: {
-    label: 'Strict grounding',
-    description:
-      'Replace unsupported claims with a short model-generated non-verification notice in the user’s language.',
-  },
-  warn: {
-    label: 'Warn only',
-    description:
-      'Keep unsupported text visible and record support validation details for review.',
-  },
-  off: {
-    label: 'Off',
-    description:
-      'Skip post-generation support replacement entirely and return the model answer unchanged.',
-  },
-}
-
-const conversationModeLabels: Record<
-  RetrievalSettings['conversationMode'],
-  { label: string; description: string }
-> = {
-  factual: {
-    label: 'Factual',
-    description: 'Answer the current question directly and stop unless clarification is required.',
-  },
-  guided: {
-    label: 'Guided',
-    description: 'Answer directly, then suggest one or two grounded nearby directions when useful.',
-  },
-  exploratory: {
-    label: 'Exploratory',
-    description: 'Answer directly, then surface more of what the workspace covers and invite grounded follow-up.',
-  },
-}
-
 const triggerModeLabels: Record<
   RetrievalSettings['metadataRules'][number]['triggerMode'],
   { label: string; description: string }
@@ -136,37 +97,63 @@ const suggestedQuestionCountLabel = (count: number) =>
   `${count} suggested question${count === 1 ? '' : 's'}`
 
 export function RetrievalSettingsPanel({
-  accountId,
-  routeState,
+  onSaveStateChange,
 }: {
-  accountId: string
-  routeState: DashboardRouteState
+  onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
-  const router = useRouter()
   const descriptor = getSettingsTabDescriptor('retrieval')
+  const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [settings, setSettings] = useState<RetrievalSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
-  const [hasChanges, setHasChanges] = useState(false)
+  const [lastSavedSettings, setLastSavedSettings] = useState<RetrievalSettings | null>(null)
+  const [saveState, setSaveState] = useState<'idle' | 'saved' | 'saving' | 'error'>('idle')
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const hasLoadedRef = useRef(false)
+  const saveSequenceRef = useRef(0)
+  const draftVersionRef = useRef(0)
 
   useEffect(() => {
+    onSaveStateChange?.({ state: saveState, message: saveError })
+  }, [onSaveStateChange, saveError, saveState])
+
+  useEffect(() => {
+    if (isWorkspaceLoading || !activeWorkspaceId) {
+      setIsLoading(true)
+      return
+    }
+
+    let active = true
     const loadSettings = async () => {
       try {
         const data = await settingsApi.getRetrievalSettings()
+        if (!active) return
         setSettings(data)
+        setLastSavedSettings(data)
+        setSaveState('idle')
       } catch (error) {
+        if (!active) return
         console.error('Failed to load settings:', error)
       } finally {
-        setIsLoading(false)
+        if (active) {
+          setIsLoading(false)
+          hasLoadedRef.current = true
+        }
       }
     }
     void loadSettings()
-  }, [])
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId, isWorkspaceLoading])
+
+  const updateSettingsDraft = (updater: (current: RetrievalSettings) => RetrievalSettings) => {
+    draftVersionRef.current += 1
+    setSettings((current) => (current ? updater(current) : current))
+  }
 
   const updateSetting = <K extends keyof RetrievalSettings>(key: K, value: RetrievalSettings[K]) => {
-    if (!settings) return
-    setSettings({ ...settings, [key]: value })
-    setHasChanges(true)
+    updateSettingsDraft((current) => ({ ...current, [key]: value }))
   }
 
   const updateMetadataRule = (
@@ -175,13 +162,12 @@ export function RetrievalSettingsPanel({
   ) => {
     if (!settings) return
 
-    setSettings({
-      ...settings,
-      metadataRules: settings.metadataRules.map((rule) =>
+    updateSettingsDraft((current) => ({
+      ...current,
+      metadataRules: current.metadataRules.map((rule) =>
         rule.id === ruleId ? { ...rule, ...updates } : rule
       ),
-    })
-    setHasChanges(true)
+    }))
   }
 
   const applyMetadataField = (
@@ -246,10 +232,10 @@ export function RetrievalSettingsPanel({
     if (!settings) return
 
     const suggestedField = settings.metadataFieldSuggestions[0]
-    setSettings({
-      ...settings,
+    updateSettingsDraft((current) => ({
+      ...current,
       metadataRules: [
-        ...settings.metadataRules,
+        ...current.metadataRules,
         syncRuleWithConditions({
           id: globalThis.crypto?.randomUUID?.() ?? `rule-${Date.now()}`,
           field: suggestedField?.field ?? '',
@@ -269,8 +255,7 @@ export function RetrievalSettingsPanel({
           }),
         ]),
       ],
-    })
-    setHasChanges(true)
+    }))
   }
 
   const updateMetadataCondition = (
@@ -324,25 +309,53 @@ export function RetrievalSettingsPanel({
   const removeMetadataRule = (ruleId: string) => {
     if (!settings) return
 
-    setSettings({
-      ...settings,
-      metadataRules: settings.metadataRules.filter((rule) => rule.id !== ruleId),
-    })
-    setHasChanges(true)
+    updateSettingsDraft((current) => ({
+      ...current,
+      metadataRules: current.metadataRules.filter((rule) => rule.id !== ruleId),
+    }))
   }
 
-  const handleSave = async () => {
-    if (!settings) return
-    setIsSaving(true)
-    try {
-      await settingsApi.updateRetrievalSettings(settings)
-      setHasChanges(false)
-    } catch (error) {
-      console.error('Failed to save settings:', error)
-    } finally {
-      setIsSaving(false)
+  const settingsSignature = useMemo(() => JSON.stringify(settings), [settings])
+  const lastSavedSignature = useMemo(() => JSON.stringify(lastSavedSettings), [lastSavedSettings])
+
+  useEffect(() => {
+    if (!hasLoadedRef.current || !settings || !lastSavedSettings) {
+      return
     }
-  }
+
+    if (settingsSignature === lastSavedSignature) {
+      return
+    }
+
+    const saveId = saveSequenceRef.current + 1
+    saveSequenceRef.current = saveId
+    setSaveState('saving')
+    setSaveError(null)
+
+    const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = draftVersionRef.current
+      try {
+        const saved = await settingsApi.updateRetrievalSettings(settings)
+        if (saveSequenceRef.current !== saveId) {
+          return
+        }
+        setLastSavedSettings(saved)
+        if (draftVersionRef.current === draftVersionAtRequestStart) {
+          setSettings(saved)
+          setSaveState('saved')
+        }
+      } catch (error) {
+        if (saveSequenceRef.current !== saveId) {
+          return
+        }
+        console.error('Failed to save settings:', error)
+        setSaveState('error')
+        setSaveError('Failed to save changes. Your latest edits are still in the browser.')
+      }
+    }, 700)
+
+    return () => window.clearTimeout(timeout)
+  }, [lastSavedSettings, lastSavedSignature, settings, settingsSignature])
 
   if (isLoading) {
     return (
@@ -361,207 +374,48 @@ export function RetrievalSettingsPanel({
   }
 
   return (
-    <SettingsTabShell
-      accountId={accountId}
-      routeState={routeState}
-      descriptor={descriptor}
-      onNavigate={(href) => router.push(href)}
-      footer={
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-foreground">Retrieval changes stay workspace-scoped.</p>
-            <p className="text-sm text-muted-foreground">
-              Tune how questions are rewritten, how evidence is selected, and how grounded answers are shaped.
-            </p>
-          </div>
-          <Button size="sm" onClick={handleSave} disabled={!hasChanges || isSaving}>
-            {isSaving ? <Spinner className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
-            Save changes
-          </Button>
-        </div>
-      }
-    >
-      <div className="mx-auto max-w-5xl space-y-6">
+    <SettingsTabShell>
+      <div className="space-y-6">
+        <section className="space-y-1 px-1">
+          <p className="text-sm text-muted-foreground">{descriptor.summary}</p>
+        </section>
+
         <SettingsCard
           id="query-rewrite"
           icon={<Search className="h-5 w-5 text-primary" />}
-          title="Rewrite the incoming question"
-          description="Decide whether the system should generate retrieval-specific semantic and lexical rewrites before search begins."
+          eyebrow="Find The Right Evidence"
+          title="Query rewrite"
+          description="Let the system rewrite the user’s question into optimized semantic and lexical search queries."
         >
-          <div className="space-y-4">
-            <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="queryRewrite" className="text-foreground">
-                    {retrievalSettingDocs.queryRewriteEnabled.label}
-                  </Label>
-                  <SettingTooltip
-                    label={retrievalSettingDocs.queryRewriteEnabled.label}
-                    content={retrievalSettingDocs.queryRewriteEnabled.details}
-                  />
-                </div>
-                <div className="mt-0.5 text-sm text-muted-foreground">
-                  <AssistantMarkdownContent content={retrievalSettingDocs.queryRewriteEnabled.summary} inline />
-                </div>
-              </div>
-              <Switch
-                id="queryRewrite"
-                checked={settings.queryRewriteEnabled}
-                onCheckedChange={(checked) => updateSetting('queryRewriteEnabled', checked)}
-              />
-            </div>
-
-            <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
-              <SettingFieldHeader
-                htmlFor="semanticRewriteInstructions"
-                label={retrievalSettingDocs.semanticRewriteInstructions.label}
-                description={retrievalSettingDocs.semanticRewriteInstructions.summary}
-                tooltip={retrievalSettingDocs.semanticRewriteInstructions.details}
-              />
-              <Textarea
-                id="semanticRewriteInstructions"
-                value={settings.semanticRewriteInstructions}
-                onChange={(event) =>
-                  updateSetting('semanticRewriteInstructions', event.target.value.slice(0, 2000))
-                }
-                placeholder="e.g. Keep the same meaning, preserve proper nouns, and rewrite follow-ups into standalone questions."
-                rows={4}
-              />
-              <p className="text-right text-xs text-muted-foreground">
-                {settings.semanticRewriteInstructions.length} / 2000
-              </p>
-
-              <SettingFieldHeader
-                htmlFor="lexicalRewriteInstructions"
-                label={retrievalSettingDocs.lexicalRewriteInstructions.label}
-                description={retrievalSettingDocs.lexicalRewriteInstructions.summary}
-                tooltip={retrievalSettingDocs.lexicalRewriteInstructions.details}
-              />
-              <Textarea
-                id="lexicalRewriteInstructions"
-                value={settings.lexicalRewriteInstructions}
-                onChange={(event) =>
-                  updateSetting('lexicalRewriteInstructions', event.target.value.slice(0, 2000))
-                }
-                placeholder="e.g. Prefer section symbols, abbreviations, and exact citation notation when grounded in the query or context."
-                rows={4}
-              />
-              <p className="text-right text-xs text-muted-foreground">
-                {settings.lexicalRewriteInstructions.length} / 2000
-              </p>
-
-              <p className="text-sm text-muted-foreground">
-                Retrieval runs one semantic query and one lexical query per request. These instructions tune those two query shapes independently.
-              </p>
-            </div>
-          </div>
-        </SettingsCard>
-
-        <SettingsCard
-          id="search-tuning"
-          icon={<Search className="h-5 w-5 text-primary" />}
-          title="Tune search and reranking"
-          description="Adjust candidate recall, thresholding, and optional reranking before the final answer context is assembled."
-        >
-          <div className="space-y-4">
-            <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <SettingFieldHeader
-                    htmlFor="vectorTopK"
-                    label={retrievalSettingDocs.vectorTopK.label}
-                    description={retrievalSettingDocs.vectorTopK.summary}
-                    tooltip={retrievalSettingDocs.vectorTopK.details}
-                    className="pr-4"
-                  />
-                  <span className="text-sm font-mono text-muted-foreground">{settings.vectorTopK}</span>
-                </div>
-                <Slider
-                  id="vectorTopK"
-                  min={1}
-                  max={300}
-                  step={1}
-                  value={[settings.vectorTopK]}
-                  onValueChange={([value]) => updateSetting('vectorTopK', value)}
+          <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="queryRewrite" className="text-foreground">
+                  {retrievalSettingDocs.queryRewriteEnabled.label}
+                </Label>
+                <SettingTooltip
+                  label={retrievalSettingDocs.queryRewriteEnabled.label}
+                  content={retrievalSettingDocs.queryRewriteEnabled.details}
                 />
               </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <SettingFieldHeader
-                    htmlFor="similarity"
-                    label={retrievalSettingDocs.similarityThreshold.label}
-                    description={retrievalSettingDocs.similarityThreshold.summary}
-                    tooltip={retrievalSettingDocs.similarityThreshold.details}
-                    className="pr-4"
-                  />
-                  <span className="text-sm font-mono text-muted-foreground">
-                    {settings.similarityThreshold.toFixed(2)}
-                  </span>
-                </div>
-                <Slider
-                  id="similarity"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={[settings.similarityThreshold]}
-                  onValueChange={([value]) => updateSetting('similarityThreshold', value)}
-                />
+              <div className="mt-0.5 text-sm text-muted-foreground">
+                <AssistantMarkdownContent content={retrievalSettingDocs.queryRewriteEnabled.summary} inline />
               </div>
             </div>
-
-            <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
-              <div className="flex items-center justify-between rounded-md border border-border bg-background/60 p-3">
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <Label htmlFor="rerank" className="text-foreground">
-                      {retrievalSettingDocs.rerankEnabled.label}
-                    </Label>
-                    <SettingTooltip
-                      label={retrievalSettingDocs.rerankEnabled.label}
-                      content={retrievalSettingDocs.rerankEnabled.details}
-                    />
-                  </div>
-                  <div className="mt-0.5 text-sm text-muted-foreground">
-                    <AssistantMarkdownContent content={retrievalSettingDocs.rerankEnabled.summary} inline />
-                  </div>
-                </div>
-                <Switch
-                  id="rerank"
-                  checked={settings.rerankEnabled}
-                  onCheckedChange={(checked) => updateSetting('rerankEnabled', checked)}
-                />
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <SettingFieldHeader
-                    htmlFor="rerankTopK"
-                    label={retrievalSettingDocs.rerankTopK.label}
-                    description={retrievalSettingDocs.rerankTopK.summary}
-                    tooltip={retrievalSettingDocs.rerankTopK.details}
-                    className="pr-4"
-                  />
-                  <span className="text-sm font-mono text-muted-foreground">{settings.rerankTopK}</span>
-                </div>
-                <Slider
-                  id="rerankTopK"
-                  min={1}
-                  max={50}
-                  step={1}
-                  value={[settings.rerankTopK]}
-                  onValueChange={([value]) => updateSetting('rerankTopK', value)}
-                />
-              </div>
-            </div>
+            <Switch
+              id="queryRewrite"
+              checked={settings.queryRewriteEnabled}
+              onCheckedChange={(checked) => updateSetting('queryRewriteEnabled', checked)}
+            />
           </div>
         </SettingsCard>
 
         <SettingsCard
           id="metadata-rules"
+          eyebrow="Find The Right Evidence"
           icon={<SlidersHorizontal className="h-5 w-5 text-primary" />}
-          title="Prioritize by metadata"
-          description="Use persistent metadata rules when retrieval should consistently prefer or filter results based on document attributes."
+          title="Filtering and boosting by document metadata"
+          description="Use document metadata to consistently prefer or require certain results during retrieval."
         >
           <div className="space-y-4">
             <div className="flex items-start justify-between gap-4">
@@ -901,11 +755,12 @@ export function RetrievalSettingsPanel({
         <SettingsCard
           id="answer-behavior"
           icon={<Bot className="h-5 w-5 text-primary" />}
-          title="Shape the final answer"
-          description="Once evidence is assembled, configure how the grounded response should read and what support it should expose."
+          eyebrow="Shape The Answer"
+          title="Answer presentation"
+          description="Control how grounded answers show citations and follow-up suggestions."
         >
           <div className="space-y-4">
-            <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
+            <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-1.5">
                   <Label htmlFor="citationDisplay" className="text-foreground">
@@ -927,36 +782,7 @@ export function RetrievalSettingsPanel({
               />
             </div>
 
-            <div className="space-y-2 rounded-md border border-border bg-muted/20 p-4">
-              <SettingFieldHeader
-                htmlFor="conversationMode"
-                label={retrievalSettingDocs.conversationMode.label}
-                description={retrievalSettingDocs.conversationMode.summary}
-                tooltip={retrievalSettingDocs.conversationMode.details}
-              />
-              <Select
-                value={settings.conversationMode}
-                onValueChange={(value) =>
-                  updateSetting('conversationMode', value as RetrievalSettings['conversationMode'])
-                }
-              >
-                <SelectTrigger id="conversationMode" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(conversationModeLabels).map(([value, meta]) => (
-                    <SelectItem key={value} value={value}>
-                      {meta.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                {conversationModeLabels[settings.conversationMode].description}
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3">
+            <div className="flex items-center justify-between border-t border-border/70 pt-4">
               <div>
                 <div className="flex items-center gap-1.5">
                   <Label htmlFor="suggestedQuestionsEnabled" className="text-foreground">
@@ -978,84 +804,157 @@ export function RetrievalSettingsPanel({
               />
             </div>
 
-            <div className="space-y-3 rounded-md border border-border bg-muted/20 p-4">
-              <SettingFieldHeader
-                htmlFor="suggestedQuestionsCount"
-                label={retrievalSettingDocs.suggestedQuestionsCount.label}
-                description={retrievalSettingDocs.suggestedQuestionsCount.summary}
-                tooltip={retrievalSettingDocs.suggestedQuestionsCount.details}
-              />
-              <Slider
-                id="suggestedQuestionsCount"
-                min={1}
-                max={4}
-                step={1}
-                value={[settings.suggestedQuestionsCount]}
-                disabled={!settings.suggestedQuestionsEnabled}
-                onValueChange={(value) => updateSetting('suggestedQuestionsCount', value[0] ?? 1)}
-              />
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <span>{suggestedQuestionCountLabel(settings.suggestedQuestionsCount)}</span>
-                <span>
-                  {settings.suggestedQuestionsEnabled
-                    ? 'Shown when grounded suggestions are available.'
-                    : 'Enable suggested questions to use this setting.'}
-                </span>
+            {settings.suggestedQuestionsEnabled ? (
+              <div className="space-y-3">
+                <SettingFieldHeader
+                  htmlFor="suggestedQuestionsCount"
+                  label={retrievalSettingDocs.suggestedQuestionsCount.label}
+                  description={retrievalSettingDocs.suggestedQuestionsCount.summary}
+                  tooltip={retrievalSettingDocs.suggestedQuestionsCount.details}
+                />
+                <Slider
+                  id="suggestedQuestionsCount"
+                  min={1}
+                  max={4}
+                  step={1}
+                  value={[settings.suggestedQuestionsCount]}
+                  onValueChange={(value) => updateSetting('suggestedQuestionsCount', value[0] ?? 1)}
+                />
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>{suggestedQuestionCountLabel(settings.suggestedQuestionsCount)}</span>
+                  <span>Shown when grounded suggestions are available.</span>
+                </div>
               </div>
-            </div>
+            ) : null}
 
-            <div className="space-y-2 rounded-md border border-border bg-muted/20 p-4">
-              <SettingFieldHeader
-                htmlFor="answerSupportPolicy"
-                label={retrievalSettingDocs.answerSupportPolicy.label}
-                description={retrievalSettingDocs.answerSupportPolicy.summary}
-                tooltip={retrievalSettingDocs.answerSupportPolicy.details}
-              />
-              <Select
-                value={settings.answerSupportPolicy}
-                onValueChange={(value) =>
-                  updateSetting('answerSupportPolicy', value as RetrievalSettings['answerSupportPolicy'])
-                }
-              >
-                <SelectTrigger id="answerSupportPolicy" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(answerSupportPolicyLabels).map(([value, meta]) => (
-                    <SelectItem key={value} value={value}>
-                      {meta.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                {answerSupportPolicyLabels[settings.answerSupportPolicy].description}
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <SettingFieldHeader
-                htmlFor="customInstruction"
-                label={retrievalSettingDocs.customInstruction.label}
-                description={retrievalSettingDocs.customInstruction.summary}
-                tooltip={retrievalSettingDocs.customInstruction.details}
-              />
-              <Textarea
-                id="customInstruction"
-                value={settings.customInstruction}
-                onChange={(event) => updateSetting('customInstruction', event.target.value.slice(0, 2000))}
-                placeholder="e.g. Always cite the specific section of the Act when referencing legal provisions."
-                rows={4}
-              />
-              <p className="text-right text-xs text-muted-foreground">
-                {settings.customInstruction.length} / 2000
-              </p>
-            </div>
-
-            <p className="text-sm text-muted-foreground">
-              The assistant may still ask a clarification question when your request is missing information needed for a reliable answer.
-            </p>
           </div>
+        </SettingsCard>
+
+        <SettingsCard
+          id="search-tuning"
+          eyebrow="Advanced"
+          icon={<Search className="h-5 w-5 text-primary" />}
+          title="Advanced search tuning"
+          description="Adjust candidate recall, thresholding, and reranking. These controls are most useful when you are actively tuning retrieval quality."
+        >
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl border border-border bg-muted/20 px-4 py-3 text-left"
+              >
+                <div>
+                  <p className="text-sm font-medium text-foreground">Searching and reranking</p>
+                  <p className="text-sm text-muted-foreground">
+                    Advanced controls for recall, filtering sensitivity, and reranking behavior.
+                  </p>
+                </div>
+                <ChevronDown
+                  className={`h-4 w-4 text-muted-foreground transition-transform ${advancedOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-4">
+              <div className="space-y-4">
+                <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <SettingFieldHeader
+                        htmlFor="vectorTopK"
+                        label={retrievalSettingDocs.vectorTopK.label}
+                        description={retrievalSettingDocs.vectorTopK.summary}
+                        tooltip={retrievalSettingDocs.vectorTopK.details}
+                        className="pr-4"
+                      />
+                      <span className="text-sm font-mono text-muted-foreground">{settings.vectorTopK}</span>
+                    </div>
+                    <Slider
+                      id="vectorTopK"
+                      min={1}
+                      max={300}
+                      step={1}
+                      value={[settings.vectorTopK]}
+                      onValueChange={([value]) => updateSetting('vectorTopK', value)}
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <SettingFieldHeader
+                        htmlFor="similarity"
+                        label={retrievalSettingDocs.similarityThreshold.label}
+                        description={retrievalSettingDocs.similarityThreshold.summary}
+                        tooltip={retrievalSettingDocs.similarityThreshold.details}
+                        className="pr-4"
+                      />
+                      <span className="text-sm font-mono text-muted-foreground">
+                        {settings.similarityThreshold.toFixed(2)}
+                      </span>
+                    </div>
+                    <Slider
+                      id="similarity"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={[settings.similarityThreshold]}
+                      onValueChange={([value]) => updateSetting('similarityThreshold', value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
+                  <div className="flex items-center justify-between rounded-md border border-border bg-background/60 p-3">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <Label htmlFor="rerank" className="text-foreground">
+                          {retrievalSettingDocs.rerankEnabled.label}
+                        </Label>
+                        <SettingTooltip
+                          label={retrievalSettingDocs.rerankEnabled.label}
+                          content={retrievalSettingDocs.rerankEnabled.details}
+                        />
+                      </div>
+                      <div className="mt-0.5 text-sm text-muted-foreground">
+                        <AssistantMarkdownContent content={retrievalSettingDocs.rerankEnabled.summary} inline />
+                      </div>
+                    </div>
+                    <Switch
+                      id="rerank"
+                      checked={settings.rerankEnabled}
+                      onCheckedChange={(checked) => updateSetting('rerankEnabled', checked)}
+                    />
+                  </div>
+
+                  {settings.rerankEnabled ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <SettingFieldHeader
+                          htmlFor="rerankTopK"
+                          label={retrievalSettingDocs.rerankTopK.label}
+                          description={retrievalSettingDocs.rerankTopK.summary}
+                          tooltip={retrievalSettingDocs.rerankTopK.details}
+                          className="pr-4"
+                        />
+                        <span className="text-sm font-mono text-muted-foreground">{settings.rerankTopK}</span>
+                      </div>
+                      <Slider
+                        id="rerankTopK"
+                        min={1}
+                        max={50}
+                        step={1}
+                        value={[settings.rerankTopK]}
+                        onValueChange={([value]) => updateSetting('rerankTopK', value)}
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Enable reranking to tune how many candidates survive the rerank pass.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </SettingsCard>
       </div>
     </SettingsTabShell>

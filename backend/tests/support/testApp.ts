@@ -681,7 +681,7 @@ export const createTestDependencies = (overrides: {
     },
   };
   const chatGateway = overrides.chatGateway ?? defaultChatGateway;
-  const workspaceService = new WorkspaceService(workspaceRepository, auditService);
+  const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(
     overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),
@@ -787,6 +787,7 @@ export const createTestDependencies = (overrides: {
     chatBootstrapService,
     chatHistoryService,
     evalLabService,
+    accountRepository,
     workspaceRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,

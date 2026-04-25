@@ -1,11 +1,10 @@
 'use client'
 
-import { useState } from 'react'
-import { AlertTriangle, CheckCircle2, Save } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -15,18 +14,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
+import { getApiErrorMessage } from '@/lib/api-error'
 import type { ConnectorDetail, ConnectorValidationIssue } from '@/lib/api'
 
-interface ConnectorConfigFormProps {
+interface ConnectorSettingsFormProps {
   connector: ConnectorDetail
-  busyAction: 'save' | 'enable' | 'disable' | null
-  validationIssues: ConnectorValidationIssue[]
-  formError: string | null
-  onSave: (config: Record<string, string | boolean>) => Promise<void>
-  onEnable: () => Promise<void>
-  onDisable: () => Promise<void>
+  onSave: (config: Record<string, string | boolean>) => Promise<ConnectorDetail>
+  onSetEnabled: (enabled: boolean) => Promise<ConnectorDetail>
+  onSaveStateChange?: (input: {
+    state: 'idle' | 'saved' | 'saving' | 'error'
+    message?: string | null
+  }) => void
 }
 
 const withDefaults = (connector: ConnectorDetail): Record<string, string> => {
@@ -41,30 +40,61 @@ const withDefaults = (connector: ConnectorDetail): Record<string, string> => {
   return nextValues
 }
 
-export function ConnectorConfigForm({
+const getValidationIssues = (error: unknown): ConnectorValidationIssue[] => {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'fields' in error &&
+    Array.isArray(error.fields)
+  ) {
+    return error.fields.filter((field): field is ConnectorValidationIssue => {
+      return (
+        field &&
+        typeof field === 'object' &&
+        'key' in field &&
+        'message' in field &&
+        typeof field.key === 'string' &&
+        typeof field.message === 'string'
+      )
+    })
+  }
+
+  return []
+}
+
+export function ConnectorSettingsForm({
   connector,
-  busyAction,
-  validationIssues,
-  formError,
   onSave,
-  onEnable,
-  onDisable,
-}: ConnectorConfigFormProps) {
+  onSetEnabled,
+  onSaveStateChange,
+}: ConnectorSettingsFormProps) {
   const [values, setValues] = useState<Record<string, string>>(withDefaults(connector))
   const [dirty, setDirty] = useState(false)
+  const [busyAction, setBusyAction] = useState<'save' | 'enable' | 'disable' | null>(null)
+  const [validationIssues, setValidationIssues] = useState<ConnectorValidationIssue[]>([])
+  const [formError, setFormError] = useState<string | null>(null)
+  const draftVersionRef = useRef(0)
+  const saveSequenceRef = useRef(0)
 
   const issueByKey = new Map(validationIssues.map((issue) => [issue.key, issue.message]))
 
+  useEffect(() => {
+    if (!dirty) {
+      setValues(withDefaults(connector))
+    }
+  }, [connector, dirty])
+
   const updateValue = (key: string, value: string | boolean) => {
+    draftVersionRef.current += 1
     setValues((current) => ({ ...current, [key]: String(value) }))
     setDirty(true)
   }
 
-  const buildPayload = () => {
+  const buildPayload = (draftValues: Record<string, string>) => {
     const payload: Record<string, string | boolean> = {}
 
     for (const field of connector.schema) {
-      const value = values[field.key] ?? ''
+      const value = draftValues[field.key] ?? ''
       if (
         field.type === 'secret' &&
         value === (connector.config[field.key] ?? '') &&
@@ -84,24 +114,116 @@ export function ConnectorConfigForm({
     return payload
   }
 
+  const persistDraft = async (draftValues: Record<string, string>) => {
+    setBusyAction('save')
+    setFormError(null)
+    setValidationIssues([])
+    const updated = await onSave(buildPayload(draftValues))
+    return updated
+  }
+
+  const valuesSignature = useMemo(() => JSON.stringify(values), [values])
+
+  useEffect(() => {
+    onSaveStateChange?.({ state: 'idle' })
+  }, [onSaveStateChange])
+
+  useEffect(() => {
+    if (!dirty) {
+      return
+    }
+
+    const saveId = saveSequenceRef.current + 1
+    saveSequenceRef.current = saveId
+    onSaveStateChange?.({ state: 'saving', message: null })
+
+    const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = draftVersionRef.current
+      try {
+        const updated = await persistDraft(values)
+        if (saveSequenceRef.current !== saveId) {
+          return
+        }
+        if (draftVersionRef.current === draftVersionAtRequestStart) {
+          setValues(withDefaults(updated))
+          setDirty(false)
+          onSaveStateChange?.({ state: 'saved', message: null })
+        }
+      } catch (error) {
+        if (saveSequenceRef.current !== saveId) {
+          return
+        }
+        setValidationIssues(getValidationIssues(error))
+        setFormError(getApiErrorMessage(error, 'Failed to save WhatsApp settings.'))
+        onSaveStateChange?.({ state: 'error', message: 'Failed to save WhatsApp settings' })
+      } finally {
+        if (saveSequenceRef.current === saveId) {
+          setBusyAction(null)
+        }
+      }
+    }, 700)
+
+    return () => window.clearTimeout(timeout)
+  }, [dirty, onSaveStateChange, values, valuesSignature])
+
+  const handleEnabledChange = async (enabled: boolean) => {
+    const pendingDraftValues = values
+    const draftVersionAtRequestStart = draftVersionRef.current
+    setBusyAction(enabled ? 'enable' : 'disable')
+    setFormError(null)
+    setValidationIssues([])
+    onSaveStateChange?.({ state: 'saving', message: null })
+
+    try {
+      let updatedConnector = connector
+      if (dirty) {
+        updatedConnector = await persistDraft(pendingDraftValues)
+      }
+      updatedConnector = await onSetEnabled(enabled)
+      setValidationIssues([])
+      setFormError(null)
+      if (draftVersionRef.current === draftVersionAtRequestStart) {
+        setValues(withDefaults(updatedConnector))
+        setDirty(false)
+        onSaveStateChange?.({ state: 'saved', message: null })
+      }
+    } catch (error) {
+      setValidationIssues(getValidationIssues(error))
+      setFormError(
+        getApiErrorMessage(error, enabled ? 'Failed to enable WhatsApp.' : 'Failed to disable WhatsApp.')
+      )
+      onSaveStateChange?.({
+        state: 'error',
+        message: enabled ? 'Failed to enable WhatsApp' : 'Failed to disable WhatsApp',
+      })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   return (
-    <div className="space-y-5 rounded-xl border border-border bg-card p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/20 px-3 py-3">
+        <div className="min-w-0">
           <div className="flex items-center gap-3">
-            <h3 className="text-lg font-semibold text-foreground">{connector.name}</h3>
+            <p className="text-sm font-medium text-foreground">Enable {connector.name}</p>
             <Badge variant={connector.enabled ? 'default' : 'outline'}>
               {connector.enabled ? 'Enabled' : 'Disabled'}
             </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{connector.description}</p>
         </div>
+        <Switch
+          checked={connector.enabled}
+          onCheckedChange={(checked) => void handleEnabledChange(checked)}
+          disabled={busyAction === 'enable' || busyAction === 'disable'}
+        />
       </div>
 
       {connector.errorStatus ? (
         <Alert variant="destructive">
           <AlertTriangle />
-          <AlertTitle>Connector error</AlertTitle>
+          <AlertTitle>Channel error</AlertTitle>
           <AlertDescription>{connector.errorStatus}</AlertDescription>
         </Alert>
       ) : null}
@@ -191,43 +313,10 @@ export function ConnectorConfigForm({
           </div>
           <Input readOnly value={connector.webhookUrl} />
           <p className="text-sm text-muted-foreground">
-            Register this callback URL with the provider after saving your connector config.
+            Register this callback URL with the provider after saving your WhatsApp settings.
           </p>
         </div>
       ) : null}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          type="button"
-          onClick={() => void onSave(buildPayload())}
-          disabled={busyAction !== null || !dirty}
-        >
-          {busyAction === 'save' ? <Spinner className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
-          Save Config
-        </Button>
-
-        {connector.enabled ? (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void onDisable()}
-            disabled={busyAction !== null}
-          >
-            {busyAction === 'disable' ? <Spinner className="mr-2" /> : null}
-            Disable
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void onEnable()}
-            disabled={busyAction !== null}
-          >
-            {busyAction === 'enable' ? <Spinner className="mr-2" /> : null}
-            Enable
-          </Button>
-        )}
-      </div>
     </div>
   )
 }

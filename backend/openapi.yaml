@@ -83,6 +83,8 @@ components:
           format: uuid
         workspaceName:
           type: string
+        workspacePublicRouteKey:
+          type: string
         requiresEmailVerification:
           type: boolean
       required:
@@ -91,6 +93,7 @@ components:
         - organizationName
         - workspaceId
         - workspaceName
+        - workspacePublicRouteKey
         - requiresEmailVerification
     LoginResponse:
       type: object
@@ -108,12 +111,15 @@ components:
           format: uuid
         workspaceName:
           type: string
+        workspacePublicRouteKey:
+          type: string
       required:
         - userId
         - accountId
         - organizationName
         - workspaceId
         - workspaceName
+        - workspacePublicRouteKey
     PasswordResetConfirmResponse:
       allOf:
         - $ref: "#/components/schemas/LoginResponse"
@@ -135,6 +141,8 @@ components:
           format: uuid
         name:
           type: string
+        publicRouteKey:
+          type: string
         createdAt:
           type: string
           format: date-time
@@ -145,8 +153,30 @@ components:
         - id
         - accountId
         - name
+        - publicRouteKey
         - createdAt
         - updatedAt
+    WorkspaceRouteResolutionResponse:
+      type: object
+      properties:
+        workspaceKey:
+          type: string
+        workspaceId:
+          type: string
+          format: uuid
+        workspaceName:
+          type: string
+        accountId:
+          type: string
+          format: uuid
+        organizationName:
+          type: string
+      required:
+        - workspaceKey
+        - workspaceId
+        - workspaceName
+        - accountId
+        - organizationName
     WorkspaceListResponse:
       type: object
       properties:
@@ -415,12 +445,15 @@ components:
           format: uuid
         workspaceName:
           type: string
+        workspacePublicRouteKey:
+          type: string
       required:
         - accountId
         - organizationName
         - role
         - workspaceId
         - workspaceName
+        - workspacePublicRouteKey
     AccessibleAccountsResponse:
       type: object
       properties:
@@ -3382,6 +3415,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RateLimitExceededResponse"
+  /api/v1/account/workspaces/{workspaceId}/token/rotate:
+    post:
+      tags:
+        - Account
+      summary: Rotate the workspace API token
+      operationId: rotateWorkspaceApiToken
+      security:
+        - sessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+      responses:
+        "200":
+          description: Workspace token rotated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceTokenResponse"
+        "400":
+          description: Invalid workspace id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace does not belong to the current account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many rotate attempts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Workspace token secret is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspace/mcp/context:
     get:
       tags:
@@ -3458,6 +3543,42 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspace/resolve/{workspaceKey}:
+    get:
+      tags:
+        - Workspace
+      summary: Resolve a workspace public route key for the authenticated user
+      operationId: resolveWorkspaceRouteKey
+      security:
+        - sessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 3
+            maxLength: 64
+            pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+          required: true
+          name: workspaceKey
+          in: path
+      responses:
+        "200":
+          description: Workspace route key resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceRouteResolutionResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Workspace not found or inaccessible
           content:
             application/json:
               schema:

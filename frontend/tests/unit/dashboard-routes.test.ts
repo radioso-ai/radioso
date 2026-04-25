@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildAccountRoute, buildDashboardHref, parseDashboardRoute } from '@/lib/dashboard-routes'
+import { buildAccountRoute, buildDashboardHref, buildLegacyDashboardHref, parseDashboardRoute } from '@/lib/dashboard-routes'
 
 describe('dashboard route state', () => {
-  it('builds a documents deep link with workspace and page state', () => {
+  it('builds a canonical documents deep link with workspace key and page state', () => {
     const href = buildDashboardHref('account-1', {
       section: 'documents',
       workspaceId: 'workspace-1',
+      workspacePublicRouteKey: 'support-abc123',
       documentId: 'doc-9',
       documentsPage: 3,
     })
 
-    expect(href).toBe('/account/account-1/documents/doc-9?workspace=workspace-1&page=3')
+    expect(href).toBe('/w/support-abc123/documents/doc-9?page=3')
   })
 
   it('parses history filter, page, and selected item state', () => {
@@ -48,16 +49,16 @@ describe('dashboard route state', () => {
     })
   })
 
-  it('builds settings links with targeted anchor and connector selection', () => {
+  it('builds settings links with targeted channel anchor', () => {
     const href = buildDashboardHref('account-2', {
       section: 'settings',
       workspaceId: 'workspace-9',
-      settingsTab: 'connectors',
-      settingsAnchor: 'connectors',
-      connectorId: 'whatsapp',
+      workspacePublicRouteKey: 'workspace-nine-abc123',
+      settingsTab: 'channels',
+      settingsAnchor: 'whatsapp-channel',
     })
 
-    expect(href).toBe('/account/account-2/settings?workspace=workspace-9&tab=connectors&anchor=connectors&connector=whatsapp')
+    expect(href).toBe('/w/workspace-nine-abc123/settings?tab=channels&anchor=whatsapp-channel')
   })
 
   it('parses and builds the users route without extra state', () => {
@@ -69,11 +70,20 @@ describe('dashboard route state', () => {
     expect(buildDashboardHref('account-7', {
       section: 'users',
       workspaceId: 'workspace-5',
-    })).toBe('/account/account-7/users?workspace=workspace-5')
+      workspacePublicRouteKey: 'workspace-five-abc123',
+    })).toBe('/w/workspace-five-abc123/users')
   })
 
-  it('builds account routes with an explicit workspace selection', () => {
+  it('builds legacy account routes with an explicit workspace selection', () => {
     expect(buildAccountRoute('account-9', 'chat', undefined, 'workspace-12'))
       .toBe('/account/account-9/chat?workspace=workspace-12')
+  })
+
+  it('builds legacy dashboard hrefs explicitly when canonical workspace keys are unavailable', () => {
+    expect(buildLegacyDashboardHref('account-4', {
+      section: 'history',
+      workspaceId: 'workspace-4',
+      historyFilter: 'search',
+    })).toBe('/account/account-4/history?workspace=workspace-4&filter=search')
   })
 })

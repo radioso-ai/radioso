@@ -20,6 +20,7 @@ describe('backend proxy route', () => {
           organizationName: 'Acme',
           workspaceId: 'workspace-1',
           workspaceName: 'Default',
+          workspacePublicRouteKey: 'default-abc123',
           requiresEmailVerification: false,
         }),
         {
@@ -77,6 +78,7 @@ describe('backend proxy route', () => {
       organizationName: 'Acme',
       workspaceId: 'workspace-1',
       workspaceName: 'Default',
+      workspacePublicRouteKey: 'default-abc123',
       requiresEmailVerification: false,
     })
   })
@@ -98,5 +100,50 @@ describe('backend proxy route', () => {
         message: 'Backend is unavailable: getaddrinfo EAI_AGAIN backend',
       },
     })
+  })
+
+  it('forwards bearer auth for chat streaming proxy requests', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('event: done\ndata: {"conversationId":"conv-1","answer":"ok"}\n\n', {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+        },
+      }),
+    )
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/api/chat/stream/route')
+
+    const request = new Request('https://frontend.example.com/api/chat/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer sk_proj_workspace_token',
+      },
+      body: JSON.stringify({
+        query: 'Hello',
+        stream: true,
+      }),
+    })
+
+    const response = await POST(request)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BACKEND_URL}/api/v1/chat/`,
+      expect.objectContaining({
+        method: 'POST',
+        cache: 'no-store',
+      }),
+    )
+
+    const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
+    expect(upstreamInit.headers.Authorization).toBe('Bearer sk_proj_workspace_token')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('text/event-stream')
   })
 })

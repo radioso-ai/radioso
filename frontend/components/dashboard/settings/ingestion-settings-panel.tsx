@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { RefreshCw, Save, Search, Settings2, SlidersHorizontal } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { RefreshCw, Search, Settings2, SlidersHorizontal } from 'lucide-react'
 
 import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
@@ -22,73 +21,132 @@ import {
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
-import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { type IngestionSettings, settingsApi } from '@/lib/api'
+import { useWorkspace } from '@/lib/workspace-context'
 
 export function IngestionSettingsPanel({
-  accountId,
-  routeState,
+  onSaveStateChange,
 }: {
-  accountId: string
-  routeState: DashboardRouteState
+  onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
-  const router = useRouter()
   const descriptor = getSettingsTabDescriptor('ingestion')
+  const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [settings, setSettings] = useState<IngestionSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
+  const [lastSavedSettings, setLastSavedSettings] = useState<IngestionSettings | null>(null)
+  const [saveState, setSaveState] = useState<'idle' | 'saved' | 'saving' | 'error'>('idle')
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [isReprocessing, setIsReprocessing] = useState(false)
-  const [hasChanges, setHasChanges] = useState(false)
   const [reprocessMessage, setReprocessMessage] = useState<string | null>(null)
+  const hasLoadedRef = useRef(false)
+  const saveSequenceRef = useRef(0)
+  const draftVersionRef = useRef(0)
 
   useEffect(() => {
+    onSaveStateChange?.({ state: saveState, message: saveError })
+  }, [onSaveStateChange, saveError, saveState])
+
+  useEffect(() => {
+    if (isWorkspaceLoading || !activeWorkspaceId) {
+      setIsLoading(true)
+      return
+    }
+
+    let active = true
     const loadSettings = async () => {
       try {
         const data = await settingsApi.getIngestionSettings()
+        if (!active) return
         setSettings(data)
+        setLastSavedSettings(data)
+        setSaveState('idle')
       } catch (error) {
+        if (!active) return
         console.error('Failed to load ingestion settings:', error)
       } finally {
-        setIsLoading(false)
+        if (active) {
+          setIsLoading(false)
+          hasLoadedRef.current = true
+        }
       }
     }
     void loadSettings()
-  }, [])
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId, isWorkspaceLoading])
+
+  const updateSettingsDraft = (updater: (current: IngestionSettings) => IngestionSettings) => {
+    draftVersionRef.current += 1
+    setSettings((current) => (current ? updater(current) : current))
+  }
 
   const updateSetting = <K extends keyof IngestionSettings>(key: K, value: IngestionSettings[K]) => {
-    if (!settings) return
-    setSettings({ ...settings, [key]: value })
-    setHasChanges(true)
+    updateSettingsDraft((current) => ({ ...current, [key]: value }))
     setReprocessMessage(null)
   }
 
   const persistSettings = async (draft: IngestionSettings) => {
     const updated = await settingsApi.updateIngestionSettings(draft)
-    setSettings(updated)
-    setHasChanges(false)
+    setLastSavedSettings(updated)
     return updated
   }
 
-  const handleSave = async () => {
-    if (!settings) return
-    setIsSaving(true)
-    try {
-      await persistSettings(settings)
-    } catch (error) {
-      console.error('Failed to save ingestion settings:', error)
-    } finally {
-      setIsSaving(false)
+  const settingsSignature = useMemo(() => JSON.stringify(settings), [settings])
+  const lastSavedSignature = useMemo(() => JSON.stringify(lastSavedSettings), [lastSavedSettings])
+
+  useEffect(() => {
+    if (!hasLoadedRef.current || !settings || !lastSavedSettings) {
+      return
     }
-  }
+
+    if (settingsSignature === lastSavedSignature) {
+      return
+    }
+
+    const saveId = saveSequenceRef.current + 1
+    saveSequenceRef.current = saveId
+    setSaveState('saving')
+    setSaveError(null)
+
+    const timeout = window.setTimeout(async () => {
+      const draftVersionAtRequestStart = draftVersionRef.current
+      try {
+        const updated = await persistSettings(settings)
+        if (saveSequenceRef.current !== saveId) {
+          return
+        }
+        if (draftVersionRef.current === draftVersionAtRequestStart) {
+          setSettings(updated)
+          setSaveState('saved')
+        }
+      } catch (error) {
+        if (saveSequenceRef.current !== saveId) {
+          return
+        }
+        console.error('Failed to save ingestion settings:', error)
+        setSaveState('error')
+        setSaveError('Failed to save changes. Your latest edits are still in the browser.')
+      }
+    }, 700)
+
+    return () => window.clearTimeout(timeout)
+  }, [lastSavedSettings, lastSavedSignature, settings, settingsSignature])
 
   const handleReprocess = async () => {
     if (!settings) return
     setIsReprocessing(true)
     setReprocessMessage(null)
     try {
-      if (hasChanges) {
-        setIsSaving(true)
-        await persistSettings(settings)
+      if (settingsSignature !== lastSavedSignature) {
+        const draftVersionAtRequestStart = draftVersionRef.current
+        setSaveState('saving')
+        setSaveError(null)
+        const updated = await persistSettings(settings)
+        if (draftVersionRef.current === draftVersionAtRequestStart) {
+          setSettings(updated)
+          setSaveState('saved')
+        }
       }
 
       const response = await settingsApi.reprocessWorkspaceIngestion()
@@ -101,9 +159,14 @@ export function IngestionSettingsPanel({
       }
     } catch (error) {
       console.error('Failed to save or reprocess ingestion settings:', error)
-      setReprocessMessage(hasChanges ? 'Failed to save settings before reprocessing.' : 'Failed to start workspace reprocessing.')
+      setReprocessMessage(
+        settingsSignature !== lastSavedSignature
+          ? 'Failed to save settings before reprocessing.'
+          : 'Failed to start workspace reprocessing.'
+      )
+      setSaveState('error')
+      setSaveError('Failed to save changes. Your latest edits are still in the browser.')
     } finally {
-      setIsSaving(false)
       setIsReprocessing(false)
     }
   }
@@ -125,90 +188,53 @@ export function IngestionSettingsPanel({
   }
 
   return (
-    <SettingsTabShell
-      accountId={accountId}
-      routeState={routeState}
-      descriptor={descriptor}
-      onNavigate={(href) => router.push(href)}
-      footer={
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-foreground">Ingestion changes affect future processing.</p>
-            <p className="text-sm text-muted-foreground">
-              Save your tuning first, then reprocess existing documents only when you want stored chunks rewritten.
-            </p>
-          </div>
-          <Button size="sm" onClick={handleSave} disabled={!hasChanges || isSaving}>
-            {isSaving ? <Spinner className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
-            Save changes
-          </Button>
-        </div>
-      }
-    >
-      <div className="mx-auto max-w-4xl space-y-6">
-          <SettingsCard
-            id="chunking-strategy"
-            icon={<Settings2 className="h-5 w-5 text-primary" />}
-            title="Choose a chunking strategy"
-            description="Pick the splitting approach for future ingests. Strategy choice establishes the baseline before you tune the active parameters."
-          >
-            <div className="space-y-4">
-              <SettingFieldHeader
-                htmlFor="chunkingStrategy"
-                label={ingestionSettingDocs.chunkingStrategy.label}
-                description={ingestionSettingDocs.chunkingStrategy.summary}
-                tooltip={ingestionSettingDocs.chunkingStrategy.details}
-              />
-              <Select
-                value={settings.chunkingStrategy}
-                onValueChange={(value) =>
-                  updateSetting('chunkingStrategy', value as IngestionSettings['chunkingStrategy'])
-                }
-              >
-                <SelectTrigger id="chunkingStrategy" className="w-full">
-                  <SelectValue placeholder="Select a chunking strategy" />
-                </SelectTrigger>
-                <SelectContent>
-                  {chunkingStrategyOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
-                {chunkingStrategyOptions
-                  .filter((option) => option.value === settings.chunkingStrategy)
-                  .map((option) => (
-                    <div key={option.value}>
-                      <p className="text-sm font-medium text-foreground">{option.label}</p>
-                      <p className="text-sm text-muted-foreground">{option.description}</p>
-                    </div>
-                  ))}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Changes apply to future ingests and document updates immediately. Existing stored chunks stay as they are until you reprocess those documents.
-              </p>
-            </div>
-          </SettingsCard>
+    <SettingsTabShell>
+      <div className="space-y-6">
+        <section className="space-y-1 px-1">
+          <p className="text-sm text-muted-foreground">{descriptor.summary}</p>
+        </section>
 
-          <SettingsCard
-            id="chunking-tuning"
-            icon={
-              settings.chunkingStrategy === 'fixed_window' ? (
-                <SlidersHorizontal className="h-5 w-5 text-primary" />
-              ) : (
-                <Search className="h-5 w-5 text-primary" />
-              )
-            }
-            title={settings.chunkingStrategy === 'fixed_window' ? 'Tune fixed windows' : 'Tune structure-aware chunks'}
-            description={
-              settings.chunkingStrategy === 'fixed_window'
-                ? 'Adjust the chunk size and overlap used by the fixed-window strategy.'
-                : 'Adjust the min and max chunk bounds used when structure-aware splitting groups adjacent content.'
-            }
-          >
-            <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
+        <SettingsCard
+          id="chunking-strategy"
+          icon={<Settings2 className="h-5 w-5 text-primary" />}
+          title="Chunking"
+          description="How documents are split before they become searchable, along with the active strategy settings."
+        >
+          <div className="space-y-4">
+            <SettingFieldHeader
+              htmlFor="chunkingStrategy"
+              label={ingestionSettingDocs.chunkingStrategy.label}
+              description="Chunking approach used for future uploads and document updates."
+              tooltip={ingestionSettingDocs.chunkingStrategy.details}
+            />
+            <Select
+              value={settings.chunkingStrategy}
+              onValueChange={(value) =>
+                updateSetting('chunkingStrategy', value as IngestionSettings['chunkingStrategy'])
+              }
+            >
+              <SelectTrigger id="chunkingStrategy" className="w-full">
+                <SelectValue placeholder="Select a chunking strategy" />
+              </SelectTrigger>
+              <SelectContent>
+                {chunkingStrategyOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="space-y-2">
+              {chunkingStrategyOptions
+                .filter((option) => option.value === settings.chunkingStrategy)
+                .map((option) => (
+                  <div key={option.value}>
+                    <p className="text-sm font-medium text-foreground">{option.label}</p>
+                    <p className="text-sm text-muted-foreground">{option.description}</p>
+                  </div>
+                ))}
+            </div>
+            <div className="space-y-4 border-t border-border/70 pt-4">
               <div className="flex items-center gap-2">
                 {settings.chunkingStrategy === 'fixed_window' ? (
                   <SlidersHorizontal className="h-4 w-4 text-primary" />
@@ -216,128 +242,112 @@ export function IngestionSettingsPanel({
                   <Search className="h-4 w-4 text-primary" />
                 )}
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {settings.chunkingStrategy === 'fixed_window' ? 'Fixed Window Tuning' : 'Structured Semantic Tuning'}
+                  {settings.chunkingStrategy === 'fixed_window' ? 'Fixed-size chunk tuning' : 'Semantic chunk tuning'}
                 </p>
               </div>
 
-              {settings.chunkingStrategy === 'fixed_window' ? (
-                <>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <SettingFieldHeader
-                        htmlFor="fixedWindowChunkSize"
-                        label={ingestionSettingDocs.fixedWindowChunkSize.label}
-                        tooltip={ingestionSettingDocs.fixedWindowChunkSize.details}
-                        description={ingestionSettingDocs.fixedWindowChunkSize.summary}
-                        className="pr-4"
+                {settings.chunkingStrategy === 'fixed_window' ? (
+                  <>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <SettingFieldHeader
+                          htmlFor="fixedWindowChunkSize"
+                          label="Chunk size"
+                          description="Target size for each chunk."
+                          className="pr-4"
+                        />
+                        <span className="text-sm font-mono text-muted-foreground">{settings.fixedWindowChunkSize}</span>
+                      </div>
+                      <Slider
+                        id="fixedWindowChunkSize"
+                        min={100}
+                        max={4000}
+                        step={10}
+                        value={[settings.fixedWindowChunkSize]}
+                        onValueChange={([value]) => updateSetting('fixedWindowChunkSize', value)}
                       />
-                      <span className="text-sm font-mono text-muted-foreground">{settings.fixedWindowChunkSize}</span>
                     </div>
-                    <Slider
-                      id="fixedWindowChunkSize"
-                      min={100}
-                      max={4000}
-                      step={10}
-                      value={[settings.fixedWindowChunkSize]}
-                      onValueChange={([value]) => updateSetting('fixedWindowChunkSize', value)}
-                    />
-                  </div>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <SettingFieldHeader
-                        htmlFor="fixedWindowChunkOverlap"
-                        label={ingestionSettingDocs.fixedWindowChunkOverlap.label}
-                        tooltip={ingestionSettingDocs.fixedWindowChunkOverlap.details}
-                        description={ingestionSettingDocs.fixedWindowChunkOverlap.summary}
-                        className="pr-4"
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <SettingFieldHeader
+                          htmlFor="fixedWindowChunkOverlap"
+                          label="Overlap"
+                          description="How much adjacent chunks should share."
+                          className="pr-4"
+                        />
+                        <span className="text-sm font-mono text-muted-foreground">{settings.fixedWindowChunkOverlap}</span>
+                      </div>
+                      <Slider
+                        id="fixedWindowChunkOverlap"
+                        min={0}
+                        max={2000}
+                        step={10}
+                        value={[Math.min(settings.fixedWindowChunkOverlap, 2000)]}
+                        onValueChange={([value]) => updateSetting('fixedWindowChunkOverlap', value)}
                       />
-                      <span className="text-sm font-mono text-muted-foreground">{settings.fixedWindowChunkOverlap}</span>
                     </div>
-                    <Slider
-                      id="fixedWindowChunkOverlap"
-                      min={0}
-                      max={2000}
-                      step={10}
-                      value={[Math.min(settings.fixedWindowChunkOverlap, 2000)]}
-                      onValueChange={([value]) => updateSetting('fixedWindowChunkOverlap', value)}
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <SettingFieldHeader
-                        htmlFor="structuredMinChunkSize"
-                        label={ingestionSettingDocs.structuredMinChunkSize.label}
-                        tooltip={ingestionSettingDocs.structuredMinChunkSize.details}
-                        description={ingestionSettingDocs.structuredMinChunkSize.summary}
-                        className="pr-4"
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <SettingFieldHeader
+                          htmlFor="structuredMinChunkSize"
+                          label="Minimum chunk size"
+                          description="Merge very small sections until they reach this size."
+                          className="pr-4"
+                        />
+                        <span className="text-sm font-mono text-muted-foreground">{settings.structuredMinChunkSize}</span>
+                      </div>
+                      <Slider
+                        id="structuredMinChunkSize"
+                        min={1}
+                        max={1000}
+                        step={1}
+                        value={[Math.min(settings.structuredMinChunkSize, 1000)]}
+                        onValueChange={([value]) => updateSetting('structuredMinChunkSize', value)}
                       />
-                      <span className="text-sm font-mono text-muted-foreground">{settings.structuredMinChunkSize}</span>
                     </div>
-                    <Slider
-                      id="structuredMinChunkSize"
-                      min={1}
-                      max={1000}
-                      step={1}
-                      value={[Math.min(settings.structuredMinChunkSize, 1000)]}
-                      onValueChange={([value]) => updateSetting('structuredMinChunkSize', value)}
-                    />
-                  </div>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <SettingFieldHeader
-                        htmlFor="structuredMaxChunkSize"
-                        label={ingestionSettingDocs.structuredMaxChunkSize.label}
-                        tooltip={ingestionSettingDocs.structuredMaxChunkSize.details}
-                        description={ingestionSettingDocs.structuredMaxChunkSize.summary}
-                        className="pr-4"
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <SettingFieldHeader
+                          htmlFor="structuredMaxChunkSize"
+                          label="Maximum chunk size"
+                          description="Stop growing a semantic chunk once it reaches this size."
+                          className="pr-4"
+                        />
+                        <span className="text-sm font-mono text-muted-foreground">{settings.structuredMaxChunkSize}</span>
+                      </div>
+                      <Slider
+                        id="structuredMaxChunkSize"
+                        min={1}
+                        max={2000}
+                        step={1}
+                        value={[Math.min(settings.structuredMaxChunkSize, 2000)]}
+                        onValueChange={([value]) => updateSetting('structuredMaxChunkSize', value)}
                       />
-                      <span className="text-sm font-mono text-muted-foreground">{settings.structuredMaxChunkSize}</span>
                     </div>
-                    <Slider
-                      id="structuredMaxChunkSize"
-                      min={1}
-                      max={2000}
-                      step={1}
-                      value={[Math.min(settings.structuredMaxChunkSize, 2000)]}
-                      onValueChange={([value]) => updateSetting('structuredMaxChunkSize', value)}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          </SettingsCard>
-
-          <SettingsCard
-            id="existing-documents"
-            icon={<RefreshCw className="h-5 w-5 text-primary" />}
-            title="Apply changes to existing documents"
-            description="Save the new ingestion settings, then re-queue eligible documents when you want stored chunks rewritten."
-          >
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-foreground">{ingestionSettingDocs.reprocess.label}</Label>
-                  <SettingTooltip
-                    label={ingestionSettingDocs.reprocess.label}
-                    content={ingestionSettingDocs.reprocess.details}
-                  />
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  <AssistantMarkdownContent content={ingestionSettingDocs.reprocess.summary} inline />
-                </div>
+                  </>
+                )}
               </div>
-              <div className="space-y-4 rounded-md border border-border bg-muted/20 p-4">
+              <div id="existing-documents" className="space-y-4 border-t border-border/70 pt-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-foreground">{ingestionSettingDocs.reprocess.label}</Label>
+                    <SettingTooltip
+                      label={ingestionSettingDocs.reprocess.label}
+                      content={ingestionSettingDocs.reprocess.details}
+                    />
+                  </div>
+                </div>
                 <p className="text-sm text-muted-foreground">
-                  Saving settings does not rewrite existing chunks. Use this action when you want current documents to be re-queued with the latest ingestion configuration.
+                  Changes apply to future ingests and document updates immediately. Existing documents keep their current chunks until you reprocess them.
                 </p>
                 <div className="flex items-center gap-3">
-                  <Button onClick={handleReprocess} disabled={isReprocessing || isSaving}>
-                    {isReprocessing || isSaving ? <Spinner className="mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                  <Button onClick={handleReprocess} disabled={isReprocessing}>
+                    {isReprocessing ? <Spinner className="mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
                     Reprocess Existing Documents
                   </Button>
                   {reprocessMessage ? <p className="text-sm text-muted-foreground">{reprocessMessage}</p> : null}

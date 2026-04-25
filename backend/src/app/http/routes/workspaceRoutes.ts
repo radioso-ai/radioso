@@ -18,8 +18,13 @@ export const workspaceParamsSchema = z.object({
   workspaceId: z.string().uuid(),
 });
 
+export const workspaceKeyParamsSchema = z.object({
+  workspaceKey: z.string().trim().min(3).max(64).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+});
+
 export const createWorkspaceRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
+  const authenticatedUserSession = requireSession(dependencies, { requireActiveMembership: false });
   const workspaceMutationRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
@@ -37,6 +42,24 @@ export const createWorkspaceRoutes = (dependencies: AppDependencies): Router => 
       const { accountId } = res.locals as { accountId: string };
       const workspaces = await dependencies.workspaceService.listForAccount(accountId);
       res.status(200).json({ workspaces });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/resolve/:workspaceKey", authenticatedUserSession, async (req, res, next) => {
+    try {
+      const { userId } = res.locals as { userId: string };
+      const { workspaceKey } = workspaceKeyParamsSchema.parse(req.params);
+      const workspace = await dependencies.workspaceService.resolveAccessibleByPublicRouteKey(userId, workspaceKey);
+      const account = await dependencies.accountRepository.findById(workspace.accountId);
+      res.status(200).json({
+        workspaceKey: workspace.publicRouteKey,
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        accountId: workspace.accountId,
+        organizationName: account?.name ?? "Organization",
+      });
     } catch (error) {
       next(error);
     }

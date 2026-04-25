@@ -303,7 +303,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer(input) {
         expect(input.prompt).toContain("Assistant name: Marta");
-        expect(input.prompt).toContain("Assistant role: Museum guide");
+        expect(input.prompt).toContain("What this assistant helps with: Museum guide");
         return "My name is Marta. I am your museum guide.";
       },
       async *streamAnswer() {
@@ -513,7 +513,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer(input) {
-        expect(input.prompt).toContain("Assistant role: Museum guide");
+        expect(input.prompt).toContain("What this assistant helps with: Museum guide");
         return "I am Marta, and I help visitors navigate the museum.";
       },
       async *streamAnswer() {

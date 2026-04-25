@@ -35,6 +35,9 @@ export function DashboardShell({
   const requestedWorkspaceExists = requestedWorkspaceId
     ? workspaces.some((workspace) => workspace.id === requestedWorkspaceId)
     : false
+  const activeWorkspacePublicRouteKey = activeWorkspaceId
+    ? workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.publicRouteKey
+    : undefined
   const currentView = routeState.section
 
   useEffect(() => {
@@ -80,10 +83,12 @@ export function DashboardShell({
     router.replace(buildDashboardHref(accountId, {
       ...routeState,
       workspaceId: activeWorkspaceId,
+      workspacePublicRouteKey: activeWorkspacePublicRouteKey,
     }))
   }, [
     accountId,
     activeWorkspaceId,
+    activeWorkspacePublicRouteKey,
     requestedWorkspaceExists,
     requestedWorkspaceId,
     routeState,
@@ -95,6 +100,7 @@ export function DashboardShell({
       ...routeState,
       section: 'documents',
       documentId: documentId ?? undefined,
+      workspacePublicRouteKey: activeWorkspacePublicRouteKey,
     }))
   }
 

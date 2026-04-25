@@ -66,6 +66,7 @@ describe("auth integration", () => {
     expect(response.body.accountId).toBeDefined();
     expect(response.body.organizationName).toBe("Bootstrap Organization");
     expect(response.body.workspaceName).toBe("Default");
+    expect(response.body.workspacePublicRouteKey).toMatch(/^default-[a-z0-9]{6}$/);
     expect(response.body.workspaceId).toBeDefined();
     expect(response.body.token).toBeUndefined();
     expect(response.body.requiresEmailVerification).toBe(true);
@@ -109,6 +110,27 @@ describe("auth integration", () => {
     expect(defaultSettings.status).toBe(200);
     expect(tokenRoute.status).toBe(200);
     expect(tokenRoute.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
+  });
+
+  it("rotates the workspace token on demand", async () => {
+    const { app } = createTestApp();
+    const registration = await issueTestSession(app, "rotate-token@example.com");
+    const cookie = registration.cookie;
+    const tokenRoute = `/api/v1/account/workspaces/${registration.workspaceId}/token`;
+    const rotateRoute = `/api/v1/account/workspaces/${registration.workspaceId}/token/rotate`;
+
+    const revealed = await request(app)
+      .get(tokenRoute)
+      .set("Cookie", cookie);
+
+    const rotated = await request(app)
+      .post(rotateRoute)
+      .set("Cookie", cookie);
+
+    expect(revealed.status).toBe(200);
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
+    expect(rotated.body.token).not.toBe(revealed.body.token);
   });
 
   it("returns 503 for workspace token operations when the token secret is unset", async () => {
@@ -319,6 +341,7 @@ describe("auth integration", () => {
     expect(response.body.organizationName).toBe("Multi Workspace Organization");
     expect(response.body.workspaceId).toBe(created.body.id);
     expect(response.body.workspaceName).toBe("Research");
+    expect(response.body.workspacePublicRouteKey).toMatch(/^research-[a-z0-9]{6}$/);
     expect(response.body.token).toBeUndefined();
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
@@ -373,6 +396,7 @@ describe("auth integration", () => {
     expect(response.body.accountId).not.toBe(registration.accountId);
     expect(response.body.organizationName).toBe("Second Organization");
     expect(response.body.workspaceName).toBe("Default");
+    expect(response.body.workspacePublicRouteKey).toMatch(/^default-[a-z0-9]{6}$/);
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
 

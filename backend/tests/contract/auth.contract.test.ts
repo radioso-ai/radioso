@@ -24,6 +24,7 @@ describe("auth contract", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
     expect(response.body.workspaceName).toBe("Default");
+    expect(response.body.workspacePublicRouteKey).toMatch(/^default-[a-z0-9]{6}$/);
     expect(response.body.token).toBeUndefined();
     expect(response.body.requiresEmailVerification).toBe(true);
     expect(response.headers["set-cookie"]).toBeUndefined();
@@ -46,6 +47,7 @@ describe("auth contract", () => {
     expect(response.body.organizationName).toBe("Bob Organization");
     expect(response.body.workspaceId).toBe(registration.workspaceId);
     expect(response.body.workspaceName).toBe("Default");
+    expect(response.body.workspacePublicRouteKey).toMatch(/^default-[a-z0-9]{6}$/);
     expect(response.body.token).toBeUndefined();
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
@@ -189,6 +191,7 @@ describe("auth contract", () => {
     expect(response.body.organizationName).toBe("Preferred Organization");
     expect(response.body.workspaceId).toBe(created.body.id);
     expect(response.body.workspaceName).toBe("Research");
+    expect(response.body.workspacePublicRouteKey).toMatch(/^research-[a-z0-9]{6}$/);
     expect(response.body.token).toBeUndefined();
   });
 
@@ -251,6 +254,26 @@ describe("auth contract", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
+  });
+
+  it("rotates a workspace token through an explicit session-authenticated account route", async () => {
+    const { app } = createTestApp();
+
+    const registration = await issueTestSession(app, "rotate-token-route@example.com");
+    const cookie = registration.cookie;
+
+    const revealed = await request(app)
+      .get(`/api/v1/account/workspaces/${registration.workspaceId}/token`)
+      .set("Cookie", cookie);
+
+    const rotated = await request(app)
+      .post(`/api/v1/account/workspaces/${registration.workspaceId}/token/rotate`)
+      .set("Cookie", cookie);
+
+    expect(revealed.status).toBe(200);
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
+    expect(rotated.body.token).not.toBe(revealed.body.token);
   });
 
   it("creates and accepts account invitations", async () => {

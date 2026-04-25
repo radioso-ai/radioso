@@ -77,7 +77,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const targetId = resolveBootstrapWorkspaceId(list, storedId)
 
         if (targetId) {
-          activateWorkspaceToken(targetId)
+          const targetWorkspace = list.find((workspace) => workspace.id === targetId) ?? null
+          activateWorkspaceToken(targetId, targetWorkspace?.publicRouteKey)
           setActiveWorkspaceId(targetId)
         }
       } catch {
@@ -92,16 +93,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [user, isBootstrapping, logout])
 
   const switchWorkspace = useCallback(async (workspaceId: string) => {
-    activateWorkspaceToken(workspaceId)
+    const workspace = workspaces.find((candidate) => candidate.id === workspaceId) ?? null
+    activateWorkspaceToken(workspaceId, workspace?.publicRouteKey)
     setActiveWorkspaceId(workspaceId)
-  }, [])
+  }, [workspaces])
 
   const createWorkspace = useCallback(async (name: string) => {
     const workspace = await workspaceApi.create(name)
     setWorkspaces((prev) => [...prev, workspace])
-    await switchWorkspace(workspace.id)
+    activateWorkspaceToken(workspace.id, workspace.publicRouteKey)
+    setActiveWorkspaceId(workspace.id)
     return workspace
-  }, [switchWorkspace])
+  }, [])
 
   const renameWorkspace = useCallback(async (workspaceId: string, name: string) => {
     const updated = await workspaceApi.rename(workspaceId, name)

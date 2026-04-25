@@ -9,3 +9,9 @@ Unsupported draft content:
 
 Retrieved contexts:
 {{contexts_section}}
+
+Write at most 2 short paragraphs:
+1. A direct limitation about the exact question.
+2. One nearby grounded continuation, if helpful.
+
+Do not use bullets or a list.

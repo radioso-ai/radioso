@@ -90,3 +90,22 @@ test("runPreflightChecks reports port conflicts when project is not already runn
   const blockedPort = results.find((result) => result.name === "port-3000");
   assert.equal(blockedPort?.status, "fail");
 });
+
+test("runPreflightChecks fails fast when docker info times out", async () => {
+  const results = await runPreflightChecks({
+    run: async (command, args) => {
+      const key = [command, ...args].join(" ");
+      if (key === "docker info") {
+        return { ok: false, stdout: "", stderr: "Command timed out after 100ms", timedOut: true };
+      }
+
+      return { ok: true, stdout: "ok", stderr: "", timedOut: false };
+    },
+    commandTimeoutMs: 100,
+  });
+
+  const dockerDaemon = results.find((result) => result.name === "docker-daemon");
+  assert.equal(dockerDaemon?.status, "fail");
+  assert.match(dockerDaemon?.summary ?? "", /timed out/);
+  assert.match(dockerDaemon?.recoveryAction ?? "", /docker info/);
+});

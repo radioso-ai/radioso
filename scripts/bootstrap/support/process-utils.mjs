@@ -8,9 +8,24 @@ export const runCommand = (command, args = [], options = {}) =>
       env: options.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    const timeoutMs = options.timeoutMs ?? null;
 
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let timedOut = false;
+    let timeoutId = null;
+
+    const finalize = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      resolve(result);
+    };
 
     child.stdout?.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -21,12 +36,22 @@ export const runCommand = (command, args = [], options = {}) =>
     });
 
     child.on("error", (error) => {
-      resolve({ ok: false, code: null, stdout, stderr, error });
+      finalize({ ok: false, code: null, stdout, stderr, error, timedOut });
     });
 
     child.on("close", (code) => {
-      resolve({ ok: code === 0, code, stdout, stderr });
+      finalize({ ok: !timedOut && code === 0, code, stdout, stderr, timedOut });
     });
+
+    if (typeof timeoutMs === "number" && timeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        stderr += stderr.endsWith("\n") || stderr.length === 0 ? "" : "\n";
+        stderr += `Command timed out after ${timeoutMs}ms`;
+        child.kill("SIGTERM");
+      }, timeoutMs);
+      timeoutId.unref?.();
+    }
   });
 
 export const spawnInherited = (command, args = [], options = {}) =>

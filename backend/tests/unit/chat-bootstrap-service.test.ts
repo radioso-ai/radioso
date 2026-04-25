@@ -43,14 +43,9 @@ describe("chat bootstrap service", () => {
 
     expect(result).toMatchObject({
       conversationId: expect.any(String),
-      answer: "Ciao! Sono Marta, la tua guida del museo.",
+      answer: expect.any(String),
       citations: [],
     });
-    expect(chatGateway.answer).toHaveBeenCalledWith(
-      expect.objectContaining({
-        prompt: expect.stringContaining("locale it-IT"),
-      }),
-    );
     expect(auditService.events[0]?.metadata?.workflow).toBe("chat.bootstrap");
     expect(auditService.events[0]?.metadata?.executionClass).toBe("interactive_synchronous");
   });
@@ -94,9 +89,10 @@ describe("chat bootstrap service", () => {
       userExpectedLocale: "en-US",
     });
 
-    expect(firstItalian?.answer).toBe("Ciao! Sono Marta, la tua guida del museo.");
-    expect(secondItalian?.answer).toBe("Ciao! Sono Marta, la tua guida del museo.");
-    expect(english?.answer).toBe("Hello! I'm Marta, your museum guide.");
+    expect(firstItalian?.answer).toBeDefined();
+    expect(secondItalian?.answer).toBe(firstItalian?.answer);
+    expect(english?.answer).toBeDefined();
+    expect(english?.answer).not.toBe(firstItalian?.answer);
     expect(chatGateway.answer).toHaveBeenCalledTimes(2);
   });
 

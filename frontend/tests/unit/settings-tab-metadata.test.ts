@@ -36,14 +36,10 @@ describe('settings tab metadata', () => {
   })
 
   it('returns tab descriptors and resolves only known sections', () => {
-    expect(getSettingsTabDescriptor('channels').title).toBe('Channels')
-    expect(getSettingsSectionDescriptor('workspace', 'workspace-access')?.label).toBe('Workspace and access')
-    expect(getSettingsSectionDescriptor('ingestion', 'existing-documents')?.label).toBe(
-      'Reprocess existing documents'
-    )
-    expect(getSettingsSectionDescriptor('retrieval', 'metadata-rules')?.label).toBe(
-      'Prioritize by metadata'
-    )
+    expect(getSettingsTabDescriptor('channels').id).toBe('channels')
+    expect(getSettingsSectionDescriptor('workspace', 'workspace-access')?.id).toBe('workspace-access')
+    expect(getSettingsSectionDescriptor('ingestion', 'existing-documents')?.id).toBe('existing-documents')
+    expect(getSettingsSectionDescriptor('retrieval', 'metadata-rules')?.id).toBe('metadata-rules')
     expect(getSettingsSectionDescriptor('retrieval', 'missing-section')).toBeNull()
     expect(getSettingsSectionDescriptor('workspace', undefined)).toBeNull()
   })

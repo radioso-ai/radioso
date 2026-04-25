@@ -30,9 +30,51 @@ EXPECTED_SWC_PACKAGE="$(
     process.stdout.write(map[platform]?.[arch] ?? "");
   '
 )"
-CURRENT_INSTALL_STATE="${CURRENT_HASH}:${NODE_VERSION}:${EXPECTED_SWC_PACKAGE}"
+EXPECTED_LIGHTNINGCSS_PACKAGE="$(
+  node -p '
+    const platform = process.platform;
+    const arch = process.arch;
+    const report = process.report?.getReport?.();
+    const isMusl = platform === "linux" && !report?.header?.glibcVersionRuntime;
+    const suffix =
+      platform === "linux"
+        ? arch === "arm"
+          ? "gnueabihf"
+          : isMusl
+            ? "musl"
+            : "gnu"
+        : platform === "win32"
+          ? "msvc"
+          : "";
+    const name = [platform, arch, suffix].filter(Boolean).join("-");
+    process.stdout.write(name ? `lightningcss-${name}` : "");
+  '
+)"
+EXPECTED_TAILWIND_OXIDE_PACKAGE="$(
+  node -p '
+    const platform = process.platform;
+    const arch = process.arch;
+    const report = process.report?.getReport?.();
+    const isMusl = platform === "linux" && !report?.header?.glibcVersionRuntime;
+    const suffix =
+      platform === "linux"
+        ? arch === "arm"
+          ? "gnueabihf"
+          : isMusl
+            ? "musl"
+            : "gnu"
+        : platform === "win32"
+          ? "msvc"
+          : "";
+    const name = [platform, arch, suffix].filter(Boolean).join("-");
+    process.stdout.write(name ? `@tailwindcss/oxide-${name}` : "");
+  '
+)"
+CURRENT_INSTALL_STATE="${CURRENT_HASH}:${NODE_VERSION}:${EXPECTED_SWC_PACKAGE}:${EXPECTED_LIGHTNINGCSS_PACKAGE}:${EXPECTED_TAILWIND_OXIDE_PACKAGE}"
 SAVED_INSTALL_STATE=""
 SWC_READY=1
+LIGHTNINGCSS_READY=1
+TAILWIND_OXIDE_READY=1
 NEXT_RUNTIME_READY=1
 
 if [ -f "$INSTALL_STATE_FILE" ]; then
@@ -42,6 +84,18 @@ fi
 if [ -n "$EXPECTED_SWC_PACKAGE" ]; then
   if ! node -e "require.resolve('${EXPECTED_SWC_PACKAGE}/package.json')" >/dev/null 2>&1; then
     SWC_READY=0
+  fi
+fi
+
+if [ -n "$EXPECTED_LIGHTNINGCSS_PACKAGE" ]; then
+  if ! node -e "require.resolve('${EXPECTED_LIGHTNINGCSS_PACKAGE}/package.json')" >/dev/null 2>&1; then
+    LIGHTNINGCSS_READY=0
+  fi
+fi
+
+if [ -n "$EXPECTED_TAILWIND_OXIDE_PACKAGE" ]; then
+  if ! node -e "require.resolve('${EXPECTED_TAILWIND_OXIDE_PACKAGE}/package.json')" >/dev/null 2>&1; then
+    TAILWIND_OXIDE_READY=0
   fi
 fi
 
@@ -57,7 +111,7 @@ do
   fi
 done
 
-if [ ! -d node_modules ] || [ "$CURRENT_INSTALL_STATE" != "$SAVED_INSTALL_STATE" ] || [ "$SWC_READY" -ne 1 ] || [ "$NEXT_RUNTIME_READY" -ne 1 ]; then
+if [ ! -d node_modules ] || [ "$CURRENT_INSTALL_STATE" != "$SAVED_INSTALL_STATE" ] || [ "$SWC_READY" -ne 1 ] || [ "$LIGHTNINGCSS_READY" -ne 1 ] || [ "$TAILWIND_OXIDE_READY" -ne 1 ] || [ "$NEXT_RUNTIME_READY" -ne 1 ]; then
   echo "Installing frontend dependencies..."
   npm ci
   printf '%s' "$CURRENT_INSTALL_STATE" > "$INSTALL_STATE_FILE"

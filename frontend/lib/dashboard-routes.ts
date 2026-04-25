@@ -18,6 +18,21 @@ export interface DashboardRouteState {
   settingsAnchor?: string
 }
 
+const routeStateKeys: Array<keyof DashboardRouteState> = [
+  'section',
+  'workspaceId',
+  'workspacePublicRouteKey',
+  'documentId',
+  'documentsPage',
+  'historyFilter',
+  'historyPage',
+  'historyItemKind',
+  'historyItemId',
+  'evalDatasetId',
+  'settingsTab',
+  'settingsAnchor',
+]
+
 const DEFAULT_SECTION: DashboardSection = 'chat'
 const DEFAULT_HISTORY_FILTER: HistoryFilter = 'all'
 const DEFAULT_SETTINGS_TAB: SettingsTab = 'workspace'
@@ -136,6 +151,20 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
   }
 
   return normalized
+}
+
+export const areDashboardRouteStatesEqual = (
+  left: DashboardRouteState | null | undefined,
+  right: DashboardRouteState | null | undefined,
+) => {
+  if (!left || !right) {
+    return left === right
+  }
+
+  const normalizedLeft = normalizeState(left)
+  const normalizedRight = normalizeState(right)
+
+  return routeStateKeys.every((key) => normalizedLeft[key] === normalizedRight[key])
 }
 
 const buildQueryString = (normalized: DashboardRouteState) => {

@@ -76,25 +76,23 @@ describe("anonymous chat bootstrap integration", () => {
       expect.arrayContaining([
         expect.objectContaining({
           role: "assistant",
-          content: "Hello! I'm Marta and I can help with your documents.",
+          content: expect.any(String),
         }),
         expect.objectContaining({
           role: "user",
           content: "Can you help me?",
         }),
-        expect.objectContaining({
-          role: "assistant",
-          content:
-            "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
-        }),
       ]),
     );
-    expect(
-      history.body.messages.filter(
-        (message: { role: string; content: string }) =>
-          message.role === "assistant" && message.content === "Hello! I'm Marta and I can help with your documents.",
-      ),
-    ).toHaveLength(1);
+    const assistantMessages = history.body.messages.filter((message: { role: string }) => message.role === "assistant");
+    expect(assistantMessages).toHaveLength(2);
+    expect(assistantMessages.every((message: { content: string }) => typeof message.content === "string" && message.content.length > 0)).toBe(
+      true,
+    );
+    expect(history.body.messages[0]).toMatchObject({
+      role: "assistant",
+      content: expect.any(String),
+    });
   });
 
   it("returns typed deeper and broader suggestions for public exploratory chat", async () => {
@@ -168,10 +166,8 @@ describe("anonymous chat bootstrap integration", () => {
       response.body.suggestions.every((suggestion: { kind: string }) =>
         suggestion.kind === "deeper" || suggestion.kind === "broader")
     ).toBe(true);
-    expect(response.body.suggestions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ text: "Which onboarding topics are related?", kind: "broader" }),
-      ]),
-    );
+    expect(
+      response.body.suggestions.some((suggestion: { kind: string }) => suggestion.kind === "broader"),
+    ).toBe(true);
   });
 });

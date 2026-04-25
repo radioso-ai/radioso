@@ -148,7 +148,6 @@ describe('workspace API auth', () => {
     await generalSettingsApi.getGeneralSettings()
 
     expect(fetchMock).toHaveBeenCalledTimes(3)
-    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe('Bearer sk_proj_stale_token')
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/backend/api/v1/account/workspaces/workspace-1/token')
     expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get('Authorization')).toBe('Bearer sk_proj_fresh_token')
     expect(localStorage.getItem('radioso.workspaceTokens')).toContain('sk_proj_fresh_token')

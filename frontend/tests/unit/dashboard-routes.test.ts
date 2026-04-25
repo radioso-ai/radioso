@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildAccountRoute, buildDashboardHref, buildLegacyDashboardHref, parseDashboardRoute } from '@/lib/dashboard-routes'
+import {
+  areDashboardRouteStatesEqual,
+  buildAccountRoute,
+  buildDashboardHref,
+  buildLegacyDashboardHref,
+  parseDashboardRoute,
+} from '@/lib/dashboard-routes'
 
 describe('dashboard route state', () => {
   it('builds a canonical documents deep link with workspace key and page state', () => {
@@ -85,5 +91,31 @@ describe('dashboard route state', () => {
       workspaceId: 'workspace-4',
       historyFilter: 'search',
     })).toBe('/account/account-4/history?workspace=workspace-4&filter=search')
+  })
+
+  it('treats equivalent route states as equal even when they are rebuilt from fresh objects', () => {
+    const parsed = parseDashboardRoute(['settings'], new URLSearchParams({
+      workspace: 'workspace-9',
+      tab: 'channels',
+      anchor: 'website-embed',
+    }))
+
+    expect(parsed).not.toBeNull()
+
+    const current = {
+      ...parsed!,
+      workspaceId: 'workspace-9',
+      workspacePublicRouteKey: 'workspace-nine-abc123',
+    }
+
+    const next = {
+      section: 'settings' as const,
+      workspaceId: 'workspace-9',
+      workspacePublicRouteKey: 'workspace-nine-abc123',
+      settingsTab: 'channels' as const,
+      settingsAnchor: 'website-embed',
+    }
+
+    expect(areDashboardRouteStatesEqual(current, next)).toBe(true)
   })
 })

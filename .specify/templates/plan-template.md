@@ -33,6 +33,7 @@
 
 - Spec exists and is approved; no implementation without spec.
 - Backend work includes TDD with failing tests written before implementation.
+- Frontend user-visible behavior is planned for Playwright coverage, and any frontend unit tests are limited to non-visual logic.
 - Stack remains Node.js for backend and React for frontend.
 - Database is PostgreSQL with `pgvector` for embeddings and vector search.
 - LLM provider is GPT-5.2 for AI integrations.

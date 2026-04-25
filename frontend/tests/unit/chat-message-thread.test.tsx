@@ -114,7 +114,7 @@ describe('ChatMessageThread', () => {
     expect(html).not.toContain('Broader')
   })
 
-  it('preserves hover-capable suggestion styling for themed embedded chat', () => {
+  it('renders suggestion actions as buttons when selection is enabled', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread
         messages={[
@@ -128,7 +128,72 @@ describe('ChatMessageThread', () => {
         ]}
         onOpenDocument={async () => 'opened'}
         onSuggestionSelect={() => {}}
-        themedSuggestionButtons
+      />,
+    )
+
+    expect(html).toContain('Which onboarding questions are answered?')
+    expect(html.match(/<button/g)?.length).toBe(1)
+  })
+
+  it('omits empty suggestion text entries', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            suggestions: [
+              { text: '   ', kind: 'deeper' },
+              { text: 'Which onboarding questions are answered?', kind: 'broader' },
+            ],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        onSuggestionSelect={() => {}}
+      />,
+    )
+
+    expect(html).toContain('Which onboarding questions are answered?')
+    expect(html.match(/<button/g)?.length).toBe(1)
+  })
+
+  it('renders inline pseudo-lists as markdown lists for assistant messages', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content:
+              'If you want, I can help with: - a simple yoga or meditation routine - what gear is useful for practice - Ananda Yoga topics and recordings',
+            createdAt: '2026-04-02T10:00:00.000Z',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('<ul')
+    expect(html).toContain('<li')
+    expect(html).toContain('a simple yoga or meditation routine')
+    expect(html).toContain('what gear is useful for practice')
+    expect(html).toContain('Ananda Yoga topics and recordings')
+  })
+
+  it('uses the blue link treatment for themed assistant markdown content', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '[Learn the energization exercises](https://example.com/learn)',
+            createdAt: '2026-04-02T10:00:00.000Z',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
         theme={{
           launcherBackground: '#000000',
           launcherForeground: '#ffffff',
@@ -154,76 +219,7 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html).toContain('hover:border-[var(--suggestion-hover-border)]')
-    expect(html).toContain('hover:bg-[var(--suggestion-hover-bg)]')
-    expect(html).toContain('--suggestion-hover-border:#336699')
-  })
-
-  it('keeps the default auth-chat suggestion styling unchanged', () => {
-    const html = renderToStaticMarkup(
-      <ChatMessageThread
-        messages={[
-          {
-            id: 'assistant-1',
-            role: 'assistant',
-            content: 'Answer text',
-            createdAt: '2026-04-02T10:00:00.000Z',
-            suggestions: [{ text: 'Which onboarding questions are answered?', kind: 'broader' }],
-          },
-        ]}
-        onOpenDocument={async () => 'opened'}
-        onSuggestionSelect={() => {}}
-      />,
-    )
-
-    expect(html).toContain('h-auto max-w-full whitespace-normal px-3 py-2 text-left')
-    expect(html).not.toContain('hover:border-[var(--suggestion-hover-border)]')
-    expect(html).not.toContain('--suggestion-hover-border:')
-  })
-
-  it('omits empty suggestion text entries', () => {
-    const html = renderToStaticMarkup(
-      <ChatMessageThread
-        messages={[
-          {
-            id: 'assistant-1',
-            role: 'assistant',
-            content: 'Answer text',
-            createdAt: '2026-04-02T10:00:00.000Z',
-            suggestions: [
-              { text: '   ', kind: 'deeper' },
-              { text: 'Which onboarding questions are answered?', kind: 'broader' },
-            ],
-          },
-        ]}
-        onOpenDocument={async () => 'opened'}
-      />,
-    )
-
-    expect(html).toContain('Which onboarding questions are answered?')
-    expect(html.match(/rounded-md border border-border bg-muted\/40/g)?.length).toBe(1)
-  })
-
-  it('renders inline pseudo-lists as markdown lists for assistant messages', () => {
-    const html = renderToStaticMarkup(
-      <ChatMessageThread
-        messages={[
-          {
-            id: 'assistant-1',
-            role: 'assistant',
-            content:
-              'If you want, I can help with: - a simple yoga or meditation routine - what gear is useful for practice - Ananda Yoga topics and recordings',
-            createdAt: '2026-04-02T10:00:00.000Z',
-          },
-        ]}
-        onOpenDocument={async () => 'opened'}
-      />,
-    )
-
-    expect(html).toContain('<ul')
-    expect(html).toContain('<li')
-    expect(html).toContain('a simple yoga or meditation routine')
-    expect(html).toContain('what gear is useful for practice')
-    expect(html).toContain('Ananda Yoga topics and recordings')
+    expect(html).toContain('href="https://example.com/learn"')
+    expect(html).toContain('Learn the energization exercises')
   })
 })

@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, type ReactNode, useState } from 'react'
+import { Fragment, type CSSProperties, type ReactNode, useState } from 'react'
 import { FileText } from 'lucide-react'
 
 const URL_REGEX = /https?:\/\/[^\s<>)"']+/g
@@ -21,7 +21,7 @@ export function linkifyText(text: string): ReactNode[] {
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-primary underline hover:text-primary/80"
+        className="text-[var(--message-link-fg,var(--color-primary))] underline underline-offset-4 hover:text-[var(--message-link-hover-fg,var(--color-primary))]"
       >
         {url}
       </a>,
@@ -42,6 +42,10 @@ import {
   HoverCardTrigger,
 } from '@/components/ui/hover-card'
 import { type AnswerSegment, type Citation } from '@/lib/api'
+import {
+  buildWebsiteEmbedSurfaceCssVars,
+  type WebsiteEmbedTheme,
+} from '@/lib/embed-widget'
 import { AssistantMarkdownContent } from './chat-markdown'
 
 export type CitationOpenResult = 'opened' | 'unavailable' | 'error'
@@ -51,6 +55,7 @@ interface AssistantMessageContentProps {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
+  theme?: WebsiteEmbedTheme | null
 }
 
 const getCitationLabel = (citation: Citation, index: number) =>
@@ -60,10 +65,12 @@ const CitationMarker = ({
   citation,
   index,
   onOpenDocument,
+  theme,
 }: {
   citation: Citation
   index: number
   onOpenDocument: (citation: Citation, index: number) => void
+  theme?: WebsiteEmbedTheme | null
 }) => (
   <HoverCard openDelay={100}>
     <HoverCardTrigger asChild>
@@ -79,7 +86,19 @@ const CitationMarker = ({
         [{index + 1}]
       </button>
     </HoverCardTrigger>
-    <HoverCardContent className="max-w-xs space-y-2 px-3 py-3">
+    <HoverCardContent
+      className="max-w-xs space-y-2 px-3 py-3"
+      style={
+        theme
+          ? {
+              ...buildWebsiteEmbedSurfaceCssVars(theme),
+              background: theme.panelBackground,
+              borderColor: theme.panelBorder,
+              color: theme.panelForeground,
+            }
+          : undefined
+      }
+    >
       <div className="space-y-1">
         <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           Source {index + 1}
@@ -139,10 +158,17 @@ export function AssistantMessageContent({
   citations = [],
   answerSegments,
   onOpenDocument,
+  theme,
 }: AssistantMessageContentProps) {
   const [citationNotice, setCitationNotice] = useState<{ scope: string; message: string } | null>(null)
   const noticeScope = `${content}|${citations.length}|${answerSegments?.length ?? 0}`
   const segments = getRenderableSegments(content, answerSegments)
+  const contentThemeVars = theme
+    ? ({
+        '--message-link-fg': theme.accent,
+        '--message-link-hover-fg': theme.accent,
+      } as CSSProperties)
+    : undefined
 
   const handleCitationOpen = async (citation: Citation, index: number) => {
     try {
@@ -185,6 +211,7 @@ export function AssistantMessageContent({
           citation={citation}
           index={citationIndex}
           onOpenDocument={handleCitationOpen}
+          theme={theme}
         />
       )
     })
@@ -242,7 +269,7 @@ export function AssistantMessageContent({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" style={contentThemeVars}>
       <div className="text-sm break-words leading-6">
         {contentNodes}
       </div>

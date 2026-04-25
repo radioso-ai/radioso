@@ -1,13 +1,10 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import {
-  buildPublicAssistantIdentityLines,
-  type AssistantIdentityPromptInput,
-} from "../../settings/domain/assistantBootstrapSettings.js";
+import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
-import { ConversationModeInstructionBuilder } from "./conversationModeInstructionBuilder.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
+import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
 
 export interface PromptBuildResult {
   prompt: string;
@@ -15,7 +12,9 @@ export interface PromptBuildResult {
 }
 
 export class PromptBuilder {
-  private readonly conversationModeInstructionBuilder = new ConversationModeInstructionBuilder();
+  constructor(
+    private readonly sharedAnswerInstructionBuilder = new SharedAnswerInstructionBuilder(),
+  ) {}
 
   build(input: {
     query: string;
@@ -40,24 +39,26 @@ export class PromptBuilder {
         return `Result ${index + 1} (${context.title}): ${metadataLine}${context.content}`;
       })
       .join("\n\n");
-    const customInstructionBlock = this.renderCustomInstruction(input.settings.customInstruction);
-    const assistantIdentityBlock = this.renderAssistantIdentity(input.settings.assistantIdentity);
-    const responseFormattingGuidelinesBlock = this.renderResponseFormattingGuidelines();
-    const conversationModeInstructionBlock = this.conversationModeInstructionBuilder.build({
-      conversationMode: input.settings.conversationMode ?? "guided",
+    const answerInstructionBlocks = this.sharedAnswerInstructionBuilder.build({
+      assistantIdentity: input.settings.assistantIdentity,
+      customInstruction: input.settings.customInstruction,
+      conversationMode: input.settings.conversationMode,
+      responseLanguagePolicy: input.settings.responseLanguagePolicy,
     });
 
     return {
       prompt: renderPromptTemplate("retrieval/answer.md", {
-        assistant_identity_block: assistantIdentityBlock ? `${assistantIdentityBlock}\n` : "",
-        custom_instruction_block: customInstructionBlock ? `${customInstructionBlock}\n` : "",
-        response_formatting_guidelines_block: responseFormattingGuidelinesBlock
-          ? `${responseFormattingGuidelinesBlock}\n`
+        assistant_identity_block: answerInstructionBlocks.assistantIdentityBlock
+          ? `${answerInstructionBlocks.assistantIdentityBlock}\n`
           : "",
-        conversation_mode_instruction_block: `${conversationModeInstructionBlock}\n`,
-        response_language_instruction: this.renderResponseLanguageInstruction(
-          input.settings.responseLanguagePolicy ?? "match_user_question",
-        ),
+        custom_instruction_block: answerInstructionBlocks.customInstructionBlock
+          ? `${answerInstructionBlocks.customInstructionBlock}\n`
+          : "",
+        response_formatting_guidelines_block: answerInstructionBlocks.responseFormattingGuidelinesBlock
+          ? `${answerInstructionBlocks.responseFormattingGuidelinesBlock}\n`
+          : "",
+        conversation_mode_instruction_block: `${answerInstructionBlocks.conversationModeInstructionBlock}\n`,
+        response_language_instruction: answerInstructionBlocks.responseLanguageInstruction,
         history_section: historySection || "No prior history",
         contexts_section: contextsSection || "No retrieved context",
         query: input.query,
@@ -68,43 +69,5 @@ export class PromptBuilder {
         title: context.title,
       })),
     };
-  }
-
-  private renderCustomInstruction(customInstruction?: string): string | null {
-    if (!customInstruction) return null;
-    const sanitized = customInstruction.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
-    if (!sanitized.trim()) return null;
-    return `Workspace-specific instructions:\n${sanitized}`;
-  }
-
-  private renderAssistantIdentity(assistantIdentity?: AssistantIdentityPromptInput | null): string | null {
-    if (!assistantIdentity) {
-      return null;
-    }
-
-    const identityLines = buildPublicAssistantIdentityLines(assistantIdentity);
-
-    if (identityLines.length === 0) {
-      return null;
-    }
-
-    return [
-      "Stable assistant identity:",
-      ...identityLines,
-      "When the user asks about your name, role, or what you do, answer consistently with this identity.",
-    ].join("\n");
-  }
-
-  private renderResponseFormattingGuidelines(): string | null {
-    const guidelines = loadPromptTemplate("chat/response-formatting-guidelines.md");
-    return guidelines.trim() ? `Response formatting guidance:\n${guidelines}` : null;
-  }
-
-  private renderResponseLanguageInstruction(responseLanguagePolicy: ResponseLanguagePolicy): string {
-    switch (responseLanguagePolicy) {
-      case "match_user_question":
-      default:
-        return "Respond in the same language as the current user question. Do not switch to the language of the retrieved context or sources.";
-    }
   }
 }

@@ -91,6 +91,7 @@ describe("candidate retrieval branches", () => {
         effectiveQuery: "who is freya and tomas?",
         semanticQuery: "who is freya and tomas?",
         lexicalQuery: "who is freya and tomas?",
+        responseIntent: "retrieval",
         retrievalSubqueries: [
           { id: "subquery_1", label: "Freya", semanticQuery: "who is freya", lexicalQuery: "freya" },
           { id: "subquery_2", label: "Tomas", semanticQuery: "who is tomas", lexicalQuery: "tomas" },
@@ -100,6 +101,7 @@ describe("candidate retrieval branches", () => {
         status: "applied",
         confidence: 0.9,
       },
+      responseIntent: "retrieval",
       activeQuery: "who is freya and tomas?",
       activeParsedQuery: {
         originalQuery: "who is freya and tomas?",

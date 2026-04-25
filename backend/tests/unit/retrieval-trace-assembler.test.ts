@@ -55,6 +55,7 @@ describe("retrieval trace assembler", () => {
           effectiveQuery: "who is freya and tomas?",
           semanticQuery: "who is freya and tomas?",
           lexicalQuery: "who is freya and tomas?",
+          responseIntent: "retrieval",
           responseLanguagePolicy: "match_user_question",
           retrievalSubqueries: [
             { id: "subquery_1", label: "Freya", semanticQuery: "who is freya", lexicalQuery: "freya", responseLanguagePolicy: "match_user_question" },
@@ -65,6 +66,7 @@ describe("retrieval trace assembler", () => {
           status: "applied",
           confidence: 0.9,
         },
+        responseIntent: "retrieval",
         activeQuery: "who is freya and tomas?",
         activeParsedQuery: {
           originalQuery: "who is freya and tomas?",

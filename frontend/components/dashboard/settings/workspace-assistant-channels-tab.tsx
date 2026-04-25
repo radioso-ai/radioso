@@ -1114,7 +1114,7 @@ export function WorkspaceAssistantChannelsTab({
                     rows={4}
                   />
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Additional answer guidance applied to grounded responses.</span>
+                    <span>Answer guidance applied to responses.</span>
                     <span>{assistantBehaviorSettings.customInstruction.length} / 2000</span>
                   </div>
                 </div>

@@ -28,6 +28,10 @@ export class RetrievalInfoPresenter {
               responseLanguagePolicy: subquery.responseLanguagePolicy,
             }))
           : undefined,
+      responseIntent: input.responseIntent,
+      retrievalSkipped: input.retrievalSkipped,
+      intentConfidence: input.intentConfidence,
+      intentFallbackApplied: input.intentFallbackApplied,
       responseLanguagePolicy: input.responseLanguagePolicy,
       candidateCounts: {
         semantic: input.originalCandidateCount + input.rewrittenCandidateCount,

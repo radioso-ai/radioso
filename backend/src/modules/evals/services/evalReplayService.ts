@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
-import type { ChatGateway } from "../../chat/services/chatService.js";
+import { BlankChatAnswerError, type ChatGateway } from "../../chat/services/chatService.js";
 import {
   AnswerPresentationService,
   remapAnswerSegmentsToCitationEvidence,
@@ -20,7 +20,10 @@ import {
   type GroundedMissResponseComposer,
 } from "../../chat/services/groundedMissResponseComposer.js";
 import { assertInteractiveAssistantWorkflow } from "../../chat/services/chatExecutionPolicy.js";
+import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "../../chat/services/chatTurnIntentService.js";
+import { buildNonRetrievalAnswerPrompt } from "../../chat/services/nonRetrievalAnswerPromptBuilder.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
+import { SharedAnswerInstructionBuilder } from "../../retrieval/services/sharedAnswerInstructionBuilder.js";
 import type { EvalCaseConversationMessage, EvalReplayDiagnostics } from "../domain/evalTypes.js";
 
 export class EvalReplayService {
@@ -29,6 +32,8 @@ export class EvalReplayService {
   private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
+  private readonly sharedAnswerInstructionBuilder = new SharedAnswerInstructionBuilder();
+  private readonly chatTurnIntentService = new ChatTurnIntentService();
 
   constructor(
     private readonly retrievalPipeline: RetrievalPipelineService,
@@ -44,25 +49,50 @@ export class EvalReplayService {
     assertInteractiveAssistantWorkflow("eval.replay");
     const startedAt = Date.now();
     const history = this.toMessageHistory(input.workspaceId, input.conversationContext ?? []);
-    const retrieval = await this.retrievalPipeline.run({
+    const pipelineInput = {
       workspaceId: input.workspaceId,
       query: input.query,
       history,
-    });
+    };
+    let retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
+    let turnRoute: ChatTurnRoute = CHAT_TURN_ROUTE.RETRIEVAL;
+
+    if (supportsChatIntentRouting(this.retrievalPipeline)) {
+      const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
+      const interpretation = await retrievalPipeline.interpret(pipelineInput);
+      turnRoute = this.chatTurnIntentService.resolve({
+        responseIntent: interpretation.interpretation.result.responseIntent,
+      }).route;
+      retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
+        ? await retrievalPipeline.runInterpreted(interpretation)
+        : await retrievalPipeline.runWithoutRetrieval(interpretation);
+    } else {
+      retrieval = await this.retrievalPipeline.run(pipelineInput);
+    }
     const answerSupportPolicy = retrieval.responseSettings?.answerSupportPolicy ?? DEFAULT_ANSWER_SUPPORT_POLICY;
     const conversationMode = retrieval.responseSettings?.conversationMode ?? "guided";
-
-    const rawAnswer =
-      retrieval.contexts.length === 0
-        ? await this.groundedMissResponseComposer.composeNoContext({
-            query: input.query,
-            conversationMode,
-          })
-        : await this.chatGateway.answer({
-            query: input.query,
+    const nonRetrievalAnswer =
+      turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL
+        ? await this.generateNonRetrievalAnswer({
+            retrieval,
             history,
-            prompt: retrieval.prompt,
-          });
+            query: input.query,
+            route: turnRoute,
+          })
+        : null;
+    const rawAnswer =
+      turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL && nonRetrievalAnswer !== null
+        ? nonRetrievalAnswer
+        : retrieval.contexts.length === 0
+          ? await this.groundedMissResponseComposer.composeNoContext({
+              query: input.query,
+              conversationMode,
+            })
+          : await this.chatGateway.answer({
+              query: input.query,
+              history,
+              prompt: retrieval.prompt,
+            });
 
     const citationEvidence = retrieval.contexts.map((context) => ({
       documentId: context.documentId,
@@ -85,7 +115,17 @@ export class EvalReplayService {
       nonSubstantiveSegmentCount: 0,
     };
 
-    if (retrieval.contexts.length === 0) {
+    if (turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL && nonRetrievalAnswer !== null) {
+      const presented = this.answerPresentationService.present({
+        answer: rawAnswer,
+        citations: [],
+        citationDisplayEnabled: false,
+      });
+      answer = presented.answer;
+      citations = presented.citations;
+      answerSegments = presented.answerSegments;
+      answerOutcome = ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE;
+    } else if (retrieval.contexts.length === 0) {
       const presented = this.answerPresentationService.present({
         answer: rawAnswer,
         citations: citationEvidence,
@@ -145,6 +185,7 @@ export class EvalReplayService {
           answer,
           stream: false,
           hadContexts: retrieval.contexts.length > 0,
+          retrievalSkipped: retrieval.diagnostics.retrievalSkipped,
           durationMs: Date.now() - startedAt,
           answerOutcome,
           validation: retrieval.contexts.length > 0
@@ -186,4 +227,54 @@ export class EvalReplayService {
       createdAt: new Date(baseTimestamp + index * 1_000),
     }));
   }
+
+  private async generateNonRetrievalAnswer(input: {
+    retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
+    history: MessageRecord[];
+    query: string;
+    route: ChatTurnRoute;
+  }): Promise<string | null> {
+    try {
+      const answer = (await this.chatGateway.answer({
+        query: input.query,
+        history: input.history,
+        prompt: buildNonRetrievalAnswerPrompt({
+          route: input.route,
+          assistantIdentity: input.retrieval.assistantIdentity,
+          history: input.history,
+          query: input.query,
+          answerInstructionBlock: this.sharedAnswerInstructionBuilder.buildCombinedBlock({
+            assistantIdentity: input.retrieval.assistantIdentity,
+            customInstruction: input.retrieval.responseSettings.customInstruction,
+            conversationMode: input.retrieval.responseSettings.conversationMode,
+            responseLanguagePolicy: input.retrieval.responseSettings.responseLanguagePolicy,
+          }),
+        }),
+      })).trim();
+
+      return answer.length > 0 ? answer : null;
+    } catch (error) {
+      if (error instanceof BlankChatAnswerError) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
 }
+
+type ChatIntentCapableRetrievalPipeline = Pick<
+  RetrievalPipelineService,
+  "run" | "interpret" | "runInterpreted" | "runWithoutRetrieval"
+>;
+
+const supportsChatIntentRouting = (
+  pipeline: RetrievalPipelineService,
+): boolean => {
+  const candidate = pipeline as Partial<ChatIntentCapableRetrievalPipeline>;
+
+  return typeof candidate.run === "function"
+    && typeof candidate.interpret === "function"
+    && typeof candidate.runInterpreted === "function"
+    && typeof candidate.runWithoutRetrieval === "function";
+};

@@ -1,3 +1,4 @@
+import { RESPONSE_INTENT } from "../domain/retrievalPipelineTypes.js";
 import type { ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
@@ -34,6 +35,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       semanticRewriteInstructions: input.settings.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.settings.lexicalRewriteInstructions,
     });
+    const responseIntent = rewrittenQuery.responseIntent;
     const parsedQueryBase = originalParsedQuery;
     const preparedParsedQuery = prepareQueries(
       parsedQueryBase,
@@ -81,18 +83,28 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
               responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
             },
           ];
-    const triggerAnalysis = await this.queryRewriteService.analyzeTriggers({
-      query: input.request.query,
-      activeQuery,
-      contextMessages: promptHistory,
-      metadataRules: input.settings.metadataRules ?? [],
-    });
+    const triggerAnalysis = responseIntent === RESPONSE_INTENT.RETRIEVAL
+      ? await this.queryRewriteService.analyzeTriggers({
+          query: input.request.query,
+          activeQuery,
+          contextMessages: promptHistory,
+          metadataRules: input.settings.metadataRules ?? [],
+        })
+      : {
+          status: "skipped_non_retrieval" as const,
+          consideredRules: [],
+          matchedRuleIds: [],
+          unmatchedRuleIds: [],
+          matchCount: 0,
+          matcherVersion: "non_retrieval",
+        };
 
     return {
       ...input,
       originalParsedQuery,
       originalPreparedQuery,
       rewrittenQuery,
+      responseIntent,
       activeQuery,
       activeParsedQuery,
       activeSemanticQuery: activeParsedQuery.semanticQuery || activeQuery,

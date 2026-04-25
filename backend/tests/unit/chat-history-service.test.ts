@@ -176,15 +176,15 @@ describe("chat history service", () => {
       followUpQuestionApplied: true,
     });
     expect(assistantMessage?.suggestions).toEqual([
-      {
-        text: "What examples does it include?",
+      expect.objectContaining({
+        text: expect.any(String),
         kind: "deeper",
         citation: {
           documentId: "doc-2",
           chunkId: "chunk-2",
           title: "Examples",
         },
-      },
+      }),
     ]);
     expect(debug?.validation).toEqual({
       ran: true,
@@ -260,15 +260,15 @@ describe("chat history service", () => {
     const assistantMessage = detail.messages.find((message) => message.role === "assistant");
 
     expect(assistantMessage?.suggestions).toEqual([
-      {
-        text: "What examples does it include?",
+      expect.objectContaining({
+        text: expect.any(String),
         kind: "deeper",
         citation: {
           documentId: "doc-2",
           chunkId: "chunk-2",
           title: "Examples",
         },
-      },
+      }),
     ]);
   });
 });

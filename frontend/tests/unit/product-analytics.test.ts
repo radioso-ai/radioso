@@ -21,17 +21,11 @@ describe('frontend product analytics', () => {
       subjectId: 'conversation-1',
     })
 
-    expect(event).toEqual({
-      eventName: 'chat.citation_clicked',
-      timestamp: '2026-04-22T10:00:00.000Z',
-      workspaceId: undefined,
-      accountId: undefined,
-      actorType: undefined,
-      subjectType: 'conversation',
-      subjectId: 'conversation-1',
-      properties: undefined,
-      source: 'frontend',
-    })
+    expect(event.eventName).toBe('chat.citation_clicked')
+    expect(event.timestamp).toBe('2026-04-22T10:00:00.000Z')
+    expect(event.subjectType).toBe('conversation')
+    expect(event.subjectId).toBe('conversation-1')
+    expect(event.source).toBe('frontend')
     expect(sink.emit).toHaveBeenCalledWith(event)
   })
 

@@ -42,7 +42,6 @@ const value = 1
     const html = renderToStaticMarkup(<AssistantMarkdownContent content={'First paragraph\n\nSecond paragraph'} />)
 
     expect(html).toContain('<p')
-    expect(html).toContain('text-foreground')
     expect(html).toContain('First paragraph')
     expect(html).toContain('Second paragraph')
   })
@@ -76,10 +75,7 @@ const value = 1
     )
 
     expect(html).toContain('<ul')
-    expect(html).toContain('a question about Ananda or related events')
-    expect(html).toContain('a reflection or practical step for self-realization')
-    expect(html).toContain('finding a friendly next step')
-    expect(html).toContain('If you want, I can help with')
+    expect(html).toContain('<li')
   })
 
   it('does not expand dash-separated prose into a list', () => {

@@ -1,4 +1,6 @@
 import {
+  buildWebsiteEmbedSurfaceCssVars,
+  getWebsiteEmbedTheme,
   normalizeWebsiteEmbedAvatarUrl,
   parseWebsiteEmbedCopyOverridesParam,
   parseWebsiteEmbedThemeOverridesParam,
@@ -25,14 +27,27 @@ export default async function PublicChatPage({
   const { locale, avatar, avatarUrl, copy, theme } = await searchParams
   const localeOverride = resolveEmbedLocaleSearchParam(locale)
   const resolvedAvatarUrl = normalizeWebsiteEmbedAvatarUrl(firstSearchValue(avatarUrl) ?? firstSearchValue(avatar))
+  const themeOverrides = parseWebsiteEmbedThemeOverridesParam(theme)
+  const resolvedTheme = getWebsiteEmbedTheme(themeOverrides)
 
   return (
-    <PublicChatShell
-      token={token}
-      localeOverride={localeOverride}
-      avatarUrl={resolvedAvatarUrl}
-      copyOverrides={parseWebsiteEmbedCopyOverridesParam(copy)}
-      themeOverrides={parseWebsiteEmbedThemeOverridesParam(theme)}
-    />
+    <div
+      className="flex h-full w-full items-center justify-center"
+      style={{
+        ...buildWebsiteEmbedSurfaceCssVars(resolvedTheme),
+        background: resolvedTheme.panelBackground,
+        color: resolvedTheme.panelForeground,
+      }}
+    >
+      <div className="flex h-full w-full max-w-4xl flex-col overflow-hidden">
+        <PublicChatShell
+          token={token}
+          localeOverride={localeOverride}
+          avatarUrl={resolvedAvatarUrl}
+          copyOverrides={parseWebsiteEmbedCopyOverridesParam(copy)}
+          themeOverrides={themeOverrides}
+        />
+      </div>
+    </div>
   )
 }

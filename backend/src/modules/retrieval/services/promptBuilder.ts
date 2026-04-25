@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import {
   buildPublicAssistantIdentityLines,
   type AssistantIdentityPromptInput,
@@ -42,6 +42,7 @@ export class PromptBuilder {
       .join("\n\n");
     const customInstructionBlock = this.renderCustomInstruction(input.settings.customInstruction);
     const assistantIdentityBlock = this.renderAssistantIdentity(input.settings.assistantIdentity);
+    const responseFormattingGuidelinesBlock = this.renderResponseFormattingGuidelines();
     const conversationModeInstructionBlock = this.conversationModeInstructionBuilder.build({
       conversationMode: input.settings.conversationMode ?? "guided",
     });
@@ -50,6 +51,9 @@ export class PromptBuilder {
       prompt: renderPromptTemplate("retrieval/answer.md", {
         assistant_identity_block: assistantIdentityBlock ? `${assistantIdentityBlock}\n` : "",
         custom_instruction_block: customInstructionBlock ? `${customInstructionBlock}\n` : "",
+        response_formatting_guidelines_block: responseFormattingGuidelinesBlock
+          ? `${responseFormattingGuidelinesBlock}\n`
+          : "",
         conversation_mode_instruction_block: `${conversationModeInstructionBlock}\n`,
         response_language_instruction: this.renderResponseLanguageInstruction(
           input.settings.responseLanguagePolicy ?? "match_user_question",
@@ -89,6 +93,11 @@ export class PromptBuilder {
       ...identityLines,
       "When the user asks about your name, role, or what you do, answer consistently with this identity.",
     ].join("\n");
+  }
+
+  private renderResponseFormattingGuidelines(): string | null {
+    const guidelines = loadPromptTemplate("chat/response-formatting-guidelines.md");
+    return guidelines.trim() ? `Response formatting guidance:\n${guidelines}` : null;
   }
 
   private renderResponseLanguageInstruction(responseLanguagePolicy: ResponseLanguagePolicy): string {

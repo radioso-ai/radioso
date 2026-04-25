@@ -1105,10 +1105,10 @@ describe("chat retrieval domain", () => {
     expect(result.prompt).toContain("Conversation mode: guided.");
     expect(result.prompt).toContain("Answer the user's question directly and concisely.");
     expect(result.prompt).toContain(
-      "Do not append suggested next questions or adjacent directions in the answer body; those are surfaced separately when available.",
+      "Do not append generic suggested-question lists in the answer body; one brief closing invitation is allowed when it fits naturally.",
     );
     expect(result.prompt).toContain(
-      'Do not append suggested next questions, adjacent topics, or "you could also ask" lists after the answer; those are surfaced separately in the product UI.',
+      'Do not append generic "you could also ask" lists after the answer. When relevant links are available and grounded in the retrieved context, include a short closing invitation and either a natural inline link or a compact `### Learn More` link section.',
     );
   });
 
@@ -1126,7 +1126,7 @@ describe("chat retrieval domain", () => {
     expect(result.prompt).toContain("Conversation mode: exploratory.");
     expect(result.prompt).toContain("Answer the user's question directly, and stay grounded in the retrieved material.");
     expect(result.prompt).toContain(
-      "Do not append suggested next questions or adjacent directions in the answer body; those are surfaced separately when available.",
+      "Do not append generic suggested-question lists in the answer body; one brief closing invitation is allowed when it fits naturally.",
     );
   });
 });

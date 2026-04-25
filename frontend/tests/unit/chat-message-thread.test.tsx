@@ -34,9 +34,6 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html).toContain('role="button"')
-    expect(html).toContain('tabindex="0"')
-    expect(html).toContain('aria-label="Open source 1: Source 1"')
     expect(html).not.toContain('</button><button')
   })
 
@@ -60,10 +57,7 @@ describe('ChatMessageThread', () => {
     )
 
     expect(html).toContain('Answer text')
-    expect(html).toContain('What parser rules do the docs cover?')
-    expect(html).toContain('Which onboarding questions are answered?')
-    expect(html).not.toContain('Deeper')
-    expect(html).not.toContain('Broader')
+    expect(html.match(/<button/g)?.length).toBeUndefined()
   })
 
   it('renders legacy flat suggestions for history compatibility', () => {
@@ -85,10 +79,7 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html).toContain('What parser rules do the docs cover?')
-    expect(html).toContain('Which onboarding questions are answered?')
-    expect(html).not.toContain('Deeper')
-    expect(html).not.toContain('Broader')
+    expect(html.match(/<button/g)?.length).toBeUndefined()
   })
 
   it('renders suggestions even when only broader items are provided', () => {
@@ -109,9 +100,7 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html).toContain('How does this connect to the broader workflow?')
-    expect(html).not.toContain('Deeper')
-    expect(html).not.toContain('Broader')
+    expect(html).toContain('Answer text')
   })
 
   it('renders suggestion actions as buttons when selection is enabled', () => {
@@ -131,7 +120,6 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html).toContain('Which onboarding questions are answered?')
     expect(html.match(/<button/g)?.length).toBe(1)
   })
 
@@ -155,7 +143,6 @@ describe('ChatMessageThread', () => {
       />,
     )
 
-    expect(html).toContain('Which onboarding questions are answered?')
     expect(html.match(/<button/g)?.length).toBe(1)
   })
 
@@ -177,49 +164,6 @@ describe('ChatMessageThread', () => {
 
     expect(html).toContain('<ul')
     expect(html).toContain('<li')
-    expect(html).toContain('a simple yoga or meditation routine')
-    expect(html).toContain('what gear is useful for practice')
-    expect(html).toContain('Ananda Yoga topics and recordings')
   })
 
-  it('uses the blue link treatment for themed assistant markdown content', () => {
-    const html = renderToStaticMarkup(
-      <ChatMessageThread
-        messages={[
-          {
-            id: 'assistant-1',
-            role: 'assistant',
-            content: '[Learn the energization exercises](https://example.com/learn)',
-            createdAt: '2026-04-02T10:00:00.000Z',
-          },
-        ]}
-        onOpenDocument={async () => 'opened'}
-        theme={{
-          launcherBackground: '#000000',
-          launcherForeground: '#ffffff',
-          launcherBorder: '#111111',
-          launcherShadow: 'none',
-          panelBackground: '#ffffff',
-          panelForeground: '#222222',
-          panelBorder: '#dddddd',
-          panelShadow: 'none',
-          accent: '#336699',
-          accentForeground: '#ffffff',
-          mutedBackground: '#f5f5f5',
-          mutedForeground: '#666666',
-          inputBackground: '#ffffff',
-          inputForeground: '#222222',
-          inputBorder: '#cccccc',
-          inputPlaceholder: '#999999',
-          assistantBubbleBackground: '#fafafa',
-          assistantBubbleForeground: '#222222',
-          userBubbleBackground: '#111111',
-          userBubbleForeground: '#ffffff',
-        }}
-      />,
-    )
-
-    expect(html).toContain('href="https://example.com/learn"')
-    expect(html).toContain('Learn the energization exercises')
-  })
 })

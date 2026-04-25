@@ -44,9 +44,9 @@ Avoid turning every answer into a bulleted outline when prose would read more na
 
 Use `**bold**` only for genuinely key ideas.
 
-- `**Kriya Yoga**`
-- `**inner stillness**`
-- `**daily practice**`
+- `**key requirement**`
+- `**next step**`
+- `**supporting evidence**`
 
 Do not bold entire clauses.
 Do not bold more than 2-3 phrases per response.
@@ -68,19 +68,19 @@ These are strong preferences:
 
 Inline links should attach to a specific noun phrase, not interrupt sentence flow.
 
-Good: "You can begin with the [Energization Exercises](...)."
-Bad: "You can begin with [the energization exercises ebook](...) and [the intensive course on Yogananda's Energization Exercises](...)."
+Good: "You can begin with the [Getting Started Guide](...)."
+Bad: "You can begin with [this guide](...) and [this other page](...)."
 
 ## Link Label Style
 
 Prefer clean, descriptive, capitalized labels.
 
-- `[Energization Exercises Ebook](...)`
-- `[Kriya Yoga Overview](...)`
+- `[Getting Started Guide](...)`
+- `[API Reference](...)`
 
 Avoid lowercase, sentence-fragment, or generic labels such as:
 
-- `[the energization exercises ebook](...)`
+- `[the getting started guide](...)`
 - `[click here to learn more](...)`
 
 Labels should be scan-friendly noun phrases.
@@ -99,11 +99,11 @@ Do not end with a cluttered paragraph that mixes guidance and multiple links.
 
 Example:
 
-If you'd like, I can also guide you through Kriya Yoga, meditation, or how to begin a daily practice.
+If you'd like, I can also help compare the options, summarize the tradeoffs, or suggest a practical next step.
 
 ### Learn More
-- [Energization Exercises](...)
-- [Follow-Along Practice](...)
+- [Getting Started Guide](...)
+- [Related Documentation](...)
 
 ## Non-Negotiable Rules
 

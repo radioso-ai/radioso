@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 
 import {
   Pagination,
@@ -9,6 +9,14 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination'
+
+const shouldInterceptPaginationClick = (event: MouseEvent<HTMLAnchorElement>) =>
+  event.button === 0 &&
+  !event.defaultPrevented &&
+  !event.metaKey &&
+  !event.ctrlKey &&
+  !event.shiftKey &&
+  !event.altKey
 
 export function DashboardPagination({
   summary,
@@ -49,11 +57,13 @@ export function DashboardPagination({
             <PaginationPrevious
               href={previousHref}
               onClick={(event) => {
-                if (previousDisabled || onPrevious) {
+                if (previousDisabled) {
                   event.preventDefault()
+                  return
                 }
 
-                if (!previousDisabled) {
+                if (onPrevious && shouldInterceptPaginationClick(event)) {
+                  event.preventDefault()
                   onPrevious?.()
                 }
               }}
@@ -70,11 +80,13 @@ export function DashboardPagination({
             <PaginationNext
               href={nextHref}
               onClick={(event) => {
-                if (nextDisabled || onNext) {
+                if (nextDisabled) {
                   event.preventDefault()
+                  return
                 }
 
-                if (!nextDisabled) {
+                if (onNext && shouldInterceptPaginationClick(event)) {
+                  event.preventDefault()
                   onNext?.()
                 }
               }}

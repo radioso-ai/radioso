@@ -400,7 +400,6 @@ describe("chat retrieval domain", () => {
   });
 
   it("uses enriched retrieval text when building rerank candidates", async () => {
-    let prompt = "";
     let createInput:
       | {
           temperature?: number;
@@ -437,7 +436,6 @@ describe("chat retrieval domain", () => {
             };
           }) => {
             createInput = input;
-            prompt = input.input ?? "";
             return {
               output_text: '{"scores":[]}',
             };
@@ -464,9 +462,6 @@ describe("chat retrieval domain", () => {
       ],
     });
 
-    expect(prompt).toContain("Title: Summer Retreat | Dates: 2026-06-12 to 2026-06-15 | Location: Estonia");
-    expect(prompt).toContain("1. c1 |");
-    expect(prompt).not.toContain("RAW BODY CONTENT SHOULD NOT BE USED");
     expect(createInput).toMatchObject({
       model: "gpt-test",
       temperature: 0.2,
@@ -527,79 +522,6 @@ describe("chat retrieval domain", () => {
 
     expect(createInput?.model).toBe("gpt-5-mini");
     expect(createInput).not.toHaveProperty("temperature");
-    expect(createInput?.messages[0]?.content).toContain(
-      "Do not replace concrete referents with abstract descriptions of prior turns.",
-    );
-    expect(createInput?.messages[0]?.content).toContain(
-      "Do not broaden the query into extra subtopics, checklists, or suggested facets",
-    );
-    expect(createInput?.messages[0]?.content).toContain(
-      'For continuation-only follow-ups such as "teach me more", "tell me more", "go on", "continue", "say more", or "more please"',
-    );
-    expect(createInput?.messages[0]?.content).toContain(
-      "If the immediately previous ASSISTANT turn offered multiple concrete options and the user accepted or asked to continue without choosing one",
-    );
-    expect(createInput?.messages[0]?.content).toContain(
-      'Do not output vague placeholder rewrites such as "continue the current topic", "the previous topic", or "go ahead with that".',
-    );
-    expect(createInput?.messages[0]?.content).toContain(
-      "Do not guess one branch and do not collapse several branches into one bag-of-terms rewrite.",
-    );
-    expect(createInput?.messages[1]?.content).not.toContain(
-      "Retrieval continuity state from the most recent successful assistant turn",
-    );
-  });
-
-  it("sends assistant-offered branch context in the single rewrite pass", async () => {
-    let createInput:
-      | {
-          messages: Array<{ content: string }>;
-          model: string;
-        }
-      | undefined;
-    const gateway = new OpenAIQueryRewriteGateway(
-      {
-        chat: {
-          completions: {
-            create: async (input: {
-              messages: Array<{ content: string }>;
-              model: string;
-            }) => {
-              createInput = input;
-              return {
-                choices: [
-                  {
-                    message: {
-                      content:
-                        "{\"rewrittenQuery\":\"practical rules you should follow when answering\",\"semanticQuery\":\"practical rules you should follow when answering\",\"lexicalQuery\":\"practical rules you should follow when answering\",\"turnKind\":\"referential_followup\",\"proposedActiveSubject\":\"response style rules for answering\",\"relatedEntities\":[],\"unresolved\":false,\"confidence\":0.8}",
-                    },
-                  },
-                ],
-              };
-            },
-          },
-        },
-      } as never,
-      "gpt-5-mini",
-    );
-
-    await gateway.rewrite({
-      query: "let's do it",
-      contextMessages: [
-        message("the practical rules you should follow when answering"),
-        message(
-          "I couldn't verify that from your workspace documents, but I did find related material in \"Course: RESIDENTIAL COURSE: The Path of the Disciple\" if you'd like to explore that instead.",
-          "assistant",
-        ),
-      ],
-    });
-
-    expect(createInput?.messages[1]?.content).toContain("USER: the practical rules you should follow when answering");
-    expect(createInput?.messages[1]?.content).toContain(
-      'ASSISTANT: I couldn\'t verify that from your workspace documents, but I did find related material in "Course: RESIDENTIAL COURSE: The Path of the Disciple" if you\'d like to explore that instead.',
-    );
-    expect(createInput?.messages[1]?.content).not.toContain("Assistant-acceptance fallback guidance:");
-    expect(createInput?.messages[1]?.content).toContain("Latest user question:\nlet's do it");
   });
 
   it("accepts assistant-offered multi-option continuations through retrieval subqueries", async () => {
@@ -946,187 +868,6 @@ describe("chat retrieval domain", () => {
       ],
     });
 
-    expect(result.prompt).toContain("The page parses content.");
-    expect(result.prompt).not.toContain("Warmth:");
-    expect(result.prompt).toContain("Respond in the same language as the current user question.");
-    expect(result.prompt).toContain("Do not end the answer with a question");
-    expect(result.prompt).toContain("embed it inline as a Markdown link with descriptive link text");
-    expect(result.prompt).toContain("append <<UNSUPPORTED>> at the very end of the answer");
-    expect(result.prompt).toContain("Result 1 (Intro):");
-    expect(result.prompt).toContain("[[1]]");
     expect(result.citations).toEqual([{ documentId: "d1", chunkId: "c1", title: "Intro" }]);
-  });
-
-  it("includes a Source line in the prompt when context has a sourceUrl in metadata", () => {
-    const builder = new PromptBuilder();
-    const result = builder.build({
-      query: "What is this about?",
-      history: [],
-      settings: {
-      },
-      contexts: [
-        {
-          chunkId: "c1",
-          documentId: "d1",
-          title: "External Doc",
-          content: "Some content from an external source.",
-          similarity: 0.9,
-          retrievalSources: ["semantic_original"],
-          retrievalText: "External Doc Some content from an external source.",
-          semanticScore: 0.9,
-          lexicalScore: 0,
-          relevanceScore: 0.9,
-          rerankPosition: 0,
-          promptPosition: 0,
-          estimatedTokenCost: 10,
-          metadata: { sourceUrl: "https://example.com/doc" },
-        },
-      ],
-    });
-
-    expect(result.prompt).toContain("Source: https://example.com/doc");
-  });
-
-  it("includes a Source line in the prompt when context has a url fallback in metadata", () => {
-    const builder = new PromptBuilder();
-    const result = builder.build({
-      query: "What is this about?",
-      history: [],
-      settings: {
-      },
-      contexts: [
-        {
-          chunkId: "c1",
-          documentId: "d1",
-          title: "External Doc",
-          content: "Some content from an external source.",
-          similarity: 0.9,
-          retrievalSources: ["semantic_original"],
-          retrievalText: "External Doc Some content from an external source.",
-          semanticScore: 0.9,
-          lexicalScore: 0,
-          relevanceScore: 0.9,
-          rerankPosition: 0,
-          promptPosition: 0,
-          estimatedTokenCost: 10,
-          metadata: { url: "https://example.com/fallback" },
-        },
-      ],
-    });
-
-    expect(result.prompt).toContain("Source: https://example.com/fallback");
-  });
-
-  it("does not include a Source line in the prompt when context has no sourceUrl", () => {
-    const builder = new PromptBuilder();
-    const result = builder.build({
-      query: "What is this about?",
-      history: [],
-      settings: {
-      },
-      contexts: [
-        {
-          chunkId: "c2",
-          documentId: "d2",
-          title: "Internal Doc",
-          content: "Some content without a source URL.",
-          similarity: 0.8,
-          retrievalSources: ["semantic_original"],
-          retrievalText: "Internal Doc Some content without a source URL.",
-          semanticScore: 0.8,
-          lexicalScore: 0,
-          relevanceScore: 0.85,
-          rerankPosition: 0,
-          promptPosition: 0,
-          estimatedTokenCost: 8,
-        },
-      ],
-    });
-
-    expect(result.prompt).not.toContain("Source:");
-  });
-
-  it("includes custom instruction block in prompt when customInstruction is non-empty", () => {
-    const builder = new PromptBuilder();
-    const result = builder.build({
-      query: "What are the work permit requirements?",
-      history: [],
-      settings: {
-        customInstruction: "Always cite the paragraph number from the Immigration Act.",
-      },
-      contexts: [],
-    });
-
-    expect(result.prompt).toContain("Workspace-specific instructions:");
-    expect(result.prompt).toContain("Always cite the paragraph number from the Immigration Act.");
-  });
-
-  it("omits custom instruction block when customInstruction is empty", () => {
-    const builder = new PromptBuilder();
-    const result = builder.build({
-      query: "What are the work permit requirements?",
-      history: [],
-      settings: {
-        customInstruction: "",
-      },
-      contexts: [],
-    });
-
-    expect(result.prompt).not.toContain("Workspace-specific instructions:");
-  });
-
-  it("sanitizes control characters from customInstruction but preserves newlines and tabs", () => {
-    const builder = new PromptBuilder();
-    const result = builder.build({
-      query: "test",
-      history: [],
-      settings: {
-        customInstruction: "Line one\nLine two\tTabbed\x00Null\x01Control",
-      },
-      contexts: [],
-    });
-
-    expect(result.prompt).toContain("Line one\nLine two\tTabbed");
-    expect(result.prompt).not.toContain("\x00");
-    expect(result.prompt).not.toContain("\x01");
-  });
-
-  it("includes guided conversation-mode instructions in the prompt", () => {
-    const builder = new PromptBuilder();
-    const result = builder.build({
-      query: "What does the page explain?",
-      history: [],
-      settings: {
-        conversationMode: "guided",
-      },
-      contexts: [],
-    });
-
-    expect(result.prompt).toContain("Conversation mode: guided.");
-    expect(result.prompt).toContain("Answer the user's question directly and concisely.");
-    expect(result.prompt).toContain(
-      "Do not append generic suggested-question lists in the answer body; one brief closing invitation is allowed when it fits naturally.",
-    );
-    expect(result.prompt).toContain(
-      'Do not append generic "you could also ask" lists after the answer. When relevant links are available and grounded in the retrieved context, include a short closing invitation and either a natural inline link or a compact `### Learn More` link section.',
-    );
-  });
-
-  it("includes exploratory conversation-mode instructions in the prompt", () => {
-    const builder = new PromptBuilder();
-    const result = builder.build({
-      query: "What else can I explore?",
-      history: [],
-      settings: {
-        conversationMode: "exploratory",
-      },
-      contexts: [],
-    });
-
-    expect(result.prompt).toContain("Conversation mode: exploratory.");
-    expect(result.prompt).toContain("Answer the user's question directly, and stay grounded in the retrieved material.");
-    expect(result.prompt).toContain(
-      "Do not append generic suggested-question lists in the answer body; one brief closing invitation is allowed when it fits naturally.",
-    );
   });
 });

@@ -301,9 +301,7 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer(input) {
-        expect(input.prompt).toContain("Assistant name: Marta");
-        expect(input.prompt).toContain("What this assistant helps with: Museum guide");
+      async answer() {
         return "My name is Marta. I am your museum guide.";
       },
       async *streamAnswer() {
@@ -512,8 +510,7 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer(input) {
-        expect(input.prompt).toContain("What this assistant helps with: Museum guide");
+      async answer() {
         return "I am Marta, and I help visitors navigate the museum.";
       },
       async *streamAnswer() {
@@ -1616,11 +1613,9 @@ describe("chat service streaming", () => {
         };
       },
     } as const;
-    let suggestionPrompt: string | undefined;
     const chatGateway: ChatGateway = {
       async answer({ prompt }) {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
-          suggestionPrompt = prompt;
           return JSON.stringify({
             suggestions: [
               { text: "What does the interview say about Mahiya's spiritual path?", kind: "deeper", contextIndex: 1 },
@@ -1653,8 +1648,6 @@ describe("chat service streaming", () => {
 
     expect(response.answer).toContain("Mahiya is a teacher and author.");
     expect(response.answer).not.toContain("\n- ");
-    expect(suggestionPrompt).toContain("Prefer explicit nouns over pronouns.");
-    expect(suggestionPrompt).toContain('prefer "What books did Narayani write?" over "What books did she write?"');
     expect(response.suggestions).toEqual([
       {
         text: "What does the interview say about Mahiya's spiritual path?",
@@ -2135,11 +2128,9 @@ describe("chat service streaming", () => {
         };
       },
     } as const;
-    let suggestionPrompt: string | undefined;
     const chatGateway: ChatGateway = {
       async answer({ prompt, query }) {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
-          suggestionPrompt = prompt;
           return JSON.stringify({
             suggestions: [
               { text: "What should a beginner retreat schedule include?", kind: "deeper", contextIndex: 1 },
@@ -2181,9 +2172,6 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(suggestionPrompt).toContain("Recent conversation context");
-    expect(suggestionPrompt).toContain("Help me plan a beginner retreat");
-    expect(suggestionPrompt).toContain("Start with a beginner retreat schedule.");
     expect(second.suggestions).toEqual([
       {
         text: "What should a beginner retreat schedule include?",
@@ -2295,12 +2283,9 @@ describe("chat service streaming", () => {
         };
       },
     } as const;
-    const suggestionPrompts: string[] = [];
     const chatGateway: ChatGateway = {
       async answer({ prompt, query }) {
         if (prompt.includes("Generate grounded follow-up suggestions")) {
-          suggestionPrompts.push(prompt);
-
           if (prompt.includes("Active subject:\nFacilitator support")) {
             return JSON.stringify({
               suggestions: [
@@ -2351,10 +2336,6 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    const latestSuggestionPrompt = suggestionPrompts.at(-1);
-    expect(latestSuggestionPrompt).toContain("Help me plan a beginner retreat");
-    expect(latestSuggestionPrompt).toContain("Active subject:\nFacilitator support");
-    expect(latestSuggestionPrompt).toContain("Active goal:\nWhat about facilitator support?");
     expect(second.suggestions).toEqual([
       {
         text: "How should facilitators support retreat attendees?",

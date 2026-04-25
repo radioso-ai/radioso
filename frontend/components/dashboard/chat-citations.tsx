@@ -4,8 +4,6 @@ import { Fragment, type CSSProperties, type ReactNode, useState } from 'react'
 import { FileText } from 'lucide-react'
 
 const URL_REGEX = /https?:\/\/[^\s<>)"']+/g
-const MESSAGE_LINK_COLOR = '#5096e7'
-const MESSAGE_LINK_HOVER_COLOR = '#1e3df1'
 
 export function linkifyText(text: string): ReactNode[] {
   const parts: ReactNode[] = []
@@ -167,8 +165,8 @@ export function AssistantMessageContent({
   const segments = getRenderableSegments(content, answerSegments)
   const contentThemeVars = theme
     ? ({
-        '--message-link-fg': MESSAGE_LINK_COLOR,
-        '--message-link-hover-fg': MESSAGE_LINK_HOVER_COLOR,
+        '--message-link-fg': theme.accent,
+        '--message-link-hover-fg': theme.accent,
       } as CSSProperties)
     : undefined
 

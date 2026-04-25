@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { ChatRetrievalInfo } from '@/components/dashboard/chat-retrieval-info'
+import { ChatRetrievalTraceDetail } from '@/components/dashboard/chat-retrieval-trace-detail'
 import { ChatRetrievalTraceGraph } from '@/components/dashboard/chat-retrieval-trace-graph'
 import type { RetrievalInfo, RetrievalTrace } from '@/lib/api'
 
@@ -62,6 +63,20 @@ const retrievalTrace: RetrievalTrace = {
       },
     },
     {
+      stageId: 'answer',
+      kind: 'answer_outcome',
+      label: 'Answer outcome',
+      status: 'applied',
+      outputs: {
+        outcome: 'grounded_success',
+        validationRan: true,
+        supportedSegmentCount: 2,
+        unsupportedSegmentCount: 0,
+        hiddenSupportUsed: true,
+        hiddenSupportKindsUsed: ['assistant_name', 'assistant_role'],
+      },
+    },
+    {
       stageId: 'preparation',
       kind: 'candidate_preparation',
       label: 'Candidate preparation',
@@ -100,5 +115,23 @@ describe('retrieval diagnostics surfaces', () => {
 
     expect(html).toContain('Trigger analysis')
     expect(html).toContain('1 matched rule')
+  })
+
+  it('shows hidden support usage in the answer stage diagnostics', () => {
+    const graphHtml = renderToStaticMarkup(
+      <ChatRetrievalTraceGraph
+        retrievalTrace={retrievalTrace}
+        selectedStageId="answer"
+        onSelectStage={() => undefined}
+      />,
+    )
+    const detailHtml = renderToStaticMarkup(
+      <ChatRetrievalTraceDetail retrievalTrace={retrievalTrace} selectedStageId="answer" />,
+    )
+
+    expect(graphHtml).toContain('hidden support')
+    expect(detailHtml).toContain('Hidden support used')
+    expect(detailHtml).toContain('assistant_name')
+    expect(detailHtml).toContain('assistant_role')
   })
 })

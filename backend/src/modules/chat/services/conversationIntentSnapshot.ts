@@ -26,38 +26,10 @@ const clampExcerpt = (value: string, maxLength: number): string => {
   return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
 };
 
-const isContextDependentQuery = (value: string): boolean =>
-  /^(and|also|next|what next|what about|how about|what should i|should i|then|after that)\b/i.test(normalizeWhitespace(value));
-
-const extractPivotSubject = (value: string): string | undefined => {
-  const normalized = normalizeWhitespace(value);
-  if (!normalized) {
-    return undefined;
-  }
-
-  const patterns = [
-    /^(?:and\s+)?what about\s+(.+)$/i,
-    /^(?:and\s+)?how about\s+(.+)$/i,
-    /^(?:and\s+)?what should i know about\s+(.+)$/i,
-    /^(?:and\s+)?tell me about\s+(.+)$/i,
-    /^(?:and\s+)?for\s+(.+)$/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = normalized.match(pattern);
-    const candidate = match?.[1]
-      ?.replace(/[?.!,:;]+$/g, "")
-      .trim();
-    if (candidate) {
-      return candidate;
-    }
-  }
-
-  return undefined;
+const resolveContinuitySubject = (state?: RewriteContinuityState): string | undefined => {
+  const normalized = normalizeWhitespace(state?.activeSubject ?? state?.groundedTitles[0] ?? "");
+  return normalized.length > 0 ? normalized : undefined;
 };
-
-const resolveContinuitySubject = (state?: RewriteContinuityState): string | undefined =>
-  normalizeWhitespace(state?.activeSubject ?? state?.groundedTitles[0] ?? "");
 
 const resolveActiveSubject = (input: {
   latestQuery: string;
@@ -65,20 +37,14 @@ const resolveActiveSubject = (input: {
   priorRewriteContinuityState?: RewriteContinuityState;
   rewriteProposal?: StructuredRewriteResult;
 }): string | undefined => {
-  const pivotSubject = extractPivotSubject(input.latestQuery);
   const rewriteTurnKind = input.rewriteProposal?.turnKind;
   const continuitySubject = resolveContinuitySubject(input.priorRewriteContinuityState);
 
   if (rewriteTurnKind && EXPLICIT_RECENTER_KINDS.has(rewriteTurnKind)) {
     return normalizeWhitespace(
       input.rewriteProposal?.proposedActiveSubject
-        ?? pivotSubject
         ?? input.latestQuery,
     );
-  }
-
-  if (pivotSubject) {
-    return normalizeWhitespace(pivotSubject);
   }
 
   if (rewriteTurnKind && CONTINUITY_TURN_KINDS.has(rewriteTurnKind) && continuitySubject) {
@@ -107,11 +73,7 @@ const resolveActiveGoal = (input: {
     return normalizedLatestQuery;
   }
 
-  if (extractPivotSubject(normalizedLatestQuery)) {
-    return normalizedLatestQuery;
-  }
-
-  if (isContextDependentQuery(normalizedLatestQuery) && continuitySubject) {
+  if (rewriteTurnKind && CONTINUITY_TURN_KINDS.has(rewriteTurnKind) && continuitySubject) {
     return `${continuitySubject}: ${normalizedLatestQuery}`;
   }
 

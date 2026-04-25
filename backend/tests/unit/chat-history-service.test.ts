@@ -117,6 +117,8 @@ describe("chat history service", () => {
           supportedSegmentCount: 1,
           nonSubstantiveSegmentCount: 1,
           answerSupportPolicy: "strict",
+          hiddenSupportUsed: true,
+          hiddenSupportKindsUsed: ["assistant_name", "assistant_role"],
           segmentResults: [
             {
               originalText: "It answers questions.",
@@ -192,6 +194,8 @@ describe("chat history service", () => {
       supportedSegmentCount: 1,
       nonSubstantiveSegmentCount: 1,
       answerSupportPolicy: "strict",
+      hiddenSupportUsed: true,
+      hiddenSupportKindsUsed: ["assistant_name", "assistant_role"],
       segmentResults: [
         {
           originalText: "It answers questions.",

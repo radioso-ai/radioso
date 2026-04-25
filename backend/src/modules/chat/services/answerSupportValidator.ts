@@ -2,62 +2,14 @@ import type { AnswerSegment, CitationEvidence } from "./answerPresentationServic
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { shouldPreserveUnsupportedSegments, shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
 import {
+  type HiddenSupportEvidence,
   type ValidatedAnswer,
   VALIDATION_DISPOSITION,
 } from "./answerSupportValidationTypes.js";
 import type { GroundedMissResponseComposer } from "./groundedMissResponseComposer.js";
 
-const NON_SUBSTANTIVE_PHRASES = new Set([
-  "hello",
-  "hi",
-  "hey",
-  "sure",
-  "of course",
-  "certainly",
-  "absolutely",
-  "thanks",
-  "thank you",
-  "glad to help",
-  "happy to help",
-  "no problem",
-  "you are welcome",
-  "youre welcome",
-  "okay",
-  "ok",
-]);
-
-const LINK_SCAFFOLD_WORDS = new Set([
-  "you",
-  "can",
-  "read",
-  "more",
-  "here",
-  "and",
-  "or",
-  "see",
-  "source",
-  "sources",
-  "link",
-  "links",
-  "at",
-  "full",
-  "article",
-  "articles",
-  "visit",
-  "open",
-  "details",
-  "learn",
-  "about",
-  "the",
-]);
-
 const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
-
-const normalizeForMeaningCheck = (value: string): string =>
-  value
-    .replace(/[^a-z0-9]+/gi, " ")
-    .trim()
-    .toLowerCase();
+const sentenceSegmenter = new Intl.Segmenter(undefined, { granularity: "sentence" });
 
 const hasWordLikeContent = (value: string): boolean => {
   for (const segment of wordSegmenter.segment(value)) {
@@ -87,7 +39,7 @@ const extractSignificantTerms = (value: string): string[] => {
   return [...new Set(terms)];
 };
 
-const extractWordTokens = (value: string): string[] => {
+const extractNormalizedWordTokens = (value: string): string[] => {
   const tokens: string[] = [];
 
   for (const segment of wordSegmenter.segment(value.normalize("NFKC").toLowerCase())) {
@@ -96,7 +48,7 @@ const extractWordTokens = (value: string): string[] => {
     }
 
     const normalized = segment.segment.replace(/[^\p{L}\p{N}]+/gu, "");
-    if (!normalized) {
+    if (normalized.length === 0) {
       continue;
     }
 
@@ -106,13 +58,68 @@ const extractWordTokens = (value: string): string[] => {
   return tokens;
 };
 
-const isNonSubstantiveText = (value: string): boolean => {
-  if (!hasWordLikeContent(value)) {
-    return true;
+const containsTokenSequence = (tokens: string[], sequence: string[]): boolean => {
+  if (sequence.length === 0 || sequence.length > tokens.length) {
+    return false;
   }
 
-  const normalized = normalizeForMeaningCheck(value);
-  return NON_SUBSTANTIVE_PHRASES.has(normalized);
+  for (let index = 0; index <= tokens.length - sequence.length; index += 1) {
+    if (sequence.every((token, offset) => tokens[index + offset] === token)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const countWordLikeTokens = (value: string): number => {
+  let count = 0;
+
+  for (const segment of wordSegmenter.segment(value)) {
+    if (segment.isWordLike) {
+      count += 1;
+    }
+  }
+
+  return count;
+};
+
+const isNonSubstantiveText = (value: string): boolean => {
+  return !hasWordLikeContent(value);
+};
+
+const splitIntoSentenceLikeSegments = (value: string): string[] => {
+  const rawSegments = [...sentenceSegmenter.segment(value)]
+    .map((segment) => segment.segment)
+    .filter((segment) => segment.length > 0);
+
+  if (rawSegments.length <= 1) {
+    return [value];
+  }
+
+  const segments: string[] = [];
+  let carry = "";
+
+  for (const segment of rawSegments) {
+    if (!hasWordLikeContent(segment)) {
+      carry += segment;
+      continue;
+    }
+
+    segments.push(`${carry}${segment}`);
+    carry = "";
+  }
+
+  if (carry.length > 0) {
+    if (segments.length === 0) {
+      segments.push(carry);
+    } else {
+      segments[segments.length - 1] += carry;
+    }
+  }
+
+  const rebuilt = segments.join("");
+  return rebuilt === value ? segments : [value];
 };
 
 const preservePrefix = (value: string): string => value.match(/^[\s,.;:!?()/-]*/)?.[0] ?? "";
@@ -165,9 +172,66 @@ const stripLinksAndUrls = (value: string): string =>
     .replace(/\[[^\]]+\]\(\s*\)/g, "")
     .trim();
 
-const isLinkScaffoldingText = (value: string): boolean => {
-  const tokens = extractWordTokens(value);
-  return tokens.length === 0 || tokens.every((token) => LINK_SCAFFOLD_WORDS.has(token));
+const sameCitationIndices = (left?: number[], right?: number[]): boolean => {
+  if (!left || !right || left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+};
+
+const hasParagraphBreak = (text: string): boolean => /\r?\n\r?\n/.test(text);
+
+const collectLinkSpans = (value: string): Array<{ start: number; end: number }> => {
+  const spans: Array<{ start: number; end: number }> = [];
+  const markdownLinkPattern = new RegExp(MARKDOWN_LINK_URL_PATTERN.source, "gi");
+
+  for (const match of value.matchAll(markdownLinkPattern)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    spans.push({
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+
+  const bareUrlPattern = new RegExp(BARE_URL_PATTERN.source, "gi");
+  for (const match of value.matchAll(bareUrlPattern)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    const start = match.index;
+    if (spans.some((span) => start >= span.start && start < span.end)) {
+      continue;
+    }
+
+    spans.push({
+      start,
+      end: start + trimBareUrlPunctuation(match[0]).length,
+    });
+  }
+
+  return spans.sort((left, right) => left.start - right.start);
+};
+
+const extractSupportedLinkText = (value: string): string | null => {
+  const linkSpans = collectLinkSpans(value);
+  if (linkSpans.length === 0) {
+    return null;
+  }
+
+  const firstSpan = linkSpans[0];
+  const lastSpan = linkSpans[linkSpans.length - 1];
+  let trailingIndex = lastSpan.end;
+
+  while (trailingIndex < value.length && /[\s,.;:!?()/-]/.test(value[trailingIndex] ?? "")) {
+    trailingIndex += 1;
+  }
+
+  return `${preservePrefix(value.slice(0, firstSpan.start))}${value.slice(firstSpan.start, trailingIndex)}`;
 };
 
 const toChatCitation = (citation: CitationEvidence) => ({
@@ -177,6 +241,23 @@ const toChatCitation = (citation: CitationEvidence) => ({
 });
 
 export class AnswerSupportValidator {
+  private expandValidationSegments(answerSegments: AnswerSegment[]): AnswerSegment[] {
+    const expandedSegments: AnswerSegment[] = [];
+
+    for (const segment of answerSegments) {
+      if ((segment.citationIndices?.length ?? 0) > 0) {
+        expandedSegments.push(segment);
+        continue;
+      }
+
+      for (const text of splitIntoSentenceLikeSegments(segment.text)) {
+        expandedSegments.push({ text });
+      }
+    }
+
+    return expandedSegments;
+  }
+
   private resolveImplicitCitationIndices(segment: AnswerSegment, citationEvidence: CitationEvidence[]): number[] | undefined {
     if ((segment.citationIndices?.length ?? 0) > 0) {
       return segment.citationIndices;
@@ -222,23 +303,21 @@ export class AnswerSupportValidator {
     return [best.index];
   }
 
-  private resolveSourceUrlCitationIndices(segment: AnswerSegment, citationEvidence: CitationEvidence[]): number[] | undefined {
+  private resolveSourceUrlCitationSupport(
+    segment: AnswerSegment,
+    citationEvidence: CitationEvidence[],
+  ): { citationIndices: number[]; supportedText: string; replacementApplied: boolean } | undefined {
     if ((segment.citationIndices?.length ?? 0) > 0) {
-      return segment.citationIndices;
+      return {
+        citationIndices: segment.citationIndices ?? [],
+        supportedText: segment.text,
+        replacementApplied: false,
+      };
     }
 
     const normalizedUrls = extractNormalizedUrls(segment.text);
 
     if (normalizedUrls.length === 0) {
-      return undefined;
-    }
-
-    const residualText = stripLinksAndUrls(segment.text);
-    if (
-      hasWordLikeContent(residualText)
-      && !isNonSubstantiveText(residualText)
-      && !isLinkScaffoldingText(residualText)
-    ) {
       return undefined;
     }
 
@@ -277,7 +356,69 @@ export class AnswerSupportValidator {
       }
     }
 
-    return matchingIndices.length > 0 ? matchingIndices : undefined;
+    const residualText = stripLinksAndUrls(segment.text);
+    if (!hasWordLikeContent(residualText) || isNonSubstantiveText(residualText)) {
+      return matchingIndices.length > 0
+        ? {
+            citationIndices: matchingIndices,
+            supportedText: segment.text,
+            replacementApplied: false,
+          }
+        : undefined;
+    }
+
+    const supportedLinkText = extractSupportedLinkText(segment.text);
+    if (!supportedLinkText) {
+      return undefined;
+    }
+
+    return {
+      citationIndices: matchingIndices,
+      supportedText: supportedLinkText,
+      replacementApplied: supportedLinkText !== segment.text,
+    };
+  }
+
+  private resolveHiddenSupportEvidenceKinds(
+    segment: AnswerSegment,
+    hiddenSupportEvidence: HiddenSupportEvidence[],
+  ): HiddenSupportEvidence["kind"][] | undefined {
+    if (hiddenSupportEvidence.length === 0) {
+      return undefined;
+    }
+
+    const segmentTokens = extractNormalizedWordTokens(segment.text);
+    if (segmentTokens.length === 0) {
+      return undefined;
+    }
+
+    const supportKinds = new Set<HiddenSupportEvidence["kind"]>();
+    const coveredTokens = new Set<string>();
+
+    for (const evidence of hiddenSupportEvidence) {
+      const evidenceTokens = extractNormalizedWordTokens(evidence.content);
+      if (evidenceTokens.length === 0) {
+        continue;
+      }
+
+      if (containsTokenSequence(segmentTokens, evidenceTokens)) {
+        supportKinds.add(evidence.kind);
+        for (const token of evidenceTokens) {
+          coveredTokens.add(token);
+        }
+      }
+    }
+
+    if (supportKinds.size === 0) {
+      return undefined;
+    }
+
+    const unsupportedTokens = segmentTokens.filter((token) => token.length > 4 && !coveredTokens.has(token));
+    if (unsupportedTokens.length > 0) {
+      return undefined;
+    }
+
+    return [...supportKinds];
   }
 
   async validate(input: {
@@ -285,6 +426,7 @@ export class AnswerSupportValidator {
     answer: string;
     answerSegments: AnswerSegment[];
     citationEvidence: CitationEvidence[];
+    hiddenSupportEvidence?: HiddenSupportEvidence[];
     retrievedContextSummaries: Array<{ title: string; content: string }>;
     citationDisplayEnabled: boolean;
     answerSupportPolicy: AnswerSupportPolicy;
@@ -293,10 +435,16 @@ export class AnswerSupportValidator {
     unsupportedNoticeMarked?: boolean;
     userExpectedLocale?: string | null;
   }): Promise<ValidatedAnswer> {
-    const segmentResults = await Promise.all(input.answerSegments.map(async (segment) => {
+    const validationSegments = this.expandValidationSegments(input.answerSegments);
+    const segmentResults = await Promise.all(validationSegments.map(async (segment) => {
+      const sourceUrlSupport = this.resolveSourceUrlCitationSupport(segment, input.citationEvidence);
       const citationIndices =
-        this.resolveSourceUrlCitationIndices(segment, input.citationEvidence)
+        sourceUrlSupport?.citationIndices
         ?? this.resolveImplicitCitationIndices(segment, input.citationEvidence);
+      const hiddenSupportKinds = this.resolveHiddenSupportEvidenceKinds(
+        segment,
+        input.hiddenSupportEvidence ?? [],
+      );
 
       if (isNonSubstantiveText(segment.text)) {
         return {
@@ -312,11 +460,22 @@ export class AnswerSupportValidator {
       if ((citationIndices?.length ?? 0) > 0) {
         return {
           originalText: segment.text,
-          text: segment.text,
+          text: sourceUrlSupport?.supportedText ?? segment.text,
           disposition: VALIDATION_DISPOSITION.SUPPORTED,
           citationIndices,
+          replacementApplied: sourceUrlSupport?.replacementApplied ?? false,
+          reason: sourceUrlSupport?.replacementApplied ? "has_support_reference_link_only" : "has_support_reference",
+        } as const;
+      }
+
+      if ((hiddenSupportKinds?.length ?? 0) > 0) {
+        const presentHiddenSupportKinds = hiddenSupportKinds ?? [];
+        return {
+          originalText: segment.text,
+          text: segment.text,
+          disposition: VALIDATION_DISPOSITION.SUPPORTED,
           replacementApplied: false,
-          reason: "has_support_reference",
+          reason: `has_hidden_support_reference:${presentHiddenSupportKinds.join(",")}`,
         } as const;
       }
 
@@ -347,6 +506,21 @@ export class AnswerSupportValidator {
         && hasWordLikeContent(segment.originalText),
     ).length;
     const nonSubstantiveSegmentCount = segmentResults.filter((segment) => segment.disposition === VALIDATION_DISPOSITION.NON_SUBSTANTIVE).length;
+    const hiddenSupportKindsUsed = [...new Set(
+      segmentResults.flatMap((segment) => {
+        if (!segment.reason.startsWith("has_hidden_support_reference:")) {
+          return [];
+        }
+
+        return segment.reason
+          .slice("has_hidden_support_reference:".length)
+          .split(",")
+          .filter((kind): kind is HiddenSupportEvidence["kind"] => (
+            kind === "assistant_name" || kind === "assistant_role"
+          ));
+      }),
+    )];
+    const hiddenSupportUsed = hiddenSupportKindsUsed.length > 0 ? true : undefined;
 
     const preserveModelUnsupportedNotice =
       Boolean(input.unsupportedNoticeMarked)
@@ -398,6 +572,8 @@ export class AnswerSupportValidator {
         supportedSegmentCount,
         nonSubstantiveSegmentCount,
         answerSupportPolicy: input.answerSupportPolicy,
+        hiddenSupportUsed,
+        hiddenSupportKindsUsed: hiddenSupportUsed ? hiddenSupportKindsUsed : undefined,
       },
       segmentResults: effectiveSegmentResults,
     };
@@ -432,6 +608,12 @@ export class AnswerSupportValidator {
           text: segment.text,
           citationIndices: segment.citationIndices,
         });
+        latestMeaningfulSegmentText = segment.text;
+        continue;
+      }
+
+      if (segment.disposition === VALIDATION_DISPOSITION.SUPPORTED) {
+        visibleSegments.push({ text: segment.text });
         latestMeaningfulSegmentText = segment.text;
         continue;
       }
@@ -492,11 +674,15 @@ export class AnswerSupportValidator {
     let omittedUnsupported = false;
 
     for (const segment of segmentResults) {
-      if (segment.disposition === VALIDATION_DISPOSITION.SUPPORTED && segment.citationIndices) {
-        visibleSegments.push({
-          text: segment.text,
-          citationIndices: segment.citationIndices,
-        });
+      if (segment.disposition === VALIDATION_DISPOSITION.SUPPORTED) {
+        visibleSegments.push(
+          segment.citationIndices
+            ? {
+                text: segment.text,
+                citationIndices: segment.citationIndices,
+              }
+            : { text: segment.text },
+        );
         omittedUnsupported = false;
         continue;
       }
@@ -575,9 +761,34 @@ export class AnswerSupportValidator {
         : { text: segment.text };
     });
 
+    const mergedSegments: AnswerSegment[] = [];
+    for (const segment of remappedSegments) {
+      const previous = mergedSegments.at(-1);
+
+      if (!segment.citationIndices || segment.citationIndices.length === 0) {
+        if (/^\s+$/.test(segment.text)) {
+          continue;
+        }
+
+        mergedSegments.push(segment);
+        continue;
+      }
+
+      if (
+        previous?.citationIndices
+        && sameCitationIndices(previous.citationIndices, segment.citationIndices)
+        && !hasParagraphBreak(segment.text)
+      ) {
+        previous.text += segment.text;
+        continue;
+      }
+
+      mergedSegments.push(segment);
+    }
+
     return {
       citations,
-      answerSegments: remappedSegments,
+      answerSegments: mergedSegments,
     };
   }
 }

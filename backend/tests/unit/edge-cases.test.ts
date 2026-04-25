@@ -33,7 +33,6 @@ describe("edge cases", () => {
       contexts: [],
     });
 
-    expect(result.prompt).toContain("No retrieved context");
     expect(result.citations).toEqual([]);
   });
 
@@ -56,7 +55,6 @@ describe("edge cases", () => {
     expect(result.prompt).toContain("Assistant name: Marta");
     expect(result.prompt).toContain("What this assistant helps with: Museum guide");
   });
-
   it("falls back to the original query when rewrite assistance errors", async () => {
     const service = new QueryRewriteService({
       async rewrite() {

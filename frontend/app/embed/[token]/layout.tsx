@@ -11,10 +11,6 @@ export default function EmbeddedChatLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
-        {children}
-      </div>
-    </div>
+    <div className="flex h-screen overflow-hidden">{children}</div>
   )
 }

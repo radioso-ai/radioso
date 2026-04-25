@@ -17,7 +17,7 @@ export class ConversationModeInstructionBuilder {
         return [
           "Conversation mode: exploratory.",
           "Answer the user's question directly, and stay grounded in the retrieved material.",
-          "Do not append suggested next questions or adjacent directions in the answer body; those are surfaced separately when available.",
+          "Do not append generic suggested-question lists in the answer body; one brief closing invitation is allowed when it fits naturally.",
           "Keep the answer in the same language as the user's question.",
         ].join("\n");
       case "guided":
@@ -25,7 +25,7 @@ export class ConversationModeInstructionBuilder {
         return [
           "Conversation mode: guided.",
           "Answer the user's question directly and concisely.",
-          "Do not append suggested next questions or adjacent directions in the answer body; those are surfaced separately when available.",
+          "Do not append generic suggested-question lists in the answer body; one brief closing invitation is allowed when it fits naturally.",
           "Keep the answer in the same language as the user's question.",
         ].join("\n");
     }

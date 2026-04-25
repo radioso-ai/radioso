@@ -109,6 +109,8 @@ tests/
 
 : Follow standard conventions
 - Do not hard-code user-facing assistant or chat response strings in application code. This is a multilingual system, so runtime conversational copy must come from the LLM. If prompt text is extracted from backend code, store it under `backend/prompts/`.
+- Prefer Playwright coverage for frontend user journeys and visible UI behavior.
+- Frontend unit tests should focus on non-visual functionality such as state transitions, data transforms, API adapters, parsing, and routing logic; avoid assertions on markup structure, class names, design tokens, or cosmetic copy when an end-to-end test is the better fit.
 
 ## Documentation
 

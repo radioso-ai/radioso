@@ -11,10 +11,6 @@ export default function PublicChatLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex h-screen flex-col items-center justify-center bg-background">
-      <div className="flex h-full w-full max-w-4xl flex-col">
-        {children}
-      </div>
-    </div>
+    <div className="flex h-screen flex-col">{children}</div>
   )
 }

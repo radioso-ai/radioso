@@ -2,7 +2,6 @@ import { notFound } from "../../../shared/domain/errors.js";
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
-import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -41,6 +40,7 @@ import type { AssistantIdentityPromptInput } from "../../settings/domain/assista
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
+import { buildNonRetrievalAnswerPrompt } from "./nonRetrievalAnswerPromptBuilder.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -452,7 +452,12 @@ export class ChatService {
 
       if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
         noContextPresentation = await this.generateNonRetrievalAnswer(session, input.query);
-        rawAnswer = noContextPresentation?.answer ?? "";
+        rawAnswer = noContextPresentation?.answer
+          ?? await this.groundedMissResponseComposer.composeNoContext({
+            query: input.query,
+            conversationMode: this.getConversationMode(session),
+            userExpectedLocale: input.userExpectedLocale,
+          });
         yield {
           type: "chunk",
           text: rawAnswer,
@@ -1245,37 +1250,4 @@ const buildHiddenSupportEvidence = (
   }
 
   return evidence;
-};
-
-const buildNonRetrievalAnswerPrompt = (input: {
-  route: ChatTurnRoute;
-  assistantIdentity?: AssistantIdentityPromptInput | null;
-  answerInstructionBlock: string;
-  history: MessageRecord[];
-  query: string;
-}): string => {
-  const historySection = input.history
-    .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
-    .join("\n");
-  const identityAvailabilityInstruction =
-    input.route === CHAT_TURN_ROUTE.ASSISTANT_IDENTITY && !input.assistantIdentity
-      ? loadPromptTemplate("chat/assistant-identity-missing-guidance.md").trim()
-      : "";
-  const answerInstructionBlock = [
-    identityAvailabilityInstruction,
-    input.answerInstructionBlock,
-  ]
-    .filter((block) => block.trim().length > 0)
-    .join("\n\n");
-
-  return renderPromptTemplate(
-    input.route === CHAT_TURN_ROUTE.ASSISTANT_IDENTITY
-      ? "chat/assistant-identity-answer.md"
-      : "chat/social-turn-answer.md",
-    {
-      answer_instruction_block: answerInstructionBlock || "No additional answer instructions.",
-      history_section: historySection || "No prior history",
-      query: input.query,
-    },
-  );
 };

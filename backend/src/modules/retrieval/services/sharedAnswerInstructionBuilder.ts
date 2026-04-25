@@ -2,6 +2,7 @@ import {
   buildPublicAssistantIdentityLines,
   type AssistantIdentityPromptInput,
 } from "../../settings/domain/assistantBootstrapSettings.js";
+import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { ConversationModeInstructionBuilder } from "./conversationModeInstructionBuilder.js";
@@ -9,6 +10,7 @@ import { ConversationModeInstructionBuilder } from "./conversationModeInstructio
 export interface SharedAnswerInstructionBlocks {
   assistantIdentityBlock: string | null;
   customInstructionBlock: string | null;
+  responseFormattingGuidelinesBlock: string | null;
   conversationModeInstructionBlock: string;
   responseLanguageInstruction: string;
 }
@@ -27,6 +29,7 @@ export class SharedAnswerInstructionBuilder {
     return {
       assistantIdentityBlock: this.renderAssistantIdentity(input.assistantIdentity),
       customInstructionBlock: this.renderCustomInstruction(input.customInstruction),
+      responseFormattingGuidelinesBlock: this.renderResponseFormattingGuidelines(),
       conversationModeInstructionBlock: this.conversationModeInstructionBuilder.build({
         conversationMode: input.conversationMode ?? "guided",
       }),
@@ -42,6 +45,7 @@ export class SharedAnswerInstructionBuilder {
     return [
       blocks.assistantIdentityBlock,
       blocks.customInstructionBlock,
+      blocks.responseFormattingGuidelinesBlock,
       blocks.conversationModeInstructionBlock,
       blocks.responseLanguageInstruction,
     ]
@@ -77,6 +81,11 @@ export class SharedAnswerInstructionBuilder {
       ...identityLines,
       "When the user asks about your name, role, or what you do, answer consistently with this identity.",
     ].join("\n");
+  }
+
+  private renderResponseFormattingGuidelines(): string | null {
+    const guidelines = loadPromptTemplate("chat/response-formatting-guidelines.md");
+    return guidelines.trim() ? `Response formatting guidance:\n${guidelines}` : null;
   }
 
   private renderResponseLanguageInstruction(responseLanguagePolicy: ResponseLanguagePolicy): string {

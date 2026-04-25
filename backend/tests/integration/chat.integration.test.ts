@@ -1578,6 +1578,86 @@ describe("chat integration", () => {
     });
   });
 
+  it("fails safely to retrieval when a non-retrieval intent is low confidence", async () => {
+    const deterministicGateway: ChatGateway = {
+      async answer() {
+        return "The next retreat is the Spring Retreat.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const { app } = createTestApp({
+      chatGateway: deterministicGateway,
+      queryRewriteGateway: {
+        async rewrite() {
+          return {
+            rewrittenQuery: "Thanks for the help",
+            semanticQuery: "Thanks for the help",
+            lexicalQuery: "Thanks for the help",
+            responseIntent: "social_only" as const,
+            turnKind: "ambiguous" as const,
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.62,
+          };
+        },
+      },
+    });
+
+    const { token } = await issueTestToken(app, "low-confidence-intent@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set("Authorization", authorization)
+      .send({
+        title: "Spring Retreat",
+        content: "The next retreat is the Spring Retreat.",
+      })
+      .expect(202);
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post("/api/v1/chat/")
+      .set("Authorization", authorization)
+      .send({ query: "Thanks for the help", stream: false })
+      .expect(200);
+
+    expect(response.body.answer).toEqual(expect.any(String));
+    expect(response.body.answer.length).toBeGreaterThan(0);
+    expect(response.body.citations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Spring Retreat",
+        }),
+      ]),
+    );
+    expect(response.body.retrievalInfo).toMatchObject({
+      responseIntent: "retrieval",
+      retrievalSkipped: false,
+      intentFallbackApplied: true,
+    });
+  });
+
   it("resolves a single assistant-offered branch after a bare acceptance", async () => {
     const { app, dependencies } = createTestApp({
       queryRewriteGateway: {

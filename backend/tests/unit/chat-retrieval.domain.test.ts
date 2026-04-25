@@ -364,6 +364,38 @@ describe("chat retrieval domain", () => {
     expect(result.fallbackReason).toBeUndefined();
   });
 
+  it("falls back to retrieval when a non-retrieval intent is low confidence", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Thanks for the help",
+          semanticQuery: "Thanks for the help",
+          lexicalQuery: "Thanks for the help",
+          responseIntent: "social_only" as const,
+          turnKind: "ambiguous",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.62,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Thanks for the help",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+    });
+
+    expect(result.responseIntent).toBe("retrieval");
+    expect(result.intentFallbackApplied).toBe(true);
+    expect(result.fallbackReason).toBe("intent_low_confidence");
+    expect(result.status).toBe("fallback");
+  });
+
   it("deduplicates candidates across original and rewritten retrieval paths", () => {
     const service = new CandidatePreparationService();
 
@@ -1047,6 +1079,8 @@ describe("chat retrieval domain", () => {
 
     expect(result.prompt).toContain("The page parses content.");
     expect(result.prompt).not.toContain("Warmth:");
+    expect(result.prompt).toContain("Response formatting guidance:");
+    expect(result.prompt).toContain("At most one inline link per paragraph.");
     expect(result.prompt).toContain("Respond in the same language as the current user question.");
     expect(result.prompt).toContain("Do not end the answer with a question");
     expect(result.prompt).toContain("embed it inline as a Markdown link with descriptive link text");

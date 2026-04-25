@@ -3153,6 +3153,15 @@ describe("chat service streaming", () => {
     expect(groundedMissCalls).toBe(0);
     expect(runWithoutRetrievalCalls).toBe(1);
     expect(runInterpretedCalls).toBe(0);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "chat.answer",
+        eventStatus: "success",
+        metadata: expect.objectContaining({
+          answerOutcome: "non_retrieval_response",
+        }),
+      }),
+    );
   });
 
   it("routes assistant-identity turns through the same non-retrieval path without regex checks", async () => {
@@ -3323,6 +3332,43 @@ describe("chat service streaming", () => {
     expect(observedPrompt).toContain("Vikram");
     expect(observedPrompt).toContain("Guide to Ananda");
     expect(observedPrompt).toContain("Keep the reply brief.");
+  });
+
+  it("adds explicit missing-identity guidance when assistant identity is not configured", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    let observedPrompt = "";
+    const retrievalPipeline = createIntentRoutedNoContextPipeline({
+      query: "Who are you?",
+      responseIntent: "assistant_identity",
+    });
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        observedPrompt = prompt;
+        return "I don't have a configured workspace identity yet.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: "Who are you?",
+      stream: false,
+    });
+
+    expect(observedPrompt).toContain("No stable assistant identity is configured for this workspace.");
+    expect(observedPrompt).toContain("Say that briefly instead of inventing a name, role, or capabilities.");
   });
 
 });

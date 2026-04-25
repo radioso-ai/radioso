@@ -2,7 +2,7 @@ import { notFound } from "../../../shared/domain/errors.js";
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
-import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -291,6 +291,7 @@ export class ChatService {
         history: session.history,
         prompt: buildNonRetrievalAnswerPrompt({
           route: session.turnRoute,
+          assistantIdentity: session.retrieval.assistantIdentity,
           history: session.history,
           query,
           answerInstructionBlock: this.sharedAnswerInstructionBuilder.buildCombinedBlock({
@@ -320,7 +321,7 @@ export class ChatService {
     return {
       ...presented,
       planningCitations: [],
-      answerOutcome: ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS,
+      answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
       validation: {
         ran: false,
         answerModified: false,
@@ -1248,6 +1249,7 @@ const buildHiddenSupportEvidence = (
 
 const buildNonRetrievalAnswerPrompt = (input: {
   route: ChatTurnRoute;
+  assistantIdentity?: AssistantIdentityPromptInput | null;
   answerInstructionBlock: string;
   history: MessageRecord[];
   query: string;
@@ -1255,13 +1257,23 @@ const buildNonRetrievalAnswerPrompt = (input: {
   const historySection = input.history
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
     .join("\n");
+  const identityAvailabilityInstruction =
+    input.route === CHAT_TURN_ROUTE.ASSISTANT_IDENTITY && !input.assistantIdentity
+      ? loadPromptTemplate("chat/assistant-identity-missing-guidance.md").trim()
+      : "";
+  const answerInstructionBlock = [
+    identityAvailabilityInstruction,
+    input.answerInstructionBlock,
+  ]
+    .filter((block) => block.trim().length > 0)
+    .join("\n\n");
 
   return renderPromptTemplate(
     input.route === CHAT_TURN_ROUTE.ASSISTANT_IDENTITY
       ? "chat/assistant-identity-answer.md"
       : "chat/social-turn-answer.md",
     {
-      answer_instruction_block: input.answerInstructionBlock || "No additional answer instructions.",
+      answer_instruction_block: answerInstructionBlock || "No additional answer instructions.",
       history_section: historySection || "No prior history",
       query: input.query,
     },

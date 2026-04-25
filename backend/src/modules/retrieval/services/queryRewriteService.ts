@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { RetrievalMetadataRule } from "../../settings/domain/retrievalSettings.js";
@@ -37,6 +37,7 @@ const TRIGGER_ANALYSIS_SYSTEM_PROMPT = loadPromptTemplate("retrieval/trigger-ana
 
 const DEFAULT_RESPONSE_LANGUAGE_POLICY: ResponseLanguagePolicy = "match_user_question";
 const TRIGGER_MATCH_ENACTMENT_THRESHOLD = RETRIEVAL_BEHAVIOR.hybrid.triggerMatchEnactmentThreshold;
+const NON_RETRIEVAL_INTENT_CONFIDENCE_THRESHOLD = CHAT_BEHAVIOR.intentRouting.nonRetrievalConfidenceThreshold;
 
 const buildQueryRewritePrompt = (input: {
   context: string;
@@ -221,31 +222,48 @@ export class QueryRewriteService {
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
       });
       const result = this.normalizeStructuredResult(input.query, rawResult);
+      const rawResponseIntent = this.normalizeResponseIntent(result.responseIntent);
+      const normalizedStructuredResult = {
+        ...result,
+        responseIntent: rawResponseIntent,
+      };
+      const lowConfidenceNonRetrieval =
+        rawResponseIntent !== RESPONSE_INTENT.RETRIEVAL
+        && normalizedStructuredResult.confidence < NON_RETRIEVAL_INTENT_CONFIDENCE_THRESHOLD;
+
+      if (lowConfidenceNonRetrieval) {
+        return {
+          ...this.fallback(input.query, "intent_low_confidence"),
+          confidence: normalizedStructuredResult.confidence,
+          intentFallbackApplied: true,
+          structuredResult: normalizedStructuredResult,
+        };
+      }
+
       const semanticQuery = this.selectSemanticQuery(
         input.query,
-        result.semanticQuery ?? result.rewrittenQuery,
+        normalizedStructuredResult.semanticQuery ?? normalizedStructuredResult.rewrittenQuery,
         hasConversationContext,
       );
       const lexicalQuery = this.selectLexicalQuery(
         input.query,
-        result.lexicalQuery ?? result.rewrittenQuery,
+        normalizedStructuredResult.lexicalQuery ?? normalizedStructuredResult.rewrittenQuery,
         hasConversationContext,
       );
-      const responseIntent = this.normalizeResponseIntent(result.responseIntent);
+      const responseIntent = rawResponseIntent;
       const compatibilityRewrite = semanticQuery;
       const applied =
         responseIntent !== RESPONSE_INTENT.RETRIEVAL
         || semanticQuery !== input.query
         || lexicalQuery !== input.query
-        || Boolean(result.retrievalSubqueries && result.retrievalSubqueries.length > 1);
+        || Boolean(normalizedStructuredResult.retrievalSubqueries && normalizedStructuredResult.retrievalSubqueries.length > 1);
 
       if (!applied) {
         return {
           ...this.fallback(input.query, "rewrite_unusable"),
           responseIntent,
           structuredResult: {
-            ...result,
-            responseIntent,
+            ...normalizedStructuredResult,
             rewrittenQuery: compatibilityRewrite,
             semanticQuery,
             lexicalQuery,
@@ -254,8 +272,7 @@ export class QueryRewriteService {
       }
 
       const structuredResult = {
-        ...result,
-        responseIntent,
+        ...normalizedStructuredResult,
         rewrittenQuery: compatibilityRewrite,
         semanticQuery,
         lexicalQuery,
@@ -275,12 +292,12 @@ export class QueryRewriteService {
         semanticQuery: retrievalEligible ? semanticQuery : input.query,
         lexicalQuery: retrievalEligible ? lexicalQuery : input.query,
         responseIntent,
-        responseLanguagePolicy: result.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY,
-        retrievalSubqueries: retrievalEligible ? result.retrievalSubqueries : undefined,
+        responseLanguagePolicy: normalizedStructuredResult.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY,
+        retrievalSubqueries: retrievalEligible ? normalizedStructuredResult.retrievalSubqueries : undefined,
         rewriteApplied: retrievalEligible,
         retrievalEligible,
         status: retrievalEligible || responseIntent !== RESPONSE_INTENT.RETRIEVAL ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
-        confidence: result.confidence ?? 0.5,
+        confidence: normalizedStructuredResult.confidence ?? 0.5,
         structuredResult,
         rejectionReason: responseIntent === RESPONSE_INTENT.RETRIEVAL ? eligibility.rejectionReason : undefined,
       };

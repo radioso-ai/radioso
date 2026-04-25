@@ -21,6 +21,8 @@ describe("shared answer instruction builder", () => {
     expect(result).toContain("Vikram");
     expect(result).toContain("Workspace-specific instructions:");
     expect(result).toContain("Keep the tone calm.");
+    expect(result).toContain("Response formatting guidance:");
+    expect(result).toContain("At most one inline link per paragraph.");
     expect(result).toContain("Conversation mode: guided.");
     expect(result).toContain("Respond in the same language as the current user question.");
   });
@@ -35,6 +37,7 @@ describe("shared answer instruction builder", () => {
     });
 
     expect(result).not.toContain("Workspace-specific instructions:");
+    expect(result).toContain("Response formatting guidance:");
     expect(result).toContain("Conversation mode: guided.");
   });
 });

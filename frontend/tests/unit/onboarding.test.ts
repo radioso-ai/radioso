@@ -24,7 +24,7 @@ describe('shouldAutoActivateOnboarding', () => {
     vi.unstubAllGlobals()
   })
 
-  it('activates onboarding for the first empty workspace when no onboarding has completed', () => {
+  it('activates onboarding for an empty workspace when no onboarding has completed for that workspace', () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage(),
     })
@@ -39,7 +39,7 @@ describe('shouldAutoActivateOnboarding', () => {
     ).toBe(true)
   })
 
-  it('does not activate onboarding for later empty workspaces', () => {
+  it('activates onboarding for later empty workspaces too', () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage(),
     })
@@ -51,13 +51,30 @@ describe('shouldAutoActivateOnboarding', () => {
         documentCount: 0,
         conversationCount: 0,
       })
-    ).toBe(false)
+    ).toBe(true)
   })
 
-  it('does not activate onboarding after any workspace completed the guided flow', () => {
+  it('activates onboarding even if another workspace completed the guided flow', () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage({
         'radioso.onboardingCompleted': JSON.stringify({ 'workspace-1': true }),
+      }),
+    })
+
+    expect(
+      shouldAutoActivateOnboarding({
+        workspaceId: 'workspace-2',
+        workspaceCount: 1,
+        documentCount: 0,
+        conversationCount: 0,
+      })
+    ).toBe(true)
+  })
+
+  it('does not activate onboarding after this workspace completed the guided flow', () => {
+    vi.stubGlobal('window', {
+      localStorage: createLocalStorage({
+        'radioso.onboardingCompleted': JSON.stringify({ 'workspace-2': true }),
       }),
     })
 

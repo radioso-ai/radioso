@@ -6,7 +6,7 @@ import { ArrowLeft, FileText, PanelRight, Pencil, Save, X } from 'lucide-react'
 import { DocumentStatus } from '@/components/dashboard/document-status'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import type { DocumentSummary } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -49,7 +49,7 @@ export function DocumentEditorPage({
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }

@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { type EvalDatasetSummary, type EvalImportDraft, evalApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
@@ -132,7 +132,7 @@ export function AddToEvalDialog({
 
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
-            <Spinner className="h-5 w-5" />
+            <LogoSpinner imageClassName="h-6 w-6" />
           </div>
         ) : (
           <div className="space-y-4">

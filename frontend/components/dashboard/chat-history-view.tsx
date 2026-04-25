@@ -24,7 +24,7 @@ import {
 import { ActionButton } from '@/components/ui/action-button'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { ChatRetrievalInfo } from './chat-retrieval-info'
 import { ChatRetrievalTraceGraph } from './chat-retrieval-trace-graph'
 import { ChatMessageThread } from './chat-message-thread'
@@ -779,7 +779,7 @@ export function ChatHistoryView({
           <div className="min-h-0 flex-1 overflow-hidden p-4">
             {isDetailLoading ? (
               <div className="flex h-full items-center justify-center">
-                <Spinner className="h-6 w-6" />
+                <LogoSpinner imageClassName="h-7 w-7" />
               </div>
             ) : detailError ? (
               <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">

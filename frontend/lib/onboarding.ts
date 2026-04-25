@@ -52,8 +52,6 @@ const setWorkspaceFlag = (key: string, workspaceId: string, enabled: boolean) =>
 }
 
 const getWorkspaceFlag = (key: string, workspaceId: string) => readBooleanMap(key)[workspaceId] === true
-const hasAnyWorkspaceFlag = (key: string) => Object.values(readBooleanMap(key)).some((value) => value)
-
 export const markOnboardingActive = (workspaceId: string) => {
   setWorkspaceFlag(ONBOARDING_ACTIVE_KEY, workspaceId, true)
 }
@@ -146,11 +144,7 @@ export const shouldAutoActivateOnboarding = (input: {
     return false
   }
 
-  if (hasAnyWorkspaceFlag(ONBOARDING_COMPLETED_KEY)) {
-    return false
-  }
-
-  return input.workspaceCount === 1
+  return true
 }
 
 export const useWorkspaceOnboarding = (
@@ -270,26 +264,6 @@ export const useWorkspaceOnboarding = (
       setIsImportingSampleDocs(false)
     }
   }, [documents, refresh, workspaceId])
-
-  useEffect(() => {
-    if (!workspaceId || !isOnboardingActive || isOnboardingCompleted || isImportingSampleDocs) {
-      return
-    }
-
-    if (documents.length > 0 || hasCompletedChat) {
-      return
-    }
-
-    void importSampleDocs()
-  }, [
-    documents.length,
-    hasCompletedChat,
-    importSampleDocs,
-    isImportingSampleDocs,
-    isOnboardingActive,
-    isOnboardingCompleted,
-    workspaceId,
-  ])
 
   const markCompleted = useCallback(() => {
     if (!workspaceId) {

@@ -19,7 +19,6 @@ import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { retrievalSettingDocs } from '@/components/dashboard/settings/settings-docs'
 import { SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
-import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
@@ -32,7 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { type RetrievalSettings, settingsApi } from '@/lib/api'
@@ -101,7 +100,6 @@ export function RetrievalSettingsPanel({
 }: {
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
-  const descriptor = getSettingsTabDescriptor('retrieval')
   const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [settings, setSettings] = useState<RetrievalSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -360,7 +358,7 @@ export function RetrievalSettingsPanel({
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }
@@ -376,10 +374,6 @@ export function RetrievalSettingsPanel({
   return (
     <SettingsTabShell>
       <div className="space-y-6">
-        <section className="space-y-1 px-1">
-          <p className="text-sm text-muted-foreground">{descriptor.summary}</p>
-        </section>
-
         <SettingsCard
           id="query-rewrite"
           icon={<Search className="h-5 w-5 text-primary" />}

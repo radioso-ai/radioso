@@ -15,7 +15,7 @@ import { FirstRunExperience } from './first-run-experience'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useWorkspaceOnboarding } from '@/lib/onboarding'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 
 interface DashboardShellProps {
   accountId: string
@@ -106,6 +106,7 @@ export function DashboardShell({
 
   if (
     isWorkspaceLoading ||
+    (currentView === 'chat' && onboarding.isLoading) ||
     (requestedWorkspaceId && requestedWorkspaceExists && activeWorkspaceId !== requestedWorkspaceId)
   ) {
     return (
@@ -116,7 +117,7 @@ export function DashboardShell({
             <SidebarTrigger />
           </header>
           <div className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 items-center justify-center md:h-screen">
-            <Spinner className="h-6 w-6" />
+            <LogoSpinner imageClassName="h-7 w-7" />
           </div>
         </SidebarInset>
       </SidebarProvider>

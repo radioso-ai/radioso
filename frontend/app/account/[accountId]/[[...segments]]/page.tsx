@@ -4,8 +4,15 @@ import { useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 
 import { AuthPage } from '@/components/auth/auth-page'
-import { Spinner } from '@/components/ui/spinner'
-import { accountApi, getStoredActiveWorkspaceId, getStoredActiveWorkspacePublicRouteKey, seedWorkspaceSession, workspaceApi } from '@/lib/api'
+import { LogoSpinner } from '@/components/ui/spinner'
+import {
+  accountApi,
+  getPendingAccountSwitchId,
+  getStoredActiveWorkspaceId,
+  getStoredActiveWorkspacePublicRouteKey,
+  seedWorkspaceSession,
+  workspaceApi,
+} from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref, parseDashboardRoute } from '@/lib/dashboard-routes'
 
@@ -53,6 +60,11 @@ export default function LegacyAccountDashboardPage() {
       }
 
       if (routeAccountId && routeAccountId !== auth.user.accountId) {
+        const pendingAccountSwitchId = getPendingAccountSwitchId()
+        if (pendingAccountSwitchId && pendingAccountSwitchId !== routeAccountId) {
+          return
+        }
+
         try {
           const response = await accountApi.switchAccount(routeAccountId, parsedRoute.workspaceId)
           seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
@@ -100,7 +112,7 @@ export default function LegacyAccountDashboardPage() {
   if (auth.isBootstrapping) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }
@@ -111,7 +123,7 @@ export default function LegacyAccountDashboardPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <Spinner className="h-6 w-6" />
+      <LogoSpinner imageClassName="h-7 w-7" />
     </div>
   )
 }

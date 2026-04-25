@@ -8,7 +8,6 @@ import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
 import { chunkingStrategyOptions } from '@/components/dashboard/settings/settings-options'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
-import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { ingestionSettingDocs } from '@/components/dashboard/settings/settings-docs'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -20,7 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { type IngestionSettings, settingsApi } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -29,7 +28,6 @@ export function IngestionSettingsPanel({
 }: {
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
-  const descriptor = getSettingsTabDescriptor('ingestion')
   const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [settings, setSettings] = useState<IngestionSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -174,7 +172,7 @@ export function IngestionSettingsPanel({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Spinner className="w-6 h-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }
@@ -190,10 +188,6 @@ export function IngestionSettingsPanel({
   return (
     <SettingsTabShell>
       <div className="space-y-6">
-        <section className="space-y-1 px-1">
-          <p className="text-sm text-muted-foreground">{descriptor.summary}</p>
-        </section>
-
         <SettingsCard
           id="chunking-strategy"
           icon={<Settings2 className="h-5 w-5 text-primary" />}

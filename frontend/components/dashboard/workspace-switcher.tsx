@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { useWorkspace } from '@/lib/workspace-context'
-import { accountApi, seedWorkspaceSession } from '@/lib/api'
+import { accountApi, seedWorkspaceSession, setPendingAccountSwitchId } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref, type DashboardSection } from '@/lib/dashboard-routes'
 import { Building2, ChevronsUpDown, Check, Plus, Layers } from 'lucide-react'
@@ -115,6 +115,7 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
 
     setIsSwitchingAccountId(targetAccountId)
     try {
+      setPendingAccountSwitchId(targetAccountId)
       const response = await accountApi.switchAccount(targetAccountId, preferredWorkspaceId)
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       await login(user.email, response.userId, response.accountId)
@@ -139,6 +140,7 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
     setCreateOrganizationError(null)
     try {
       const response = await accountApi.createOrganization(trimmed)
+      setPendingAccountSwitchId(response.accountId)
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       await login(user.email, response.userId, response.accountId)
       setNewOrganizationName('')
@@ -154,6 +156,9 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
       setIsCreatingOrganization(false)
     }
   }
+
+  const currentAccount = accounts.find((account) => account.accountId === accountId) ?? null
+  const otherAccounts = accounts.filter((account) => account.accountId !== accountId)
 
   return (
     <>
@@ -174,58 +179,73 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
                 <ChevronsUpDown className="ml-auto w-4 h-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64">
-              <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                Workspaces
-              </DropdownMenuLabel>
-              {workspaces.map((workspace) => (
-                <DropdownMenuItem
-                  key={workspace.id}
-                  onClick={() => switchWorkspace(workspace.id)}
-                >
-                  <div className="mr-2 flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                    <Layers className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate">{workspace.name}</div>
-                  </div>
-                  {workspace.id === activeWorkspace?.id && (
-                    <Check className="ml-auto w-4 h-4" />
-                  )}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setIsCreateOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Create workspace
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                Organizations
-              </DropdownMenuLabel>
+            <DropdownMenuContent align="start" className="w-72">
               {accountsLoaded ? (
                 accounts.length > 0 ? (
-                  accounts.map((account) => (
-                    <DropdownMenuItem
-                      key={account.accountId}
-                      onClick={() => void handleAccountSwitch(account.accountId, account.workspaceId)}
-                      disabled={account.accountId === accountId || isSwitchingAccountId !== null}
-                    >
-                      <Building2 className="w-4 h-4 mr-2" />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate">
-                          {account.organizationName}
-                          {account.accountId === accountId ? ' (Current)' : ''}
+                  <div className="space-y-3 p-1">
+                    {currentAccount ? (
+                      <div className="space-y-1">
+                        <div className="px-2 pb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                          Current organization
                         </div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {account.workspaceName}
+                        <div className="flex items-start gap-2 px-2 py-1.5">
+                          <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                            <Building2 className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-inherit">{currentAccount.organizationName}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">Workspaces in this organization</p>
+                          </div>
+                        </div>
+                        <div className="mt-1 space-y-1">
+                          {workspaces.map((workspace) => (
+                            <DropdownMenuItem
+                              key={workspace.id}
+                              onClick={() => switchWorkspace(workspace.id)}
+                              className="ml-5"
+                            >
+                              <div className="mr-2 flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                                <Layers className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-inherit">{workspace.name}</div>
+                              </div>
+                              {workspace.id === activeWorkspace?.id ? (
+                                <Check className="ml-auto w-4 h-4" />
+                              ) : null}
+                            </DropdownMenuItem>
+                          ))}
+                          <DropdownMenuItem onClick={() => setIsCreateOpen(true)} className="ml-5">
+                            <Plus className="w-4 h-4 mr-2" />
+                            Create workspace
+                          </DropdownMenuItem>
                         </div>
                       </div>
-                      {account.accountId === accountId ? (
-                        <Check className="ml-2 w-4 h-4" />
-                      ) : null}
-                    </DropdownMenuItem>
-                  ))
+                    ) : null}
+
+                    {otherAccounts.length > 0 ? (
+                      <div className="space-y-2">
+                        <div className="px-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                          Other organizations
+                        </div>
+                        {otherAccounts.map((account) => (
+                          <DropdownMenuItem
+                            key={account.accountId}
+                            onClick={() => void handleAccountSwitch(account.accountId, account.workspaceId)}
+                            disabled={isSwitchingAccountId !== null}
+                            className="px-2 py-1.5"
+                          >
+                            <div className="mr-2 flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                              <Building2 className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-inherit">{account.organizationName}</p>
+                            </div>
+                          </DropdownMenuItem>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : (
                   <DropdownMenuItem disabled>
                     <Building2 className="w-4 h-4 mr-2" />
@@ -243,7 +263,9 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
                   Loading organizations...
                 </DropdownMenuItem>
               )}
-              <DropdownMenuSeparator />
+              {accountsLoaded ? (
+                <DropdownMenuSeparator />
+              ) : null}
               <DropdownMenuItem onClick={() => setIsCreateOrganizationOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
                 Create organization

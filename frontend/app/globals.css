@@ -153,10 +153,10 @@
   }
 
   .settings-surface [data-slot='button'][data-variant='outline'] {
-    @apply border-input bg-card text-foreground hover:border-muted-foreground/30 hover:bg-muted/70 hover:text-foreground dark:border-input/90 dark:bg-card/80 dark:hover:bg-muted/70;
+    @apply border-input bg-card text-foreground hover:border-muted-foreground/30 hover:bg-accent hover:text-secondary-foreground dark:border-input/90 dark:bg-card/80 dark:hover:bg-accent dark:hover:text-secondary-foreground;
   }
 
   .settings-surface [data-slot='button'][data-variant='ghost'] {
-    @apply text-foreground hover:bg-muted/70 hover:text-foreground dark:text-foreground dark:hover:bg-muted/70 dark:hover:text-foreground;
+    @apply text-foreground hover:bg-accent hover:text-secondary-foreground dark:text-foreground dark:hover:bg-accent dark:hover:text-secondary-foreground;
   }
 }

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertCircle } from 'lucide-react'
 
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import {
   formatWebsiteEmbedStartingMessage,
   getWebsiteEmbedCopy,
@@ -203,7 +203,7 @@ export function EmbeddedChatFrame({
         className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
         style={{ color: theme.panelForeground }}
       >
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
         <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
           {formatWebsiteEmbedStartingMessage({
             embeddedChatStartingMessage: copy.embeddedChatStartingMessage,

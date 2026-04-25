@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -21,7 +20,6 @@ import type { ConnectorDetail, ConnectorValidationIssue } from '@/lib/api'
 interface ConnectorSettingsFormProps {
   connector: ConnectorDetail
   onSave: (config: Record<string, string | boolean>) => Promise<ConnectorDetail>
-  onSetEnabled: (enabled: boolean) => Promise<ConnectorDetail>
   onSaveStateChange?: (input: {
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
@@ -65,7 +63,6 @@ const getValidationIssues = (error: unknown): ConnectorValidationIssue[] => {
 export function ConnectorSettingsForm({
   connector,
   onSave,
-  onSetEnabled,
   onSaveStateChange,
 }: ConnectorSettingsFormProps) {
   const [values, setValues] = useState<Record<string, string>>(withDefaults(connector))
@@ -166,60 +163,8 @@ export function ConnectorSettingsForm({
     return () => window.clearTimeout(timeout)
   }, [dirty, onSaveStateChange, values, valuesSignature])
 
-  const handleEnabledChange = async (enabled: boolean) => {
-    const pendingDraftValues = values
-    const draftVersionAtRequestStart = draftVersionRef.current
-    setBusyAction(enabled ? 'enable' : 'disable')
-    setFormError(null)
-    setValidationIssues([])
-    onSaveStateChange?.({ state: 'saving', message: null })
-
-    try {
-      let updatedConnector = connector
-      if (dirty) {
-        updatedConnector = await persistDraft(pendingDraftValues)
-      }
-      updatedConnector = await onSetEnabled(enabled)
-      setValidationIssues([])
-      setFormError(null)
-      if (draftVersionRef.current === draftVersionAtRequestStart) {
-        setValues(withDefaults(updatedConnector))
-        setDirty(false)
-        onSaveStateChange?.({ state: 'saved', message: null })
-      }
-    } catch (error) {
-      setValidationIssues(getValidationIssues(error))
-      setFormError(
-        getApiErrorMessage(error, enabled ? 'Failed to enable WhatsApp.' : 'Failed to disable WhatsApp.')
-      )
-      onSaveStateChange?.({
-        state: 'error',
-        message: enabled ? 'Failed to enable WhatsApp' : 'Failed to disable WhatsApp',
-      })
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/20 px-3 py-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <p className="text-sm font-medium text-foreground">Enable {connector.name}</p>
-            <Badge variant={connector.enabled ? 'default' : 'outline'}>
-              {connector.enabled ? 'Enabled' : 'Disabled'}
-            </Badge>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">{connector.description}</p>
-        </div>
-        <Switch
-          checked={connector.enabled}
-          onCheckedChange={(checked) => void handleEnabledChange(checked)}
-          disabled={busyAction === 'enable' || busyAction === 'disable'}
-        />
-      </div>
-
       {connector.errorStatus ? (
         <Alert variant="destructive">
           <AlertTriangle />

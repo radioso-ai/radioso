@@ -2,7 +2,7 @@
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import type { DocumentDetails } from '@/lib/api'
 
@@ -30,7 +30,7 @@ export function HistoryDocumentDialog({
         </DialogHeader>
         {isLoading ? (
           <div className="flex flex-1 items-center justify-center">
-            <Spinner className="h-6 w-6" />
+            <LogoSpinner imageClassName="h-7 w-7" />
           </div>
         ) : error ? (
           <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">

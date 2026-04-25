@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 
 type EditorMode = 'create' | 'edit' | 'view'
@@ -59,7 +59,7 @@ export function DocumentEditorDialog({
         </DialogHeader>
         {isLoading ? (
           <div className="flex flex-1 min-h-[240px] items-center justify-center">
-            <Spinner className="w-6 h-6" />
+            <LogoSpinner imageClassName="h-7 w-7" />
           </div>
         ) : (
           <form

@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 
 export function UsersView({ accountId: _accountId }: { accountId: string }) {
   const [users, setUsers] = useState<AccountUserSummary[]>([])
@@ -87,7 +87,7 @@ export function UsersView({ accountId: _accountId }: { accountId: string }) {
   if (isLoading) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     )
   }

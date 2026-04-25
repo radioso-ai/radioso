@@ -394,7 +394,7 @@ describe("retrieval pipeline stages", () => {
       | {
           query: string;
           activeQuery: string;
-          contextMessages: Array<{ role: "user" | "assistant"; content: string }>;
+          contextMessages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
         }
       | undefined;
 

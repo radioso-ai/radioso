@@ -22,6 +22,7 @@ import {
   type AnswerSegmentValidationResult,
   type AnswerValidationSummary,
   type AssistantTurnOutcome,
+  type HiddenSupportEvidence,
 } from "./answerSupportValidationTypes.js";
 import { AssistantTurnOutcomeClassifier } from "./assistantTurnOutcomeClassifier.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
@@ -675,6 +676,7 @@ export class ChatService {
       content: context.content,
       sourceUrl: resolveContextSourceUrl(context.metadata),
     }));
+    const hiddenSupportEvidence = buildHiddenSupportEvidence(session.retrieval.assistantIdentity);
     const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
 
     if (session.retrieval.contexts.length === 0) {
@@ -718,6 +720,7 @@ export class ChatService {
       answer: normalized.answer,
       answerSegments: validationAnswerSegments,
       citationEvidence,
+      hiddenSupportEvidence,
       retrievedContextSummaries: citationEvidence.map((citation) => ({
         title: citation.title,
         content: citation.content,
@@ -759,6 +762,7 @@ export class ChatService {
       content: context.content,
       sourceUrl: resolveContextSourceUrl(context.metadata),
     }));
+    const hiddenSupportEvidence = buildHiddenSupportEvidence(session.retrieval.assistantIdentity);
     const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
 
     if (session.retrieval.contexts.length === 0) {
@@ -799,6 +803,7 @@ export class ChatService {
       answer: normalized.answer,
       answerSegments: validationAnswerSegments,
       citationEvidence,
+      hiddenSupportEvidence,
       retrievedContextSummaries: citationEvidence.map((citation) => ({
         title: citation.title,
         content: citation.content,
@@ -1189,6 +1194,32 @@ const ASSISTANT_IDENTITY_STANDALONE_PATTERNS = [
 const isAssistantIdentityQuestion = (query: string): boolean =>
   ASSISTANT_IDENTITY_EXPLICIT_PATTERNS.some((pattern) => pattern.test(query))
   || ASSISTANT_IDENTITY_STANDALONE_PATTERNS.some((pattern) => pattern.test(query));
+
+const buildHiddenSupportEvidence = (
+  assistantIdentity?: AssistantIdentityPromptInput | null,
+): HiddenSupportEvidence[] => {
+  if (!assistantIdentity) {
+    return [];
+  }
+
+  const evidence: HiddenSupportEvidence[] = [];
+
+  if (assistantIdentity.assistantName) {
+    evidence.push({
+      kind: "assistant_name",
+      content: assistantIdentity.assistantName,
+    });
+  }
+
+  if (assistantIdentity.assistantRole) {
+    evidence.push({
+      kind: "assistant_role",
+      content: assistantIdentity.assistantRole,
+    });
+  }
+
+  return evidence;
+};
 
 const buildAssistantIdentityAnswerPrompt = (input: {
   assistantIdentity: AssistantIdentityPromptInput;

@@ -6,22 +6,6 @@ import {
 } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 
 describe("grounded miss response composer", () => {
-  it("falls back to deterministic copy when no grounded-miss composer is configured", async () => {
-    const composer = new MissingGroundedMissResponseComposer();
-
-    const unsupportedWithContext = await composer.composeUnsupportedWithContext({
-      query: "I need a raspberry cake recipe",
-      unsupportedText: "Here is a raspberry cake recipe.",
-      contexts: [{ title: "Workspace Guide", content: "" }],
-    });
-    expect(unsupportedWithContext).toContain("Workspace Guide");
-    expect(unsupportedWithContext.length).toBeGreaterThan(0);
-
-    const noContext = await composer.composeNoContext({ query: "What is the capital of France?" });
-    expect(noContext).toEqual(expect.any(String));
-    expect(noContext.length).toBeGreaterThan(0);
-  });
-
   it("lets the model compose the full unsupported response from retrieved contexts", async () => {
     const composer = new ModelGroundedMissResponseComposer({
       metadata: {

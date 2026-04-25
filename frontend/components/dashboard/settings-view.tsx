@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 
 import { IngestionSettingsPanel } from '@/components/dashboard/settings/ingestion-settings-panel'
 import { RetrievalSettingsPanel } from '@/components/dashboard/settings/retrieval-settings-panel'
+import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -22,6 +23,7 @@ export function SettingsView({
 }) {
   const router = useRouter()
   const activeTab = routeState.settingsTab ?? 'workspace'
+  const activeTabDescriptor = getSettingsTabDescriptor(activeTab)
   const [retrievalSaveState, setRetrievalSaveState] = useState<{
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
@@ -67,52 +69,62 @@ export function SettingsView({
         }}
         className="flex flex-1 flex-col"
       >
-        <div className="sticky top-0 z-20 border-b border-border bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
-            <TabsList>
-              <TabsTrigger value="workspace">Workspace</TabsTrigger>
-              <TabsTrigger value="assistant">Assistant</TabsTrigger>
-              <TabsTrigger value="channels">Channels</TabsTrigger>
-              <TabsTrigger value="ingestion">Ingestion</TabsTrigger>
-              <TabsTrigger value="retrieval">Retrieval</TabsTrigger>
-            </TabsList>
-            {activeTab === 'workspace' || activeTab === 'assistant' || activeTab === 'channels' ? (
-              <div className="text-sm">
-                {generalSaveState.state === 'saving' ? (
-                  <span className="text-muted-foreground">Saving…</span>
-                ) : generalSaveState.state === 'error' ? (
-                  <span className="text-destructive">
-                    {generalSaveState.message ?? 'Failed to save changes'}
-                  </span>
-                ) : generalSaveState.state === 'saved' ? (
-                  <span className="text-muted-foreground">Saved</span>
-                ) : null}
+        <div className="sticky top-0 z-20 border-b border-border bg-background/95 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="flex w-full flex-col gap-3 px-4 sm:px-6">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-lg font-medium text-foreground">Settings</h1>
+                  {activeTab === 'workspace' || activeTab === 'assistant' || activeTab === 'channels' ? (
+                    <div className="text-sm">
+                      {generalSaveState.state === 'saving' ? (
+                        <span className="text-muted-foreground">Saving…</span>
+                      ) : generalSaveState.state === 'error' ? (
+                        <span className="text-destructive">
+                          {generalSaveState.message ?? 'Failed to save changes'}
+                        </span>
+                      ) : generalSaveState.state === 'saved' ? (
+                        <span className="text-muted-foreground">Saved</span>
+                      ) : null}
+                    </div>
+                  ) : activeTab === 'retrieval' ? (
+                    <div className="text-sm">
+                      {retrievalSaveState.state === 'saving' ? (
+                        <span className="text-muted-foreground">Saving…</span>
+                      ) : retrievalSaveState.state === 'error' ? (
+                        <span className="text-destructive">
+                          {retrievalSaveState.message ?? 'Failed to save changes'}
+                        </span>
+                      ) : retrievalSaveState.state === 'saved' ? (
+                        <span className="text-muted-foreground">Saved</span>
+                      ) : null}
+                    </div>
+                  ) : activeTab === 'ingestion' ? (
+                    <div className="text-sm">
+                      {ingestionSaveState.state === 'saving' ? (
+                        <span className="text-muted-foreground">Saving…</span>
+                      ) : ingestionSaveState.state === 'error' ? (
+                        <span className="text-destructive">
+                          {ingestionSaveState.message ?? 'Failed to save changes'}
+                        </span>
+                      ) : ingestionSaveState.state === 'saved' ? (
+                        <span className="text-muted-foreground">Saved</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{activeTabDescriptor.summary}</p>
               </div>
-            ) : activeTab === 'retrieval' ? (
-              <div className="text-sm">
-                {retrievalSaveState.state === 'saving' ? (
-                  <span className="text-muted-foreground">Saving…</span>
-                ) : retrievalSaveState.state === 'error' ? (
-                  <span className="text-destructive">
-                    {retrievalSaveState.message ?? 'Failed to save changes'}
-                  </span>
-                ) : retrievalSaveState.state === 'saved' ? (
-                  <span className="text-muted-foreground">Saved</span>
-                ) : null}
+              <div className="lg:ml-auto lg:self-start">
+                <TabsList>
+                  <TabsTrigger value="workspace">Workspace</TabsTrigger>
+                  <TabsTrigger value="assistant">Assistant</TabsTrigger>
+                  <TabsTrigger value="channels">Channels</TabsTrigger>
+                  <TabsTrigger value="ingestion">Ingestion</TabsTrigger>
+                  <TabsTrigger value="retrieval">Retrieval</TabsTrigger>
+                </TabsList>
               </div>
-            ) : activeTab === 'ingestion' ? (
-              <div className="text-sm">
-                {ingestionSaveState.state === 'saving' ? (
-                  <span className="text-muted-foreground">Saving…</span>
-                ) : ingestionSaveState.state === 'error' ? (
-                  <span className="text-destructive">
-                    {ingestionSaveState.message ?? 'Failed to save changes'}
-                  </span>
-                ) : ingestionSaveState.state === 'saved' ? (
-                  <span className="text-muted-foreground">Saved</span>
-                ) : null}
-              </div>
-            ) : null}
+            </div>
           </div>
         </div>
 

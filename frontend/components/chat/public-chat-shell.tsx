@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Send, Sparkles, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
@@ -218,7 +218,7 @@ function PublicChatContent({
   if (isHydrating) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-        <Spinner className="h-6 w-6" />
+        <LogoSpinner imageClassName="h-7 w-7" />
         <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
           {formatWebsiteEmbedStartingMessage({
             embeddedChatStartingMessage: copy.embeddedChatStartingMessage,

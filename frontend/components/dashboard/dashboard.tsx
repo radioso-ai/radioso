@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { getStoredActiveWorkspaceId, getStoredActiveWorkspacePublicRouteKey } from '@/lib/api'
@@ -28,7 +28,7 @@ export function Dashboard() {
 
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <Spinner className="h-6 w-6" />
+      <LogoSpinner imageClassName="h-7 w-7" />
     </div>
   )
 }

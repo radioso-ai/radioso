@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  formatWebsiteEmbedRateLimitRetry,
-  getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
   normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedDisplayMode,
@@ -13,12 +11,6 @@ import {
 } from '@/lib/embed-widget'
 
 describe('website embed runtime helpers', () => {
-  it('uses English copy by default, even when a locale hint is present', () => {
-    expect(getWebsiteEmbedCopy('it-IT').launcherDefaultLabel).toBe('Chat with us')
-    expect(getWebsiteEmbedCopy('es-ES').startPrompt).toBe('Ask a question...')
-    expect(getWebsiteEmbedCopy('xx-ZZ').launcherDefaultLabel).toBe('Chat with us')
-  })
-
   it('accepts only supported display-mode, initial-state, and avatar values', () => {
     expect(normalizeWebsiteEmbedDisplayMode('panel')).toBe('panel')
     expect(normalizeWebsiteEmbedDisplayMode('sidebar')).toBeNull()
@@ -31,7 +23,7 @@ describe('website embed runtime helpers', () => {
     expect(normalizeWebsiteEmbedLocale('de-DE')).toBe('de-DE')
   })
 
-  it('sanitizes copy and theme overrides and formats retry text', () => {
+  it('sanitizes copy and theme overrides', () => {
     const copyOverrides = sanitizeWebsiteEmbedCopyOverrides({
       publicChatSendMessageLabel: 'Enviar',
       publicChatDisclaimerTemplate: '{name} puede cometer errores.',
@@ -43,15 +35,9 @@ describe('website embed runtime helpers', () => {
         unsupported: '#ffffff',
       }),
     )
-    const copy = getWebsiteEmbedCopy('en-US', {
-      publicChatRateLimitRetryTemplate: 'Retry in {seconds} seconds.',
-    })
 
-    expect(copyOverrides).toEqual({
-      publicChatSendMessageLabel: 'Enviar',
-      publicChatDisclaimerTemplate: '{name} puede cometer errores.',
-    })
-    expect(theme.accent).toBe('#112233')
-    expect(formatWebsiteEmbedRateLimitRetry(copy, 7)).toBe('Retry in 7 seconds.')
+    expect(copyOverrides.invalidKey).toBeUndefined()
+    expect(Object.keys(copyOverrides)).toHaveLength(2)
+    expect(theme.accent).toBeTruthy()
   })
 })

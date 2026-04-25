@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 
 import { AuthPage } from '@/components/auth/auth-page'
@@ -8,7 +8,7 @@ import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { Spinner } from '@/components/ui/spinner'
 import { accountApi, seedWorkspaceSession, workspaceApi } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
-import { parseDashboardRoute, withDashboardWorkspace, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { parseDashboardRoute, withDashboardWorkspace } from '@/lib/dashboard-routes'
 
 const getParamValue = (value: string | string[] | undefined) => {
   if (Array.isArray(value)) {
@@ -30,35 +30,39 @@ export default function WorkspaceDashboardPage() {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const auth = useAuth()
-  const [resolvedRouteState, setResolvedRouteState] = useState<DashboardRouteState | null>(null)
+  const { isAuthenticated, isBootstrapping, login, user } = useAuth()
+  const [resolvedWorkspace, setResolvedWorkspace] = useState<{
+    workspaceId: string
+    workspacePublicRouteKey: string
+  } | null>(null)
 
-  const workspaceKey = getParamValue(params.workspaceKey)
-  const segments = getParamList(params.segments)
-  const parsedRoute = parseDashboardRoute(segments, searchParams)
-
-  useEffect(() => {
-    if (!parsedRoute) {
-      return
+  const workspaceKey = useMemo(() => getParamValue(params.workspaceKey), [params.workspaceKey])
+  const segments = useMemo(() => getParamList(params.segments), [params.segments])
+  const searchParamsString = searchParams.toString()
+  const parsedRoute = useMemo(
+    () => parseDashboardRoute(segments, new URLSearchParams(searchParamsString)),
+    [searchParamsString, segments],
+  )
+  const resolvedRouteState = useMemo(() => {
+    if (!parsedRoute || !resolvedWorkspace || resolvedWorkspace.workspacePublicRouteKey !== workspaceKey) {
+      return null
     }
 
-    setResolvedRouteState((current) => {
-      if (!current || current.workspacePublicRouteKey !== workspaceKey) {
-        return current
-      }
-
-      return withDashboardWorkspace(parsedRoute, current.workspaceId, current.workspacePublicRouteKey)
-    })
-  }, [parsedRoute, workspaceKey])
+    return withDashboardWorkspace(
+      parsedRoute,
+      resolvedWorkspace.workspaceId,
+      resolvedWorkspace.workspacePublicRouteKey,
+    )
+  }, [parsedRoute, resolvedWorkspace, workspaceKey])
 
   useEffect(() => {
-    if (!auth.isBootstrapping && auth.user && !parsedRoute) {
+    if (!isBootstrapping && user && !parsedRoute) {
       router.replace('/')
     }
-  }, [auth.isBootstrapping, auth.user, parsedRoute, router])
+  }, [isBootstrapping, parsedRoute, router, user])
 
   useEffect(() => {
-    if (auth.isBootstrapping || !auth.user || !workspaceKey || !parsedRoute) {
+    if (isBootstrapping || !user || !workspaceKey || !parsedRoute) {
       return
     }
 
@@ -69,17 +73,27 @@ export default function WorkspaceDashboardPage() {
         const resolved = await workspaceApi.resolve(workspaceKey)
         if (cancelled) return
 
-        if (resolved.accountId !== auth.user?.accountId) {
+        if (resolved.accountId !== user.accountId) {
           const response = await accountApi.switchAccount(resolved.accountId, resolved.workspaceId)
           if (cancelled) return
           seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-          await auth.login(auth.user.email, response.userId, response.accountId)
+          await login(user.email, response.userId, response.accountId)
         } else {
           seedWorkspaceSession(resolved.workspaceId, resolved.workspaceKey)
         }
 
         if (cancelled) return
-        setResolvedRouteState(withDashboardWorkspace(parsedRoute, resolved.workspaceId, resolved.workspaceKey))
+        setResolvedWorkspace((current) => {
+          const nextState = {
+            workspaceId: resolved.workspaceId,
+            workspacePublicRouteKey: resolved.workspaceKey,
+          }
+          return current &&
+            current.workspaceId === nextState.workspaceId &&
+            current.workspacePublicRouteKey === nextState.workspacePublicRouteKey
+            ? current
+            : nextState
+        })
       } catch {
         if (!cancelled) {
           router.replace('/')
@@ -89,9 +103,9 @@ export default function WorkspaceDashboardPage() {
 
     void resolveRoute()
     return () => { cancelled = true }
-  }, [auth, parsedRoute, router, workspaceKey])
+  }, [isBootstrapping, login, parsedRoute, router, user, workspaceKey])
 
-  if (auth.isBootstrapping) {
+  if (isBootstrapping) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner className="h-6 w-6" />
@@ -99,7 +113,7 @@ export default function WorkspaceDashboardPage() {
     )
   }
 
-  if (!auth.isAuthenticated || !auth.user) {
+  if (!isAuthenticated || !user) {
     return <AuthPage />
   }
 
@@ -118,7 +132,7 @@ export default function WorkspaceDashboardPage() {
 
   return (
     <DashboardShell
-      accountId={auth.user.accountId}
+      accountId={user.accountId}
       routeState={resolvedRouteState}
     />
   )

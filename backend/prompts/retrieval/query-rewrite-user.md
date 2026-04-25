@@ -9,3 +9,5 @@ Lexical rewrite instructions:
 
 Latest user question:
 {{query}}
+
+Return only the strict JSON object requested by the system prompt, including responseIntent.

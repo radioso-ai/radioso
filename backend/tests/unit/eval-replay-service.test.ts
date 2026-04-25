@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { BlankChatAnswerError } from "../../src/modules/chat/services/chatService.js";
 import { EvalReplayService } from "../../src/modules/evals/services/evalReplayService.js";
 import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 import { getAssistantWorkflowPolicy } from "../../src/modules/chat/services/chatExecutionPolicy.js";
@@ -63,6 +64,282 @@ describe("EvalReplayService", () => {
     expect(replay.answerOutcome).toBe("no_context_refusal");
     expect(replay.answer).toEqual(expect.any(String));
     expect(replay.answer.length).toBeGreaterThan(0);
+  });
+
+  it("replays non-retrieval social turns through the same direct-answer path as chat", async () => {
+    let observedPrompt = "";
+    const retrievalPipeline = {
+      async run() {
+        throw new Error("run should not be used when intent routing is available");
+      },
+      async interpret() {
+        return {
+          request: {
+            workspaceId: "workspace-1",
+            query: "Thanks for the help",
+            history: [],
+            assistantIdentity: null,
+          },
+          traceStartedAtMs: Date.now(),
+          context: {
+            startedAt: Date.now(),
+            durationMs: 1,
+            result: {
+              request: {
+                workspaceId: "workspace-1",
+                query: "Thanks for the help",
+                history: [],
+                assistantIdentity: null,
+              },
+              settings: {
+                workspaceId: "workspace-1",
+                queryRewriteEnabled: true,
+                semanticRewriteInstructions: "",
+                lexicalRewriteInstructions: "",
+                answerSupportPolicy: "strict",
+                conversationMode: "guided",
+                suggestedQuestionsEnabled: true,
+                suggestedQuestionsCount: 3,
+                rerankEnabled: false,
+                vectorTopK: 20,
+                similarityThreshold: 0.1,
+                rerankTopK: 5,
+                citationDisplayEnabled: true,
+                customInstruction: "Keep it warm and brief.",
+                metadataRules: [],
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+              contextWindow: {
+                selectedMessages: [],
+                truncated: false,
+                selectionReason: "full-history",
+              },
+            },
+          },
+          interpretation: {
+            startedAt: Date.now(),
+            durationMs: 1,
+            result: {
+              responseIntent: "social_only",
+            },
+          },
+        };
+      },
+      async runInterpreted() {
+        throw new Error("runInterpreted should not be used for non-retrieval replay turns");
+      },
+      async runWithoutRetrieval() {
+        return {
+          rewrittenQuery: "Thanks for the help",
+          contexts: [],
+          prompt: "",
+          citations: [],
+          assistantIdentity: null,
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "guided",
+            suggestedQuestionsEnabled: true,
+            suggestedQuestionsCount: 3,
+            customInstruction: "Keep it warm and brief.",
+            responseLanguagePolicy: "match_user_question",
+          },
+          diagnostics: {
+            rewriteStatus: "applied",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            responseIntent: "social_only",
+            retrievalSkipped: true,
+            intentConfidence: 0.96,
+            intentFallbackApplied: false,
+            parsedQuery: {
+              originalQuery: "Thanks for the help",
+              semanticQuery: "Thanks for the help",
+              lexicalQuery: "Thanks for the help",
+              constraints: [],
+            },
+            triggerAnalysis: {
+              status: "skipped_non_retrieval",
+              consideredRules: [],
+              matchedRuleIds: [],
+              unmatchedRuleIds: [],
+              matchCount: 0,
+              matcherVersion: "non_retrieval",
+            },
+          },
+          trace: {
+            traceId: "trace-1",
+            startedAt: "2026-04-09T00:00:00.000Z",
+            stages: [],
+            links: [],
+          },
+        };
+      },
+    } as any;
+
+    const chatGateway = {
+      async answer({ prompt }: { prompt: string }) {
+        observedPrompt = prompt;
+        return "Thanks. Ask me about retreats whenever you like.";
+      },
+    } as any;
+
+    const service = new EvalReplayService(retrievalPipeline, chatGateway, groundedMissResponseComposer);
+    const replay = await service.replay({
+      workspaceId: "workspace-1",
+      query: "Thanks for the help",
+    });
+
+    expect(replay.answerOutcome).toBe("non_retrieval_response");
+    expect(replay.answer).toBe("Thanks. Ask me about retreats whenever you like.");
+    expect(replay.retrievalInfo).toMatchObject({
+      responseIntent: "social_only",
+      retrievalSkipped: true,
+    });
+    expect(observedPrompt).toContain("Keep it warm and brief.");
+    expect(observedPrompt).toContain("Answer Instructions:");
+  });
+
+  it("falls back to the normal no-context response when a non-retrieval replay answer is blank", async () => {
+    const retrievalPipeline = {
+      async run() {
+        throw new Error("run should not be used when intent routing is available");
+      },
+      async interpret() {
+        return {
+          request: {
+            workspaceId: "workspace-1",
+            query: "Thanks for the help",
+            history: [],
+            assistantIdentity: null,
+          },
+          traceStartedAtMs: Date.now(),
+          context: {
+            startedAt: Date.now(),
+            durationMs: 1,
+            result: {
+              request: {
+                workspaceId: "workspace-1",
+                query: "Thanks for the help",
+                history: [],
+                assistantIdentity: null,
+              },
+              settings: {
+                workspaceId: "workspace-1",
+                queryRewriteEnabled: true,
+                semanticRewriteInstructions: "",
+                lexicalRewriteInstructions: "",
+                answerSupportPolicy: "strict",
+                conversationMode: "guided",
+                suggestedQuestionsEnabled: true,
+                suggestedQuestionsCount: 3,
+                rerankEnabled: false,
+                vectorTopK: 20,
+                similarityThreshold: 0.1,
+                rerankTopK: 5,
+                citationDisplayEnabled: true,
+                customInstruction: "Keep it warm and brief.",
+                metadataRules: [],
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+              contextWindow: {
+                selectedMessages: [],
+                truncated: false,
+                selectionReason: "full-history",
+              },
+            },
+          },
+          interpretation: {
+            startedAt: Date.now(),
+            durationMs: 1,
+            result: {
+              responseIntent: "social_only",
+            },
+          },
+        };
+      },
+      async runInterpreted() {
+        throw new Error("runInterpreted should not be used for non-retrieval replay turns");
+      },
+      async runWithoutRetrieval() {
+        return {
+          rewrittenQuery: "Thanks for the help",
+          contexts: [],
+          prompt: "",
+          citations: [],
+          assistantIdentity: null,
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "guided",
+            suggestedQuestionsEnabled: true,
+            suggestedQuestionsCount: 3,
+            customInstruction: "Keep it warm and brief.",
+            responseLanguagePolicy: "match_user_question",
+          },
+          diagnostics: {
+            rewriteStatus: "applied",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            responseIntent: "social_only",
+            retrievalSkipped: true,
+            intentConfidence: 0.96,
+            intentFallbackApplied: false,
+            parsedQuery: {
+              originalQuery: "Thanks for the help",
+              semanticQuery: "Thanks for the help",
+              lexicalQuery: "Thanks for the help",
+              constraints: [],
+            },
+            triggerAnalysis: {
+              status: "skipped_non_retrieval",
+              consideredRules: [],
+              matchedRuleIds: [],
+              unmatchedRuleIds: [],
+              matchCount: 0,
+              matcherVersion: "non_retrieval",
+            },
+          },
+          trace: {
+            traceId: "trace-1",
+            startedAt: "2026-04-09T00:00:00.000Z",
+            stages: [],
+            links: [],
+          },
+        };
+      },
+    } as any;
+
+    const chatGateway = {
+      async answer() {
+        throw new BlankChatAnswerError();
+      },
+    } as any;
+
+    const service = new EvalReplayService(retrievalPipeline, chatGateway, groundedMissResponseComposer);
+    const replay = await service.replay({
+      workspaceId: "workspace-1",
+      query: "Thanks for the help",
+    });
+
+    expect(replay.answerOutcome).toBe("no_context_refusal");
+    expect(replay.answer).toBe(
+      "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+    );
   });
 
   it("measures latency across retrieval and answer generation", async () => {

@@ -3,6 +3,7 @@ import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSet
 import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import type {
   ConversationContextWindow,
+  ResponseIntent,
   RetrievalSubquery,
   ResponseLanguagePolicy,
   RewrittenRetrievalQuery,
@@ -32,6 +33,7 @@ export interface QueryInterpretationStageResult extends RetrievalContextStageRes
   originalParsedQuery: ParsedQueryInterpretation;
   originalPreparedQuery: ParsedQueryInterpretation;
   rewrittenQuery: RewrittenRetrievalQuery;
+  responseIntent: ResponseIntent;
   activeQuery: string;
   activeParsedQuery: ParsedQueryInterpretation;
   activeSemanticQuery: string;
@@ -87,6 +89,7 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
     conversationMode: RetrievalSettingsRecord["conversationMode"];
     suggestedQuestionsEnabled: RetrievalSettingsRecord["suggestedQuestionsEnabled"];
     suggestedQuestionsCount: RetrievalSettingsRecord["suggestedQuestionsCount"];
+    customInstruction?: RetrievalSettingsRecord["customInstruction"];
     responseLanguagePolicy?: ResponseLanguagePolicy;
   };
 }

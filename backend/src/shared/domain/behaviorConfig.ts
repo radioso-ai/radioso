@@ -3,6 +3,9 @@ export const LLM_DEFAULTS = {
 } as const;
 
 export const CHAT_BEHAVIOR = {
+  intentRouting: {
+    nonRetrievalConfidenceThreshold: 0.85,
+  },
   unsupportedNotice: {
     temperature: 0,
     maxOutputTokens: 80,

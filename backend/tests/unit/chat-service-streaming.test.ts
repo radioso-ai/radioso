@@ -27,6 +27,133 @@ const groundedMissResponseComposer: GroundedMissResponseComposer = {
 };
 
 describe("chat service streaming", () => {
+  const createIntentRoutedNoContextPipeline = (input: {
+    query: string;
+    responseIntent: "social_only" | "assistant_identity";
+    assistantIdentity?: {
+      assistantName: string;
+      assistantRole: string;
+      greetingInstruction: string;
+    };
+    customInstruction?: string;
+  }) => ({
+    async run() {
+      throw new Error("run should not be used when intent routing is available");
+    },
+    async interpret() {
+      return {
+        request: {
+          workspaceId: "workspace-1",
+          query: input.query,
+          history: [],
+          assistantIdentity: input.assistantIdentity ?? null,
+        },
+        traceStartedAtMs: Date.now(),
+        context: {
+          startedAt: Date.now(),
+          durationMs: 1,
+          result: {
+            request: {
+              workspaceId: "workspace-1",
+              query: input.query,
+              history: [],
+              assistantIdentity: input.assistantIdentity ?? null,
+            },
+            settings: {
+              workspaceId: "workspace-1",
+              queryRewriteEnabled: true,
+              semanticRewriteInstructions: "",
+              lexicalRewriteInstructions: "",
+              answerSupportPolicy: "strict",
+              conversationMode: "guided",
+              suggestedQuestionsEnabled: true,
+              suggestedQuestionsCount: 3,
+              rerankEnabled: false,
+              vectorTopK: 20,
+              similarityThreshold: 0.1,
+              rerankTopK: 5,
+              citationDisplayEnabled: true,
+              customInstruction: input.customInstruction ?? "",
+              metadataRules: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            contextWindow: {
+              selectedMessages: [],
+              truncated: false,
+              selectionReason: "full-history",
+            },
+          },
+        },
+        interpretation: {
+          startedAt: Date.now(),
+          durationMs: 1,
+          result: {
+            responseIntent: input.responseIntent,
+          },
+        },
+      };
+    },
+    async runInterpreted() {
+      throw new Error("runInterpreted should not be used for non-retrieval turns");
+    },
+    async runWithoutRetrieval() {
+      return {
+        rewrittenQuery: input.query,
+        contexts: [],
+        prompt: "",
+        citations: [],
+        assistantIdentity: input.assistantIdentity ?? null,
+        responseSettings: {
+          citationDisplayEnabled: true,
+          answerSupportPolicy: "strict",
+          conversationMode: "guided",
+          suggestedQuestionsEnabled: true,
+          suggestedQuestionsCount: 3,
+          customInstruction: input.customInstruction ?? "",
+          responseLanguagePolicy: "match_user_question",
+        },
+        diagnostics: {
+          rewriteStatus: "applied",
+          rerankStatus: "skipped",
+          originalCandidateCount: 0,
+          rewrittenCandidateCount: 0,
+          lexicalCandidateCount: 0,
+          normalizedCandidateCount: 0,
+          finalContextCount: 0,
+          candidateFallbackApplied: false,
+          fallbackApplied: false,
+          responseIntent: input.responseIntent,
+          retrievalSkipped: true,
+          intentConfidence: 0.9,
+          intentFallbackApplied: false,
+          parsedQuery: {
+            originalQuery: input.query,
+            semanticQuery: input.query,
+            lexicalQuery: input.query,
+            constraints: [],
+          },
+          triggerAnalysis: {
+            status: "skipped_non_retrieval",
+            consideredRules: [],
+            matchedRuleIds: [],
+            unmatchedRuleIds: [],
+            matchCount: 0,
+            matcherVersion: "non_retrieval",
+          },
+        },
+        trace: {
+          traceId: `trace-${input.responseIntent}`,
+          startedAt: new Date().toISOString(),
+          stages: [
+            { stageId: "diagnostics", kind: "diagnostics", label: "Diagnostics", status: "skipped" },
+          ],
+          links: [],
+        },
+      };
+    },
+  });
+
   it("persists the normalized assistant answer only after the stream completes", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
@@ -265,41 +392,15 @@ describe("chat service streaming", () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const retrievalPipeline = {
-      async run() {
-        return {
-          rewrittenQuery: "what is your name",
-          contexts: [],
-          prompt: "unused retrieval prompt",
-          citations: [],
-          assistantIdentity: {
-            assistantName: "Marta",
-            assistantRole: "Museum guide",
-            greetingInstruction: "Warm and concise",
-          },
-          diagnostics: {
-            rewriteStatus: "skipped",
-            rerankStatus: "skipped",
-            originalCandidateCount: 0,
-            rewrittenCandidateCount: 0,
-            lexicalCandidateCount: 0,
-            normalizedCandidateCount: 0,
-            finalContextCount: 0,
-            candidateFallbackApplied: false,
-            fallbackApplied: false,
-            parsedQuery: {
-              semanticQuery: "what is your name",
-              lexicalQuery: "what is your name",
-              constraints: [],
-            },
-          },
-          responseSettings: {
-            citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
-          },
-        };
+    const retrievalPipeline = createIntentRoutedNoContextPipeline({
+      query: "What is your name and what do you do?",
+      responseIntent: "assistant_identity",
+      assistantIdentity: {
+        assistantName: "Marta",
+        assistantRole: "Museum guide",
+        greetingInstruction: "Warm and concise",
       },
-    } as const;
+    });
     const chatGateway: ChatGateway = {
       async answer() {
         return "My name is Marta. I am your museum guide.";
@@ -333,41 +434,15 @@ describe("chat service streaming", () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const retrievalPipeline = {
-      async run() {
-        return {
-          rewrittenQuery: "what is your name",
-          contexts: [],
-          prompt: "unused retrieval prompt",
-          citations: [],
-          assistantIdentity: {
-            assistantName: "Marta",
-            assistantRole: "Museum guide",
-            greetingInstruction: "Warm and concise",
-          },
-          diagnostics: {
-            rewriteStatus: "skipped",
-            rerankStatus: "skipped",
-            originalCandidateCount: 0,
-            rewrittenCandidateCount: 0,
-            lexicalCandidateCount: 0,
-            normalizedCandidateCount: 0,
-            finalContextCount: 0,
-            candidateFallbackApplied: false,
-            fallbackApplied: false,
-            parsedQuery: {
-              semanticQuery: "what is your name",
-              lexicalQuery: "what is your name",
-              constraints: [],
-            },
-          },
-          responseSettings: {
-            citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
-          },
-        };
+    const retrievalPipeline = createIntentRoutedNoContextPipeline({
+      query: "What is your name?",
+      responseIntent: "assistant_identity",
+      assistantIdentity: {
+        assistantName: "Marta",
+        assistantRole: "Museum guide",
+        greetingInstruction: "Warm and concise",
       },
-    } as const;
+    });
     const chatGateway: ChatGateway = {
       async answer() {
         throw new BlankChatAnswerError();
@@ -399,41 +474,15 @@ describe("chat service streaming", () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const retrievalPipeline = {
-      async run() {
-        return {
-          rewrittenQuery: "what is your name",
-          contexts: [],
-          prompt: "unused retrieval prompt",
-          citations: [],
-          assistantIdentity: {
-            assistantName: "Marta",
-            assistantRole: "Museum guide",
-            greetingInstruction: "Warm and concise",
-          },
-          diagnostics: {
-            rewriteStatus: "skipped",
-            rerankStatus: "skipped",
-            originalCandidateCount: 0,
-            rewrittenCandidateCount: 0,
-            lexicalCandidateCount: 0,
-            normalizedCandidateCount: 0,
-            finalContextCount: 0,
-            candidateFallbackApplied: false,
-            fallbackApplied: false,
-            parsedQuery: {
-              semanticQuery: "what is your name",
-              lexicalQuery: "what is your name",
-              constraints: [],
-            },
-          },
-          responseSettings: {
-            citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
-          },
-        };
+    const retrievalPipeline = createIntentRoutedNoContextPipeline({
+      query: "What is your name?",
+      responseIntent: "assistant_identity",
+      assistantIdentity: {
+        assistantName: "Marta",
+        assistantRole: "Museum guide",
+        greetingInstruction: "Warm and concise",
       },
-    } as const;
+    });
     const chatGateway: ChatGateway = {
       async answer() {
         throw new Error("provider unavailable");
@@ -474,41 +523,15 @@ describe("chat service streaming", () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const retrievalPipeline = {
-      async run() {
-        return {
-          rewrittenQuery: "what do you do",
-          contexts: [],
-          prompt: "unused retrieval prompt",
-          citations: [],
-          assistantIdentity: {
-            assistantName: "Marta",
-            assistantRole: "Museum guide",
-            greetingInstruction: "Warm and concise",
-          },
-          diagnostics: {
-            rewriteStatus: "skipped",
-            rerankStatus: "skipped",
-            originalCandidateCount: 0,
-            rewrittenCandidateCount: 0,
-            lexicalCandidateCount: 0,
-            normalizedCandidateCount: 0,
-            finalContextCount: 0,
-            candidateFallbackApplied: false,
-            fallbackApplied: false,
-            parsedQuery: {
-              semanticQuery: "what do you do",
-              lexicalQuery: "what do you do",
-              constraints: [],
-            },
-          },
-          responseSettings: {
-            citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
-          },
-        };
+    const retrievalPipeline = createIntentRoutedNoContextPipeline({
+      query: "What do you do?",
+      responseIntent: "assistant_identity",
+      assistantIdentity: {
+        assistantName: "Marta",
+        assistantRole: "Museum guide",
+        greetingInstruction: "Warm and concise",
       },
-    } as const;
+    });
     const chatGateway: ChatGateway = {
       async answer() {
         return "I am Marta, and I help visitors navigate the museum.";
@@ -541,6 +564,57 @@ describe("chat service streaming", () => {
       expect.objectContaining({
         type: "done",
         answer: expect.any(String),
+      }),
+    );
+  });
+
+  it("falls back to the normal no-context response when a streamed non-retrieval answer is blank", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = createIntentRoutedNoContextPipeline({
+      query: "What do you do?",
+      responseIntent: "assistant_identity",
+      assistantIdentity: {
+        assistantName: "Marta",
+        assistantRole: "Museum guide",
+        greetingInstruction: "Warm and concise",
+      },
+    });
+    const chatGateway: ChatGateway = {
+      async answer() {
+        throw new BlankChatAnswerError();
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "What do you do?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events[1]).toEqual({
+      type: "chunk",
+      text: "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+    });
+    expect(events[2]).toEqual(
+      expect.objectContaining({
+        type: "done",
+        answer: "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
       }),
     );
   });
@@ -2887,6 +2961,422 @@ describe("chat service streaming", () => {
       type: "done",
       answer: expect.any(String),
     }));
+  });
+
+  it("routes social-only turns through the non-retrieval path and keeps answer instructions available", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    let groundedMissCalls = 0;
+    let observedPrompt = "";
+    let runInterpretedCalls = 0;
+    let runWithoutRetrievalCalls = 0;
+
+    const retrievalPipeline = {
+      async run() {
+        throw new Error("run should not be used when intent routing is available");
+      },
+      async interpret() {
+        return {
+          request: {
+            workspaceId: "workspace-1",
+            query: "Thanks for the help",
+            history: [],
+            assistantIdentity: {
+              assistantName: "Vikram",
+              assistantRole: "Guide to Ananda",
+              greetingInstruction: "",
+            },
+          },
+          traceStartedAtMs: Date.now(),
+          context: {
+            startedAt: Date.now(),
+            durationMs: 1,
+            result: {
+              request: {
+                workspaceId: "workspace-1",
+                query: "Thanks for the help",
+                history: [],
+                assistantIdentity: {
+                  assistantName: "Vikram",
+                  assistantRole: "Guide to Ananda",
+                  greetingInstruction: "",
+                },
+              },
+              settings: {
+                workspaceId: "workspace-1",
+                queryRewriteEnabled: true,
+                semanticRewriteInstructions: "",
+                lexicalRewriteInstructions: "",
+                answerSupportPolicy: "strict",
+                conversationMode: "guided",
+                suggestedQuestionsEnabled: true,
+                suggestedQuestionsCount: 3,
+                rerankEnabled: false,
+                vectorTopK: 20,
+                similarityThreshold: 0.1,
+                rerankTopK: 5,
+                citationDisplayEnabled: true,
+                customInstruction: "Keep the tone calm and welcoming.",
+                metadataRules: [],
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+              contextWindow: {
+                selectedMessages: [],
+                truncated: false,
+                selectionReason: "full-history",
+              },
+            },
+          },
+          interpretation: {
+            startedAt: Date.now(),
+            durationMs: 1,
+            result: {
+              responseIntent: "social_only",
+            },
+          },
+        };
+      },
+      async runInterpreted() {
+        runInterpretedCalls += 1;
+        throw new Error("runInterpreted should not be used for social-only turns");
+      },
+      async runWithoutRetrieval() {
+        runWithoutRetrievalCalls += 1;
+        return {
+          rewrittenQuery: "Thanks for the help",
+          contexts: [],
+          prompt: "",
+          citations: [],
+          assistantIdentity: {
+            assistantName: "Vikram",
+            assistantRole: "Guide to Ananda",
+            greetingInstruction: "",
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "guided",
+            suggestedQuestionsEnabled: true,
+            suggestedQuestionsCount: 3,
+            customInstruction: "Keep the tone calm and welcoming.",
+            responseLanguagePolicy: "match_user_question",
+          },
+          diagnostics: {
+            rewriteStatus: "applied",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            responseIntent: "social_only",
+            retrievalSkipped: true,
+            intentConfidence: 0.96,
+            intentFallbackApplied: false,
+            parsedQuery: {
+              originalQuery: "Thanks for the help",
+              semanticQuery: "Thanks for the help",
+              lexicalQuery: "Thanks for the help",
+              constraints: [],
+            },
+            triggerAnalysis: {
+              status: "skipped_non_retrieval",
+              consideredRules: [],
+              matchedRuleIds: [],
+              unmatchedRuleIds: [],
+              matchCount: 0,
+              matcherVersion: "non_retrieval",
+            },
+          },
+          trace: {
+            traceId: "trace-1",
+            startedAt: new Date().toISOString(),
+            stages: [
+              { stageId: "diagnostics", kind: "diagnostics", label: "Diagnostics", status: "skipped" },
+            ],
+            links: [],
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        observedPrompt = prompt;
+        return "Thanks. Ask me about retreats or courses when you're ready.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const fallbackComposer: GroundedMissResponseComposer = {
+      async composeUnsupportedWithContext() {
+        return "unused";
+      },
+      async composeNoContext() {
+        groundedMissCalls += 1;
+        return "I couldn't find supporting material.";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      fallbackComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "Thanks for the help",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Thanks. Ask me about retreats or courses when you're ready.");
+    expect(response.citations).toBeUndefined();
+    expect(response.retrievalInfo).toMatchObject({
+      responseIntent: "social_only",
+      retrievalSkipped: true,
+      intentConfidence: 0.96,
+    });
+    expect(response.retrievalTrace.stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stageId: "answer",
+          status: "applied",
+          outputs: expect.objectContaining({
+            retrievalSkipped: true,
+          }),
+        }),
+      ]),
+    );
+    expect(observedPrompt).toContain("Keep the tone calm and welcoming.");
+    expect(observedPrompt).toContain("Stable assistant identity:");
+    expect(observedPrompt).toContain("Vikram");
+    expect(observedPrompt).toContain("Conversation mode: guided.");
+    expect(groundedMissCalls).toBe(0);
+    expect(runWithoutRetrievalCalls).toBe(1);
+    expect(runInterpretedCalls).toBe(0);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "chat.answer",
+        eventStatus: "success",
+        metadata: expect.objectContaining({
+          answerOutcome: "non_retrieval_response",
+        }),
+      }),
+    );
+  });
+
+  it("routes assistant-identity turns through the same non-retrieval path without regex checks", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    let observedPrompt = "";
+
+    const retrievalPipeline = {
+      async run() {
+        throw new Error("run should not be used when intent routing is available");
+      },
+      async interpret() {
+        return {
+          request: {
+            workspaceId: "workspace-1",
+            query: "Remind me what you do around here",
+            history: [],
+            assistantIdentity: {
+              assistantName: "Vikram",
+              assistantRole: "Guide to Ananda",
+              greetingInstruction: "",
+            },
+          },
+          traceStartedAtMs: Date.now(),
+          context: {
+            startedAt: Date.now(),
+            durationMs: 1,
+            result: {
+              request: {
+                workspaceId: "workspace-1",
+                query: "Remind me what you do around here",
+                history: [],
+                assistantIdentity: {
+                  assistantName: "Vikram",
+                  assistantRole: "Guide to Ananda",
+                  greetingInstruction: "",
+                },
+              },
+              settings: {
+                workspaceId: "workspace-1",
+                queryRewriteEnabled: true,
+                semanticRewriteInstructions: "",
+                lexicalRewriteInstructions: "",
+                answerSupportPolicy: "strict",
+                conversationMode: "guided",
+                suggestedQuestionsEnabled: true,
+                suggestedQuestionsCount: 3,
+                rerankEnabled: false,
+                vectorTopK: 20,
+                similarityThreshold: 0.1,
+                rerankTopK: 5,
+                citationDisplayEnabled: true,
+                customInstruction: "Keep the reply brief.",
+                metadataRules: [],
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+              contextWindow: {
+                selectedMessages: [],
+                truncated: false,
+                selectionReason: "full-history",
+              },
+            },
+          },
+          interpretation: {
+            startedAt: Date.now(),
+            durationMs: 1,
+            result: {
+              responseIntent: "assistant_identity",
+            },
+          },
+        };
+      },
+      async runInterpreted() {
+        throw new Error("runInterpreted should not be used for assistant identity turns");
+      },
+      async runWithoutRetrieval() {
+        return {
+          rewrittenQuery: "Remind me what you do around here",
+          contexts: [],
+          prompt: "",
+          citations: [],
+          assistantIdentity: {
+            assistantName: "Vikram",
+            assistantRole: "Guide to Ananda",
+            greetingInstruction: "",
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportPolicy: "strict",
+            conversationMode: "guided",
+            suggestedQuestionsEnabled: true,
+            suggestedQuestionsCount: 3,
+            customInstruction: "Keep the reply brief.",
+            responseLanguagePolicy: "match_user_question",
+          },
+          diagnostics: {
+            rewriteStatus: "applied",
+            rerankStatus: "skipped",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            responseIntent: "assistant_identity",
+            retrievalSkipped: true,
+            intentConfidence: 0.9,
+            intentFallbackApplied: false,
+            parsedQuery: {
+              originalQuery: "Remind me what you do around here",
+              semanticQuery: "Remind me what you do around here",
+              lexicalQuery: "Remind me what you do around here",
+              constraints: [],
+            },
+            triggerAnalysis: {
+              status: "skipped_non_retrieval",
+              consideredRules: [],
+              matchedRuleIds: [],
+              unmatchedRuleIds: [],
+              matchCount: 0,
+              matcherVersion: "non_retrieval",
+            },
+          },
+          trace: {
+            traceId: "trace-2",
+            startedAt: new Date().toISOString(),
+            stages: [
+              { stageId: "diagnostics", kind: "diagnostics", label: "Diagnostics", status: "skipped" },
+            ],
+            links: [],
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        observedPrompt = prompt;
+        return "I'm Vikram, your guide to Ananda.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "Remind me what you do around here",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("I'm Vikram, your guide to Ananda.");
+    expect(response.retrievalInfo).toMatchObject({
+      responseIntent: "assistant_identity",
+      retrievalSkipped: true,
+    });
+    expect(observedPrompt).toContain("Answer Instructions:");
+    expect(observedPrompt).toContain("Vikram");
+    expect(observedPrompt).toContain("Guide to Ananda");
+    expect(observedPrompt).toContain("Keep the reply brief.");
+  });
+
+  it("adds explicit missing-identity guidance when assistant identity is not configured", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    let observedPrompt = "";
+    const retrievalPipeline = createIntentRoutedNoContextPipeline({
+      query: "Who are you?",
+      responseIntent: "assistant_identity",
+    });
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        observedPrompt = prompt;
+        return "I don't have a configured workspace identity yet.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline as never,
+      chatGateway,
+      auditService,
+      groundedMissResponseComposer,
+    );
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: "Who are you?",
+      stream: false,
+    });
+
+    expect(observedPrompt).toContain("No stable assistant identity is configured for this workspace.");
+    expect(observedPrompt).toContain("Say that briefly instead of inventing a name, role, or capabilities.");
   });
 
 });

@@ -35,7 +35,7 @@ export const createEvalCaseSchema = z.object({
     expectedDocumentIds: z.array(z.string().uuid()).optional(),
     expectedCitationTitles: z.array(z.string()).optional(),
     expectedRefusalBehavior: z.enum(["refusal", "answer"]).optional(),
-    expectedAnswerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal"]).optional(),
+    expectedAnswerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal", "non_retrieval_response"]).optional(),
     requiredPhrases: z.array(z.string()).optional(),
     forbiddenPhrases: z.array(z.string()).optional(),
     latencyBudgetMs: z.number().int().positive().optional(),

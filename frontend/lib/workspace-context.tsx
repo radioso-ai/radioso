@@ -67,6 +67,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     let cancelled = false
 
     const bootstrap = async () => {
+      setIsLoading(true)
+      setWorkspaces([])
+      setActiveWorkspaceId(null)
+
       try {
         const list = await workspaceApi.list()
         if (cancelled) return

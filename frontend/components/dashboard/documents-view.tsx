@@ -609,7 +609,7 @@ export function DocumentsView({
         />
       ) : (
         <>
-          <div className="shrink-0 border-b border-border px-6 py-4">
+          <div className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div className="min-w-0 flex-1 space-y-2">
                 <div>

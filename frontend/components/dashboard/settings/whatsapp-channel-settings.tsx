@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react'
 
 import { ConnectorSettingsForm } from '@/components/dashboard/connectors/connector-settings-form'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { MessageSquare } from 'lucide-react'
 import { LogoSpinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import {
   connectorsApi,
   type ConnectorDetail,
@@ -15,11 +17,15 @@ const WHATSAPP_CONNECTOR_ID = 'whatsapp'
 
 export function WhatsAppChannelSettings({
   onSaveStateChange,
+  onLoadingChange,
+  suppressLoadingState = false,
 }: {
   onSaveStateChange?: (input: {
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
   }) => void
+  onLoadingChange?: (isLoading: boolean) => void
+  suppressLoadingState?: boolean
 }) {
   const [channelId, setChannelId] = useState<string | null>(null)
   const [channel, setChannel] = useState<ConnectorDetail | null>(null)
@@ -47,6 +53,10 @@ export function WhatsAppChannelSettings({
 
     void load()
   }, [])
+
+  useEffect(() => {
+    onLoadingChange?.(isLoading)
+  }, [isLoading, onLoadingChange])
 
   const refreshChannel = async (nextChannelId: string) => {
     const detail = await connectorsApi.getConnector(nextChannelId)
@@ -76,6 +86,10 @@ export function WhatsAppChannelSettings({
   }
 
   if (isLoading) {
+    if (suppressLoadingState) {
+      return null
+    }
+
     return (
       <div className="flex min-h-[320px] items-center justify-center">
         <LogoSpinner imageClassName="h-7 w-7" />
@@ -100,13 +114,32 @@ export function WhatsAppChannelSettings({
         <LogoSpinner imageClassName="h-7 w-7" />
       </div>
     ) : (
-      <ConnectorSettingsForm
-        key={`${channel.id}:${channel.enabled}:${JSON.stringify(channel.config)}:${channel.errorStatus ?? ''}`}
-        connector={channel}
-        onSaveStateChange={onSaveStateChange}
-        onSave={saveChannelConfig}
-        onSetEnabled={setChannelEnabled}
-      />
+      <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
+              <MessageSquare className="h-5 w-5 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-medium text-foreground">WhatsApp</h3>
+              <p className="text-sm text-muted-foreground">Configure the WhatsApp channel for this workspace.</p>
+            </div>
+          </div>
+          <Switch
+            checked={channel.enabled}
+            onCheckedChange={(checked) => void setChannelEnabled(checked)}
+            className="sm:mt-3"
+          />
+        </div>
+        <div className="mt-5">
+          <ConnectorSettingsForm
+            key={`${channel.id}:${channel.enabled}:${JSON.stringify(channel.config)}:${channel.errorStatus ?? ''}`}
+            connector={channel}
+            onSaveStateChange={onSaveStateChange}
+            onSave={saveChannelConfig}
+          />
+        </div>
+      </section>
     )
   )
 }

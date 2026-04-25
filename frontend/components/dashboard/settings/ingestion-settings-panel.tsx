@@ -8,7 +8,6 @@ import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
 import { chunkingStrategyOptions } from '@/components/dashboard/settings/settings-options'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
-import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { ingestionSettingDocs } from '@/components/dashboard/settings/settings-docs'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -29,7 +28,6 @@ export function IngestionSettingsPanel({
 }: {
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
-  const descriptor = getSettingsTabDescriptor('ingestion')
   const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [settings, setSettings] = useState<IngestionSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -190,10 +188,6 @@ export function IngestionSettingsPanel({
   return (
     <SettingsTabShell>
       <div className="space-y-6">
-        <section className="space-y-1 px-1">
-          <p className="text-sm text-muted-foreground">{descriptor.summary}</p>
-        </section>
-
         <SettingsCard
           id="chunking-strategy"
           icon={<Settings2 className="h-5 w-5 text-primary" />}

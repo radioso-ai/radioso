@@ -11,7 +11,7 @@ export function SettingsTabShell({
 }) {
   return (
     <div className="settings-surface flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
+      <div className="w-full px-4 py-6 sm:px-6">
         <div className="min-w-0 space-y-6">
           {children}
           {footer ? (

@@ -85,17 +85,6 @@ export default function WorkspaceDashboardPage() {
   }, [isBootstrapping, parsedRoute, router, user])
 
   useEffect(() => {
-    if (!user) {
-      return
-    }
-
-    const pendingAccountSwitchId = getPendingAccountSwitchId()
-    if (pendingAccountSwitchId === user.accountId) {
-      setPendingAccountSwitchId(null)
-    }
-  }, [user])
-
-  useEffect(() => {
     if (isBootstrapping || !user || !workspaceKey || !parsedRoute) {
       return
     }
@@ -106,8 +95,13 @@ export default function WorkspaceDashboardPage() {
       try {
         const resolved = await workspaceApi.resolve(workspaceKey)
         if (cancelled) return
+        const pendingAccountSwitchId = getPendingAccountSwitchId()
 
         if (resolved.accountId !== user.accountId) {
+          if (pendingAccountSwitchId && pendingAccountSwitchId !== resolved.accountId) {
+            return
+          }
+
           const response = await accountApi.switchAccount(resolved.accountId, resolved.workspaceId)
           if (cancelled) return
           seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
@@ -117,6 +111,9 @@ export default function WorkspaceDashboardPage() {
         }
 
         if (cancelled) return
+        if (pendingAccountSwitchId === resolved.accountId) {
+          setPendingAccountSwitchId(null)
+        }
         setResolvedWorkspace((current) => {
           const nextState = {
             workspaceId: resolved.workspaceId,

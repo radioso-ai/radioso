@@ -41,7 +41,7 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
   channels: {
     id: 'channels',
     title: 'Channels',
-    summary: 'Control where users can access this assistant across public chat, website embed, and WhatsApp.',
+    summary: 'Control where users can access this assistant.',
     sections: [
       {
         id: 'anonymous-chat',

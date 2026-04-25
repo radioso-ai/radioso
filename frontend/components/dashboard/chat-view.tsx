@@ -151,7 +151,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-border px-6 py-4">
+      <div className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-lg font-medium text-foreground">Chat</h1>

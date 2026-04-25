@@ -5,6 +5,7 @@ import { FileText, History, MessageSquareText } from 'lucide-react'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { Button } from '@/components/ui/button'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { cn } from '@/lib/utils'
 import type { ChatConversationSummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getConversationSourceBadge } from '@/lib/history-source'
@@ -246,27 +247,38 @@ export function HistoryList({
 
   return (
     <>
-      <div className="shrink-0 border-b border-border px-6 py-4">
-        <h1 className="text-lg font-medium text-foreground">History</h1>
-        <p className="text-sm text-muted-foreground">
-          Review past chats and searches. Retrieval diagnostics live here.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {([
-            { value: 'all', label: 'All' },
-            { value: 'chat', label: 'Chats' },
-            { value: 'search', label: 'Searches' },
-          ] as const).map((option) => (
-            <Button
-              key={option.value}
-              type="button"
-              size="sm"
-              variant={filter === option.value ? 'default' : 'outline'}
-              onClick={() => onFilterChange(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
+      <div className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-lg font-medium text-foreground">History</h1>
+            <p className="text-sm text-muted-foreground">
+              Review past chats and searches. Retrieval diagnostics live here.
+            </p>
+          </div>
+          <div className="lg:ml-auto lg:self-start">
+            <div className="bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]">
+              {([
+                { value: 'all', label: 'All' },
+                { value: 'chat', label: 'Chats' },
+                { value: 'search', label: 'Searches' },
+              ] as const).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => onFilterChange(option.value)}
+                  className={cn(
+                    'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-foreground transition-[color,box-shadow,background-color] focus-visible:ring-[3px] focus-visible:outline-1',
+                    filter === option.value
+                      ? 'bg-background text-foreground shadow-sm dark:border-input dark:bg-input/30 dark:text-foreground'
+                      : 'dark:text-muted-foreground',
+                  )}
+                  aria-pressed={filter === option.value}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -327,7 +339,7 @@ export function HistoryList({
             </div>
           </div>
         ) : (
-          <div className="mx-auto max-w-4xl space-y-3">
+          <div className="space-y-3">
             {listError ? (
               <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
                 {listError}

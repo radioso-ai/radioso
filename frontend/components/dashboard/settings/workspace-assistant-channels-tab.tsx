@@ -5,7 +5,6 @@ import { Building2, Code2, ExternalLink, FolderOpen, Globe, KeyRound, MessageSqu
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
-import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { WhatsAppChannelSettings } from '@/components/dashboard/settings/whatsapp-channel-settings'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
@@ -41,6 +40,7 @@ import {
   sanitizeWebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
 import { useWorkspace } from '@/lib/workspace-context'
+import { cn } from '@/lib/utils'
 
 type JsonOverrideRecord = Record<string, unknown>
 
@@ -55,6 +55,25 @@ const getWebsiteEmbedJsonOverrideRecord = (value: string): JsonOverrideRecord =>
 
 const stringifyWebsiteEmbedJsonOverrideRecord = (value: JsonOverrideRecord) =>
   Object.keys(value).length > 0 ? JSON.stringify(value, null, 2) : ''
+
+const getOrganizationNameCacheKey = (accountId: string) => `radioso.organizationName:${accountId}`
+
+const readCachedOrganizationName = (accountId: string) => {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  const cachedValue = window.localStorage.getItem(getOrganizationNameCacheKey(accountId))
+  return typeof cachedValue === 'string' ? cachedValue : ''
+}
+
+const writeCachedOrganizationName = (accountId: string, organizationName: string) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(getOrganizationNameCacheKey(accountId), organizationName)
+}
 
 const updateWebsiteEmbedJsonOverrideValue = (currentValue: string, key: string, nextValue: string) => {
   const nextOverrides = getWebsiteEmbedJsonOverrideRecord(currentValue)
@@ -96,11 +115,10 @@ export function WorkspaceAssistantChannelsTab({
   mode: 'workspace' | 'assistant' | 'channels'
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
-  const descriptor = getSettingsTabDescriptor(mode)
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
   const [workspaceName, setWorkspaceName] = useState(activeWorkspace?.name ?? '')
-  const [organizationName, setOrganizationName] = useState('')
-  const [savedOrganizationName, setSavedOrganizationName] = useState('')
+  const [organizationName, setOrganizationName] = useState(() => readCachedOrganizationName(accountId))
+  const [savedOrganizationName, setSavedOrganizationName] = useState(() => readCachedOrganizationName(accountId))
   const [isOrganizationLoading, setIsOrganizationLoading] = useState(true)
   const [organizationError, setOrganizationError] = useState<string | null>(null)
   const [renameError, setRenameError] = useState<string | null>(null)
@@ -134,6 +152,7 @@ export function WorkspaceAssistantChannelsTab({
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
+  const [isWhatsAppLoading, setIsWhatsAppLoading] = useState(mode === 'channels')
   const [whatsAppSaveState, setWhatsAppSaveState] = useState<{
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
@@ -177,6 +196,10 @@ export function WorkspaceAssistantChannelsTab({
   }, [mode, whatsAppSaveState.state])
 
   useEffect(() => {
+    setIsWhatsAppLoading(mode === 'channels')
+  }, [mode, activeWorkspaceId])
+
+  useEffect(() => {
     if (!hasNameChange) {
       setWorkspaceName(activeWorkspace?.name ?? '')
     }
@@ -194,6 +217,7 @@ export function WorkspaceAssistantChannelsTab({
         const nextOrganizationName = current?.organizationName ?? ''
         setOrganizationName(nextOrganizationName)
         setSavedOrganizationName(nextOrganizationName)
+        writeCachedOrganizationName(accountId, nextOrganizationName)
         setOrganizationError(null)
       } catch {
         if (!active) return
@@ -675,6 +699,7 @@ export function WorkspaceAssistantChannelsTab({
         const updated = await accountApi.renameOrganization(trimmed)
         if (saveSequenceRef.current !== saveId) return
         setSavedOrganizationName(updated.organizationName)
+        writeCachedOrganizationName(accountId, updated.organizationName)
         if (organizationDraftVersionRef.current === draftVersionAtRequestStart) {
           setOrganizationName(updated.organizationName)
           setSaveState('saved')
@@ -936,37 +961,28 @@ export function WorkspaceAssistantChannelsTab({
   return (
     <SettingsTabShell>
       <div className="space-y-8">
-        <section className="space-y-1 px-1">
-          <p className="text-sm text-muted-foreground">{descriptor.summary}</p>
-        </section>
-
         {mode === 'workspace' ? (
         <section id="workspace-access" className="space-y-6 scroll-mt-24">
-            {isOrganizationLoading ? (
-              <div className="flex items-center justify-center py-4">
-                <LogoSpinner imageClassName="h-6 w-6" />
+            <SettingsCard
+              icon={<Building2 className="h-5 w-5 text-primary" />}
+              title="Organization name"
+              description="Label shown in the organization picker and invite flows."
+            >
+              <div className="space-y-2">
+                <Input
+                  value={organizationName}
+                  onChange={(event) => {
+                    organizationDraftVersionRef.current += 1
+                    setOrganizationName(event.target.value)
+                    setOrganizationError(null)
+                  }}
+                  maxLength={80}
+                  className="flex-1"
+                  placeholder={isOrganizationLoading ? 'Loading organization name…' : undefined}
+                />
+                {organizationError ? <p className="text-sm text-destructive">{organizationError}</p> : null}
               </div>
-            ) : (
-              <SettingsCard
-                icon={<Building2 className="h-5 w-5 text-primary" />}
-                title="Organization name"
-                description="Label shown in the organization picker and invite flows."
-              >
-                <div className="space-y-2">
-                  <Input
-                    value={organizationName}
-                    onChange={(event) => {
-                      organizationDraftVersionRef.current += 1
-                      setOrganizationName(event.target.value)
-                      setOrganizationError(null)
-                    }}
-                    maxLength={80}
-                    className="flex-1"
-                  />
-                  {organizationError ? <p className="text-sm text-destructive">{organizationError}</p> : null}
-                </div>
-              </SettingsCard>
-            )}
+            </SettingsCard>
 
             <SettingsCard
               icon={<FolderOpen className="h-5 w-5 text-primary" />}
@@ -1167,35 +1183,39 @@ export function WorkspaceAssistantChannelsTab({
           </section>
           ) : null}
 
-          {mode === 'channels' ? (
+          {mode === 'channels' && (isAnonLoading || isWhatsAppLoading) ? (
+          <section className="flex min-h-[320px] items-center justify-center">
+            <LogoSpinner imageClassName="h-7 w-7" />
+          </section>
+          ) : null}
+
+          {mode === 'channels' && !isAnonLoading && !isWhatsAppLoading ? (
           <section id="anonymous-chat" className="space-y-6 scroll-mt-24">
-            {isAnonLoading ? (
-              <div className="flex items-center justify-center py-4">
-                <LogoSpinner imageClassName="h-6 w-6" />
-              </div>
-            ) : anonSettings ? (
-              <SettingsCard
-                icon={<MessageSquare className="h-5 w-5 text-primary" />}
-                title="Anonymous chat"
-                description="Public link access for unauthenticated visitors."
-              >
-                <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/20 p-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">Enable anonymous chat</p>
-                    <p className="text-sm text-muted-foreground">
-                      Turn on a public link that opens this assistant without signing in.
-                    </p>
+            {anonSettings ? (
+              <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
+                      <MessageSquare className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-medium text-foreground">Anonymous chat</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Public link access for unauthenticated visitors.
+                      </p>
+                    </div>
                   </div>
                   <Switch
                     id="anonChatToggle"
                     checked={anonSettings.anonymousChatEnabled}
                     onCheckedChange={handleAnonToggle}
                     disabled={isAnonSaving}
+                    className="sm:mt-3"
                   />
                 </div>
 
                 {anonSettings.anonymousChatEnabled && anonSettings.anonymousChatUrl ? (
-                  <>
+                  <div className="mt-5 space-y-5">
                     <div className="space-y-2">
                       <Label htmlFor="anonChatUrl" className="text-foreground">Public Chat URL</Label>
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
@@ -1244,43 +1264,41 @@ export function WorkspaceAssistantChannelsTab({
                         Maximum messages per minute for each anonymous user session.
                       </p>
                     </div>
-                  </>
+                  </div>
                 ) : null}
-              </SettingsCard>
+              </section>
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load anonymous chat settings.</p>
             )}
           </section>
           ) : null}
 
-          {mode === 'channels' ? (
+          {mode === 'channels' && !isAnonLoading && !isWhatsAppLoading ? (
           <section id="website-embed" className="space-y-6 scroll-mt-24">
-            {isAnonLoading ? (
-              <div className="flex items-center justify-center py-4">
-                <LogoSpinner imageClassName="h-6 w-6" />
-              </div>
-            ) : anonSettings ? (
-              <SettingsCard
-                icon={<Globe className="h-5 w-5 text-primary" />}
-                title="Hosted website widget"
-                description="Radioso-hosted launcher script and iframe chat for approved sites."
-              >
-                <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/20 p-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">Enable website widget</p>
-                    <p className="text-sm text-muted-foreground">
-                      Control whether approved sites can load the hosted embed.
-                    </p>
+            {anonSettings ? (
+              <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
+                      <Globe className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-medium text-foreground">Hosted website widget</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Radioso-hosted launcher script and iframe chat for approved sites.
+                      </p>
+                    </div>
                   </div>
                   <Switch
                     id="websiteEmbedToggle"
                     checked={anonSettings.websiteEmbedEnabled ?? false}
                     onCheckedChange={(checked) => handleAssistantSettingChange('websiteEmbedEnabled', checked)}
                     disabled={isAnonSaving}
+                    className="sm:mt-3"
                   />
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="websiteEmbedLauncherLabel" className="text-foreground">Launcher label</Label>
                     <Input
@@ -1675,7 +1693,7 @@ export function WorkspaceAssistantChannelsTab({
                   </div>
                 ) : null}
 
-              </SettingsCard>
+              </section>
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load website embed settings.</p>
             )}
@@ -1683,14 +1701,15 @@ export function WorkspaceAssistantChannelsTab({
           ) : null}
 
           {mode === 'channels' ? (
-          <section id="whatsapp-channel" className="space-y-6 scroll-mt-24">
-            <SettingsCard
-              icon={<MessageSquare className="h-5 w-5 text-primary" />}
-              title="WhatsApp"
-              description="Configure the WhatsApp channel for this workspace."
-            >
-              <WhatsAppChannelSettings onSaveStateChange={setWhatsAppSaveState} />
-            </SettingsCard>
+          <section
+            id="whatsapp-channel"
+            className={cn('space-y-6 scroll-mt-24', (isAnonLoading || isWhatsAppLoading) && 'hidden')}
+          >
+            <WhatsAppChannelSettings
+              onSaveStateChange={setWhatsAppSaveState}
+              onLoadingChange={setIsWhatsAppLoading}
+              suppressLoadingState
+            />
           </section>
           ) : null}
 

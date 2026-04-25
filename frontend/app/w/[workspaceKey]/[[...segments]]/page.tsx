@@ -36,11 +36,20 @@ export default function WorkspaceDashboardPage() {
   const workspaceKey = getParamValue(params.workspaceKey)
   const segments = getParamList(params.segments)
   const parsedRoute = parseDashboardRoute(segments, searchParams)
-  const searchParamsKey = searchParams.toString()
 
   useEffect(() => {
-    setResolvedRouteState(null)
-  }, [workspaceKey, searchParamsKey])
+    if (!parsedRoute) {
+      return
+    }
+
+    setResolvedRouteState((current) => {
+      if (!current || current.workspacePublicRouteKey !== workspaceKey) {
+        return current
+      }
+
+      return withDashboardWorkspace(parsedRoute, current.workspaceId, current.workspacePublicRouteKey)
+    })
+  }, [parsedRoute, workspaceKey])
 
   useEffect(() => {
     if (!auth.isBootstrapping && auth.user && !parsedRoute) {
@@ -94,7 +103,12 @@ export default function WorkspaceDashboardPage() {
     return <AuthPage />
   }
 
-  if (!workspaceKey || !parsedRoute || !resolvedRouteState) {
+  if (
+    !workspaceKey ||
+    !parsedRoute ||
+    !resolvedRouteState ||
+    resolvedRouteState.workspacePublicRouteKey !== workspaceKey
+  ) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner className="h-6 w-6" />

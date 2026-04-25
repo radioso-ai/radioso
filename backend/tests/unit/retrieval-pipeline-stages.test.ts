@@ -55,6 +55,88 @@ describe("retrieval pipeline stages", () => {
     });
   });
 
+  it("propagates non-retrieval response intent and skips trigger analysis", async () => {
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService({
+        async rewrite() {
+          return {
+            rewrittenQuery: "Thanks again",
+            semanticQuery: "Thanks again",
+            lexicalQuery: "Thanks again",
+            responseIntent: "social_only" as const,
+            turnKind: "ambiguous",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.94,
+          };
+        },
+      }, {
+        async analyze() {
+          return {
+            status: "applied" as const,
+            consideredRules: [],
+            matchedRuleIds: [],
+            unmatchedRuleIds: [],
+            matchCount: 0,
+            matcherVersion: "should-not-run",
+          };
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "Thanks again",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        answerSupportPolicy: "strict",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "events-only",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact when the user is asking about upcoming events.",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.responseIntent).toBe("social_only");
+    expect(result.rewrittenQuery.responseIntent).toBe("social_only");
+    expect(result.triggerAnalysis).toMatchObject({
+      status: "skipped_non_retrieval",
+      matcherVersion: "non_retrieval",
+      matchCount: 0,
+    });
+  });
+
   it("skips trigger matching when no triggerable rules are configured", async () => {
     let triggerCalls = 0;
     const stage = new QueryInterpretationStageService(
@@ -1043,12 +1125,14 @@ describe("retrieval pipeline stages", () => {
         effectiveQuery: "what about her later work?",
         semanticQuery: "what about her later work?",
         lexicalQuery: "what about her later work?",
+        responseIntent: "retrieval",
         rewriteApplied: false,
         retrievalEligible: false,
         status: "rejected",
         confidence: 0.9,
         rejectionReason: "rewrite_not_materially_different",
       },
+      responseIntent: "retrieval",
       activeQuery: "what about her later work?",
       activeParsedQuery: {
         originalQuery: "what about her later work?",

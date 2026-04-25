@@ -9,6 +9,7 @@ export interface AnswerOutcomeInput {
   answer: string;
   stream: boolean;
   hadContexts: boolean;
+  retrievalSkipped?: boolean;
   durationMs: number;
   answerOutcome?: string;
   validation?: {
@@ -76,16 +77,25 @@ export class RetrievalTracePresenter {
       stages: [],
       links: [],
     };
+    const retrievalSkipped = Boolean(input.outcome.retrievalSkipped);
     const answerStage: RetrievalTraceStage = {
       stageId: "answer",
       kind: "answer_outcome",
       label: "Answer outcome",
-      status: input.outcome.hadContexts ? "applied" : "fallback",
+      status: input.outcome.hadContexts || retrievalSkipped ? "applied" : "fallback",
       durationMs: input.outcome.durationMs,
       outputs: {
-        outcome: input.outcome.answerOutcome ?? (input.outcome.hadContexts ? "grounded_answer" : "no_context"),
+        outcome: input.outcome.answerOutcome
+          ?? (
+            retrievalSkipped
+              ? "non_retrieval_answer"
+              : input.outcome.hadContexts
+                ? "grounded_answer"
+                : "no_context"
+          ),
         stream: input.outcome.stream,
         answerPreview: summarizeValue(input.outcome.answer),
+        retrievalSkipped,
         validationRan: input.outcome.validation?.ran,
         answerModified: input.outcome.validation?.answerModified,
         unsupportedSegmentCount: input.outcome.validation?.unsupportedSegmentCount,
@@ -97,7 +107,11 @@ export class RetrievalTracePresenter {
       metrics: {
         answerLength: input.outcome.answer.length,
       },
-      reason: input.outcome.hadContexts ? undefined : "No relevant contexts were available for grounded answer generation.",
+      reason: retrievalSkipped
+        ? "Retrieval was intentionally skipped for a non-retrieval chat turn."
+        : input.outcome.hadContexts
+          ? undefined
+          : "No relevant contexts were available for grounded answer generation.",
     };
 
     return this.present(

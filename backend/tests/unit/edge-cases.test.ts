@@ -36,6 +36,25 @@ describe("edge cases", () => {
     expect(result.citations).toEqual([]);
   });
 
+  it("includes stable assistant identity in the retrieval prompt", () => {
+    const builder = new PromptBuilder();
+    const result = builder.build({
+      query: "What is your name?",
+      history: [],
+      settings: {
+        assistantIdentity: {
+          assistantName: "Marta",
+          assistantRole: "Museum guide",
+          greetingInstruction: "Warm and concise",
+        },
+      },
+      contexts: [],
+    });
+
+    expect(result.prompt).toContain("Stable assistant identity:");
+    expect(result.prompt).toContain("Assistant name: Marta");
+    expect(result.prompt).toContain("What this assistant helps with: Museum guide");
+  });
   it("falls back to the original query when rewrite assistance errors", async () => {
     const service = new QueryRewriteService({
       async rewrite() {

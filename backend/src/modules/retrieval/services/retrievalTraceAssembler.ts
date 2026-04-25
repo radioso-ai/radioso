@@ -159,6 +159,7 @@ export class RetrievalTraceAssembler {
           semanticQuery: prompt.activeParsedQuery.semanticQuery,
           lexicalQuery: prompt.activeParsedQuery.lexicalQuery,
           lexicalEffectiveQuery: prompt.rewrittenQuery.lexicalQuery,
+          responseIntent: diagnostics.responseIntent,
           responseLanguagePolicy: prompt.rewrittenQuery.responseLanguagePolicy,
           retrievalSubqueries: (diagnostics.retrievalSubqueries ?? []).map((subquery) => ({
             id: subquery.id,
@@ -289,6 +290,8 @@ export class RetrievalTraceAssembler {
       }),
       buildStage("diagnostics", "diagnostics", "Diagnostics", "applied", timings.diagnostics, {
         outputs: {
+          responseIntent: diagnostics.responseIntent,
+          retrievalSkipped: diagnostics.retrievalSkipped,
           fallbackApplied: diagnostics.fallbackApplied,
           continuityDecision: diagnostics.continuityDecision,
         },
@@ -338,6 +341,10 @@ export class RetrievalTraceAssembler {
           reason: subquery.reason,
           responseLanguagePolicy: subquery.responseLanguagePolicy,
         })),
+        responseIntent: diagnostics.responseIntent,
+        retrievalSkipped: diagnostics.retrievalSkipped,
+        intentConfidence: diagnostics.intentConfidence,
+        intentFallbackApplied: diagnostics.intentFallbackApplied,
         responseLanguagePolicy: diagnostics.responseLanguagePolicy,
         candidateCounts: {
           semantic: diagnostics.originalCandidateCount + diagnostics.rewrittenCandidateCount,

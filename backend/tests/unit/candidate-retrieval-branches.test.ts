@@ -91,6 +91,7 @@ describe("candidate retrieval branches", () => {
         effectiveQuery: "who is narayani and arudra?",
         semanticQuery: "who is narayani and arudra?",
         lexicalQuery: "who is narayani and arudra?",
+        responseIntent: "retrieval",
         retrievalSubqueries: [
           { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani" },
           { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra" },
@@ -100,6 +101,7 @@ describe("candidate retrieval branches", () => {
         status: "applied",
         confidence: 0.9,
       },
+      responseIntent: "retrieval",
       activeQuery: "who is narayani and arudra?",
       activeParsedQuery: {
         originalQuery: "who is narayani and arudra?",

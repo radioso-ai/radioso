@@ -55,6 +55,7 @@ describe("retrieval trace assembler", () => {
           effectiveQuery: "who is narayani and arudra?",
           semanticQuery: "who is narayani and arudra?",
           lexicalQuery: "who is narayani and arudra?",
+          responseIntent: "retrieval",
           responseLanguagePolicy: "match_user_question",
           retrievalSubqueries: [
             { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani", responseLanguagePolicy: "match_user_question" },
@@ -65,6 +66,7 @@ describe("retrieval trace assembler", () => {
           status: "applied",
           confidence: 0.9,
         },
+        responseIntent: "retrieval",
         activeQuery: "who is narayani and arudra?",
         activeParsedQuery: {
           originalQuery: "who is narayani and arudra?",

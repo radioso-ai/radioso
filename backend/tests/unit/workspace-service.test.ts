@@ -8,15 +8,15 @@ import {
 } from "../support/fakes.js";
 
 describe("workspace service", () => {
-  it("creates workspaces with a readable public route key", async () => {
+  it("creates workspaces with a numeric public route key", async () => {
     const service = new WorkspaceService(new InMemoryWorkspaceRepository(), createAuditService());
 
     const workspace = await service.create("account-1", "Customer Support");
 
-    expect(workspace.publicRouteKey).toMatch(/^customer-support-[a-z0-9]{6}$/);
+    expect(workspace.publicRouteKey).toMatch(/^\d{10}$/);
   });
 
-  it("caps public route keys so long workspace names still produce valid URLs", async () => {
+  it("keeps public route keys independent from the workspace name", async () => {
     const service = new WorkspaceService(new InMemoryWorkspaceRepository(), createAuditService());
 
     const workspace = await service.create(
@@ -24,8 +24,9 @@ describe("workspace service", () => {
       "This workspace name is intentionally much longer than the canonical route should expose",
     );
 
-    expect(workspace.publicRouteKey).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*-[a-z0-9]{6}$/);
-    expect(workspace.publicRouteKey.length).toBeLessThanOrEqual(31);
+    expect(workspace.publicRouteKey).toMatch(/^\d{10}$/);
+    expect(workspace.publicRouteKey).not.toContain("workspace");
+    expect(workspace.publicRouteKey.length).toBe(10);
   });
 
   it("keeps the public route key stable when a workspace is renamed", async () => {

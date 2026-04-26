@@ -88,7 +88,6 @@ backend/
 │       └── providerRegistry.ts
 └── tests/
     ├── integration/chat.integration.test.ts
-    ├── integration/connectors/whatsappFlow.test.ts
     ├── unit/chat-service-streaming.test.ts
     ├── unit/eval-replay-service.test.ts
     └── unit/[new composer tests]

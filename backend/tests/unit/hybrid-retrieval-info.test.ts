@@ -114,4 +114,35 @@ describe("hybrid retrieval info", () => {
       },
     });
   });
+
+  it("includes execution metadata when a caller supplies the capability surface", () => {
+    const presenter = new RetrievalInfoPresenter();
+
+    const result = presenter.present(
+      {
+        rewriteStatus: "skipped",
+        rerankStatus: "skipped",
+        originalCandidateCount: 0,
+        rewrittenCandidateCount: 0,
+        lexicalCandidateCount: 0,
+        normalizedCandidateCount: 0,
+        finalContextCount: 0,
+        candidateFallbackApplied: false,
+        fallbackApplied: false,
+      },
+      {
+        execution: {
+          surface: "mcp_capability",
+          path: "mcp_grounded_answer",
+          retrievalInvoked: true,
+        },
+      },
+    );
+
+    expect(result.execution).toEqual({
+      surface: "mcp_capability",
+      path: "mcp_grounded_answer",
+      retrievalInvoked: true,
+    });
+  });
 });

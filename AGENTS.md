@@ -91,6 +91,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL 16 with existing `workspaces`, `sessions`, `account_memberships`, and dashboard URL state in the browser (049-workspace-route-keys)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing prompt-loader and retrieval/chat service seams (050-social-turn-intent)
 - PostgreSQL 16 with existing conversations, messages, retrieval settings, and additive assistant-turn audit metadata only (050-social-turn-intent)
+- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing MCP package under `packages/radioso-mcp-server` (051-assistant-retrieval-boundary)
+- PostgreSQL 16 with existing `workspaces`, `retrieval_settings`, `conversations`, `messages`, `audit_events`, and existing public/embed workspace columns; no schema migration is required for the boundary split itself (051-assistant-retrieval-boundary)
 
 
 ## Project Structure
@@ -120,6 +122,6 @@ tests/
 - Store backend runtime LLM prompt templates under `backend/prompts/`. Do not add new runtime prompt files at repo root `/prompts`; if prompt text is extracted from backend code, the destination is `backend/prompts/`.
 
 ## Recent Changes
+- 051-assistant-retrieval-boundary: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing MCP package under `packages/radioso-mcp-server`
 - 050-social-turn-intent: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing prompt-loader and retrieval/chat service seams
 - 049-workspace-route-keys: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, `pg`, Zod, Pino, React 19, Next.js App Router, existing auth/workspace services
-- 048-triggered-retrieval-filters: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, OpenAI SDK, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives

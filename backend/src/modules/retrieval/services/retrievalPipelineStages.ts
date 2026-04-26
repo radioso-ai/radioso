@@ -1,6 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalSettingsRecord } from "../../settings/domain/retrievalSettings.js";
-import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
+import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type {
   ConversationContextWindow,
   ResponseIntent,
@@ -18,7 +18,8 @@ export interface RetrievalPipelineRequest {
   workspaceId: string;
   query: string;
   history: MessageRecord[];
-  assistantIdentity?: AssistantIdentityPromptInput | null;
+  responseIdentity?: ResponseIdentity | null;
+  responseBehaviorEnabled?: boolean;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   metadataFilter?: Record<string, unknown>;
 }

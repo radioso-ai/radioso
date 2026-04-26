@@ -51,6 +51,8 @@ const HIDDEN_SUPPORT_LABELS = {
   assistant_role: 'Assistant role',
 } as const
 
+const formatDiagnosticLabel = (value: string) => value.replaceAll('_', ' ')
+
 interface HistoryPageSnapshot<T> {
   items: T[]
   total: number
@@ -1050,6 +1052,26 @@ function ChatDiagnosticsPanel({
       {diagnosticsDebug?.errorMessage ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
           {diagnosticsDebug?.errorMessage}
+        </div>
+      ) : null}
+
+      {diagnosticsDebug?.route ? (
+        <div className="rounded-lg border border-border/70 bg-background/70 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-foreground">Response route</p>
+            <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              {formatDiagnosticLabel(diagnosticsDebug.route.generator)}
+            </span>
+            <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              {formatDiagnosticLabel(diagnosticsDebug.route.routeType)}
+            </span>
+            <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              {formatDiagnosticLabel(diagnosticsDebug.route.routeReason)}
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Retrieval {diagnosticsDebug.route.retrievalInvoked ? 'was invoked for this assistant response.' : 'was skipped for this assistant response.'}
+          </p>
         </div>
       ) : null}
 

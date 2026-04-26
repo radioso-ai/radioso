@@ -36,10 +36,12 @@ describe("retrieval execution telemetry service", () => {
     });
 
     expect(diagnostics.fallbackApplied).toBe(false);
-    expect(metricsRegistry?.renderPrometheus()).toContain(
-      'radioso_retrieval_pipeline_runs_total{fallback_applied="false",rerank_status="applied",rewrite_status="applied"} 1',
-    );
-    expect(metricsRegistry?.renderPrometheus()).toContain("radioso_retrieval_candidate_count_bucket");
+    const metrics = metricsRegistry?.renderPrometheus() ?? "";
+    expect(metrics).toContain("radioso_retrieval_pipeline_runs_total");
+    expect(metrics).toContain('fallback_applied="false"');
+    expect(metrics).toContain('rerank_status="applied"');
+    expect(metrics).toContain('rewrite_status="applied"');
+    expect(metrics).toContain("radioso_retrieval_candidate_count_bucket");
   });
 
   it("marks fallback runs in the emitted telemetry tags", async () => {
@@ -67,8 +69,49 @@ describe("retrieval execution telemetry service", () => {
     });
 
     expect(diagnostics.fallbackApplied).toBe(true);
-    expect(metricsRegistry?.renderPrometheus()).toContain(
-      'radioso_retrieval_pipeline_runs_total{fallback_applied="true",rerank_status="fallback",rewrite_status="fallback"} 1',
-    );
+    const metrics = metricsRegistry?.renderPrometheus() ?? "";
+    expect(metrics).toContain("radioso_retrieval_pipeline_runs_total");
+    expect(metrics).toContain('fallback_applied="true"');
+    expect(metrics).toContain('rerank_status="fallback"');
+    expect(metrics).toContain('rewrite_status="fallback"');
+  });
+
+  it("carries assistant and retrieval route diagnostics into telemetry metadata", async () => {
+    const { metricsRegistry, sinks } = buildTelemetrySinks({ METRICS_ENABLED: true });
+    const telemetryService = new TelemetryService({
+      enabled: true,
+      environment: "test",
+      logger: createLogger("silent"),
+      service: "radioso-api",
+      sinks,
+      version: "test",
+    });
+    const service = new RetrievalExecutionTelemetryService(telemetryService);
+
+    const diagnostics = await service.create({
+      workspaceId: "workspace-1",
+      execution: {
+        surface: "retrieval",
+        path: "retrieval_answer",
+        retrievalInvoked: true,
+      },
+      rewriteStatus: "applied",
+      rerankStatus: "skipped",
+      originalCandidateCount: 2,
+      rewrittenCandidateCount: 0,
+      lexicalCandidateCount: 1,
+      normalizedCandidateCount: 2,
+      finalContextCount: 1,
+      candidateFallbackApplied: false,
+    });
+
+    expect(diagnostics.execution).toEqual({
+      surface: "retrieval",
+      path: "retrieval_answer",
+      retrievalInvoked: true,
+    });
+    const metrics = metricsRegistry?.renderPrometheus() ?? "";
+    expect(metrics).toContain('execution_surface="retrieval"');
+    expect(metrics).toContain('execution_path="retrieval_answer"');
   });
 });

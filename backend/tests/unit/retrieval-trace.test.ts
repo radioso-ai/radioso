@@ -124,4 +124,38 @@ describe("retrieval trace presenter", () => {
       }),
     });
   });
+
+  it("preserves execution metadata in the trace summary", () => {
+    const presenter = new RetrievalTracePresenter();
+
+    const result = presenter.appendAnswerOutcome({
+      summary: {
+        execution: {
+          surface: "retrieval",
+          path: "retrieval_answer",
+          retrievalInvoked: true,
+        },
+        candidateCounts: {
+          semantic: 1,
+          lexical: 0,
+          merged: 1,
+          final: 1,
+        },
+        fallbackApplied: false,
+        rerankStatus: "skipped",
+      },
+      outcome: {
+        answer: "A grounded answer",
+        stream: false,
+        hadContexts: true,
+        durationMs: 4,
+      },
+    });
+
+    expect(result.summary?.execution).toEqual({
+      surface: "retrieval",
+      path: "retrieval_answer",
+      retrievalInvoked: true,
+    });
+  });
 });

@@ -2,6 +2,7 @@ import type {
   ResponseIntent,
   ResponseLanguagePolicy,
   RetrievalExecutionDiagnostics,
+  RetrievalExecutionMetadata,
   RetrievalSubquery,
   TriggerAnalysisResult,
   TriggerBackoffDecision,
@@ -16,6 +17,7 @@ export class RetrievalExecutionTelemetryService {
 
   async create(input: {
     workspaceId: string;
+    execution?: RetrievalExecutionMetadata;
     rewriteStatus: RewriteStatus;
     rerankStatus: RerankStatus;
     originalCandidateCount: number;
@@ -73,12 +75,17 @@ export class RetrievalExecutionTelemetryService {
         fallbackReason: input.fallbackReason,
         triggerMatchCount: input.triggerAnalysis?.matchCount ?? 0,
         triggerBackoffApplied: input.triggerBackoff?.applied ?? false,
+        executionSurface: input.execution?.surface,
+        executionPath: input.execution?.path,
+        retrievalInvoked: input.execution?.retrievalInvoked ?? input.retrievalSkipped !== true,
       },
       tags: {
         rewrite_status: input.rewriteStatus,
         rerank_status: input.rerankStatus,
         response_intent: input.responseIntent ?? "unknown",
         fallback_applied: diagnostics.fallbackApplied ? "true" : "false",
+        execution_surface: input.execution?.surface ?? "unknown",
+        execution_path: input.execution?.path ?? "unknown",
       },
     });
 

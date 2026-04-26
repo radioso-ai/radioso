@@ -1,14 +1,14 @@
 # Custom Instruction
 
 ## Summary
-Add workspace-specific answer guidance that shapes both grounded answers and non-retrieval chat replies.
+Add assistant-owned answer guidance for customer-facing chat responses.
 
 ## Details
 ### Overview
 
-This is the workspace-level instruction for how answers should be written.
+This is the workspace-level assistant instruction for how customer-facing answers should be written.
 
-In practice, it applies to grounded answers and also to short social or identity replies that do not need retrieval.
+In practice, it applies to assistant chat responses after the assistant decides whether the current message can be answered directly or needs retrieval. It is not a retrieval tuning field.
 
 ### Appropriate Uses
 
@@ -21,4 +21,4 @@ In practice, it applies to grounded answers and also to short social or identity
 
 Do not use this as a bandage for retrieval problems.
 
-If the wrong evidence is being found, the fix belongs in ingestion or retrieval settings, not here.
+If the wrong evidence is being found, the fix belongs in ingestion or retrieval settings, not here. Use retrieval rewrite, ranking, and metadata controls for evidence quality.

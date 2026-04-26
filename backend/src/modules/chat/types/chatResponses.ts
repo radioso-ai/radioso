@@ -20,8 +20,14 @@ export interface ConversationModeMetadata {
   followUpQuestionApplied: boolean;
 }
 
+export interface ChatRoute {
+  type: "direct" | "retrieval";
+  reason: "assistant_identity" | "conversation_start" | "evidence_required" | "social_only";
+}
+
 export interface ChatResponse {
   conversationId: string;
+  route?: ChatRoute;
   answer: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];

@@ -66,7 +66,7 @@ still classified as `no_context_refusal`.
 ### Tests for User Story 2 (REQUIRED for backend)
 
 - [x] T010 [P] [US2] Update no-context unit coverage in `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/chat-service-streaming.test.ts`
-- [x] T011 [P] [US2] Update no-context integration and connector coverage in `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/integration/chat.integration.test.ts` and `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/integration/connectors/whatsappFlow.test.ts`
+- [x] T011 [P] [US2] Update no-context integration coverage in `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/integration/chat.integration.test.ts`
 - [x] T012 [P] [US2] Add eval replay no-context coverage in `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/eval-replay-service.test.ts`
 
 ### Implementation for User Story 2
@@ -105,7 +105,7 @@ remain unchanged.
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 - [x] T018 Mark completed tasks and reconcile final artifact wording in `/Users/dm/conductor/workspaces/radioso/madison-v1/specs/039-unsupported-answer-refine/tasks.md`
-- [x] T019 Run targeted backend validation for `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/grounded-miss-response-composer.test.ts`, `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/chat-service-streaming.test.ts`, `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/eval-replay-service.test.ts`, `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/integration/chat.integration.test.ts`, and `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/integration/connectors/whatsappFlow.test.ts`
+- [x] T019 Run targeted backend validation for `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/grounded-miss-response-composer.test.ts`, `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/chat-service-streaming.test.ts`, `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/eval-replay-service.test.ts`, and `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/integration/chat.integration.test.ts`
 - [x] T020 Run additional regression validation needed for confidence and update any affected docs or task state
 
 ## Dependencies & Execution Order

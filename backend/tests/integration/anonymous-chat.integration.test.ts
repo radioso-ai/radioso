@@ -46,7 +46,7 @@ describe("anonymous chat bootstrap integration", () => {
 
     const bootstrap = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "en-US" });
+      .send({ startConversation: true, stream: false, userExpectedLocale: "en-US" });
 
     expect(bootstrap.status).toBe(200);
     const anonCookie = findAnonymousCookie(bootstrap.headers["set-cookie"]);
@@ -57,7 +57,7 @@ describe("anonymous chat bootstrap integration", () => {
       .set("Cookie", anonCookie!)
       .send({
         conversationId: bootstrap.body.conversationId,
-        query: "Can you help me?",
+        message: "Can you help me?",
         stream: false,
       });
 
@@ -158,9 +158,18 @@ describe("anonymous chat bootstrap integration", () => {
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ query: "What do the testing docs cover?", stream: false });
+      .send({ message: "What do the testing docs cover?", stream: false });
 
     expect(response.status).toBe(200);
+    expect(response.body.route).toEqual({
+      type: "retrieval",
+      reason: "evidence_required",
+    });
+    expect(response.body.retrievalInfo.execution).toMatchObject({
+      surface: "assistant",
+      path: "assistant_retrieval",
+      retrievalInvoked: true,
+    });
     expect(response.body.suggestions.length).toBeGreaterThan(0);
     expect(
       response.body.suggestions.every((suggestion: { kind: string }) =>
@@ -169,5 +178,18 @@ describe("anonymous chat bootstrap integration", () => {
     expect(
       response.body.suggestions.some((suggestion: { kind: string }) => suggestion.kind === "broader"),
     ).toBe(true);
+
+    const anonCookie = findAnonymousCookie(response.headers["set-cookie"]);
+    const history = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/history/${response.body.conversationId}`)
+      .set("Cookie", anonCookie!)
+      .expect(200);
+    const assistantTurn = history.body.messages.find((message: { role: string }) => message.role === "assistant");
+    expect(assistantTurn?.debug?.route).toMatchObject({
+      generator: "assistant",
+      routeType: "retrieval",
+      routeReason: "evidence_required",
+      retrievalInvoked: true,
+    });
   });
 });

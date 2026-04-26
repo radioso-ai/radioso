@@ -5,7 +5,6 @@ import { Building2, Code2, ExternalLink, FolderOpen, Globe, KeyRound, MessageSqu
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
-import { WhatsAppChannelSettings } from '@/components/dashboard/settings/whatsapp-channel-settings'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
@@ -40,7 +39,6 @@ import {
   sanitizeWebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
 import { useWorkspace } from '@/lib/workspace-context'
-import { cn } from '@/lib/utils'
 
 type JsonOverrideRecord = Record<string, unknown>
 
@@ -152,11 +150,6 @@ export function WorkspaceAssistantChannelsTab({
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
-  const [isWhatsAppLoading, setIsWhatsAppLoading] = useState(mode === 'channels')
-  const [whatsAppSaveState, setWhatsAppSaveState] = useState<{
-    state: 'idle' | 'saved' | 'saving' | 'error'
-    message?: string | null
-  }>({ state: 'idle' })
   const saveSequenceRef = useRef(0)
   const organizationDraftVersionRef = useRef(0)
   const workspaceDraftVersionRef = useRef(0)
@@ -171,33 +164,18 @@ export function WorkspaceAssistantChannelsTab({
       return
     }
 
-    if (whatsAppSaveState.state === 'error') {
-      onSaveStateChange?.(whatsAppSaveState)
-      return
-    }
-
-    if (primaryState.state === 'saving' || whatsAppSaveState.state === 'saving') {
+    if (primaryState.state === 'saving') {
       onSaveStateChange?.({ state: 'saving', message: null })
       return
     }
 
-    if (primaryState.state === 'saved' || whatsAppSaveState.state === 'saved') {
+    if (primaryState.state === 'saved') {
       onSaveStateChange?.({ state: 'saved', message: null })
       return
     }
 
     onSaveStateChange?.({ state: 'idle', message: null })
-  }, [onSaveStateChange, saveError, saveState, whatsAppSaveState])
-
-  useEffect(() => {
-    if (mode !== 'channels' && whatsAppSaveState.state !== 'idle') {
-      setWhatsAppSaveState({ state: 'idle' })
-    }
-  }, [mode, whatsAppSaveState.state])
-
-  useEffect(() => {
-    setIsWhatsAppLoading(mode === 'channels')
-  }, [mode, activeWorkspaceId])
+  }, [onSaveStateChange, saveError, saveState])
 
   useEffect(() => {
     if (!hasNameChange) {
@@ -429,10 +407,12 @@ export function WorkspaceAssistantChannelsTab({
   const hasAssistantBehaviorChanges =
     assistantBehaviorSettings && savedAssistantBehaviorSettings
       ? (
-          assistantBehaviorSettings.conversationMode !== savedAssistantBehaviorSettings.conversationMode ||
-          assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction
-        )
-      : false
+	          assistantBehaviorSettings.conversationMode !== savedAssistantBehaviorSettings.conversationMode ||
+	          assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction ||
+	          assistantBehaviorSettings.suggestedQuestionsEnabled !== savedAssistantBehaviorSettings.suggestedQuestionsEnabled ||
+	          assistantBehaviorSettings.suggestedQuestionsCount !== savedAssistantBehaviorSettings.suggestedQuestionsCount
+	        )
+	      : false
 
   const hasWebsiteEmbedChanges =
     anonSettings && savedAnonSettings
@@ -1159,9 +1139,55 @@ export function WorkspaceAssistantChannelsTab({
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-4 rounded bg-muted/50 p-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <Label htmlFor="proactiveGreetingEnabled" className="text-foreground">Proactive first greeting</Label>
+	                <div className="flex flex-col gap-4 rounded bg-muted/50 p-3 sm:flex-row sm:items-start sm:justify-between">
+	                  <div className="min-w-0">
+	                    <Label htmlFor="assistantSuggestedQuestionsEnabled" className="text-foreground">Suggested follow-up questions</Label>
+	                    <p className="text-sm text-muted-foreground mt-0.5">
+	                      Show grounded follow-up chips after assistant answers when useful.
+	                    </p>
+	                  </div>
+	                  <Switch
+	                    id="assistantSuggestedQuestionsEnabled"
+	                    checked={assistantBehaviorSettings.suggestedQuestionsEnabled}
+	                    onCheckedChange={(checked) =>
+	                      updateAssistantBehaviorDraft((current) => ({
+	                        ...current,
+	                        suggestedQuestionsEnabled: checked,
+	                      }))
+	                    }
+	                  />
+	                </div>
+
+	                {assistantBehaviorSettings.suggestedQuestionsEnabled ? (
+	                  <div className="space-y-3 rounded bg-muted/50 p-3">
+	                    <div className="flex items-center justify-between gap-4">
+	                      <div>
+	                        <Label htmlFor="assistantSuggestedQuestionsCount" className="text-foreground">Maximum follow-up questions</Label>
+	                        <p className="text-sm text-muted-foreground mt-0.5">
+	                          This is a cap. The assistant can return fewer when the evidence supports fewer useful continuations.
+	                        </p>
+	                      </div>
+	                      <span className="text-sm font-mono text-muted-foreground">{assistantBehaviorSettings.suggestedQuestionsCount}</span>
+	                    </div>
+	                    <Slider
+	                      id="assistantSuggestedQuestionsCount"
+	                      min={1}
+	                      max={4}
+	                      step={1}
+	                      value={[assistantBehaviorSettings.suggestedQuestionsCount]}
+	                      onValueChange={(value) =>
+	                        updateAssistantBehaviorDraft((current) => ({
+	                          ...current,
+	                          suggestedQuestionsCount: value[0] ?? 1,
+	                        }))
+	                      }
+	                    />
+	                  </div>
+	                ) : null}
+
+	                <div className="flex flex-col gap-4 rounded bg-muted/50 p-3 sm:flex-row sm:items-start sm:justify-between">
+	                  <div className="min-w-0">
+	                    <Label htmlFor="proactiveGreetingEnabled" className="text-foreground">Proactive first greeting</Label>
                     <p className="text-sm text-muted-foreground mt-0.5">
                       Whether a brand-new chat begins with an assistant-first greeting.
                     </p>
@@ -1183,13 +1209,13 @@ export function WorkspaceAssistantChannelsTab({
           </section>
           ) : null}
 
-          {mode === 'channels' && (isAnonLoading || isWhatsAppLoading) ? (
+          {mode === 'channels' && isAnonLoading ? (
           <section className="flex min-h-[320px] items-center justify-center">
             <LogoSpinner imageClassName="h-7 w-7" />
           </section>
           ) : null}
 
-          {mode === 'channels' && !isAnonLoading && !isWhatsAppLoading ? (
+          {mode === 'channels' && !isAnonLoading ? (
           <section id="anonymous-chat" className="space-y-6 scroll-mt-24">
             {anonSettings ? (
               <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
@@ -1273,7 +1299,7 @@ export function WorkspaceAssistantChannelsTab({
           </section>
           ) : null}
 
-          {mode === 'channels' && !isAnonLoading && !isWhatsAppLoading ? (
+          {mode === 'channels' && !isAnonLoading ? (
           <section id="website-embed" className="space-y-6 scroll-mt-24">
             {anonSettings ? (
               <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
@@ -1697,19 +1723,6 @@ export function WorkspaceAssistantChannelsTab({
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load website embed settings.</p>
             )}
-          </section>
-          ) : null}
-
-          {mode === 'channels' ? (
-          <section
-            id="whatsapp-channel"
-            className={cn('space-y-6 scroll-mt-24', (isAnonLoading || isWhatsAppLoading) && 'hidden')}
-          >
-            <WhatsAppChannelSettings
-              onSaveStateChange={setWhatsAppSaveState}
-              onLoadingChange={setIsWhatsAppLoading}
-              suppressLoadingState
-            />
           </section>
           ) : null}
 

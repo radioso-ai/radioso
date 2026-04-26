@@ -36,18 +36,18 @@ describe("chat bootstrap integration", () => {
       .expect(200);
 
     const bootstrap = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set(headers)
-      .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "it-IT" });
+      .send({ startConversation: true, stream: false, userExpectedLocale: "it-IT" });
 
     expect(bootstrap.status).toBe(200);
 
     const followUp = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set(headers)
       .send({
         conversationId: bootstrap.body.conversationId,
-        query: "Come ti chiami?",
+        message: "Come ti chiami?",
         stream: false,
       });
 
@@ -55,7 +55,7 @@ describe("chat bootstrap integration", () => {
     expect(followUp.body.conversationId).toBe(bootstrap.body.conversationId);
 
     const history = await request(app)
-      .get(`/api/v1/chat/history/${bootstrap.body.conversationId}`)
+      .get(`/api/v1/history/${bootstrap.body.conversationId}`)
       .set(headers);
 
     expect(history.status).toBe(200);

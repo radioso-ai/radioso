@@ -12,11 +12,6 @@ export interface AssistantBootstrapSettingsRecord {
   proactiveGreetingEnabled: boolean;
 }
 
-export interface AssistantIdentityPromptInput {
-  assistantName: string;
-  assistantRole: string;
-  greetingInstruction: string;
-}
 export interface AssistantBootstrapSettingsInput {
   assistantName?: string;
   assistantRole?: string;
@@ -87,17 +82,6 @@ export const isAssistantBootstrapConfigured = (input: AssistantBootstrapSettings
 export const isAssistantBootstrapActive = (input: AssistantBootstrapSettingsRecord): boolean =>
   input.proactiveGreetingEnabled && isAssistantBootstrapConfigured(input);
 
-export const toAssistantIdentityPromptInput = (
-  input: AssistantBootstrapSettingsRecord,
-): AssistantIdentityPromptInput | null =>
-  isAssistantBootstrapConfigured(input)
-    ? {
-        assistantName: input.assistantName,
-        assistantRole: input.assistantRole,
-        greetingInstruction: input.greetingInstruction,
-      }
-    : null;
-
 export const resolveAssistantDisplayName = (input: {
   assistantName: string;
   workspaceName: string;
@@ -111,7 +95,7 @@ export const resolveAssistantDisplayName = (input: {
 };
 
 export const buildPublicAssistantIdentityLines = (
-  input: Pick<AssistantIdentityPromptInput, "assistantName" | "assistantRole">,
+  input: Pick<AssistantBootstrapSettingsRecord, "assistantName" | "assistantRole">,
 ): string[] =>
   [
     input.assistantName ? `Assistant name: ${input.assistantName}` : null,

@@ -1,4 +1,9 @@
-import type { RerankStatus, RetrievalExecutionDiagnostics, RetrievalTraceSummary } from "../domain/retrievalPipelineTypes.js";
+import type {
+  RerankStatus,
+  RetrievalExecutionDiagnostics,
+  RetrievalExecutionMetadata,
+  RetrievalTraceSummary,
+} from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint } from "../domain/queryConstraintTypes.js";
 
 export interface RetrievalInfo extends RetrievalTraceSummary {
@@ -6,9 +11,14 @@ export interface RetrievalInfo extends RetrievalTraceSummary {
   appliedConstraints?: AppliedConstraint[];
 }
 
+export interface RetrievalInfoPresenterOptions {
+  execution?: RetrievalExecutionMetadata;
+}
+
 export class RetrievalInfoPresenter {
-  present(input: RetrievalExecutionDiagnostics): RetrievalInfo {
+  present(input: RetrievalExecutionDiagnostics, options: RetrievalInfoPresenterOptions = {}): RetrievalInfo {
     return {
+      execution: options.execution ?? input.execution,
       parsedQuery: input.parsedQuery
         ? {
             originalQuery: input.parsedQuery.originalQuery ?? input.parsedQuery.semanticQuery,

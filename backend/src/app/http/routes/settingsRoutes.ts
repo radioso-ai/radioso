@@ -89,6 +89,43 @@ export const updateGeneralSettingsSchema = z.object({
   websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions).optional(),
 });
 
+export const updatePlatformSettingsSchema = z.object({
+  assistant: z.object({
+    assistantName: z.string().max(200).optional(),
+    assistantRole: z.string().max(200).optional(),
+    greetingInstruction: z.string().max(200).optional(),
+    assistantDefaultLocale: z.string().max(35).nullable().optional(),
+    proactiveGreetingEnabled: z.boolean().optional(),
+    conversationMode: z.enum(conversationModes).optional(),
+    suggestedQuestionsEnabled: z.boolean().optional(),
+    suggestedQuestionsCount: z.number().int().min(MIN_SUGGESTED_QUESTIONS_COUNT).max(MAX_SUGGESTED_QUESTIONS_COUNT).optional(),
+    customInstruction: z.string().max(2000).optional(),
+  }).optional(),
+  retrieval: z.object({
+    queryRewriteEnabled: z.boolean().optional(),
+    semanticRewriteInstructions: z.string().max(2000).optional(),
+    lexicalRewriteInstructions: z.string().max(2000).optional(),
+    answerSupportPolicy: z.enum(answerSupportPolicies).optional(),
+    rerankEnabled: z.boolean().optional(),
+    vectorTopK: z.number().int().optional(),
+    similarityThreshold: z.number().optional(),
+    rerankTopK: z.number().int().optional(),
+    citationDisplayEnabled: z.boolean().optional(),
+    metadataRules: updateSettingsSchema.shape.metadataRules,
+  }).optional(),
+  channels: z.object({
+    anonymousChatEnabled: z.boolean().optional(),
+    anonymousRateLimit: z.number().int().min(1).max(60).optional(),
+    rotateAnonymousChatToken: z.boolean().optional(),
+    websiteEmbedEnabled: z.boolean().optional(),
+    rotateWebsiteEmbedToken: z.boolean().optional(),
+    websiteEmbedAllowedOrigins: z.array(z.string().max(200)).max(20).optional(),
+    websiteEmbedLauncherLabel: z.string().max(80).optional(),
+    websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons).optional(),
+    websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions).optional(),
+  }).optional(),
+});
+
 export const updateIngestionSettingsSchema = z.object({
   chunkingStrategy: z.enum(chunkingStrategyIds),
   fixedWindowChunkSize: z.number().int()
@@ -117,17 +154,48 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
 
+  router.get("/", workspaceSession, async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const settings = await dependencies.platformSettingsService.getForWorkspace(workspaceId);
+      res.status(200).json(settings);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.put("/", workspaceSession, validateBody(updatePlatformSettingsSchema), async (req, res, next) => {
+    try {
+      const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
+      const settings = await dependencies.platformSettingsService.updateForWorkspace(workspaceId, req.body, { accountId });
+      res.status(200).json(settings);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  const presentLegacyRetrievalSettings = (
+    settings: Awaited<ReturnType<typeof dependencies.platformSettingsService.getForWorkspace>>,
+    record: Awaited<ReturnType<typeof dependencies.retrievalSettingsService.getForWorkspace>>,
+  ) => ({
+    ...settings.retrieval,
+    workspaceId: record.workspaceId,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    conversationMode: settings.assistant.conversationMode,
+    suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
+    suggestedQuestionsCount: settings.assistant.suggestedQuestionsCount,
+    customInstruction: settings.assistant.customInstruction,
+  });
+
   router.get("/retrieval", workspaceSession, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const [settings, metadataFieldSuggestions] = await Promise.all([
+      const [settings, record] = await Promise.all([
+        dependencies.platformSettingsService.getForWorkspace(workspaceId),
         dependencies.retrievalSettingsService.getForWorkspace(workspaceId),
-        dependencies.retrievalSettingsService.listMetadataFieldSuggestions(workspaceId),
       ]);
-      res.status(200).json({
-        ...settings,
-        metadataFieldSuggestions,
-      });
+      res.status(200).json(presentLegacyRetrievalSettings(settings, record));
     } catch (error) {
       next(error);
     }
@@ -136,23 +204,28 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
   router.put("/retrieval", workspaceSession, validateBody(updateSettingsSchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
-      const settings = await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
-        ...req.body,
-        semanticRewriteInstructions: req.body.semanticRewriteInstructions ?? existing.semanticRewriteInstructions,
-        lexicalRewriteInstructions: req.body.lexicalRewriteInstructions ?? existing.lexicalRewriteInstructions,
-        answerSupportPolicy: req.body.answerSupportPolicy ?? existing.answerSupportPolicy,
-        conversationMode: req.body.conversationMode ?? existing.conversationMode,
-        suggestedQuestionsEnabled: req.body.suggestedQuestionsEnabled ?? existing.suggestedQuestionsEnabled,
-        suggestedQuestionsCount: req.body.suggestedQuestionsCount ?? existing.suggestedQuestionsCount,
-        metadataRules: req.body.metadataRules ?? existing.metadataRules,
-        customInstruction: req.body.customInstruction ?? existing.customInstruction,
+      const settings = await dependencies.platformSettingsService.updateForWorkspace(workspaceId, {
+        assistant: {
+          conversationMode: req.body.conversationMode,
+          suggestedQuestionsEnabled: req.body.suggestedQuestionsEnabled,
+          suggestedQuestionsCount: req.body.suggestedQuestionsCount,
+          customInstruction: req.body.customInstruction,
+        },
+        retrieval: {
+          queryRewriteEnabled: req.body.queryRewriteEnabled,
+          semanticRewriteInstructions: req.body.semanticRewriteInstructions,
+          lexicalRewriteInstructions: req.body.lexicalRewriteInstructions,
+          answerSupportPolicy: req.body.answerSupportPolicy,
+          rerankEnabled: req.body.rerankEnabled,
+          vectorTopK: req.body.vectorTopK,
+          similarityThreshold: req.body.similarityThreshold,
+          rerankTopK: req.body.rerankTopK,
+          citationDisplayEnabled: req.body.citationDisplayEnabled,
+          metadataRules: req.body.metadataRules,
+        },
       });
-      const metadataFieldSuggestions = await dependencies.retrievalSettingsService.listMetadataFieldSuggestions(workspaceId);
-      res.status(200).json({
-        ...settings,
-        metadataFieldSuggestions,
-      });
+      const record = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
+      res.status(200).json(presentLegacyRetrievalSettings(settings, record));
     } catch (error) {
       next(error);
     }

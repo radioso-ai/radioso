@@ -17,7 +17,11 @@ const searchDocumentsSchema = z.object({
   query: z.string().min(1),
 });
 const answerGroundedSchema = z.object({
-  conversationId: z.string().uuid().optional(),
+  conversationContext: z.object({
+    previousUserMessages: z.array(z.string()).optional(),
+    previousAssistantMessages: z.array(z.string()).optional(),
+    followUpToMessageId: z.string().optional(),
+  }).optional(),
   metadataFilter: z.record(z.string(), z.unknown()).optional(),
   query: z.string().min(1),
 });
@@ -119,7 +123,7 @@ export const createReadToolDefinitions = (): GenericToolDefinition[] => [
   },
   {
     accessMode: "read",
-    description: "Generate a grounded answer from Radioso's existing workspace chat path, including citations when available.",
+    description: "Generate a retrieval-only grounded answer from Radioso evidence, including citations when available. This does not use assistant chat persona or social behavior.",
     execute: async (args: unknown, context) => {
       const parsed = answerGroundedSchema.parse(args);
       const data = await context.adapter.answerGrounded(parsed);

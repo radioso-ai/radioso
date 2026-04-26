@@ -25,22 +25,22 @@
       "name": "Workspace"
     },
     {
+      "name": "Assistant"
+    },
+    {
+      "name": "History"
+    },
+    {
+      "name": "Retrieval"
+    },
+    {
       "name": "Settings"
     },
     {
       "name": "Documents"
     },
     {
-      "name": "Chat"
-    },
-    {
-      "name": "Public Chat"
-    },
-    {
       "name": "Connectors"
-    },
-    {
-      "name": "Connector Webhooks"
     }
   ],
   "components": {
@@ -1675,6 +1675,628 @@
           "websiteEmbedLauncherPosition"
         ]
       },
+      "AssistantSettingsSection": {
+        "type": "object",
+        "properties": {
+          "assistantName": {
+            "type": "string"
+          },
+          "assistantRole": {
+            "type": "string"
+          },
+          "greetingInstruction": {
+            "type": "string"
+          },
+          "assistantDefaultLocale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proactiveGreetingEnabled": {
+            "type": "boolean"
+          },
+          "assistantBootstrapActive": {
+            "type": "boolean",
+            "description": "Server-managed bootstrap readiness derived from the current assistant configuration.",
+            "readOnly": true
+          },
+          "conversationMode": {
+            "type": "string",
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
+            ]
+          },
+          "suggestedQuestionsEnabled": {
+            "type": "boolean"
+          },
+          "suggestedQuestionsCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
+          "customInstruction": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "assistantName",
+          "assistantRole",
+          "greetingInstruction",
+          "assistantDefaultLocale",
+          "proactiveGreetingEnabled",
+          "assistantBootstrapActive",
+          "conversationMode",
+          "suggestedQuestionsEnabled",
+          "suggestedQuestionsCount",
+          "customInstruction"
+        ]
+      },
+      "PlatformRetrievalSettingsSection": {
+        "type": "object",
+        "properties": {
+          "queryRewriteEnabled": {
+            "type": "boolean"
+          },
+          "semanticRewriteInstructions": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "lexicalRewriteInstructions": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "answerSupportPolicy": {
+            "type": "string",
+            "enum": [
+              "strict",
+              "warn",
+              "off"
+            ]
+          },
+          "rerankEnabled": {
+            "type": "boolean"
+          },
+          "vectorTopK": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "similarityThreshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "rerankTopK": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "citationDisplayEnabled": {
+            "type": "boolean"
+          },
+          "metadataRules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "valueType": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "number",
+                    "date",
+                    "boolean"
+                  ]
+                },
+                "operator": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "not_equals",
+                    "contains",
+                    "not_contains",
+                    "lt",
+                    "lte",
+                    "gt",
+                    "gte"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                },
+                "combinator": {
+                  "type": "string",
+                  "enum": [
+                    "and",
+                    "or"
+                  ],
+                  "default": "and"
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "field": {
+                        "type": "string"
+                      },
+                      "valueType": {
+                        "type": "string",
+                        "enum": [
+                          "string",
+                          "number",
+                          "date",
+                          "boolean"
+                        ]
+                      },
+                      "operator": {
+                        "type": "string",
+                        "enum": [
+                          "equals",
+                          "not_equals",
+                          "contains",
+                          "not_contains",
+                          "lt",
+                          "lte",
+                          "gt",
+                          "gte"
+                        ]
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "field",
+                      "valueType",
+                      "operator",
+                      "value"
+                    ]
+                  },
+                  "default": []
+                },
+                "effect": {
+                  "type": "string",
+                  "enum": [
+                    "boost",
+                    "filter"
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "triggerMode": {
+                  "type": "string",
+                  "enum": [
+                    "always_on",
+                    "match_turn"
+                  ]
+                },
+                "triggerInstruction": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "field",
+                "valueType",
+                "operator",
+                "value",
+                "effect",
+                "enabled",
+                "triggerMode"
+              ]
+            },
+            "default": []
+          },
+          "metadataFieldSuggestions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "inferredType": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "number",
+                    "date",
+                    "boolean"
+                  ]
+                }
+              },
+              "required": [
+                "field",
+                "inferredType"
+              ]
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "queryRewriteEnabled",
+          "semanticRewriteInstructions",
+          "lexicalRewriteInstructions",
+          "answerSupportPolicy",
+          "rerankEnabled",
+          "vectorTopK",
+          "similarityThreshold",
+          "rerankTopK",
+          "citationDisplayEnabled"
+        ]
+      },
+      "PlatformChannelsSettingsSection": {
+        "type": "object",
+        "properties": {
+          "anonymousChatEnabled": {
+            "type": "boolean"
+          },
+          "anonymousChatUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "anonymousRateLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "websiteEmbedEnabled": {
+            "type": "boolean"
+          },
+          "websiteEmbedToken": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "websiteEmbedAllowedOrigins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "websiteEmbedLauncherLabel": {
+            "type": "string"
+          },
+          "websiteEmbedLauncherIcon": {
+            "type": "string",
+            "enum": [
+              "chat",
+              "sparkles",
+              "message"
+            ]
+          },
+          "websiteEmbedLauncherPosition": {
+            "type": "string",
+            "enum": [
+              "bottom-right",
+              "bottom-left"
+            ]
+          },
+          "websiteEmbedScriptUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "websiteEmbedSnippet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "anonymousChatEnabled",
+          "anonymousChatUrl",
+          "anonymousRateLimit",
+          "websiteEmbedEnabled",
+          "websiteEmbedToken",
+          "websiteEmbedAllowedOrigins",
+          "websiteEmbedLauncherLabel",
+          "websiteEmbedLauncherIcon",
+          "websiteEmbedLauncherPosition",
+          "websiteEmbedScriptUrl",
+          "websiteEmbedSnippet"
+        ]
+      },
+      "PlatformSettingsResponse": {
+        "type": "object",
+        "properties": {
+          "assistant": {
+            "$ref": "#/components/schemas/AssistantSettingsSection"
+          },
+          "retrieval": {
+            "$ref": "#/components/schemas/PlatformRetrievalSettingsSection"
+          },
+          "channels": {
+            "$ref": "#/components/schemas/PlatformChannelsSettingsSection"
+          }
+        },
+        "required": [
+          "assistant",
+          "retrieval",
+          "channels"
+        ]
+      },
+      "UpdatePlatformSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "assistant": {
+            "type": "object",
+            "properties": {
+              "assistantName": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "assistantRole": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "greetingInstruction": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "assistantDefaultLocale": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 35
+              },
+              "proactiveGreetingEnabled": {
+                "type": "boolean"
+              },
+              "conversationMode": {
+                "type": "string",
+                "enum": [
+                  "factual",
+                  "guided",
+                  "exploratory"
+                ]
+              },
+              "suggestedQuestionsEnabled": {
+                "type": "boolean"
+              },
+              "suggestedQuestionsCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4
+              },
+              "customInstruction": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            }
+          },
+          "retrieval": {
+            "type": "object",
+            "properties": {
+              "queryRewriteEnabled": {
+                "type": "boolean"
+              },
+              "semanticRewriteInstructions": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "lexicalRewriteInstructions": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "answerSupportPolicy": {
+                "type": "string",
+                "enum": [
+                  "strict",
+                  "warn",
+                  "off"
+                ]
+              },
+              "rerankEnabled": {
+                "type": "boolean"
+              },
+              "vectorTopK": {
+                "type": "integer"
+              },
+              "similarityThreshold": {
+                "type": "number"
+              },
+              "rerankTopK": {
+                "type": "integer"
+              },
+              "citationDisplayEnabled": {
+                "type": "boolean"
+              },
+              "metadataRules": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "field": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "valueType": {
+                      "type": "string",
+                      "enum": [
+                        "string",
+                        "number",
+                        "date",
+                        "boolean"
+                      ]
+                    },
+                    "operator": {
+                      "type": "string",
+                      "enum": [
+                        "equals",
+                        "not_equals",
+                        "contains",
+                        "not_contains",
+                        "lt",
+                        "lte",
+                        "gt",
+                        "gte"
+                      ]
+                    },
+                    "value": {
+                      "type": "string"
+                    },
+                    "combinator": {
+                      "type": "string",
+                      "enum": [
+                        "and",
+                        "or"
+                      ]
+                    },
+                    "conditions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "field": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "valueType": {
+                            "type": "string",
+                            "enum": [
+                              "string",
+                              "number",
+                              "date",
+                              "boolean"
+                            ]
+                          },
+                          "operator": {
+                            "type": "string",
+                            "enum": [
+                              "equals",
+                              "not_equals",
+                              "contains",
+                              "not_contains",
+                              "lt",
+                              "lte",
+                              "gt",
+                              "gte"
+                            ]
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "field",
+                          "valueType",
+                          "operator",
+                          "value"
+                        ]
+                      }
+                    },
+                    "effect": {
+                      "type": "string",
+                      "enum": [
+                        "boost",
+                        "filter"
+                      ]
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "triggerMode": {
+                      "type": "string",
+                      "enum": [
+                        "always_on",
+                        "match_turn"
+                      ]
+                    },
+                    "triggerInstruction": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "effect",
+                    "enabled"
+                  ]
+                }
+              }
+            }
+          },
+          "channels": {
+            "type": "object",
+            "properties": {
+              "anonymousChatEnabled": {
+                "type": "boolean"
+              },
+              "anonymousRateLimit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60
+              },
+              "rotateAnonymousChatToken": {
+                "type": "boolean"
+              },
+              "websiteEmbedEnabled": {
+                "type": "boolean"
+              },
+              "rotateWebsiteEmbedToken": {
+                "type": "boolean"
+              },
+              "websiteEmbedAllowedOrigins": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "maxItems": 20
+              },
+              "websiteEmbedLauncherLabel": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "websiteEmbedLauncherIcon": {
+                "type": "string",
+                "enum": [
+                  "chat",
+                  "sparkles",
+                  "message"
+                ]
+              },
+              "websiteEmbedLauncherPosition": {
+                "type": "string",
+                "enum": [
+                  "bottom-right",
+                  "bottom-left"
+                ]
+              }
+            }
+          }
+        }
+      },
       "PublicEmbedSessionResponse": {
         "type": "object",
         "properties": {
@@ -2164,6 +2786,9 @@
       "ParsedQuery": {
         "type": "object",
         "properties": {
+          "originalQuery": {
+            "type": "string"
+          },
           "semanticQuery": {
             "type": "string"
           },
@@ -2303,9 +2928,43 @@
           "materialDisagreement"
         ]
       },
+      "RetrievalExecutionMetadata": {
+        "type": "object",
+        "properties": {
+          "surface": {
+            "type": "string",
+            "enum": [
+              "assistant",
+              "retrieval",
+              "mcp_capability"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "enum": [
+              "assistant_direct",
+              "assistant_retrieval",
+              "retrieval_search",
+              "retrieval_answer",
+              "mcp_grounded_answer"
+            ]
+          },
+          "retrievalInvoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "surface",
+          "path",
+          "retrievalInvoked"
+        ]
+      },
       "RetrievalInfo": {
         "type": "object",
         "properties": {
+          "execution": {
+            "$ref": "#/components/schemas/RetrievalExecutionMetadata"
+          },
           "parsedQuery": {
             "$ref": "#/components/schemas/ParsedQuery"
           },
@@ -2314,6 +2973,26 @@
             "items": {
               "$ref": "#/components/schemas/RetrievalSubquery"
             }
+          },
+          "responseIntent": {
+            "type": "string",
+            "enum": [
+              "retrieval",
+              "social_only",
+              "assistant_identity"
+            ],
+            "description": "High-level user-turn intent inferred before routing. This is independent from the assistant route reason."
+          },
+          "retrievalSkipped": {
+            "type": "boolean"
+          },
+          "intentConfidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "intentFallbackApplied": {
+            "type": "boolean"
           },
           "responseLanguagePolicy": {
             "type": "string",
@@ -2521,6 +3200,285 @@
           "results"
         ]
       },
+      "RetrievalSearchRequest": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "metadataFilter": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "topK": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "RetrievalAnswerRequest": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "conversationContext": {
+            "type": "object",
+            "properties": {
+              "previousUserMessages": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 4000
+                },
+                "maxItems": 20
+              },
+              "previousAssistantMessages": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 4000
+                },
+                "maxItems": 20
+              },
+              "followUpToMessageId": {
+                "type": "string",
+                "maxLength": 120
+              }
+            }
+          },
+          "metadataFilter": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "RetrievalSearchEvidence": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chunkId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "documentId",
+          "chunkId",
+          "title",
+          "content"
+        ]
+      },
+      "RetrievalSearchResponse": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "results"
+            ]
+          },
+          "rewrittenQuery": {
+            "type": "object",
+            "properties": {
+              "semantic": {
+                "type": "string"
+              },
+              "lexical": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "semantic",
+              "lexical"
+            ]
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetrievalSearchEvidence"
+            }
+          },
+          "retrievalInfo": {
+            "$ref": "#/components/schemas/RetrievalInfo"
+          },
+          "retrievalTrace": {
+            "$ref": "#/components/schemas/RetrievalTrace"
+          }
+        },
+        "required": [
+          "outcome",
+          "rewrittenQuery",
+          "results",
+          "retrievalInfo",
+          "retrievalTrace"
+        ]
+      },
+      "RetrievalAnswerEvidence": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chunkId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "documentId",
+          "chunkId",
+          "title",
+          "content"
+        ]
+      },
+      "RetrievalAnswerSuccess": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "answer"
+            ]
+          },
+          "answer": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetrievalAnswerEvidence"
+            }
+          },
+          "validation": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "supported",
+                  "unsupported",
+                  "not_checked"
+                ]
+              },
+              "policy": {
+                "type": "string",
+                "enum": [
+                  "strict",
+                  "warn",
+                  "off"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "policy"
+            ]
+          },
+          "retrievalInfo": {
+            "$ref": "#/components/schemas/RetrievalInfo"
+          },
+          "retrievalTrace": {
+            "$ref": "#/components/schemas/RetrievalTrace"
+          }
+        },
+        "required": [
+          "outcome",
+          "answer",
+          "evidence",
+          "validation",
+          "retrievalInfo",
+          "retrievalTrace"
+        ]
+      },
+      "RetrievalAnswerUnsupported": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "unsupported"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "unsupported_query_type"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "social_only",
+              "assistant_identity"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "This request is outside retrieval scope."
+            ]
+          }
+        },
+        "required": [
+          "outcome",
+          "code",
+          "reason",
+          "message"
+        ]
+      },
+      "RetrievalAnswerResponse": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RetrievalAnswerSuccess"
+          },
+          {
+            "$ref": "#/components/schemas/RetrievalAnswerUnsupported"
+          }
+        ]
+      },
       "ChatSuggestion": {
         "type": "object",
         "properties": {
@@ -2541,6 +3499,70 @@
         "required": [
           "text",
           "kind"
+        ]
+      },
+      "AssistantRoute": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "retrieval"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "assistant_identity",
+              "conversation_start",
+              "evidence_required",
+              "social_only"
+            ],
+            "description": "Execution routing reason chosen by the assistant surface after intent and policy checks."
+          }
+        },
+        "required": [
+          "type",
+          "reason"
+        ]
+      },
+      "AssistantRouteDiagnostics": {
+        "type": "object",
+        "properties": {
+          "generator": {
+            "type": "string",
+            "enum": [
+              "assistant"
+            ],
+            "description": "The human-facing assistant surface that produced this response."
+          },
+          "routeType": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "retrieval"
+            ]
+          },
+          "routeReason": {
+            "type": "string",
+            "enum": [
+              "assistant_identity",
+              "conversation_start",
+              "evidence_required",
+              "social_only"
+            ],
+            "description": "Route reason echoed into diagnostics for replay and history views."
+          },
+          "retrievalInvoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "generator",
+          "routeType",
+          "routeReason",
+          "retrievalInvoked"
         ]
       },
       "ChatResponse": {
@@ -2626,6 +3648,9 @@
           },
           "retrievalTrace": {
             "$ref": "#/components/schemas/RetrievalTrace"
+          },
+          "route": {
+            "$ref": "#/components/schemas/AssistantRoute"
           }
         },
         "required": [
@@ -2637,97 +3662,361 @@
           "retrievalTrace"
         ]
       },
-      "ChatRequest": {
+      "AssistantChatResponse": {
         "type": "object",
         "properties": {
-          "query": {
-            "type": "string",
-            "minLength": 1
-          },
-          "stream": {
-            "type": "boolean"
-          },
           "conversationId": {
             "type": "string",
             "format": "uuid"
           },
-          "bootstrapGreeting": {
-            "type": "boolean"
+          "answer": {
+            "type": "string"
           },
-          "userExpectedLocale": {
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            }
+          },
+          "answerSegments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnswerSegment"
+            }
+          },
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatSuggestion"
+            }
+          },
+          "conversationMode": {
             "type": "string",
-            "maxLength": 35
+            "enum": [
+              "factual",
+              "guided",
+              "exploratory"
+            ]
           },
-          "inputMetadata": {
+          "conversationModeMetadata": {
             "type": "object",
             "properties": {
-              "method": {
+              "conversationMode": {
                 "type": "string",
                 "enum": [
-                  "typed",
-                  "suggestion_click"
+                  "factual",
+                  "guided",
+                  "exploratory"
                 ]
               },
-              "suggestionSourceMessageId": {
+              "brevityOverrideApplied": {
+                "type": "boolean"
+              },
+              "expansionApplied": {
+                "type": "boolean"
+              },
+              "expansionKind": {
                 "type": "string",
-                "format": "uuid"
+                "enum": [
+                  "none",
+                  "focused",
+                  "expansive"
+                ]
+              },
+              "suggestionCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "followUpQuestionApplied": {
+                "type": "boolean"
               }
             },
             "required": [
-              "method"
+              "conversationMode",
+              "brevityOverrideApplied",
+              "expansionApplied",
+              "expansionKind",
+              "suggestionCount",
+              "followUpQuestionApplied"
             ]
           },
-          "metadataFilter": {
-            "type": "object",
-            "additionalProperties": {}
+          "retrievalInfo": {
+            "$ref": "#/components/schemas/RetrievalInfo"
+          },
+          "retrievalTrace": {
+            "$ref": "#/components/schemas/RetrievalTrace"
+          },
+          "route": {
+            "$ref": "#/components/schemas/AssistantRoute"
           }
         },
         "required": [
-          "stream"
+          "conversationId",
+          "answer",
+          "conversationMode",
+          "conversationModeMetadata",
+          "retrievalInfo",
+          "retrievalTrace",
+          "route"
         ]
       },
-      "PublicChatRequest": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "minLength": 1
-          },
-          "stream": {
-            "type": "boolean",
-            "default": false
-          },
-          "conversationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "bootstrapGreeting": {
-            "type": "boolean"
-          },
-          "userExpectedLocale": {
-            "type": "string",
-            "maxLength": 35
-          },
-          "inputMetadata": {
+      "AssistantChatRequest": {
+        "anyOf": [
+          {
             "type": "object",
             "properties": {
-              "method": {
-                "type": "string",
-                "enum": [
-                  "typed",
-                  "suggestion_click"
-                ]
-              },
-              "suggestionSourceMessageId": {
+              "conversationId": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "startConversation": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ],
+                "default": false
+              },
+              "stream": {
+                "type": "boolean",
+                "default": false
+              },
+              "userExpectedLocale": {
+                "type": "string",
+                "maxLength": 35
+              },
+              "inputMetadata": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "typed",
+                      "suggestion_click"
+                    ]
+                  },
+                  "suggestionSourceMessageId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "method"
+                ]
+              },
+              "sourceContext": {
+                "type": "object",
+                "properties": {
+                  "surface": {
+                    "type": "string",
+                    "enum": [
+                      "authenticated_chat",
+                      "public_chat",
+                      "website_embed"
+                    ]
+                  },
+                  "sourceOrigin": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 200
+                  }
+                }
+              },
+              "metadataFilter": {
+                "type": "object",
+                "additionalProperties": {}
               }
             },
             "required": [
-              "method"
-            ]
+              "message"
+            ],
+            "description": "Standard assistant turn. `message` is required for non-bootstrap requests."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "startConversation": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "stream": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ],
+                "default": false
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "userExpectedLocale": {
+                "type": "string",
+                "maxLength": 35
+              },
+              "inputMetadata": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "typed",
+                      "suggestion_click"
+                    ]
+                  },
+                  "suggestionSourceMessageId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "method"
+                ]
+              },
+              "sourceContext": {
+                "type": "object",
+                "properties": {
+                  "surface": {
+                    "type": "string",
+                    "enum": [
+                      "authenticated_chat",
+                      "public_chat",
+                      "website_embed"
+                    ]
+                  },
+                  "sourceOrigin": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 200
+                  }
+                }
+              },
+              "metadataFilter": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "startConversation"
+            ],
+            "additionalProperties": false,
+            "description": "Conversation bootstrap request. `conversationId` is not allowed and streaming is disabled."
           }
-        }
+        ]
+      },
+      "PublicChatRequest": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "startConversation": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ],
+                "default": false
+              },
+              "stream": {
+                "type": "boolean",
+                "default": false
+              },
+              "userExpectedLocale": {
+                "type": "string",
+                "maxLength": 35
+              },
+              "inputMetadata": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "typed",
+                      "suggestion_click"
+                    ]
+                  },
+                  "suggestionSourceMessageId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "method"
+                ]
+              }
+            },
+            "required": [
+              "message"
+            ],
+            "description": "Standard public chat turn. `message` is required for non-bootstrap requests."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "startConversation": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "stream": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ],
+                "default": false
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "userExpectedLocale": {
+                "type": "string",
+                "maxLength": 35
+              },
+              "inputMetadata": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "typed",
+                      "suggestion_click"
+                    ]
+                  },
+                  "suggestionSourceMessageId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "method"
+                ]
+              }
+            },
+            "required": [
+              "startConversation"
+            ],
+            "additionalProperties": false,
+            "description": "Public conversation bootstrap request. `conversationId` is not allowed and streaming is disabled."
+          }
+        ]
       },
       "ChatConversationSummary": {
         "type": "object",
@@ -2955,7 +4244,8 @@
             "enum": [
               "grounded_success",
               "grounded_degraded_unsupported_segments",
-              "no_context_refusal"
+              "no_context_refusal",
+              "non_retrieval_response"
             ]
           },
           "answerSupportPolicy": {
@@ -2973,6 +4263,9 @@
               "guided",
               "exploratory"
             ]
+          },
+          "route": {
+            "$ref": "#/components/schemas/AssistantRouteDiagnostics"
           },
           "conversationModeMetadata": {
             "type": "object",
@@ -3246,7 +4539,8 @@
             "enum": [
               "grounded_success",
               "grounded_degraded_unsupported_segments",
-              "no_context_refusal"
+              "no_context_refusal",
+              "non_retrieval_response"
             ]
           },
           "requiredPhrases": {
@@ -3567,7 +4861,8 @@
             "enum": [
               "grounded_success",
               "grounded_degraded_unsupported_segments",
-              "no_context_refusal"
+              "no_context_refusal",
+              "non_retrieval_response"
             ]
           },
           "answerSupportPolicy": {
@@ -4167,18 +5462,7 @@
           "detail"
         ]
       },
-      "PlainTextChallenge": {
-        "type": "string"
-      },
-      "EmptySuccess": {
-        "type": "object",
-        "properties": {}
-      },
-      "WhatsAppWebhookPayload": {
-        "type": "object",
-        "additionalProperties": {}
-      },
-      "ChatSseStream": {
+      "AssistantChatSseStream": {
         "type": "string"
       },
       "ConnectorNotFoundResponse": {
@@ -4226,7 +5510,7 @@
     "/api/v1/public/embed/{token}/session": {
       "post": {
         "tags": [
-          "Public Chat"
+          "Assistant"
         ],
         "summary": "Bootstrap an embedded chat session for an approved website origin",
         "operationId": "createPublicEmbedSession",
@@ -5525,6 +6809,116 @@
         }
       }
     },
+    "/api/v1/settings": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get shared workspace platform settings",
+        "operationId": "getPlatformSettings",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shared assistant, retrieval, and channel settings returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Merge-update shared workspace platform settings",
+        "operationId": "updatePlatformSettings",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePlatformSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Shared settings updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings/retrieval": {
       "get": {
         "tags": [
@@ -5844,6 +7238,118 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FlatErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/retrieval/search": {
+      "post": {
+        "tags": [
+          "Retrieval"
+        ],
+        "summary": "Search workspace evidence without assistant behavior",
+        "operationId": "searchRetrievalEvidence",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrievalSearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Retrieval evidence returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/retrieval/answer": {
+      "post": {
+        "tags": [
+          "Retrieval"
+        ],
+        "summary": "Generate a retrieval-only grounded answer",
+        "operationId": "createRetrievalAnswer",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrievalAnswerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Retrieval answer or unsupported retrieval-scoped result returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalAnswerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -6427,13 +7933,13 @@
         }
       }
     },
-    "/api/v1/chat/": {
+    "/api/v1/assistant/chat": {
       "post": {
         "tags": [
-          "Chat"
+          "Assistant"
         ],
-        "summary": "Ask a retrieval-grounded question",
-        "operationId": "createChatResponse",
+        "summary": "Run human-facing assistant chat",
+        "operationId": "createAssistantChatResponse",
         "security": [
           {
             "bearerAuth": []
@@ -6444,7 +7950,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ChatRequest"
+                "$ref": "#/components/schemas/AssistantChatRequest"
               }
             }
           }
@@ -6455,12 +7961,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChatResponse"
+                  "$ref": "#/components/schemas/AssistantChatResponse"
                 }
               },
               "text/event-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChatSseStream"
+                  "$ref": "#/components/schemas/AssistantChatSseStream"
                 }
               }
             }
@@ -6501,13 +8007,13 @@
         }
       }
     },
-    "/api/v1/chat/history": {
+    "/api/v1/history": {
       "get": {
         "tags": [
-          "Chat"
+          "History"
         ],
-        "summary": "List saved chat conversations",
-        "operationId": "listChatHistory",
+        "summary": "List saved assistant conversations",
+        "operationId": "listHistory",
         "security": [
           {
             "bearerAuth": []
@@ -6567,13 +8073,13 @@
         }
       }
     },
-    "/api/v1/chat/history/{conversationId}": {
+    "/api/v1/history/{conversationId}": {
       "get": {
         "tags": [
-          "Chat"
+          "History"
         ],
-        "summary": "Get a saved conversation and its debug metadata",
-        "operationId": "getChatHistoryConversation",
+        "summary": "Get a saved assistant conversation and its debug metadata",
+        "operationId": "getHistoryConversation",
         "security": [
           {
             "bearerAuth": []
@@ -6972,7 +8478,8 @@
                         "enum": [
                           "grounded_success",
                           "grounded_degraded_unsupported_segments",
-                          "no_context_refusal"
+                          "no_context_refusal",
+                          "non_retrieval_response"
                         ]
                       },
                       "requiredPhrases": {
@@ -7580,7 +9087,7 @@
     "/api/v1/public/chat/{token}": {
       "post": {
         "tags": [
-          "Public Chat"
+          "Assistant"
         ],
         "summary": "Send a public chat message",
         "operationId": "createPublicChatResponse",
@@ -7659,7 +9166,7 @@
       },
       "get": {
         "tags": [
-          "Public Chat"
+          "Assistant"
         ],
         "summary": "List conversations for the current anonymous session",
         "operationId": "listPublicChatHistory",
@@ -7730,7 +9237,7 @@
     "/api/v1/public/chat/{token}/history/{conversationId}": {
       "get": {
         "tags": [
-          "Public Chat"
+          "Assistant"
         ],
         "summary": "Get a public conversation for the current anonymous session",
         "operationId": "getPublicChatHistoryConversation",
@@ -7815,114 +9322,6 @@
           }
         },
         "description": "Anonymous session continuity is maintained by an HttpOnly cookie set by the server.\n\nThe cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential."
-      }
-    },
-    "/api/connectors/whatsapp/{workspaceId}/webhook": {
-      "get": {
-        "tags": [
-          "Connector Webhooks"
-        ],
-        "summary": "Verify WhatsApp webhook ownership",
-        "operationId": "verifyWhatsAppWebhook",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "workspaceId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "hub.mode",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "hub.verify_token",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "hub.challenge",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Verification challenge echoed back",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlainTextChallenge"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Verification failed"
-          },
-          "404": {
-            "description": "Connector config not found"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Connector Webhooks"
-        ],
-        "summary": "Receive a WhatsApp webhook event",
-        "operationId": "receiveWhatsAppWebhook",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "workspaceId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WhatsAppWebhookPayload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Webhook accepted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmptySuccess"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid webhook signature"
-          },
-          "404": {
-            "description": "Connector config not found"
-          }
-        }
       }
     }
   },

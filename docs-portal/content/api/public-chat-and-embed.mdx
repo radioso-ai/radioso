@@ -39,13 +39,13 @@ The request can include `anonymousSessionId` when you want to reattach a known a
 
 ```json
 {
-  "query": "What can this workspace answer?",
+  "message": "What can this workspace answer?",
   "stream": false,
   "conversationId": "optional-conversation-id"
 }
 ```
 
-The public chat request also supports `bootstrapGreeting`, `userExpectedLocale`, and `inputMetadata`.
+The public chat request also supports `startConversation: true` for bootstrap greeting requests, `userExpectedLocale`, and `inputMetadata`.
 
 ## History in the anonymous flow
 

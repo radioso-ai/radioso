@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Bot, ChevronDown, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { ChevronDown, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
 
 import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
 import {
@@ -91,9 +91,6 @@ const triggerModeLabels: Record<
     description: 'Apply this rule only when the current question matches the intent.',
   },
 }
-
-const suggestedQuestionCountLabel = (count: number) =>
-  `${count} suggested question${count === 1 ? '' : 's'}`
 
 export function RetrievalSettingsPanel({
   onSaveStateChange,
@@ -748,10 +745,10 @@ export function RetrievalSettingsPanel({
 
         <SettingsCard
           id="answer-behavior"
-          icon={<Bot className="h-5 w-5 text-primary" />}
+          icon={<Search className="h-5 w-5 text-primary" />}
           eyebrow="Shape The Answer"
-          title="Answer presentation"
-          description="Control how grounded answers show citations and follow-up suggestions."
+          title="Grounded answer presentation"
+          description="Control retrieval-owned answer evidence presentation. Assistant follow-up behavior lives under Assistant settings."
         >
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -775,51 +772,6 @@ export function RetrievalSettingsPanel({
                 onCheckedChange={(checked) => updateSetting('citationDisplayEnabled', checked)}
               />
             </div>
-
-            <div className="flex items-center justify-between border-t border-border/70 pt-4">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="suggestedQuestionsEnabled" className="text-foreground">
-                    {retrievalSettingDocs.suggestedQuestionsEnabled.label}
-                  </Label>
-                  <SettingTooltip
-                    label={retrievalSettingDocs.suggestedQuestionsEnabled.label}
-                    content={retrievalSettingDocs.suggestedQuestionsEnabled.details}
-                  />
-                </div>
-                <div className="mt-0.5 text-sm text-muted-foreground">
-                  <AssistantMarkdownContent content={retrievalSettingDocs.suggestedQuestionsEnabled.summary} inline />
-                </div>
-              </div>
-              <Switch
-                id="suggestedQuestionsEnabled"
-                checked={settings.suggestedQuestionsEnabled}
-                onCheckedChange={(checked) => updateSetting('suggestedQuestionsEnabled', checked)}
-              />
-            </div>
-
-            {settings.suggestedQuestionsEnabled ? (
-              <div className="space-y-3">
-                <SettingFieldHeader
-                  htmlFor="suggestedQuestionsCount"
-                  label={retrievalSettingDocs.suggestedQuestionsCount.label}
-                  description={retrievalSettingDocs.suggestedQuestionsCount.summary}
-                  tooltip={retrievalSettingDocs.suggestedQuestionsCount.details}
-                />
-                <Slider
-                  id="suggestedQuestionsCount"
-                  min={1}
-                  max={4}
-                  step={1}
-                  value={[settings.suggestedQuestionsCount]}
-                  onValueChange={(value) => updateSetting('suggestedQuestionsCount', value[0] ?? 1)}
-                />
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>{suggestedQuestionCountLabel(settings.suggestedQuestionsCount)}</span>
-                  <span>Shown when grounded suggestions are available.</span>
-                </div>
-              </div>
-            ) : null}
 
           </div>
         </SettingsCard>

@@ -1,10 +1,14 @@
 import { createClientConfig, type RadiosoClientOptions } from "./core/config.js";
-import { GeneratedRadiosoClient, type ChatCreateRequest, type ChatRequest } from "./generated/client.js";
+import { GeneratedRadiosoClient, type ChatCreateRequest, type ChatStreamRequest } from "./generated/client.js";
 import { streamChat, type RadiosoChatStreamEvent } from "./streaming/chatStream.js";
 
 export { RadiosoError } from "./core/errors.js";
 export type {
+  AssistantChatTurnRequest,
+  AssistantChatRequest,
+  AssistantChatResponse,
   ChatCreateRequest,
+  ChatStreamRequest,
   ChatRequest,
   ChatResponse,
   ChatConversationDetail,
@@ -73,7 +77,7 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
         conversationId: string,
         query?: Parameters<GeneratedRadiosoClient["getChatHistoryConversation"]>[1],
       ) => generated.getChatHistoryConversation(conversationId, query),
-      stream: (body: Omit<ChatRequest, "stream">): AsyncGenerator<RadiosoChatStreamEvent> => streamChat(config, body),
+      stream: (body: ChatStreamRequest): AsyncGenerator<RadiosoChatStreamEvent> => streamChat(config, body),
     },
   };
 };

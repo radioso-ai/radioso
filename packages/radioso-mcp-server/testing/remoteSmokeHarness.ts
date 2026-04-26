@@ -351,8 +351,8 @@ export const runSingleNodeSmoke = async (logger: SmokeLogger): Promise<SmokeSumm
     assert.ok(Array.isArray(answer.structuredContent.citations));
     assert.ok(answer.structuredContent.citations.length > 0);
 
-    logger.step("verifying MCP answers are labeled in chat history");
-    const historyResponse = await fetch(`${backend.baseUrl}/api/v1/chat/history`, {
+    logger.step("verifying MCP grounded answers do not create assistant chat history");
+    const historyResponse = await fetch(`${backend.baseUrl}/api/v1/history`, {
       headers: {
         authorization: `Bearer ${issued.token}`,
       },
@@ -360,8 +360,8 @@ export const runSingleNodeSmoke = async (logger: SmokeLogger): Promise<SmokeSumm
     const historyPayload = await readJson(historyResponse);
     assert.equal(historyResponse.status, 200);
     assert.ok(
-      historyPayload.conversations.some((conversation: { sourceChannel?: string }) => conversation.sourceChannel === "mcp"),
-      "Expected at least one MCP-originated conversation in history.",
+      !historyPayload.conversations.some((conversation: { sourceChannel?: string }) => conversation.sourceChannel === "mcp"),
+      "Expected retrieval-first MCP grounded answers not to create assistant chat history.",
     );
 
     logger.step("verifying remote auth failures");

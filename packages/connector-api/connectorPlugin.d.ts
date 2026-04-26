@@ -51,7 +51,7 @@ export interface ConnectorContext {
  * Lifecycle contract that every connector plugin must implement.
  */
 export interface ConnectorPlugin {
-  /** Unique identifier (e.g. "whatsapp"). Used as DB key and URL segment. */
+  /** Unique identifier (for example, "sms"). Used as DB key and URL segment. */
   readonly id: string;
 
   /** Human-readable name shown in the Settings UI. */
@@ -83,7 +83,7 @@ export interface ConnectorPlugin {
   /**
    * Returns the webhook URL template for this connector.
    * The host portion is filled in by the registry/UI.
-   * Example: "/api/connectors/whatsapp/:workspaceId/webhook"
+   * Example: "/api/connectors/sms/:workspaceId/webhook"
    */
   getWebhookPath(): string;
 

@@ -135,7 +135,7 @@ await client.settings.updateGeneral({
 
 ```ts
 const response = await client.chat.create({
-  query: 'What does the FAQ say about uploaded content?',
+  message: 'What does the FAQ say about uploaded content?',
   stream: false,
 })
 ```
@@ -146,7 +146,7 @@ const response = await client.chat.create({
 
 ```ts
 for await (const event of client.chat.stream({
-  query: 'Summarize the FAQ',
+  message: 'Summarize the FAQ',
 })) {
   if (event.type === 'conversation') {
     continue
@@ -200,7 +200,7 @@ try {
 
 - `baseUrl` should be the Radioso server origin, without a trailing slash.
 - The SDK sends the API token as `Authorization: Bearer <token>`.
-- Streaming chat is layered on top of the same `/api/v1/chat/` endpoint, with `stream: true`.
+- Streaming chat is layered on top of `POST /api/v1/assistant/chat`, with `stream: true`.
 - Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.
 - Run `npm run sync` in `typescript-sdk/` after backend API changes so the generated types stay up to date.
 - Search and answer settings are documented separately in [Retrieval settings](/sdk/retrieval-settings).

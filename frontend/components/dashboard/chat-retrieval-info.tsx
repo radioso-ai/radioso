@@ -10,6 +10,8 @@ interface ChatRetrievalInfoProps {
   graphMode?: boolean
 }
 
+const formatExecutionLabel = (value: string) => value.replaceAll('_', ' ')
+
 export function ChatRetrievalInfo({
   retrievalInfo,
   retrievalTrace,
@@ -27,6 +29,23 @@ export function ChatRetrievalInfo({
 
   return (
     <div className="space-y-3">
+      {retrievalInfo?.execution ? (
+        <section className="rounded-lg border border-border/70 bg-background/60 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-foreground">Execution path</p>
+            <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              {formatExecutionLabel(retrievalInfo.execution.surface)}
+            </span>
+            <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              {formatExecutionLabel(retrievalInfo.execution.path)}
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Retrieval {retrievalInfo.execution.retrievalInvoked ? 'was invoked for this response.' : 'was not invoked for this response.'}
+          </p>
+        </section>
+      ) : null}
+
       {retrievalInfo?.triggerAnalysis ? (
         <section className="rounded-lg border border-border/70 bg-background/60 p-3">
           <p className="text-sm font-medium text-foreground">Trigger analysis</p>

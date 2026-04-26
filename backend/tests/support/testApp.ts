@@ -12,6 +12,8 @@ import { EmailVerificationService } from "../../src/modules/auth/services/emailV
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
+import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import {
   type GroundedMissResponseComposer,
 } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
@@ -42,15 +44,17 @@ import {
 import { RerankService, type RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
+import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
+import { RetrievalSearchService } from "../../src/modules/retrieval/services/retrievalSearchService.js";
 import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
+import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
 import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
-import { WhatsAppPlugin } from "../../src/modules/connectors/plugins/whatsapp/whatsappPlugin.js";
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
 import { EvalReplayService } from "../../src/modules/evals/services/evalReplayService.js";
 import { EvalLabService } from "../../src/modules/evals/services/evalLabService.js";
@@ -338,8 +342,6 @@ export const createTestDependencies = (overrides: {
   rerankGateway?: RerankGateway;
   envOverrides?: Partial<Env>;
   abuseControlRepository?: AbuseControlRepositoryPort;
-  whatsappFetch?: typeof fetch;
-  whatsappDebounceMs?: number;
   groundedMissResponseComposer?: GroundedMissResponseComposer;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
@@ -649,7 +651,6 @@ export const createTestDependencies = (overrides: {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(telemetryService),
-    workspaceRepository,
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,
@@ -687,10 +688,6 @@ export const createTestDependencies = (overrides: {
     overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),
   );
   const connectorRegistry = new ConnectorRegistry();
-  connectorRegistry.register(new WhatsAppPlugin({
-    fetch: overrides.whatsappFetch,
-    debounceMs: overrides.whatsappDebounceMs,
-  }));
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
   const emailService = new EmailService(new NoopEmailDriver(), {
@@ -718,6 +715,7 @@ export const createTestDependencies = (overrides: {
     auditService,
     overrides.groundedMissResponseComposer ?? new TestGroundedMissResponseComposer(),
     productAnalyticsService,
+    workspaceRepository,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -726,6 +724,19 @@ export const createTestDependencies = (overrides: {
     chatGateway,
     auditService,
   );
+  const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
+  const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
+  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
+  const retrievalAnswerService = new RetrievalAnswerService({
+    retrievalPipeline,
+    chatGateway,
+  });
+  const platformSettingsService = new PlatformSettingsService({
+    workspaceRepository,
+    retrievalSettingsService,
+    auditService,
+    publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
+  });
   const evalLabService = new EvalLabService(
     new InMemoryEvalRepository(),
     chatHistoryService,
@@ -733,6 +744,7 @@ export const createTestDependencies = (overrides: {
       retrievalPipeline,
       chatGateway,
       overrides.groundedMissResponseComposer ?? new TestGroundedMissResponseComposer(),
+      workspaceRepository,
     ),
   );
 
@@ -786,6 +798,11 @@ export const createTestDependencies = (overrides: {
     chatService,
     chatBootstrapService,
     chatHistoryService,
+    assistantChatService,
+    assistantHistoryService,
+    retrievalSearchService,
+    retrievalAnswerService,
+    platformSettingsService,
     evalLabService,
     accountRepository,
     workspaceRepository,
@@ -824,8 +841,6 @@ export const createTestApp = (overrides: {
   rerankGateway?: RerankGateway;
   envOverrides?: Partial<Env>;
   abuseControlRepository?: AbuseControlRepositoryPort;
-  whatsappFetch?: typeof fetch;
-  whatsappDebounceMs?: number;
   groundedMissResponseComposer?: GroundedMissResponseComposer;
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);

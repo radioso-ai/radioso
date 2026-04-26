@@ -276,6 +276,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account/workspaces/{workspaceId}/token/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate the workspace API token */
+        post: operations["rotateWorkspaceApiToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace/mcp/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace MCP context for a bearer-authenticated workspace token */
+        get: operations["getWorkspaceMcpContext"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspace": {
         parameters: {
             query?: never;
@@ -288,6 +322,23 @@ export interface paths {
         put?: never;
         /** Create a workspace */
         post: operations["createWorkspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace/resolve/{workspaceKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve a workspace public route key for the authenticated user */
+        get: operations["resolveWorkspaceRouteKey"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -310,6 +361,24 @@ export interface paths {
         head?: never;
         /** Rename a workspace */
         patch: operations["renameWorkspace"];
+        trace?: never;
+    };
+    "/api/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get shared workspace platform settings */
+        get: operations["getPlatformSettings"];
+        /** Merge-update shared workspace platform settings */
+        put: operations["updatePlatformSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/settings/retrieval": {
@@ -377,6 +446,40 @@ export interface paths {
         /** Update general workspace settings */
         put: operations["updateGeneralSettings"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/retrieval/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search workspace evidence without assistant behavior */
+        post: operations["searchRetrievalEvidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/retrieval/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate a retrieval-only grounded answer */
+        post: operations["createRetrievalAnswer"];
         delete?: never;
         options?: never;
         head?: never;
@@ -488,7 +591,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/chat/": {
+    "/api/v1/assistant/chat": {
         parameters: {
             query?: never;
             header?: never;
@@ -497,23 +600,23 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Ask a retrieval-grounded question */
-        post: operations["createChatResponse"];
+        /** Run human-facing assistant chat */
+        post: operations["createAssistantChatResponse"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/chat/history": {
+    "/api/v1/history": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List saved chat conversations */
-        get: operations["listChatHistory"];
+        /** List saved assistant conversations */
+        get: operations["listHistory"];
         put?: never;
         post?: never;
         delete?: never;
@@ -522,15 +625,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/chat/history/{conversationId}": {
+    "/api/v1/history/{conversationId}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get a saved conversation and its debug metadata */
-        get: operations["getChatHistoryConversation"];
+        /** Get a saved assistant conversation and its debug metadata */
+        get: operations["getHistoryConversation"];
         put?: never;
         post?: never;
         delete?: never;
@@ -778,24 +881,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/connectors/whatsapp/{workspaceId}/webhook": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Verify WhatsApp webhook ownership */
-        get: operations["verifyWhatsAppWebhook"];
-        put?: never;
-        /** Receive a WhatsApp webhook event */
-        post: operations["receiveWhatsAppWebhook"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -824,6 +909,7 @@ export interface components {
             /** Format: uuid */
             workspaceId: string;
             workspaceName: string;
+            workspacePublicRouteKey: string;
             requiresEmailVerification: boolean;
         };
         LoginResponse: {
@@ -835,6 +921,11 @@ export interface components {
             /** Format: uuid */
             workspaceId: string;
             workspaceName: string;
+            workspacePublicRouteKey: string;
+        };
+        PasswordResetConfirmResponse: components["schemas"]["LoginResponse"] & {
+            /** Format: email */
+            email: string;
         };
         Workspace: {
             /** Format: uuid */
@@ -842,16 +933,36 @@ export interface components {
             /** Format: uuid */
             accountId: string;
             name: string;
+            publicRouteKey: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        WorkspaceRouteResolutionResponse: {
+            workspaceKey: string;
+            /** Format: uuid */
+            workspaceId: string;
+            workspaceName: string;
+            /** Format: uuid */
+            accountId: string;
+            organizationName: string;
         };
         WorkspaceListResponse: {
             workspaces: components["schemas"]["Workspace"][];
         };
         WorkspaceTokenResponse: {
             token: string;
+        };
+        WorkspaceMcpContextResponse: {
+            /** @enum {string} */
+            apiVersion: "0.1.0";
+            /** @enum {string} */
+            mcpContextVersion: "2026-04-22";
+            supportedTools: ("answer_grounded" | "create_document" | "delete_document" | "describe_capabilities" | "get_document" | "get_retrieval_settings" | "list_documents" | "reprocess_document" | "search_documents" | "update_document" | "update_retrieval_settings")[];
+            /** Format: uuid */
+            workspaceId: string;
+            workspaceName: string;
         };
         RegisterRequest: {
             /** Format: email */
@@ -943,6 +1054,7 @@ export interface components {
             /** Format: uuid */
             workspaceId: string;
             workspaceName: string;
+            workspacePublicRouteKey: string;
         };
         AccessibleAccountsResponse: {
             /** Format: uuid */
@@ -1002,9 +1114,27 @@ export interface components {
                 /** @enum {string} */
                 operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
                 value: string;
+                /**
+                 * @default and
+                 * @enum {string}
+                 */
+                combinator: "and" | "or";
+                /** @default [] */
+                conditions: {
+                    id: string;
+                    field: string;
+                    /** @enum {string} */
+                    valueType: "string" | "number" | "date" | "boolean";
+                    /** @enum {string} */
+                    operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                    value: string;
+                }[];
                 /** @enum {string} */
                 effect: "boost" | "filter";
                 enabled: boolean;
+                /** @enum {string} */
+                triggerMode: "always_on" | "match_turn";
+                triggerInstruction?: string;
             }[];
             customInstruction: string;
             /** Format: date-time */
@@ -1029,15 +1159,29 @@ export interface components {
             citationDisplayEnabled: boolean;
             metadataRules?: {
                 id: string;
-                field: string;
+                field?: string;
                 /** @enum {string} */
-                valueType: "string" | "number" | "date" | "boolean";
+                valueType?: "string" | "number" | "date" | "boolean";
                 /** @enum {string} */
-                operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
-                value: string;
+                operator?: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                value?: string;
+                /** @enum {string} */
+                combinator?: "and" | "or";
+                conditions?: {
+                    id: string;
+                    field: string;
+                    /** @enum {string} */
+                    valueType: "string" | "number" | "date" | "boolean";
+                    /** @enum {string} */
+                    operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                    value: string;
+                }[];
                 /** @enum {string} */
                 effect: "boost" | "filter";
                 enabled: boolean;
+                /** @enum {string} */
+                triggerMode?: "always_on" | "match_turn";
+                triggerInstruction?: string;
             }[];
             customInstruction?: string;
         };
@@ -1071,9 +1215,51 @@ export interface components {
             /** @enum {string} */
             operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
             value: string;
+            /**
+             * @default and
+             * @enum {string}
+             */
+            combinator: "and" | "or";
+            /** @default [] */
+            conditions: {
+                id: string;
+                field: string;
+                /** @enum {string} */
+                valueType: "string" | "number" | "date" | "boolean";
+                /** @enum {string} */
+                operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                value: string;
+            }[];
             /** @enum {string} */
             effect: "boost" | "filter";
             enabled: boolean;
+            /** @enum {string} */
+            triggerMode: "always_on" | "match_turn";
+            triggerInstruction?: string;
+        };
+        TriggerAnalysisRule: {
+            ruleId: string;
+            matched: boolean;
+            matchStrength: number;
+            reason: string;
+            triggerInstructionPreview: string;
+        };
+        TriggerAnalysis: {
+            /** @enum {string} */
+            status: "skipped_not_configured" | "skipped_unavailable" | "applied" | "fallback";
+            consideredRules: components["schemas"]["TriggerAnalysisRule"][];
+            matchedRuleIds: string[];
+            unmatchedRuleIds: string[];
+            matchCount: number;
+            matcherVersion: string;
+            failureReason?: string;
+        };
+        TriggerBackoff: {
+            applied: boolean;
+            /** @enum {string} */
+            reason?: "empty_filtered_candidates" | "weak_filtered_support";
+            relaxedRuleIds: string[];
+            restoredCandidateCount?: number;
         };
         UpdateGeneralSettingsRequest: {
             anonymousChatEnabled?: boolean;
@@ -1113,6 +1299,154 @@ export interface components {
             websiteEmbedLauncherIcon: "chat" | "sparkles" | "message";
             /** @enum {string} */
             websiteEmbedLauncherPosition: "bottom-right" | "bottom-left";
+        };
+        AssistantSettingsSection: {
+            assistantName: string;
+            assistantRole: string;
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            /** @description Server-managed bootstrap readiness derived from the current assistant configuration. */
+            readonly assistantBootstrapActive: boolean;
+            /** @enum {string} */
+            conversationMode: "factual" | "guided" | "exploratory";
+            suggestedQuestionsEnabled: boolean;
+            suggestedQuestionsCount: number;
+            customInstruction: string;
+        };
+        PlatformRetrievalSettingsSection: {
+            queryRewriteEnabled: boolean;
+            semanticRewriteInstructions: string;
+            lexicalRewriteInstructions: string;
+            /** @enum {string} */
+            answerSupportPolicy: "strict" | "warn" | "off";
+            rerankEnabled: boolean;
+            vectorTopK: number;
+            similarityThreshold: number;
+            rerankTopK: number;
+            citationDisplayEnabled: boolean;
+            /** @default [] */
+            metadataRules: {
+                id: string;
+                field: string;
+                /** @enum {string} */
+                valueType: "string" | "number" | "date" | "boolean";
+                /** @enum {string} */
+                operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                value: string;
+                /**
+                 * @default and
+                 * @enum {string}
+                 */
+                combinator: "and" | "or";
+                /** @default [] */
+                conditions: {
+                    id: string;
+                    field: string;
+                    /** @enum {string} */
+                    valueType: "string" | "number" | "date" | "boolean";
+                    /** @enum {string} */
+                    operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                    value: string;
+                }[];
+                /** @enum {string} */
+                effect: "boost" | "filter";
+                enabled: boolean;
+                /** @enum {string} */
+                triggerMode: "always_on" | "match_turn";
+                triggerInstruction?: string;
+            }[];
+            /** @default [] */
+            metadataFieldSuggestions: {
+                field: string;
+                /** @enum {string} */
+                inferredType: "string" | "number" | "date" | "boolean";
+            }[];
+        };
+        PlatformChannelsSettingsSection: {
+            anonymousChatEnabled: boolean;
+            anonymousChatUrl: string | null;
+            anonymousRateLimit: number;
+            websiteEmbedEnabled: boolean;
+            websiteEmbedToken: string | null;
+            websiteEmbedAllowedOrigins: string[];
+            websiteEmbedLauncherLabel: string;
+            /** @enum {string} */
+            websiteEmbedLauncherIcon: "chat" | "sparkles" | "message";
+            /** @enum {string} */
+            websiteEmbedLauncherPosition: "bottom-right" | "bottom-left";
+            websiteEmbedScriptUrl: string | null;
+            websiteEmbedSnippet: string | null;
+        };
+        PlatformSettingsResponse: {
+            assistant: components["schemas"]["AssistantSettingsSection"];
+            retrieval: components["schemas"]["PlatformRetrievalSettingsSection"];
+            channels: components["schemas"]["PlatformChannelsSettingsSection"];
+        };
+        UpdatePlatformSettingsRequest: {
+            assistant?: {
+                assistantName?: string;
+                assistantRole?: string;
+                greetingInstruction?: string;
+                assistantDefaultLocale?: string | null;
+                proactiveGreetingEnabled?: boolean;
+                /** @enum {string} */
+                conversationMode?: "factual" | "guided" | "exploratory";
+                suggestedQuestionsEnabled?: boolean;
+                suggestedQuestionsCount?: number;
+                customInstruction?: string;
+            };
+            retrieval?: {
+                queryRewriteEnabled?: boolean;
+                semanticRewriteInstructions?: string;
+                lexicalRewriteInstructions?: string;
+                /** @enum {string} */
+                answerSupportPolicy?: "strict" | "warn" | "off";
+                rerankEnabled?: boolean;
+                vectorTopK?: number;
+                similarityThreshold?: number;
+                rerankTopK?: number;
+                citationDisplayEnabled?: boolean;
+                metadataRules?: {
+                    id: string;
+                    field?: string;
+                    /** @enum {string} */
+                    valueType?: "string" | "number" | "date" | "boolean";
+                    /** @enum {string} */
+                    operator?: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                    value?: string;
+                    /** @enum {string} */
+                    combinator?: "and" | "or";
+                    conditions?: {
+                        id: string;
+                        field: string;
+                        /** @enum {string} */
+                        valueType: "string" | "number" | "date" | "boolean";
+                        /** @enum {string} */
+                        operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                        value: string;
+                    }[];
+                    /** @enum {string} */
+                    effect: "boost" | "filter";
+                    enabled: boolean;
+                    /** @enum {string} */
+                    triggerMode?: "always_on" | "match_turn";
+                    triggerInstruction?: string;
+                }[];
+            };
+            channels?: {
+                anonymousChatEnabled?: boolean;
+                anonymousRateLimit?: number;
+                rotateAnonymousChatToken?: boolean;
+                websiteEmbedEnabled?: boolean;
+                rotateWebsiteEmbedToken?: boolean;
+                websiteEmbedAllowedOrigins?: string[];
+                websiteEmbedLauncherLabel?: string;
+                /** @enum {string} */
+                websiteEmbedLauncherIcon?: "chat" | "sparkles" | "message";
+                /** @enum {string} */
+                websiteEmbedLauncherPosition?: "bottom-right" | "bottom-left";
+            };
         };
         PublicEmbedSessionResponse: {
             workspaceName: string;
@@ -1233,6 +1567,7 @@ export interface components {
             citationIndices?: number[];
         };
         ParsedQuery: {
+            originalQuery?: string;
             semanticQuery: string;
             lexicalQuery: string;
             constraintSummary: string[];
@@ -1268,9 +1603,25 @@ export interface components {
             continuityDecision?: string;
             rejectionReason?: string;
         };
+        RetrievalExecutionMetadata: {
+            /** @enum {string} */
+            surface: "assistant" | "retrieval" | "mcp_capability";
+            /** @enum {string} */
+            path: "assistant_direct" | "assistant_retrieval" | "retrieval_search" | "retrieval_answer" | "mcp_grounded_answer";
+            retrievalInvoked: boolean;
+        };
         RetrievalInfo: {
+            execution?: components["schemas"]["RetrievalExecutionMetadata"];
             parsedQuery?: components["schemas"]["ParsedQuery"];
             retrievalSubqueries?: components["schemas"]["RetrievalSubquery"][];
+            /**
+             * @description High-level user-turn intent inferred before routing. This is independent from the assistant route reason.
+             * @enum {string}
+             */
+            responseIntent?: "retrieval" | "social_only" | "assistant_identity";
+            retrievalSkipped?: boolean;
+            intentConfidence?: number;
+            intentFallbackApplied?: boolean;
             /** @enum {string} */
             responseLanguagePolicy?: "match_user_question";
             candidateCounts: components["schemas"]["CandidateCounts"];
@@ -1279,6 +1630,8 @@ export interface components {
             /** @enum {string} */
             rerankStatus: "skipped" | "applied" | "fallback";
             rewrite?: components["schemas"]["RewriteInfo"];
+            triggerAnalysis?: components["schemas"]["TriggerAnalysis"];
+            triggerBackoff?: components["schemas"]["TriggerBackoff"];
         };
         RetrievalTraceStage: {
             stageId: string;
@@ -1330,11 +1683,113 @@ export interface components {
             results: components["schemas"]["DocumentSearchResult"][];
             retrievalTrace?: components["schemas"]["RetrievalTrace"];
         };
+        RetrievalSearchRequest: {
+            query: string;
+            metadataFilter?: {
+                [key: string]: unknown;
+            };
+            topK?: number;
+        };
+        RetrievalAnswerRequest: {
+            query: string;
+            conversationContext?: {
+                previousUserMessages?: string[];
+                previousAssistantMessages?: string[];
+                followUpToMessageId?: string;
+            };
+            metadataFilter?: {
+                [key: string]: unknown;
+            };
+        };
+        RetrievalSearchEvidence: {
+            /** Format: uuid */
+            documentId: string;
+            /** Format: uuid */
+            chunkId: string;
+            title: string;
+            content: string;
+            metadata?: {
+                [key: string]: unknown;
+            };
+            score?: number;
+        };
+        RetrievalSearchResponse: {
+            /** @enum {string} */
+            outcome: "results";
+            rewrittenQuery: {
+                semantic: string;
+                lexical: string;
+            };
+            results: components["schemas"]["RetrievalSearchEvidence"][];
+            retrievalInfo: components["schemas"]["RetrievalInfo"];
+            retrievalTrace: components["schemas"]["RetrievalTrace"];
+        };
+        RetrievalAnswerEvidence: {
+            /** Format: uuid */
+            documentId: string;
+            /** Format: uuid */
+            chunkId: string;
+            title: string;
+            content: string;
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        RetrievalAnswerSuccess: {
+            /** @enum {string} */
+            outcome: "answer";
+            answer: string;
+            citations?: components["schemas"]["Citation"][];
+            evidence: components["schemas"]["RetrievalAnswerEvidence"][];
+            validation: {
+                /** @enum {string} */
+                status: "supported" | "unsupported" | "not_checked";
+                /** @enum {string} */
+                policy: "strict" | "warn" | "off";
+            };
+            retrievalInfo: components["schemas"]["RetrievalInfo"];
+            retrievalTrace: components["schemas"]["RetrievalTrace"];
+        };
+        RetrievalAnswerUnsupported: {
+            /** @enum {string} */
+            outcome: "unsupported";
+            /** @enum {string} */
+            code: "unsupported_query_type";
+            /** @enum {string} */
+            reason: "social_only" | "assistant_identity";
+            /** @enum {string} */
+            message: "This request is outside retrieval scope.";
+        };
+        RetrievalAnswerResponse: components["schemas"]["RetrievalAnswerSuccess"] | components["schemas"]["RetrievalAnswerUnsupported"];
         ChatSuggestion: {
             text: string;
             /** @enum {string} */
             kind: "deeper" | "broader";
             citation?: components["schemas"]["Citation"];
+        };
+        AssistantRoute: {
+            /** @enum {string} */
+            type: "direct" | "retrieval";
+            /**
+             * @description Execution routing reason chosen by the assistant surface after intent and policy checks.
+             * @enum {string}
+             */
+            reason: "assistant_identity" | "conversation_start" | "evidence_required" | "social_only";
+        };
+        AssistantRouteDiagnostics: {
+            /**
+             * @description The human-facing assistant surface that produced this response.
+             * @enum {string}
+             */
+            generator: "assistant";
+            /** @enum {string} */
+            routeType: "direct" | "retrieval";
+            /**
+             * @description Route reason echoed into diagnostics for replay and history views.
+             * @enum {string}
+             */
+            routeReason: "assistant_identity" | "conversation_start" | "evidence_required" | "social_only";
+            retrievalInvoked: boolean;
         };
         ChatResponse: {
             /** Format: uuid */
@@ -1357,13 +1812,42 @@ export interface components {
             };
             retrievalInfo: components["schemas"]["RetrievalInfo"];
             retrievalTrace: components["schemas"]["RetrievalTrace"];
+            route?: components["schemas"]["AssistantRoute"];
         };
-        ChatRequest: {
-            query?: string;
-            stream: boolean;
+        AssistantChatResponse: {
+            /** Format: uuid */
+            conversationId: string;
+            answer: string;
+            citations?: components["schemas"]["Citation"][];
+            answerSegments?: components["schemas"]["AnswerSegment"][];
+            suggestions?: components["schemas"]["ChatSuggestion"][];
+            /** @enum {string} */
+            conversationMode: "factual" | "guided" | "exploratory";
+            conversationModeMetadata: {
+                /** @enum {string} */
+                conversationMode: "factual" | "guided" | "exploratory";
+                brevityOverrideApplied: boolean;
+                expansionApplied: boolean;
+                /** @enum {string} */
+                expansionKind: "none" | "focused" | "expansive";
+                suggestionCount: number;
+                followUpQuestionApplied: boolean;
+            };
+            retrievalInfo: components["schemas"]["RetrievalInfo"];
+            retrievalTrace: components["schemas"]["RetrievalTrace"];
+            route: components["schemas"]["AssistantRoute"];
+        };
+        AssistantChatRequest: {
             /** Format: uuid */
             conversationId?: string;
-            bootstrapGreeting?: boolean;
+            message: string;
+            /**
+             * @default false
+             * @enum {boolean}
+             */
+            startConversation: false;
+            /** @default false */
+            stream: boolean;
             userExpectedLocale?: string;
             inputMetadata?: {
                 /** @enum {string} */
@@ -1371,17 +1855,66 @@ export interface components {
                 /** Format: uuid */
                 suggestionSourceMessageId?: string;
             };
+            sourceContext?: {
+                /** @enum {string} */
+                surface?: "authenticated_chat" | "public_chat" | "website_embed";
+                sourceOrigin?: string | null;
+            };
+            metadataFilter?: {
+                [key: string]: unknown;
+            };
+        } | {
+            /** @enum {boolean} */
+            startConversation: true;
+            /**
+             * @default false
+             * @enum {boolean}
+             */
+            stream: false;
+            message?: string;
+            userExpectedLocale?: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+            };
+            sourceContext?: {
+                /** @enum {string} */
+                surface?: "authenticated_chat" | "public_chat" | "website_embed";
+                sourceOrigin?: string | null;
+            };
             metadataFilter?: {
                 [key: string]: unknown;
             };
         };
         PublicChatRequest: {
-            query?: string;
-            /** @default false */
-            stream: boolean;
             /** Format: uuid */
             conversationId?: string;
-            bootstrapGreeting?: boolean;
+            message: string;
+            /**
+             * @default false
+             * @enum {boolean}
+             */
+            startConversation: false;
+            /** @default false */
+            stream: boolean;
+            userExpectedLocale?: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+            };
+        } | {
+            /** @enum {boolean} */
+            startConversation: true;
+            /**
+             * @default false
+             * @enum {boolean}
+             */
+            stream: false;
+            message?: string;
             userExpectedLocale?: string;
             inputMetadata?: {
                 /** @enum {string} */
@@ -1430,6 +1963,8 @@ export interface components {
             nonSubstantiveSegmentCount: number;
             /** @enum {string} */
             answerSupportPolicy?: "strict" | "warn" | "off";
+            hiddenSupportUsed?: boolean;
+            hiddenSupportKindsUsed?: ("assistant_name" | "assistant_role")[];
             segmentResults: components["schemas"]["ValidationSegmentResult"][];
         };
         ChatConversationMessageDebug: {
@@ -1440,11 +1975,12 @@ export interface components {
             stream: boolean;
             citationCount: number;
             /** @enum {string} */
-            answerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal";
+            answerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
             /** @enum {string} */
             answerSupportPolicy?: "strict" | "warn" | "off";
             /** @enum {string} */
             conversationMode?: "factual" | "guided" | "exploratory";
+            route?: components["schemas"]["AssistantRouteDiagnostics"];
             conversationModeMetadata?: {
                 /** @enum {string} */
                 conversationMode: "factual" | "guided" | "exploratory";
@@ -1511,7 +2047,7 @@ export interface components {
             /** @enum {string} */
             expectedRefusalBehavior?: "refusal" | "answer";
             /** @enum {string} */
-            expectedAnswerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal";
+            expectedAnswerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
             requiredPhrases?: string[];
             forbiddenPhrases?: string[];
             latencyBudgetMs?: number;
@@ -1598,7 +2134,7 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             /** @enum {string} */
-            answerOutcome: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal";
+            answerOutcome: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
             answerSupportPolicy?: string;
             answer: string;
             latencyMs: number;
@@ -1742,12 +2278,7 @@ export interface components {
             error: "Channel identity conflict";
             detail: string;
         };
-        PlainTextChallenge: string;
-        EmptySuccess: Record<string, never>;
-        WhatsAppWebhookPayload: {
-            [key: string]: unknown;
-        };
-        ChatSseStream: string;
+        AssistantChatSseStream: string;
         ConnectorNotFoundResponse: {
             /** @enum {string} */
             error: "Connector not found";
@@ -2109,7 +2640,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LoginResponse"];
+                    "application/json": components["schemas"]["PasswordResetConfirmResponse"];
                 };
             };
             /** @description Request validation failed */
@@ -2457,8 +2988,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Workspace not found */
-            404: {
+            /** @description Workspace token no longer resolves to an active workspace */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2473,6 +3004,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
+        };
+    };
+    rotateWorkspaceApiToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace token rotated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceTokenResponse"];
+                };
+            };
+            /** @description Invalid workspace id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace does not belong to the current account */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too many rotate attempts */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace token secret is not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceMcpContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace MCP context returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMcpContextResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace token no longer resolves to an active workspace */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -2539,6 +3175,46 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resolveWorkspaceRouteKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace route key resolved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceRouteResolutionResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found or inaccessible */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2617,6 +3293,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPlatformSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Shared assistant, retrieval, and channel settings returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updatePlatformSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePlatformSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Shared settings updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformSettingsResponse"];
                 };
             };
             /** @description Request validation failed */
@@ -2904,6 +3669,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FlatErrorResponse"];
+                };
+            };
+        };
+    };
+    searchRetrievalEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Retrieval evidence returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetrievalSearchResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createRetrievalAnswer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Retrieval answer or unsupported retrieval-scoped result returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetrievalAnswerResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3276,7 +4125,7 @@ export interface operations {
             };
         };
     };
-    createChatResponse: {
+    createAssistantChatResponse: {
         parameters: {
             query?: never;
             header?: never;
@@ -3285,7 +4134,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ChatRequest"];
+                "application/json": components["schemas"]["AssistantChatRequest"];
             };
         };
         responses: {
@@ -3295,8 +4144,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChatResponse"];
-                    "text/event-stream": components["schemas"]["ChatSseStream"];
+                    "application/json": components["schemas"]["AssistantChatResponse"];
+                    "text/event-stream": components["schemas"]["AssistantChatSseStream"];
                 };
             };
             /** @description Bootstrap request completed without creating a greeting */
@@ -3335,7 +4184,7 @@ export interface operations {
             };
         };
     };
-    listChatHistory: {
+    listHistory: {
         parameters: {
             query?: {
                 limit?: number;
@@ -3368,7 +4217,7 @@ export interface operations {
             };
         };
     };
-    getChatHistoryConversation: {
+    getHistoryConversation: {
         parameters: {
             query?: {
                 limit?: number;
@@ -3584,7 +4433,7 @@ export interface operations {
                         /** @enum {string} */
                         expectedRefusalBehavior?: "refusal" | "answer";
                         /** @enum {string} */
-                        expectedAnswerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal";
+                        expectedAnswerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
                         requiredPhrases?: string[];
                         forbiddenPhrases?: string[];
                         latencyBudgetMs?: number;
@@ -4109,86 +4958,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
-            };
-        };
-    };
-    verifyWhatsAppWebhook: {
-        parameters: {
-            query?: {
-                "hub.mode"?: string;
-                "hub.verify_token"?: string;
-                "hub.challenge"?: string;
-            };
-            header?: never;
-            path: {
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Verification challenge echoed back */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": components["schemas"]["PlainTextChallenge"];
-                };
-            };
-            /** @description Verification failed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Connector config not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    receiveWhatsAppWebhook: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WhatsAppWebhookPayload"];
-            };
-        };
-        responses: {
-            /** @description Webhook accepted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmptySuccess"];
-                };
-            };
-            /** @description Invalid webhook signature */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Connector config not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };

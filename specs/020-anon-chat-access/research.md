@@ -61,7 +61,7 @@ The route handler then delegates to the existing `ChatService` (same as authenti
 
 ## R-006: Conversation Ownership for Anonymous Users
 
-**Decision**: Anonymous conversations use the existing `conversations` and `messages` tables. The `conversations` table already has a `source_channel` column (used for WhatsApp connectors). Set `source_channel = 'anonymous'` for anonymous conversations. Additionally, store the anonymous session ID in a new `anonymous_session_id` column on `conversations` so the system can filter conversations by anonymous user cookie.
+**Decision**: Anonymous conversations use the existing `conversations` and `messages` tables. The `conversations` table already has a `source_channel` column. Set `source_channel = 'anonymous'` for anonymous conversations. Additionally, store the anonymous session ID in a new `anonymous_session_id` column on `conversations` so the system can filter conversations by anonymous user cookie.
 
 **Rationale**: Reuses existing tables. The `source_channel` field provides a natural way to distinguish anonymous from authenticated conversations in queries and UI. Adding `anonymous_session_id` enables per-user conversation history lookup without a new join table.
 

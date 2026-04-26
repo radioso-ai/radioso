@@ -11,11 +11,6 @@ import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
-import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-
-const FIXED_SEMANTIC_REWRITE_INSTRUCTIONS = loadPromptTemplate("retrieval/semantic-rewrite-instructions.md");
-const FIXED_LEXICAL_REWRITE_INSTRUCTIONS = loadPromptTemplate("retrieval/lexical-rewrite-instructions.md");
-const FIXED_ANSWER_SUPPORT_POLICY = "strict" as const;
 
 export interface RetrievalSettingsRepositoryPort {
   findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null>;
@@ -44,9 +39,6 @@ export class RetrievalSettingsService {
     if (existing) {
       const normalized = validateRetrievalSettings({
         ...existing,
-        semanticRewriteInstructions: FIXED_SEMANTIC_REWRITE_INSTRUCTIONS,
-        lexicalRewriteInstructions: FIXED_LEXICAL_REWRITE_INSTRUCTIONS,
-        answerSupportPolicy: FIXED_ANSWER_SUPPORT_POLICY,
         metadataRules: normalizeMetadataRules(existing.metadataRules),
       });
       return {
@@ -63,9 +55,6 @@ export class RetrievalSettingsService {
     try {
       const normalizedInput: RetrievalSettingsInput = {
         ...input,
-        semanticRewriteInstructions: FIXED_SEMANTIC_REWRITE_INSTRUCTIONS,
-        lexicalRewriteInstructions: FIXED_LEXICAL_REWRITE_INSTRUCTIONS,
-        answerSupportPolicy: FIXED_ANSWER_SUPPORT_POLICY,
         metadataRules: normalizeMetadataRules(input.metadataRules),
       };
       const settings = await this.repository.upsert(workspaceId, validateRetrievalSettings(normalizedInput));

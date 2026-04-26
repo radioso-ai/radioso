@@ -135,17 +135,17 @@ describe("eval regression lab", () => {
       .expect(202);
 
     const chatResponse = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
-        query: "Which cookie name is used for browser sessions?",
+        message: "Which cookie name is used for browser sessions?",
         stream: false,
       })
       .expect(200);
 
     const conversationId = chatResponse.body.conversationId as string;
     const historyResponse = await request(app)
-      .get(`/api/v1/chat/history/${conversationId}`)
+      .get(`/api/v1/history/${conversationId}`)
       .set("Authorization", authorization)
       .expect(200);
 

@@ -3,226 +3,38 @@ import { describe, expect, it } from "vitest";
 
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../../support/testApp.js";
 
-const validConfig = {
-  phone_number_id: "15551234567",
-  access_token: "access-token-123456",
-  app_secret: "app-secret-abcdef",
-  webhook_verify_token: "verify-token-xyz987",
-  business_account_id: "987654321",
-  conversation_timeout_hours: "24",
-};
-
 describe("connector management contract", () => {
-  it("lists whatsapp and returns detail with masked secrets", async () => {
+  it("returns an empty registry when no connector capabilities are registered", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "connectors-list@example.com");
-    const { workspaceId } = session;
 
-    const listResponse = await request(app)
+    const response = await request(app)
       .get("/api/v1/connectors")
       .set(adminSessionHeaders(session));
 
-    expect(listResponse.status).toBe(200);
-    expect(listResponse.body.connectors).toEqual([
-      {
-        id: "whatsapp",
-        name: "WhatsApp",
-        description: "Connect a workspace to WhatsApp Business so incoming messages flow through chat.",
-        enabled: false,
-        errorStatus: null,
-      },
-    ]);
-
-    const saveResponse = await request(app)
-      .put("/api/v1/connectors/whatsapp")
-      .set("Host", "localhost:3000")
-      .set("X-Forwarded-Proto", "https")
-      .set("X-Forwarded-Prefix", "/backend")
-      .set(adminSessionHeaders(session))
-      .send({ config: validConfig });
-
-    expect(saveResponse.status).toBe(200);
-    expect(saveResponse.body.schema).toHaveLength(6);
-    expect(saveResponse.body.enabled).toBe(false);
-    expect(saveResponse.body.webhookUrl).toBe(`https://localhost:3000/backend/api/connectors/whatsapp/${workspaceId}/webhook`);
-    expect(saveResponse.body.config).toMatchObject({
-      phone_number_id: "15551234567",
-      business_account_id: "987654321",
-      conversation_timeout_hours: "24",
-    });
-    expect(saveResponse.body.config.access_token).toMatch(/3456$/);
-    expect(saveResponse.body.config.access_token).not.toBe(validConfig.access_token);
-    expect(saveResponse.body.config.app_secret).toMatch(/cdef$/);
-
-    const detailResponse = await request(app)
-      .get("/api/v1/connectors/whatsapp")
-      .set("Host", "localhost:3000")
-      .set("X-Forwarded-Proto", "https")
-      .set("X-Forwarded-Prefix", "/backend")
-      .set(adminSessionHeaders(session));
-
-    expect(detailResponse.status).toBe(200);
-    expect(detailResponse.body).toMatchObject({
-      ...saveResponse.body,
-      webhookUrl: `https://localhost:3000/backend/api/connectors/whatsapp/${workspaceId}/webhook`,
-    });
-  });
-
-  it("validates required fields on enable and preserves config across disable", async () => {
-    const { app } = createTestApp();
-    const session = await issueTestSession(app, "connectors-enable@example.com");
-
-    const partialSave = await request(app)
-      .put("/api/v1/connectors/whatsapp")
-      .set(adminSessionHeaders(session))
-      .send({
-        config: {
-          phone_number_id: validConfig.phone_number_id,
-        },
-      });
-
-    expect(partialSave.status).toBe(200);
-
-    const enableWithoutRequiredFields = await request(app)
-      .post("/api/v1/connectors/whatsapp/enable")
-      .set(adminSessionHeaders(session));
-
-    expect(enableWithoutRequiredFields.status).toBe(400);
-    expect(enableWithoutRequiredFields.body).toEqual({
-      error: "Validation failed",
-      fields: expect.arrayContaining([
-        { key: "access_token", message: "Access Token is required" },
-        { key: "app_secret", message: "App Secret is required" },
-        { key: "webhook_verify_token", message: "Webhook Verify Token is required" },
-        { key: "business_account_id", message: "Business Account ID is required" },
-      ]),
-    });
-
-    const fullSave = await request(app)
-      .put("/api/v1/connectors/whatsapp")
-      .set(adminSessionHeaders(session))
-      .send({ config: validConfig });
-
-    expect(fullSave.status).toBe(200);
-
-    const enableResponse = await request(app)
-      .post("/api/v1/connectors/whatsapp/enable")
-      .set(adminSessionHeaders(session));
-
-    expect(enableResponse.status).toBe(200);
-    expect(enableResponse.body.enabled).toBe(true);
-    expect(enableResponse.body.config.phone_number_id).toBe(validConfig.phone_number_id);
-
-    const disableResponse = await request(app)
-      .post("/api/v1/connectors/whatsapp/disable")
-      .set(adminSessionHeaders(session));
-
-    expect(disableResponse.status).toBe(200);
-    expect(disableResponse.body.enabled).toBe(false);
-    expect(disableResponse.body.config.phone_number_id).toBe(validConfig.phone_number_id);
-  });
-
-  it("rejects duplicate phone numbers across workspaces", async () => {
-    const { app } = createTestApp();
-    const first = await issueTestSession(app, "connectors-duplicate-a@example.com");
-    const second = await issueTestSession(app, "connectors-duplicate-b@example.com");
-
-    await request(app)
-      .put("/api/v1/connectors/whatsapp")
-      .set(adminSessionHeaders(first))
-      .send({ config: validConfig });
-
-    const firstEnable = await request(app)
-      .post("/api/v1/connectors/whatsapp/enable")
-      .set(adminSessionHeaders(first));
-
-    expect(firstEnable.status).toBe(200);
-
-    const secondSave = await request(app)
-      .put("/api/v1/connectors/whatsapp")
-      .set(adminSessionHeaders(second))
-      .send({
-        config: {
-          ...validConfig,
-          access_token: "different-token-123456",
-        },
-      });
-
-    expect(secondSave.status).toBe(409);
-    expect(secondSave.body).toEqual({
-      error: "Channel identity conflict",
-      detail: "Phone Number ID is already configured in another workspace.",
-    });
-  });
-
-  it("rejects saving secret fields when connector encryption is not configured", async () => {
-    const { app } = createTestApp({
-      envOverrides: {
-        CONNECTOR_ENCRYPTION_KEY: undefined,
-      },
-    });
-    const session = await issueTestSession(app, "connectors-no-encryption@example.com");
-
-    const response = await request(app)
-      .put("/api/v1/connectors/whatsapp")
-      .set(adminSessionHeaders(session))
-      .send({ config: validConfig });
-
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(200);
     expect(response.body).toEqual({
-      error: "Validation failed",
-      fields: expect.arrayContaining([
-        { key: "access_token", message: "Connector secret encryption must be configured before saving secret fields" },
-        { key: "app_secret", message: "Connector secret encryption must be configured before saving secret fields" },
-        { key: "webhook_verify_token", message: "Connector secret encryption must be configured before saving secret fields" },
-      ]),
+      connectors: [],
     });
   });
 
-  it("surfaces remediation state for legacy plaintext connector secrets", async () => {
-    const { app, dependencies } = createTestApp();
-    const session = await issueTestSession(app, "connectors-legacy-remediation@example.com");
-    const connectorDb = dependencies.connectorDb as any;
+  it("rejects unknown connector operations", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "connectors-unknown@example.com");
 
-    connectorDb.configs.set(`${session.workspaceId}:whatsapp`, {
-      id: "legacy-config",
-      workspaceId: session.workspaceId,
-      connectorId: "whatsapp",
-      enabled: false,
-      configData: {
-        phone_number_id: validConfig.phone_number_id,
-        access_token: validConfig.access_token,
-        app_secret: validConfig.app_secret,
-        webhook_verify_token: validConfig.webhook_verify_token,
-        business_account_id: validConfig.business_account_id,
-        conversation_timeout_hours: validConfig.conversation_timeout_hours,
-      },
-      errorStatus: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    const detailResponse = await request(app)
-      .get("/api/v1/connectors/whatsapp")
+    const detail = await request(app)
+      .get("/api/v1/connectors/removed")
+      .set(adminSessionHeaders(session));
+    const save = await request(app)
+      .put("/api/v1/connectors/removed")
+      .set(adminSessionHeaders(session))
+      .send({ config: {} });
+    const enable = await request(app)
+      .post("/api/v1/connectors/removed/enable")
       .set(adminSessionHeaders(session));
 
-    expect(detailResponse.status).toBe(200);
-    expect(detailResponse.body.errorStatus).toBe("secret_rotation_required");
-    expect(detailResponse.body.config.access_token).toBe("[re-enter secret]");
-    expect(detailResponse.body.config.app_secret).toBe("[re-enter secret]");
-
-    const enableResponse = await request(app)
-      .post("/api/v1/connectors/whatsapp/enable")
-      .set(adminSessionHeaders(session));
-
-    expect(enableResponse.status).toBe(400);
-    expect(enableResponse.body).toEqual({
-      error: "Validation failed",
-      fields: expect.arrayContaining([
-        { key: "access_token", message: "Stored connector secrets require rotation before this connector can be used" },
-        { key: "app_secret", message: "Stored connector secrets require rotation before this connector can be used" },
-        { key: "webhook_verify_token", message: "Stored connector secrets require rotation before this connector can be used" },
-      ]),
-    });
+    expect(detail.status).toBe(404);
+    expect(save.status).toBe(404);
+    expect(enable.status).toBe(404);
   });
 });

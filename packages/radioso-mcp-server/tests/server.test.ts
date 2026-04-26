@@ -1,5 +1,3 @@
-import { createHmac } from "node:crypto";
-
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createRadiosoMcpServer, createStaticExecutionContextResolver } from "../src/server.js";
@@ -43,10 +41,9 @@ describe("createRadiosoMcpServer", () => {
     ).toThrow(/baseConfig or resolveExecutionContext/i);
   });
 
-  it("propagates stdio signing config into grounded-answer requests", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1_713_779_200_000);
+  it("routes grounded-answer requests through retrieval", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ answer: "ok", conversationId: "conv_123" }), {
+      new Response(JSON.stringify({ outcome: "answer", answer: "ok" }), {
         headers: { "content-type": "application/json" },
         status: 200,
       }),
@@ -55,7 +52,6 @@ describe("createRadiosoMcpServer", () => {
     const resolver = createStaticExecutionContextResolver({
       apiToken: "sk_proj_stdio",
       baseUrl: "http://localhost:8080",
-      mcpSourceSigningSecret: "dev-signing-secret",
       requestTimeoutMs: 30_000,
       serverName: "radioso-test",
     });
@@ -69,17 +65,20 @@ describe("createRadiosoMcpServer", () => {
     await context.adapter.answerGrounded({ query: "hello" });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8080/api/v1/chat",
+      "http://localhost:8080/api/v1/retrieval/answer",
       expect.objectContaining({
+        body: JSON.stringify({ query: "hello" }),
+        method: "POST",
         headers: expect.objectContaining({
           authorization: "Bearer sk_proj_stdio",
-          "x-radioso-source-channel": "mcp",
-          "x-radioso-source-signature": createHmac("sha256", "dev-signing-secret")
-            .update("mcp\n\n1713779200000\nsk_proj_stdio")
-            .digest("hex"),
-          "x-radioso-source-timestamp": "1713779200000",
+          "content-type": "application/json",
+          "x-radioso-capability-client": "mcp",
         }),
       }),
     );
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers).not.toHaveProperty("x-radioso-source-channel");
+    expect(headers).not.toHaveProperty("x-radioso-source-signature");
+    expect(headers).not.toHaveProperty("x-radioso-source-timestamp");
   });
 });

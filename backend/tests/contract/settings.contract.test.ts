@@ -6,6 +6,116 @@ import { describe, expect, it } from "vitest";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("settings contract", () => {
+  it("returns assistant, retrieval, and channel settings through one shared resource", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "platform-settings-default@example.com");
+
+    const response = await request(app)
+      .get("/api/v1/settings")
+      .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      assistant: {
+        assistantName: "",
+        assistantRole: "",
+        greetingInstruction: "",
+        assistantDefaultLocale: null,
+        proactiveGreetingEnabled: false,
+        assistantBootstrapActive: false,
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        customInstruction: "",
+      },
+      retrieval: {
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: expect.any(String),
+        lexicalRewriteInstructions: expect.any(String),
+        answerSupportPolicy: "strict",
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: expect.any(Number),
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        metadataRules: [],
+        metadataFieldSuggestions: [],
+      },
+      channels: {
+        anonymousChatEnabled: false,
+        anonymousChatUrl: null,
+        anonymousRateLimit: 10,
+        websiteEmbedEnabled: false,
+        websiteEmbedAllowedOrigins: [],
+        websiteEmbedLauncherLabel: expect.any(String),
+        websiteEmbedLauncherIcon: expect.any(String),
+        websiteEmbedLauncherPosition: expect.any(String),
+        websiteEmbedScriptUrl: "http://localhost:3000/radioso-embed.js",
+        websiteEmbedSnippet: null,
+      },
+    });
+    expect(response.body.retrieval).not.toHaveProperty("conversationMode");
+    expect(response.body.retrieval).not.toHaveProperty("customInstruction");
+  });
+
+  it("merge-updates shared settings without resetting omitted sections", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "platform-settings-merge@example.com");
+
+    const assistantUpdate = await request(app)
+      .put("/api/v1/settings")
+      .set(adminSessionHeaders(session))
+      .send({
+        assistant: {
+          assistantName: "Marta",
+          conversationMode: "exploratory",
+          customInstruction: "Answer plainly.",
+        },
+      });
+
+    const retrievalUpdate = await request(app)
+      .put("/api/v1/settings")
+      .set(adminSessionHeaders(session))
+      .send({
+        retrieval: {
+          queryRewriteEnabled: true,
+          vectorTopK: 12,
+          rerankEnabled: true,
+        },
+      });
+
+    const channelsUpdate = await request(app)
+      .put("/api/v1/settings")
+      .set(adminSessionHeaders(session))
+      .send({
+        channels: {
+          anonymousChatEnabled: true,
+          anonymousRateLimit: 20,
+        },
+      });
+
+    expect(assistantUpdate.status).toBe(200);
+    expect(retrievalUpdate.status).toBe(200);
+    expect(channelsUpdate.status).toBe(200);
+    expect(channelsUpdate.body).toMatchObject({
+      assistant: {
+        assistantName: "Marta",
+        conversationMode: "exploratory",
+        customInstruction: "Answer plainly.",
+      },
+      retrieval: {
+        queryRewriteEnabled: true,
+        vectorTopK: 12,
+        rerankEnabled: true,
+      },
+      channels: {
+        anonymousChatEnabled: true,
+        anonymousRateLimit: 20,
+        anonymousChatUrl: expect.any(String),
+      },
+    });
+  });
+
   it("returns default retrieval settings for a valid session workspace context", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "settings-default@example.com");
@@ -344,6 +454,9 @@ describe("settings contract", () => {
     expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");
     expect(ingestionUpdateSchema).toContain("fixedWindowChunkOverlap:");
     expect(ingestionUpdateSchema).toContain("structuredMinChunkSize:");
+    expect(spec).toContain("/api/v1/settings:");
+    expect(spec).toContain("PlatformSettingsResponse:");
+    expect(spec).toContain("UpdatePlatformSettingsRequest:");
     expect(spec).toContain("/api/v1/settings/ingestion:");
     expect(spec).toContain("/api/v1/settings/ingestion/reprocess:");
   });

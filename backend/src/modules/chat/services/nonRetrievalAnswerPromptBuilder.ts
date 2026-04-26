@@ -1,12 +1,12 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
 import type { ChatTurnRoute } from "./chatTurnIntentService.js";
 import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
 
 export const buildNonRetrievalAnswerPrompt = (input: {
   route: ChatTurnRoute;
-  assistantIdentity?: AssistantIdentityPromptInput | null;
+  responseIdentity?: ResponseIdentity | null;
   answerInstructionBlock: string;
   history: MessageRecord[];
   query: string;
@@ -15,7 +15,7 @@ export const buildNonRetrievalAnswerPrompt = (input: {
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
     .join("\n");
   const identityAvailabilityInstruction =
-    input.route === CHAT_TURN_ROUTE.ASSISTANT_IDENTITY && !input.assistantIdentity
+    input.route === CHAT_TURN_ROUTE.ASSISTANT_IDENTITY && !input.responseIdentity
       ? loadPromptTemplate("chat/assistant-identity-missing-guidance.md").trim()
       : "";
   const answerInstructionBlock = [

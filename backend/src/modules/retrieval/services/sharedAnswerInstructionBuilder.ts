@@ -1,22 +1,22 @@
-import {
-  buildPublicAssistantIdentityLines,
-  type AssistantIdentityPromptInput,
-} from "../../settings/domain/assistantBootstrapSettings.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import {
+  buildResponseIdentityLines,
+  type ResponseIdentity,
+} from "../../../shared/domain/responseIdentity.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { ConversationModeInstructionBuilder } from "./conversationModeInstructionBuilder.js";
 
 export interface SharedAnswerInstructionBlocks {
-  assistantIdentityBlock: string | null;
+  responseIdentityBlock: string | null;
   customInstructionBlock: string | null;
   responseFormattingGuidelinesBlock: string | null;
-  conversationModeInstructionBlock: string;
+  conversationModeInstructionBlock: string | null;
   responseLanguageInstruction: string;
 }
 
 export interface SharedAnswerInstructionInput {
-  assistantIdentity?: AssistantIdentityPromptInput | null;
+  responseIdentity?: ResponseIdentity | null;
   customInstruction?: string;
   conversationMode?: ConversationMode;
   responseLanguagePolicy?: ResponseLanguagePolicy;
@@ -27,12 +27,12 @@ export class SharedAnswerInstructionBuilder {
 
   build(input: SharedAnswerInstructionInput): SharedAnswerInstructionBlocks {
     return {
-      assistantIdentityBlock: this.renderAssistantIdentity(input.assistantIdentity),
+      responseIdentityBlock: this.renderResponseIdentity(input.responseIdentity),
       customInstructionBlock: this.renderCustomInstruction(input.customInstruction),
       responseFormattingGuidelinesBlock: this.renderResponseFormattingGuidelines(),
-      conversationModeInstructionBlock: this.conversationModeInstructionBuilder.build({
-        conversationMode: input.conversationMode ?? "guided",
-      }),
+      conversationModeInstructionBlock: input.conversationMode
+        ? this.conversationModeInstructionBuilder.build({ conversationMode: input.conversationMode })
+        : null,
       responseLanguageInstruction: this.renderResponseLanguageInstruction(
         input.responseLanguagePolicy ?? "match_user_question",
       ),
@@ -43,7 +43,7 @@ export class SharedAnswerInstructionBuilder {
     const blocks = this.build(input);
 
     return [
-      blocks.assistantIdentityBlock,
+      blocks.responseIdentityBlock,
       blocks.customInstructionBlock,
       blocks.responseFormattingGuidelinesBlock,
       blocks.conversationModeInstructionBlock,
@@ -66,25 +66,25 @@ export class SharedAnswerInstructionBuilder {
     return `Workspace-specific instructions:\n${sanitized}`;
   }
 
-  private renderAssistantIdentity(assistantIdentity?: AssistantIdentityPromptInput | null): string | null {
-    if (!assistantIdentity) {
+  private renderResponseIdentity(responseIdentity?: ResponseIdentity | null): string | null {
+    if (!responseIdentity) {
       return null;
     }
 
-    const identityLines = buildPublicAssistantIdentityLines(assistantIdentity);
+    const identityLines = buildResponseIdentityLines(responseIdentity);
     if (identityLines.length === 0) {
       return null;
     }
 
     return [
-      "Stable assistant identity:",
+      "Stable response identity:",
       ...identityLines,
-      "When the user asks about your name, role, or what you do, answer consistently with this identity.",
+      "When the caller asks about the configured name, role, or purpose, answer consistently with this identity.",
     ].join("\n");
   }
 
   private renderResponseFormattingGuidelines(): string | null {
-    const guidelines = loadPromptTemplate("chat/response-formatting-guidelines.md");
+    const guidelines = loadPromptTemplate("retrieval/response-formatting-guidelines.md");
     return guidelines.trim() ? `Response formatting guidance:\n${guidelines}` : null;
   }
 

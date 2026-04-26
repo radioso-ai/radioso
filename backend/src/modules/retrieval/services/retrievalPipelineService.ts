@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { RetrievalSettingsService } from "../../settings/services/retrievalSettingsService.js";
-import { toAssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
+import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { EmbeddingService } from "./embeddingService.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 import { CandidatePreparationService } from "./candidatePreparationService.js";
@@ -43,7 +42,7 @@ export interface RetrievalPipelineResult {
   contexts: import("../domain/retrievalPipelineTypes.js").FinalPromptContext[];
   prompt: string;
   citations: PromptBuildResult["citations"];
-  assistantIdentity: import("../../settings/domain/assistantBootstrapSettings.js").AssistantIdentityPromptInput | null;
+  responseIdentity: ResponseIdentity | null;
   responseSettings: {
     citationDisplayEnabled: boolean;
     answerSupportPolicy: import("../../settings/domain/retrievalSettings.js").AnswerSupportPolicy;
@@ -93,7 +92,6 @@ export class RetrievalPipelineService {
     promptContextSelectorService: PromptContextSelectorService,
     promptBuilder: PromptBuilder,
     retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
-    private readonly workspaceRepository: WorkspaceRepositoryPort,
     _semanticQueryConstraintService?: unknown,
   ) {
     this.retrievalContextStage = new RetrievalContextStageService(
@@ -121,7 +119,7 @@ export class RetrievalPipelineService {
   }
 
   async interpret(input: RetrievalPipelineRequest): Promise<RetrievalPipelineInterpretationResult> {
-    const request = await this.resolveRequest(input);
+    const request = this.resolveRequest(input);
     const traceStartedAtMs = Date.now();
     const context = await this.measure(() => this.retrievalContextStage.execute(request));
     const interpretation = await this.measure(() => this.queryInterpretationStage.execute(context.result));
@@ -191,7 +189,7 @@ export class RetrievalPipelineService {
       contexts: prompt.result.contexts,
       prompt: prompt.result.prompt,
       citations: prompt.result.citations,
-      assistantIdentity: input.request.assistantIdentity ?? null,
+      responseIdentity: input.request.responseIdentity ?? null,
       responseSettings: prompt.result.responseSettings,
       diagnostics: diagnostics.result,
       trace,
@@ -248,7 +246,7 @@ export class RetrievalPipelineService {
       contexts: [],
       prompt: "",
       citations: [],
-      assistantIdentity: input.request.assistantIdentity ?? null,
+      responseIdentity: input.request.responseIdentity ?? null,
       responseSettings,
       diagnostics,
       trace: {
@@ -325,12 +323,10 @@ export class RetrievalPipelineService {
     };
   }
 
-  private async resolveRequest(input: RetrievalPipelineRequest): Promise<RetrievalPipelineRequest> {
-    const workspace = await this.workspaceRepository.findById(input.workspaceId);
-
+  private resolveRequest(input: RetrievalPipelineRequest): RetrievalPipelineRequest {
     return {
       ...input,
-      assistantIdentity: input.assistantIdentity ?? (workspace ? toAssistantIdentityPromptInput(workspace) : null),
+      responseIdentity: input.responseIdentity ?? null,
     };
   }
 

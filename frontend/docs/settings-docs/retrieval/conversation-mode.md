@@ -1,14 +1,14 @@
 # Conversation Mode
 
 ## Summary
-Choose how broadly the assistant responds after it finds grounded material for the current turn.
+Choose how broadly the assistant responds in customer-facing chat.
 
 ## Details
 ### Overview
 
-Conversation mode controls the shape of the final grounded answer.
+Conversation mode is an assistant behavior setting. It controls how much the assistant expands after answering the current question.
 
-It does not relax grounding. The separate unsupported-answer policy still decides what happens when the model writes something the retrieved material does not support.
+It does not relax grounding. When the assistant uses retrieval, support validation still decides what happens when the model writes something the retrieved material does not support.
 
 ### Factual
 

@@ -1,6 +1,8 @@
 import type { ChatService } from "../../modules/chat/services/chatService.js";
 import type { ChatBootstrapService } from "../../modules/chat/services/chatBootstrapService.js";
 import type { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
+import type { AssistantChatService } from "../../modules/chat/services/assistantChatService.js";
+import type { AssistantHistoryService } from "../../modules/chat/services/assistantHistoryService.js";
 import type { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import type { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
 import type { DocumentImportService } from "../../modules/documents/services/documentImportService.js";
@@ -9,7 +11,10 @@ import type { DocumentSearchService } from "../../modules/documents/services/doc
 import type { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
 import type { WorkspaceIngestionReprocessService } from "../../modules/documents/services/workspaceIngestionReprocessService.js";
 import type { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
+import type { PlatformSettingsService } from "../../modules/settings/services/platformSettingsService.js";
 import type { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
+import type { RetrievalAnswerService } from "../../modules/retrieval/services/retrievalAnswerService.js";
+import type { RetrievalSearchService } from "../../modules/retrieval/services/retrievalSearchService.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
@@ -64,6 +69,11 @@ export interface AppDependencies {
   chatService: ChatService;
   chatBootstrapService: ChatBootstrapService;
   chatHistoryService: ChatHistoryService;
+  assistantChatService: AssistantChatService;
+  assistantHistoryService: AssistantHistoryService;
+  retrievalSearchService: RetrievalSearchService;
+  retrievalAnswerService: RetrievalAnswerService;
+  platformSettingsService: PlatformSettingsService;
   evalLabService: EvalLabService;
   workspaceRepository: WorkspaceRepositoryPort;
   accountRepository: AccountRepositoryPort;

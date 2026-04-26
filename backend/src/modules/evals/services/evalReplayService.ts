@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
 import { BlankChatAnswerError, type ChatGateway } from "../../chat/services/chatService.js";
 import {
@@ -39,6 +41,7 @@ export class EvalReplayService {
     private readonly retrievalPipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
+    private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
   ) {}
 
   async replay(input: {
@@ -49,10 +52,13 @@ export class EvalReplayService {
     assertInteractiveAssistantWorkflow("eval.replay");
     const startedAt = Date.now();
     const history = this.toMessageHistory(input.workspaceId, input.conversationContext ?? []);
+    const responseIdentity = await this.resolveResponseIdentity(input.workspaceId);
     const pipelineInput = {
       workspaceId: input.workspaceId,
       query: input.query,
       history,
+      responseIdentity,
+      responseBehaviorEnabled: true,
     };
     let retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
     let turnRoute: ChatTurnRoute = CHAT_TURN_ROUTE.RETRIEVAL;
@@ -240,11 +246,11 @@ export class EvalReplayService {
         history: input.history,
         prompt: buildNonRetrievalAnswerPrompt({
           route: input.route,
-          assistantIdentity: input.retrieval.assistantIdentity,
+          responseIdentity: input.retrieval.responseIdentity,
           history: input.history,
           query: input.query,
           answerInstructionBlock: this.sharedAnswerInstructionBuilder.buildCombinedBlock({
-            assistantIdentity: input.retrieval.assistantIdentity,
+            responseIdentity: input.retrieval.responseIdentity,
             customInstruction: input.retrieval.responseSettings.customInstruction,
             conversationMode: input.retrieval.responseSettings.conversationMode,
             responseLanguagePolicy: input.retrieval.responseSettings.responseLanguagePolicy,
@@ -260,6 +266,26 @@ export class EvalReplayService {
 
       throw error;
     }
+  }
+
+  private async resolveResponseIdentity(workspaceId: string): Promise<ResponseIdentity | null> {
+    if (!this.workspaceRepository) {
+      return null;
+    }
+
+    const workspace = await this.workspaceRepository.findById(workspaceId);
+    if (!workspace) {
+      return null;
+    }
+
+    const name = workspace.assistantName.trim();
+    const role = workspace.assistantRole.trim();
+    return name || role
+      ? {
+          name: name || undefined,
+          role: role || undefined,
+        }
+      : null;
   }
 }
 

@@ -5,11 +5,13 @@ import type { TextGenerationClient } from "../../../shared/infra/llm/providerTyp
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
+import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import { RetrievalTracePresenter } from "../../retrieval/services/retrievalTracePresenter.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
 import { resolveContextSourceUrl } from "../../retrieval/services/contextSourceUrl.js";
-import { SharedAnswerInstructionBuilder } from "../../retrieval/services/sharedAnswerInstructionBuilder.js";
+import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
 import {
   AnswerPresentationService,
   remapAnswerSegmentsToCitationEvidence,
@@ -35,8 +37,7 @@ import { ConversationModeExpansionService } from "./conversationModeExpansionSer
 import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import type { RetrievalTrace, RewriteContinuityState } from "../../retrieval/domain/retrievalPipelineTypes.js";
-import type { ChatResponse, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
-import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
+import type { ChatResponse, ChatRoute, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
@@ -119,6 +120,7 @@ export type ChatStreamEvent =
       conversationModeMetadata: ConversationModeMetadata;
       retrievalInfo: RetrievalInfo;
       retrievalTrace: RetrievalTrace;
+      route?: ChatRoute;
     };
 
 interface PreparedSession {
@@ -228,7 +230,7 @@ export class ChatService {
   private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
-  private readonly sharedAnswerInstructionBuilder = new SharedAnswerInstructionBuilder();
+  private readonly assistantInstructionBuilder = new AssistantInstructionBuilder();
   private readonly chatTurnIntentService = new ChatTurnIntentService();
   private readonly conversationModeExpansionService: ConversationModeExpansionService;
   constructor(
@@ -239,6 +241,7 @@ export class ChatService {
     private readonly auditService: AuditService,
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
+    private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
   ) {
     this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, history, prompt }) =>
       this.chatGateway.answer({
@@ -250,6 +253,26 @@ export class ChatService {
 
   private getAnswerSupportPolicy(session: PreparedSession): AnswerSupportPolicy {
     return session.retrieval.responseSettings?.answerSupportPolicy ?? DEFAULT_ANSWER_SUPPORT_POLICY;
+  }
+
+  private async resolveResponseIdentity(workspaceId: string): Promise<ResponseIdentity | null> {
+    if (!this.workspaceRepository) {
+      return null;
+    }
+
+    const workspace = await this.workspaceRepository.findById(workspaceId);
+    if (!workspace) {
+      return null;
+    }
+
+    const name = workspace.assistantName.trim();
+    const role = workspace.assistantRole.trim();
+    return name || role
+      ? {
+          name: name || undefined,
+          role: role || undefined,
+        }
+      : null;
   }
 
   private getConversationMode(session: PreparedSession): ConversationMode {
@@ -276,6 +299,22 @@ export class ChatService {
     };
   }
 
+  private getRoute(session: PreparedSession): ChatRoute {
+    if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
+      return {
+        type: "direct",
+        reason: session.retrieval.diagnostics.responseIntent === "assistant_identity"
+          ? "assistant_identity"
+          : "social_only",
+      };
+    }
+
+    return {
+      type: "retrieval",
+      reason: "evidence_required",
+    };
+  }
+
   private async generateNonRetrievalAnswer(
     session: PreparedSession,
     query: string,
@@ -291,11 +330,11 @@ export class ChatService {
         history: session.history,
         prompt: buildNonRetrievalAnswerPrompt({
           route: session.turnRoute,
-          assistantIdentity: session.retrieval.assistantIdentity,
+          responseIdentity: session.retrieval.responseIdentity,
           history: session.history,
           query,
-          answerInstructionBlock: this.sharedAnswerInstructionBuilder.buildCombinedBlock({
-            assistantIdentity: session.retrieval.assistantIdentity,
+          answerInstructionBlock: this.assistantInstructionBuilder.buildCombinedBlock({
+            responseIdentity: session.retrieval.responseIdentity,
             customInstruction: session.retrieval.responseSettings.customInstruction,
             conversationMode: session.retrieval.responseSettings.conversationMode,
             responseLanguagePolicy: session.retrieval.responseSettings.responseLanguagePolicy,
@@ -357,7 +396,14 @@ export class ChatService {
       session = await this.prepareSession(input);
       const answerStartedAt = Date.now();
       const presentation = await this.generateAnswerPresentation(session, input.query, input.userExpectedLocale);
-      const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics);
+      const route = this.getRoute(session);
+      const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics, {
+        execution: {
+          surface: "assistant",
+          path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
+          retrievalInvoked: route.type === "retrieval",
+        },
+      });
       const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
         trace: session.retrieval.trace,
         summary: retrievalInfo,
@@ -397,11 +443,13 @@ export class ChatService {
         priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
+        route,
         stream: input.stream,
       });
 
       return {
         conversationId: session.conversation.id,
+        route,
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
@@ -527,7 +575,14 @@ export class ChatService {
         conversationModeMetadata: noContextPresentation?.conversationModeMetadata ?? this.getConversationModeMetadata(session),
       };
 
-      const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics);
+      const route = this.getRoute(session);
+      const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics, {
+        execution: {
+          surface: "assistant",
+          path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
+          retrievalInvoked: route.type === "retrieval",
+        },
+      });
       const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
         trace: session.retrieval.trace,
         summary: retrievalInfo,
@@ -567,12 +622,14 @@ export class ChatService {
         priorRewriteContinuityState: session.priorRewriteContinuityState,
         diagnostics: session.retrieval.diagnostics,
         retrievalTrace,
+        route,
         stream: input.stream,
       });
 
       yield {
         type: "done",
         conversationId: session.conversation.id,
+        route,
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
@@ -638,10 +695,13 @@ export class ChatService {
     const rewriteContinuityState = conversation
       ? await this.loadRewriteContinuityState(input.workspaceId, conversation.id)
       : undefined;
+    const responseIdentity = await this.resolveResponseIdentity(input.workspaceId);
     const pipelineInput = {
       workspaceId: input.workspaceId,
       query: input.query,
       history,
+      responseIdentity,
+      responseBehaviorEnabled: true,
       metadataFilter: input.metadataFilter,
     };
     let retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
@@ -725,7 +785,7 @@ export class ChatService {
       content: context.content,
       sourceUrl: resolveContextSourceUrl(context.metadata),
     }));
-    const hiddenSupportEvidence = buildHiddenSupportEvidence(session.retrieval.assistantIdentity);
+    const hiddenSupportEvidence = buildHiddenSupportEvidence(session.retrieval.responseIdentity);
     const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
 
     if (session.retrieval.contexts.length === 0) {
@@ -811,7 +871,7 @@ export class ChatService {
       content: context.content,
       sourceUrl: resolveContextSourceUrl(context.metadata),
     }));
-    const hiddenSupportEvidence = buildHiddenSupportEvidence(session.retrieval.assistantIdentity);
+    const hiddenSupportEvidence = buildHiddenSupportEvidence(session.retrieval.responseIdentity);
     const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
 
     if (session.retrieval.contexts.length === 0) {
@@ -897,6 +957,7 @@ export class ChatService {
     priorRewriteContinuityState?: RewriteContinuityState;
     diagnostics: PreparedSession["retrieval"]["diagnostics"];
     retrievalTrace: RetrievalTrace;
+    route: ChatRoute;
     stream: boolean;
   }): Promise<void> {
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
@@ -914,6 +975,12 @@ export class ChatService {
         assistantMessageId: input.assistantMessageId,
         stream: input.stream,
         answerOutcome: input.answerOutcome,
+        route: {
+          generator: "assistant",
+          routeType: input.route.type,
+          routeReason: input.route.reason,
+          retrievalInvoked: input.route.type === "retrieval",
+        },
         answerSupportPolicy: input.answerSupportPolicy,
         conversationMode: input.conversationMode,
         conversationModeMetadata: input.conversationModeMetadata,
@@ -1058,7 +1125,13 @@ export class ChatService {
         retrievalTrace: session?.retrieval.trace
           ? this.retrievalTracePresenter.appendAnswerOutcome({
               trace: session.retrieval.trace,
-              summary: this.retrievalInfoPresenter.present(session.retrieval.diagnostics),
+              summary: this.retrievalInfoPresenter.present(session.retrieval.diagnostics, {
+                execution: {
+                  surface: "assistant",
+                  path: this.getRoute(session).type === "direct" ? "assistant_direct" : "assistant_retrieval",
+                  retrievalInvoked: this.getRoute(session).type === "retrieval",
+                },
+              }),
               outcome: {
                 answer: "",
                 stream: input.stream,
@@ -1227,25 +1300,25 @@ export class ChatService {
 }
 
 const buildHiddenSupportEvidence = (
-  assistantIdentity?: AssistantIdentityPromptInput | null,
+  responseIdentity?: ResponseIdentity | null,
 ): HiddenSupportEvidence[] => {
-  if (!assistantIdentity) {
+  if (!responseIdentity) {
     return [];
   }
 
   const evidence: HiddenSupportEvidence[] = [];
 
-  if (assistantIdentity.assistantName) {
+  if (responseIdentity.name) {
     evidence.push({
       kind: "assistant_name",
-      content: assistantIdentity.assistantName,
+      content: responseIdentity.name,
     });
   }
 
-  if (assistantIdentity.assistantRole) {
+  if (responseIdentity.role) {
     evidence.push({
       kind: "assistant_role",
-      content: assistantIdentity.assistantRole,
+      content: responseIdentity.role,
     });
   }
 

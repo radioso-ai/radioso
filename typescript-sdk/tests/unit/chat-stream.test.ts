@@ -21,7 +21,7 @@ describe("chat stream", () => {
             'event: conversation\ndata: {"conversationId":"c1"}\n\n',
             'event: chunk\ndata: {"text":"hello"}\n\n',
             'event: suggestions\ndata: {"conversationId":"c1","suggestions":[{"text":"What next?"}],"conversationModeMetadata":{"conversationMode":"guided","brevityOverrideApplied":false,"expansionApplied":true,"expansionKind":"focused","suggestionCount":1,"followUpQuestionApplied":false}}\n\n',
-            'event: done\ndata: {"conversationId":"c1","answer":"hello","retrievalInfo":{},"retrievalTrace":{}}\n\n',
+            'event: done\ndata: {"conversationId":"c1","route":{"type":"retrieval","reason":"evidence_required"},"answer":"hello","suggestions":[{"text":"What next?"}],"conversationMode":"guided","conversationModeMetadata":{"conversationMode":"guided","brevityOverrideApplied":false,"expansionApplied":true,"expansionKind":"focused","suggestionCount":1,"followUpQuestionApplied":false},"retrievalInfo":{},"retrievalTrace":{}}\n\n',
           ].join(""),
         ),
         {
@@ -38,7 +38,7 @@ describe("chat stream", () => {
     });
 
     const events = [];
-    for await (const event of client.chat.stream({ query: "hi", conversationId: undefined })) {
+    for await (const event of client.chat.stream({ message: "hi", conversationId: undefined })) {
       events.push(event);
     }
 
@@ -58,7 +58,24 @@ describe("chat stream", () => {
           followUpQuestionApplied: false,
         },
       },
-      { type: "done", conversationId: "c1", answer: "hello", retrievalInfo: {}, retrievalTrace: {} },
+      {
+        type: "done",
+        conversationId: "c1",
+        route: { type: "retrieval", reason: "evidence_required" },
+        answer: "hello",
+        suggestions: [{ text: "What next?" }],
+        conversationMode: "guided",
+        conversationModeMetadata: {
+          conversationMode: "guided",
+          brevityOverrideApplied: false,
+          expansionApplied: true,
+          expansionKind: "focused",
+          suggestionCount: 1,
+          followUpQuestionApplied: false,
+        },
+        retrievalInfo: {},
+        retrievalTrace: {},
+      },
     ]);
   });
 
@@ -82,7 +99,7 @@ describe("chat stream", () => {
     });
 
     const events = [];
-    for await (const event of client.chat.stream({ query: "hi", conversationId: undefined })) {
+    for await (const event of client.chat.stream({ message: "hi", conversationId: undefined })) {
       events.push(event);
     }
 

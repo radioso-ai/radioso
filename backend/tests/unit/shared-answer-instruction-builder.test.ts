@@ -7,17 +7,16 @@ describe("shared answer instruction builder", () => {
     const builder = new SharedAnswerInstructionBuilder();
 
     const result = builder.buildCombinedBlock({
-      assistantIdentity: {
-        assistantName: "Vikram",
-        assistantRole: "Guide to self-realization",
-        greetingInstruction: "",
+      responseIdentity: {
+        name: "Vikram",
+        role: "Guide to self-realization",
       },
       customInstruction: "Keep the tone calm.",
       conversationMode: "guided",
       responseLanguagePolicy: "match_user_question",
     });
 
-    expect(result).toContain("Stable assistant identity:");
+    expect(result).toContain("Stable response identity:");
     expect(result).toContain("Vikram");
     expect(result).toContain("Workspace-specific instructions:");
     expect(result).toContain("Keep the tone calm.");
@@ -39,5 +38,18 @@ describe("shared answer instruction builder", () => {
     expect(result).not.toContain("Workspace-specific instructions:");
     expect(result).toContain("Response formatting guidance:");
     expect(result).toContain("Conversation mode: guided.");
+  });
+
+  it("omits conversation-mode guidance when retrieval is used without response behavior", () => {
+    const builder = new SharedAnswerInstructionBuilder();
+
+    const result = builder.buildCombinedBlock({
+      responseLanguagePolicy: "match_user_question",
+    });
+
+    expect(result).toContain("Response formatting guidance:");
+    expect(result).not.toContain("Stable response identity:");
+    expect(result).not.toContain("Workspace-specific instructions:");
+    expect(result).not.toContain("Conversation mode:");
   });
 });

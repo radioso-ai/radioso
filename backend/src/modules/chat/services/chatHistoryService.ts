@@ -60,6 +60,12 @@ export interface ChatConversationTurnDebug {
   retrievalInfo?: RetrievalInfo;
   retrievalTrace?: RetrievalTrace;
   errorMessage?: string | null;
+  route?: {
+    generator: string;
+    routeType: "direct" | "retrieval";
+    routeReason: string;
+    retrievalInvoked: boolean;
+  };
 }
 
 export interface ChatConversationTurn {
@@ -149,6 +155,12 @@ interface ChatAuditMetadata {
   retrieval?: unknown;
   retrievalTrace?: RetrievalTrace;
   errorMessage?: string;
+  route?: {
+    generator?: unknown;
+    routeType?: unknown;
+    routeReason?: unknown;
+    retrievalInvoked?: unknown;
+  };
 }
 
 interface AssistantTurnArtifacts {
@@ -216,6 +228,48 @@ const normalizeChatSuggestion = (value: unknown): ChatSuggestion | null => {
 };
 
 const toIsoString = (value: Date): string => value.toISOString();
+
+const normalizeRouteDiagnostics = (
+  value: ChatAuditMetadata["route"],
+): ChatConversationTurnDebug["route"] | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const generator = typeof value.generator === "string" && value.generator.trim()
+    ? value.generator.trim()
+    : undefined;
+  const routeType =
+    value.routeType === "direct" || value.routeType === "retrieval"
+      ? value.routeType
+      : undefined;
+  const routeReason = typeof value.routeReason === "string" ? value.routeReason : undefined;
+
+  if (!generator || !routeType || !routeReason) {
+    return undefined;
+  }
+
+  return {
+    generator,
+    routeType,
+    routeReason,
+    retrievalInvoked: Boolean(value.retrievalInvoked),
+  };
+};
+
+const toRetrievalExecutionPath = (
+  route: ChatConversationTurnDebug["route"] | undefined,
+): RetrievalInfo["execution"] | undefined => {
+  if (!route || route.generator !== "assistant") {
+    return undefined;
+  }
+
+  return {
+    surface: "assistant",
+    path: route.routeType === "direct" ? "assistant_direct" : "assistant_retrieval",
+    retrievalInvoked: route.retrievalInvoked,
+  };
+};
 
 export class ChatHistoryService {
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
@@ -367,6 +421,7 @@ export class ChatHistoryService {
         continue;
       }
 
+      const route = normalizeRouteDiagnostics(metadata.route);
       index.set(metadata.assistantMessageId, {
         eventStatus: event.eventStatus === "failure" ? "failure" : "success",
         recordedAt: toIsoString(event.createdAt),
@@ -445,10 +500,13 @@ export class ChatHistoryService {
             }
           : undefined,
         retrievalInfo: metadata.retrieval
-          ? this.retrievalInfoPresenter.present(metadata.retrieval as RetrievalExecutionDiagnostics)
+          ? this.retrievalInfoPresenter.present(metadata.retrieval as RetrievalExecutionDiagnostics, {
+              execution: toRetrievalExecutionPath(route),
+            })
           : undefined,
         retrievalTrace: metadata.retrievalTrace,
         errorMessage: metadata.errorMessage ?? null,
+        route,
       });
     }
 

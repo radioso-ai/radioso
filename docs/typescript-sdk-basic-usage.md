@@ -128,9 +128,11 @@ await client.settings.updateGeneral({
 
 ## Non-Streaming Chat
 
+SDK chat methods target the assistant chat surface. Use them for human-facing assistant conversations that should keep history and may answer directly or with retrieval-backed evidence.
+
 ```ts
 const response = await client.chat.create({
-  query: "What does the FAQ say about uploaded content?",
+  message: "What does the FAQ say about uploaded content?",
   stream: false,
 });
 ```
@@ -141,7 +143,7 @@ const response = await client.chat.create({
 
 ```ts
 for await (const event of client.chat.stream({
-  query: "Summarize the FAQ",
+  message: "Summarize the FAQ",
 })) {
   if (event.type === "conversation") {
     continue;
@@ -195,7 +197,9 @@ try {
 
 - `baseUrl` should be the Radioso server origin, without a trailing slash.
 - The SDK sends the API token as `Authorization: Bearer <token>`.
-- Streaming chat is layered on top of the same `/api/v1/chat/` endpoint, with `stream: true`.
+- Streaming chat is layered on top of the assistant chat contract, `POST /api/v1/assistant/chat`, with `stream: true`.
+- Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history.
+- Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
 - Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.
 - Run `npm run sync` in [`typescript-sdk/`](/Users/dm/conductor/workspaces/radioso/typescript-sdk/typescript-sdk) after backend API changes so the generated types stay up to date.
 - Search and answer settings are documented separately in [Retrieval Settings](./typescript-sdk-retrieval-settings.md).

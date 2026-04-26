@@ -134,7 +134,7 @@ describe('backend proxy route', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith(
-      `${BACKEND_URL}/api/v1/chat/`,
+      `${BACKEND_URL}/api/v1/assistant/chat`,
       expect.objectContaining({
         method: 'POST',
         cache: 'no-store',
@@ -143,7 +143,125 @@ describe('backend proxy route', () => {
 
     const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
     expect(upstreamInit.headers.Authorization).toBe('Bearer sk_proj_workspace_token')
+    expect(JSON.parse(upstreamInit.body as string)).toMatchObject({
+      message: 'Hello',
+      stream: true,
+      sourceContext: {
+        surface: 'authenticated_chat',
+      },
+    })
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe('text/event-stream')
+  })
+
+  it('normalizes new authenticated chat payloads before forwarding upstream', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('event: done\ndata: {"conversationId":"conv-2","answer":"ok"}\n\n', {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+        },
+      }),
+    )
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/api/chat/stream/route')
+
+    const request = new Request('https://frontend.example.com/api/chat/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer sk_proj_workspace_token',
+      },
+      body: JSON.stringify({
+        conversationId: '5a657822-fc30-4693-8c7c-a4e7e9368afd',
+        message: 'hi',
+        stream: true,
+        userExpectedLocale: 'en-GB',
+        inputMetadata: { method: 'typed' },
+        sourceContext: { surface: 'authenticated_chat' },
+      }),
+    })
+
+    const response = await POST(request)
+
+    const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
+    expect(upstreamInit.headers.Authorization).toBe('Bearer sk_proj_workspace_token')
+    expect(JSON.parse(upstreamInit.body as string)).toEqual({
+      conversationId: '5a657822-fc30-4693-8c7c-a4e7e9368afd',
+      message: 'hi',
+      startConversation: undefined,
+      stream: true,
+      userExpectedLocale: 'en-GB',
+      inputMetadata: { method: 'typed' },
+      sourceContext: { surface: 'authenticated_chat' },
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('text/event-stream')
+  })
+
+  it('normalizes public chat proxy payloads before forwarding upstream', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ conversationId: 'conv-1', answer: 'ok' }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Radioso-Anonymous-Session': 'anon-1',
+        },
+      }),
+    )
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/api/public/chat/[token]/route')
+
+    const request = new Request('https://frontend.example.com/api/public/chat/public-token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Radioso-Anonymous-Session': 'anon-existing',
+      },
+      body: JSON.stringify({
+        query: 'Hello',
+        bootstrapGreeting: false,
+        stream: true,
+      }),
+    })
+
+    const response = await POST(request, {
+      params: Promise.resolve({ token: 'public-token' }),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BACKEND_URL}/api/v1/public/chat/public-token`,
+      expect.objectContaining({
+        method: 'POST',
+        cache: 'no-store',
+      }),
+    )
+
+    const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
+    expect(upstreamInit.headers['X-Radioso-Anonymous-Session']).toBe('anon-existing')
+    expect(JSON.parse(upstreamInit.body as string)).toEqual({
+      conversationId: undefined,
+      message: 'Hello',
+      startConversation: false,
+      stream: true,
+      userExpectedLocale: undefined,
+      inputMetadata: undefined,
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-radioso-anonymous-session')).toBe('anon-1')
+    expect(await response.json()).toEqual({
+      conversationId: 'conv-1',
+      answer: 'ok',
+    })
   })
 })

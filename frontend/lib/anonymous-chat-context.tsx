@@ -215,7 +215,7 @@ export function AnonymousChatProvider({
         if (response.assistantBootstrapActive) {
           const bootstrap = await publicChatApi.bootstrapConversation(token, {
             stream: false,
-            bootstrapGreeting: true,
+            startConversation: true,
             userExpectedLocale: resolveAnonymousChatBootstrapLocale({
               localeOverride,
               browserLocales:
@@ -382,7 +382,7 @@ export function AnonymousChatProvider({
         const completion = await publicChatApi.streamMessage(
           token,
           {
-            query,
+            message: query,
             stream: true,
             conversationId,
             inputMetadata,

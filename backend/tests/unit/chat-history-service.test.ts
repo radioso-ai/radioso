@@ -32,13 +32,19 @@ describe("chat history service", () => {
       workspaceId: "workspace-1",
       eventType: "chat.answer",
       eventStatus: "success",
-      metadata: {
-        conversationId: conversation.id,
-        assistantMessageId: assistant.id,
-        citationCount: 1,
-        retrieval: {
-          rewriteStatus: "skipped",
-          rerankStatus: "applied",
+        metadata: {
+          conversationId: conversation.id,
+          assistantMessageId: assistant.id,
+          citationCount: 1,
+          route: {
+            generator: "assistant",
+            routeType: "retrieval",
+            routeReason: "evidence_required",
+            retrievalInvoked: true,
+          },
+          retrieval: {
+            rewriteStatus: "skipped",
+            rerankStatus: "applied",
           originalCandidateCount: 1,
           rewrittenCandidateCount: 0,
           lexicalCandidateCount: 1,
@@ -157,6 +163,11 @@ describe("chat history service", () => {
       applied: true,
       relaxedRuleIds: ["events-only"],
     });
+    expect(debug?.retrievalInfo?.execution).toEqual({
+      surface: "assistant",
+      path: "assistant_retrieval",
+      retrievalInvoked: true,
+    });
     expect(debug?.retrievalTrace).toMatchObject({
       traceId: "trace-1",
       stages: [
@@ -165,6 +176,12 @@ describe("chat history service", () => {
       ],
     });
     expect(debug?.answerOutcome).toBe("grounded_degraded_unsupported_segments");
+    expect(debug?.route).toEqual({
+      generator: "assistant",
+      routeType: "retrieval",
+      routeReason: "evidence_required",
+      retrievalInvoked: true,
+    });
     expect(debug?.answerSupportPolicy).toBe("strict");
     expect(debug?.conversationMode).toBe("exploratory");
     expect(debug?.conversationModeMetadata).toEqual({

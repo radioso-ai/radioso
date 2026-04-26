@@ -1,10 +1,10 @@
 # Suggested Questions
 
 ## Summary
-Turn the clickable follow-up question chips beneath assistant answers on or off.
+Turn assistant follow-up question chips on or off.
 
 ## Details
-Suggested questions are optional grounded continuations generated from the retrieved material for the current answer.
+Suggested questions are assistant behavior. They are optional grounded continuations generated from the retrieved material when the assistant used retrieval for the current answer.
 
 In exploratory mode, they can appear as deeper and broader groups. Deeper suggestions keep pushing on the same subject, while broader suggestions widen to adjacent grounded areas that still fit the active conversation goal.
 

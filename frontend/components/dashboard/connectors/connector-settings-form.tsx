@@ -151,8 +151,8 @@ export function ConnectorSettingsForm({
           return
         }
         setValidationIssues(getValidationIssues(error))
-        setFormError(getApiErrorMessage(error, 'Failed to save WhatsApp settings.'))
-        onSaveStateChange?.({ state: 'error', message: 'Failed to save WhatsApp settings' })
+        setFormError(getApiErrorMessage(error, 'Failed to save connector settings.'))
+        onSaveStateChange?.({ state: 'error', message: 'Failed to save connector settings' })
       } finally {
         if (saveSequenceRef.current === saveId) {
           setBusyAction(null)
@@ -258,7 +258,7 @@ export function ConnectorSettingsForm({
           </div>
           <Input readOnly value={connector.webhookUrl} />
           <p className="text-sm text-muted-foreground">
-            Register this callback URL with the provider after saving your WhatsApp settings.
+            Register this callback URL with the provider after saving your connector settings.
           </p>
         </div>
       ) : null}

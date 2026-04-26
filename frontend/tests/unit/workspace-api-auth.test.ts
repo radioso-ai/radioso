@@ -34,6 +34,40 @@ const createErrorResponse = (status: number, payload: unknown) => ({
   json: async () => payload,
 })
 
+const platformSettingsPayload = {
+  assistant: {
+    assistantName: '',
+    assistantRole: '',
+    greetingInstruction: '',
+    assistantDefaultLocale: null,
+    proactiveGreetingEnabled: false,
+    assistantBootstrapActive: false,
+    conversationMode: 'guided',
+    suggestedQuestionsEnabled: true,
+    suggestedQuestionsCount: 3,
+    customInstruction: '',
+  },
+  retrieval: {
+    queryRewriteEnabled: false,
+    semanticRewriteInstructions: '',
+    lexicalRewriteInstructions: '',
+    answerSupportPolicy: 'strict',
+    rerankEnabled: false,
+    vectorTopK: 15,
+    similarityThreshold: 0.2,
+    rerankTopK: 5,
+    citationDisplayEnabled: true,
+    metadataRules: [],
+    metadataFieldSuggestions: [],
+  },
+  channels: {
+    anonymousChatEnabled: false,
+    anonymousRateLimit: 10,
+    anonymousChatUrl: null,
+    anonymousChatToken: null,
+  },
+}
+
 describe('workspace API auth', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -48,18 +82,7 @@ describe('workspace API auth', () => {
     })
 
     const fetchMock = vi.fn().mockResolvedValue(
-      createJsonResponse({
-        anonymousChatEnabled: false,
-        anonymousRateLimit: 10,
-        anonymousChatUrl: null,
-        anonymousChatToken: null,
-        assistantName: '',
-        assistantRole: '',
-        greetingInstruction: '',
-        assistantDefaultLocale: null,
-        proactiveGreetingEnabled: false,
-        assistantBootstrapActive: false,
-      }),
+      createJsonResponse(platformSettingsPayload),
     )
     vi.stubGlobal('fetch', fetchMock)
 
@@ -67,7 +90,7 @@ describe('workspace API auth', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(requestUrl).toBe('/backend/api/v1/settings/general')
+    expect(requestUrl).toBe('/backend/api/v1/settings')
     expect(requestInit.credentials).toBe('omit')
     expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer sk_proj_cached_token')
   })
@@ -82,18 +105,7 @@ describe('workspace API auth', () => {
       .fn()
       .mockResolvedValueOnce(createJsonResponse({ token: 'sk_proj_fetched_token' }))
       .mockResolvedValueOnce(
-        createJsonResponse({
-          anonymousChatEnabled: false,
-          anonymousRateLimit: 10,
-          anonymousChatUrl: null,
-          anonymousChatToken: null,
-          assistantName: '',
-          assistantRole: '',
-          greetingInstruction: '',
-          assistantDefaultLocale: null,
-          proactiveGreetingEnabled: false,
-          assistantBootstrapActive: false,
-        }),
+        createJsonResponse(platformSettingsPayload),
       )
 
     vi.stubGlobal('fetch', fetchMock)
@@ -107,7 +119,7 @@ describe('workspace API auth', () => {
     expect(tokenInit.credentials).toBe('include')
 
     const [requestUrl, requestInit] = fetchMock.mock.calls[1] as [string, RequestInit]
-    expect(requestUrl).toBe('/backend/api/v1/settings/general')
+    expect(requestUrl).toBe('/backend/api/v1/settings')
     expect(requestInit.credentials).toBe('omit')
     expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer sk_proj_fetched_token')
     expect(localStorage.getItem('radioso.workspaceTokens')).toContain('workspace-1')
@@ -130,18 +142,7 @@ describe('workspace API auth', () => {
       }))
       .mockResolvedValueOnce(createJsonResponse({ token: 'sk_proj_fresh_token' }))
       .mockResolvedValueOnce(
-        createJsonResponse({
-          anonymousChatEnabled: false,
-          anonymousRateLimit: 10,
-          anonymousChatUrl: null,
-          anonymousChatToken: null,
-          assistantName: '',
-          assistantRole: '',
-          greetingInstruction: '',
-          assistantDefaultLocale: null,
-          proactiveGreetingEnabled: false,
-          assistantBootstrapActive: false,
-        }),
+        createJsonResponse(platformSettingsPayload),
       )
     vi.stubGlobal('fetch', fetchMock)
 

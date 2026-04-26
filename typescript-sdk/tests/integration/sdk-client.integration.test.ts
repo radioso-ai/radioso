@@ -108,7 +108,7 @@ describe("sdk client integration", () => {
     const generalSettings = await client.settings.getGeneral();
     const searchHistory = await client.documents.listHistory({ limit: 10 });
     const chatHistory = await client.chat.listHistory({ limit: 10 });
-    const chat = await client.chat.create({ query: "hello", stream: false });
+    const chat = await client.chat.create({ message: "hello", stream: false });
 
     expect(documents.documents).toEqual([]);
     expect(retrievalSettings.answerSupportPolicy).toBe("strict");

@@ -5,7 +5,7 @@ This directory is the source of truth for workspace settings copy used by the fr
 ## Structure
 
 - `ingestion/`: copy for ingestion-stage controls
-- `retrieval/`: copy for retrieval-stage and answer-stage controls
+- `retrieval/`: copy for retrieval-stage and retrieval-owned answer evidence controls
 - one setting per file
 
 ## File format
@@ -29,7 +29,9 @@ The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts
 The dashboard presents settings in pipeline order:
 
 1. Ingestion: choose chunking strategy -> tune chunk sizing -> reprocess existing documents
-2. Retrieval: rewrite query -> retrieve/filter candidates -> rerank -> shape the final answer
+2. Retrieval: rewrite query -> retrieve/filter candidates -> rerank -> present grounded evidence
+
+Assistant identity, conversation mode, custom answer instruction, proactive greeting, and suggested follow-up behavior belong to the assistant settings surface. Retrieval settings should stay focused on evidence gathering, ranking, filters, support policy, and citation presentation.
 
 The connector-style stage separators are rendered in [`frontend/components/dashboard/settings/settings-flow.tsx`](../../frontend/components/dashboard/settings/settings-flow.tsx) and reused by the retrieval trace graph for visual consistency.
 

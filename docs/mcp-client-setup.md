@@ -22,6 +22,20 @@ eval "$(
 
 The exchange helper emits a short-lived token. Rerun it when the MCP session expires.
 
+## Endpoint Model
+
+MCP is retrieval-first by default. Tools such as `search_documents` and `answer_grounded` call Radioso retrieval and document endpoints directly. They do not create assistant conversations and they do not inherit assistant persona, greeting, or social-reply behavior.
+
+In practice:
+
+- Use MCP `answer_grounded` when a client wants a grounded RAG answer from workspace documents.
+- Use MCP document tools when a client wants document capability access.
+- Use `POST /api/v1/assistant/chat` only when the integration explicitly wants the customer-facing assistant chat product.
+
+The retrieval answer endpoint accepts optional `conversationContext` hints for rewrite continuity. The caller owns those hints. Radioso retrieval uses them to improve the search query, but retrieval does not become the owner of assistant chat history.
+
+For debugging, MCP grounded-answer calls are marked in retrieval diagnostics as `mcp_capability` executions. This keeps them separate from direct retrieval API calls and assistant-backed chat turns.
+
 ### macOS GUI Launches
 
 If you normally open Cursor from the Dock, Spotlight, Raycast, or a desktop launcher, use the macOS helper instead:

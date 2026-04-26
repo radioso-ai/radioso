@@ -23,8 +23,10 @@ describe("EvalReplayService", () => {
   });
 
   it("uses the conversational no-context response during replay", async () => {
+    let observedPipelineInput: any;
     const retrievalPipeline = {
-      async run() {
+      async run(input: any) {
+        observedPipelineInput = input;
         return {
           prompt: "Answer using retrieved context",
           contexts: [],
@@ -55,7 +57,18 @@ describe("EvalReplayService", () => {
       },
     } as any;
 
-    const service = new EvalReplayService(retrievalPipeline, chatGateway, groundedMissResponseComposer);
+    const workspaceRepository = {
+      findById: vi.fn().mockResolvedValue({
+        assistantName: "Marta",
+        assistantRole: "Museum guide",
+      }),
+    };
+    const service = new EvalReplayService(
+      retrievalPipeline,
+      chatGateway,
+      groundedMissResponseComposer,
+      workspaceRepository as never,
+    );
     const replay = await service.replay({
       workspaceId: "workspace-1",
       query: "What is the capital of France?",
@@ -64,6 +77,10 @@ describe("EvalReplayService", () => {
     expect(replay.answerOutcome).toBe("no_context_refusal");
     expect(replay.answer).toEqual(expect.any(String));
     expect(replay.answer.length).toBeGreaterThan(0);
+    expect(observedPipelineInput.responseIdentity).toEqual({
+      name: "Marta",
+      role: "Museum guide",
+    });
   });
 
   it("replays non-retrieval social turns through the same direct-answer path as chat", async () => {
@@ -78,7 +95,7 @@ describe("EvalReplayService", () => {
             workspaceId: "workspace-1",
             query: "Thanks for the help",
             history: [],
-            assistantIdentity: null,
+            responseIdentity: null,
           },
           traceStartedAtMs: Date.now(),
           context: {
@@ -89,7 +106,7 @@ describe("EvalReplayService", () => {
                 workspaceId: "workspace-1",
                 query: "Thanks for the help",
                 history: [],
-                assistantIdentity: null,
+                responseIdentity: null,
               },
               settings: {
                 workspaceId: "workspace-1",
@@ -135,7 +152,7 @@ describe("EvalReplayService", () => {
           contexts: [],
           prompt: "",
           citations: [],
-          assistantIdentity: null,
+          responseIdentity: null,
           responseSettings: {
             citationDisplayEnabled: true,
             answerSupportPolicy: "strict",
@@ -218,7 +235,7 @@ describe("EvalReplayService", () => {
             workspaceId: "workspace-1",
             query: "Thanks for the help",
             history: [],
-            assistantIdentity: null,
+            responseIdentity: null,
           },
           traceStartedAtMs: Date.now(),
           context: {
@@ -229,7 +246,7 @@ describe("EvalReplayService", () => {
                 workspaceId: "workspace-1",
                 query: "Thanks for the help",
                 history: [],
-                assistantIdentity: null,
+                responseIdentity: null,
               },
               settings: {
                 workspaceId: "workspace-1",
@@ -275,7 +292,7 @@ describe("EvalReplayService", () => {
           contexts: [],
           prompt: "",
           citations: [],
-          assistantIdentity: null,
+          responseIdentity: null,
           responseSettings: {
             citationDisplayEnabled: true,
             answerSupportPolicy: "strict",

@@ -20,7 +20,7 @@ const client = createRadiosoClient({
 })
 
 const response = await client.chat.create({
-  query: 'What does the FAQ say about uploaded content?',
+  message: 'What does the FAQ say about uploaded content?',
   stream: false,
 })
 
@@ -29,10 +29,10 @@ console.log(response.answer)`,
   {
     language: 'curl',
     label: 'cURL',
-    code: `curl -sS -X POST http://localhost:8080/api/v1/chat \\
+    code: `curl -sS -X POST http://localhost:8080/api/v1/assistant/chat \\
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \\
   -H "Content-Type: application/json" \\
-  -d '{"query":"What does the FAQ say about uploaded content?","stream":false}'`,
+  -d '{"message":"What does the FAQ say about uploaded content?","stream":false}'`,
   },
 ]
 

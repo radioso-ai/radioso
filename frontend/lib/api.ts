@@ -148,6 +148,7 @@ export const getStoredActiveWorkspacePublicRouteKey = (): string | null => {
 
 export const setPendingAccountSwitchId = (accountId: string | null) => {
   if (typeof window === 'undefined') return
+  if (!window.sessionStorage) return
   if (accountId) {
     window.sessionStorage.setItem(PENDING_ACCOUNT_SWITCH_STORAGE_KEY, accountId)
   } else {
@@ -157,6 +158,7 @@ export const setPendingAccountSwitchId = (accountId: string | null) => {
 
 export const getPendingAccountSwitchId = (): string | null => {
   if (typeof window === 'undefined') return null
+  if (!window.sessionStorage) return null
   return window.sessionStorage.getItem(PENDING_ACCOUNT_SWITCH_STORAGE_KEY)
 }
 
@@ -166,7 +168,7 @@ export const clearWorkspaceStorage = () => {
   window.localStorage.removeItem(WORKSPACE_TOKENS_STORAGE_KEY);
   window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
   window.localStorage.removeItem(ACTIVE_WORKSPACE_ROUTE_KEY_STORAGE_KEY);
-  window.sessionStorage.removeItem(PENDING_ACCOUNT_SWITCH_STORAGE_KEY)
+  window.sessionStorage?.removeItem(PENDING_ACCOUNT_SWITCH_STORAGE_KEY)
 };
 
 export const removeWorkspaceToken = (workspaceId: string) => {
@@ -654,6 +656,35 @@ export interface RetrievalSettings {
   customInstruction: string
 }
 
+export interface PlatformSettings {
+  assistant: {
+    assistantName: string
+    assistantRole: string
+    greetingInstruction: string
+    assistantDefaultLocale: string | null
+    proactiveGreetingEnabled: boolean
+    assistantBootstrapActive: boolean
+    conversationMode: RetrievalSettings['conversationMode']
+    suggestedQuestionsEnabled: boolean
+    suggestedQuestionsCount: number
+    customInstruction: string
+  }
+  retrieval: Omit<RetrievalSettings, 'conversationMode' | 'suggestedQuestionsEnabled' | 'suggestedQuestionsCount' | 'customInstruction'>
+  channels: {
+    anonymousChatEnabled: boolean
+    anonymousChatUrl: string | null
+    anonymousRateLimit: number
+    websiteEmbedEnabled?: boolean
+    websiteEmbedToken?: string | null
+    websiteEmbedScriptUrl?: string | null
+    websiteEmbedSnippet?: string | null
+    websiteEmbedAllowedOrigins?: string[]
+    websiteEmbedLauncherLabel?: string
+    websiteEmbedLauncherIcon?: 'chat' | 'sparkles' | 'message'
+    websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
+  }
+}
+
 export type RetrievalMetadataValueType = 'string' | 'number' | 'date' | 'boolean'
 
 export interface MetadataFieldSuggestion {
@@ -804,6 +835,36 @@ export interface ChatRequest {
   inputMetadata?: ChatUserInputMetadata
 }
 
+const toAssistantChatPayload = (data: ChatRequest) => ({
+  conversationId: data.conversationId,
+  message: data.query,
+  startConversation: data.bootstrapGreeting,
+  stream: data.stream,
+  userExpectedLocale: data.userExpectedLocale,
+  inputMetadata: data.inputMetadata,
+  sourceContext: {
+    surface: 'authenticated_chat' as const,
+  },
+})
+
+const toRetrievalSettings = (settings: PlatformSettings): RetrievalSettings => ({
+  ...settings.retrieval,
+  conversationMode: settings.assistant.conversationMode,
+  suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
+  suggestedQuestionsCount: settings.assistant.suggestedQuestionsCount,
+  customInstruction: settings.assistant.customInstruction,
+})
+
+const toGeneralSettings = (settings: PlatformSettings): GeneralSettings => ({
+  ...settings.channels,
+  assistantName: settings.assistant.assistantName,
+  assistantRole: settings.assistant.assistantRole,
+  greetingInstruction: settings.assistant.greetingInstruction,
+  assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
+  proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
+  assistantBootstrapActive: settings.assistant.assistantBootstrapActive,
+})
+
 export interface ChatUserInputMetadata {
   method: 'typed' | 'suggestion_click'
   suggestionSourceMessageId?: string
@@ -829,6 +890,16 @@ export interface ChatSuggestion {
 }
 
 export interface RetrievalInfo {
+  execution?: {
+    surface: 'assistant' | 'retrieval' | 'mcp_capability'
+    path:
+      | 'assistant_direct'
+      | 'assistant_retrieval'
+      | 'retrieval_search'
+      | 'retrieval_answer'
+      | 'mcp_grounded_answer'
+    retrievalInvoked: boolean
+  }
   parsedQuery?: ParsedQueryInfo
   retrievalSubqueries?: RetrievalSubqueryInfo[]
   responseLanguagePolicy?: 'match_user_question'
@@ -932,6 +1003,10 @@ export interface RetrievalTrace {
 
 export interface ChatResponse {
   conversationId: string
+  route?: {
+    type: 'direct' | 'retrieval'
+    reason: 'assistant_identity' | 'conversation_start' | 'evidence_required' | 'social_only'
+  }
   answer: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
@@ -965,6 +1040,7 @@ export interface ChatStreamSuggestions {
 
 export interface ChatStreamCompletion {
   conversationId?: string
+  route?: ChatResponse['route']
   answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
@@ -1032,6 +1108,12 @@ export interface ChatConversationTurnDebug {
   }
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
+  route?: {
+    generator: string
+    routeType: 'direct' | 'retrieval'
+    routeReason: string
+    retrievalInvoked: boolean
+  }
   errorMessage?: string | null
 }
 
@@ -1329,6 +1411,7 @@ const streamChatEvents = async (
   let conversationModeMetadata: ChatResponse['conversationModeMetadata'] | undefined
   let retrievalInfo: RetrievalInfo | undefined
   let retrievalTrace: RetrievalTrace | undefined
+  let route: ChatResponse['route'] | undefined
 
   const flushEvent = (rawEvent: string) => {
     if (!rawEvent.trim()) {
@@ -1377,8 +1460,10 @@ const streamChatEvents = async (
       conversationModeMetadata = completionPayload.conversationModeMetadata
       retrievalInfo = completionPayload.retrievalInfo
       retrievalTrace = completionPayload.retrievalTrace
+      route = completionPayload.route
       handlers.onDone?.({
         conversationId,
+        route,
         answer,
         citations,
         answerSegments,
@@ -1427,6 +1512,7 @@ const streamChatEvents = async (
 
   return {
     conversationId,
+    route,
     answer,
     citations,
     answerSegments,
@@ -1620,17 +1706,38 @@ export const authApi = {
 // Settings API
 export const settingsApi = {
   async getRetrievalSettings(): Promise<RetrievalSettings> {
-    return request<RetrievalSettings>("/settings/retrieval", {
+    const settings = await request<PlatformSettings>("/settings", {
       method: "GET",
     }, { withApiToken: true })
+    return toRetrievalSettings(settings)
   },
 
   async updateRetrievalSettings(data: RetrievalSettings): Promise<RetrievalSettings> {
     const { metadataFieldSuggestions: _metadataFieldSuggestions, ...payload } = data
-    return request<RetrievalSettings>("/settings/retrieval", {
+    const settings = await request<PlatformSettings>("/settings", {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        assistant: {
+          conversationMode: payload.conversationMode,
+          suggestedQuestionsEnabled: payload.suggestedQuestionsEnabled,
+          suggestedQuestionsCount: payload.suggestedQuestionsCount,
+          customInstruction: payload.customInstruction,
+        },
+        retrieval: {
+          queryRewriteEnabled: payload.queryRewriteEnabled,
+          semanticRewriteInstructions: payload.semanticRewriteInstructions,
+          lexicalRewriteInstructions: payload.lexicalRewriteInstructions,
+          answerSupportPolicy: payload.answerSupportPolicy,
+          rerankEnabled: payload.rerankEnabled,
+          vectorTopK: payload.vectorTopK,
+          similarityThreshold: payload.similarityThreshold,
+          rerankTopK: payload.rerankTopK,
+          citationDisplayEnabled: payload.citationDisplayEnabled,
+          metadataRules: payload.metadataRules,
+        },
+      }),
     }, { withApiToken: true })
+    return toRetrievalSettings(settings)
   },
 
   async getIngestionSettings(): Promise<IngestionSettings> {
@@ -1799,9 +1906,9 @@ export const documentsApi = {
 // Chat API
 export const chatApi = {
   async createChatResponse(data: ChatRequest): Promise<ChatResponse> {
-    return request<ChatResponse>("/chat/", {
+    return request<ChatResponse>("/assistant/chat", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify(toAssistantChatPayload(data)),
     }, { withApiToken: true })
   },
 
@@ -1818,7 +1925,7 @@ export const chatApi = {
       cache: "no-store",
       credentials: "omit",
       headers,
-      body: JSON.stringify(data),
+      body: JSON.stringify(toAssistantChatPayload(data)),
     })
     let response = await executeFetch()
     if (canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers)) {
@@ -1839,6 +1946,7 @@ export const chatApi = {
       }
       handlers.onDone?.({
         conversationId: payload.conversationId,
+        route: payload.route,
         answer: payload.answer,
         citations: payload.citations,
         answerSegments: payload.answerSegments,
@@ -1857,9 +1965,9 @@ export const chatApi = {
   async bootstrapConversation(
     data: Pick<ChatRequest, 'stream' | 'bootstrapGreeting' | 'userExpectedLocale'>,
   ): Promise<ChatResponse | undefined> {
-    return request<ChatResponse>('/chat/', {
+    return request<ChatResponse>('/assistant/chat', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(toAssistantChatPayload(data)),
     }, { withApiToken: true })
   },
 
@@ -1876,7 +1984,7 @@ export const chatApi = {
     }
 
     const query = searchParams.toString()
-    return request<ChatHistoryListResponse>(`/chat/history${query ? `?${query}` : ''}`, {
+    return request<ChatHistoryListResponse>(`/history${query ? `?${query}` : ''}`, {
       method: 'GET',
     }, { withApiToken: true })
   },
@@ -1897,7 +2005,7 @@ export const chatApi = {
     }
 
     const query = searchParams.toString()
-    return request<ChatConversationDetail>(`/chat/history/${conversationId}${query ? `?${query}` : ''}`, {
+    return request<ChatConversationDetail>(`/history/${conversationId}${query ? `?${query}` : ''}`, {
       method: 'GET',
     }, { withApiToken: true })
   },
@@ -2013,9 +2121,10 @@ export interface RenameOrganizationResponse {
 // General Settings API
 export const generalSettingsApi = {
   async getGeneralSettings(): Promise<GeneralSettings> {
-    return request<GeneralSettings>('/settings/general', {
+    const settings = await request<PlatformSettings>('/settings', {
       method: 'GET',
     }, { withApiToken: true })
+    return toGeneralSettings(settings)
   },
 
   async updateGeneralSettings(data: {
@@ -2037,10 +2146,30 @@ export const generalSettingsApi = {
     websiteEmbedLauncherIcon?: 'chat' | 'sparkles' | 'message'
     websiteEmbedLauncherPosition?: 'bottom-right' | 'bottom-left'
   }): Promise<GeneralSettings> {
-    return request<GeneralSettings>('/settings/general', {
+    const settings = await request<PlatformSettings>('/settings', {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        assistant: {
+          assistantName: data.assistantName,
+          assistantRole: data.assistantRole,
+          greetingInstruction: data.greetingInstruction,
+          assistantDefaultLocale: data.assistantDefaultLocale,
+          proactiveGreetingEnabled: data.proactiveGreetingEnabled,
+        },
+        channels: {
+          anonymousChatEnabled: data.anonymousChatEnabled,
+          anonymousRateLimit: data.anonymousRateLimit,
+          rotateAnonymousChatToken: data.rotateAnonymousChatToken,
+          websiteEmbedEnabled: data.websiteEmbedEnabled,
+          rotateWebsiteEmbedToken: data.rotateWebsiteEmbedToken,
+          websiteEmbedAllowedOrigins: data.websiteEmbedAllowedOrigins,
+          websiteEmbedLauncherLabel: data.websiteEmbedLauncherLabel,
+          websiteEmbedLauncherIcon: data.websiteEmbedLauncherIcon,
+          websiteEmbedLauncherPosition: data.websiteEmbedLauncherPosition,
+        },
+      }),
     }, { withApiToken: true })
+    return toGeneralSettings(settings)
   },
 }
 
@@ -2115,7 +2244,7 @@ export const accountApi = {
 export const publicChatApi = {
   async sendMessage(
     token: string,
-    data: { query: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string },
+    data: { message: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string },
   ): Promise<ChatResponse> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',
@@ -2138,7 +2267,7 @@ export const publicChatApi = {
 
   async streamMessage(
     token: string,
-    data: { query: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string },
+    data: { message: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string },
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
     const response = await fetch(`${PUBLIC_CHAT_STREAMING_API_PATH}/${encodeURIComponent(token)}`, {
@@ -2167,6 +2296,7 @@ export const publicChatApi = {
       }
       handlers.onDone?.({
         conversationId: payload.conversationId,
+        route: payload.route,
         answer: payload.answer,
         citations: payload.citations,
         answerSegments: payload.answerSegments,
@@ -2184,7 +2314,7 @@ export const publicChatApi = {
 
   async bootstrapConversation(
     token: string,
-    data: Pick<ChatRequest, 'stream' | 'bootstrapGreeting' | 'userExpectedLocale'>,
+    data: { stream: boolean; startConversation: true; userExpectedLocale?: string },
   ): Promise<ChatResponse | undefined> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',

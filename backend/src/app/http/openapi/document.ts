@@ -26,6 +26,7 @@ import { workspaceMcpContextSchema } from "../routes/mcpContextRoutes.js";
 import {
   updateGeneralSettingsSchema,
   updateIngestionSettingsSchema,
+  updatePlatformSettingsSchema,
   updateSettingsSchema,
 } from "../routes/settingsRoutes.js";
 import {
@@ -34,7 +35,9 @@ import {
   documentSearchHistoryParamsSchema,
   documentSearchSchema,
 } from "../routes/documentRoutes.js";
-import { chatSchema, conversationParamsSchema } from "../routes/chatRoutes.js";
+import { assistantChatSchema } from "../schemas/assistantChatSchemas.js";
+import { conversationParamsSchema } from "../routes/conversationRouteSchemas.js";
+import { retrievalAnswerSchema, retrievalSearchSchema } from "../routes/retrievalRoutes.js";
 import {
   createEvalCaseSchema,
   createEvalDatasetSchema,
@@ -449,6 +452,100 @@ const GeneralSettingsResponseSchema = registry.register(
   }),
 );
 
+const AssistantSettingsSectionSchema = registry.register(
+  "AssistantSettingsSection",
+  z.object({
+    assistantName: z.string(),
+    assistantRole: z.string(),
+    greetingInstruction: z.string(),
+    assistantDefaultLocale: z.string().nullable(),
+    proactiveGreetingEnabled: z.boolean(),
+    assistantBootstrapActive: z.boolean().openapi({
+      description: "Server-managed bootstrap readiness derived from the current assistant configuration.",
+      readOnly: true,
+    }),
+    conversationMode: z.enum(conversationModes),
+    suggestedQuestionsEnabled: z.boolean(),
+    suggestedQuestionsCount: z.number().int().min(MIN_SUGGESTED_QUESTIONS_COUNT).max(MAX_SUGGESTED_QUESTIONS_COUNT),
+    customInstruction: z.string(),
+  }),
+);
+
+const PlatformRetrievalSettingsSectionSchema = registry.register(
+  "PlatformRetrievalSettingsSection",
+  z.object({
+    queryRewriteEnabled: z.boolean(),
+    semanticRewriteInstructions: z.string().max(2000),
+    lexicalRewriteInstructions: z.string().max(2000),
+    answerSupportPolicy: z.enum(answerSupportPolicies),
+    rerankEnabled: z.boolean(),
+    vectorTopK: z.number().int().min(1).max(300),
+    similarityThreshold: z.number().min(0).max(1),
+    rerankTopK: z.number().int().min(1),
+    citationDisplayEnabled: z.boolean(),
+    metadataRules: z.array(
+      z.object({
+        id: z.string(),
+        field: z.string(),
+        valueType: z.enum(metadataValueTypes),
+        operator: z.enum(metadataRuleOperators),
+        value: z.string(),
+        combinator: z.enum(["and", "or"]).default("and"),
+        conditions: z.array(
+          z.object({
+            id: z.string(),
+            field: z.string(),
+            valueType: z.enum(metadataValueTypes),
+            operator: z.enum(metadataRuleOperators),
+            value: z.string(),
+          }),
+        ).default([]),
+        effect: z.enum(metadataRuleEffects),
+        enabled: z.boolean(),
+        triggerMode: z.enum(metadataRuleTriggerModes),
+        triggerInstruction: z.string().optional(),
+      }),
+    ).default([]),
+    metadataFieldSuggestions: z.array(
+      z.object({
+        field: z.string(),
+        inferredType: z.enum(metadataValueTypes),
+      }),
+    ).default([]),
+  }),
+);
+
+const PlatformChannelsSettingsSectionSchema = registry.register(
+  "PlatformChannelsSettingsSection",
+  z.object({
+    anonymousChatEnabled: z.boolean(),
+    anonymousChatUrl: z.string().nullable(),
+    anonymousRateLimit: z.number().int().min(1).max(60),
+    websiteEmbedEnabled: z.boolean(),
+    websiteEmbedToken: z.string().nullable(),
+    websiteEmbedAllowedOrigins: z.array(z.string()),
+    websiteEmbedLauncherLabel: z.string(),
+    websiteEmbedLauncherIcon: z.enum(websiteEmbedLauncherIcons),
+    websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions),
+    websiteEmbedScriptUrl: z.string().nullable(),
+    websiteEmbedSnippet: z.string().nullable(),
+  }),
+);
+
+const PlatformSettingsResponseSchema = registry.register(
+  "PlatformSettingsResponse",
+  z.object({
+    assistant: AssistantSettingsSectionSchema,
+    retrieval: PlatformRetrievalSettingsSectionSchema,
+    channels: PlatformChannelsSettingsSectionSchema,
+  }),
+);
+
+const UpdatePlatformSettingsRequestSchema = registry.register(
+  "UpdatePlatformSettingsRequest",
+  updatePlatformSettingsSchema,
+);
+
 const PublicEmbedSessionResponseSchema = registry.register(
   "PublicEmbedSessionResponse",
   z.object({
@@ -590,6 +687,7 @@ const AnswerSegmentSchema = registry.register(
 const ParsedQuerySchema = registry.register(
   "ParsedQuery",
   z.object({
+    originalQuery: z.string().optional(),
     semanticQuery: z.string(),
     lexicalQuery: z.string(),
     constraintSummary: z.array(z.string()),
@@ -640,11 +738,33 @@ const RewriteInfoSchema = registry.register(
   }),
 );
 
+const RetrievalExecutionMetadataSchema = registry.register(
+  "RetrievalExecutionMetadata",
+  z.object({
+    surface: z.enum(["assistant", "retrieval", "mcp_capability"]),
+    path: z.enum([
+      "assistant_direct",
+      "assistant_retrieval",
+      "retrieval_search",
+      "retrieval_answer",
+      "mcp_grounded_answer",
+    ]),
+    retrievalInvoked: z.boolean(),
+  }),
+);
+
 const RetrievalInfoSchema = registry.register(
   "RetrievalInfo",
   z.object({
+    execution: RetrievalExecutionMetadataSchema.optional(),
     parsedQuery: ParsedQuerySchema.optional(),
     retrievalSubqueries: z.array(RetrievalSubquerySchema).optional(),
+    responseIntent: z.enum(["retrieval", "social_only", "assistant_identity"]).optional().openapi({
+      description: "High-level user-turn intent inferred before routing. This is independent from the assistant route reason.",
+    }),
+    retrievalSkipped: z.boolean().optional(),
+    intentConfidence: z.number().min(0).max(1).optional(),
+    intentFallbackApplied: z.boolean().optional(),
     responseLanguagePolicy: z.enum(["match_user_question"]).optional(),
     candidateCounts: CandidateCountsSchema,
     appliedConstraints: z.array(AppliedConstraintSchema).optional(),
@@ -707,6 +827,77 @@ const DocumentSearchResponseSchema = registry.register(
   }),
 );
 
+const RetrievalSearchRequestSchema = registry.register("RetrievalSearchRequest", retrievalSearchSchema);
+const RetrievalAnswerRequestSchema = registry.register("RetrievalAnswerRequest", retrievalAnswerSchema);
+
+const RetrievalSearchEvidenceSchema = registry.register(
+  "RetrievalSearchEvidence",
+  z.object({
+    documentId: z.string().uuid(),
+    chunkId: z.string().uuid(),
+    title: z.string(),
+    content: z.string(),
+    metadata: z.record(z.unknown()).optional(),
+    score: z.number().optional(),
+  }),
+);
+
+const RetrievalSearchResponseSchema = registry.register(
+  "RetrievalSearchResponse",
+  z.object({
+    outcome: z.literal("results"),
+    rewrittenQuery: z.object({
+      semantic: z.string(),
+      lexical: z.string(),
+    }),
+    results: z.array(RetrievalSearchEvidenceSchema),
+    retrievalInfo: RetrievalInfoSchema,
+    retrievalTrace: RetrievalTraceSchema,
+  }),
+);
+
+const RetrievalAnswerEvidenceSchema = registry.register(
+  "RetrievalAnswerEvidence",
+  z.object({
+    documentId: z.string().uuid(),
+    chunkId: z.string().uuid(),
+    title: z.string(),
+    content: z.string(),
+    metadata: z.record(z.unknown()).optional(),
+  }),
+);
+
+const RetrievalAnswerSuccessSchema = registry.register(
+  "RetrievalAnswerSuccess",
+  z.object({
+    outcome: z.literal("answer"),
+    answer: z.string(),
+    citations: z.array(CitationSchema).optional(),
+    evidence: z.array(RetrievalAnswerEvidenceSchema),
+    validation: z.object({
+      status: z.enum(["supported", "unsupported", "not_checked"]),
+      policy: z.enum(answerSupportPolicies),
+    }),
+    retrievalInfo: RetrievalInfoSchema,
+    retrievalTrace: RetrievalTraceSchema,
+  }),
+);
+
+const RetrievalAnswerUnsupportedSchema = registry.register(
+  "RetrievalAnswerUnsupported",
+  z.object({
+    outcome: z.literal("unsupported"),
+    code: z.literal("unsupported_query_type"),
+    reason: z.enum(["social_only", "assistant_identity"]),
+    message: z.literal("This request is outside retrieval scope."),
+  }),
+);
+
+const RetrievalAnswerResponseSchema = registry.register(
+  "RetrievalAnswerResponse",
+  z.union([RetrievalAnswerSuccessSchema, RetrievalAnswerUnsupportedSchema]),
+);
+
 const ChatSuggestionSchema = registry.register(
   "ChatSuggestion",
   z.object({
@@ -716,30 +907,135 @@ const ChatSuggestionSchema = registry.register(
   }),
 );
 
-const ChatResponseSchema = registry.register(
-  "ChatResponse",
+const AssistantRouteSchema = registry.register(
+  "AssistantRoute",
   z.object({
-    conversationId: z.string().uuid(),
-    answer: z.string(),
-    citations: z.array(CitationSchema).optional(),
-    answerSegments: z.array(AnswerSegmentSchema).optional(),
-    suggestions: z.array(ChatSuggestionSchema).optional(),
-    conversationMode: z.enum(conversationModes),
-    conversationModeMetadata: z.object({
-      conversationMode: z.enum(conversationModes),
-      brevityOverrideApplied: z.boolean(),
-      expansionApplied: z.boolean(),
-      expansionKind: z.enum(["none", "focused", "expansive"]),
-      suggestionCount: z.number().int().min(0),
-      followUpQuestionApplied: z.boolean(),
+    type: z.enum(["direct", "retrieval"]),
+    reason: z.enum(["assistant_identity", "conversation_start", "evidence_required", "social_only"]).openapi({
+      description: "Execution routing reason chosen by the assistant surface after intent and policy checks.",
     }),
-    retrievalInfo: RetrievalInfoSchema,
-    retrievalTrace: RetrievalTraceSchema,
   }),
 );
 
-const ChatRequestSchema = registry.register("ChatRequest", chatSchema);
-const PublicChatRequestSchema = registry.register("PublicChatRequest", anonymousChatSchema);
+const AssistantRouteDiagnosticsSchema = registry.register(
+  "AssistantRouteDiagnostics",
+  z.object({
+    generator: z.literal("assistant").openapi({
+      description: "The human-facing assistant surface that produced this response.",
+    }),
+    routeType: z.enum(["direct", "retrieval"]),
+    routeReason: z.enum(["assistant_identity", "conversation_start", "evidence_required", "social_only"]).openapi({
+      description: "Route reason echoed into diagnostics for replay and history views.",
+    }),
+    retrievalInvoked: z.boolean(),
+  }),
+);
+
+const chatResponseShape = {
+  conversationId: z.string().uuid(),
+  answer: z.string(),
+  citations: z.array(CitationSchema).optional(),
+  answerSegments: z.array(AnswerSegmentSchema).optional(),
+  suggestions: z.array(ChatSuggestionSchema).optional(),
+  conversationMode: z.enum(conversationModes),
+  conversationModeMetadata: z.object({
+    conversationMode: z.enum(conversationModes),
+    brevityOverrideApplied: z.boolean(),
+    expansionApplied: z.boolean(),
+    expansionKind: z.enum(["none", "focused", "expansive"]),
+    suggestionCount: z.number().int().min(0),
+    followUpQuestionApplied: z.boolean(),
+  }),
+  retrievalInfo: RetrievalInfoSchema,
+  retrievalTrace: RetrievalTraceSchema,
+};
+
+const ChatResponseSchema = registry.register(
+  "ChatResponse",
+  z.object({
+    ...chatResponseShape,
+    route: AssistantRouteSchema.optional(),
+  }),
+);
+
+const AssistantChatResponseSchema = registry.register(
+  "AssistantChatResponse",
+  z.object({
+    ...chatResponseShape,
+    route: AssistantRouteSchema,
+  }),
+);
+
+const AssistantChatRequestSchema = registry.register(
+  "AssistantChatRequest",
+  z.union([
+    z.object({
+      conversationId: z.string().uuid().optional(),
+      message: z.string().min(1),
+      startConversation: z.literal(false).optional().default(false),
+      stream: z.boolean().default(false),
+      userExpectedLocale: z.string().trim().max(35).optional(),
+      inputMetadata: z.object({
+        method: z.enum(["typed", "suggestion_click"]),
+        suggestionSourceMessageId: z.string().uuid().optional(),
+      }).optional(),
+      sourceContext: z.object({
+        surface: z.enum(["authenticated_chat", "public_chat", "website_embed"]).optional(),
+        sourceOrigin: z.string().trim().max(200).nullable().optional(),
+      }).optional(),
+      metadataFilter: z.record(z.unknown()).optional(),
+    }).openapi({
+      description: "Standard assistant turn. `message` is required for non-bootstrap requests.",
+    }),
+    z.object({
+      startConversation: z.literal(true),
+      stream: z.literal(false).default(false),
+      message: z.string().min(1).optional(),
+      userExpectedLocale: z.string().trim().max(35).optional(),
+      inputMetadata: z.object({
+        method: z.enum(["typed", "suggestion_click"]),
+        suggestionSourceMessageId: z.string().uuid().optional(),
+      }).optional(),
+      sourceContext: z.object({
+        surface: z.enum(["authenticated_chat", "public_chat", "website_embed"]).optional(),
+        sourceOrigin: z.string().trim().max(200).nullable().optional(),
+      }).optional(),
+      metadataFilter: z.record(z.unknown()).optional(),
+    }).strict().openapi({
+      description: "Conversation bootstrap request. `conversationId` is not allowed and streaming is disabled.",
+    }),
+  ]),
+);
+const PublicChatRequestSchema = registry.register(
+  "PublicChatRequest",
+  z.union([
+    z.object({
+      conversationId: z.string().uuid().optional(),
+      message: z.string().min(1),
+      startConversation: z.literal(false).optional().default(false),
+      stream: z.boolean().default(false),
+      userExpectedLocale: z.string().trim().max(35).optional(),
+      inputMetadata: z.object({
+        method: z.enum(["typed", "suggestion_click"]),
+        suggestionSourceMessageId: z.string().uuid().optional(),
+      }).optional(),
+    }).openapi({
+      description: "Standard public chat turn. `message` is required for non-bootstrap requests.",
+    }),
+    z.object({
+      startConversation: z.literal(true),
+      stream: z.literal(false).default(false),
+      message: z.string().min(1).optional(),
+      userExpectedLocale: z.string().trim().max(35).optional(),
+      inputMetadata: z.object({
+        method: z.enum(["typed", "suggestion_click"]),
+        suggestionSourceMessageId: z.string().uuid().optional(),
+      }).optional(),
+    }).strict().openapi({
+      description: "Public conversation bootstrap request. `conversationId` is not allowed and streaming is disabled.",
+    }),
+  ]),
+);
 
 const ChatConversationSummarySchema = registry.register(
   "ChatConversationSummary",
@@ -810,6 +1106,7 @@ const ChatConversationMessageDebugSchema = registry.register(
     answerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal", "non_retrieval_response"]).optional(),
     answerSupportPolicy: z.enum(answerSupportPolicies).optional(),
     conversationMode: z.enum(conversationModes).optional(),
+    route: AssistantRouteDiagnosticsSchema.optional(),
     conversationModeMetadata: z.object({
       conversationMode: z.enum(conversationModes),
       brevityOverrideApplied: z.boolean(),
@@ -1157,16 +1454,6 @@ const ConnectorConflictSchema = registry.register(
   }),
 );
 
-const PlainTextChallengeSchema = registry.register(
-  "PlainTextChallenge",
-  z.string(),
-);
-
-const EmptySuccessSchema = registry.register(
-  "EmptySuccess",
-  z.object({}).passthrough(),
-);
-
 const tokenPathParamsSchema = z.object({
   token: z.string().min(1),
 }).openapi("PublicChatTokenParams");
@@ -1174,21 +1461,6 @@ const tokenPathParamsSchema = z.object({
 const connectorIdPathParamsSchema = z.object({
   connectorId: z.string().min(1),
 }).openapi("ConnectorIdParams");
-
-const whatsAppWebhookParamsSchema = z.object({
-  workspaceId: z.string().uuid(),
-}).openapi("WhatsAppWebhookParams");
-
-const whatsAppWebhookQuerySchema = z.object({
-  "hub.mode": z.string().optional(),
-  "hub.verify_token": z.string().optional(),
-  "hub.challenge": z.string().optional(),
-}).openapi("WhatsAppWebhookQuery");
-
-const whatsAppWebhookPayloadSchema = registry.register(
-  "WhatsAppWebhookPayload",
-  z.record(z.unknown()),
-);
 
 registry.registerPath({
   method: "get",
@@ -1211,7 +1483,7 @@ registry.registerPath({
 registry.registerPath({
   method: "post",
   path: "/api/v1/public/embed/{token}/session",
-  tags: ["Public Chat"],
+  tags: ["Assistant"],
   summary: "Bootstrap an embedded chat session for an approved website origin",
   operationId: "createPublicEmbedSession",
   request: {
@@ -2197,6 +2469,94 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/v1/settings",
+  tags: ["Settings"],
+  summary: "Get shared workspace platform settings",
+  operationId: "getPlatformSettings",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Shared assistant, retrieval, and channel settings returned",
+      content: {
+        "application/json": {
+          schema: PlatformSettingsResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Workspace not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/v1/settings",
+  tags: ["Settings"],
+  summary: "Merge-update shared workspace platform settings",
+  operationId: "updatePlatformSettings",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: UpdatePlatformSettingsRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Shared settings updated",
+      content: {
+        "application/json": {
+          schema: PlatformSettingsResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Workspace not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/v1/settings/retrieval",
   tags: ["Settings"],
   summary: "Get retrieval settings for the authenticated workspace",
@@ -2448,6 +2808,96 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: FlatErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/retrieval/search",
+  tags: ["Retrieval"],
+  summary: "Search workspace evidence without assistant behavior",
+  operationId: "searchRetrievalEvidence",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: RetrievalSearchRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Retrieval evidence returned",
+      content: {
+        "application/json": {
+          schema: RetrievalSearchResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/retrieval/answer",
+  tags: ["Retrieval"],
+  summary: "Generate a retrieval-only grounded answer",
+  operationId: "createRetrievalAnswer",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: RetrievalAnswerRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Retrieval answer or unsupported retrieval-scoped result returned",
+      content: {
+        "application/json": {
+          schema: RetrievalAnswerResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
         },
       },
     },
@@ -2815,17 +3265,17 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/v1/chat/",
-  tags: ["Chat"],
-  summary: "Ask a retrieval-grounded question",
-  operationId: "createChatResponse",
+  path: "/api/v1/assistant/chat",
+  tags: ["Assistant"],
+  summary: "Run human-facing assistant chat",
+  operationId: "createAssistantChatResponse",
   security: [{ [bearerAuthScheme.name]: [] }],
   request: {
     body: {
       required: true,
       content: {
         "application/json": {
-          schema: ChatRequestSchema,
+          schema: AssistantChatRequestSchema,
         },
       },
     },
@@ -2835,10 +3285,10 @@ registry.registerPath({
       description: "Chat response returned as JSON or SSE",
       content: {
         "application/json": {
-          schema: ChatResponseSchema,
+          schema: AssistantChatResponseSchema,
         },
         "text/event-stream": {
-          schema: z.string().openapi("ChatSseStream"),
+          schema: z.string().openapi("AssistantChatSseStream"),
         },
       },
     },
@@ -2874,10 +3324,10 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/v1/chat/history",
-  tags: ["Chat"],
-  summary: "List saved chat conversations",
-  operationId: "listChatHistory",
+  path: "/api/v1/history",
+  tags: ["History"],
+  summary: "List saved assistant conversations",
+  operationId: "listHistory",
   security: [{ [bearerAuthScheme.name]: [] }],
   request: {
     query: z.object({
@@ -2908,10 +3358,10 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/v1/chat/history/{conversationId}",
-  tags: ["Chat"],
-  summary: "Get a saved conversation and its debug metadata",
-  operationId: "getChatHistoryConversation",
+  path: "/api/v1/history/{conversationId}",
+  tags: ["History"],
+  summary: "Get a saved assistant conversation and its debug metadata",
+  operationId: "getHistoryConversation",
   security: [{ [bearerAuthScheme.name]: [] }],
   request: {
     params: conversationParamsSchema,
@@ -3455,7 +3905,7 @@ registry.registerPath({
 registry.registerPath({
   method: "post",
   path: "/api/v1/public/chat/{token}",
-  tags: ["Public Chat"],
+  tags: ["Assistant"],
   summary: "Send a public chat message",
   operationId: "createPublicChatResponse",
   security: [{ [anonymousSessionCookieScheme.name]: [] }],
@@ -3515,7 +3965,7 @@ registry.registerPath({
 registry.registerPath({
   method: "get",
   path: "/api/v1/public/chat/{token}",
-  tags: ["Public Chat"],
+  tags: ["Assistant"],
   summary: "List conversations for the current anonymous session",
   operationId: "listPublicChatHistory",
   security: [{ [anonymousSessionCookieScheme.name]: [] }],
@@ -3550,7 +4000,7 @@ registry.registerPath({
 registry.registerPath({
   method: "get",
   path: "/api/v1/public/chat/{token}/history/{conversationId}",
-  tags: ["Public Chat"],
+  tags: ["Assistant"],
   summary: "Get a public conversation for the current anonymous session",
   operationId: "getPublicChatHistoryConversation",
   security: [{ [anonymousSessionCookieScheme.name]: [] }],
@@ -3590,69 +4040,6 @@ registry.registerPath({
   },
 });
 
-registry.registerPath({
-  method: "get",
-  path: "/api/connectors/whatsapp/{workspaceId}/webhook",
-  tags: ["Connector Webhooks"],
-  summary: "Verify WhatsApp webhook ownership",
-  operationId: "verifyWhatsAppWebhook",
-  request: {
-    params: whatsAppWebhookParamsSchema,
-    query: whatsAppWebhookQuerySchema,
-  },
-  responses: {
-    200: {
-      description: "Verification challenge echoed back",
-      content: {
-        "text/plain": {
-          schema: PlainTextChallengeSchema,
-        },
-      },
-    },
-    403: {
-      description: "Verification failed",
-    },
-    404: {
-      description: "Connector config not found",
-    },
-  },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/connectors/whatsapp/{workspaceId}/webhook",
-  tags: ["Connector Webhooks"],
-  summary: "Receive a WhatsApp webhook event",
-  operationId: "receiveWhatsAppWebhook",
-  request: {
-    params: whatsAppWebhookParamsSchema,
-    body: {
-      required: true,
-      content: {
-        "application/json": {
-          schema: whatsAppWebhookPayloadSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: "Webhook accepted",
-      content: {
-        "application/json": {
-          schema: EmptySuccessSchema,
-        },
-      },
-    },
-    401: {
-      description: "Invalid webhook signature",
-    },
-    404: {
-      description: "Connector config not found",
-    },
-  },
-});
-
 export const createOpenApiDocument = (
   options: {
     sessionCookieName?: string;
@@ -3676,12 +4063,12 @@ export const createOpenApiDocument = (
       { name: "Auth" },
       { name: "Account" },
       { name: "Workspace" },
+      { name: "Assistant" },
+      { name: "History" },
+      { name: "Retrieval" },
       { name: "Settings" },
       { name: "Documents" },
-      { name: "Chat" },
-      { name: "Public Chat" },
       { name: "Connectors" },
-      { name: "Connector Webhooks" },
     ],
   });
 

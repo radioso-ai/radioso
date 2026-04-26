@@ -2,6 +2,8 @@ import { getEnv, type Env } from "../config/env.js";
 import { ChatService } from "../../modules/chat/services/chatService.js";
 import { ChatBootstrapService } from "../../modules/chat/services/chatBootstrapService.js";
 import { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
+import { AssistantChatService } from "../../modules/chat/services/assistantChatService.js";
+import { AssistantHistoryService } from "../../modules/chat/services/assistantHistoryService.js";
 import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
 import { AccountInvitationRepository } from "../../db/repositories/accountInvitationRepository.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
@@ -55,8 +57,11 @@ import { QueryRewriteService } from "../../modules/retrieval/services/queryRewri
 import { RerankService } from "../../modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../modules/retrieval/services/retrievalPipelineService.js";
 import { RetrievalExecutionTelemetryService } from "../../modules/retrieval/services/retrievalExecutionTelemetryService.js";
+import { RetrievalAnswerService } from "../../modules/retrieval/services/retrievalAnswerService.js";
+import { RetrievalSearchService } from "../../modules/retrieval/services/retrievalSearchService.js";
 import { EmbeddingService } from "../../modules/retrieval/services/embeddingService.js";
 import { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
+import { PlatformSettingsService } from "../../modules/settings/services/platformSettingsService.js";
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
@@ -222,7 +227,6 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(telemetryService),
-    workspaceRepository,
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,
@@ -233,20 +237,23 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     auditEventRepository,
     documentRepository,
   );
+  const chatGateway = llmRegistry.createChatGateway();
+  const groundedMissResponseComposer = llmRegistry.createGroundedMissResponseComposer();
   const chatService = new ChatService(
     conversationRepository,
     messageRepository,
     retrievalPipeline,
-    llmRegistry.createChatGateway(),
+    chatGateway,
     auditService,
-    llmRegistry.createGroundedMissResponseComposer(),
+    groundedMissResponseComposer,
     productAnalyticsService,
+    workspaceRepository,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,
-    llmRegistry.createChatGateway(),
+    chatGateway,
     auditService,
   );
   const chatHistoryService = new ChatHistoryService(
@@ -254,13 +261,27 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     messageRepository,
     auditEventRepository,
   );
+  const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
+  const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
+  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
+  const retrievalAnswerService = new RetrievalAnswerService({
+    retrievalPipeline,
+    chatGateway,
+  });
+  const platformSettingsService = new PlatformSettingsService({
+    workspaceRepository,
+    retrievalSettingsService,
+    auditService,
+    publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
+  });
   const evalLabService = new EvalLabService(
     new EvalRepository(database),
     chatHistoryService,
     new EvalReplayService(
       retrievalPipeline,
-      llmRegistry.createChatGateway(),
-      llmRegistry.createGroundedMissResponseComposer(),
+      chatGateway,
+      groundedMissResponseComposer,
+      workspaceRepository,
     ),
   );
   const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
@@ -339,6 +360,11 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     chatService,
     chatBootstrapService,
     chatHistoryService,
+    assistantChatService,
+    assistantHistoryService,
+    retrievalSearchService,
+    retrievalAnswerService,
+    platformSettingsService,
     evalLabService,
     accountRepository,
     workspaceRepository,

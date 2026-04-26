@@ -1,5 +1,3 @@
-import { createHmac } from "node:crypto";
-
 import type { RadiosoMcpConfig } from "./config.js";
 import type {
   DocumentListResult,
@@ -25,7 +23,15 @@ export interface RadiosoApiAdapter {
   listDocuments(query?: { limit?: number; cursor?: string; offset?: number }): Promise<DocumentListResult>;
   getDocument(documentId: string): Promise<unknown>;
   searchDocuments(body: { query: string; metadataFilter?: JsonRecord }): Promise<unknown>;
-  answerGrounded(body: { query: string; conversationId?: string; metadataFilter?: Record<string, unknown> }): Promise<unknown>;
+  answerGrounded(body: {
+    query: string;
+    conversationContext?: {
+      previousUserMessages?: string[];
+      previousAssistantMessages?: string[];
+      followUpToMessageId?: string;
+    };
+    metadataFilter?: Record<string, unknown>;
+  }): Promise<unknown>;
   getRetrievalSettings(): Promise<RetrievalSettingsRecord>;
   createDocument(body: {
     title: string;
@@ -49,6 +55,16 @@ export interface RadiosoApiAdapter {
 
 type FetchLike = typeof fetch;
 type CapabilityErrorCode = "resource_not_found" | "unsupported_capability";
+
+interface PlatformSettingsRecord {
+  assistant?: {
+    conversationMode?: RetrievalSettingsRecord["conversationMode"];
+    suggestedQuestionsEnabled?: boolean;
+    suggestedQuestionsCount?: number;
+    customInstruction?: string;
+  };
+  retrieval?: Partial<RetrievalSettingsRecord>;
+}
 
 interface RequestOptions {
   notFoundCode?: CapabilityErrorCode;
@@ -74,23 +90,6 @@ export const createRadiosoApiAdapter = (
   },
   fetchImpl: FetchLike = fetch,
 ): RadiosoApiAdapter => {
-  const buildMcpSourceHeaders = (): Record<string, string> => {
-    if (!config.mcpSourceSigningSecret) {
-      return {};
-    }
-
-    const timestamp = Date.now().toString();
-    const signature = createHmac("sha256", config.mcpSourceSigningSecret)
-      .update(`mcp\n\n${timestamp}\n${config.apiToken}`)
-      .digest("hex");
-
-    return {
-      "x-radioso-source-channel": "mcp",
-      "x-radioso-source-signature": signature,
-      "x-radioso-source-timestamp": timestamp,
-    };
-  };
-
   const request = async <TResult>(path: string, init: RequestInit = {}, options: RequestOptions = {}): Promise<TResult> => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
@@ -139,15 +138,23 @@ export const createRadiosoApiAdapter = (
     return data as TResult;
   };
 
+  const toRetrievalSettings = (settings: PlatformSettingsRecord): RetrievalSettingsRecord => ({
+    ...(settings.retrieval ?? {}),
+    conversationMode: settings.assistant?.conversationMode ?? "guided",
+    suggestedQuestionsEnabled: settings.assistant?.suggestedQuestionsEnabled ?? true,
+    suggestedQuestionsCount: settings.assistant?.suggestedQuestionsCount ?? 3,
+    customInstruction: settings.assistant?.customInstruction ?? "",
+  } as RetrievalSettingsRecord);
+
   return {
     answerGrounded: (body) =>
-      request("/api/v1/chat", {
-        body: JSON.stringify({ ...body, stream: false }),
+      request("/api/v1/retrieval/answer", {
+        body: JSON.stringify(body),
         headers: {
-          ...buildMcpSourceHeaders(),
+          "x-radioso-capability-client": "mcp",
         },
         method: "POST",
-      }),
+      }, { notFoundCode: "unsupported_capability" }),
     createDocument: (body) =>
       request("/api/v1/document", {
         body: JSON.stringify(body),
@@ -158,7 +165,9 @@ export const createRadiosoApiAdapter = (
         method: "DELETE",
       }),
     getDocument: (documentId) => request(`/api/v1/document/${documentId}`),
-    getRetrievalSettings: () => request("/api/v1/settings/retrieval", {}, { notFoundCode: "unsupported_capability" }),
+    getRetrievalSettings: async () => toRetrievalSettings(
+      await request<PlatformSettingsRecord>("/api/v1/settings", {}, { notFoundCode: "unsupported_capability" }),
+    ),
     getWorkspaceMcpContext: () =>
       request("/api/v1/workspace/mcp/context", {}, { notFoundCode: "unsupported_capability" }),
     listDocuments: (query) => {
@@ -185,8 +194,27 @@ export const createRadiosoApiAdapter = (
         method: "PUT",
       }),
     updateRetrievalSettings: (body) =>
-      request("/api/v1/settings/retrieval", {
-        body: JSON.stringify(body),
+      request("/api/v1/settings", {
+        body: JSON.stringify({
+          assistant: {
+            conversationMode: body.conversationMode,
+            suggestedQuestionsEnabled: body.suggestedQuestionsEnabled,
+            suggestedQuestionsCount: body.suggestedQuestionsCount,
+            customInstruction: body.customInstruction,
+          },
+          retrieval: {
+            queryRewriteEnabled: body.queryRewriteEnabled,
+            semanticRewriteInstructions: body.semanticRewriteInstructions,
+            lexicalRewriteInstructions: body.lexicalRewriteInstructions,
+            answerSupportPolicy: body.answerSupportPolicy,
+            rerankEnabled: body.rerankEnabled,
+            vectorTopK: body.vectorTopK,
+            similarityThreshold: body.similarityThreshold,
+            rerankTopK: body.rerankTopK,
+            citationDisplayEnabled: body.citationDisplayEnabled,
+            metadataRules: body.metadataRules,
+          },
+        }),
         method: "PUT",
       }, { notFoundCode: "unsupported_capability" }),
   };

@@ -19,7 +19,6 @@ describe('settings tab metadata', () => {
     expect(settingsTabMetadata.channels.sections.map((section) => section.id)).toEqual([
       'anonymous-chat',
       'website-embed',
-      'whatsapp-channel',
     ])
 
     expect(settingsTabMetadata.ingestion.sections.map((section) => section.id)).toEqual([

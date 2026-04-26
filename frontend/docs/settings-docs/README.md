@@ -5,8 +5,8 @@ This directory is the source of truth for workspace settings copy used by the fr
 ## Structure
 
 - `ingestion/`: copy for ingestion-stage controls
-- `general/`: copy for workspace identity and startup behavior controls
-- `retrieval/`: copy for retrieval-stage and answer-stage controls
+- `general/`: copy for assistant identity, startup behavior, and channel controls
+- `retrieval/`: copy for retrieval-stage and retrieval-owned answer evidence controls
 - one setting per file
 
 ## File format
@@ -29,10 +29,12 @@ The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts
 
 The dashboard presents settings in product order:
 
-1. General: Workspace and access -> Assistant Identity -> Anonymous Chat Access -> Website Embed -> Danger Zone
+1. Workspace, Assistant, and Channels: workspace access, assistant behavior, anonymous chat, website embed, and danger zone
 2. Ingestion: Choose a chunking strategy -> Tune active chunking -> Apply changes to existing documents
-3. Retrieval: Rewrite the incoming question -> Tune search and reranking -> Prioritize by metadata -> Shape the final answer
-4. Chat connectors: connector list and configuration, without a per-page side menu
+3. Retrieval: Rewrite the incoming question -> Tune search and reranking -> Prioritize by metadata -> Present grounded evidence
+4. Connectors: connector list and configuration, without a per-page side menu
+
+Assistant behavior fields such as conversation mode, custom answer instruction, suggested follow-ups, identity, and first greeting belong to the assistant settings surface. Retrieval settings should stay focused on rewrite, ranking, metadata filters, support policy, and citation presentation.
 
 The settings navigation shell and per-tab section metadata now live in [`frontend/components/dashboard/settings/settings-tab-shell.tsx`](../../frontend/components/dashboard/settings/settings-tab-shell.tsx) and [`frontend/components/dashboard/settings/settings-tab-metadata.ts`](../../frontend/components/dashboard/settings/settings-tab-metadata.ts).
 

@@ -17,6 +17,10 @@ import { resolveChatLocale } from "./chatLocale.js";
 
 const emptyChatResponse = (conversationId: string, answer: string): ChatResponse => ({
   conversationId,
+  route: {
+    type: "direct",
+    reason: "conversation_start",
+  },
   answer,
   citations: [],
   answerSegments: answer ? [{ text: answer }] : [],
@@ -38,6 +42,7 @@ const emptyChatResponse = (conversationId: string, answer: string): ChatResponse
     },
     fallbackApplied: false,
     rerankStatus: "skipped",
+    retrievalSkipped: true,
     rewrite: {
       status: "skipped",
       eligible: false,

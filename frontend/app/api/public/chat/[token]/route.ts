@@ -6,6 +6,17 @@ const ANONYMOUS_SESSION_HEADER = 'x-radioso-anonymous-session'
 const ANONYMOUS_SESSION_RESET_HEADER = 'x-radioso-reset-anonymous-session'
 const EMBED_SESSION_HEADER = 'x-radioso-embed-session'
 
+interface PublicChatProxyRequestBody {
+  message?: string
+  query?: string
+  stream?: boolean
+  conversationId?: string
+  startConversation?: boolean
+  bootstrapGreeting?: boolean
+  userExpectedLocale?: string
+  inputMetadata?: unknown
+}
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ token: string }> },
@@ -15,7 +26,16 @@ export async function POST(
   const anonymousSession = request.headers.get(ANONYMOUS_SESSION_HEADER)
   const anonymousSessionReset = request.headers.get(ANONYMOUS_SESSION_RESET_HEADER)
   const embedSession = request.headers.get(EMBED_SESSION_HEADER)
-  const body = await request.text()
+  const rawBody = await request.text()
+  const parsedBody = rawBody ? JSON.parse(rawBody) as PublicChatProxyRequestBody : {}
+  const body = JSON.stringify({
+    conversationId: parsedBody.conversationId,
+    message: parsedBody.message ?? parsedBody.query,
+    startConversation: parsedBody.startConversation ?? parsedBody.bootstrapGreeting,
+    stream: parsedBody.stream,
+    userExpectedLocale: parsedBody.userExpectedLocale,
+    inputMetadata: parsedBody.inputMetadata,
+  })
 
   try {
     const upstream = await fetch(`${BACKEND_BASE}/api/v1/public/chat/${encodeURIComponent(token)}`, {

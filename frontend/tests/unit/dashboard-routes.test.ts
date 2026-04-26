@@ -61,10 +61,10 @@ describe('dashboard route state', () => {
       workspaceId: 'workspace-9',
       workspacePublicRouteKey: 'workspace-nine-abc123',
       settingsTab: 'channels',
-      settingsAnchor: 'whatsapp-channel',
+      settingsAnchor: 'website-embed',
     })
 
-    expect(href).toBe('/w/workspace-nine-abc123/settings?tab=channels&anchor=whatsapp-channel')
+    expect(href).toBe('/w/workspace-nine-abc123/settings?tab=channels&anchor=website-embed')
   })
 
   it('parses and builds the users route without extra state', () => {

@@ -16,11 +16,20 @@ export type DocumentDetails = components["schemas"]["DocumentDetails"];
 export type DocumentSearchRequest = components["schemas"]["DocumentSearchRequest"];
 export type DocumentSearchResponse = components["schemas"]["DocumentSearchResponse"];
 export type DocumentSearchHistoryListResponse = components["schemas"]["DocumentSearchHistoryListResponse"];
-export type ChatRequest = components["schemas"]["ChatRequest"];
+export type AssistantChatRequest = components["schemas"]["AssistantChatRequest"];
+export type ChatRequest = AssistantChatRequest;
+export type AssistantChatResponse = components["schemas"]["AssistantChatResponse"];
 export type ChatResponse = components["schemas"]["ChatResponse"];
 export type ChatHistoryListResponse = components["schemas"]["ChatHistoryListResponse"];
 export type ChatConversationDetail = components["schemas"]["ChatConversationDetail"];
-export type ChatCreateRequest = Omit<ChatRequest, "stream"> & { stream?: false };
+export type AssistantChatTurnRequest = Extract<AssistantChatRequest, { message: string }>;
+export type ChatCreateRequest = Omit<AssistantChatTurnRequest, "stream" | "startConversation"> & {
+  stream?: false;
+  startConversation?: false;
+};
+export type ChatStreamRequest = Omit<AssistantChatTurnRequest, "stream" | "startConversation"> & {
+  startConversation?: false;
+};
 
 export interface PaginationQuery {
   limit?: number;
@@ -159,12 +168,13 @@ export class GeneratedRadiosoClient {
     });
   }
 
-  createChatResponse(body: ChatCreateRequest): Promise<ChatResponse> {
+  createChatResponse(body: ChatCreateRequest): Promise<AssistantChatResponse> {
     return requestJson(this.config, {
       method: "POST",
-      path: "/api/v1/chat/",
+      path: "/api/v1/assistant/chat",
       body: {
         ...body,
+        startConversation: false,
         stream: false,
       },
     });
@@ -173,7 +183,7 @@ export class GeneratedRadiosoClient {
   listChatHistory(query?: PaginationQuery): Promise<ChatHistoryListResponse> {
     return requestJson(this.config, {
       method: "GET",
-      path: "/api/v1/chat/history",
+      path: "/api/v1/history",
       query: query as Record<string, string | number | boolean | null | undefined> | undefined,
     });
   }
@@ -181,7 +191,7 @@ export class GeneratedRadiosoClient {
   getChatHistoryConversation(conversationId: string, query?: PaginationQuery): Promise<ChatConversationDetail> {
     return requestJson(this.config, {
       method: "GET",
-      path: `/api/v1/chat/history/${conversationId}`,
+      path: `/api/v1/history/${conversationId}`,
       query: query as Record<string, string | number | boolean | null | undefined> | undefined,
     });
   }

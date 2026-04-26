@@ -112,7 +112,41 @@ Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API
 
 If a workspace token or public embed link is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
 
+### Assistant and retrieval APIs
+
+Use the assistant API for human-facing chat. It owns conversation history, source-channel context, assistant identity, direct social replies, and the decision to call retrieval when evidence is needed.
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer <workspace-token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"What does the FAQ say about refunds?","stream":false}' \
+  http://localhost:8080/api/v1/assistant/chat
+```
+
+Use retrieval APIs when you want grounded RAG capabilities without assistant persona or chat routing.
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer <workspace-token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"refund policy"}' \
+  http://localhost:8080/api/v1/retrieval/search
+
+curl -sS \
+  -H "Authorization: Bearer <workspace-token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"What does the FAQ say about refunds?"}' \
+  http://localhost:8080/api/v1/retrieval/answer
+```
+
+Assistant conversations are listed from `GET /api/v1/history` and fetched from `GET /api/v1/history/<conversation-id>`. Shared workspace settings are read and merge-updated through `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
+
+Assistant and retrieval responses include diagnostic metadata that identifies whether the work ran as assistant direct, assistant retrieval-backed, retrieval-only, or MCP capability traffic.
+
 ### TypeScript SDK
+
+The SDK chat facade is for assistant chat. Use the REST retrieval endpoints above for retrieval-only search or grounded answers when you do not want assistant behavior.
 
 ```ts
 import { createRadiosoClient } from "@radioso/typescript-sdk";
@@ -125,12 +159,12 @@ const client = createRadiosoClient({
 await client.documents.create({ title: "Support FAQ", content: "..." });
 
 const response = await client.chat.create({
-  query: "What does the FAQ say about refunds?",
+  message: "What does the FAQ say about refunds?",
   stream: false,
 });
 
-for await (const event of client.chat.stream({ query: "Summarize the FAQ" })) {
-  if (event.type === "chunk") process.stdout.write(event.textDelta);
+for await (const event of client.chat.stream({ message: "Summarize the FAQ" })) {
+  if (event.type === "chunk") process.stdout.write(event.text);
 }
 ```
 

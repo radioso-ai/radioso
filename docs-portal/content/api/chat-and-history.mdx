@@ -10,9 +10,9 @@ This is the main grounded-answer workflow for authenticated API clients.
 ## Relevant endpoints
 
 ```text
-POST /api/v1/chat/
-GET  /api/v1/chat/history
-GET  /api/v1/chat/history/{conversationId}
+POST /api/v1/assistant/chat
+GET  /api/v1/history
+GET  /api/v1/history/{conversationId}
 ```
 
 ## How it works
@@ -25,16 +25,16 @@ GET  /api/v1/chat/history/{conversationId}
 ## Ask a grounded question
 
 ```bash
-curl -sS -X POST http://localhost:8080/api/v1/chat/ \
+curl -sS -X POST http://localhost:8080/api/v1/assistant/chat \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"query":"What does the FAQ say about uploaded content?","stream":false}'
+  -d '{"message":"What does the FAQ say about uploaded content?","stream":false}'
 ```
 
 The chat request schema also supports:
 
 - `conversationId` for follow-up turns
-- `bootstrapGreeting` for bootstrap flows
+- `startConversation: true` for bootstrap flows
 - `userExpectedLocale` when the caller knows the user's locale
 - `inputMetadata` and `metadataFilter` for richer routing and filtering
 
@@ -51,9 +51,9 @@ Use the [API Reference](/api-reference) for the exact streaming and non-streamin
 
 ## Conversation history
 
-Use `GET /api/v1/chat/history` to list saved conversations.
+Use `GET /api/v1/history` to list saved conversations.
 
-Use `GET /api/v1/chat/history/{conversationId}` to retrieve one conversation and its debug metadata.
+Use `GET /api/v1/history/{conversationId}` to retrieve one conversation and its debug metadata.
 
 That second route is the one to use when you need to inspect how a specific answer was produced.
 

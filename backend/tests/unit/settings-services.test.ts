@@ -4,9 +4,221 @@ import { defaultAssistantBootstrapSettings, validateAssistantBootstrapSettings }
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import { defaultRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
+import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 
 describe("settings services", () => {
+  it("aggregates assistant-owned behavior separately from retrieval-owned tuning", async () => {
+    const workspace = {
+      id: "workspace-1",
+      name: "Workspace",
+      assistantName: "Marta",
+      assistantRole: "Museum guide",
+      greetingInstruction: "Warm and concise",
+      assistantDefaultLocale: "it-IT",
+      proactiveGreetingEnabled: true,
+      anonymousChatEnabled: false,
+      anonymousChatToken: null,
+      anonymousRateLimit: 10,
+      websiteEmbedEnabled: false,
+      websiteEmbedToken: null,
+      websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Chat with us",
+      websiteEmbedLauncherIcon: "chat",
+      websiteEmbedLauncherPosition: "bottom-right",
+    };
+    const retrieval = {
+      ...defaultRetrievalSettings("workspace-1"),
+      queryRewriteEnabled: true,
+      conversationMode: "exploratory" as const,
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 1,
+      customInstruction: "Answer plainly.",
+    };
+    const service = new PlatformSettingsService({
+      workspaceRepository: {
+        findById: vi.fn().mockResolvedValue(workspace),
+        updateGeneralSettings: vi.fn(),
+      },
+      retrievalSettingsService: {
+        getForWorkspace: vi.fn().mockResolvedValue(retrieval),
+        listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
+        updateForWorkspace: vi.fn(),
+      },
+      publicChatBaseUrl: "http://localhost:3000/chat",
+    } as never);
+
+    const result = await service.getForWorkspace("workspace-1");
+
+    expect(result.assistant).toMatchObject({
+      assistantName: "Marta",
+      assistantRole: "Museum guide",
+      greetingInstruction: "Warm and concise",
+      assistantDefaultLocale: "it-IT",
+      proactiveGreetingEnabled: true,
+      assistantBootstrapActive: true,
+      conversationMode: "exploratory",
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 1,
+      customInstruction: "Answer plainly.",
+    });
+    expect(result.retrieval).toMatchObject({
+      queryRewriteEnabled: true,
+      answerSupportPolicy: "strict",
+      vectorTopK: 15,
+    });
+    expect(result.retrieval).not.toHaveProperty("conversationMode");
+    expect(result.retrieval).not.toHaveProperty("customInstruction");
+  });
+
+  it("updates one shared settings section without resetting omitted sections", async () => {
+    const workspace = {
+      id: "workspace-1",
+      name: "Workspace",
+      assistantName: "",
+      assistantRole: "",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      anonymousChatEnabled: false,
+      anonymousChatToken: null,
+      anonymousRateLimit: 10,
+      websiteEmbedEnabled: false,
+      websiteEmbedToken: null,
+      websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Chat with us",
+      websiteEmbedLauncherIcon: "chat",
+      websiteEmbedLauncherPosition: "bottom-right",
+    };
+    const retrieval = defaultRetrievalSettings("workspace-1");
+    const workspaceRepository = {
+      findById: vi.fn().mockResolvedValue(workspace),
+      updateGeneralSettings: vi.fn().mockResolvedValue({
+        ...workspace,
+        assistantName: "Nora",
+      }),
+    };
+    const retrievalSettingsService = {
+      getForWorkspace: vi.fn().mockResolvedValue(retrieval),
+      listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
+      updateForWorkspace: vi.fn(),
+    };
+    const service = new PlatformSettingsService({
+      workspaceRepository,
+      retrievalSettingsService,
+      publicChatBaseUrl: "http://localhost:3000/chat",
+    } as never);
+
+    await service.updateForWorkspace("workspace-1", {
+      assistant: {
+        assistantName: "Nora",
+      },
+    });
+
+    expect(workspaceRepository.updateGeneralSettings).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({
+        assistantName: "Nora",
+        anonymousChatEnabled: false,
+        anonymousRateLimit: 10,
+        websiteEmbedEnabled: false,
+      }),
+    );
+    expect(retrievalSettingsService.updateForWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("emits channel audit events from the shared settings update path", async () => {
+    const workspace = {
+      id: "workspace-1",
+      name: "Workspace",
+      assistantName: "",
+      assistantRole: "",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      anonymousChatEnabled: false,
+      anonymousChatToken: "old-anonymous-token",
+      anonymousRateLimit: 10,
+      websiteEmbedEnabled: false,
+      websiteEmbedToken: "old-embed-token",
+      websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Chat with us",
+      websiteEmbedLauncherIcon: "chat",
+      websiteEmbedLauncherPosition: "bottom-right",
+    };
+    const retrieval = defaultRetrievalSettings("workspace-1");
+    const auditService = {
+      record: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new PlatformSettingsService({
+      workspaceRepository: {
+        findById: vi.fn().mockResolvedValue(workspace),
+        updateGeneralSettings: vi.fn().mockImplementation(async (_workspaceId, input) => ({
+          ...workspace,
+          ...input,
+        })),
+      },
+      retrievalSettingsService: {
+        getForWorkspace: vi.fn().mockResolvedValue(retrieval),
+        listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
+        updateForWorkspace: vi.fn(),
+      },
+      auditService,
+      publicChatBaseUrl: "http://localhost:3000/chat",
+    } as never);
+
+    await service.updateForWorkspace(
+      "workspace-1",
+      {
+        channels: {
+          anonymousChatEnabled: true,
+          anonymousRateLimit: 20,
+          rotateAnonymousChatToken: true,
+          websiteEmbedEnabled: true,
+          websiteEmbedAllowedOrigins: ["https://example.com"],
+          websiteEmbedLauncherPosition: "bottom-left",
+          rotateWebsiteEmbedToken: true,
+        },
+      },
+      { accountId: "account-1" },
+    );
+
+    expect(auditService.record).toHaveBeenCalledWith({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      eventType: "anonymous_chat.enabled",
+      eventStatus: "success",
+      metadata: { anonymousRateLimit: 20 },
+    });
+    expect(auditService.record).toHaveBeenCalledWith({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      eventType: "anonymous_chat.token_rotated",
+      eventStatus: "success",
+      metadata: { enabled: true },
+    });
+    expect(auditService.record).toHaveBeenCalledWith({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      eventType: "website_embed.enabled",
+      eventStatus: "success",
+      metadata: {
+        allowedOrigins: ["https://example.com"],
+        launcherPosition: "bottom-left",
+      },
+    });
+    expect(auditService.record).toHaveBeenCalledWith({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      eventType: "website_embed.token_rotated",
+      eventStatus: "success",
+      metadata: {
+        enabled: true,
+        allowedOrigins: ["https://example.com"],
+      },
+    });
+  });
+
   it("returns saved retrieval settings even when success audit logging fails", async () => {
     const settings = defaultRetrievalSettings("workspace-1");
     const repository = {

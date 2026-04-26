@@ -3,14 +3,41 @@ export const dynamic = 'force-dynamic'
 
 const BACKEND_BASE = process.env.BACKEND_INTERNAL_URL ?? 'http://localhost:8080'
 
+interface ChatStreamProxyRequestBody {
+  query?: string
+  message?: string
+  conversationId?: string
+  bootstrapGreeting?: boolean
+  startConversation?: boolean
+  stream?: boolean
+  userExpectedLocale?: string
+  inputMetadata?: unknown
+  sourceContext?: {
+    surface?: 'authenticated_chat' | 'public_chat' | 'website_embed'
+    sourceOrigin?: string | null
+  }
+}
+
 export async function POST(request: Request) {
   const workspaceId = request.headers.get('x-workspace-id')
   const cookie = request.headers.get('cookie')
   const authorization = request.headers.get('authorization')
-  const body = await request.text()
+  const rawBody = await request.text()
+  const parsedBody = rawBody ? JSON.parse(rawBody) as ChatStreamProxyRequestBody : {}
+  const body = JSON.stringify({
+    conversationId: parsedBody.conversationId,
+    message: parsedBody.message ?? parsedBody.query,
+    startConversation: parsedBody.startConversation ?? parsedBody.bootstrapGreeting,
+    stream: parsedBody.stream ?? true,
+    userExpectedLocale: parsedBody.userExpectedLocale,
+    inputMetadata: parsedBody.inputMetadata,
+    sourceContext: parsedBody.sourceContext ?? {
+      surface: 'authenticated_chat',
+    },
+  })
 
   try {
-    const upstream = await fetch(`${BACKEND_BASE}/api/v1/chat/`, {
+    const upstream = await fetch(`${BACKEND_BASE}/api/v1/assistant/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

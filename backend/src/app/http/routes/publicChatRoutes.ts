@@ -7,16 +7,15 @@ import { badRequest } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { anonymousRateLimiter } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
-import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./chatRoutes.js";
-import { assertInteractiveAssistantWorkflow } from "../../../modules/chat/services/chatExecutionPolicy.js";
+import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 
 const localeHintSchema = z.string().trim().max(35);
 
 export const anonymousChatSchema = z.object({
-  query: z.string().min(1).optional(),
+  message: z.string().min(1).optional(),
   stream: z.boolean().default(false),
   conversationId: z.string().uuid().optional(),
-  bootstrapGreeting: z.boolean().optional(),
+  startConversation: z.boolean().optional(),
   userExpectedLocale: localeHintSchema.optional(),
   inputMetadata: z.object({
     method: z.enum(["typed", "suggestion_click"]),
@@ -31,17 +30,17 @@ export const anonymousChatSchema = z.object({
     }
   }).optional(),
 }).superRefine((value, ctx) => {
-  if (!value.query && !value.bootstrapGreeting) {
+  if (!value.message && !value.startConversation) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "query is required unless bootstrapGreeting is true",
-      path: ["query"],
+      message: "message is required unless startConversation is true",
+      path: ["message"],
     });
   }
-  if (value.bootstrapGreeting && value.conversationId) {
+  if (value.startConversation && value.conversationId) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "bootstrapGreeting may only be used for brand-new conversations",
+      message: "startConversation may only be used for brand-new conversations",
       path: ["conversationId"],
     });
   }
@@ -74,10 +73,11 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
           sourceOrigin: string | null;
         };
 
-        if (req.body.bootstrapGreeting) {
-          assertInteractiveAssistantWorkflow("chat.bootstrap");
-          const bootstrap = await dependencies.chatBootstrapService.startConversation({
+        if (req.body.startConversation) {
+          const bootstrap = await dependencies.assistantChatService.answer({
             workspaceId,
+            startConversation: true,
+            stream: false,
             sourceChannel,
             anonymousSessionId,
             sourceOrigin,
@@ -93,7 +93,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
 
         const input = {
           workspaceId,
-          query: req.body.query!,
+          message: req.body.message!,
           stream: req.body.stream,
           userExpectedLocale: req.body.userExpectedLocale,
           conversationId: req.body.conversationId,
@@ -104,11 +104,9 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
         };
 
         if (input.stream) {
-          assertInteractiveAssistantWorkflow("chat.turn");
-          await sendChatSse(res, dependencies.chatService.streamAnswer(input));
+          await sendChatSse(res, dependencies.assistantChatService.streamAnswer(input));
         } else {
-          assertInteractiveAssistantWorkflow("chat.turn");
-          const result = await dependencies.chatService.answer(input);
+          const result = await dependencies.assistantChatService.answer(input);
           res.status(200).json(result);
         }
       } catch (error) {

@@ -5,13 +5,14 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
   constructor(private readonly promptBuilder: PromptBuilder) {}
 
   execute(input: ContextSelectionStageResult) {
+    const includeResponseBehavior = input.request.responseBehaviorEnabled ?? input.request.responseIdentity !== null;
     const prompt = this.promptBuilder.build({
       query: input.request.query,
       history: input.promptHistory,
       settings: {
-        assistantIdentity: input.request.assistantIdentity,
-        customInstruction: input.settings.customInstruction,
-        conversationMode: input.settings.conversationMode,
+        responseIdentity: input.request.responseIdentity,
+        customInstruction: includeResponseBehavior ? input.settings.customInstruction : undefined,
+        conversationMode: includeResponseBehavior ? input.settings.conversationMode : undefined,
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
       },
       contexts: input.contexts,
@@ -24,10 +25,10 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       responseSettings: {
         citationDisplayEnabled: input.settings.citationDisplayEnabled,
         answerSupportPolicy: input.settings.answerSupportPolicy,
-        conversationMode: input.settings.conversationMode,
-        suggestedQuestionsEnabled: input.settings.suggestedQuestionsEnabled,
-        suggestedQuestionsCount: input.settings.suggestedQuestionsCount,
-        customInstruction: input.settings.customInstruction,
+        conversationMode: includeResponseBehavior ? input.settings.conversationMode : "factual",
+        suggestedQuestionsEnabled: includeResponseBehavior ? input.settings.suggestedQuestionsEnabled : false,
+        suggestedQuestionsCount: includeResponseBehavior ? input.settings.suggestedQuestionsCount : 0,
+        customInstruction: includeResponseBehavior ? input.settings.customInstruction : undefined,
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
       },
     };

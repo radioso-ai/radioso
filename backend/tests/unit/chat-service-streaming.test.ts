@@ -30,10 +30,9 @@ describe("chat service streaming", () => {
   const createIntentRoutedNoContextPipeline = (input: {
     query: string;
     responseIntent: "social_only" | "assistant_identity";
-    assistantIdentity?: {
-      assistantName: string;
-      assistantRole: string;
-      greetingInstruction: string;
+    responseIdentity?: {
+      name: string;
+      role: string;
     };
     customInstruction?: string;
   }) => ({
@@ -46,7 +45,7 @@ describe("chat service streaming", () => {
           workspaceId: "workspace-1",
           query: input.query,
           history: [],
-          assistantIdentity: input.assistantIdentity ?? null,
+          responseIdentity: input.responseIdentity ?? null,
         },
         traceStartedAtMs: Date.now(),
         context: {
@@ -57,7 +56,7 @@ describe("chat service streaming", () => {
               workspaceId: "workspace-1",
               query: input.query,
               history: [],
-              assistantIdentity: input.assistantIdentity ?? null,
+              responseIdentity: input.responseIdentity ?? null,
             },
             settings: {
               workspaceId: "workspace-1",
@@ -103,7 +102,7 @@ describe("chat service streaming", () => {
         contexts: [],
         prompt: "",
         citations: [],
-        assistantIdentity: input.assistantIdentity ?? null,
+        responseIdentity: input.responseIdentity ?? null,
         responseSettings: {
           citationDisplayEnabled: true,
           answerSupportPolicy: "strict",
@@ -236,9 +235,14 @@ describe("chat service streaming", () => {
     expect(events[2]).toEqual({
       type: "done",
       conversationId: expect.any(String),
+      route: {
+        type: "retrieval",
+        reason: "evidence_required",
+      },
       answer: "full answer",
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer", citationIndices: [0] }],
+      suggestions: undefined,
       conversationMode: "guided",
       conversationModeMetadata: {
         conversationMode: "guided",
@@ -395,10 +399,9 @@ describe("chat service streaming", () => {
     const retrievalPipeline = createIntentRoutedNoContextPipeline({
       query: "What is your name and what do you do?",
       responseIntent: "assistant_identity",
-      assistantIdentity: {
-        assistantName: "Marta",
-        assistantRole: "Museum guide",
-        greetingInstruction: "Warm and concise",
+      responseIdentity: {
+        name: "Marta",
+        role: "Museum guide",
       },
     });
     const chatGateway: ChatGateway = {
@@ -437,10 +440,9 @@ describe("chat service streaming", () => {
     const retrievalPipeline = createIntentRoutedNoContextPipeline({
       query: "What is your name?",
       responseIntent: "assistant_identity",
-      assistantIdentity: {
-        assistantName: "Marta",
-        assistantRole: "Museum guide",
-        greetingInstruction: "Warm and concise",
+      responseIdentity: {
+        name: "Marta",
+        role: "Museum guide",
       },
     });
     const chatGateway: ChatGateway = {
@@ -477,10 +479,9 @@ describe("chat service streaming", () => {
     const retrievalPipeline = createIntentRoutedNoContextPipeline({
       query: "What is your name?",
       responseIntent: "assistant_identity",
-      assistantIdentity: {
-        assistantName: "Marta",
-        assistantRole: "Museum guide",
-        greetingInstruction: "Warm and concise",
+      responseIdentity: {
+        name: "Marta",
+        role: "Museum guide",
       },
     });
     const chatGateway: ChatGateway = {
@@ -526,10 +527,9 @@ describe("chat service streaming", () => {
     const retrievalPipeline = createIntentRoutedNoContextPipeline({
       query: "What do you do?",
       responseIntent: "assistant_identity",
-      assistantIdentity: {
-        assistantName: "Marta",
-        assistantRole: "Museum guide",
-        greetingInstruction: "Warm and concise",
+      responseIdentity: {
+        name: "Marta",
+        role: "Museum guide",
       },
     });
     const chatGateway: ChatGateway = {
@@ -575,10 +575,9 @@ describe("chat service streaming", () => {
     const retrievalPipeline = createIntentRoutedNoContextPipeline({
       query: "What do you do?",
       responseIntent: "assistant_identity",
-      assistantIdentity: {
-        assistantName: "Marta",
-        assistantRole: "Museum guide",
-        greetingInstruction: "Warm and concise",
+      responseIdentity: {
+        name: "Marta",
+        role: "Museum guide",
       },
     });
     const chatGateway: ChatGateway = {
@@ -630,10 +629,9 @@ describe("chat service streaming", () => {
           contexts: [],
           prompt: "unused retrieval prompt",
           citations: [],
-          assistantIdentity: {
-            assistantName: "Marta",
-            assistantRole: "Museum guide",
-            greetingInstruction: "Warm and concise",
+          responseIdentity: {
+            name: "Marta",
+            role: "Museum guide",
           },
           diagnostics: {
             rewriteStatus: "skipped",
@@ -1050,11 +1048,16 @@ describe("chat service streaming", () => {
     expect(doneEvent).toEqual({
       type: "done",
       conversationId: expect.any(String),
+      route: {
+        type: "retrieval",
+        reason: "evidence_required",
+      },
       answer: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.`,
       citations: [],
       answerSegments: [
         { text: `I couldn't verify that from your workspace documents, but I did find related material in "Intro" if you'd like to explore that instead.` },
       ],
+      suggestions: undefined,
       conversationMode: "guided",
       conversationModeMetadata: {
         conversationMode: "guided",
@@ -1288,10 +1291,9 @@ describe("chat service streaming", () => {
           ],
           prompt: "prompt text",
           citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
-          assistantIdentity: {
-            assistantName: "Vikram",
-            assistantRole: "Museum guide",
-            greetingInstruction: "Help with reflection and questions",
+          responseIdentity: {
+            name: "Vikram",
+            role: "Museum guide",
           },
           diagnostics: {
             rewriteStatus: "skipped",
@@ -2982,10 +2984,9 @@ describe("chat service streaming", () => {
             workspaceId: "workspace-1",
             query: "Thanks for the help",
             history: [],
-            assistantIdentity: {
-              assistantName: "Vikram",
-              assistantRole: "Guide to Ananda",
-              greetingInstruction: "",
+            responseIdentity: {
+              name: "Vikram",
+              role: "Guide to Ananda",
             },
           },
           traceStartedAtMs: Date.now(),
@@ -2997,10 +2998,9 @@ describe("chat service streaming", () => {
                 workspaceId: "workspace-1",
                 query: "Thanks for the help",
                 history: [],
-                assistantIdentity: {
-                  assistantName: "Vikram",
-                  assistantRole: "Guide to Ananda",
-                  greetingInstruction: "",
+                responseIdentity: {
+                  name: "Vikram",
+                  role: "Guide to Ananda",
                 },
               },
               settings: {
@@ -3049,10 +3049,9 @@ describe("chat service streaming", () => {
           contexts: [],
           prompt: "",
           citations: [],
-          assistantIdentity: {
-            assistantName: "Vikram",
-            assistantRole: "Guide to Ananda",
-            greetingInstruction: "",
+          responseIdentity: {
+            name: "Vikram",
+            role: "Guide to Ananda",
           },
           responseSettings: {
             citationDisplayEnabled: true,
@@ -3137,6 +3136,10 @@ describe("chat service streaming", () => {
     });
 
     expect(response.answer).toBe("Thanks. Ask me about retreats or courses when you're ready.");
+    expect(response.route).toEqual({
+      type: "direct",
+      reason: "social_only",
+    });
     expect(response.citations).toBeUndefined();
     expect(response.retrievalInfo).toMatchObject({
       responseIntent: "social_only",
@@ -3167,6 +3170,12 @@ describe("chat service streaming", () => {
         eventStatus: "success",
         metadata: expect.objectContaining({
           answerOutcome: "non_retrieval_response",
+          route: expect.objectContaining({
+            generator: "assistant",
+            routeType: "direct",
+            routeReason: "social_only",
+            retrievalInvoked: false,
+          }),
         }),
       }),
     );
@@ -3188,10 +3197,9 @@ describe("chat service streaming", () => {
             workspaceId: "workspace-1",
             query: "Remind me what you do around here",
             history: [],
-            assistantIdentity: {
-              assistantName: "Vikram",
-              assistantRole: "Guide to Ananda",
-              greetingInstruction: "",
+            responseIdentity: {
+              name: "Vikram",
+              role: "Guide to Ananda",
             },
           },
           traceStartedAtMs: Date.now(),
@@ -3203,10 +3211,9 @@ describe("chat service streaming", () => {
                 workspaceId: "workspace-1",
                 query: "Remind me what you do around here",
                 history: [],
-                assistantIdentity: {
-                  assistantName: "Vikram",
-                  assistantRole: "Guide to Ananda",
-                  greetingInstruction: "",
+                responseIdentity: {
+                  name: "Vikram",
+                  role: "Guide to Ananda",
                 },
               },
               settings: {
@@ -3253,10 +3260,9 @@ describe("chat service streaming", () => {
           contexts: [],
           prompt: "",
           citations: [],
-          assistantIdentity: {
-            assistantName: "Vikram",
-            assistantRole: "Guide to Ananda",
-            greetingInstruction: "",
+          responseIdentity: {
+            name: "Vikram",
+            role: "Guide to Ananda",
           },
           responseSettings: {
             citationDisplayEnabled: true,
@@ -3332,6 +3338,10 @@ describe("chat service streaming", () => {
     });
 
     expect(response.answer).toBe("I'm Vikram, your guide to Ananda.");
+    expect(response.route).toEqual({
+      type: "direct",
+      reason: "assistant_identity",
+    });
     expect(response.retrievalInfo).toMatchObject({
       responseIntent: "assistant_identity",
       retrievalSkipped: true,

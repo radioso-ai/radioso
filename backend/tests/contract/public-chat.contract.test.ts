@@ -45,7 +45,7 @@ describe("public chat contract", () => {
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ query: "What is the answer?", stream: false });
+      .send({ message: "What is the answer?", stream: false });
 
     expect(response.status).toBe(200);
     expect(response.body.conversationId).toBeDefined();
@@ -70,7 +70,7 @@ describe("public chat contract", () => {
     // First request — get cookie
     const first = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ query: "hello", stream: false });
+      .send({ message: "hello", stream: false });
 
     const cookies = first.headers["set-cookie"];
     const anonCookie = findAnonymousCookie(cookies);
@@ -79,7 +79,7 @@ describe("public chat contract", () => {
     const second = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
       .set("Cookie", anonCookie!)
-      .send({ query: "follow up", stream: false, conversationId: first.body.conversationId });
+      .send({ message: "follow up", stream: false, conversationId: first.body.conversationId });
 
     expect(second.status).toBe(200);
     expect(second.body.conversationId).toBe(first.body.conversationId);
@@ -98,7 +98,7 @@ describe("public chat contract", () => {
     // Create a conversation
     const chat = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ query: "test", stream: false });
+      .send({ message: "test", stream: false });
 
     const cookies = chat.headers["set-cookie"];
     const anonCookie = findAnonymousCookie(cookies);
@@ -123,7 +123,7 @@ describe("public chat contract", () => {
 
     const first = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ query: "hello", stream: false });
+      .send({ message: "hello", stream: false });
 
     const cookies = first.headers["set-cookie"];
     const anonCookie = findAnonymousCookie(cookies);
@@ -152,7 +152,7 @@ describe("public chat contract", () => {
     const chat = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
       .send({
-        query: "What does this page do?",
+        message: "What does this page do?",
         stream: false,
         inputMetadata: {
           method: "typed",
@@ -219,7 +219,7 @@ describe("public chat contract", () => {
         });
         res.on("end", () => callback(null, body));
       })
-      .send({ query: "Hello", stream: true });
+      .send({ message: "Hello", stream: true });
 
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("text/event-stream");
@@ -243,7 +243,7 @@ describe("public chat contract", () => {
 
     const firstConversation = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ query: "first", stream: false });
+      .send({ message: "first", stream: false });
 
     const cookies = firstConversation.headers["set-cookie"];
     const anonCookie = findAnonymousCookie(cookies);
@@ -251,12 +251,12 @@ describe("public chat contract", () => {
     await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
       .set("Cookie", anonCookie!)
-      .send({ query: "second", stream: false });
+      .send({ message: "second", stream: false });
 
     await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
       .set("Cookie", anonCookie!)
-      .send({ query: "third", stream: false });
+      .send({ message: "third", stream: false });
 
     const firstPage = await request(app)
       .get(`/api/v1/public/chat/${chatToken}?limit=2`)
@@ -316,7 +316,7 @@ describe("public chat contract", () => {
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ query: "Who is Narayani?", stream: false });
+      .send({ message: "Who is Narayani?", stream: false });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -328,7 +328,7 @@ describe("public chat contract", () => {
 
     const response = await request(app)
       .post("/api/v1/public/chat/nonexistent-token")
-      .send({ query: "hello", stream: false });
+      .send({ message: "hello", stream: false });
 
     expect(response.status).toBe(404);
   });
@@ -346,7 +346,7 @@ describe("public chat contract", () => {
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ query: "hello", stream: false });
+      .send({ message: "hello", stream: false });
 
     expect(response.status).toBe(404);
   });
@@ -364,7 +364,7 @@ describe("public chat contract", () => {
     // First message should succeed
     const first = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ query: "first", stream: false });
+      .send({ message: "first", stream: false });
     expect(first.status).toBe(200);
 
     const cookies = first.headers["set-cookie"];
@@ -374,7 +374,7 @@ describe("public chat contract", () => {
     const second = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
       .set("Cookie", anonCookie!)
-      .send({ query: "second", stream: false });
+      .send({ message: "second", stream: false });
 
     expect(second.status).toBe(429);
     expect(second.body.error).toMatchObject({
@@ -412,7 +412,7 @@ describe("public chat contract", () => {
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "en" });
+      .send({ startConversation: true, stream: false, userExpectedLocale: "en" });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -450,7 +450,7 @@ describe("public chat contract", () => {
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "bad_locale_value" });
+      .send({ startConversation: true, stream: false, userExpectedLocale: "bad_locale_value" });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -492,13 +492,13 @@ describe("public chat contract", () => {
 
     const bootstrap = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
-      .send({ bootstrapGreeting: true, stream: false, userExpectedLocale: "en-US" });
+      .send({ startConversation: true, stream: false, userExpectedLocale: "en-US" });
     const anonCookie = findAnonymousCookie(bootstrap.headers["set-cookie"]);
 
     const firstMessage = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
       .set("Cookie", anonCookie!)
-      .send({ query: "What is the answer?", stream: false, conversationId: bootstrap.body.conversationId });
+      .send({ message: "What is the answer?", stream: false, conversationId: bootstrap.body.conversationId });
 
     expect(bootstrap.status).toBe(200);
     expect(firstMessage.status).toBe(429);

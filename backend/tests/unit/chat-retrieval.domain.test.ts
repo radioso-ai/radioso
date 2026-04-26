@@ -1027,7 +1027,8 @@ describe("chat retrieval domain", () => {
     expect(result.prompt).toContain("At most one inline link per paragraph.");
     expect(result.prompt).toContain("Respond in the same language as the current user question.");
     expect(result.prompt).toContain("You may end with one short closing invitation or adjacent-topic suggestion");
-    expect(result.prompt).toContain("embed it as a Markdown link with descriptive link text");
+    expect(result.prompt).toContain("include exactly one inline Markdown link in the answer by default");
+    expect(result.prompt).toContain("Do this even for definitional answers");
     expect(result.prompt).toContain("append <<UNSUPPORTED>> at the very end of the answer");
     expect(result.prompt).toContain("Result 1 (Intro):");
     expect(result.prompt).toContain("[[1]]");

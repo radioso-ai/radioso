@@ -234,6 +234,8 @@ const extractSupportedLinkText = (value: string): string | null => {
   return `${preservePrefix(value.slice(0, firstSpan.start))}${value.slice(firstSpan.start, trailingIndex)}`;
 };
 
+const normalizeOmittedUnsupportedPrefix = (value: string): string => value.replace(/^\s+/g, "");
+
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
   chunkId: citation.chunkId,
@@ -688,7 +690,7 @@ export class AnswerSupportValidator {
       }
 
       if (segment.disposition === VALIDATION_DISPOSITION.UNSUPPORTED) {
-        const prefix = preservePrefix(segment.text);
+        const prefix = normalizeOmittedUnsupportedPrefix(preservePrefix(segment.text));
         if (visibleSegments.length > 0 && /[.,;:!?()/-]/.test(prefix)) {
           visibleSegments.push({ text: prefix });
         }

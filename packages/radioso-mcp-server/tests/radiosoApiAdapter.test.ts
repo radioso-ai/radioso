@@ -1,5 +1,3 @@
-import { createHmac } from "node:crypto";
-
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RadiosoApiError, createRadiosoApiAdapter } from "../src/radiosoApiAdapter.js";
@@ -85,9 +83,9 @@ describe("createRadiosoApiAdapter", () => {
     });
   });
 
-  it("preserves chat not-found errors for unknown conversation ids", async () => {
+  it("maps missing retrieval answer routes to unsupported_capability", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: { code: "not_found", message: "Conversation not found" } }), {
+      new Response(JSON.stringify({ error: { code: "not_found", message: "Missing route" } }), {
         status: 404,
         headers: { "content-type": "application/json" },
       }),
@@ -104,11 +102,10 @@ describe("createRadiosoApiAdapter", () => {
     );
 
     await expect(adapter.answerGrounded({
-      conversationId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
       query: "hello",
     })).rejects.toMatchObject({
-      code: "not_found",
-      message: "Conversation not found",
+      code: "unsupported_capability",
+      message: "Missing route",
       status: 404,
     });
   });
@@ -171,10 +168,9 @@ describe("createRadiosoApiAdapter", () => {
     );
   });
 
-  it("marks grounded answers as MCP-originated chat traffic", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1_713_779_200_000);
+  it("calls retrieval answer without assistant source headers", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ conversationId: "conv_123", answer: "Hello" }), {
+      new Response(JSON.stringify({ outcome: "answer", answer: "Hello" }), {
         status: 200,
         headers: { "content-type": "application/json" },
       }),
@@ -184,7 +180,6 @@ describe("createRadiosoApiAdapter", () => {
       {
         apiToken: "sk_proj_test",
         baseUrl: "http://localhost:8080",
-        mcpSourceSigningSecret: "dev-signing-secret",
         requestTimeoutMs: 30_000,
         serverName: "radioso-test",
       },
@@ -194,17 +189,20 @@ describe("createRadiosoApiAdapter", () => {
     await adapter.answerGrounded({ query: "hello" });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8080/api/v1/chat",
+      "http://localhost:8080/api/v1/retrieval/answer",
       expect.objectContaining({
+        body: JSON.stringify({ query: "hello" }),
+        method: "POST",
         headers: expect.objectContaining({
           authorization: "Bearer sk_proj_test",
-          "x-radioso-source-channel": "mcp",
-          "x-radioso-source-signature": createHmac("sha256", "dev-signing-secret")
-            .update("mcp\n\n1713779200000\nsk_proj_test")
-            .digest("hex"),
-          "x-radioso-source-timestamp": "1713779200000",
+          "content-type": "application/json",
+          "x-radioso-capability-client": "mcp",
         }),
       }),
     );
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers).not.toHaveProperty("x-radioso-source-channel");
+    expect(headers).not.toHaveProperty("x-radioso-source-signature");
+    expect(headers).not.toHaveProperty("x-radioso-source-timestamp");
   });
 });

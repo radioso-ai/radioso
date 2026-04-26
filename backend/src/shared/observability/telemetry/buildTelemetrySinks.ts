@@ -40,6 +40,8 @@ class MetricsTelemetrySink implements TelemetrySink {
         rewrite_status: event.tags?.rewrite_status ?? "unknown",
         rerank_status: event.tags?.rerank_status ?? "unknown",
         fallback_applied: event.tags?.fallback_applied ?? "unknown",
+        execution_surface: event.tags?.execution_surface ?? "unknown",
+        execution_path: event.tags?.execution_path ?? "unknown",
       };
 
       this.metricsRegistry.incrementCounter("retrieval_pipeline_runs_total", {

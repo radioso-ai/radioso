@@ -74,7 +74,7 @@ client.documents.listHistory(...)
 client.documents.getHistory(...)
 client.documents.reprocess(...)
 
-client.chat.create(...)
+client.chat.create(...)              // assistant chat
 client.chat.listHistory(...)
 client.chat.getHistoryConversation(...)
 client.chat.stream(...)
@@ -83,4 +83,4 @@ client.chat.stream(...)
 ## Next Step
 
 Continue with [Basic Usage](./typescript-sdk-basic-usage.md) for copy-paste examples of documents, chat, streaming, and error handling.
-For search and answer settings, use [Retrieval Settings](./typescript-sdk-retrieval-settings.md).
+For search and answer settings, use [Retrieval Settings](./typescript-sdk-retrieval-settings.md). For retrieval-only answers without assistant behavior, call the REST retrieval endpoints directly: `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`.

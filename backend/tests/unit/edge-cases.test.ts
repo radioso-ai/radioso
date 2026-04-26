@@ -10,7 +10,6 @@ import { CandidatePreparationService } from "../../src/modules/retrieval/service
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
-import { InMemoryWorkspaceRepository } from "../support/fakes.js";
 
 describe("edge cases", () => {
   it("normalizes short content into a single chunk", () => {
@@ -36,24 +35,23 @@ describe("edge cases", () => {
     expect(result.citations).toEqual([]);
   });
 
-  it("includes stable assistant identity in the retrieval prompt", () => {
+  it("includes stable response identity in the retrieval prompt", () => {
     const builder = new PromptBuilder();
     const result = builder.build({
       query: "What is your name?",
       history: [],
       settings: {
-        assistantIdentity: {
-          assistantName: "Marta",
-          assistantRole: "Museum guide",
-          greetingInstruction: "Warm and concise",
+        responseIdentity: {
+          name: "Marta",
+          role: "Museum guide",
         },
       },
       contexts: [],
     });
 
-    expect(result.prompt).toContain("Stable assistant identity:");
-    expect(result.prompt).toContain("Assistant name: Marta");
-    expect(result.prompt).toContain("What this assistant helps with: Museum guide");
+    expect(result.prompt).toContain("Stable response identity:");
+    expect(result.prompt).toContain("Response identity name: Marta");
+    expect(result.prompt).toContain("Response identity role: Museum guide");
   });
   it("falls back to the original query when rewrite assistance errors", async () => {
     const service = new QueryRewriteService({
@@ -213,7 +211,6 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      new InMemoryWorkspaceRepository(),
     );
 
     const result = await service.run({
@@ -302,7 +299,6 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      new InMemoryWorkspaceRepository(),
     );
 
     const result = await service.run({
@@ -398,7 +394,6 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      new InMemoryWorkspaceRepository(),
     );
 
     const result = await service.run({
@@ -481,7 +476,6 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      new InMemoryWorkspaceRepository(),
     );
 
     const result = await service.run({
@@ -623,7 +617,6 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
-      new InMemoryWorkspaceRepository(),
     );
 
     const result = await service.run({

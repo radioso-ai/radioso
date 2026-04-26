@@ -142,8 +142,22 @@ export interface FinalPromptContext extends RerankedCandidate {
 
 export type RerankStatus = "skipped" | "applied" | "fallback";
 export type RetrievalTraceStageStatus = "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
+export type RetrievalExecutionSurface = "assistant" | "retrieval" | "mcp_capability";
+export type RetrievalExecutionPath =
+  | "assistant_direct"
+  | "assistant_retrieval"
+  | "retrieval_search"
+  | "retrieval_answer"
+  | "mcp_grounded_answer";
+
+export interface RetrievalExecutionMetadata {
+  surface: RetrievalExecutionSurface;
+  path: RetrievalExecutionPath;
+  retrievalInvoked: boolean;
+}
 
 export interface RetrievalTraceSummary {
+  execution?: RetrievalExecutionMetadata;
   parsedQuery?: {
     originalQuery: string;
     semanticQuery: string;
@@ -216,6 +230,7 @@ export interface RetrievalTrace {
 }
 
 export interface RetrievalExecutionDiagnostics {
+  execution?: RetrievalExecutionMetadata;
   rewriteStatus: RewriteStatus;
   rerankStatus: RerankStatus;
   originalCandidateCount: number;

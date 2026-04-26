@@ -146,7 +146,7 @@ describe("public embed contract", () => {
       .post(`/api/v1/public/chat/${embedSession.body.publicChatToken}`)
       .set("x-radioso-embed-session", embedSession.body.embedSessionToken)
       .send({
-        query: "What can you do?",
+        message: "What can you do?",
         stream: false,
       });
 
@@ -168,7 +168,7 @@ describe("public embed contract", () => {
       .post(`/api/v1/public/chat/${firstEmbedSession.body.publicChatToken}`)
       .set("x-radioso-embed-session", firstEmbedSession.body.embedSessionToken)
       .send({
-        query: "What can you do?",
+        message: "What can you do?",
         stream: false,
       });
 

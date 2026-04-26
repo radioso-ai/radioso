@@ -87,9 +87,9 @@ describe("chat integration", () => {
       .expect(200);
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "Which conference is upcoming?", stream: false })
+      .send({ message: "Which conference is upcoming?", stream: false })
       .expect(200);
 
     expect(response.body.citations).toEqual(
@@ -200,14 +200,14 @@ describe("chat integration", () => {
     expect(settingsResponse.status).toBe(200);
 
     const matched = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "When is the next conference?", stream: false });
+      .send({ message: "When is the next conference?", stream: false });
 
     const unmatched = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What is mononuclear disease?", stream: false });
+      .send({ message: "What is mononuclear disease?", stream: false });
 
     expect(matched.status).toBe(200);
     expect(unmatched.status).toBe(200);
@@ -253,9 +253,9 @@ describe("chat integration", () => {
         yield "The testing guide explains testing and parsing content for users[[1]].";
       },
     };
-    const { app } = createTestApp({ chatGateway: deterministicGateway });
+    const { app, dependencies } = createTestApp({ chatGateway: deterministicGateway });
 
-    const { token } = await issueTestToken(app, "conversation-modes@example.com");
+    const { token, workspaceId } = await issueTestToken(app, "conversation-modes@example.com");
     const authorization = `Bearer ${token}`;
 
     for (const document of [
@@ -270,25 +270,24 @@ describe("chat integration", () => {
     }
 
     const ask = async (conversationMode: "factual" | "guided" | "exploratory") => {
-      await request(app)
-        .put("/api/v1/settings/retrieval")
-        .set("Authorization", authorization)
-        .send({
-          queryRewriteEnabled: false,
-          suggestedQuestionsEnabled: true,
-          suggestedQuestionsCount: 4,
-          rerankEnabled: false,
-          vectorTopK: 20,
-          similarityThreshold: 0.1,
-          rerankTopK: 5,
-          citationDisplayEnabled: true,
-          conversationMode,
-        });
+      const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
+      await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
+        ...existing,
+        queryRewriteEnabled: false,
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 4,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        conversationMode,
+      });
 
       return request(app)
-        .post("/api/v1/chat/")
+        .post("/api/v1/assistant/chat")
         .set("Authorization", authorization)
-        .send({ query: "What do the testing docs cover?", stream: false });
+        .send({ message: "What do the testing docs cover?", stream: false });
     };
 
     const factual = await ask("factual");
@@ -345,9 +344,9 @@ describe("chat integration", () => {
         yield "The testing guide explains testing and parsing content for users[[1]].";
       },
     };
-    const { app } = createTestApp({ chatGateway: deterministicGateway });
+    const { app, dependencies } = createTestApp({ chatGateway: deterministicGateway });
 
-    const { token } = await issueTestToken(app, "conversation-modes-disabled@example.com");
+    const { token, workspaceId } = await issueTestToken(app, "conversation-modes-disabled@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -358,25 +357,24 @@ describe("chat integration", () => {
         content: "The testing docs cover testing and parsing content for users.",
       });
 
-    await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set("Authorization", authorization)
-      .send({
-        queryRewriteEnabled: false,
-        conversationMode: "exploratory",
-        suggestedQuestionsEnabled: false,
-        suggestedQuestionsCount: 4,
-        rerankEnabled: false,
-        vectorTopK: 20,
-        similarityThreshold: 0.1,
-        rerankTopK: 5,
-        citationDisplayEnabled: true,
-      });
+    const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
+    await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
+      ...existing,
+      queryRewriteEnabled: false,
+      conversationMode: "exploratory",
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 4,
+      rerankEnabled: false,
+      vectorTopK: 20,
+      similarityThreshold: 0.1,
+      rerankTopK: 5,
+      citationDisplayEnabled: true,
+    });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What do the testing docs cover?", stream: false });
+      .send({ message: "What do the testing docs cover?", stream: false });
 
     expect(response.status).toBe(200);
     expect(response.body.suggestions).toBeUndefined();
@@ -411,9 +409,9 @@ describe("chat integration", () => {
         yield "unused";
       },
     };
-    const { app } = createTestApp({ chatGateway: deterministicGateway });
+    const { app, dependencies } = createTestApp({ chatGateway: deterministicGateway });
 
-    const { token } = await issueTestToken(app, "conversation-intent@example.com");
+    const { token, workspaceId } = await issueTestToken(app, "conversation-intent@example.com");
     const authorization = `Bearer ${token}`;
 
     for (const document of [
@@ -426,31 +424,30 @@ describe("chat integration", () => {
         .send(document);
     }
 
-    await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set("Authorization", authorization)
-      .send({
-        queryRewriteEnabled: false,
-        suggestedQuestionsEnabled: true,
-        suggestedQuestionsCount: 4,
-        rerankEnabled: false,
-        vectorTopK: 20,
-        similarityThreshold: 0.1,
-        rerankTopK: 5,
-        citationDisplayEnabled: true,
-        conversationMode: "exploratory",
-      });
+    const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
+    await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
+      ...existing,
+      queryRewriteEnabled: false,
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 4,
+      rerankEnabled: false,
+      vectorTopK: 20,
+      similarityThreshold: 0.1,
+      rerankTopK: 5,
+      citationDisplayEnabled: true,
+      conversationMode: "exploratory",
+    });
 
     const first = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "Help me plan a beginner retreat", stream: false });
+      .send({ message: "Help me plan a beginner retreat", stream: false });
     const second = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
         conversationId: first.body.conversationId,
-        query: "What should I add next?",
+        message: "What should I add next?",
         stream: false,
       });
 
@@ -522,12 +519,12 @@ describe("chat integration", () => {
         };
       },
     };
-    const { app } = createTestApp({
+    const { app, dependencies } = createTestApp({
       chatGateway: deterministicGateway,
       queryRewriteGateway,
     });
 
-    const { token } = await issueTestToken(app, "conversation-pivot@example.com");
+    const { token, workspaceId } = await issueTestToken(app, "conversation-pivot@example.com");
     const authorization = `Bearer ${token}`;
 
     for (const document of [
@@ -541,31 +538,30 @@ describe("chat integration", () => {
         .send(document);
     }
 
-    await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set("Authorization", authorization)
-      .send({
-        queryRewriteEnabled: true,
-        suggestedQuestionsEnabled: true,
-        suggestedQuestionsCount: 4,
-        rerankEnabled: false,
-        vectorTopK: 20,
-        similarityThreshold: 0.1,
-        rerankTopK: 5,
-        citationDisplayEnabled: true,
-        conversationMode: "exploratory",
-      });
+    const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
+    await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
+      ...existing,
+      queryRewriteEnabled: true,
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 4,
+      rerankEnabled: false,
+      vectorTopK: 20,
+      similarityThreshold: 0.1,
+      rerankTopK: 5,
+      citationDisplayEnabled: true,
+      conversationMode: "exploratory",
+    });
 
     const first = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "Help me plan a beginner retreat", stream: false });
+      .send({ message: "Help me plan a beginner retreat", stream: false });
     const second = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
         conversationId: first.body.conversationId,
-        query: "What about facilitator support?",
+        message: "What about facilitator support?",
         stream: false,
       });
 
@@ -592,9 +588,9 @@ describe("chat integration", () => {
         yield "The testing guide explains testing and parsing content for users[[1]].";
       },
     };
-    const { app } = createTestApp({ chatGateway: deterministicGateway });
+    const { app, dependencies } = createTestApp({ chatGateway: deterministicGateway });
 
-    const { token } = await issueTestToken(app, "conversation-directness@example.com");
+    const { token, workspaceId } = await issueTestToken(app, "conversation-directness@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -605,25 +601,24 @@ describe("chat integration", () => {
         content: "The testing docs cover testing and parsing content for users.",
       });
 
-    await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set("Authorization", authorization)
-      .send({
-        queryRewriteEnabled: false,
-        conversationMode: "exploratory",
-        suggestedQuestionsEnabled: true,
-        suggestedQuestionsCount: 4,
-        rerankEnabled: false,
-        vectorTopK: 20,
-        similarityThreshold: 0.1,
-        rerankTopK: 5,
-        citationDisplayEnabled: true,
-      });
+    const existing = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
+    await dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, {
+      ...existing,
+      queryRewriteEnabled: false,
+      conversationMode: "exploratory",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 4,
+      rerankEnabled: false,
+      vectorTopK: 20,
+      similarityThreshold: 0.1,
+      rerankTopK: 5,
+      citationDisplayEnabled: true,
+    });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "Just the answer: what do the testing docs cover?", stream: false });
+      .send({ message: "Just the answer: what do the testing docs cover?", stream: false });
 
     expect(response.status).toBe(200);
     expect(suggestionCallCount).toBe(0);
@@ -661,15 +656,15 @@ describe("chat integration", () => {
       });
 
     const first = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false });
     const second = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
         conversationId: first.body.conversationId,
-        query: "And who is it for?",
+        message: "And who is it for?",
         stream: false,
       });
 
@@ -685,9 +680,9 @@ describe("chat integration", () => {
     const { token } = await issueTestToken(app, "empty@example.com");
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", `Bearer ${token}`)
-      .send({ query: "What is the capital of France?", stream: false });
+      .send({ message: "What is the capital of France?", stream: false });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -706,9 +701,9 @@ describe("chat integration", () => {
       .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false });
 
     expect(response.status).toBe(200);
 
@@ -761,9 +756,9 @@ describe("chat integration", () => {
       .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false });
 
     expect(response.status).toBe(503);
     expect(response.body).toMatchObject({
@@ -784,9 +779,9 @@ describe("chat integration", () => {
     const { token } = await issueTestToken(app, "stream-route-error@example.com");
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", `Bearer ${token}`)
-      .send({ query: "What does the page explain?", stream: true });
+      .send({ message: "What does the page explain?", stream: true });
 
     expect(response.status).toBe(500);
     expect(response.headers["content-type"]).toContain("application/json");
@@ -819,9 +814,9 @@ describe("chat integration", () => {
       .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -852,9 +847,9 @@ describe("chat integration", () => {
       .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -901,9 +896,9 @@ describe("chat integration", () => {
       });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What do the testing docs cover?", stream: false });
+      .send({ message: "What do the testing docs cover?", stream: false });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -925,15 +920,15 @@ describe("chat integration", () => {
       .send({ title: "A", content: "Account A data only." });
 
     const firstChat = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", `Bearer ${firstToken}`)
-      .send({ query: "What data is here?", stream: false });
+      .send({ message: "What data is here?", stream: false });
     const secondChat = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", `Bearer ${secondToken}`)
       .send({
         conversationId: firstChat.body.conversationId,
-        query: "Can I reuse this conversation?",
+        message: "Can I reuse this conversation?",
         stream: false,
       });
 
@@ -968,10 +963,10 @@ describe("chat integration", () => {
       });
 
     const strictResponse = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
-        query: "What is the API rate limit and how long should a client wait before retrying?",
+        message: "What is the API rate limit and how long should a client wait before retrying?",
         stream: false,
       });
 
@@ -989,18 +984,18 @@ describe("chat integration", () => {
       });
 
     const firstFollowUp = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
-        query: "Tell me about the session cookie",
+        message: "Tell me about the session cookie",
         stream: false,
       });
     const broadResponse = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
         conversationId: firstFollowUp.body.conversationId,
-        query: "What is it used for?",
+        message: "What is it used for?",
         stream: false,
       });
 
@@ -1038,10 +1033,10 @@ describe("chat integration", () => {
       });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
-        query: "Tell me about the session cookie",
+        message: "Tell me about the session cookie",
         stream: false,
       });
 
@@ -1050,6 +1045,11 @@ describe("chat integration", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.retrievalInfo).toMatchObject({
+      execution: {
+        surface: "assistant",
+        path: "assistant_retrieval",
+        retrievalInvoked: true,
+      },
       candidateCounts: {
         semantic: expect.any(Number),
         lexical: expect.any(Number),
@@ -1065,7 +1065,18 @@ describe("chat integration", () => {
         materialDisagreement: expect.any(Boolean),
       },
     });
+    expect(response.body.route).toEqual({
+      type: "retrieval",
+      reason: "evidence_required",
+    });
     expect(response.body.retrievalTrace).toMatchObject({
+      summary: {
+        execution: {
+          surface: "assistant",
+          path: "assistant_retrieval",
+          retrievalInvoked: true,
+        },
+      },
       stages: expect.any(Array),
     });
     expect(chatAudit?.metadata?.retrieval).toMatchObject({
@@ -1082,6 +1093,29 @@ describe("chat integration", () => {
       assistantMessageId: expect.any(String),
       conversationId: response.body.conversationId,
       stream: false,
+      route: {
+        generator: "assistant",
+        routeType: "retrieval",
+        routeReason: "evidence_required",
+        retrievalInvoked: true,
+      },
+    });
+
+    const detail = await request(app)
+      .get(`/api/v1/history/${response.body.conversationId}`)
+      .set("Authorization", authorization)
+      .expect(200);
+    const assistantTurn = detail.body.messages.find((message: { role: string }) => message.role === "assistant");
+    expect(assistantTurn?.debug?.route).toMatchObject({
+      generator: "assistant",
+      routeType: "retrieval",
+      routeReason: "evidence_required",
+      retrievalInvoked: true,
+    });
+    expect(assistantTurn?.debug?.retrievalInfo?.execution).toMatchObject({
+      surface: "assistant",
+      path: "assistant_retrieval",
+      retrievalInvoked: true,
     });
   });
 
@@ -1106,9 +1140,9 @@ describe("chat integration", () => {
       .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false });
 
     const auditEvents = (dependencies.auditService as unknown as { events: Array<{ eventType: string; metadata?: Record<string, unknown> }> }).events;
     const chatAudit = [...auditEvents].reverse().find((event) => event.eventType === "chat.answer");
@@ -1139,9 +1173,9 @@ describe("chat integration", () => {
     const authorization = `Bearer ${token}`;
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What is the capital of France?", stream: false });
+      .send({ message: "What is the capital of France?", stream: false });
 
     const auditEvents = (dependencies.auditService as unknown as { events: Array<{ eventType: string; metadata?: Record<string, unknown> }> }).events;
     const chatAudit = [...auditEvents].reverse().find((event) => event.eventType === "chat.answer");
@@ -1180,21 +1214,21 @@ describe("chat integration", () => {
       .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
 
     const failure = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false });
 
     expect(failure.status).toBe(500);
 
     const history = await request(app)
-      .get("/api/v1/chat/history")
+      .get("/api/v1/history")
       .set("Authorization", authorization);
 
     expect(history.status).toBe(200);
     expect(history.body.conversations).toHaveLength(1);
 
     const detail = await request(app)
-      .get(`/api/v1/chat/history/${history.body.conversations[0].id}`)
+      .get(`/api/v1/history/${history.body.conversations[0].id}`)
       .set("Authorization", authorization);
 
     expect(detail.status).toBe(200);
@@ -1244,15 +1278,15 @@ describe("chat integration", () => {
       });
 
     const first = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "Tell me about Narayani", stream: false });
+      .send({ message: "Tell me about Narayani", stream: false });
     const second = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
         conversationId: first.body.conversationId,
-        query: "Does she work with Arudra?",
+        message: "Does she work with Arudra?",
         stream: false,
       });
 
@@ -1315,16 +1349,16 @@ describe("chat integration", () => {
       });
 
     const first = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "Who is Narayani?", stream: false });
+      .send({ message: "Who is Narayani?", stream: false });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
         conversationId: first.body.conversationId,
-        query: "Can I buy her book?",
+        message: "Can I buy her book?",
         stream: false,
       });
 
@@ -1388,9 +1422,9 @@ describe("chat integration", () => {
       .expect(200);
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "Thanks for the help", stream: false })
+      .send({ message: "Thanks for the help", stream: false })
       .expect(200);
 
     expect(response.body.answer).toEqual(expect.any(String));
@@ -1463,9 +1497,9 @@ describe("chat integration", () => {
       .expect(200);
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "Remind me what you do around here", stream: false })
+      .send({ message: "Remind me what you do around here", stream: false })
       .expect(200);
 
     expect(response.body.answer).toEqual(expect.any(String));
@@ -1475,6 +1509,32 @@ describe("chat integration", () => {
       responseIntent: "assistant_identity",
       retrievalSkipped: true,
       intentConfidence: 0.91,
+      execution: {
+        surface: "assistant",
+        path: "assistant_direct",
+        retrievalInvoked: false,
+      },
+    });
+    expect(response.body.route).toEqual({
+      type: "direct",
+      reason: "assistant_identity",
+    });
+
+    const detail = await request(app)
+      .get(`/api/v1/history/${response.body.conversationId}`)
+      .set("Authorization", authorization)
+      .expect(200);
+    const assistantTurn = detail.body.messages.find((message: { role: string }) => message.role === "assistant");
+    expect(assistantTurn?.debug?.route).toMatchObject({
+      generator: "assistant",
+      routeType: "direct",
+      routeReason: "assistant_identity",
+      retrievalInvoked: false,
+    });
+    expect(assistantTurn?.debug?.retrievalInfo?.execution).toMatchObject({
+      surface: "assistant",
+      path: "assistant_direct",
+      retrievalInvoked: false,
     });
     expect(observedPrompt).toContain("Keep identity replies direct.");
     expect(observedPrompt).toContain("Answer Instructions:");
@@ -1539,9 +1599,9 @@ describe("chat integration", () => {
       .expect(200);
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "Thanks, what retreats are coming up?", stream: false })
+      .send({ message: "Thanks, what retreats are coming up?", stream: false })
       .expect(200);
 
     expect(response.body.answer).toEqual(expect.any(String));
@@ -1618,9 +1678,9 @@ describe("chat integration", () => {
       .expect(200);
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "Thanks for the help", stream: false })
+      .send({ message: "Thanks for the help", stream: false })
       .expect(200);
 
     expect(response.body.answer).toEqual(expect.any(String));
@@ -1703,11 +1763,11 @@ describe("chat integration", () => {
     });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
         conversationId: conversation.id,
-        query: "go ahead",
+        message: "go ahead",
         stream: false,
       });
 
@@ -1824,11 +1884,11 @@ describe("chat integration", () => {
     });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
         conversationId: conversation.id,
-        query: "go ahead",
+        message: "go ahead",
         stream: false,
       });
 
@@ -1885,10 +1945,10 @@ describe("chat integration", () => {
       });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
-        query: "What does flag HVC-42-ALPHA enable?",
+        message: "What does flag HVC-42-ALPHA enable?",
         stream: false,
       });
 
@@ -1922,9 +1982,9 @@ describe("chat integration", () => {
       });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -1956,9 +2016,9 @@ describe("chat integration", () => {
       });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ query: "What does the page explain?", stream: false });
+      .send({ message: "What does the page explain?", stream: false });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
@@ -1997,10 +2057,10 @@ describe("chat integration", () => {
       });
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
-        query: "What is the API rate limit and how long should a client wait before retrying?",
+        message: "What is the API rate limit and how long should a client wait before retrying?",
         stream: false,
       });
 
@@ -2027,10 +2087,10 @@ describe("chat integration", () => {
       .send(retrievalFixtureDocuments.rateLimits);
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
-        query: "What is the API rate limit and how long should a client wait before retrying?",
+        message: "What is the API rate limit and how long should a client wait before retrying?",
         stream: false,
       });
 
@@ -2068,10 +2128,10 @@ describe("chat integration", () => {
     // that metadataFilter is a valid request field that is accepted without errors and
     // that the pipeline runs to completion.
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
-        query: "What does the guide cover?",
+        message: "What does the guide cover?",
         stream: false,
         metadataFilter: { language: "en" },
       });
@@ -2106,10 +2166,10 @@ describe("chat integration", () => {
     }
 
     const response = await request(app)
-      .post("/api/v1/chat/")
+      .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
-        query: "Which cookie name is used for browser sessions?",
+        message: "Which cookie name is used for browser sessions?",
         stream: false,
       });
 

@@ -1,6 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { AssistantIdentityPromptInput } from "../../settings/domain/assistantBootstrapSettings.js";
+import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
@@ -21,7 +21,7 @@ export class PromptBuilder {
     history: MessageRecord[];
     contexts: FinalPromptContext[];
     settings: {
-      assistantIdentity?: AssistantIdentityPromptInput | null;
+      responseIdentity?: ResponseIdentity | null;
       customInstruction?: string;
       conversationMode?: ConversationMode;
       responseLanguagePolicy?: ResponseLanguagePolicy;
@@ -40,7 +40,7 @@ export class PromptBuilder {
       })
       .join("\n\n");
     const answerInstructionBlocks = this.sharedAnswerInstructionBuilder.build({
-      assistantIdentity: input.settings.assistantIdentity,
+      responseIdentity: input.settings.responseIdentity,
       customInstruction: input.settings.customInstruction,
       conversationMode: input.settings.conversationMode,
       responseLanguagePolicy: input.settings.responseLanguagePolicy,
@@ -48,8 +48,8 @@ export class PromptBuilder {
 
     return {
       prompt: renderPromptTemplate("retrieval/answer.md", {
-        assistant_identity_block: answerInstructionBlocks.assistantIdentityBlock
-          ? `${answerInstructionBlocks.assistantIdentityBlock}\n`
+        response_identity_block: answerInstructionBlocks.responseIdentityBlock
+          ? `${answerInstructionBlocks.responseIdentityBlock}\n`
           : "",
         custom_instruction_block: answerInstructionBlocks.customInstructionBlock
           ? `${answerInstructionBlocks.customInstructionBlock}\n`
@@ -57,7 +57,9 @@ export class PromptBuilder {
         response_formatting_guidelines_block: answerInstructionBlocks.responseFormattingGuidelinesBlock
           ? `${answerInstructionBlocks.responseFormattingGuidelinesBlock}\n`
           : "",
-        conversation_mode_instruction_block: `${answerInstructionBlocks.conversationModeInstructionBlock}\n`,
+        conversation_mode_instruction_block: answerInstructionBlocks.conversationModeInstructionBlock
+          ? `${answerInstructionBlocks.conversationModeInstructionBlock}\n`
+          : "",
         response_language_instruction: answerInstructionBlocks.responseLanguageInstruction,
         history_section: historySection || "No prior history",
         contexts_section: contextsSection || "No retrieved context",

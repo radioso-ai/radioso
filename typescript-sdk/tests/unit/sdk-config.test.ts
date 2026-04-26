@@ -81,7 +81,7 @@ describe("sdk config", () => {
       fetch: fetchMock as typeof fetch,
     });
 
-    for await (const _event of client.chat.stream({ query: "hello" })) {
+    for await (const _event of client.chat.stream({ message: "hello" })) {
       // no-op
     }
 
@@ -104,7 +104,7 @@ describe("sdk config", () => {
     });
 
     await expect(async () => client.chat.create({
-      query: "hello",
+      message: "hello",
       stream: true as true,
     } as never)).rejects.toThrow("Use chat.stream()");
   });

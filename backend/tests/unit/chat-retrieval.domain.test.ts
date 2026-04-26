@@ -9,6 +9,7 @@ import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilde
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import { OpenAIQueryRewriteGateway, QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
+import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
 
 const message = (content: string, role: MessageRecord["role"] = "user"): MessageRecord => ({
   id: content,
@@ -1031,5 +1032,39 @@ describe("chat retrieval domain", () => {
     expect(result.prompt).toContain("Result 1 (Intro):");
     expect(result.prompt).toContain("[[1]]");
     expect(result.citations).toEqual([{ documentId: "d1", chunkId: "c1", title: "Intro" }]);
+  });
+
+  it("returns a retrieval-scoped unsupported result for non-retrieval intent", async () => {
+    const service = new RetrievalAnswerService({
+      retrievalPipeline: {
+        async interpret() {
+          return {
+            interpretation: {
+              result: {
+                responseIntent: "assistant_identity",
+              },
+            },
+          };
+        },
+        async runInterpreted() {
+          throw new Error("runInterpreted must not be called for unsupported retrieval intents");
+        },
+      },
+      chatGateway: {
+        async answer() {
+          throw new Error("answer generation must not run for unsupported retrieval intents");
+        },
+      },
+    } as never);
+
+    await expect(service.answer({
+      workspaceId: "workspace-1",
+      query: "who are you?",
+    })).resolves.toEqual({
+      outcome: "unsupported",
+      code: "unsupported_query_type",
+      reason: "assistant_identity",
+      message: "This request is outside retrieval scope.",
+    });
   });
 });

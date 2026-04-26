@@ -24,7 +24,7 @@ describe("auth contract", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
     expect(response.body.workspaceName).toBe("Default");
-    expect(response.body.workspacePublicRouteKey).toMatch(/^default-[a-z0-9]{6}$/);
+    expect(response.body.workspacePublicRouteKey).toMatch(/^\d{10}$/);
     expect(response.body.token).toBeUndefined();
     expect(response.body.requiresEmailVerification).toBe(true);
     expect(response.headers["set-cookie"]).toBeUndefined();
@@ -47,7 +47,7 @@ describe("auth contract", () => {
     expect(response.body.organizationName).toBe("Bob Organization");
     expect(response.body.workspaceId).toBe(registration.workspaceId);
     expect(response.body.workspaceName).toBe("Default");
-    expect(response.body.workspacePublicRouteKey).toMatch(/^default-[a-z0-9]{6}$/);
+    expect(response.body.workspacePublicRouteKey).toMatch(/^\d{10}$/);
     expect(response.body.token).toBeUndefined();
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
@@ -191,7 +191,7 @@ describe("auth contract", () => {
     expect(response.body.organizationName).toBe("Preferred Organization");
     expect(response.body.workspaceId).toBe(created.body.id);
     expect(response.body.workspaceName).toBe("Research");
-    expect(response.body.workspacePublicRouteKey).toMatch(/^research-[a-z0-9]{6}$/);
+    expect(response.body.workspacePublicRouteKey).toMatch(/^\d{10}$/);
     expect(response.body.token).toBeUndefined();
   });
 

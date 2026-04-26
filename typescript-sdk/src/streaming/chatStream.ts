@@ -1,7 +1,7 @@
 import type { InternalClientConfig } from "../core/config.js";
 import { normalizeError, RadiosoError } from "../core/errors.js";
 import { requestStream } from "../core/http.js";
-import type { ChatRequest, ChatResponse } from "../generated/client.js";
+import type { AssistantChatRequest, AssistantChatResponse, ChatStreamRequest } from "../generated/client.js";
 
 export type RadiosoChatStreamEvent =
   | { type: "conversation"; conversationId: string }
@@ -9,10 +9,10 @@ export type RadiosoChatStreamEvent =
   | {
       type: "suggestions";
       conversationId: string;
-      suggestions: NonNullable<ChatResponse["suggestions"]>;
-      conversationModeMetadata: ChatResponse["conversationModeMetadata"];
+      suggestions: NonNullable<AssistantChatResponse["suggestions"]>;
+      conversationModeMetadata: AssistantChatResponse["conversationModeMetadata"];
     }
-  | ({ type: "done" } & ChatResponse)
+  | ({ type: "done" } & AssistantChatResponse)
   | { type: "error"; error: RadiosoError };
 
 const parsePayload = (value: string): Record<string, unknown> => JSON.parse(value) as Record<string, unknown>;
@@ -75,22 +75,31 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
     return {
       type: "suggestions",
       conversationId: payload.conversationId,
-      suggestions: payload.suggestions as NonNullable<ChatResponse["suggestions"]>,
-      conversationModeMetadata: payload.conversationModeMetadata as ChatResponse["conversationModeMetadata"],
+      suggestions: payload.suggestions as NonNullable<AssistantChatResponse["suggestions"]>,
+      conversationModeMetadata: payload.conversationModeMetadata as AssistantChatResponse["conversationModeMetadata"],
     };
   }
 
   if (
     eventName === "done" &&
     typeof payload.conversationId === "string" &&
-    typeof payload.answer === "string"
+    typeof payload.answer === "string" &&
+    typeof payload.route === "object" &&
+    payload.route !== null &&
+    typeof payload.conversationMode === "string" &&
+    typeof payload.conversationModeMetadata === "object" &&
+    payload.conversationModeMetadata !== null
   ) {
     return {
       type: "done",
       conversationId: payload.conversationId,
+      route: payload.route,
       answer: payload.answer,
       citations: Array.isArray(payload.citations) ? payload.citations : undefined,
       answerSegments: Array.isArray(payload.answerSegments) ? payload.answerSegments : undefined,
+      suggestions: Array.isArray(payload.suggestions) ? payload.suggestions : undefined,
+      conversationMode: payload.conversationMode,
+      conversationModeMetadata: payload.conversationModeMetadata,
       retrievalInfo: payload.retrievalInfo,
       retrievalTrace: payload.retrievalTrace,
     } as RadiosoChatStreamEvent;
@@ -101,19 +110,20 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
 
 export const streamChat = async function* (
   config: InternalClientConfig,
-  request: Omit<ChatRequest, "stream">,
+  request: ChatStreamRequest,
 ): AsyncGenerator<RadiosoChatStreamEvent> {
   try {
     const response = await requestStream(config, {
       method: "POST",
-      path: "/api/v1/chat/",
+      path: "/api/v1/assistant/chat",
       headers: {
         Accept: "text/event-stream",
       },
       body: {
         ...request,
+        startConversation: false,
         stream: true,
-      },
+      } satisfies AssistantChatRequest,
     });
 
     if (!response.body) {

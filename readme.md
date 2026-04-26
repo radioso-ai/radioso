@@ -15,6 +15,8 @@ Or you can run Radioso, upload your documents, and have an assistant that knows 
 
 The bootstrap prompts for your AI provider credentials, generates secrets, and starts the full stack. Register, upload a document, ask a question. Working grounded assistant in under five minutes.
 
+In the Docker development stack, frontend and backend source changes are bind-mounted into the containers. TypeScript backend changes restart automatically, and backend prompt markdown under `backend/prompts/` is re-read on each request in development without a container restart.
+
 | Surface | URL |
 |---|---|
 | App | http://localhost:3000 |

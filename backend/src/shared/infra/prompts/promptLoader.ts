@@ -12,6 +12,7 @@ const candidatePromptDirectories = [
 ].filter((value): value is string => typeof value === "string" && value.length > 0);
 
 const promptCache = new Map<string, string>();
+const shouldBypassPromptCache = process.env.NODE_ENV === "development";
 
 const resolvePromptsDirectory = (): string => {
   for (const candidate of candidatePromptDirectories) {
@@ -26,14 +27,18 @@ const resolvePromptsDirectory = (): string => {
 };
 
 export const loadPromptTemplate = (relativePath: string): string => {
-  const cached = promptCache.get(relativePath);
-  if (cached) {
-    return cached;
+  if (!shouldBypassPromptCache) {
+    const cached = promptCache.get(relativePath);
+    if (cached) {
+      return cached;
+    }
   }
 
   const templatePath = path.join(resolvePromptsDirectory(), relativePath);
   const template = readFileSync(templatePath, "utf8").trimEnd();
-  promptCache.set(relativePath, template);
+  if (!shouldBypassPromptCache) {
+    promptCache.set(relativePath, template);
+  }
   return template;
 };
 

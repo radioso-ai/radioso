@@ -32,6 +32,34 @@ describe("runtime configuration", () => {
     expect((prodCompose.services?.["backend-worker"] as { depends_on?: Record<string, { condition?: string }> })?.depends_on?.backend?.condition).toBe("service_healthy");
   });
 
+  it("uses the watch-oriented backend dev image and bind mounts in docker compose development", async () => {
+    const devCompose = YAML.parse(await readFile(new URL("../../../infra/docker-compose.dev.yml", import.meta.url), "utf8")) as {
+      services?: Record<string, {
+        build?: { dockerfile?: string };
+        command?: string[] | string;
+        volumes?: string[];
+      }>;
+    };
+
+    const backend = devCompose.services?.backend;
+    const worker = devCompose.services?.["backend-worker"];
+
+    expect(backend?.build?.dockerfile).toBe("infra/backend.dev.Dockerfile");
+    expect(worker?.build?.dockerfile).toBe("infra/backend.dev.Dockerfile");
+    expect(backend?.command).toEqual(["backend-dev-entrypoint.sh", "dev:http"]);
+    expect(worker?.command).toEqual(["backend-dev-entrypoint.sh", "dev:worker"]);
+    expect(backend?.volumes).toEqual(expect.arrayContaining([
+      "../backend:/app/backend",
+      "../packages:/app/packages",
+      "radioso_backend_node_modules:/app/backend/node_modules",
+    ]));
+    expect(worker?.volumes).toEqual(expect.arrayContaining([
+      "../backend:/app/backend",
+      "../packages:/app/packages",
+      "radioso_backend_node_modules:/app/backend/node_modules",
+    ]));
+  });
+
   it("provides default observability configuration without extra vendor settings", () => {
     const env = getEnv({
       NODE_ENV: "test",

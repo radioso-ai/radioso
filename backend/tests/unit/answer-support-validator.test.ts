@@ -311,6 +311,58 @@ describe("answer support validator", () => {
     expect(result.validation.unsupportedSegmentCount).toBe(2);
   });
 
+  it("does not preserve a leading space before punctuation when dropping an unsupported tail", async () => {
+    const validator = new AnswerSupportValidator();
+
+    const result = await validator.validate({
+      query: "What is Ananda Yoga?",
+      answer:
+        "Ananda Yoga is a classical style of Hatha Yoga. It is described as an inward practice rather than an athletic one . If you'd like, I can also point you to the Ananda Yoga page for more details .",
+      answerSegments: [
+        {
+          text: "Ananda Yoga is a classical style of Hatha Yoga",
+          citationIndices: [0],
+        },
+        { text: ". " },
+        {
+          text: "It is described as an inward practice rather than an athletic one",
+          citationIndices: [0],
+        },
+        { text: " . " },
+        {
+          text: "If you'd like, I can also point you to the Ananda Yoga page for more details",
+        },
+        { text: " ." },
+      ],
+      citationEvidence: citations,
+      retrievedContextSummaries: citations.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled: true,
+      answerSupportPolicy: "strict",
+      conversationMode: "guided",
+      groundedMissResponseComposer,
+    });
+
+    expect(result.answer).toBe(
+      "Ananda Yoga is a classical style of Hatha Yoga. It is described as an inward practice rather than an athletic one.",
+    );
+    expect(result.answer).not.toContain(" .");
+    expect(result.answerSegments).toEqual([
+      {
+        text: "Ananda Yoga is a classical style of Hatha Yoga",
+        citationIndices: [0],
+      },
+      { text: ". " },
+      {
+        text: "It is described as an inward practice rather than an athletic one",
+        citationIndices: [0],
+      },
+      { text: "." },
+    ]);
+  });
+
   it("counts unsupported non-Latin text as substantive", async () => {
     const validator = new AnswerSupportValidator();
 

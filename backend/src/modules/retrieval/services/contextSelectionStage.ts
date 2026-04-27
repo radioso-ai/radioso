@@ -10,7 +10,8 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
   ) {}
 
   async execute(input: CandidatePreparationStageResult) {
-    const rerankCandidates = input.scoredCandidates.slice(0, RETRIEVAL_BEHAVIOR.rerank.candidateLimit);
+    const rerankCandidateCount = Math.min(input.settings.rerankTopK, RETRIEVAL_BEHAVIOR.rerank.candidateLimit);
+    const rerankCandidates = input.scoredCandidates.slice(0, rerankCandidateCount);
     const reranked = await this.rerankService.rerank({
       query: input.activeParsedQuery.semanticQuery || input.activeQuery,
       contexts: rerankCandidates,

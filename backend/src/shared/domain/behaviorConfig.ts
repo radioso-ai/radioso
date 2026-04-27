@@ -50,7 +50,7 @@ export const RETRIEVAL_BEHAVIOR = {
     openAiMinOutputTokens: 200,
     openAiMaxOutputTokens: 1200,
     openAiOutputTokensPerCandidate: 24,
-    candidateLimit: 16,
+    candidateLimit: 50,
     maxBatchSize: 20,
     maxRetrievalTextChars: 220,
   },

@@ -1171,7 +1171,7 @@ describe("chat retrieval domain", () => {
       scoredCandidates,
     } as never);
 
-    expect(rerankCandidateCount).toBe(RETRIEVAL_BEHAVIOR.rerank.candidateLimit);
+    expect(rerankCandidateCount).toBe(10);
     expect(result.contexts).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
   });
 

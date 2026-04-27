@@ -3,6 +3,8 @@ import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
 const DEFAULT_CONTEXT_TOKEN_BUDGET = RETRIEVAL_BEHAVIOR.promptContextTokenBudget;
 const DEFAULT_MAX_CONTEXTS_PER_DOCUMENT = 2;
+const DEFAULT_MAX_CHARS_PER_CONTEXT = RETRIEVAL_BEHAVIOR.promptContextMaxCharsPerContext;
+const DEFAULT_MIN_USEFUL_CHARS = RETRIEVAL_BEHAVIOR.promptContextMinUsefulChars;
 
 export class PromptContextSelectorService {
   constructor(private readonly tokenBudget: number = DEFAULT_CONTEXT_TOKEN_BUDGET) {}
@@ -21,14 +23,21 @@ export class PromptContextSelectorService {
       return selected;
     }
 
-    const trySelect = (context: RerankedCandidate, allowSiblingContext: boolean): boolean => {
+    const trySelect = (
+      context: RerankedCandidate,
+      options: { allowSiblingContext: boolean; allowLowInformation: boolean },
+    ): boolean => {
       if (selected.length >= input.topK || selectedChunkIds.has(context.chunkId)) {
+        return false;
+      }
+
+      if (!options.allowLowInformation && this.isLowInformationContext(context.content)) {
         return false;
       }
 
       const documentKey = this.buildDocumentKey(context);
       const documentCount = documentCounts.get(documentKey) ?? 0;
-      if (documentCount > 0 && !allowSiblingContext) {
+      if (documentCount > 0 && !options.allowSiblingContext) {
         return false;
       }
 
@@ -41,7 +50,8 @@ export class PromptContextSelectorService {
         return false;
       }
 
-      const estimatedTokenCost = this.estimateTokenCost(context.content);
+      const packedContent = this.packContent(context.content);
+      const estimatedTokenCost = this.estimateTokenCost(packedContent);
       if (estimatedTokenCost > this.tokenBudget) {
         return false;
       }
@@ -58,6 +68,7 @@ export class PromptContextSelectorService {
       }
       selected.push({
         ...context,
+        content: packedContent,
         promptPosition: selected.length,
         estimatedTokenCost,
       });
@@ -65,16 +76,25 @@ export class PromptContextSelectorService {
     };
 
     for (const context of input.contexts) {
-      trySelect(context, false);
+      trySelect(context, { allowSiblingContext: false, allowLowInformation: false });
       if (selected.length >= input.topK) {
         return selected;
       }
     }
 
     for (const context of input.contexts) {
-      trySelect(context, true);
+      trySelect(context, { allowSiblingContext: true, allowLowInformation: false });
       if (selected.length >= input.topK) {
         return selected;
+      }
+    }
+
+    if (selected.length === 0) {
+      for (const context of input.contexts) {
+        trySelect(context, { allowSiblingContext: true, allowLowInformation: true });
+        if (selected.length >= input.topK) {
+          return selected;
+        }
       }
     }
 
@@ -94,5 +114,33 @@ export class PromptContextSelectorService {
 
   private buildDocumentKey(context: RerankedCandidate): string {
     return context.documentId || context.title;
+  }
+
+  private packContent(content: string): string {
+    const normalized = content.trim();
+    if (normalized.length <= DEFAULT_MAX_CHARS_PER_CONTEXT) {
+      return normalized;
+    }
+
+    const candidate = normalized.slice(0, DEFAULT_MAX_CHARS_PER_CONTEXT);
+    const lastWhitespace = candidate.lastIndexOf(" ");
+    const excerpt = lastWhitespace > DEFAULT_MAX_CHARS_PER_CONTEXT * 0.75
+      ? candidate.slice(0, lastWhitespace)
+      : candidate;
+    return `${excerpt.trimEnd()}...`;
+  }
+
+  private isLowInformationContext(content: string): boolean {
+    const normalized = content.replace(/\s+/g, " ").trim().toLowerCase();
+    if (normalized.length < DEFAULT_MIN_USEFUL_CHARS) {
+      return true;
+    }
+
+    return [
+      "back to all events",
+      "back to all",
+      "skip to content",
+      "vai al contenuto",
+    ].some((fragment) => normalized === fragment || normalized.startsWith(`${fragment} `));
   }
 }

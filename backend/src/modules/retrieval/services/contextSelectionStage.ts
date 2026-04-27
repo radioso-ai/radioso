@@ -1,5 +1,6 @@
 import { RerankService } from "./rerankService.js";
 import { PromptContextSelectorService } from "./promptContextSelectorService.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { CandidatePreparationStageResult, ContextSelectionStage as ContextSelectionStageContract } from "./retrievalPipelineStages.js";
 
 export class ContextSelectionStageService implements ContextSelectionStageContract {
@@ -9,15 +10,16 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
   ) {}
 
   async execute(input: CandidatePreparationStageResult) {
+    const rerankCandidates = input.scoredCandidates.slice(0, RETRIEVAL_BEHAVIOR.rerank.candidateLimit);
     const reranked = await this.rerankService.rerank({
       query: input.activeParsedQuery.semanticQuery || input.activeQuery,
-      contexts: input.scoredCandidates,
+      contexts: rerankCandidates,
       enabled: input.settings.rerankEnabled,
       topK: input.settings.rerankTopK,
     });
     const contexts = this.promptContextSelectorService.select({
       contexts: reranked.contexts,
-      topK: input.settings.rerankTopK,
+      topK: RETRIEVAL_BEHAVIOR.finalContextTopK,
     });
 
     return {

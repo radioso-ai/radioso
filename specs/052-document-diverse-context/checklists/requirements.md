@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Document-Diverse Retrieval Context
+# Specification Quality Checklist: Document-Diverse Retrieval Cascade
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-04-27  
@@ -32,4 +32,4 @@
 
 ## Notes
 
-- Approved scope is limited to final prompt context selection. Broader intent classification, chunking changes, embedding weighting, answer voice, and citation presentation remain out of scope.
+- Approved scope includes rerank candidate capping, independent final context limits, final prompt excerpt packing, and low-information final-context filtering. Broader intent classification, chunking changes, embedding weighting, answer voice, citation presentation, and new external reranker providers remain out of scope.

@@ -1,5 +1,5 @@
 export const LLM_DEFAULTS = {
-  textGenerationMaxOutputTokens: 1024,
+  textGenerationMaxOutputTokens: 1536,
 } as const;
 
 export const CHAT_BEHAVIOR = {
@@ -28,7 +28,10 @@ export const CHAT_BEHAVIOR = {
 
 export const RETRIEVAL_BEHAVIOR = {
   defaultSimilarityThreshold: 0.2,
-  promptContextTokenBudget: 1200,
+  promptContextTokenBudget: 2400,
+  finalContextTopK: 6,
+  promptContextMaxCharsPerContext: 1200,
+  promptContextMinUsefulChars: 24,
   rewriteConversationContextMaxMessages: 10,
   promptHistoryMaxMessages: 4,
   candidateMergeSecondaryWeight: 0.25,
@@ -47,6 +50,7 @@ export const RETRIEVAL_BEHAVIOR = {
     openAiMinOutputTokens: 200,
     openAiMaxOutputTokens: 1200,
     openAiOutputTokensPerCandidate: 24,
+    candidateLimit: 16,
     maxBatchSize: 20,
     maxRetrievalTextChars: 220,
   },

@@ -19,6 +19,7 @@ import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { retrievalSettingDocs } from '@/components/dashboard/settings/settings-docs'
 import { SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
+import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
@@ -101,16 +102,10 @@ export function RetrievalSettingsPanel({
   const [settings, setSettings] = useState<RetrievalSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [lastSavedSettings, setLastSavedSettings] = useState<RetrievalSettings | null>(null)
-  const [saveState, setSaveState] = useState<'idle' | 'saved' | 'saving' | 'error'>('idle')
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const { beginSave, isCurrentSave, markError, markSaved, resetSaveState } = useSettingsSaveStatus(onSaveStateChange)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const hasLoadedRef = useRef(false)
-  const saveSequenceRef = useRef(0)
   const draftVersionRef = useRef(0)
-
-  useEffect(() => {
-    onSaveStateChange?.({ state: saveState, message: saveError })
-  }, [onSaveStateChange, saveError, saveState])
 
   useEffect(() => {
     if (isWorkspaceLoading || !activeWorkspaceId) {
@@ -125,7 +120,7 @@ export function RetrievalSettingsPanel({
         if (!active) return
         setSettings(data)
         setLastSavedSettings(data)
-        setSaveState('idle')
+        resetSaveState()
       } catch (error) {
         if (!active) return
         console.error('Failed to load settings:', error)
@@ -322,35 +317,31 @@ export function RetrievalSettingsPanel({
       return
     }
 
-    const saveId = saveSequenceRef.current + 1
-    saveSequenceRef.current = saveId
-    setSaveState('saving')
-    setSaveError(null)
+    const saveId = beginSave()
 
     const timeout = window.setTimeout(async () => {
       const draftVersionAtRequestStart = draftVersionRef.current
       try {
         const saved = await settingsApi.updateRetrievalSettings(settings)
-        if (saveSequenceRef.current !== saveId) {
+        if (!isCurrentSave(saveId)) {
           return
         }
         setLastSavedSettings(saved)
         if (draftVersionRef.current === draftVersionAtRequestStart) {
           setSettings(saved)
-          setSaveState('saved')
+          markSaved()
         }
       } catch (error) {
-        if (saveSequenceRef.current !== saveId) {
+        if (!isCurrentSave(saveId)) {
           return
         }
         console.error('Failed to save settings:', error)
-        setSaveState('error')
-        setSaveError('Failed to save changes. Your latest edits are still in the browser.')
+        markError('Failed to save changes. Your latest edits are still in the browser.')
       }
     }, 700)
 
     return () => window.clearTimeout(timeout)
-  }, [lastSavedSettings, lastSavedSignature, settings, settingsSignature])
+  }, [beginSave, isCurrentSave, lastSavedSettings, lastSavedSignature, markError, markSaved, settings, settingsSignature])
 
   if (isLoading) {
     return (

@@ -5,6 +5,7 @@ import { Building2, Code2, ExternalLink, FolderOpen, Globe, KeyRound, MessageSqu
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
+import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
@@ -136,8 +137,7 @@ export function WorkspaceAssistantChannelsTab({
   const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<RetrievalSettings | null>(null)
   const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<RetrievalSettings | null>(null)
   const [isAssistantBehaviorLoading, setIsAssistantBehaviorLoading] = useState(mode === 'assistant')
-  const [saveState, setSaveState] = useState<'idle' | 'saved' | 'saving' | 'error'>('idle')
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const { setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
   const [websiteEmbedOrigins, setWebsiteEmbedOrigins] = useState('')
   const [websiteEmbedSnippetDisplayMode, setWebsiteEmbedSnippetDisplayMode] = useState('')
   const [websiteEmbedSnippetInitialState, setWebsiteEmbedSnippetInitialState] = useState('')
@@ -150,32 +150,10 @@ export function WorkspaceAssistantChannelsTab({
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
-  const saveSequenceRef = useRef(0)
   const organizationDraftVersionRef = useRef(0)
   const workspaceDraftVersionRef = useRef(0)
   const anonDraftVersionRef = useRef(0)
   const assistantBehaviorDraftVersionRef = useRef(0)
-
-  useEffect(() => {
-    const primaryState = { state: saveState, message: saveError }
-
-    if (primaryState.state === 'error') {
-      onSaveStateChange?.(primaryState)
-      return
-    }
-
-    if (primaryState.state === 'saving') {
-      onSaveStateChange?.({ state: 'saving', message: null })
-      return
-    }
-
-    if (primaryState.state === 'saved') {
-      onSaveStateChange?.({ state: 'saved', message: null })
-      return
-    }
-
-    onSaveStateChange?.({ state: 'idle', message: null })
-  }, [onSaveStateChange, saveError, saveState])
 
   useEffect(() => {
     if (!hasNameChange) {

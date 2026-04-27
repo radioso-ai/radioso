@@ -114,57 +114,6 @@ export const getOperatorLabel = (
   }
 }
 
-export const getOperatorDescription = (
-  operator: RetrievalMetadataRuleOperator,
-  valueType: RetrievalMetadataValueType
-) => {
-  if (valueType === 'date') {
-    switch (operator) {
-      case 'equals':
-        return 'Match dates that fall on the same day as the rule value.'
-      case 'not_equals':
-        return 'Match dates that fall on a different day than the rule value.'
-      case 'lt':
-        return 'Match dates earlier than the rule value.'
-      case 'lte':
-        return 'Match dates on or earlier than the rule value.'
-      case 'gt':
-        return 'Match dates later than the rule value.'
-      case 'gte':
-        return 'Match dates on or later than the rule value.'
-      default:
-        return ''
-    }
-  }
-
-  switch (operator) {
-    case 'equals':
-      return 'Match when the metadata value exactly matches the rule value.'
-    case 'not_equals':
-      return 'Match when the metadata value differs from the rule value.'
-    case 'contains':
-      return 'Match when the metadata value includes the rule value.'
-    case 'not_contains':
-      return 'Match when the metadata value does not include the rule value.'
-    case 'lt':
-      return 'Match when the metadata value is less than the rule value.'
-    case 'lte':
-      return 'Match when the metadata value is less than or equal to the rule value.'
-    case 'gt':
-      return 'Match when the metadata value is greater than the rule value.'
-    case 'gte':
-      return 'Match when the metadata value is greater than or equal to the rule value.'
-  }
-}
-
-export const getRuleEffectLabel = (effect: RetrievalMetadataRule['effect']) =>
-  effect === 'filter' ? 'Require match' : 'Prefer match'
-
-export const getRuleEffectDescription = (effect: RetrievalMetadataRule['effect']) =>
-  effect === 'filter'
-    ? 'Only keep results that satisfy this rule.'
-    : 'Give matching results a ranking advantage without excluding others.'
-
 export const getRulePreviewLabel = (rule: RetrievalMetadataRule) => {
   const conditions = getRuleConditions(rule)
   const renderedConditions = conditions.map((condition) => {

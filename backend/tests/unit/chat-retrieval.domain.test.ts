@@ -5,7 +5,7 @@ import type { RerankedCandidate, RetrievedCandidate, RetrievalSource } from "../
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { ContextSelectionStageService } from "../../src/modules/retrieval/services/contextSelectionStage.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
-import { OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
+import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import { OpenAIQueryRewriteGateway, QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
@@ -550,6 +550,36 @@ describe("chat retrieval domain", () => {
     expect(result).toEqual([
       { chunkId: "b", relevanceScore: 0.9 },
       { chunkId: "a", relevanceScore: 0.2 },
+    ]);
+  });
+
+  it("maps generic rerank JSON object responses by candidate index", async () => {
+    const gateway = new ModelRerankGateway({
+      metadata: { capability: "rerank", provider: "openai-compatible", model: "rerank-test" },
+      async complete() {
+        return JSON.stringify({
+          scores: [
+            { candidateIndex: 2, relevanceScore: 0.85 },
+            { candidateIndex: 1, relevanceScore: 0.15 },
+          ],
+        });
+      },
+      async *stream() {
+        yield "";
+      },
+    });
+
+    const result = await gateway.rerank({
+      query: "Who is Narayani?",
+      contexts: [
+        { chunkId: "a", documentId: "d1", title: "A", content: "", retrievalText: "A", similarity: 0.2 },
+        { chunkId: "b", documentId: "d2", title: "B", content: "", retrievalText: "B", similarity: 0.1 },
+      ] as never,
+    });
+
+    expect(result).toEqual([
+      { chunkId: "b", relevanceScore: 0.85 },
+      { chunkId: "a", relevanceScore: 0.15 },
     ]);
   });
 

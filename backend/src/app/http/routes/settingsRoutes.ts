@@ -42,7 +42,7 @@ export const updateSettingsSchema = z.object({
   rerankEnabled: z.boolean(),
   vectorTopK: z.number().int(),
   similarityThreshold: z.number(),
-  rerankTopK: z.number().int(),
+  rerankTopK: z.number().int().max(RETRIEVAL_BEHAVIOR.rerank.candidateLimit),
   citationDisplayEnabled: z.boolean(),
   metadataRules: z
     .array(

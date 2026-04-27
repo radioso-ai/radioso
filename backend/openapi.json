@@ -1045,7 +1045,8 @@
             "type": "number"
           },
           "rerankTopK": {
-            "type": "integer"
+            "type": "integer",
+            "maximum": 50
           },
           "citationDisplayEnabled": {
             "type": "boolean"

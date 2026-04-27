@@ -719,6 +719,7 @@ components:
           type: number
         rerankTopK:
           type: integer
+          maximum: 50
         citationDisplayEnabled:
           type: boolean
         metadataRules:

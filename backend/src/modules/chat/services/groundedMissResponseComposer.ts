@@ -106,19 +106,10 @@ const buildConversationModeGuidance = (input: {
   conversationMode?: ConversationMode;
   hasRetrievedContexts: boolean;
 }): string => {
-  const promptName = input.conversationMode === "factual"
-    ? input.hasRetrievedContexts
-      ? "chat/grounded-miss/guidance-factual-with-context.md"
-      : "chat/grounded-miss/guidance-factual-no-context.md"
-    : input.conversationMode === "exploratory"
-      ? input.hasRetrievedContexts
-        ? "chat/grounded-miss/guidance-exploratory-with-context.md"
-        : "chat/grounded-miss/guidance-exploratory-no-context.md"
-      : input.hasRetrievedContexts
-        ? "chat/grounded-miss/guidance-guided-with-context.md"
-        : "chat/grounded-miss/guidance-guided-no-context.md";
-
-  return loadPromptTemplate(promptName);
+  return renderPromptTemplate("chat/grounded-miss/conversation-mode-guidance.md", {
+    conversation_mode: input.conversationMode ?? "guided",
+    has_retrieved_contexts: input.hasRetrievedContexts ? "yes" : "no",
+  });
 };
 
 const buildLocaleInstruction = (userExpectedLocale?: string | null): string => {
@@ -128,8 +119,6 @@ const buildLocaleInstruction = (userExpectedLocale?: string | null): string => {
     : "Write the response in the same language as the user's question.";
 };
 
-const NO_CONTEXT_SYSTEM_PROMPT = loadPromptTemplate("chat/no-context-system.md");
-const UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT = loadPromptTemplate("chat/unsupported-with-context-system.md");
 const NO_CONTEXT_FALLBACK_PROMPT = loadPromptTemplate("chat/grounded-miss/fallback-no-context.md");
 
 const buildNoContextFallback = (): string => NO_CONTEXT_FALLBACK_PROMPT;
@@ -171,8 +160,11 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
   }): Promise<string> {
     try {
       const raw = await this.completeWithRetry({
-        systemPrompt: `${UNSUPPORTED_WITH_CONTEXT_SYSTEM_PROMPT}\n${buildLocaleInstruction(input.userExpectedLocale)}`,
-        prompt: renderPromptTemplate("chat/unsupported-with-context-user.md", {
+        systemPrompt: `${renderPromptTemplate("chat/grounded-miss/system.md", {
+          miss_kind: "unsupported_with_context",
+        })}\n${buildLocaleInstruction(input.userExpectedLocale)}`,
+        prompt: renderPromptTemplate("chat/grounded-miss/user.md", {
+          miss_kind: "unsupported_with_context",
           query: input.query,
           unsupported_text: input.unsupportedText.trim(),
           contexts_section: formatContextsForPrompt(input.contexts),
@@ -207,9 +199,14 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
   }): Promise<string> {
     try {
       const raw = await this.completeWithRetry({
-        systemPrompt: `${NO_CONTEXT_SYSTEM_PROMPT}\n${buildLocaleInstruction(input.userExpectedLocale)}`,
-        prompt: renderPromptTemplate("chat/no-context-user.md", {
+        systemPrompt: `${renderPromptTemplate("chat/grounded-miss/system.md", {
+          miss_kind: "no_context",
+        })}\n${buildLocaleInstruction(input.userExpectedLocale)}`,
+        prompt: renderPromptTemplate("chat/grounded-miss/user.md", {
+          miss_kind: "no_context",
           query: input.query,
+          unsupported_text: "None",
+          contexts_section: "None",
           conversation_mode_guidance: buildConversationModeGuidance({
             conversationMode: input.conversationMode,
             hasRetrievedContexts: false,

@@ -235,7 +235,7 @@ const extractSupportedLinkText = (value: string): string | null => {
 };
 
 const normalizeOmittedUnsupportedPrefix = (value: string): string => value.replace(/^\s+/g, "");
-const normalizePunctuationOnlySegment = (value: string): string => value.replace(/^\s+([,.;:!?])/, "$1");
+const normalizePunctuationOnlySegment = (value: string): string => value.replace(/^\s+/, "");
 
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,

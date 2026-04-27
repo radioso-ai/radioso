@@ -203,6 +203,51 @@ describe('backend proxy route', () => {
     expect(response.headers.get('content-type')).toBe('text/event-stream')
   })
 
+  it('forwards bearer auth for document search proxy requests', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ searchId: 'search-1', query: 'Neil Armstrong', results: [] }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    )
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/api/document/search/route')
+
+    const request = new Request('https://frontend.example.com/api/document/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer sk_proj_workspace_token',
+      },
+      body: JSON.stringify({
+        query: 'Neil Armstrong',
+      }),
+    })
+
+    const response = await POST(request)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BACKEND_URL}/api/v1/document/search`,
+      expect.objectContaining({
+        method: 'POST',
+        cache: 'no-store',
+      }),
+    )
+
+    const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
+    expect(upstreamInit.headers.Authorization).toBe('Bearer sk_proj_workspace_token')
+    expect(upstreamInit.body).toBe(JSON.stringify({ query: 'Neil Armstrong' }))
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('application/json')
+  })
+
   it('normalizes public chat proxy payloads before forwarding upstream', async () => {
     vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
 

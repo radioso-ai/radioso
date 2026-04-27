@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
-import type { RetrievedCandidate, RetrievalSource } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
+import type { RerankedCandidate, RetrievedCandidate, RetrievalSource } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
@@ -18,6 +18,27 @@ const message = (content: string, role: MessageRecord["role"] = "user"): Message
   role,
   content,
   createdAt: new Date(),
+});
+
+const rerankedCandidate = (input: {
+  chunkId: string;
+  documentId: string;
+  title: string;
+  content: string;
+  score: number;
+  rerankPosition: number;
+}): RerankedCandidate => ({
+  chunkId: input.chunkId,
+  documentId: input.documentId,
+  title: input.title,
+  content: input.content,
+  similarity: input.score,
+  retrievalSources: ["semantic_original"],
+  retrievalText: `${input.title} ${input.content}`,
+  semanticScore: input.score,
+  lexicalScore: 0,
+  relevanceScore: input.score,
+  rerankPosition: input.rerankPosition,
 });
 
 describe("chat retrieval domain", () => {
@@ -993,6 +1014,90 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.map((context) => context.chunkId)).toEqual(["c1", "c2"]);
+  });
+
+  it("prefers distinct documents before adding sibling chunks to final prompt context", () => {
+    const selector = new PromptContextSelectorService(500);
+
+    const result = selector.select({
+      topK: 3,
+      contexts: [
+        rerankedCandidate({
+          chunkId: "course-overview-1",
+          documentId: "course-overview",
+          title: "Kriya Yoga Overview",
+          content: "Kriya Yoga overview and preparation details.",
+          score: 0.99,
+          rerankPosition: 0,
+        }),
+        rerankedCandidate({
+          chunkId: "course-overview-2",
+          documentId: "course-overview",
+          title: "Kriya Yoga Overview",
+          content: "Additional Kriya Yoga overview details from the same page.",
+          score: 0.98,
+          rerankPosition: 1,
+        }),
+        rerankedCandidate({
+          chunkId: "preparation",
+          documentId: "preparation-course",
+          title: "Preparation for Kriya Yoga",
+          content: "Preparation for Kriya Yoga course path.",
+          score: 0.89,
+          rerankPosition: 2,
+        }),
+        rerankedCandidate({
+          chunkId: "kriyaban",
+          documentId: "kriyaban-course",
+          title: "Courses for Kriyaban",
+          content: "Courses for Kriyaban deepen the Kriya Yoga practice.",
+          score: 0.82,
+          rerankPosition: 3,
+        }),
+      ],
+    });
+
+    expect(result.map((context) => context.chunkId)).toEqual([
+      "course-overview-1",
+      "preparation",
+      "kriyaban",
+    ]);
+  });
+
+  it("fills from the same document up to the same-document cap when no alternates are available", () => {
+    const selector = new PromptContextSelectorService(500);
+
+    const result = selector.select({
+      topK: 4,
+      contexts: [
+        rerankedCandidate({
+          chunkId: "overview-1",
+          documentId: "overview",
+          title: "Kriya Yoga Overview",
+          content: "First Kriya Yoga overview section.",
+          score: 0.99,
+          rerankPosition: 0,
+        }),
+        rerankedCandidate({
+          chunkId: "overview-2",
+          documentId: "overview",
+          title: "Kriya Yoga Overview",
+          content: "Second Kriya Yoga overview section.",
+          score: 0.96,
+          rerankPosition: 1,
+        }),
+        rerankedCandidate({
+          chunkId: "overview-3",
+          documentId: "overview",
+          title: "Kriya Yoga Overview",
+          content: "Third Kriya Yoga overview section.",
+          score: 0.94,
+          rerankPosition: 2,
+        }),
+      ],
+    });
+
+    expect(result.map((context) => context.chunkId)).toEqual(["overview-1", "overview-2"]);
   });
 
   it("builds prompts with contexts and citations", () => {

@@ -1244,6 +1244,42 @@ describe("chat retrieval domain", () => {
     expect(result[0]?.content).not.toContain("Final detail that should be trimmed.");
   });
 
+  it("fills remaining context slots with low-information fragments only when useful context is exhausted", () => {
+    const selector = new PromptContextSelectorService(1_200);
+
+    const result = selector.select({
+      topK: 3,
+      contexts: [
+        rerankedCandidate({
+          chunkId: "main-doc",
+          documentId: "doc-1",
+          title: "Primary Course",
+          content: "Primary course overview with answerable details.",
+          score: 0.99,
+          rerankPosition: 0,
+        }),
+        rerankedCandidate({
+          chunkId: "low-1",
+          documentId: "chrome-1",
+          title: "Site Navigation",
+          content: "Back to All Events",
+          score: 0.98,
+          rerankPosition: 1,
+        }),
+        rerankedCandidate({
+          chunkId: "low-2",
+          documentId: "chrome-2",
+          title: "Accessibility",
+          content: "Skip to content",
+          score: 0.97,
+          rerankPosition: 2,
+        }),
+      ],
+    });
+
+    expect(result.map((context) => context.chunkId)).toEqual(["main-doc", "low-1", "low-2"]);
+  });
+
   it("builds prompts with contexts and citations", () => {
     const builder = new PromptBuilder();
     const result = builder.build({

@@ -89,7 +89,7 @@ export class PromptContextSelectorService {
       }
     }
 
-    if (selected.length === 0) {
+    if (selected.length < input.topK) {
       for (const context of input.contexts) {
         trySelect(context, { allowSiblingContext: true, allowLowInformation: true });
         if (selected.length >= input.topK) {

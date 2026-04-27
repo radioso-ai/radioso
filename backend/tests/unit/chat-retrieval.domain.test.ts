@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
-import type { RetrievedCandidate, RetrievalSource } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
+import type { RerankedCandidate, RetrievedCandidate, RetrievalSource } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
+import { ContextSelectionStageService } from "../../src/modules/retrieval/services/contextSelectionStage.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
-import { OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
+import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import { OpenAIQueryRewriteGateway, QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
+import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 
 const message = (content: string, role: MessageRecord["role"] = "user"): MessageRecord => ({
   id: content,
@@ -18,6 +20,27 @@ const message = (content: string, role: MessageRecord["role"] = "user"): Message
   role,
   content,
   createdAt: new Date(),
+});
+
+const rerankedCandidate = (input: {
+  chunkId: string;
+  documentId: string;
+  title: string;
+  content: string;
+  score: number;
+  rerankPosition: number;
+}): RerankedCandidate => ({
+  chunkId: input.chunkId,
+  documentId: input.documentId,
+  title: input.title,
+  content: input.content,
+  similarity: input.score,
+  retrievalSources: ["semantic_original"],
+  retrievalText: `${input.title} ${input.content}`,
+  semanticScore: input.score,
+  lexicalScore: 0,
+  relevanceScore: input.score,
+  rerankPosition: input.rerankPosition,
 });
 
 describe("chat retrieval domain", () => {
@@ -530,6 +553,36 @@ describe("chat retrieval domain", () => {
     ]);
   });
 
+  it("maps generic rerank JSON object responses by candidate index", async () => {
+    const gateway = new ModelRerankGateway({
+      metadata: { capability: "rerank", provider: "openai-compatible", model: "rerank-test" },
+      async complete() {
+        return JSON.stringify({
+          scores: [
+            { candidateIndex: 2, relevanceScore: 0.85 },
+            { candidateIndex: 1, relevanceScore: 0.15 },
+          ],
+        });
+      },
+      async *stream() {
+        yield "";
+      },
+    });
+
+    const result = await gateway.rerank({
+      query: "Who is Narayani?",
+      contexts: [
+        { chunkId: "a", documentId: "d1", title: "A", content: "", retrievalText: "A", similarity: 0.2 },
+        { chunkId: "b", documentId: "d2", title: "B", content: "", retrievalText: "B", similarity: 0.1 },
+      ] as never,
+    });
+
+    expect(result).toEqual([
+      { chunkId: "b", relevanceScore: 0.85 },
+      { chunkId: "a", relevanceScore: 0.15 },
+    ]);
+  });
+
   it("uses enriched retrieval text when building rerank candidates", async () => {
     let createInput:
       | {
@@ -993,6 +1046,238 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.map((context) => context.chunkId)).toEqual(["c1", "c2"]);
+  });
+
+  it("prefers distinct documents before adding sibling chunks to final prompt context", () => {
+    const selector = new PromptContextSelectorService(500);
+
+    const result = selector.select({
+      topK: 3,
+      contexts: [
+        rerankedCandidate({
+          chunkId: "course-overview-1",
+          documentId: "course-overview",
+          title: "Kriya Yoga Overview",
+          content: "Kriya Yoga overview and preparation details.",
+          score: 0.99,
+          rerankPosition: 0,
+        }),
+        rerankedCandidate({
+          chunkId: "course-overview-2",
+          documentId: "course-overview",
+          title: "Kriya Yoga Overview",
+          content: "Additional Kriya Yoga overview details from the same page.",
+          score: 0.98,
+          rerankPosition: 1,
+        }),
+        rerankedCandidate({
+          chunkId: "preparation",
+          documentId: "preparation-course",
+          title: "Preparation for Kriya Yoga",
+          content: "Preparation for Kriya Yoga course path.",
+          score: 0.89,
+          rerankPosition: 2,
+        }),
+        rerankedCandidate({
+          chunkId: "kriyaban",
+          documentId: "kriyaban-course",
+          title: "Courses for Kriyaban",
+          content: "Courses for Kriyaban deepen the Kriya Yoga practice.",
+          score: 0.82,
+          rerankPosition: 3,
+        }),
+      ],
+    });
+
+    expect(result.map((context) => context.chunkId)).toEqual([
+      "course-overview-1",
+      "preparation",
+      "kriyaban",
+    ]);
+  });
+
+  it("fills from the same document up to the same-document cap when no alternates are available", () => {
+    const selector = new PromptContextSelectorService(500);
+
+    const result = selector.select({
+      topK: 4,
+      contexts: [
+        rerankedCandidate({
+          chunkId: "overview-1",
+          documentId: "overview",
+          title: "Kriya Yoga Overview",
+          content: "First Kriya Yoga overview section.",
+          score: 0.99,
+          rerankPosition: 0,
+        }),
+        rerankedCandidate({
+          chunkId: "overview-2",
+          documentId: "overview",
+          title: "Kriya Yoga Overview",
+          content: "Second Kriya Yoga overview section.",
+          score: 0.96,
+          rerankPosition: 1,
+        }),
+        rerankedCandidate({
+          chunkId: "overview-3",
+          documentId: "overview",
+          title: "Kriya Yoga Overview",
+          content: "Third Kriya Yoga overview section.",
+          score: 0.94,
+          rerankPosition: 2,
+        }),
+      ],
+    });
+
+    expect(result.map((context) => context.chunkId)).toEqual(["overview-1", "overview-2"]);
+  });
+
+  it("caps the candidate set sent to semantic reranking independently from final contexts", async () => {
+    let rerankCandidateCount = 0;
+    const stage = new ContextSelectionStageService(
+      new RerankService({
+        async rerank(input) {
+          rerankCandidateCount += input.contexts.length;
+          return input.contexts.map((context, index) => ({
+            chunkId: context.chunkId,
+            relevanceScore: 1 - index / 100,
+          }));
+        },
+      }),
+      new PromptContextSelectorService(10_000),
+    );
+
+    const scoredCandidates: RetrievedCandidate[] = Array.from({ length: 25 }, (_, index) => ({
+      chunkId: `c${index + 1}`,
+      documentId: `d${index + 1}`,
+      title: `Doc ${index + 1}`,
+      content: `Useful retrieval content for document ${index + 1}.`,
+      similarity: 1 - index / 100,
+      retrievalSources: ["semantic_original"],
+      retrievalText: `Doc ${index + 1} Useful retrieval content for document ${index + 1}.`,
+      semanticScore: 1 - index / 100,
+      lexicalScore: 0,
+    }));
+
+    const result = await stage.execute({
+      settings: {
+        rerankEnabled: true,
+        rerankTopK: 10,
+      },
+      activeParsedQuery: {
+        semanticQuery: "yoga",
+      },
+      activeQuery: "yoga",
+      scoredCandidates,
+    } as never);
+
+    expect(rerankCandidateCount).toBe(10);
+    expect(result.contexts).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
+  });
+
+  it("packs excerpts from large chunks and skips low-information fragments", () => {
+    const selector = new PromptContextSelectorService(1_600);
+    const largeContent = `${"Large yoga product and course context. ".repeat(120)}Final detail that should be trimmed.`;
+
+    const result = selector.select({
+      topK: 5,
+      contexts: [
+        rerankedCandidate({
+          chunkId: "large-shop",
+          documentId: "shop",
+          title: "Yoga e Meditazione",
+          content: largeContent,
+          score: 0.99,
+          rerankPosition: 0,
+        }),
+        rerankedCandidate({
+          chunkId: "course-basic-1",
+          documentId: "course-basic-1",
+          title: "Ananda Yoga Basic 1",
+          content: "Course details for Ananda Yoga Basic 1, including practice, meditation, and residential context.",
+          score: 0.96,
+          rerankPosition: 1,
+        }),
+        rerankedCandidate({
+          chunkId: "boilerplate",
+          documentId: "empty-event",
+          title: "Yoga to Relieve Stress",
+          content: "Back to All Events",
+          score: 0.95,
+          rerankPosition: 2,
+        }),
+        rerankedCandidate({
+          chunkId: "course-basic-2",
+          documentId: "course-basic-2",
+          title: "Ananda Yoga Basic 2",
+          content: "Course details for Ananda Yoga Basic 2, including next-level practice and guided meditation.",
+          score: 0.94,
+          rerankPosition: 3,
+        }),
+        rerankedCandidate({
+          chunkId: "guided-yoga",
+          documentId: "guided-yoga",
+          title: "Guided Ananda Yoga",
+          content: "Guided Ananda Yoga recordings include posture practice, pranayama, and meditation warm-ups.",
+          score: 0.93,
+          rerankPosition: 4,
+        }),
+        rerankedCandidate({
+          chunkId: "chakra-yoga",
+          documentId: "chakra-yoga",
+          title: "Ananda Yoga to Awaken the Chakras",
+          content: "Ananda Yoga to Awaken the Chakras connects posture practice with energy awareness.",
+          score: 0.92,
+          rerankPosition: 5,
+        }),
+      ],
+    });
+
+    expect(result.map((context) => context.chunkId)).toEqual([
+      "large-shop",
+      "course-basic-1",
+      "course-basic-2",
+      "guided-yoga",
+      "chakra-yoga",
+    ]);
+    expect(result[0]?.content.length).toBeLessThan(largeContent.length);
+    expect(result[0]?.content).not.toContain("Final detail that should be trimmed.");
+  });
+
+  it("fills remaining context slots with low-information fragments only when useful context is exhausted", () => {
+    const selector = new PromptContextSelectorService(1_200);
+
+    const result = selector.select({
+      topK: 3,
+      contexts: [
+        rerankedCandidate({
+          chunkId: "main-doc",
+          documentId: "doc-1",
+          title: "Primary Course",
+          content: "Primary course overview with answerable details.",
+          score: 0.99,
+          rerankPosition: 0,
+        }),
+        rerankedCandidate({
+          chunkId: "low-1",
+          documentId: "chrome-1",
+          title: "Site Navigation",
+          content: "Back to All Events",
+          score: 0.98,
+          rerankPosition: 1,
+        }),
+        rerankedCandidate({
+          chunkId: "low-2",
+          documentId: "chrome-2",
+          title: "Accessibility",
+          content: "Skip to content",
+          score: 0.97,
+          rerankPosition: 2,
+        }),
+      ],
+    });
+
+    expect(result.map((context) => context.chunkId)).toEqual(["main-doc", "low-1", "low-2"]);
   });
 
   it("builds prompts with contexts and citations", () => {

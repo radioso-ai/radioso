@@ -366,6 +366,9 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   if (input.rerankTopK < 1) {
     throw badRequest("rerankTopK must be greater than 0");
   }
+  if (input.rerankTopK > RETRIEVAL_BEHAVIOR.rerank.candidateLimit) {
+    throw badRequest(`rerankTopK must be at most ${RETRIEVAL_BEHAVIOR.rerank.candidateLimit}`);
+  }
   if (!Array.isArray(input.metadataRules)) {
     throw badRequest("metadataRules must be an array");
   }

@@ -11,8 +11,7 @@ export interface RerankGateway {
   }): Promise<Array<{ chunkId: string; relevanceScore: number }>>;
 }
 
-const RERANK_SYSTEM_PROMPT = loadPromptTemplate("retrieval/rerank-system.txt");
-const RERANK_RESPONSES_INSTRUCTIONS = loadPromptTemplate("retrieval/rerank-responses-instructions.txt");
+const RERANK_INSTRUCTIONS = loadPromptTemplate("retrieval/rerank-instructions.txt");
 
 const buildRerankPrompt = (input: { query: string; candidates: string }): string =>
   renderPromptTemplate("retrieval/rerank-user.md", input);
@@ -30,14 +29,14 @@ export class ModelRerankGateway implements RerankGateway {
     const candidates = buildRerankCandidateList(input.contexts);
 
     const content = await this.client.complete({
-      systemPrompt: RERANK_SYSTEM_PROMPT,
+      systemPrompt: RERANK_INSTRUCTIONS,
       prompt: buildRerankPrompt({ query: input.query, candidates }),
       temperature: RETRIEVAL_BEHAVIOR.rerank.temperature,
       maxOutputTokens: RETRIEVAL_BEHAVIOR.rerank.modelMaxCompletionTokens,
     });
 
     try {
-      return parseRerankScores(content);
+      return mapIndexedRerankScores(input.contexts, parseIndexedRerankScores(content));
     } catch (error) {
       this.logger?.warn(
         {
@@ -122,7 +121,7 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
       model: this.model,
       temperature: RETRIEVAL_BEHAVIOR.rerank.temperature,
       max_output_tokens: maxOutputTokens,
-      instructions: RERANK_RESPONSES_INSTRUCTIONS,
+      instructions: RERANK_INSTRUCTIONS,
       input: buildRerankPrompt({ query: input.query, candidates }),
       text: {
         format: OpenAISemanticRerankGateway.RESPONSE_FORMAT,
@@ -143,20 +142,7 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
       );
     }
 
-    const parsedScores = parseIndexedRerankScores(content || '{"scores":[]}');
-    return parsedScores
-      .map((score) => {
-        const context = input.contexts[score.candidateIndex - 1];
-        if (!context) {
-          return null;
-        }
-
-        return {
-          chunkId: context.chunkId,
-          relevanceScore: score.relevanceScore,
-        };
-      })
-      .filter((score): score is { chunkId: string; relevanceScore: number } => score !== null);
+    return mapIndexedRerankScores(input.contexts, parseIndexedRerankScores(content || '{"scores":[]}'));
   }
 }
 
@@ -305,31 +291,6 @@ const toLoggableError = (error: unknown): Record<string, unknown> => {
   };
 };
 
-const parseRerankScores = (content: string): Array<{ chunkId: string; relevanceScore: number }> => {
-  const normalized = content
-    .trim()
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/i, "")
-    .trim();
-
-  const parsed = JSON.parse(normalized) as unknown;
-  if (Array.isArray(parsed)) {
-    return parsed as Array<{ chunkId: string; relevanceScore: number }>;
-  }
-
-  if (parsed && typeof parsed === "object") {
-    const objectResult = parsed as { results?: unknown; scores?: unknown };
-    if (Array.isArray(objectResult.results)) {
-      return objectResult.results as Array<{ chunkId: string; relevanceScore: number }>;
-    }
-    if (Array.isArray(objectResult.scores)) {
-      return objectResult.scores as Array<{ chunkId: string; relevanceScore: number }>;
-    }
-  }
-
-  return [];
-};
-
 const parseIndexedRerankScores = (content: string): Array<{ candidateIndex: number; relevanceScore: number }> => {
   const normalized = content
     .trim()
@@ -359,6 +320,24 @@ const parseIndexedRerankScores = (content: string): Array<{ candidateIndex: numb
 
   return [];
 };
+
+const mapIndexedRerankScores = (
+  contexts: RetrievedCandidate[],
+  scores: Array<{ candidateIndex: number; relevanceScore: number }>,
+): Array<{ chunkId: string; relevanceScore: number }> =>
+  scores
+    .map((score) => {
+      const context = contexts[score.candidateIndex - 1];
+      if (!context) {
+        return null;
+      }
+
+      return {
+        chunkId: context.chunkId,
+        relevanceScore: score.relevanceScore,
+      };
+    })
+    .filter((score): score is { chunkId: string; relevanceScore: number } => score !== null);
 
 const sanitizeScores = (
   scores?: Array<{ chunkId: string; relevanceScore: number }>,

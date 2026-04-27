@@ -235,6 +235,7 @@ const extractSupportedLinkText = (value: string): string | null => {
 };
 
 const normalizeOmittedUnsupportedPrefix = (value: string): string => value.replace(/^\s+/g, "");
+const normalizePunctuationOnlySegment = (value: string): string => value.replace(/^\s+/, "");
 
 const toChatCitation = (citation: CitationEvidence) => ({
   documentId: citation.documentId,
@@ -708,7 +709,7 @@ export class AnswerSupportValidator {
         continue;
       }
 
-      visibleSegments.push({ text: segment.text });
+      visibleSegments.push({ text: punctuationOnly ? normalizePunctuationOnlySegment(segment.text) : segment.text });
       omittedUnsupported = false;
     }
 

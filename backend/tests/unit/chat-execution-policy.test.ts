@@ -19,13 +19,6 @@ describe("chat execution policy", () => {
     });
   });
 
-  it("keeps eval replay on the current inline execution path", () => {
-    expect(assertInteractiveAssistantWorkflow("eval.replay")).toMatchObject({
-      workflow: "eval.replay",
-      executionClass: "interactive_synchronous",
-    });
-  });
-
   it("fails loudly when a caller expects the wrong execution class", () => {
     expect(() => assertAssistantExecutionClass("chat.turn", "durable_async")).toThrow(
       'Assistant workflow "chat.turn" is classified as "interactive_synchronous", expected "durable_async".',
@@ -36,7 +29,6 @@ describe("chat execution policy", () => {
     expect(listCoveredAssistantWorkflows()).toEqual([
       getAssistantWorkflowPolicy("chat.turn"),
       getAssistantWorkflowPolicy("chat.bootstrap"),
-      getAssistantWorkflowPolicy("eval.replay"),
     ]);
   });
 });

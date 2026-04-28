@@ -2,8 +2,7 @@ export type AssistantExecutionClass = "interactive_synchronous" | "durable_async
 
 export type CoveredAssistantWorkflow =
   | "chat.turn"
-  | "chat.bootstrap"
-  | "eval.replay";
+  | "chat.bootstrap";
 
 export interface AssistantWorkflowPolicy {
   workflow: CoveredAssistantWorkflow;
@@ -24,12 +23,6 @@ const WORKFLOW_POLICIES: Record<CoveredAssistantWorkflow, AssistantWorkflowPolic
     executionClass: "interactive_synchronous",
     operatorLabel: "Bootstrap greeting",
     description: "Assistant-first greetings are created inline with the chat request and never deferred to background work.",
-  },
-  "eval.replay": {
-    workflow: "eval.replay",
-    executionClass: "interactive_synchronous",
-    operatorLabel: "Eval replay",
-    description: "Eval replay currently runs inline and remains a candidate for a future deferred assistant-work path.",
   },
 };
 

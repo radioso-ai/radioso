@@ -25,20 +25,40 @@ export class RewriteEligibilityService {
       return { eligible: true };
     }
 
-    if (
-      !this.isMateriallyDifferent(input.originalQuery, semanticQuery) &&
-      !this.isMateriallyDifferent(input.originalQuery, lexicalQuery)
-    ) {
+    const semanticMaterial = this.isMateriallyDifferent(input.originalQuery, semanticQuery);
+    const lexicalMaterial =
+      this.isMateriallyDifferent(input.originalQuery, lexicalQuery) ||
+      this.isFocusedLexicalQuery(input.originalQuery, lexicalQuery);
+
+    if (!semanticMaterial && !lexicalMaterial) {
       return { eligible: false, rejectionReason: "rewrite_not_materially_different" };
     }
 
     return { eligible: true };
   }
 
+  private isFocusedLexicalQuery(originalQuery: string, rewrittenQuery: string): boolean {
+    const originalTerms = this.normalizeTerms(originalQuery);
+    const rewrittenTerms = this.normalizeTerms(rewrittenQuery);
+
+    if (rewrittenTerms.length === 0 || originalTerms.length === 0) {
+      return false;
+    }
+
+    if (rewrittenTerms.join(" ") === originalTerms.join(" ")) {
+      return false;
+    }
+
+    const originalTermSet = new Set(originalTerms);
+    const removesTerms = rewrittenTerms.length < originalTerms.length;
+    const staysAnchored = rewrittenTerms.every((term) => originalTermSet.has(term));
+
+    return removesTerms && staysAnchored;
+  }
+
   private isMateriallyDifferent(originalQuery: string, rewrittenQuery: string): boolean {
-    const normalize = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();
-    const original = normalize(originalQuery);
-    const rewritten = normalize(rewrittenQuery);
+    const original = this.normalizeTerms(originalQuery).join(" ");
+    const rewritten = this.normalizeTerms(rewrittenQuery).join(" ");
 
     if (!rewritten || rewritten === original) {
       return false;
@@ -49,6 +69,10 @@ export class RewriteEligibilityService {
     const newTerms = rewrittenTerms.filter((term) => !originalTerms.has(term));
 
     return newTerms.length > 0;
+  }
+
+  private normalizeTerms(value: string): string[] {
+    return value.trim().replace(/\s+/g, " ").toLowerCase().split(" ").filter((term) => term.length > 0);
   }
 }
 

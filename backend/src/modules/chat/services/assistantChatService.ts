@@ -52,10 +52,7 @@ export class AssistantChatService {
       sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
     });
 
-    return {
-      ...response,
-      route: response.route ?? this.assistantRouteService.fromRetrievalInfo(response.retrievalInfo),
-    };
+    return response;
   }
 
   streamAnswer(input: AssistantChatRequest): AsyncIterable<AssistantChatStreamEvent> {

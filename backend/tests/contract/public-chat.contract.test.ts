@@ -277,7 +277,7 @@ describe("public chat contract", () => {
     expect(secondPage.body.nextCursor).toBeNull();
   });
 
-  it("applies the workspace answer support policy to anonymous chat", async () => {
+  it("grounds anonymous chat answers using retrieval validation defaults", async () => {
     const { app } = createTestApp({
       chatGateway: {
         async answer() {
@@ -301,7 +301,6 @@ describe("public chat contract", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep the query standalone.",
         lexicalRewriteInstructions: "Prefer exact literals.",
-        answerSupportPolicy: "warn",
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: 0.2,

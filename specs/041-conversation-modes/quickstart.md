@@ -48,7 +48,7 @@
 ## Scenario 6: Strict support policy still wins on unsupported content
 
 1. Save `conversationMode: "exploratory"` and keep
-   `answerSupportPolicy: "strict"`.
+   `answerPolicy: "strict"`.
 2. Force a partially unsupported or fully unsupported answer path.
 3. Confirm unsupported substantive content is still handled by the strict
    support policy.

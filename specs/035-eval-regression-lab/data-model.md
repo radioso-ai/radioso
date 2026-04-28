@@ -162,7 +162,7 @@
   - `retrievalSummary`
   - `citations`
   - `answerOutcome`
-  - `answerSupportPolicy`
+  - `answerPolicy`
   - `validationSummary`
   - `timings`
 - **Validation rules**:

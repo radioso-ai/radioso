@@ -206,7 +206,6 @@ export const createRadiosoApiAdapter = (
             queryRewriteEnabled: body.queryRewriteEnabled,
             semanticRewriteInstructions: body.semanticRewriteInstructions,
             lexicalRewriteInstructions: body.lexicalRewriteInstructions,
-            answerSupportPolicy: body.answerSupportPolicy,
             rerankEnabled: body.rerankEnabled,
             vectorTopK: body.vectorTopK,
             similarityThreshold: body.similarityThreshold,

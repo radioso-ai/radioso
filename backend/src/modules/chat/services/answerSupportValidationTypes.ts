@@ -1,5 +1,4 @@
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
-import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSettings.js";
 
 export const VALIDATION_DISPOSITION = {
   SUPPORTED: "supported",
@@ -25,7 +24,6 @@ export interface AnswerValidationSummary {
   substantiveUnsupportedSegmentCount: number;
   supportedSegmentCount: number;
   nonSubstantiveSegmentCount: number;
-  answerSupportPolicy?: AnswerSupportPolicy;
   hiddenSupportUsed?: boolean;
   hiddenSupportKindsUsed?: HiddenSupportEvidence["kind"][];
 }

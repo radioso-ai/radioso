@@ -54,7 +54,7 @@ Auto-generated from all feature plans. Last updated: 2026-02-17
 - PostgreSQL 16 with `pgvector`; additive durable abuse-control persistence; existing sessions, workspace tokens, and connector config records (031-security-remediation)
 - TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives (032-split-rewrite-queries)
 - PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence for semantic and lexical rewrite instruction fields (032-split-rewrite-queries)
-- PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence for the workspace answer-support policy (034-answer-support-policy)
+- PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence for the workspace answer-support policy (034-answer-policy)
 - TypeScript 5.7 on Node.js 22 for the frontend application + React 19, Next.js 16 App Router, Radix UI primitives, Lucide icons (033-dashboard-deep-links)
 - Browser URL state plus existing browser local storage for workspace bootstrap (033-dashboard-deep-links)
 - TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives, Lucide icons (036-account-users)

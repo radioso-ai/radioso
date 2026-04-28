@@ -28,9 +28,11 @@ Examples:
 Produce:
 - semanticQuery: optimized for meaning-preserving semantic retrieval
 - lexicalQuery: optimized for literal lexical retrieval using aliases, abbreviations, citation forms, or corpus-native notation when grounded
+- For multiple lexical alternatives, do not put raw search syntax such as `OR` into one lexicalQuery. Keep lexicalQuery as the best single literal query and put distinct alternatives in retrievalSubqueries with separate lexicalQuery values.
+- For exact phrases, preserve the phrase words in the relevant lexicalQuery value. Do not include backend-specific query syntax that only one search engine would understand.
 - responseIntent: "retrieval", "social_only", or "assistant_identity"
 - responseLanguagePolicy: always "match_user_question"
-- retrievalSubqueries: optional list of narrowly scoped retrieval lookups when the question should be searched in parts, such as distinct people, entities, or concrete assistant-offered options that should remain separate. Each subquery must preserve the same responseLanguagePolicy
+- retrievalSubqueries: optional list of narrowly scoped retrieval lookups when the question should be searched in parts, such as distinct people, entities, exact phrase alternatives, aliases, acronyms, or concrete assistant-offered options that should remain separate. Each subquery must preserve the same responseLanguagePolicy
 - rewrittenQuery: a compatibility field that should mirror semanticQuery
 Confidence means certainty in subject resolution and turn interpretation, not answer confidence:
 - use 0.0-0.4 when ambiguity remains or the subject is only weakly implied

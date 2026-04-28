@@ -20,6 +20,8 @@ Make sure the document was processed successfully and chunked with a strategy th
 
 If users ask vague, shorthand, or multi-part questions, start with `queryRewriteEnabled` and the semantic or lexical rewrite instructions.
 
+For lexical rewrite instructions, prefer guidance that asks for exact aliases and phrase alternatives as separate search options. Avoid asking the model to write backend-specific search syntax such as raw `OR` expressions.
+
 ### Tune candidate depth
 
 Adjust `vectorTopK` and `similarityThreshold` to control how many semantic matches survive early filtering.
@@ -45,6 +47,7 @@ Use `customInstruction`, citation display, conversation mode, and answer-support
 - `rerankTopK`: controls the size of the rerank candidate set
 - `metadataRules`: boosts or constrains candidates based on document metadata
 - `queryRewriteEnabled`: helps when user phrasing does not match stored document language
+- `lexicalRewriteInstructions`: helps exact aliases, abbreviations, and phrase alternatives become separate lexical searches
 
 ## Symptom to setting map
 

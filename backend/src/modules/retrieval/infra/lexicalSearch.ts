@@ -48,7 +48,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
 
     const rows = await this.database.query<LexicalSearchRow>(
       `WITH search_query AS (
-         SELECT plainto_tsquery('simple', $2) AS query
+         SELECT websearch_to_tsquery('simple', $2) AS query
        )
        SELECT c.id AS chunk_id,
               c.document_id,

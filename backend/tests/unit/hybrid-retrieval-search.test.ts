@@ -121,6 +121,25 @@ describe("hybrid retrieval search", () => {
     expect(executedSql).toContain("coalesce(c.search_text, c.content, '')");
   });
 
+  it("uses web-search query parsing for phrase and OR-compatible lexical syntax", async () => {
+    let executedSql = "";
+    const search = new PgLexicalSearch({
+      async query(sql: string, params: unknown[]) {
+        executedSql = sql;
+        expect(params).toEqual(["a1", '"forgot password" OR "reset token"', 5]);
+        return [];
+      },
+    } as never);
+
+    await search.search({
+      workspaceId: "a1",
+      query: '"forgot password" OR "reset token"',
+      topK: 5,
+    });
+
+    expect(executedSql).toContain("websearch_to_tsquery('simple', $2)");
+  });
+
   it("uses a materialized CTE and enables iterative scan for filtered semantic retrieval when available", async () => {
     let transactionalQueryCount = 0;
     const statements: string[] = [];

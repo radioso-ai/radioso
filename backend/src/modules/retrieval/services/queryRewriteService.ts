@@ -15,6 +15,7 @@ import type {
   StructuredRewriteResult,
 } from "../domain/retrievalPipelineTypes.js";
 import { RESPONSE_INTENT, REWRITE_STATUS, REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
+import { buildLexicalAlternativeSubqueries } from "../domain/lexicalQueryPlan.js";
 import { RewriteEligibilityService } from "./rewritePolicyService.js";
 
 export interface QueryRewriteGatewayFallbackResult {
@@ -438,15 +439,16 @@ export class QueryRewriteService {
   }
 
   private normalizeRewrite(rewrittenQuery?: string): string {
-    return (rewrittenQuery ?? "")
+    const normalized = (rewrittenQuery ?? "")
       .trim()
       .replace(/^```(?:json)?/i, "")
       .replace(/```$/i, "")
       .replace(/^rewritten query:\s*/i, "")
       .replace(/^query:\s*/i, "")
-      .replace(/^["']|["']$/g, "")
       .replace(/\s+/g, " ")
       .trim();
+
+    return stripSingleWrappingQuotePair(normalized);
   }
 
   private normalizeStructuredResult(
@@ -454,13 +456,24 @@ export class QueryRewriteService {
     result?: QueryRewriteGatewayResult,
   ): StructuredRewriteResult {
     if (result && "turnKind" in result) {
+      const semanticQuery = this.normalizeRewrite(result.semanticQuery ?? result.rewrittenQuery);
+      const lexicalQuery = this.normalizeRewrite(result.lexicalQuery ?? result.rewrittenQuery);
+      const responseLanguagePolicy = this.normalizeResponseLanguagePolicy(result.responseLanguagePolicy);
+      const retrievalSubqueries =
+        this.normalizeRetrievalSubqueries(result.retrievalSubqueries) ??
+        buildLexicalAlternativeSubqueries({
+          semanticQuery,
+          lexicalQuery,
+          responseLanguagePolicy,
+        });
+
       return {
         rewrittenQuery: this.normalizeRewrite(result.rewrittenQuery),
-        semanticQuery: this.normalizeRewrite(result.semanticQuery ?? result.rewrittenQuery),
-        lexicalQuery: this.normalizeRewrite(result.lexicalQuery ?? result.rewrittenQuery),
+        semanticQuery,
+        lexicalQuery,
         responseIntent: this.normalizeResponseIntent(result.responseIntent),
-        responseLanguagePolicy: this.normalizeResponseLanguagePolicy(result.responseLanguagePolicy),
-        retrievalSubqueries: this.normalizeRetrievalSubqueries(result.retrievalSubqueries),
+        responseLanguagePolicy,
+        retrievalSubqueries,
         turnKind: this.normalizeTurnKind(result.turnKind),
         proposedActiveSubject: result.proposedActiveSubject?.trim() || undefined,
         relatedEntities: [...new Set((result.relatedEntities ?? []).map((entity) => entity.trim()).filter(Boolean))],
@@ -608,6 +621,17 @@ const tokenizeRewriteTerms = (value: string): string[] =>
     .split(/\s+/)
     .map((term) => term.trim())
     .filter((term) => term.length >= 3);
+
+const stripSingleWrappingQuotePair = (value: string): string => {
+  const first = value[0];
+  const last = value[value.length - 1];
+  if ((first !== '"' && first !== "'") || first !== last) {
+    return value;
+  }
+
+  const quoteCount = [...value].filter((char) => char === first).length;
+  return quoteCount === 2 ? value.slice(1, -1).trim() : value;
+};
 
 const truncateTriggerInstruction = (value: string): string => value.trim().replace(/\s+/g, " ").slice(0, 160);
 

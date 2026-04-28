@@ -51,11 +51,13 @@ export interface ChatGateway {
     query: string;
     history: MessageRecord[];
     prompt: string;
+    systemPrompt?: string;
   }): Promise<string>;
   streamAnswer(input: {
     query: string;
     history: MessageRecord[];
     prompt: string;
+    systemPrompt?: string;
   }): AsyncIterable<string>;
 }
 
@@ -186,9 +188,10 @@ const inferConversationModeMetadata = (input: {
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly client: TextGenerationClient) {}
 
-  async answer(input: { query: string; history: MessageRecord[]; prompt: string }): Promise<string> {
+  async answer(input: { query: string; history: MessageRecord[]; prompt: string; systemPrompt?: string }): Promise<string> {
     const response = await this.client.complete({
       prompt: input.prompt,
+      systemPrompt: input.systemPrompt,
     });
 
     if (!response?.trim()) {
@@ -198,9 +201,10 @@ export class ModelChatGateway implements ChatGateway {
     return response;
   }
 
-  async *streamAnswer(input: { query: string; history: MessageRecord[]; prompt: string }): AsyncIterable<string> {
+  async *streamAnswer(input: { query: string; history: MessageRecord[]; prompt: string; systemPrompt?: string }): AsyncIterable<string> {
     for await (const chunk of this.client.stream({
       prompt: input.prompt,
+      systemPrompt: input.systemPrompt,
     })) {
       if (chunk.length > 0) {
         yield chunk;
@@ -506,6 +510,7 @@ export class ChatService {
         for await (const text of this.chatGateway.streamAnswer({
           query: input.query,
           history: session.history,
+          systemPrompt: session.retrieval.systemPrompt,
           prompt: session.retrieval.prompt,
         })) {
           if (!text) {
@@ -742,6 +747,7 @@ export class ChatService {
       : await this.chatGateway.answer({
           query,
           history: session.history,
+          systemPrompt: session.retrieval.systemPrompt,
           prompt: session.retrieval.prompt,
         });
 

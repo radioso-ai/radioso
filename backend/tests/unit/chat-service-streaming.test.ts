@@ -3430,8 +3430,8 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(observedPrompt).toContain("No stable assistant identity is configured for this workspace.");
-    expect(observedPrompt).toContain("Say that briefly instead of inventing a name, role, or capabilities.");
+    expect(observedPrompt).toContain("Identity status: not_configured");
+    expect(observedPrompt).toContain("Say that you are the assistant that can answer the user's questions.");
   });
 
 });

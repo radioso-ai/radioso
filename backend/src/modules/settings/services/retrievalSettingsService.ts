@@ -1,6 +1,5 @@
 import {
   defaultRetrievalSettings,
-  type AnswerSupportPolicy,
   type RetrievalSettingsRecord,
   type MetadataFieldSuggestion,
   normalizeMetadataRules,
@@ -42,7 +41,7 @@ export class RetrievalSettingsService {
         ...existing,
         metadataRules: normalizeMetadataRules(existing.metadataRules),
       });
-      return this.disableRewriteAndStrictFactChecking({
+      return this.disableQueryRewrite({
         ...existing,
         ...normalized,
       });
@@ -54,15 +53,11 @@ export class RetrievalSettingsService {
 
   async updateForWorkspace(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
     try {
-      const runtimeInput = this.disableRewriteAndStrictFactChecking({
+      const runtimeInput = this.disableQueryRewrite({
         ...input,
         metadataRules: normalizeMetadataRules(input.metadataRules),
       });
-      const normalizedInput: RetrievalSettingsInput = {
-        ...runtimeInput,
-        answerSupportPolicy: runtimeInput.answerSupportPolicy,
-      };
-      const settings = await this.repository.upsert(workspaceId, validateRetrievalSettings(normalizedInput));
+      const settings = await this.repository.upsert(workspaceId, validateRetrievalSettings(runtimeInput));
       try {
         await this.auditService.record({
           workspaceId,
@@ -104,13 +99,10 @@ export class RetrievalSettingsService {
     }
   }
 
-  private disableRewriteAndStrictFactChecking<
-    T extends Pick<RetrievalSettingsRecord, "queryRewriteEnabled" | "answerSupportPolicy" | "metadataRules">,
-  >(input: T): T {
+  private disableQueryRewrite<T extends Pick<RetrievalSettingsRecord, "queryRewriteEnabled" | "metadataRules">>(input: T): T {
     return {
       ...input,
       queryRewriteEnabled: false,
-      answerSupportPolicy: "off" as AnswerSupportPolicy,
       metadataRules: normalizeMetadataRules(input.metadataRules),
     };
   }

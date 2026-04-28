@@ -534,7 +534,7 @@ components:
           maxLength: 2000
         conversationMode:
           type: string
-          enum: &a4
+          enum: &a3
             - factual
             - guided
             - exploratory
@@ -634,14 +634,14 @@ components:
                 default: []
               effect:
                 type: string
-                enum: &a5
+                enum: &a4
                   - boost
                   - filter
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: &a6
+                enum: &a5
                   - always_on
                   - match_turn
               triggerInstruction:
@@ -694,7 +694,7 @@ components:
           maxLength: 2000
         conversationMode:
           type: string
-          enum: *a4
+          enum: *a3
         suggestedQuestionsEnabled:
           type: boolean
         suggestedQuestionsCount:
@@ -733,7 +733,7 @@ components:
                 type: string
               combinator:
                 type: string
-                enum: &a10
+                enum: &a9
                   - and
                   - or
               conditions:
@@ -763,12 +763,12 @@ components:
                     - value
               effect:
                 type: string
-                enum: *a5
+                enum: *a4
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: *a6
+                enum: *a5
               triggerInstruction:
                 type: string
                 maxLength: 500
@@ -794,7 +794,7 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a7
+          enum: &a6
             - fixed_window
             - structured_semantic
         fixedWindowChunkSize:
@@ -825,7 +825,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a7
+          enum: *a6
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -895,12 +895,12 @@ components:
           default: []
         effect:
           type: string
-          enum: *a5
+          enum: *a4
         enabled:
           type: boolean
         triggerMode:
           type: string
-          enum: *a6
+          enum: *a5
         triggerInstruction:
           type: string
       required:
@@ -1031,13 +1031,13 @@ components:
           maxLength: 80
         websiteEmbedLauncherIcon:
           type: string
-          enum: &a8
+          enum: &a7
             - chat
             - sparkles
             - message
         websiteEmbedLauncherPosition:
           type: string
-          enum: &a9
+          enum: &a8
             - bottom-right
             - bottom-left
     GeneralSettingsResponse:
@@ -1089,10 +1089,10 @@ components:
           type: string
         websiteEmbedLauncherIcon:
           type: string
-          enum: *a8
+          enum: *a7
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a9
+          enum: *a8
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
@@ -1132,7 +1132,7 @@ components:
           readOnly: true
         conversationMode:
           type: string
-          enum: *a4
+          enum: *a3
         suggestedQuestionsEnabled:
           type: boolean
         suggestedQuestionsCount:
@@ -1227,12 +1227,12 @@ components:
                 default: []
               effect:
                 type: string
-                enum: *a5
+                enum: *a4
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: *a6
+                enum: *a5
               triggerInstruction:
                 type: string
             required:
@@ -1295,10 +1295,10 @@ components:
           type: string
         websiteEmbedLauncherIcon:
           type: string
-          enum: *a8
+          enum: *a7
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a9
+          enum: *a8
         websiteEmbedScriptUrl:
           type:
             - string
@@ -1356,7 +1356,7 @@ components:
               type: boolean
             conversationMode:
               type: string
-              enum: *a4
+              enum: *a3
             suggestedQuestionsEnabled:
               type: boolean
             suggestedQuestionsCount:
@@ -1408,7 +1408,7 @@ components:
                     type: string
                   combinator:
                     type: string
-                    enum: *a10
+                    enum: *a9
                   conditions:
                     type: array
                     items:
@@ -1436,12 +1436,12 @@ components:
                         - value
                   effect:
                     type: string
-                    enum: *a5
+                    enum: *a4
                   enabled:
                     type: boolean
                   triggerMode:
                     type: string
-                    enum: *a6
+                    enum: *a5
                   triggerInstruction:
                     type: string
                     maxLength: 500
@@ -1475,10 +1475,10 @@ components:
               maxLength: 80
             websiteEmbedLauncherIcon:
               type: string
-              enum: *a8
+              enum: *a7
             websiteEmbedLauncherPosition:
               type: string
-              enum: *a9
+              enum: *a8
     PublicEmbedSessionResponse:
       type: object
       properties:
@@ -2243,12 +2243,8 @@ components:
                 - supported
                 - unsupported
                 - not_checked
-            policy:
-              type: string
-              enum: *a3
           required:
             - status
-            - policy
         retrievalInfo:
           $ref: "#/components/schemas/RetrievalInfo"
         retrievalTrace:
@@ -2373,20 +2369,20 @@ components:
             $ref: "#/components/schemas/ChatSuggestion"
         conversationMode:
           type: string
-          enum: *a4
+          enum: *a3
         conversationModeMetadata:
           type: object
           properties:
             conversationMode:
               type: string
-              enum: *a4
+              enum: *a3
             brevityOverrideApplied:
               type: boolean
             expansionApplied:
               type: boolean
             expansionKind:
               type: string
-              enum: &a11
+              enum: &a10
                 - none
                 - focused
                 - expansive
@@ -2438,20 +2434,20 @@ components:
             $ref: "#/components/schemas/ChatSuggestion"
         conversationMode:
           type: string
-          enum: *a4
+          enum: *a3
         conversationModeMetadata:
           type: object
           properties:
             conversationMode:
               type: string
-              enum: *a4
+              enum: *a3
             brevityOverrideApplied:
               type: boolean
             expansionApplied:
               type: boolean
             expansionKind:
               type: string
-              enum: *a11
+              enum: *a10
             suggestionCount:
               type: integer
               minimum: 0
@@ -2818,7 +2814,7 @@ components:
             - non_retrieval_response
         conversationMode:
           type: string
-          enum: *a4
+          enum: *a3
         route:
           $ref: "#/components/schemas/AssistantRouteDiagnostics"
         conversationModeMetadata:
@@ -2826,7 +2822,7 @@ components:
           properties:
             conversationMode:
               type: string
-              enum: *a4
+              enum: *a3
             brevityOverrideApplied:
               type: boolean
             expansionApplied:
@@ -6010,3 +6006,4 @@ paths:
 
         The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
 webhooks: {}
+

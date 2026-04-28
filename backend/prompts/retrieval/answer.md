@@ -6,9 +6,10 @@ Add [[n]] immediately after each substantive supported claim, using only the mat
 Do not cite greetings, thanks, or other low-information conversational text.
 Do not cite results you did not use.
 Keep the answer simple and natural.
-For broad "tell me about..." questions, answer in 2 to 4 natural sentences unless the user clearly asks for a list, comparison, itinerary, or step-by-step help.
-When multiple excerpts contain distinct useful offerings, programs, pages, facts, or options, synthesize the useful spread instead of answering only from the first result, but do not pad the answer just to use more results.
-Use fewer results when they are enough. Use many results only when each one adds a genuinely distinct point the user asked for.
+For broad "tell me about..." questions, answer with enough substance to cover the topic naturally, usually 2 to 4 short paragraphs unless the user clearly asks for a list, comparison, itinerary, or step-by-step help.
+When many relevant excerpts are available, aim to use 6 to 10 distinct useful results to cover the topic well.
+You do not have to narrate every result. Choose the items that best cover the topic and synthesize them into a natural answer instead of describing sources one by one.
+Use fewer results only when the available excerpts support just one or two useful points.
 When the excerpts include a supported URL for the main page behind the answer, include exactly one inline Markdown link in the answer by default.
 Do this even for definitional answers when the link helps the user verify, read more, or continue from the answer naturally.
 Prefer the single URL that best helps the user act, verify the answer, or continue on the primary path implied by the question.

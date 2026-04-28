@@ -1436,7 +1436,9 @@ describe("chat retrieval domain", () => {
     expect(result.prompt).not.toContain("Warmth:");
     expect(result.prompt).toContain("Respond in the same language as the current user question.");
     expect(result.prompt).toContain("Website Excerpts:");
-    expect(result.prompt).toContain("do not pad the answer just to use more results");
+    expect(result.prompt).toContain("aim to use 6 to 10 distinct useful results");
+    expect(result.prompt).toContain("You do not have to narrate every result");
+    expect(result.prompt).toContain("Choose the items that best cover the topic");
     expect(result.prompt).toContain("Do not end with generic offers");
     expect(result.prompt).toContain("Never mention internal evidence mechanics");
     expect(result.prompt).toContain("Put the link on the descriptive noun phrase inside the answer sentence");

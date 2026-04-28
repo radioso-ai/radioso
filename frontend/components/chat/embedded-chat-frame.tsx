@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertCircle } from 'lucide-react'
 
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import {
   formatWebsiteEmbedStartingMessage,
   getWebsiteEmbedCopy,

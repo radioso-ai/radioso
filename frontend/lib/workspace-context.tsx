@@ -11,7 +11,6 @@ import {
 import {
   workspaceApi,
   activateWorkspaceToken,
-  clearWorkspaceStorage,
   removeWorkspaceToken,
   getStoredActiveWorkspaceId,
   type Workspace,
@@ -58,6 +57,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (isBootstrapping) return
 
     if (!user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Auth logout must clear workspace provider state.
       setWorkspaces([])
       setActiveWorkspaceId(null)
       setIsLoading(false)

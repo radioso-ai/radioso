@@ -28,7 +28,9 @@ Rules:
 - Use responseIntent "retrieval" for substantive workspace lookups, "social_only" for greetings/thanks/light reactions without a concrete retrieval target, and "assistant_identity" for questions only about the assistant's name, role, or purpose.
 - For mixed turns such as "Thanks, and what courses are coming up?", use "retrieval".
 - Keep responseLanguagePolicy as "match_user_question".
-- Use retrievalSubqueries only when distinct people, entities, or concrete assistant-offered options should stay separate.
+- Use retrievalSubqueries when distinct people, entities, exact phrase alternatives, aliases, acronyms, or concrete assistant-offered options should stay separate.
+- For multiple lexical alternatives, do not put raw search syntax such as `OR` into one lexicalQuery. Keep lexicalQuery as the best single literal query and put distinct alternatives in retrievalSubqueries with separate lexicalQuery values.
+- For exact phrases, preserve the phrase words in the relevant lexicalQuery value. Do not include backend-specific query syntax that only one search engine would understand.
 - Confidence is certainty in subject resolution and turn interpretation, not answer confidence.
 
 Return strict JSON matching this blueprint exactly:

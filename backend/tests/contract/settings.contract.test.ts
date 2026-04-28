@@ -32,7 +32,6 @@ describe("settings contract", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: expect.any(String),
         lexicalRewriteInstructions: expect.any(String),
-        answerSupportPolicy: "strict",
         rerankEnabled: false,
         vectorTopK: 15,
         similarityThreshold: expect.any(Number),
@@ -126,7 +125,6 @@ describe("settings contract", () => {
 
     expect(response.status).toBe(200);
     expect(Object.keys(response.body).sort()).toEqual([
-      "answerSupportPolicy",
       "citationDisplayEnabled",
       "conversationMode",
       "createdAt",
@@ -150,7 +148,6 @@ describe("settings contract", () => {
     expect(response.body.customInstruction).toBe("");
     expect(response.body.semanticRewriteInstructions).toEqual(expect.any(String));
     expect(response.body.lexicalRewriteInstructions).toEqual(expect.any(String));
-    expect(response.body.answerSupportPolicy).toBe("strict");
     expect(response.body.conversationMode).toBe("guided");
     expect(response.body.suggestedQuestionsEnabled).toBe(true);
     expect(response.body.suggestedQuestionsCount).toBe(3);
@@ -180,7 +177,6 @@ describe("settings contract", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
         lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
-        answerSupportPolicy: "warn",
         conversationMode: "exploratory",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 4,
@@ -208,7 +204,6 @@ describe("settings contract", () => {
       queryRewriteEnabled: true,
       semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
       lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
-      answerSupportPolicy: "warn",
       conversationMode: "exploratory",
       suggestedQuestionsEnabled: true,
       suggestedQuestionsCount: 4,
@@ -244,7 +239,6 @@ describe("settings contract", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
         lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -316,7 +310,6 @@ describe("settings contract", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep the meaning.",
         lexicalRewriteInstructions: "Prefer exact notation.",
-        answerSupportPolicy: "off",
         conversationMode: "factual",
         suggestedQuestionsEnabled: false,
         suggestedQuestionsCount: 1,
@@ -357,7 +350,6 @@ describe("settings contract", () => {
     expect(secondUpdate.body.customInstruction).toBe("Cite paragraph numbers.");
     expect(secondUpdate.body.semanticRewriteInstructions).toBe("Keep the meaning.");
     expect(secondUpdate.body.lexicalRewriteInstructions).toBe("Prefer exact notation.");
-    expect(secondUpdate.body.answerSupportPolicy).toBe("off");
     expect(secondUpdate.body.conversationMode).toBe("factual");
     expect(secondUpdate.body.suggestedQuestionsEnabled).toBe(false);
     expect(secondUpdate.body.suggestedQuestionsCount).toBe(1);
@@ -438,7 +430,6 @@ describe("settings contract", () => {
     expect(retrievalSettingsSchema).not.toContain("chunkingStrategy:");
     expect(retrievalSettingsSchema).toContain("semanticRewriteInstructions:");
     expect(retrievalSettingsSchema).toContain("lexicalRewriteInstructions:");
-    expect(retrievalSettingsSchema).toContain("answerSupportPolicy:");
     expect(retrievalSettingsSchema).toContain("conversationMode:");
     expect(retrievalSettingsSchema).toContain("suggestedQuestionsEnabled:");
     expect(retrievalSettingsSchema).toContain("suggestedQuestionsCount:");
@@ -447,7 +438,6 @@ describe("settings contract", () => {
     expect(retrievalUpdateSchema).toContain("suggestedQuestionsEnabled:");
     expect(retrievalUpdateSchema).toContain("suggestedQuestionsCount:");
     expect(retrievalUpdateSchema).toContain("lexicalRewriteInstructions:");
-    expect(retrievalUpdateSchema).toContain("answerSupportPolicy:");
     expect(retrievalUpdateSchema).toContain("conversationMode:");
     expect(retrievalUpdateSchema).not.toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("chunkingStrategy:");

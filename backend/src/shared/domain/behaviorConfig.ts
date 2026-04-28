@@ -28,9 +28,9 @@ export const CHAT_BEHAVIOR = {
 
 export const RETRIEVAL_BEHAVIOR = {
   defaultSimilarityThreshold: 0.2,
-  promptContextTokenBudget: 2400,
-  finalContextTopK: 6,
-  promptContextMaxCharsPerContext: 1200,
+  promptContextTokenBudget: 4800,
+  finalContextTopK: 12,
+  promptContextMaxCharsPerContext: 900,
   promptContextMinUsefulChars: 24,
   rewriteConversationContextMaxMessages: 10,
   promptHistoryMaxMessages: 4,

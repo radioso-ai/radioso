@@ -21,7 +21,6 @@ describe("sdk client integration", () => {
           queryRewriteEnabled: true,
           semanticRewriteInstructions: "",
           lexicalRewriteInstructions: "",
-          answerSupportPolicy: "strict",
           rerankEnabled: true,
           vectorTopK: 20,
           similarityThreshold: 0.2,
@@ -111,7 +110,6 @@ describe("sdk client integration", () => {
     const chat = await client.chat.create({ message: "hello", stream: false });
 
     expect(documents.documents).toEqual([]);
-    expect(retrievalSettings.answerSupportPolicy).toBe("strict");
     expect(ingestionSettings.chunkingStrategy).toBe("fixed_window");
     expect(generalSettings.anonymousChatEnabled).toBe(true);
     expect(searchHistory.searches).toEqual([]);

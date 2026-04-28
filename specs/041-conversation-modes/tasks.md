@@ -85,7 +85,7 @@
 - [x] T025 [P] [US2] Add operator-facing setting docs for conversation mode in `frontend/docs/settings-docs/retrieval/conversation-mode.md`
 - [x] T026 [P] [US2] Register the new settings doc in `frontend/components/dashboard/settings/settings-docs.ts`
 - [x] T027 [US2] Add the `conversationMode` control and descriptive copy to `frontend/components/dashboard/settings/retrieval-settings-panel.tsx`
-- [x] T028 [US2] Ensure settings save/load flow preserves `answerSupportPolicy` as a separate control in `frontend/components/dashboard/settings/retrieval-settings-panel.tsx` and `frontend/lib/api.ts`
+- [x] T028 [US2] Ensure settings save/load flow preserves `answerPolicy` as a separate control in `frontend/components/dashboard/settings/retrieval-settings-panel.tsx` and `frontend/lib/api.ts`
 
 **Checkpoint**: Operators can configure the mode cleanly, and the settings surface reflects the product separation between conversation mode and trust policy.
 
@@ -93,7 +93,7 @@
 
 ## Phase 5: User Story 3 - Preserve Trust Boundaries Across All Modes (Priority: P1)
 
-**Goal**: Ensure guided/exploratory behavior never bypasses `answerSupportPolicy`, and add per-turn brevity override behavior without turning it into another persisted setting.
+**Goal**: Ensure guided/exploratory behavior never bypasses `answerPolicy`, and add per-turn brevity override behavior without turning it into another persisted setting.
 
 **Independent Test**: Exercise supported, partially unsupported, fully unsupported, and no-context turns under each mode while keeping strict support policy active; also confirm an explicit “just the answer” request suppresses optional expansion.
 
@@ -107,7 +107,7 @@
 ### Implementation for User Story 3
 
 - [x] T033 [US3] Implement explicit brevity-override detection in a focused backend seam under `backend/src/modules/chat/services/`
-- [x] T034 [US3] Apply conversation mode to unsupported and no-context answer composition in `backend/src/modules/chat/services/chatService.ts` and `backend/src/modules/chat/services/groundedMissResponseComposer.ts` without weakening `answerSupportPolicy`
+- [x] T034 [US3] Apply conversation mode to unsupported and no-context answer composition in `backend/src/modules/chat/services/chatService.ts` and `backend/src/modules/chat/services/groundedMissResponseComposer.ts` without weakening `answerPolicy`
 - [x] T035 [US3] Ensure public/anonymous chat inherits the same workspace `conversationMode` behavior through `backend/src/app/http/routes/publicChatRoutes.ts` and existing service wiring
 
 **Checkpoint**: Trust-policy behavior remains intact, and explicit user intent can suppress expansion for the current turn.
@@ -141,7 +141,7 @@
 **Purpose**: Documentation, artifact sync, validation, and final cleanup across stories.
 
 - [x] T042 [P] Review and update `readme.md` for operator-facing conversation-mode guidance if the retrieval settings section should expose the new control
-- [x] T043 [P] Update any existing answer-support or retrieval settings docs that now need cross-references, including `frontend/docs/settings-docs/retrieval/answer-support-policy.md`
+- [x] T043 [P] Update any existing answer-support or retrieval settings docs that now need cross-references, including `frontend/docs/settings-docs/retrieval/answer-policy.md`
 - [x] T044 Reconcile generated artifact wording and task completion state in `specs/041-conversation-modes/`
 - [x] T045 Run the quickstart validation scenarios from `specs/041-conversation-modes/quickstart.md`
 - [x] T046 Run targeted backend/frontend validation for the completed feature
@@ -226,4 +226,4 @@ Task: "Add runtime prompt templates under backend/prompts/chat/"
 - All backend HTTP contract changes must flow through `backend/src/app/http/openapi/document.ts`
 - Generated OpenAPI files must never be hand-edited
 - Runtime prompt assets belong under `backend/prompts/`
-- Keep `answerSupportPolicy` and `conversationMode` separate throughout the implementation
+- Keep `answerPolicy` and `conversationMode` separate throughout the implementation

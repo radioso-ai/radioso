@@ -35,10 +35,10 @@
   - `unsupportedSegmentCount`
   - `supportedSegmentCount`
   - `nonSubstantiveSegmentCount`
-  - `answerSupportPolicy`
+  - `answerPolicy`
   - `segmentResults`
 - **Validation rules**:
-  - `answerSupportPolicy` must always be present for retrieval-backed answers after this feature ships
+  - `answerPolicy` must always be present for retrieval-backed answers after this feature ships
   - `answerModified` may differ by policy even when `unsupportedSegmentCount` is the same
 - **Relationships**:
   - stored in existing chat answer audit metadata

@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-04-01  
-**Feature**: [spec.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/spec.md)
+**Feature**: [spec.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/spec.md)
 
 ## Content Quality
 

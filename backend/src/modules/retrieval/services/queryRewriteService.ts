@@ -32,7 +32,6 @@ export interface TriggerAnalysisGatewayInput {
   rules: RetrievalMetadataRule[];
 }
 
-const QUERY_REWRITE_SYSTEM_PROMPT = loadPromptTemplate("retrieval/query-rewrite-system.md");
 const TRIGGER_ANALYSIS_SYSTEM_PROMPT = loadPromptTemplate("retrieval/trigger-analysis-system.md");
 
 const DEFAULT_RESPONSE_LANGUAGE_POLICY: ResponseLanguagePolicy = "match_user_question";
@@ -45,7 +44,7 @@ const buildQueryRewritePrompt = (input: {
   lexicalRewriteInstructions?: string;
   query: string;
 }): string =>
-  renderPromptTemplate("retrieval/query-rewrite-user.md", {
+  renderPromptTemplate("retrieval/query-rewrite.md", {
     context_section: input.context || "No prior context",
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
@@ -132,7 +131,6 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
     lexicalRewriteInstructions?: string;
   }): Promise<StructuredRewriteResult> {
     const raw = await this.client.complete({
-      systemPrompt: QUERY_REWRITE_SYSTEM_PROMPT,
       prompt: buildQueryRewritePrompt({
         context: formatConversationContext(input.contextMessages),
         semanticRewriteInstructions: input.semanticRewriteInstructions,
@@ -169,10 +167,6 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: [
-        {
-          role: "system",
-          content: QUERY_REWRITE_SYSTEM_PROMPT,
-        },
         {
           role: "user",
           content: buildQueryRewritePrompt({
@@ -582,11 +576,23 @@ export class QueryRewriteService {
       return originalQuery;
     }
 
-    if (!hasConversationContext) {
+    if (!hasConversationContext && !this.isFocusedLexicalQuery(originalQuery, selected)) {
       return originalQuery;
     }
 
     return selected;
+  }
+
+  private isFocusedLexicalQuery(originalQuery: string, candidateQuery: string): boolean {
+    const originalTerms = tokenizeRewriteTerms(originalQuery);
+    const candidateTerms = tokenizeRewriteTerms(candidateQuery);
+
+    if (candidateTerms.length === 0 || candidateTerms.length >= originalTerms.length) {
+      return false;
+    }
+
+    const originalTermSet = new Set(originalTerms);
+    return candidateTerms.every((term) => originalTermSet.has(term));
   }
 
   private introducesExcessiveTermDrift(originalQuery: string, candidateQuery: string): boolean {

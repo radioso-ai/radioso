@@ -1,6 +1,6 @@
 # Feature Specification: Configurable Answer Support Policy
 
-**Feature Branch**: `034-answer-support-policy`  
+**Feature Branch**: `034-answer-policy`  
 **Created**: 2026-04-01  
 **Status**: Draft  
 **Input**: User description: "Expose answer support validation policy in the retrieval settings UI and API with strict, warn, and off modes that apply to both authenticated and anonymous/public chat."

@@ -14,6 +14,79 @@ const groundedMissResponseComposer: GroundedMissResponseComposer = {
   },
 };
 
+const asReplayRetrievalPipeline = (pipeline: Record<string, unknown>) => {
+  if (
+    typeof pipeline.interpret === "function"
+    && typeof pipeline.runInterpreted === "function"
+    && typeof pipeline.runWithoutRetrieval === "function"
+  ) {
+    return pipeline;
+  }
+
+  if (typeof pipeline.run !== "function") {
+    return pipeline;
+  }
+
+  return {
+    ...pipeline,
+    async interpret(input: {
+      workspaceId: string;
+      query: string;
+      history: unknown[];
+      responseIdentity?: unknown;
+      responseBehaviorEnabled?: boolean;
+    }) {
+      return {
+        request: input,
+        traceStartedAtMs: 0,
+        context: {
+          startedAt: 0,
+          durationMs: 1,
+          result: {
+            request: input,
+            settings: {
+              workspaceId: input.workspaceId,
+              queryRewriteEnabled: true,
+              semanticRewriteInstructions: "",
+              lexicalRewriteInstructions: "",
+              conversationMode: "guided",
+              suggestedQuestionsEnabled: true,
+              suggestedQuestionsCount: 3,
+              rerankEnabled: false,
+              vectorTopK: 20,
+              similarityThreshold: 0.1,
+              rerankTopK: 5,
+              citationDisplayEnabled: true,
+              customInstruction: "",
+              metadataRules: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            contextWindow: {
+              selectedMessages: [],
+              truncated: false,
+              selectionReason: "full-history",
+            },
+          },
+        },
+        interpretation: {
+          startedAt: 0,
+          durationMs: 1,
+          result: {
+            responseIntent: "retrieval",
+          },
+        },
+      };
+    },
+    async runInterpreted(interpretation: { request: unknown }) {
+      return (pipeline.run as (input: unknown) => unknown | Promise<unknown>)(interpretation.request);
+    },
+    async runWithoutRetrieval() {
+      throw new Error("runWithoutRetrieval should not be used for retrieval replay turns");
+    },
+  };
+};
+
 describe("EvalReplayService", () => {
   it("keeps eval replay classified on the current inline execution path", () => {
     expect(getAssistantWorkflowPolicy("eval.replay")).toMatchObject({
@@ -44,7 +117,6 @@ describe("EvalReplayService", () => {
             links: [],
           },
           responseSettings: {
-            answerSupportPolicy: "warn",
             citationDisplayEnabled: true,
           },
         };
@@ -64,7 +136,7 @@ describe("EvalReplayService", () => {
       }),
     };
     const service = new EvalReplayService(
-      retrievalPipeline,
+      asReplayRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       groundedMissResponseComposer,
       workspaceRepository as never,
@@ -113,7 +185,6 @@ describe("EvalReplayService", () => {
                 queryRewriteEnabled: true,
                 semanticRewriteInstructions: "",
                 lexicalRewriteInstructions: "",
-                answerSupportPolicy: "strict",
                 conversationMode: "guided",
                 suggestedQuestionsEnabled: true,
                 suggestedQuestionsCount: 3,
@@ -155,7 +226,6 @@ describe("EvalReplayService", () => {
           responseIdentity: null,
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 3,
@@ -208,7 +278,7 @@ describe("EvalReplayService", () => {
       },
     } as any;
 
-    const service = new EvalReplayService(retrievalPipeline, chatGateway, groundedMissResponseComposer);
+    const service = new EvalReplayService(asReplayRetrievalPipeline(retrievalPipeline) as never, chatGateway, groundedMissResponseComposer);
     const replay = await service.replay({
       workspaceId: "workspace-1",
       query: "Thanks for the help",
@@ -253,7 +323,6 @@ describe("EvalReplayService", () => {
                 queryRewriteEnabled: true,
                 semanticRewriteInstructions: "",
                 lexicalRewriteInstructions: "",
-                answerSupportPolicy: "strict",
                 conversationMode: "guided",
                 suggestedQuestionsEnabled: true,
                 suggestedQuestionsCount: 3,
@@ -295,7 +364,6 @@ describe("EvalReplayService", () => {
           responseIdentity: null,
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 3,
@@ -347,7 +415,7 @@ describe("EvalReplayService", () => {
       },
     } as any;
 
-    const service = new EvalReplayService(retrievalPipeline, chatGateway, groundedMissResponseComposer);
+    const service = new EvalReplayService(asReplayRetrievalPipeline(retrievalPipeline) as never, chatGateway, groundedMissResponseComposer);
     const replay = await service.replay({
       workspaceId: "workspace-1",
       query: "Thanks for the help",
@@ -379,7 +447,6 @@ describe("EvalReplayService", () => {
             links: [],
           },
           responseSettings: {
-            answerSupportPolicy: "warn",
             citationDisplayEnabled: true,
           },
         };
@@ -392,7 +459,7 @@ describe("EvalReplayService", () => {
       },
     } as any;
 
-    const service = new EvalReplayService(retrievalPipeline, chatGateway, groundedMissResponseComposer);
+    const service = new EvalReplayService(asReplayRetrievalPipeline(retrievalPipeline) as never, chatGateway, groundedMissResponseComposer);
 
     const nowSpy = vi
       .spyOn(Date, "now")
@@ -454,7 +521,6 @@ describe("EvalReplayService", () => {
             links: [],
           },
           responseSettings: {
-            answerSupportPolicy: "strict",
             citationDisplayEnabled: true,
             conversationMode: "guided",
           },
@@ -468,7 +534,7 @@ describe("EvalReplayService", () => {
       },
     } as any;
 
-    const service = new EvalReplayService(retrievalPipeline, chatGateway);
+    const service = new EvalReplayService(asReplayRetrievalPipeline(retrievalPipeline) as never, chatGateway);
     const replay = await service.replay({
       workspaceId: "workspace-1",
       query: "What does the guide say?",
@@ -539,7 +605,6 @@ describe("EvalReplayService", () => {
             links: [],
           },
           responseSettings: {
-            answerSupportPolicy: "strict",
             citationDisplayEnabled: true,
             conversationMode: "guided",
           },
@@ -553,7 +618,7 @@ describe("EvalReplayService", () => {
       },
     } as any;
 
-    const service = new EvalReplayService(retrievalPipeline, chatGateway);
+    const service = new EvalReplayService(asReplayRetrievalPipeline(retrievalPipeline) as never, chatGateway);
     const replay = await service.replay({
       workspaceId: "workspace-1",
       query: "When is the next conference?",

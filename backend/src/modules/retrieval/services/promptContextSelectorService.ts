@@ -113,7 +113,8 @@ export class PromptContextSelectorService {
   }
 
   private buildDocumentKey(context: RerankedCandidate): string {
-    return context.documentId || context.title;
+    const titleKey = context.title.replace(/\s+/g, " ").trim().toLowerCase();
+    return titleKey ? `title:${titleKey}` : `document:${context.documentId}`;
   }
 
   private packContent(content: string): string {

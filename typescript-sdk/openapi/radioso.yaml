@@ -532,12 +532,6 @@ components:
         lexicalRewriteInstructions:
           type: string
           maxLength: 2000
-        answerSupportPolicy:
-          type: string
-          enum: &a3
-            - strict
-            - warn
-            - off
         conversationMode:
           type: string
           enum: &a4
@@ -676,7 +670,6 @@ components:
         - queryRewriteEnabled
         - semanticRewriteInstructions
         - lexicalRewriteInstructions
-        - answerSupportPolicy
         - conversationMode
         - suggestedQuestionsEnabled
         - suggestedQuestionsCount
@@ -699,9 +692,6 @@ components:
         lexicalRewriteInstructions:
           type: string
           maxLength: 2000
-        answerSupportPolicy:
-          type: string
-          enum: *a3
         conversationMode:
           type: string
           enum: *a4
@@ -1172,9 +1162,6 @@ components:
         lexicalRewriteInstructions:
           type: string
           maxLength: 2000
-        answerSupportPolicy:
-          type: string
-          enum: *a3
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -1275,7 +1262,6 @@ components:
         - queryRewriteEnabled
         - semanticRewriteInstructions
         - lexicalRewriteInstructions
-        - answerSupportPolicy
         - rerankEnabled
         - vectorTopK
         - similarityThreshold
@@ -1390,9 +1376,6 @@ components:
             lexicalRewriteInstructions:
               type: string
               maxLength: 2000
-            answerSupportPolicy:
-              type: string
-              enum: *a3
             rerankEnabled:
               type: boolean
             vectorTopK:
@@ -2787,9 +2770,6 @@ components:
         nonSubstantiveSegmentCount:
           type: integer
           minimum: 0
-        answerSupportPolicy:
-          type: string
-          enum: *a3
         hiddenSupportUsed:
           type: boolean
         hiddenSupportKindsUsed:
@@ -2834,9 +2814,6 @@ components:
             - grounded_degraded_unsupported_segments
             - no_context_refusal
             - non_retrieval_response
-        answerSupportPolicy:
-          type: string
-          enum: *a3
         conversationMode:
           type: string
           enum: *a4
@@ -3268,8 +3245,6 @@ components:
             - grounded_degraded_unsupported_segments
             - no_context_refusal
             - non_retrieval_response
-        answerSupportPolicy:
-          type: string
         answer:
           type: string
         latencyMs:
@@ -6033,4 +6008,3 @@ paths:
 
         The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
 webhooks: {}
-

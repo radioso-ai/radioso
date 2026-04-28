@@ -94,8 +94,8 @@ the new user-visible behavior.
 
 ### Implementation for User Story 3
 
-- [x] T016 [US3] Update operator-facing retrieval docs in `/Users/dm/conductor/workspaces/radioso/madison-v1/frontend/docs/settings-docs/retrieval/answer-support-policy.md`
-- [x] T017 [US3] Review and update `/Users/dm/conductor/workspaces/radioso/madison-v1/readme.md` if the `answerSupportPolicy` operator guidance needs wording changes
+- [x] T016 [US3] Update operator-facing retrieval docs in `/Users/dm/conductor/workspaces/radioso/madison-v1/frontend/docs/settings-docs/retrieval/answer-policy.md`
+- [x] T017 [US3] Review and update `/Users/dm/conductor/workspaces/radioso/madison-v1/readme.md` if the `answerPolicy` operator guidance needs wording changes
 
 **Checkpoint**: The refined behavior is documented and outcome/debug semantics
 remain unchanged.

@@ -104,7 +104,6 @@ export interface EvalReplayDiagnostics {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   answerOutcome: AssistantTurnOutcome;
-  answerSupportPolicy?: string;
   answer: string;
   latencyMs: number;
 }

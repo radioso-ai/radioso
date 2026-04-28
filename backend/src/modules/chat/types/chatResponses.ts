@@ -27,7 +27,7 @@ export interface ChatRoute {
 
 export interface ChatResponse {
   conversationId: string;
-  route?: ChatRoute;
+  route: ChatRoute;
   answer: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];

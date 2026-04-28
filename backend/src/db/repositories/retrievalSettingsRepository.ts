@@ -1,12 +1,10 @@
 import type { Database } from "../../shared/infra/database.js";
 import type {
-  AnswerSupportPolicy,
   ConversationMode,
   RetrievalSettingsInput,
   RetrievalSettingsRecord,
 } from "../../modules/settings/domain/retrievalSettings.js";
 import {
-  DEFAULT_ANSWER_SUPPORT_POLICY,
   DEFAULT_CONVERSATION_MODE,
   DEFAULT_SUGGESTED_QUESTIONS_COUNT,
   DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
@@ -18,7 +16,6 @@ interface RetrievalSettingsPayload {
   metadataRules?: unknown;
   semanticRewriteInstructions?: unknown;
   lexicalRewriteInstructions?: unknown;
-  answerSupportPolicy?: unknown;
   conversationMode?: unknown;
   suggestedQuestionsEnabled?: unknown;
   suggestedQuestionsCount?: unknown;
@@ -51,10 +48,6 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => {
       typeof payload.semanticRewriteInstructions === "string" ? payload.semanticRewriteInstructions : "",
     lexicalRewriteInstructions:
       typeof payload.lexicalRewriteInstructions === "string" ? payload.lexicalRewriteInstructions : "",
-    answerSupportPolicy:
-      typeof payload.answerSupportPolicy === "string"
-        ? (payload.answerSupportPolicy as AnswerSupportPolicy)
-        : DEFAULT_ANSWER_SUPPORT_POLICY,
     conversationMode:
       typeof payload.conversationMode === "string"
         ? (payload.conversationMode as ConversationMode)
@@ -133,7 +126,6 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
           metadataRules: input.metadataRules,
           semanticRewriteInstructions: input.semanticRewriteInstructions,
           lexicalRewriteInstructions: input.lexicalRewriteInstructions,
-          answerSupportPolicy: input.answerSupportPolicy,
           conversationMode: input.conversationMode,
           suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
           suggestedQuestionsCount: input.suggestedQuestionsCount,

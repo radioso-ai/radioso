@@ -24,7 +24,6 @@ import {
 import { assertInteractiveAssistantWorkflow } from "../../chat/services/chatExecutionPolicy.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "../../chat/services/chatTurnIntentService.js";
 import { buildNonRetrievalAnswerPrompt } from "../../chat/services/nonRetrievalAnswerPromptBuilder.js";
-import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import { SharedAnswerInstructionBuilder } from "../../retrieval/services/sharedAnswerInstructionBuilder.js";
 import type { EvalCaseConversationMessage, EvalReplayDiagnostics } from "../domain/evalTypes.js";
 
@@ -63,19 +62,14 @@ export class EvalReplayService {
     let retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
     let turnRoute: ChatTurnRoute = CHAT_TURN_ROUTE.RETRIEVAL;
 
-    if (supportsChatIntentRouting(this.retrievalPipeline)) {
-      const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
-      const interpretation = await retrievalPipeline.interpret(pipelineInput);
-      turnRoute = this.chatTurnIntentService.resolve({
-        responseIntent: interpretation.interpretation.result.responseIntent,
-      }).route;
-      retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
-        ? await retrievalPipeline.runInterpreted(interpretation)
-        : await retrievalPipeline.runWithoutRetrieval(interpretation);
-    } else {
-      retrieval = await this.retrievalPipeline.run(pipelineInput);
-    }
-    const answerSupportPolicy = retrieval.responseSettings?.answerSupportPolicy ?? DEFAULT_ANSWER_SUPPORT_POLICY;
+    const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
+    const interpretation = await retrievalPipeline.interpret(pipelineInput);
+    turnRoute = this.chatTurnIntentService.resolve({
+      responseIntent: interpretation.interpretation.result.responseIntent,
+    });
+    retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
+      ? await retrievalPipeline.runInterpreted(interpretation)
+      : await retrievalPipeline.runWithoutRetrieval(interpretation);
     const conversationMode = retrieval.responseSettings?.conversationMode ?? "guided";
     const nonRetrievalAnswer =
       turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL
@@ -95,10 +89,11 @@ export class EvalReplayService {
               conversationMode,
             })
           : await this.chatGateway.answer({
-              query: input.query,
-              history,
-              prompt: retrieval.prompt,
-            });
+            query: input.query,
+            history,
+            systemPrompt: retrieval.systemPrompt,
+            prompt: retrieval.prompt,
+          });
 
     const citationEvidence = retrieval.contexts.map((context) => ({
       documentId: context.documentId,
@@ -160,7 +155,6 @@ export class EvalReplayService {
           content: citation.content,
         })),
         citationDisplayEnabled,
-        answerSupportPolicy,
         conversationMode,
         groundedMissResponseComposer: this.groundedMissResponseComposer,
         unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
@@ -213,7 +207,6 @@ export class EvalReplayService {
       citations,
       answerSegments,
       answerOutcome,
-      answerSupportPolicy,
       answer,
       latencyMs: Date.now() - startedAt,
     };
@@ -293,14 +286,3 @@ type ChatIntentCapableRetrievalPipeline = Pick<
   RetrievalPipelineService,
   "run" | "interpret" | "runInterpreted" | "runWithoutRetrieval"
 >;
-
-const supportsChatIntentRouting = (
-  pipeline: RetrievalPipelineService,
-): boolean => {
-  const candidate = pipeline as Partial<ChatIntentCapableRetrievalPipeline>;
-
-  return typeof candidate.run === "function"
-    && typeof candidate.interpret === "function"
-    && typeof candidate.runInterpreted === "function"
-    && typeof candidate.runWithoutRetrieval === "function";
-};

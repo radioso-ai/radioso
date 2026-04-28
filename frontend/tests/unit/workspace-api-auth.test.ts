@@ -51,7 +51,6 @@ const platformSettingsPayload = {
     queryRewriteEnabled: false,
     semanticRewriteInstructions: '',
     lexicalRewriteInstructions: '',
-    answerSupportPolicy: 'strict',
     rerankEnabled: false,
     vectorTopK: 15,
     similarityThreshold: 0.2,

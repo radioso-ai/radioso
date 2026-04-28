@@ -94,7 +94,7 @@ backend/
 
 frontend/
 └── docs/settings-docs/retrieval/
-    └── answer-support-policy.md
+    └── answer-policy.md
 ```
 
 **Structure Decision**: Keep transport untouched and implement the feature in
@@ -145,7 +145,7 @@ reuses the same composer to keep operator tooling aligned with live behavior.
 3. Wire chat service and eval replay through the composer without changing
    retrieval logic or outcome enums.
 4. Update operator-facing docs and review whether the root `readme.md` needs a
-   small wording adjustment for `answerSupportPolicy`.
+   small wording adjustment for `answerPolicy`.
 5. Run targeted suites first, then broader regression validation before review.
 
 ## Post-Design Constitution Check

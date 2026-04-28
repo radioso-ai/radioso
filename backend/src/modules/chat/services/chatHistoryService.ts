@@ -13,7 +13,7 @@ import type { RetrievalExecutionDiagnostics, RetrievalTrace } from "../../retrie
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import type { AssistantTurnOutcome, HiddenSupportEvidence, ValidationDisposition } from "./answerSupportValidationTypes.js";
-import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 
 export interface ChatConversationSummary {
@@ -35,7 +35,6 @@ export interface ChatConversationTurnDebug {
   stream: boolean;
   citationCount: number;
   answerOutcome?: AssistantTurnOutcome;
-  answerSupportPolicy?: AnswerSupportPolicy;
   conversationMode?: ConversationMode;
   conversationModeMetadata?: ConversationModeMetadata;
   validation?: {
@@ -45,7 +44,6 @@ export interface ChatConversationTurnDebug {
     substantiveUnsupportedSegmentCount: number;
     supportedSegmentCount: number;
     nonSubstantiveSegmentCount: number;
-    answerSupportPolicy?: AnswerSupportPolicy;
     hiddenSupportUsed?: boolean;
     hiddenSupportKindsUsed?: HiddenSupportEvidence["kind"][];
     segmentResults: Array<{
@@ -124,7 +122,6 @@ export interface PublicConversationPage {
 
 interface ChatAuditMetadata {
   answerOutcome?: AssistantTurnOutcome;
-  answerSupportPolicy?: AnswerSupportPolicy;
   conversationMode?: ConversationMode;
   conversationModeMetadata?: ConversationModeMetadata;
   assistantMessageId?: string;
@@ -140,7 +137,6 @@ interface ChatAuditMetadata {
     substantiveUnsupportedSegmentCount?: number;
     supportedSegmentCount?: number;
     nonSubstantiveSegmentCount?: number;
-    answerSupportPolicy?: AnswerSupportPolicy;
     hiddenSupportUsed?: boolean;
     hiddenSupportKindsUsed?: unknown[];
     segmentResults?: Array<{
@@ -428,10 +424,6 @@ export class ChatHistoryService {
         stream: Boolean(metadata.stream),
         citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : 0,
         answerOutcome: metadata.answerOutcome,
-        answerSupportPolicy:
-          metadata.answerSupportPolicy === "strict" || metadata.answerSupportPolicy === "warn" || metadata.answerSupportPolicy === "off"
-            ? metadata.answerSupportPolicy
-            : undefined,
         conversationMode:
           metadata.conversationMode === "factual" ||
           metadata.conversationMode === "guided" ||
@@ -474,12 +466,6 @@ export class ChatHistoryService {
                 typeof metadata.validation.supportedSegmentCount === "number" ? metadata.validation.supportedSegmentCount : 0,
               nonSubstantiveSegmentCount:
                 typeof metadata.validation.nonSubstantiveSegmentCount === "number" ? metadata.validation.nonSubstantiveSegmentCount : 0,
-              answerSupportPolicy:
-                metadata.validation.answerSupportPolicy === "strict" ||
-                metadata.validation.answerSupportPolicy === "warn" ||
-                metadata.validation.answerSupportPolicy === "off"
-                  ? metadata.validation.answerSupportPolicy
-                  : undefined,
               hiddenSupportUsed: metadata.validation.hiddenSupportUsed === true ? true : undefined,
               hiddenSupportKindsUsed: Array.isArray(metadata.validation.hiddenSupportKindsUsed)
                 ? metadata.validation.hiddenSupportKindsUsed.filter(

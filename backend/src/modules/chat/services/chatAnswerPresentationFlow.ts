@@ -162,6 +162,7 @@ export class ChatAnswerPresentationFlow {
       : await this.chatGateway.answer({
           query,
           history: session.history,
+          systemPrompt: session.retrieval.systemPrompt,
           prompt: session.retrieval.prompt,
         });
 

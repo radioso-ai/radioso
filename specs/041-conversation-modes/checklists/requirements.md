@@ -32,4 +32,4 @@
 
 ## Notes
 
-- The spec intentionally treats `answerSupportPolicy` as a separate trust control and frames conversation mode as a workspace behavior setting that shapes both direct answers and optional grounded exploration.
+- The spec intentionally treats `answerPolicy` as a separate trust control and frames conversation mode as a workspace behavior setting that shapes both direct answers and optional grounded exploration.

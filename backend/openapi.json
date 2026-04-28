@@ -771,14 +771,6 @@
             "type": "string",
             "maxLength": 2000
           },
-          "answerSupportPolicy": {
-            "type": "string",
-            "enum": [
-              "strict",
-              "warn",
-              "off"
-            ]
-          },
           "conversationMode": {
             "type": "string",
             "enum": [
@@ -983,7 +975,6 @@
           "queryRewriteEnabled",
           "semanticRewriteInstructions",
           "lexicalRewriteInstructions",
-          "answerSupportPolicy",
           "conversationMode",
           "suggestedQuestionsEnabled",
           "suggestedQuestionsCount",
@@ -1010,14 +1001,6 @@
           "lexicalRewriteInstructions": {
             "type": "string",
             "maxLength": 2000
-          },
-          "answerSupportPolicy": {
-            "type": "string",
-            "enum": [
-              "strict",
-              "warn",
-              "off"
-            ]
           },
           "conversationMode": {
             "type": "string",
@@ -1749,14 +1732,6 @@
             "type": "string",
             "maxLength": 2000
           },
-          "answerSupportPolicy": {
-            "type": "string",
-            "enum": [
-              "strict",
-              "warn",
-              "off"
-            ]
-          },
           "rerankEnabled": {
             "type": "boolean"
           },
@@ -1932,7 +1907,6 @@
           "queryRewriteEnabled",
           "semanticRewriteInstructions",
           "lexicalRewriteInstructions",
-          "answerSupportPolicy",
           "rerankEnabled",
           "vectorTopK",
           "similarityThreshold",
@@ -2099,14 +2073,6 @@
               "lexicalRewriteInstructions": {
                 "type": "string",
                 "maxLength": 2000
-              },
-              "answerSupportPolicy": {
-                "type": "string",
-                "enum": [
-                  "strict",
-                  "warn",
-                  "off"
-                ]
               },
               "rerankEnabled": {
                 "type": "boolean"
@@ -3660,7 +3626,8 @@
           "conversationMode",
           "conversationModeMetadata",
           "retrievalInfo",
-          "retrievalTrace"
+          "retrievalTrace",
+          "route"
         ]
       },
       "AssistantChatResponse": {
@@ -4181,14 +4148,6 @@
             "type": "integer",
             "minimum": 0
           },
-          "answerSupportPolicy": {
-            "type": "string",
-            "enum": [
-              "strict",
-              "warn",
-              "off"
-            ]
-          },
           "hiddenSupportUsed": {
             "type": "boolean"
           },
@@ -4247,14 +4206,6 @@
               "grounded_degraded_unsupported_segments",
               "no_context_refusal",
               "non_retrieval_response"
-            ]
-          },
-          "answerSupportPolicy": {
-            "type": "string",
-            "enum": [
-              "strict",
-              "warn",
-              "off"
             ]
           },
           "conversationMode": {
@@ -4865,9 +4816,6 @@
               "no_context_refusal",
               "non_retrieval_response"
             ]
-          },
-          "answerSupportPolicy": {
-            "type": "string"
           },
           "answer": {
             "type": "string"

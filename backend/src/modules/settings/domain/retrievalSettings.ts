@@ -55,9 +55,6 @@ export interface RetrievalMetadataRule {
   triggerInstruction?: string;
 }
 
-export const answerSupportPolicies = ["strict", "warn", "off"] as const;
-export type AnswerSupportPolicy = (typeof answerSupportPolicies)[number];
-
 export const conversationModes = ["factual", "guided", "exploratory"] as const;
 export type ConversationMode = (typeof conversationModes)[number];
 
@@ -70,7 +67,6 @@ interface RetrievalSettingsPayload {
   metadataRules?: unknown;
   semanticRewriteInstructions?: unknown;
   lexicalRewriteInstructions?: unknown;
-  answerSupportPolicy?: unknown;
   conversationMode?: unknown;
   suggestedQuestionsEnabled?: unknown;
   suggestedQuestionsCount?: unknown;
@@ -95,7 +91,6 @@ export interface RetrievalSettingsRecord {
   queryRewriteEnabled: boolean;
   semanticRewriteInstructions: string;
   lexicalRewriteInstructions: string;
-  answerSupportPolicy: AnswerSupportPolicy;
   conversationMode: ConversationMode;
   suggestedQuestionsEnabled: boolean;
   suggestedQuestionsCount: number;
@@ -114,7 +109,6 @@ export interface RetrievalSettingsInput {
   queryRewriteEnabled: boolean;
   semanticRewriteInstructions: string;
   lexicalRewriteInstructions: string;
-  answerSupportPolicy: AnswerSupportPolicy;
   conversationMode: ConversationMode;
   suggestedQuestionsEnabled: boolean;
   suggestedQuestionsCount: number;
@@ -134,7 +128,6 @@ export const DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS =
 export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS =
   "Rewrite for lexical retrieval using exact literals likely to appear in the corpus. Prefer aliases, abbreviations, citation forms, and corpus-native notation when grounded.";
 
-export const DEFAULT_ANSWER_SUPPORT_POLICY: AnswerSupportPolicy = "strict";
 export const DEFAULT_CONVERSATION_MODE: ConversationMode = "guided";
 
 export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettingsRecord => ({
@@ -142,7 +135,6 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   queryRewriteEnabled: false,
   semanticRewriteInstructions: DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,
   lexicalRewriteInstructions: DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
-  answerSupportPolicy: DEFAULT_ANSWER_SUPPORT_POLICY,
   conversationMode: DEFAULT_CONVERSATION_MODE,
   suggestedQuestionsEnabled: DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
   suggestedQuestionsCount: DEFAULT_SUGGESTED_QUESTIONS_COUNT,
@@ -331,9 +323,6 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   if (typeof input.lexicalRewriteInstructions !== "string") {
     throw badRequest("lexicalRewriteInstructions must be a string");
   }
-  if (!answerSupportPolicies.includes(input.answerSupportPolicy)) {
-    throw badRequest("answerSupportPolicy must be a supported value");
-  }
   if (!conversationModes.includes(input.conversationMode)) {
     throw badRequest("conversationMode must be a supported value");
   }
@@ -470,7 +459,6 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
       input.lexicalRewriteInstructions,
       DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
     ),
-    answerSupportPolicy: input.answerSupportPolicy,
     suggestedQuestionsCount: Math.max(
       MIN_SUGGESTED_QUESTIONS_COUNT,
       Math.min(MAX_SUGGESTED_QUESTIONS_COUNT, input.suggestedQuestionsCount),

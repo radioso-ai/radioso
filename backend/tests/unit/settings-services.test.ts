@@ -64,7 +64,6 @@ describe("settings services", () => {
     });
     expect(result.retrieval).toMatchObject({
       queryRewriteEnabled: true,
-      answerSupportPolicy: "strict",
       vectorTopK: 15,
     });
     expect(result.retrieval).not.toHaveProperty("conversationMode");

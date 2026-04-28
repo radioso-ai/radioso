@@ -1,7 +1,7 @@
 # Tasks: Configurable Answer Support Policy
 
-**Input**: Design documents from `/specs/034-answer-support-policy/`  
-**Prerequisites**: [plan.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/plan.md), [spec.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/spec.md), [research.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/research.md), [data-model.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/data-model.md), [quickstart.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/quickstart.md), [retrieval-settings-contract.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/contracts/retrieval-settings-contract.md)
+**Input**: Design documents from `/specs/034-answer-policy/`  
+**Prerequisites**: [plan.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/plan.md), [spec.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/spec.md), [research.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/research.md), [data-model.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/data-model.md), [quickstart.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/quickstart.md), [retrieval-settings-contract.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/contracts/retrieval-settings-contract.md)
 
 **Tests**: Backend tests are REQUIRED and MUST be written before implementation. Frontend verification follows the feature spec and existing repo practices.
 
@@ -22,13 +22,13 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 [P] Add failing retrieval settings domain coverage for `answerSupportPolicy` defaults and validation in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
-- [ ] T004 [P] Add failing settings contract coverage for `answerSupportPolicy` in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/tests/contract/settings.contract.test.ts`
+- [ ] T003 [P] Add failing retrieval settings domain coverage for `answerPolicy` defaults and validation in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/tests/unit/retrieval-settings-and-chunking.test.ts`
+- [ ] T004 [P] Add failing settings contract coverage for `answerPolicy` in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/tests/contract/settings.contract.test.ts`
 - [ ] T005 [P] Add failing unit coverage for policy application seams in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/tests/unit/answer-support-validator.test.ts`
 - [ ] T006 Implement the answer-support policy enum, defaults, and validation in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/settings/domain/retrievalSettings.ts`
-- [ ] T007 Persist and read `answerSupportPolicy` through `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/db/repositories/retrievalSettingsRepository.ts`
-- [ ] T008 Add code-first retrieval settings schema support for `answerSupportPolicy` in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/app/http/openapi/document.ts`
-- [ ] T009 Wire `answerSupportPolicy` through retrieval settings transport in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/app/http/routes/settingsRoutes.ts`
+- [ ] T007 Persist and read `answerPolicy` through `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/db/repositories/retrievalSettingsRepository.ts`
+- [ ] T008 Add code-first retrieval settings schema support for `answerPolicy` in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/app/http/openapi/document.ts`
+- [ ] T009 Wire `answerPolicy` through retrieval settings transport in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/app/http/routes/settingsRoutes.ts`
 
 **Checkpoint**: Workspace policy storage and contract seams are ready for story work.
 
@@ -49,7 +49,7 @@
 
 ### Implementation for User Story 1
 
-- [ ] T014 [P] [US1] Create focused answer-support policy helpers in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/chat/services/answerSupportPolicy.ts`
+- [ ] T014 [P] [US1] Create focused answer-support policy helpers in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/chat/services/answerPolicy.ts`
 - [ ] T015 [P] [US1] Create bounded strict-mode unsupported-notice generation in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/chat/services/unsupportedNoticeGenerator.ts`
 - [ ] T016 [US1] Update answer validation types for policy-aware outcomes in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/chat/services/answerSupportValidationTypes.ts`
 - [ ] T017 [US1] Apply strict/warn/off policy behavior in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/chat/services/answerSupportValidator.ts`
@@ -73,7 +73,7 @@
 
 ### Implementation for User Story 2
 
-- [ ] T022 [P] [US2] Extend retrieval settings service flow for `answerSupportPolicy` in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/settings/services/retrievalSettingsService.ts`
+- [ ] T022 [P] [US2] Extend retrieval settings service flow for `answerPolicy` in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/settings/services/retrievalSettingsService.ts`
 - [ ] T023 [P] [US2] Update frontend retrieval settings client typing and requests in `/Users/dm/conductor/workspaces/radioso/sacramento/frontend/lib/api.ts`
 - [ ] T024 [US2] Add the answer-support policy control and copy to `/Users/dm/conductor/workspaces/radioso/sacramento/frontend/components/dashboard/settings/retrieval-settings-panel.tsx`
 - [ ] T025 [US2] Regenerate generated OpenAPI artifacts in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/openapi.yaml` and `/Users/dm/conductor/workspaces/radioso/sacramento/backend/openapi.json`
@@ -90,13 +90,13 @@
 
 ### Tests for User Story 3 (REQUIRED for backend)
 
-- [ ] T026 [P] [US3] Add failing chat history debug coverage for `answerSupportPolicy` in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/tests/unit/chat-history-service.test.ts`
+- [ ] T026 [P] [US3] Add failing chat history debug coverage for `answerPolicy` in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/tests/unit/chat-history-service.test.ts`
 - [ ] T027 [P] [US3] Add failing retrieval-trace/history streaming assertions for policy-aware metadata in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/tests/unit/chat-service-streaming.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T028 [P] [US3] Persist `answerSupportPolicy` in assistant-turn audit metadata within `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/chat/services/chatService.ts`
-- [ ] T029 [P] [US3] Surface `answerSupportPolicy` in history/debug mapping within `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/chat/services/chatHistoryService.ts`
+- [ ] T028 [P] [US3] Persist `answerPolicy` in assistant-turn audit metadata within `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/chat/services/chatService.ts`
+- [ ] T029 [P] [US3] Surface `answerPolicy` in history/debug mapping within `/Users/dm/conductor/workspaces/radioso/sacramento/backend/src/modules/chat/services/chatHistoryService.ts`
 - [ ] T030 [US3] Expose the active policy in the dashboard history/debug view at `/Users/dm/conductor/workspaces/radioso/sacramento/frontend/components/dashboard/chat-history-view.tsx`
 
 **Checkpoint**: Policy-driven answer handling is inspectable in existing debug/history flows.
@@ -109,8 +109,8 @@
 
 - [ ] T031 [P] Run focused backend validation for settings, validator, chat, and public chat flows in `/Users/dm/conductor/workspaces/radioso/sacramento/backend/tests/`
 - [ ] T032 [P] Run frontend verification for retrieval settings changes in `/Users/dm/conductor/workspaces/radioso/sacramento/frontend/`
-- [ ] T033 Run the quickstart validation scenarios from `/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/quickstart.md`
-- [ ] T034 Update feature documentation status and mark completed items in `/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/`
+- [ ] T033 Run the quickstart validation scenarios from `/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/quickstart.md`
+- [ ] T034 Update feature documentation status and mark completed items in `/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/`
 
 ---
 
@@ -158,7 +158,7 @@ Task: "Add failing authenticated chat policy integration coverage in backend/tes
 Task: "Add failing public chat policy contract coverage in backend/tests/contract/public-chat.contract.test.ts"
 
 # Launch focused domain helpers together:
-Task: "Create focused answer-support policy helpers in backend/src/modules/chat/services/answerSupportPolicy.ts"
+Task: "Create focused answer-support policy helpers in backend/src/modules/chat/services/answerPolicy.ts"
 Task: "Create bounded strict-mode unsupported-notice generation in backend/src/modules/chat/services/unsupportedNoticeGenerator.ts"
 ```
 

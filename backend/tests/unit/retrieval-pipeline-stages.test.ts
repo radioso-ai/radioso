@@ -23,7 +23,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -95,7 +94,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -166,7 +164,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -249,7 +246,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -337,7 +333,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -423,7 +418,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -563,7 +557,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -662,7 +655,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -728,7 +720,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer section symbols and citation notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -763,7 +754,7 @@ describe("retrieval pipeline stages", () => {
     expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus 2015 § 4");
   });
 
-  it("rewrites standalone searches without requiring prior history", async () => {
+  it("applies focused lexical rewrites for standalone searches without prior history", async () => {
     const stage = new QueryInterpretationStageService(
       new QueryRewriteService({
         async rewrite() {
@@ -792,7 +783,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer section symbols and legal citation notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -813,9 +803,9 @@ describe("retrieval pipeline stages", () => {
       },
     });
 
-    expect(result.rewrittenQuery.status).toBe("fallback");
+    expect(result.rewrittenQuery.status).toBe("applied");
     expect(result.activeSemanticQuery).toBe("tulumaksuseadus paragrahv 4 osa 5");
-    expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus paragrahv 4 osa 5");
+    expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus § 4 lg 5");
     expect(result.promptHistory).toEqual([]);
   });
 
@@ -841,7 +831,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -908,7 +897,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
         lexicalRewriteInstructions: "Prefer exact literals and names.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -990,7 +978,6 @@ describe("retrieval pipeline stages", () => {
             queryRewriteEnabled: true,
             semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
             lexicalRewriteInstructions: "Prefer exact notation.",
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 3,
@@ -1088,7 +1075,6 @@ describe("retrieval pipeline stages", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "Keep meaning.",
         lexicalRewriteInstructions: "Prefer exact notation.",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,
@@ -1178,11 +1164,11 @@ describe("retrieval pipeline stages", () => {
       rerankedContexts: [],
       rerankStatus: "skipped",
       contexts: [],
+      systemPrompt: "system prompt",
       prompt: "prompt",
       citations: [],
       responseSettings: {
         citationDisplayEnabled: true,
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,

@@ -1,6 +1,5 @@
 import type { AnswerSegment, CitationEvidence } from "./answerPresentationService.js";
-import type { AnswerSupportPolicy, ConversationMode } from "../../settings/domain/retrievalSettings.js";
-import { shouldPreserveUnsupportedSegments, shouldReplaceUnsupportedSegments } from "./answerSupportPolicy.js";
+import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import {
   type HiddenSupportEvidence,
   type ValidatedAnswer,
@@ -432,7 +431,6 @@ export class AnswerSupportValidator {
     hiddenSupportEvidence?: HiddenSupportEvidence[];
     retrievedContextSummaries: Array<{ title: string; content: string }>;
     citationDisplayEnabled: boolean;
-    answerSupportPolicy: AnswerSupportPolicy;
     conversationMode: ConversationMode;
     groundedMissResponseComposer: GroundedMissResponseComposer;
     unsupportedNoticeMarked?: boolean;
@@ -482,16 +480,6 @@ export class AnswerSupportValidator {
         } as const;
       }
 
-      if (shouldPreserveUnsupportedSegments(input.answerSupportPolicy)) {
-        return {
-          originalText: segment.text,
-          text: segment.text,
-          disposition: VALIDATION_DISPOSITION.UNSUPPORTED,
-          replacementApplied: false,
-          reason: "missing_support_reference",
-        } as const;
-      }
-
       return {
         originalText: segment.text,
         text: preservePrefix(segment.text),
@@ -528,8 +516,7 @@ export class AnswerSupportValidator {
     const preserveModelUnsupportedNotice =
       Boolean(input.unsupportedNoticeMarked)
       && supportedSegmentCount === 0
-      && substantiveUnsupportedSegmentCount > 0
-      && shouldReplaceUnsupportedSegments(input.answerSupportPolicy);
+      && substantiveUnsupportedSegmentCount > 0;
 
     const effectiveSegmentResults = preserveModelUnsupportedNotice
       ? segmentResults.map((segment) => (
@@ -546,7 +533,7 @@ export class AnswerSupportValidator {
 
     const visibleSegments = preserveModelUnsupportedNotice
       ? this.buildVisibleSegments(effectiveSegmentResults)
-      : supportedSegmentCount === 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)
+      : supportedSegmentCount === 0 && unsupportedSegmentCount > 0
         ? [{
             text: await input.groundedMissResponseComposer.composeUnsupportedWithContext({
               query: input.query,
@@ -556,7 +543,7 @@ export class AnswerSupportValidator {
               userExpectedLocale: input.userExpectedLocale,
             }),
           }]
-        : supportedSegmentCount > 0 && unsupportedSegmentCount > 0 && shouldReplaceUnsupportedSegments(input.answerSupportPolicy)
+        : supportedSegmentCount > 0 && unsupportedSegmentCount > 0
           ? this.buildVisibleSegmentsWithoutUnsupported(segmentResults)
           : this.buildVisibleSegments(segmentResults);
 
@@ -574,7 +561,6 @@ export class AnswerSupportValidator {
         substantiveUnsupportedSegmentCount,
         supportedSegmentCount,
         nonSubstantiveSegmentCount,
-        answerSupportPolicy: input.answerSupportPolicy,
         hiddenSupportUsed,
         hiddenSupportKindsUsed: hiddenSupportUsed ? hiddenSupportKindsUsed : undefined,
       },

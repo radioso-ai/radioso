@@ -45,6 +45,10 @@ describe("chat presenter", () => {
       {
         type: "done",
         conversationId: "conversation-1",
+        route: {
+          type: "retrieval",
+          reason: "evidence_required",
+        },
         answer: "Answer",
         citations: [],
         answerSegments: [{ text: "Answer" }],

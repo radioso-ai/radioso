@@ -45,7 +45,6 @@ describe("retrieval answer contract", () => {
       ],
       validation: expect.objectContaining({
         status: expect.any(String),
-        policy: "strict",
       }),
       retrievalInfo: expect.objectContaining({
         candidateCounts: expect.any(Object),

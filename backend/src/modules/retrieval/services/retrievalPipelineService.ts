@@ -38,12 +38,12 @@ import type {
 export interface RetrievalPipelineResult {
   rewrittenQuery: string;
   contexts: import("../domain/retrievalPipelineTypes.js").FinalPromptContext[];
+  systemPrompt: string;
   prompt: string;
   citations: PromptBuildResult["citations"];
   responseIdentity: ResponseIdentity | null;
   responseSettings: {
     citationDisplayEnabled: boolean;
-    answerSupportPolicy: import("../../settings/domain/retrievalSettings.js").AnswerSupportPolicy;
     conversationMode: import("../../settings/domain/retrievalSettings.js").ConversationMode;
     suggestedQuestionsEnabled: boolean;
     suggestedQuestionsCount: number;
@@ -150,6 +150,7 @@ export class RetrievalPipelineService {
     return {
       rewrittenQuery: prompt.result.activeQuery,
       contexts: prompt.result.contexts,
+      systemPrompt: prompt.result.systemPrompt,
       prompt: prompt.result.prompt,
       citations: prompt.result.citations,
       responseIdentity: input.request.responseIdentity ?? null,
@@ -162,7 +163,6 @@ export class RetrievalPipelineService {
   async runWithoutRetrieval(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult> {
     const responseSettings = {
       citationDisplayEnabled: input.context.result.settings.citationDisplayEnabled,
-      answerSupportPolicy: input.context.result.settings.answerSupportPolicy,
       conversationMode: input.context.result.settings.conversationMode,
       suggestedQuestionsEnabled: input.context.result.settings.suggestedQuestionsEnabled,
       suggestedQuestionsCount: input.context.result.settings.suggestedQuestionsCount,
@@ -211,6 +211,7 @@ export class RetrievalPipelineService {
     return {
       rewrittenQuery: input.request.query,
       contexts: [],
+      systemPrompt: "",
       prompt: "",
       citations: [],
       responseIdentity: input.request.responseIdentity ?? null,

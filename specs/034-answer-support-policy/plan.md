@@ -1,7 +1,7 @@
 # Implementation Plan: Configurable Answer Support Policy
 
-**Branch**: `034-answer-support-policy` | **Date**: 2026-04-01 | **Spec**: [spec.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/spec.md)
-**Input**: Feature specification from `/specs/034-answer-support-policy/spec.md`
+**Branch**: `034-answer-policy` | **Date**: 2026-04-01 | **Spec**: [spec.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/spec.md)
+**Input**: Feature specification from `/specs/034-answer-policy/spec.md`
 
 ## Summary
 
@@ -23,7 +23,7 @@ Extend workspace retrieval settings with an answer-support policy (`strict`, `wa
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- Spec exists and is approved; no implementation without spec. Pass: approved spec exists in `specs/034-answer-support-policy/`.
+- Spec exists and is approved; no implementation without spec. Pass: approved spec exists in `specs/034-answer-policy/`.
 - Backend work includes TDD with failing tests written before implementation. Pass: implementation tasks will begin with failing unit, contract, and integration tests for policy storage and per-mode answer handling.
 - Stack remains Node.js for backend and React for frontend. Pass: TypeScript/Node backend and React/Next frontend only.
 - Database is PostgreSQL with `pgvector` for embeddings and vector search. Pass: additive retrieval-settings storage only; no database or retrieval stack replacement.
@@ -40,7 +40,7 @@ Extend workspace retrieval settings with an answer-support policy (`strict`, `wa
 ### Documentation (this feature)
 
 ```text
-specs/034-answer-support-policy/
+specs/034-answer-policy/
 ├── plan.md
 ├── research.md
 ├── data-model.md
@@ -120,13 +120,13 @@ frontend/
 
 ## Phase 0: Research
 
-See [research.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/research.md) for the workspace-settings storage, strict-mode generated notice, warn/off policy behavior, and diagnostics decisions.
+See [research.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/research.md) for the workspace-settings storage, strict-mode generated notice, warn/off policy behavior, and diagnostics decisions.
 
 ## Phase 1: Design & Contracts
 
-- The workspace answer-support policy and validation diagnostics entities are defined in [data-model.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/data-model.md).
-- The retrieval settings contract changes are defined in [retrieval-settings-contract.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/contracts/retrieval-settings-contract.md).
-- Validation scenarios for settings saves, strict/warn/off behavior, and authenticated versus anonymous/public chat are documented in [quickstart.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-support-policy/quickstart.md).
+- The workspace answer-support policy and validation diagnostics entities are defined in [data-model.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/data-model.md).
+- The retrieval settings contract changes are defined in [retrieval-settings-contract.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/contracts/retrieval-settings-contract.md).
+- Validation scenarios for settings saves, strict/warn/off behavior, and authenticated versus anonymous/public chat are documented in [quickstart.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/quickstart.md).
 
 ## Post-Design Constitution Check
 

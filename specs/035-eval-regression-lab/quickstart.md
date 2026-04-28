@@ -44,7 +44,7 @@
 3. Run the same dataset again.
 4. Open the comparison view.
 5. Confirm the comparison reports regressions, improvements, and unchanged cases.
-6. Confirm at least one regressed case shows a concrete reason such as citation loss, document mismatch, refusal mismatch, answer-support-policy change, or earlier retrieval-stage degradation.
+6. Confirm at least one regressed case shows a concrete reason such as citation loss, document mismatch, refusal mismatch, answer-policy change, or earlier retrieval-stage degradation.
 
 ## Scenario 6: Import a historical turn with missing diagnostics
 

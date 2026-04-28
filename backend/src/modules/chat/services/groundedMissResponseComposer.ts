@@ -1,6 +1,6 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import { resolveChatLocale } from "./chatLocale.js";
@@ -83,6 +83,33 @@ const formatContextsForPrompt = (contexts: GroundedMissContextSummary[]): string
     .join("\n\n");
 };
 
+const GROUNDED_MISS_TEMPLATE = loadPromptTemplate("chat/grounded-miss.md");
+
+const getGroundedMissPromptSection = (sectionName: string): string => {
+  const sectionPattern = new RegExp(`--- ${sectionName} ---\\n([\\s\\S]*?)(?=\\n--- [a-z_]+ ---|$)`);
+  const match = GROUNDED_MISS_TEMPLATE.match(sectionPattern);
+  if (!match?.[1]?.trim()) {
+    throw new Error(`Missing grounded miss prompt section "${sectionName}"`);
+  }
+
+  return match[1].trimEnd();
+};
+
+const renderGroundedMissSection = (
+  sectionName: string,
+  variables: Record<string, string>,
+): string => {
+  const template = getGroundedMissPromptSection(sectionName);
+
+  return template.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key: string) => {
+    if (!(key in variables)) {
+      throw new Error(`Missing prompt variable "${key}" for grounded miss section ${sectionName}`);
+    }
+
+    return variables[key] ?? "";
+  });
+};
+
 // Keep model-authored markdown structure, but strip citation artifacts and noisy spacing
 // before the fallback response is shown to users.
 const normalizeModelResponse = (value: string | undefined): string => {
@@ -102,16 +129,6 @@ const normalizeModelResponse = (value: string | undefined): string => {
   return normalized;
 };
 
-const buildConversationModeGuidance = (input: {
-  conversationMode?: ConversationMode;
-  hasRetrievedContexts: boolean;
-}): string => {
-  return renderPromptTemplate("chat/grounded-miss/conversation-mode-guidance.md", {
-    conversation_mode: input.conversationMode ?? "guided",
-    has_retrieved_contexts: input.hasRetrievedContexts ? "yes" : "no",
-  });
-};
-
 const buildLocaleInstruction = (userExpectedLocale?: string | null): string => {
   const locale = resolveChatLocale({ userExpectedLocale });
   return locale
@@ -119,18 +136,16 @@ const buildLocaleInstruction = (userExpectedLocale?: string | null): string => {
     : "Write the response in the same language as the user's question.";
 };
 
-const NO_CONTEXT_FALLBACK_PROMPT = loadPromptTemplate("chat/grounded-miss/fallback-no-context.md");
-
-const buildNoContextFallback = (): string => NO_CONTEXT_FALLBACK_PROMPT;
+const buildNoContextFallback = (): string => renderGroundedMissSection("fallback_no_context", {});
 
 const buildUnsupportedWithContextFallback = (contexts: GroundedMissContextSummary[]): string => {
   const titledContext = normalizeContexts(contexts).find((context) => context.title.length > 0);
 
   if (!titledContext) {
-    return loadPromptTemplate("chat/grounded-miss/fallback-unsupported-with-context-untitled.md");
+    return renderGroundedMissSection("fallback_unsupported_with_context_untitled", {});
   }
 
-  return renderPromptTemplate("chat/grounded-miss/fallback-unsupported-with-context.md", {
+  return renderGroundedMissSection("fallback_unsupported_with_context", {
     title: titledContext.title,
   });
 };
@@ -139,8 +154,8 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
   constructor(private readonly client: TextGenerationClient) {}
 
   private async completeWithRetry(request: {
-    systemPrompt: string;
     prompt: string;
+    systemPrompt?: string;
     temperature: number;
     maxOutputTokens: number;
   }): Promise<string | undefined> {
@@ -160,18 +175,14 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
   }): Promise<string> {
     try {
       const raw = await this.completeWithRetry({
-        systemPrompt: `${renderPromptTemplate("chat/grounded-miss/system.md", {
+        prompt: renderGroundedMissSection("prompt", {
           miss_kind: "unsupported_with_context",
-        })}\n${buildLocaleInstruction(input.userExpectedLocale)}`,
-        prompt: renderPromptTemplate("chat/grounded-miss/user.md", {
-          miss_kind: "unsupported_with_context",
+          locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
           query: input.query,
+          conversation_mode: input.conversationMode ?? "guided",
+          has_retrieved_contexts: "yes",
           unsupported_text: input.unsupportedText.trim(),
           contexts_section: formatContextsForPrompt(input.contexts),
-          conversation_mode_guidance: buildConversationModeGuidance({
-            conversationMode: input.conversationMode,
-            hasRetrievedContexts: true,
-          }),
         }),
         temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.unsupportedWithContextMaxOutputTokens,
@@ -199,18 +210,14 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
   }): Promise<string> {
     try {
       const raw = await this.completeWithRetry({
-        systemPrompt: `${renderPromptTemplate("chat/grounded-miss/system.md", {
+        prompt: renderGroundedMissSection("prompt", {
           miss_kind: "no_context",
-        })}\n${buildLocaleInstruction(input.userExpectedLocale)}`,
-        prompt: renderPromptTemplate("chat/grounded-miss/user.md", {
-          miss_kind: "no_context",
+          locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
           query: input.query,
+          conversation_mode: input.conversationMode ?? "guided",
+          has_retrieved_contexts: "no",
           unsupported_text: "None",
           contexts_section: "None",
-          conversation_mode_guidance: buildConversationModeGuidance({
-            conversationMode: input.conversationMode,
-            hasRetrievedContexts: false,
-          }),
         }),
         temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,

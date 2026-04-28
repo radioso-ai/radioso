@@ -234,7 +234,7 @@ Returns one shared workspace settings resource.
     "queryRewriteEnabled": true,
     "semanticRewriteInstructions": "Rewrite for semantic retrieval...",
     "lexicalRewriteInstructions": "Rewrite for lexical retrieval...",
-    "answerSupportPolicy": "strict",
+    "answerPolicy": "strict",
     "rerankEnabled": true,
     "vectorTopK": 15,
     "similarityThreshold": 0.2,

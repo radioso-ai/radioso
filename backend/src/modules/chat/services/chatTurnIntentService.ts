@@ -11,30 +11,16 @@ export const CHAT_TURN_ROUTE = {
 
 export type ChatTurnRoute = (typeof CHAT_TURN_ROUTE)[keyof typeof CHAT_TURN_ROUTE];
 
-export interface ChatTurnIntentDecision {
-  route: ChatTurnRoute;
-  retrievalRequired: boolean;
-}
-
 export class ChatTurnIntentService {
-  resolve(input: { responseIntent?: ResponseIntent }): ChatTurnIntentDecision {
+  resolve(input: { responseIntent?: ResponseIntent }): ChatTurnRoute {
     switch (input.responseIntent) {
       case RESPONSE_INTENT.SOCIAL_ONLY:
-        return {
-          route: CHAT_TURN_ROUTE.SOCIAL_ONLY,
-          retrievalRequired: false,
-        };
+        return CHAT_TURN_ROUTE.SOCIAL_ONLY;
       case RESPONSE_INTENT.ASSISTANT_IDENTITY:
-        return {
-          route: CHAT_TURN_ROUTE.ASSISTANT_IDENTITY,
-          retrievalRequired: false,
-        };
+        return CHAT_TURN_ROUTE.ASSISTANT_IDENTITY;
       case RESPONSE_INTENT.RETRIEVAL:
       default:
-        return {
-          route: CHAT_TURN_ROUTE.RETRIEVAL,
-          retrievalRequired: true,
-        };
+        return CHAT_TURN_ROUTE.RETRIEVAL;
     }
   }
 }

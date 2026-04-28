@@ -179,7 +179,7 @@ Represents retrieval-owned grounded-answer behavior.
 - `queryRewriteEnabled`
 - `semanticRewriteInstructions`
 - `lexicalRewriteInstructions`
-- `answerSupportPolicy`
+- `answerPolicy`
 - `rerankEnabled`
 - `vectorTopK`
 - `similarityThreshold`

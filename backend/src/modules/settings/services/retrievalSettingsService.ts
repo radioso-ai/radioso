@@ -1,9 +1,10 @@
 import {
   defaultRetrievalSettings,
+  type AnswerSupportPolicy,
+  type RetrievalSettingsRecord,
   type MetadataFieldSuggestion,
   normalizeMetadataRules,
   type RetrievalSettingsInput,
-  type RetrievalSettingsRecord,
   validateRetrievalSettings,
 } from "../domain/retrievalSettings.js";
 import type { AuditService } from "../../audit/services/auditService.js";
@@ -41,10 +42,10 @@ export class RetrievalSettingsService {
         ...existing,
         metadataRules: normalizeMetadataRules(existing.metadataRules),
       });
-      return {
+      return this.disableRewriteAndStrictFactChecking({
         ...existing,
         ...normalized,
-      };
+      });
     }
 
     const defaults = defaultRetrievalSettings(workspaceId);
@@ -53,9 +54,13 @@ export class RetrievalSettingsService {
 
   async updateForWorkspace(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
     try {
-      const normalizedInput: RetrievalSettingsInput = {
+      const runtimeInput = this.disableRewriteAndStrictFactChecking({
         ...input,
         metadataRules: normalizeMetadataRules(input.metadataRules),
+      });
+      const normalizedInput: RetrievalSettingsInput = {
+        ...runtimeInput,
+        answerSupportPolicy: runtimeInput.answerSupportPolicy,
       };
       const settings = await this.repository.upsert(workspaceId, validateRetrievalSettings(normalizedInput));
       try {
@@ -76,7 +81,6 @@ export class RetrievalSettingsService {
           properties: {
             queryRewriteEnabled: settings.queryRewriteEnabled,
             conversationMode: settings.conversationMode,
-            answerSupportPolicy: settings.answerSupportPolicy,
             rerankEnabled: settings.rerankEnabled,
             suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
           },
@@ -98,5 +102,16 @@ export class RetrievalSettingsService {
       }
       throw error;
     }
+  }
+
+  private disableRewriteAndStrictFactChecking<
+    T extends Pick<RetrievalSettingsRecord, "queryRewriteEnabled" | "answerSupportPolicy" | "metadataRules">,
+  >(input: T): T {
+    return {
+      ...input,
+      queryRewriteEnabled: false,
+      answerSupportPolicy: "off" as AnswerSupportPolicy,
+      metadataRules: normalizeMetadataRules(input.metadataRules),
+    };
   }
 }

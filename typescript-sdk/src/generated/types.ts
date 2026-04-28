@@ -1088,9 +1088,7 @@ export interface components {
             queryRewriteEnabled: boolean;
             semanticRewriteInstructions: string;
             lexicalRewriteInstructions: string;
-            /** @enum {string} */
-            answerSupportPolicy: "strict" | "warn" | "off";
-            /** @enum {string} */
+            /** @enum {string} */            /** @enum {string} */
             conversationMode: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled: boolean;
             suggestedQuestionsCount: number;
@@ -1146,9 +1144,7 @@ export interface components {
             queryRewriteEnabled: boolean;
             semanticRewriteInstructions?: string;
             lexicalRewriteInstructions?: string;
-            /** @enum {string} */
-            answerSupportPolicy?: "strict" | "warn" | "off";
-            /** @enum {string} */
+            /** @enum {string} */            /** @enum {string} */
             conversationMode?: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled?: boolean;
             suggestedQuestionsCount?: number;
@@ -1318,9 +1314,7 @@ export interface components {
             queryRewriteEnabled: boolean;
             semanticRewriteInstructions: string;
             lexicalRewriteInstructions: string;
-            /** @enum {string} */
-            answerSupportPolicy: "strict" | "warn" | "off";
-            rerankEnabled: boolean;
+            /** @enum {string} */            rerankEnabled: boolean;
             vectorTopK: number;
             similarityThreshold: number;
             rerankTopK: number;
@@ -1400,9 +1394,7 @@ export interface components {
                 queryRewriteEnabled?: boolean;
                 semanticRewriteInstructions?: string;
                 lexicalRewriteInstructions?: string;
-                /** @enum {string} */
-                answerSupportPolicy?: "strict" | "warn" | "off";
-                rerankEnabled?: boolean;
+                /** @enum {string} */                rerankEnabled?: boolean;
                 vectorTopK?: number;
                 similarityThreshold?: number;
                 rerankTopK?: number;
@@ -1744,8 +1736,6 @@ export interface components {
             validation: {
                 /** @enum {string} */
                 status: "supported" | "unsupported" | "not_checked";
-                /** @enum {string} */
-                policy: "strict" | "warn" | "off";
             };
             retrievalInfo: components["schemas"]["RetrievalInfo"];
             retrievalTrace: components["schemas"]["RetrievalTrace"];
@@ -1961,8 +1951,6 @@ export interface components {
             substantiveUnsupportedSegmentCount: number;
             supportedSegmentCount: number;
             nonSubstantiveSegmentCount: number;
-            /** @enum {string} */
-            answerSupportPolicy?: "strict" | "warn" | "off";
             hiddenSupportUsed?: boolean;
             hiddenSupportKindsUsed?: ("assistant_name" | "assistant_role")[];
             segmentResults: components["schemas"]["ValidationSegmentResult"][];
@@ -1976,9 +1964,7 @@ export interface components {
             citationCount: number;
             /** @enum {string} */
             answerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
-            /** @enum {string} */
-            answerSupportPolicy?: "strict" | "warn" | "off";
-            /** @enum {string} */
+            /** @enum {string} */            /** @enum {string} */
             conversationMode?: "factual" | "guided" | "exploratory";
             route?: components["schemas"]["AssistantRouteDiagnostics"];
             conversationModeMetadata?: {
@@ -2135,7 +2121,6 @@ export interface components {
             answerSegments?: components["schemas"]["AnswerSegment"][];
             /** @enum {string} */
             answerOutcome: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
-            answerSupportPolicy?: string;
             answer: string;
             latencyMs: number;
         };

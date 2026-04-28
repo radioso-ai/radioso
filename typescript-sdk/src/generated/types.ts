@@ -642,126 +642,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/evals/datasets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List eval datasets for the active workspace */
-        get: operations["listEvalDatasets"];
-        put?: never;
-        /** Create an eval dataset */
-        post: operations["createEvalDataset"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/evals/datasets/{datasetId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get one eval dataset with its cases and runs */
-        get: operations["getEvalDataset"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/evals/import/chat-history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create an eval import draft from chat history */
-        post: operations["importEvalChatHistory"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/evals/datasets/{datasetId}/cases": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Add an eval case to a dataset */
-        post: operations["createEvalCase"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/evals/datasets/{datasetId}/runs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Run an eval dataset */
-        post: operations["createEvalRun"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/evals/datasets/{datasetId}/runs/{runId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get an eval run */
-        get: operations["getEvalRun"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/evals/datasets/{datasetId}/runs/{runId}/comparison": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Compare an eval run to a baseline */
-        get: operations["getEvalRunComparison"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/connectors": {
         parameters: {
             query?: never;
@@ -1088,7 +968,7 @@ export interface components {
             queryRewriteEnabled: boolean;
             semanticRewriteInstructions: string;
             lexicalRewriteInstructions: string;
-            /** @enum {string} */            /** @enum {string} */
+            /** @enum {string} */
             conversationMode: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled: boolean;
             suggestedQuestionsCount: number;
@@ -1144,7 +1024,7 @@ export interface components {
             queryRewriteEnabled: boolean;
             semanticRewriteInstructions?: string;
             lexicalRewriteInstructions?: string;
-            /** @enum {string} */            /** @enum {string} */
+            /** @enum {string} */
             conversationMode?: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled?: boolean;
             suggestedQuestionsCount?: number;
@@ -1314,7 +1194,7 @@ export interface components {
             queryRewriteEnabled: boolean;
             semanticRewriteInstructions: string;
             lexicalRewriteInstructions: string;
-            /** @enum {string} */            rerankEnabled: boolean;
+            rerankEnabled: boolean;
             vectorTopK: number;
             similarityThreshold: number;
             rerankTopK: number;
@@ -1394,7 +1274,7 @@ export interface components {
                 queryRewriteEnabled?: boolean;
                 semanticRewriteInstructions?: string;
                 lexicalRewriteInstructions?: string;
-                /** @enum {string} */                rerankEnabled?: boolean;
+                rerankEnabled?: boolean;
                 vectorTopK?: number;
                 similarityThreshold?: number;
                 rerankTopK?: number;
@@ -1802,7 +1682,7 @@ export interface components {
             };
             retrievalInfo: components["schemas"]["RetrievalInfo"];
             retrievalTrace: components["schemas"]["RetrievalTrace"];
-            route?: components["schemas"]["AssistantRoute"];
+            route: components["schemas"]["AssistantRoute"];
         };
         AssistantChatResponse: {
             /** Format: uuid */
@@ -1964,7 +1844,7 @@ export interface components {
             citationCount: number;
             /** @enum {string} */
             answerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
-            /** @enum {string} */            /** @enum {string} */
+            /** @enum {string} */
             conversationMode?: "factual" | "guided" | "exploratory";
             route?: components["schemas"]["AssistantRouteDiagnostics"];
             conversationModeMetadata?: {
@@ -2021,177 +1901,6 @@ export interface components {
             hasOlderMessages: boolean;
             nextCursor: string | null;
             messages: components["schemas"]["ChatConversationMessage"][];
-        };
-        EvalCaseConversationMessage: {
-            /** @enum {string} */
-            role: "user" | "assistant" | "system";
-            content: string;
-        };
-        EvalCaseExpectations: {
-            expectedDocumentIds?: string[];
-            expectedCitationTitles?: string[];
-            /** @enum {string} */
-            expectedRefusalBehavior?: "refusal" | "answer";
-            /** @enum {string} */
-            expectedAnswerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
-            requiredPhrases?: string[];
-            forbiddenPhrases?: string[];
-            latencyBudgetMs?: number;
-        };
-        EvalDataset: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            workspaceId: string;
-            name: string;
-            description: string;
-            /** @enum {string} */
-            status: "active" | "archived";
-            /** Format: uuid */
-            createdByAccountId: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        EvalDatasetSummary: components["schemas"]["EvalDataset"] & {
-            caseCount: number;
-            runCount: number;
-            /** Format: date-time */
-            lastRunAt: string | null;
-        };
-        EvalCase: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            datasetId: string;
-            /** Format: uuid */
-            workspaceId: string;
-            title: string;
-            /** @enum {string} */
-            sourceType: "manual" | "conversation_import";
-            query: string;
-            conversationContext: components["schemas"]["EvalCaseConversationMessage"][];
-            expectations: components["schemas"]["EvalCaseExpectations"];
-            provenance: {
-                [key: string]: unknown;
-            };
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        EvalImportDraft: {
-            title: string;
-            query: string;
-            conversationContext: components["schemas"]["EvalCaseConversationMessage"][];
-            /** @enum {string} */
-            sourceType: "manual" | "conversation_import";
-            provenance: {
-                [key: string]: unknown;
-            };
-            seededExpectations: components["schemas"]["EvalCaseExpectations"];
-            unavailable: string[];
-        };
-        EvalDatasetListResponse: {
-            datasets: components["schemas"]["EvalDatasetSummary"][];
-        };
-        EvalDimensionResult: {
-            /** @enum {string} */
-            verdict: "pass" | "fail" | "unscored";
-            expected?: unknown;
-            actual?: unknown;
-            reason?: string;
-        };
-        EvalCaseScore: {
-            documentMatch: components["schemas"]["EvalDimensionResult"];
-            citationMatch: components["schemas"]["EvalDimensionResult"];
-            refusalMatch: components["schemas"]["EvalDimensionResult"];
-            answerOutcomeMatch: components["schemas"]["EvalDimensionResult"];
-            answerContainsMatch: components["schemas"]["EvalDimensionResult"];
-            latencyMatch: components["schemas"]["EvalDimensionResult"];
-            /** @enum {string} */
-            overallVerdict: "pass" | "fail";
-            reasons: string[];
-        };
-        EvalReplayDiagnostics: {
-            retrievalInfo: components["schemas"]["RetrievalInfo"];
-            retrievalTrace?: components["schemas"]["RetrievalTrace"];
-            citations?: components["schemas"]["Citation"][];
-            answerSegments?: components["schemas"]["AnswerSegment"][];
-            /** @enum {string} */
-            answerOutcome: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
-            answer: string;
-            latencyMs: number;
-        };
-        EvalCaseResult: {
-            /** Format: uuid */
-            caseId: string;
-            /** @enum {string} */
-            status: "pass" | "fail" | "skipped" | "invalid";
-            score: components["schemas"]["EvalCaseScore"];
-            diagnostics: components["schemas"]["EvalReplayDiagnostics"];
-            /** @enum {string} */
-            comparisonOutcome?: "improved" | "regressed" | "unchanged" | "unscored";
-            comparisonReasons?: string[];
-        };
-        EvalRunSummary: {
-            totalCases: number;
-            passCount: number;
-            failCount: number;
-            skippedCount: number;
-            invalidCount: number;
-            improvementCount: number;
-            regressionCount: number;
-            unchangedCount: number;
-        };
-        EvalRun: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            datasetId: string;
-            /** Format: uuid */
-            workspaceId: string;
-            label: string | null;
-            /** Format: uuid */
-            baselineRunId: string | null;
-            /** Format: uuid */
-            createdByAccountId: string | null;
-            runMetadata: {
-                [key: string]: unknown;
-            };
-            summary: components["schemas"]["EvalRunSummary"];
-            results: components["schemas"]["EvalCaseResult"][];
-            /** Format: date-time */
-            startedAt: string;
-            /** Format: date-time */
-            completedAt: string;
-        };
-        EvalDatasetDetail: components["schemas"]["EvalDataset"] & {
-            cases: components["schemas"]["EvalCase"][];
-            runs: components["schemas"]["EvalRun"][];
-        };
-        EvalRunComparison: {
-            /** Format: uuid */
-            baselineRunId: string;
-            /** Format: uuid */
-            candidateRunId: string;
-            regressions: number;
-            improvements: number;
-            unchanged: number;
-            unscored: number;
-            cases: {
-                /** Format: uuid */
-                caseId: string;
-                title: string;
-                /** @enum {string} */
-                outcome: "improved" | "regressed" | "unchanged" | "unscored";
-                reasons: string[];
-                /** @enum {string} */
-                baselineStatus?: "pass" | "fail" | "skipped" | "invalid";
-                /** @enum {string} */
-                candidateStatus?: "pass" | "fail" | "skipped" | "invalid";
-            }[];
         };
         PublicConversationSummary: {
             /** Format: uuid */
@@ -4246,318 +3955,6 @@ export interface operations {
             };
             /** @description Conversation not found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    listEvalDatasets: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Eval dataset summaries */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EvalDatasetListResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    createEvalDataset: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    name: string;
-                    description?: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Eval dataset created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EvalDatasetSummary"];
-                };
-            };
-            /** @description Request validation failed */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    getEvalDataset: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                datasetId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Eval dataset detail */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EvalDatasetDetail"];
-                };
-            };
-            /** @description Eval dataset not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    importEvalChatHistory: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** Format: uuid */
-                    conversationId: string;
-                    /** Format: uuid */
-                    assistantMessageId: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Eval import draft returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        importDraft: components["schemas"]["EvalImportDraft"];
-                    };
-                };
-            };
-            /** @description Request validation failed */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    createEvalCase: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                datasetId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    title: string;
-                    /** @enum {string} */
-                    sourceType?: "manual" | "conversation_import";
-                    query: string;
-                    conversationContext?: {
-                        /** @enum {string} */
-                        role: "user" | "assistant" | "system";
-                        content: string;
-                    }[];
-                    expectations?: {
-                        expectedDocumentIds?: string[];
-                        expectedCitationTitles?: string[];
-                        /** @enum {string} */
-                        expectedRefusalBehavior?: "refusal" | "answer";
-                        /** @enum {string} */
-                        expectedAnswerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
-                        requiredPhrases?: string[];
-                        forbiddenPhrases?: string[];
-                        latencyBudgetMs?: number;
-                    };
-                    provenance?: {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-        responses: {
-            /** @description Eval case created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EvalCase"];
-                };
-            };
-            /** @description Request validation failed */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Eval dataset not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    createEvalRun: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                datasetId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    label?: string;
-                    /** Format: uuid */
-                    baselineRunId?: string;
-                    runMetadata?: {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-        responses: {
-            /** @description Eval run created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EvalRun"];
-                };
-            };
-            /** @description Request validation failed */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    getEvalRun: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                datasetId: string;
-                runId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Eval run returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EvalRun"];
-                };
-            };
-            /** @description Eval run not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    getEvalRunComparison: {
-        parameters: {
-            query?: {
-                baselineRunId?: string;
-            };
-            header?: never;
-            path: {
-                datasetId: string;
-                runId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Eval run comparison returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EvalRunComparison"];
-                };
-            };
-            /** @description Comparison unavailable */
-            400: {
                 headers: {
                     [name: string]: unknown;
                 };

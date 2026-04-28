@@ -4,7 +4,7 @@ import { FileText, History, MessageSquareText } from 'lucide-react'
 
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { Button } from '@/components/ui/button'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 import type { ChatConversationSummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'

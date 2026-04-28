@@ -954,7 +954,8 @@ export const settingsApi = {
   },
 
   async updateRetrievalSettings(data: RetrievalSettings): Promise<RetrievalSettings> {
-    const { metadataFieldSuggestions: _metadataFieldSuggestions, ...payload } = data
+    const { metadataFieldSuggestions, ...payload } = data
+    void metadataFieldSuggestions
     const settings = await request<PlatformSettings>("/settings", {
       method: "PUT",
       body: JSON.stringify({

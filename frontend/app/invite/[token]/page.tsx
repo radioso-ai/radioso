@@ -13,8 +13,8 @@ export default function InvitationPage() {
   const params = useParams<{ token: string }>()
   const token = typeof params?.token === 'string' ? params.token : ''
   const [invitation, setInvitation] = useState<InvitationDetailsResponse | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(() => Boolean(token))
+  const [error, setError] = useState<string | null>(() => (token ? null : 'Invitation token is missing.'))
 
   useEffect(() => {
     let active = true
@@ -36,12 +36,13 @@ export default function InvitationPage() {
       }
     }
 
-    if (token) {
-      void load()
-    } else {
-      setError('Invitation token is missing.')
-      setIsLoading(false)
+    if (!token) {
+      return () => {
+        active = false
+      }
     }
+
+    void load()
 
     return () => {
       active = false

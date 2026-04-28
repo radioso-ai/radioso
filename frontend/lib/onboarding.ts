@@ -176,7 +176,6 @@ export const useWorkspaceOnboarding = (
         chatApi.listHistory({ limit: 100, offset: 0 }),
       ])
       const nextDocuments = documentPage.documents
-      const conversations = conversationPage.conversations
 
       const nextCompleted = conversationPage.total > 0 || getWorkspaceFlag(ONBOARDING_COMPLETED_KEY, workspaceId)
       const nextActive =
@@ -203,6 +202,7 @@ export const useWorkspaceOnboarding = (
   }, [workspaceCount, workspaceId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial onboarding refresh synchronizes API state for the active workspace.
     void refresh()
   }, [refresh])
 

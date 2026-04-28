@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { type RetrievalSettings, settingsApi } from '@/lib/api'
@@ -109,6 +109,7 @@ export function RetrievalSettingsPanel({
 
   useEffect(() => {
     if (isWorkspaceLoading || !activeWorkspaceId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Workspace changes reset this async settings panel to loading.
       setIsLoading(true)
       return
     }
@@ -135,7 +136,7 @@ export function RetrievalSettingsPanel({
     return () => {
       active = false
     }
-  }, [activeWorkspaceId, isWorkspaceLoading])
+  }, [activeWorkspaceId, isWorkspaceLoading, resetSaveState])
 
   const updateSettingsDraft = (updater: (current: RetrievalSettings) => RetrievalSettings) => {
     draftVersionRef.current += 1

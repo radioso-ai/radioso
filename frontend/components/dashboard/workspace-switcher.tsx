@@ -6,7 +6,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -80,6 +79,7 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
       }
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Account menu reloads when the authenticated user changes.
     setAccountsLoaded(false)
     setAccountsLoadFailed(false)
     void loadAccounts()
@@ -91,7 +91,7 @@ export function WorkspaceSwitcher({ accountId, currentView }: WorkspaceSwitcherP
       active = false
       window.removeEventListener('radioso:accounts-updated', handleAccountRefresh)
     }
-  }, [user?.accountId, user?.userId])
+  }, [user, user?.accountId, user?.userId])
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()

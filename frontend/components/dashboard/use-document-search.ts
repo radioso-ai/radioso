@@ -52,6 +52,7 @@ export function useDocumentSearch() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial load populates search history from the backend.
     void loadHistory()
   }, [loadHistory])
 

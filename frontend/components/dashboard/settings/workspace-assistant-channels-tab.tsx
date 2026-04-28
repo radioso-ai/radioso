@@ -115,13 +115,14 @@ export function WorkspaceAssistantChannelsTab({
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
-  const [workspaceName, setWorkspaceName] = useState(activeWorkspace?.name ?? '')
+  const [workspaceNameDraft, setWorkspaceNameDraft] = useState<string | null>(null)
   const [organizationName, setOrganizationName] = useState(() => readCachedOrganizationName(accountId))
   const [savedOrganizationName, setSavedOrganizationName] = useState(() => readCachedOrganizationName(accountId))
   const [isOrganizationLoading, setIsOrganizationLoading] = useState(true)
   const [organizationError, setOrganizationError] = useState<string | null>(null)
   const [renameError, setRenameError] = useState<string | null>(null)
-  const hasNameChange = workspaceName.trim() !== (activeWorkspace?.name ?? '')
+  const workspaceName = workspaceNameDraft ?? activeWorkspace?.name ?? ''
+  const hasNameChange = workspaceNameDraft !== null && workspaceName.trim() !== (activeWorkspace?.name ?? '')
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -156,12 +157,6 @@ export function WorkspaceAssistantChannelsTab({
   const assistantBehaviorDraftVersionRef = useRef(0)
 
   useEffect(() => {
-    if (!hasNameChange) {
-      setWorkspaceName(activeWorkspace?.name ?? '')
-    }
-  }, [activeWorkspace?.name, hasNameChange])
-
-  useEffect(() => {
     let active = true
 
     const loadOrganization = async () => {
@@ -192,6 +187,7 @@ export function WorkspaceAssistantChannelsTab({
   }, [accountId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Workspace switch invalidates token rotation UI state.
     setApiToken(null)
     setApiTokenError(null)
     setIsApiTokenLoading(false)
@@ -202,6 +198,7 @@ export function WorkspaceAssistantChannelsTab({
 
   useEffect(() => {
     if (isWorkspaceLoading || !activeWorkspaceId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Workspace changes reset channel settings loading state.
       setIsAnonLoading(true)
       return
     }
@@ -233,6 +230,7 @@ export function WorkspaceAssistantChannelsTab({
 
   useEffect(() => {
     if (mode !== 'assistant') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Leaving assistant mode clears assistant-only draft state.
       setAssistantBehaviorSettings(null)
       setSavedAssistantBehaviorSettings(null)
       setIsAssistantBehaviorLoading(false)
@@ -558,19 +556,15 @@ export function WorkspaceAssistantChannelsTab({
       })
     )
   }, [
-    activeWorkspace?.name,
     anonSettings,
     websiteEmbedSnippetAvatarUrl,
-    websiteEmbedSnippetCopyJson,
     websiteEmbedSnippetCopyJsonError,
-    websiteEmbedSnippetCopyOverrides,
     websiteEmbedSnippetResolvedCopyOverrides,
     websiteEmbedSnippetDisplayMode,
     websiteEmbedSnippetInitialState,
     websiteEmbedSnippetThemeJson,
     websiteEmbedSnippetThemeJsonError,
     websiteEmbedSnippetResolvedThemeOverrides,
-    websiteEmbedSnippetThemeOverrides,
   ])
 
   const hasWebsiteEmbedAdvancedOverrides =
@@ -608,20 +602,15 @@ export function WorkspaceAssistantChannelsTab({
       new URL(APP_WEBSITE_EMBED_DEMO_PATH, window.location.origin).toString(),
     )
   }, [
-    activeWorkspace?.name,
     anonSettings,
     websiteEmbedSnippetAvatarUrl,
     websiteEmbedSnippetAvatarUrlError,
-    websiteEmbedSnippetCopyJson,
     websiteEmbedSnippetCopyJsonError,
-    websiteEmbedSnippetCopyOverrides,
     websiteEmbedSnippetResolvedCopyOverrides,
     websiteEmbedSnippetDisplayMode,
     websiteEmbedSnippetInitialState,
-    websiteEmbedSnippetThemeJson,
     websiteEmbedSnippetThemeJsonError,
     websiteEmbedSnippetResolvedThemeOverrides,
-    websiteEmbedSnippetThemeOverrides,
   ])
 
   const websiteEmbedDemoOrigin =
@@ -671,7 +660,7 @@ export function WorkspaceAssistantChannelsTab({
       }
     }, 700)
     return () => window.clearTimeout(timeout)
-  }, [accountId, isOrganizationLoading, organizationName, savedOrganizationName])
+  }, [accountId, isOrganizationLoading, organizationName, saveSequenceRef, savedOrganizationName, setSaveError, setSaveState])
 
   useEffect(() => {
     if (!activeWorkspace || !hasNameChange) {
@@ -695,6 +684,7 @@ export function WorkspaceAssistantChannelsTab({
         await renameWorkspace(activeWorkspace.id, trimmed)
         if (saveSequenceRef.current !== saveId) return
         if (workspaceDraftVersionRef.current === draftVersionAtRequestStart) {
+          setWorkspaceNameDraft(null)
           setSaveState('saved')
         }
       } catch {
@@ -705,7 +695,7 @@ export function WorkspaceAssistantChannelsTab({
       }
     }, 700)
     return () => window.clearTimeout(timeout)
-  }, [activeWorkspace, hasNameChange, renameWorkspace, workspaceName])
+  }, [activeWorkspace, hasNameChange, renameWorkspace, saveSequenceRef, setSaveError, setSaveState, workspaceName])
 
   useEffect(() => {
     if (!anonSettings || !savedAnonSettings || !hasAssistantChanges) {
@@ -746,7 +736,7 @@ export function WorkspaceAssistantChannelsTab({
       }
     }, 700)
     return () => window.clearTimeout(timeout)
-  }, [anonSettings, hasAssistantChanges, savedAnonSettings])
+  }, [anonSettings, hasAssistantChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState])
 
   useEffect(() => {
     if (!anonSettings || !savedAnonSettings || !hasWebsiteEmbedChanges) {
@@ -786,7 +776,7 @@ export function WorkspaceAssistantChannelsTab({
       }
     }, 700)
     return () => window.clearTimeout(timeout)
-  }, [anonSettings, hasWebsiteEmbedChanges, savedAnonSettings, websiteEmbedOrigins])
+  }, [anonSettings, hasWebsiteEmbedChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState, websiteEmbedOrigins])
 
   useEffect(() => {
     if (!assistantBehaviorSettings || !savedAssistantBehaviorSettings || !hasAssistantBehaviorChanges) {
@@ -818,7 +808,7 @@ export function WorkspaceAssistantChannelsTab({
     }, 700)
 
     return () => window.clearTimeout(timeout)
-  }, [assistantBehaviorSettings, hasAssistantBehaviorChanges, savedAssistantBehaviorSettings])
+  }, [assistantBehaviorSettings, hasAssistantBehaviorChanges, saveSequenceRef, savedAssistantBehaviorSettings, setSaveError, setSaveState])
 
   const handleOpenWebsiteEmbedDemo = async () => {
     if (!anonSettings?.websiteEmbedEnabled || !websiteEmbedDemoUrl || typeof window === 'undefined') {
@@ -952,8 +942,9 @@ export function WorkspaceAssistantChannelsTab({
                   id="workspaceName"
                   value={workspaceName}
                   onChange={(event) => {
+                    const nextName = event.target.value
                     workspaceDraftVersionRef.current += 1
-                    setWorkspaceName(event.target.value)
+                    setWorkspaceNameDraft(nextName === (activeWorkspace?.name ?? '') ? null : nextName)
                     setRenameError(null)
                   }}
                   maxLength={100}

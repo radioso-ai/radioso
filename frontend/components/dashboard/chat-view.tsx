@@ -201,7 +201,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
       </div>
 
       {isInitializingView ? null : (
-        <div className="shrink-0 border-t border-border bg-background p-4">
+        <div className="sticky bottom-0 z-20 shrink-0 border-t border-border bg-background p-4">
           <form onSubmit={handleSubmit} className="max-w-3xl mx-auto flex items-end gap-3">
             <Textarea
               value={input}

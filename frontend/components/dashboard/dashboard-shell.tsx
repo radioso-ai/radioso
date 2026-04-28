@@ -112,7 +112,7 @@ export function DashboardShell({
       <SidebarProvider>
         <AppSidebar accountId={accountId} currentView={currentView} />
         <SidebarInset>
-          <header className="flex h-12 items-center border-b border-border px-4 md:hidden">
+          <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
             <SidebarTrigger />
           </header>
           <div className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 items-center justify-center md:h-screen">
@@ -127,7 +127,7 @@ export function DashboardShell({
     <SidebarProvider>
       <AppSidebar accountId={accountId} currentView={currentView} />
       <SidebarInset>
-        <header className="flex h-12 items-center border-b border-border px-4 md:hidden">
+        <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
           <SidebarTrigger />
         </header>
         <div key={activeWorkspaceId} className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 flex-col md:h-screen">
@@ -162,7 +162,7 @@ export function DashboardShell({
             <SettingsView accountId={accountId} routeState={routeState} />
           )}
           {currentView === 'users' && (
-            <UsersView accountId={accountId} />
+            <UsersView />
           )}
         </div>
       </SidebarInset>

@@ -24,7 +24,7 @@ import {
 import { ActionButton } from '@/components/ui/action-button'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { ChatRetrievalInfo } from './chat-retrieval-info'
 import { ChatRetrievalTraceGraph } from './chat-retrieval-trace-graph'
 import { ChatMessageThread } from './chat-message-thread'
@@ -111,6 +111,7 @@ export function ChatHistoryView({
 
   useEffect(() => {
     const nextFilter = routeState.historyFilter ?? 'all'
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Syncs local history controls from the current URL route.
     setFilter(nextFilter)
 
     const nextPage = routeState.historyPage ?? 1
@@ -335,17 +336,20 @@ export function ChatHistoryView({
   }, [allPage, conversationPage, filter, loadConversationPages, loadSearchPages, searchPage])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- History view fetches the current page after route/filter changes.
     void loadHistory()
   }, [loadHistory, accountId])
 
   useEffect(() => {
     resetConversationPagination()
     resetSearchPagination()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Workspace switches reset cursors and fetch the first history page.
     void loadHistory()
   }, [accountId, loadHistory, resetConversationPagination, resetSearchPagination, routeState.workspaceId])
 
   useEffect(() => {
     if (!selectedItem) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Closing the drawer clears its detail state.
       setConversationDetail(null)
       setSearchDetail(null)
       setDetailError(null)
@@ -476,6 +480,7 @@ export function ChatHistoryView({
   const activeInitialStageId = activeTrace?.stages[0]?.stageId
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Active trace changes reset the selected diagnostics stage.
     setSelectedStageId(activeInitialStageId)
   }, [activeTraceId, activeInitialStageId])
 
@@ -561,6 +566,7 @@ export function ChatHistoryView({
 
     const nextPage = activeTotalPages
     if (filter === 'all') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Clamps local pagination after result totals shrink.
       setAllPage(nextPage)
     } else if (filter === 'chat') {
       setConversationPage(nextPage)

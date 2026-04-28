@@ -266,11 +266,10 @@ export function AnonymousChatProvider({
   useEffect(() => {
     let cancelled = false
 
-    void hydrateConversation().then(() => {
-      if (cancelled) {
-        return
-      }
-    })
+    if (!cancelled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrates persisted public conversation state after mount/token changes.
+      void hydrateConversation()
+    }
 
     return () => {
       cancelled = true

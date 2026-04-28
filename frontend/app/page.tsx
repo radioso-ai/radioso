@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 
 import { useAuth } from '@/lib/auth-context'
 import { AuthPage } from '@/components/auth/auth-page'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { getStoredActiveWorkspaceId, getStoredActiveWorkspacePublicRouteKey } from '@/lib/api'
 

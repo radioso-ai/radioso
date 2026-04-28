@@ -3369,19 +3369,10 @@
                   "unsupported",
                   "not_checked"
                 ]
-              },
-              "policy": {
-                "type": "string",
-                "enum": [
-                  "strict",
-                  "warn",
-                  "off"
-                ]
               }
             },
             "required": [
-              "status",
-              "policy"
+              "status"
             ]
           },
           "retrievalInfo": {

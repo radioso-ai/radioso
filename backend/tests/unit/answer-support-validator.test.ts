@@ -380,7 +380,7 @@ describe("answer support validator", () => {
     expect(result.validation.substantiveUnsupportedSegmentCount).toBe(1);
   });
 
-  it("preserves unsupported content under warn without replacing it", async () => {
+  it("replaces fully unsupported content with a grounded-miss response", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -394,11 +394,11 @@ describe("answer support validator", () => {
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe("Narayani is a teacher and author.");
-    expect(result.validation.answerModified).toBe(false);
+    expect(result.answer).toBe("No se pudo verificar esa respuesta con los documentos recuperados.");
+    expect(result.validation.answerModified).toBe(true);
     expect(result.segmentResults[0]).toMatchObject({
-      text: "Narayani is a teacher and author",
-      replacementApplied: false,
+      text: "",
+      replacementApplied: true,
       disposition: "unsupported",
     });
   });

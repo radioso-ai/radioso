@@ -166,14 +166,14 @@ describe("settings and chunking", () => {
     expect(normalized.lexicalRewriteInstructions).not.toBe("");
   });
 
-  it("rejects unsupported settings values", () => {
+  it("rejects invalid boolean settings values", () => {
     expect(() =>
       validateRetrievalSettings({
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
         conversationMode: "guided",
-        suggestedQuestionsEnabled: true,
+        suggestedQuestionsEnabled: "yes" as never,
         suggestedQuestionsCount: 3,
         rerankEnabled: false,
         vectorTopK: 15,
@@ -183,7 +183,7 @@ describe("settings and chunking", () => {
         metadataRules: [],
         customInstruction: "",
       }),
-    ).toThrow();
+    ).toThrow("suggestedQuestionsEnabled must be a boolean");
   });
 
   it("rejects unsupported conversationMode values", () => {

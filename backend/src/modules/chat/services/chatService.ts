@@ -89,17 +89,6 @@ const shouldSuppressOptionalSuggestions = (query: string): boolean =>
 
 type ChatIntentCapableRetrievalPipeline = Pick<RetrievalPipelineService, "run" | "interpret" | "runInterpreted" | "runWithoutRetrieval">;
 
-const supportsChatIntentRouting = (
-  pipeline: RetrievalPipelineService,
-): boolean => {
-  const candidate = pipeline as Partial<ChatIntentCapableRetrievalPipeline>;
-
-  return typeof candidate.run === "function"
-    && typeof candidate.interpret === "function"
-    && typeof candidate.runInterpreted === "function"
-    && typeof candidate.runWithoutRetrieval === "function";
-};
-
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
@@ -120,7 +109,7 @@ export type ChatStreamEvent =
       conversationModeMetadata: ConversationModeMetadata;
       retrievalInfo: RetrievalInfo;
       retrievalTrace: RetrievalTrace;
-      route?: ChatRoute;
+      route: ChatRoute;
     };
 
 interface PreparedSession {
@@ -707,18 +696,14 @@ export class ChatService {
     let retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
     let turnRoute: ChatTurnRoute = CHAT_TURN_ROUTE.RETRIEVAL;
 
-    if (supportsChatIntentRouting(this.retrievalPipeline)) {
-      const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
-      const interpretation = await retrievalPipeline.interpret(pipelineInput);
-      turnRoute = this.chatTurnIntentService.resolve({
-        responseIntent: interpretation.interpretation.result.responseIntent,
-      }).route;
-      retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
-        ? await retrievalPipeline.runInterpreted(interpretation)
-        : await retrievalPipeline.runWithoutRetrieval(interpretation);
-    } else {
-      retrieval = await this.retrievalPipeline.run(pipelineInput);
-    }
+    const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
+    const interpretation = await retrievalPipeline.interpret(pipelineInput);
+    turnRoute = this.chatTurnIntentService.resolve({
+      responseIntent: interpretation.interpretation.result.responseIntent,
+    });
+    retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
+      ? await retrievalPipeline.runInterpreted(interpretation)
+      : await retrievalPipeline.runWithoutRetrieval(interpretation);
     const persistedConversation =
       conversation ?? await this.conversationRepository.create(
         input.workspaceId,

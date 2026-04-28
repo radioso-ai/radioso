@@ -763,7 +763,7 @@ describe("retrieval pipeline stages", () => {
     expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus 2015 § 4");
   });
 
-  it("rewrites standalone searches without requiring prior history", async () => {
+  it("applies focused lexical rewrites for standalone searches without prior history", async () => {
     const stage = new QueryInterpretationStageService(
       new QueryRewriteService({
         async rewrite() {
@@ -813,9 +813,9 @@ describe("retrieval pipeline stages", () => {
       },
     });
 
-    expect(result.rewrittenQuery.status).toBe("fallback");
+    expect(result.rewrittenQuery.status).toBe("applied");
     expect(result.activeSemanticQuery).toBe("tulumaksuseadus paragrahv 4 osa 5");
-    expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus paragrahv 4 osa 5");
+    expect(result.activeParsedQuery.lexicalQuery).toBe("tulumaksuseadus § 4 lg 5");
     expect(result.promptHistory).toEqual([]);
   });
 

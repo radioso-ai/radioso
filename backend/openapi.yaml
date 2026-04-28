@@ -2432,6 +2432,7 @@ components:
         - conversationModeMetadata
         - retrievalInfo
         - retrievalTrace
+        - route
     AssistantChatResponse:
       type: object
       properties:

@@ -954,7 +954,7 @@ const ChatResponseSchema = registry.register(
   "ChatResponse",
   z.object({
     ...chatResponseShape,
-    route: AssistantRouteSchema.optional(),
+    route: AssistantRouteSchema,
   }),
 );
 

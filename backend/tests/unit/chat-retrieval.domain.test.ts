@@ -725,7 +725,8 @@ describe("chat retrieval domain", () => {
     expect(createInput?.messages[0]?.content).toContain(
       "Do not guess one branch and do not collapse several branches into one bag-of-terms rewrite.",
     );
-    expect(createInput?.messages[1]?.content).not.toContain(
+    expect(createInput?.messages).toHaveLength(1);
+    expect(createInput?.messages[0]?.content).not.toContain(
       "Retrieval continuity state from the most recent successful assistant turn",
     );
   });
@@ -833,6 +834,38 @@ describe("chat retrieval domain", () => {
     expect(result.semanticQuery).toBe("teach me more about yoga");
     expect(result.lexicalQuery).toBe("yoga");
     expect(result.structuredResult?.proposedActiveSubject).toBe("yoga");
+  });
+
+  it("accepts focused lexical rewrites even when the semantic query stays unchanged", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "tell me about yoga",
+          semanticQuery: "tell me about yoga",
+          lexicalQuery: "yoga",
+          turnKind: "fresh_subject",
+          proposedActiveSubject: "yoga",
+          relatedEntities: [],
+          unresolved: true,
+          confidence: 0.93,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "tell me about yoga",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.retrievalEligible).toBe(true);
+    expect(result.semanticQuery).toBe("tell me about yoga");
+    expect(result.lexicalQuery).toBe("yoga");
   });
 
   it("uses valid rerank scores even when some score rows are malformed", async () => {
@@ -1096,6 +1129,55 @@ describe("chat retrieval domain", () => {
     ]);
   });
 
+  it("treats repeated titles as siblings when selecting prompt context", () => {
+    const selector = new PromptContextSelectorService(800);
+
+    const result = selector.select({
+      topK: 4,
+      contexts: [
+        rerankedCandidate({
+          chunkId: "event-copy-1",
+          documentId: "event-copy-1",
+          title: "Yoga to Relieve Stress and Gain Strength",
+          content: "Repeated event listing with teacher biography.",
+          score: 0.99,
+          rerankPosition: 0,
+        }),
+        rerankedCandidate({
+          chunkId: "event-copy-2",
+          documentId: "event-copy-2",
+          title: "Yoga to Relieve Stress and Gain Strength",
+          content: "Second repeated event listing with the same title.",
+          score: 0.98,
+          rerankPosition: 1,
+        }),
+        rerankedCandidate({
+          chunkId: "ananda-yoga",
+          documentId: "ananda-yoga",
+          title: "Ananda Yoga",
+          content: "Ananda Yoga is an inward practice using postures, breath, and affirmations.",
+          score: 0.9,
+          rerankPosition: 2,
+        }),
+        rerankedCandidate({
+          chunkId: "course-card",
+          documentId: "course-card",
+          title: "Residential Course: Yoga and Christianity",
+          content: "Course card with dates and booking details.",
+          score: 0.85,
+          rerankPosition: 3,
+        }),
+      ],
+    });
+
+    expect(result.map((context) => context.chunkId)).toEqual([
+      "event-copy-1",
+      "ananda-yoga",
+      "course-card",
+      "event-copy-2",
+    ]);
+  });
+
   it("fills from the same document up to the same-document cap when no alternates are available", () => {
     const selector = new PromptContextSelectorService(500);
 
@@ -1162,7 +1244,7 @@ describe("chat retrieval domain", () => {
     const result = await stage.execute({
       settings: {
         rerankEnabled: true,
-        rerankTopK: 10,
+        rerankTopK: 15,
       },
       activeParsedQuery: {
         semanticQuery: "yoga",
@@ -1171,7 +1253,51 @@ describe("chat retrieval domain", () => {
       scoredCandidates,
     } as never);
 
-    expect(rerankCandidateCount).toBe(10);
+    expect(rerankCandidateCount).toBe(15);
+    expect(result.contexts).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
+  });
+
+  it("does not let a low rerank top K shrink the final prompt context cap", async () => {
+    let rerankCandidateCount = 0;
+    const stage = new ContextSelectionStageService(
+      new RerankService({
+        async rerank(input) {
+          rerankCandidateCount += input.contexts.length;
+          return input.contexts.map((context, index) => ({
+            chunkId: context.chunkId,
+            relevanceScore: 1 - index / 100,
+          }));
+        },
+      }),
+      new PromptContextSelectorService(10_000),
+    );
+
+    const scoredCandidates: RetrievedCandidate[] = Array.from({ length: 12 }, (_, index) => ({
+      chunkId: `c${index + 1}`,
+      documentId: `d${index + 1}`,
+      title: `Doc ${index + 1}`,
+      content: `Useful retrieval content for document ${index + 1}.`,
+      similarity: 1 - index / 100,
+      retrievalSources: ["semantic_original"],
+      retrievalText: `Doc ${index + 1} Useful retrieval content for document ${index + 1}.`,
+      semanticScore: 1 - index / 100,
+      lexicalScore: 0,
+    }));
+
+    const result = await stage.execute({
+      settings: {
+        rerankEnabled: true,
+        rerankTopK: 3,
+      },
+      activeParsedQuery: {
+        semanticQuery: "yoga",
+      },
+      activeQuery: "yoga",
+      scoredCandidates,
+    } as never);
+
+    expect(rerankCandidateCount).toBe(RETRIEVAL_BEHAVIOR.finalContextTopK);
+    expect(result.rerankedContexts).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
     expect(result.contexts).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
   });
 
@@ -1308,16 +1434,35 @@ describe("chat retrieval domain", () => {
 
     expect(result.prompt).toContain("The page parses content.");
     expect(result.prompt).not.toContain("Warmth:");
-    expect(result.prompt).toContain("Response formatting guidance:");
-    expect(result.prompt).toContain("At most one inline link per paragraph.");
     expect(result.prompt).toContain("Respond in the same language as the current user question.");
-    expect(result.prompt).toContain("You may end with one short closing invitation or adjacent-topic suggestion");
+    expect(result.prompt).toContain("synthesize a representative spread");
+    expect(result.prompt).toContain("aim to use 6 to 10 distinct results");
     expect(result.prompt).toContain("include exactly one inline Markdown link in the answer by default");
     expect(result.prompt).toContain("Do this even for definitional answers");
-    expect(result.prompt).toContain("append <<UNSUPPORTED>> at the very end of the answer");
+    expect(result.prompt).toContain("append <<UNSUPPORTED>> at the very end");
     expect(result.prompt).toContain("Result 1 (Intro):");
-    expect(result.prompt).toContain("[[1]]");
+    expect(result.prompt).toContain("[[n]]");
     expect(result.citations).toEqual([{ documentId: "d1", chunkId: "c1", title: "Intro" }]);
+  });
+
+  it("uses a wider default final context target for broad source coverage", () => {
+    const selector = new PromptContextSelectorService();
+    const result = selector.select({
+      topK: RETRIEVAL_BEHAVIOR.finalContextTopK,
+      contexts: Array.from({ length: RETRIEVAL_BEHAVIOR.finalContextTopK }, (_, index) =>
+        rerankedCandidate({
+          chunkId: `yoga-${index + 1}`,
+          documentId: `yoga-doc-${index + 1}`,
+          title: `Yoga Source ${index + 1}`,
+          content: `Useful yoga source ${index + 1} with course, practice, or category details.`,
+          score: 1 - index / 100,
+          rerankPosition: index,
+        }),
+      ),
+    });
+
+    expect(RETRIEVAL_BEHAVIOR.finalContextTopK).toBeGreaterThanOrEqual(10);
+    expect(result).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
   });
 
   it("returns a retrieval-scoped unsupported result for non-retrieval intent", async () => {

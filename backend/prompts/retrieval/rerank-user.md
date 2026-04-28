@@ -1,5 +1,0 @@
-Query:
-{{query}}
-
-Candidates:
-{{candidates}}

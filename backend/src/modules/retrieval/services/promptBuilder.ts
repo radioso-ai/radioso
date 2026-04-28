@@ -54,9 +54,6 @@ export class PromptBuilder {
         custom_instruction_block: answerInstructionBlocks.customInstructionBlock
           ? `${answerInstructionBlocks.customInstructionBlock}\n`
           : "",
-        response_formatting_guidelines_block: answerInstructionBlocks.responseFormattingGuidelinesBlock
-          ? `${answerInstructionBlocks.responseFormattingGuidelinesBlock}\n`
-          : "",
         conversation_mode_instruction_block: answerInstructionBlocks.conversationModeInstructionBlock
           ? `${answerInstructionBlocks.conversationModeInstructionBlock}\n`
           : "",

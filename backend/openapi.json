@@ -3660,7 +3660,8 @@
           "conversationMode",
           "conversationModeMetadata",
           "retrievalInfo",
-          "retrievalTrace"
+          "retrievalTrace",
+          "route"
         ]
       },
       "AssistantChatResponse": {

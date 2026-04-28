@@ -114,6 +114,18 @@ tests/
 - Prefer Playwright coverage for frontend user journeys and visible UI behavior.
 - Frontend unit tests should focus on non-visual functionality such as state transitions, data transforms, API adapters, parsing, and routing logic; avoid assertions on markup structure, class names, design tokens, or cosmetic copy when an end-to-end test is the better fit.
 
+### Brevity and Comprehensibility
+
+- Prefer small, named modules over large orchestration files. When a service exceeds roughly 500 lines or mixes persistence, orchestration, presentation, audit, and analytics concerns, extract the most self-contained concern first.
+- Keep request and response orchestration readable top-to-bottom. Route handlers and high-level services should describe workflow, while validation, mapping, trace formatting, audit metadata, and persistence details should live in named helpers.
+- Use explicit types at module boundaries, but avoid repeating large inline object types in method signatures. Promote shared shapes to named interfaces when they appear in more than one place or obscure the workflow.
+- Prefer pure helper modules for mapping, normalization, formatting, and trace or audit payload construction. These helpers should be easy to test without database or network setup.
+- Keep comments reserved for non-obvious constraints, safety decisions, or business rules. Do not narrate straightforward code.
+- Avoid `any` in production code. Use `unknown`, narrow it, or define a local type for third-party payloads.
+- Frontend components should separate workflow state from rendering when they grow complex. Extract hooks for loading, pagination, URL synchronization, mutation flows, and derived view state.
+- Prefer domain-specific names over generic utilities. A helper named `buildNonRetrievalTrace` is better than `buildTracePayload` when the distinction matters.
+- When refactoring, preserve behavior first. Make extraction-only changes separately from behavior changes, and verify with focused tests before broad cleanup.
+
 ## Documentation
 
 - Before creating or revising documentation, read [`docs/document-writer-prompt.md`](docs/document-writer-prompt.md) and follow it. This applies to `readme.md`, files under `docs/`, files under `docs-portal/content/`, and settings docs used by the product UI.

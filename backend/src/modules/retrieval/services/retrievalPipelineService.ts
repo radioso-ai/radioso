@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { RetrievalSettingsService } from "../../settings/services/retrievalSettingsService.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
@@ -22,7 +20,7 @@ import { PromptAssemblyStageService } from "./promptAssemblyStage.js";
 import { QueryInterpretationStageService } from "./queryInterpretationStage.js";
 import { RetrievalContextStageService } from "./retrievalContextStage.js";
 import { RetrievalDiagnosticsStageService } from "./retrievalDiagnosticsStage.js";
-import { RetrievalTraceAssembler } from "./retrievalTraceAssembler.js";
+import { RetrievalPipelineTraceBuilder } from "./retrievalPipelineTraceBuilder.js";
 import { MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import type {
   QueryInterpretationStageResult,
@@ -78,7 +76,7 @@ export class RetrievalPipelineService {
   private readonly contextSelectionStage: ContextSelectionStage;
   private readonly promptAssemblyStage: PromptAssemblyStage;
   private readonly retrievalDiagnosticsStage: RetrievalDiagnosticsStage;
-  private readonly retrievalTraceAssembler = new RetrievalTraceAssembler();
+  private readonly retrievalTraceBuilder = new RetrievalPipelineTraceBuilder();
 
   constructor(
     retrievalSettingsService: RetrievalSettingsService,
@@ -134,55 +132,20 @@ export class RetrievalPipelineService {
   }
 
   async runInterpreted(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult> {
-    const toIso = (value: number) => new Date(value).toISOString();
     const retrieval = await this.measure(() => this.candidateRetrievalStage.execute(input.interpretation.result));
     const prepared = await this.measure(() => this.candidatePreparationStage.execute(retrieval.result));
     const selection = await this.measure(() => this.contextSelectionStage.execute(prepared.result));
     const prompt = await this.measure(() => this.promptAssemblyStage.execute(selection.result));
     const diagnostics = await this.measure(() => this.retrievalDiagnosticsStage.execute(prompt.result));
-    const traceCompletedAtMs = Date.now();
-    const lexicalDurationMs = Math.max(0, Math.round(retrieval.durationMs * 0.35));
-    const semanticDurationMs = Math.max(0, retrieval.durationMs - lexicalDurationMs);
-    const trace = this.retrievalTraceAssembler.assemble({
-      prompt: prompt.result,
-      diagnostics: diagnostics.result,
-      timings: {
-        traceStartedAt: toIso(input.traceStartedAtMs),
-        traceCompletedAt: toIso(traceCompletedAtMs),
-        totalDurationMs: traceCompletedAtMs - input.traceStartedAtMs,
-        retrievalContext: {
-          startedAt: toIso(input.context.startedAt),
-          durationMs: input.context.durationMs,
-        },
-        queryInterpretation: {
-          startedAt: toIso(input.interpretation.startedAt),
-          durationMs: input.interpretation.durationMs,
-        },
-        semanticRetrieval: {
-          startedAt: toIso(retrieval.startedAt),
-          durationMs: semanticDurationMs,
-        },
-        lexicalRetrieval: {
-          startedAt: toIso(retrieval.startedAt + semanticDurationMs),
-          durationMs: lexicalDurationMs,
-        },
-        candidatePreparation: {
-          startedAt: toIso(prepared.startedAt),
-          durationMs: prepared.durationMs,
-        },
-        contextSelection: {
-          startedAt: toIso(selection.startedAt),
-          durationMs: selection.durationMs,
-        },
-        promptAssembly: {
-          startedAt: toIso(prompt.startedAt),
-          durationMs: prompt.durationMs,
-        },
-        diagnostics: {
-          startedAt: toIso(diagnostics.startedAt),
-          durationMs: diagnostics.durationMs,
-        },
-      },
+    const trace = this.retrievalTraceBuilder.buildRetrievalTrace({
+      traceStartedAtMs: input.traceStartedAtMs,
+      context: input.context,
+      interpretation: input.interpretation,
+      retrieval,
+      prepared,
+      selection,
+      prompt,
+      diagnostics,
     });
 
     return {
@@ -240,8 +203,12 @@ export class RetrievalPipelineService {
         matcherVersion: "non_retrieval",
       },
     };
-    const traceCompletedAtMs = Date.now();
-    const toIso = (value: number) => new Date(value).toISOString();
+    const trace = this.retrievalTraceBuilder.buildNonRetrievalTrace({
+      request: input.request,
+      traceStartedAtMs: input.traceStartedAtMs,
+      context: input.context,
+      interpretation: input.interpretation,
+    }, diagnostics);
 
     return {
       rewrittenQuery: input.request.query,
@@ -252,77 +219,7 @@ export class RetrievalPipelineService {
       responseIdentity: input.request.responseIdentity ?? null,
       responseSettings,
       diagnostics,
-      trace: {
-        traceId: randomUUID(),
-        startedAt: toIso(input.traceStartedAtMs),
-        completedAt: toIso(traceCompletedAtMs),
-        totalDurationMs: traceCompletedAtMs - input.traceStartedAtMs,
-        stages: [
-          {
-            stageId: "context",
-            kind: "context",
-            label: "Context",
-            status: "applied",
-            startedAt: toIso(input.context.startedAt),
-            durationMs: input.context.durationMs,
-            inputs: {
-              query: input.request.query,
-              historyMessageCount: input.request.history.length,
-              metadataFilterKeys: Object.keys(input.request.metadataFilter ?? {}),
-            },
-            outputs: {
-              selectedHistoryCount: input.context.result.contextWindow.selectedMessages.length,
-              historyTruncated: input.context.result.contextWindow.truncated,
-              selectionReason: input.context.result.contextWindow.selectionReason,
-            },
-          },
-          {
-            stageId: "interpretation",
-            kind: "query_interpretation",
-            label: "Query interpretation",
-            status: input.interpretation.result.rewrittenQuery.status === "fallback"
-              ? "fallback"
-              : input.interpretation.result.rewrittenQuery.status === "rejected"
-                ? "rejected"
-                : input.interpretation.result.rewrittenQuery.status === "skipped"
-                  ? "skipped"
-                  : "applied",
-            startedAt: toIso(input.interpretation.startedAt),
-            durationMs: input.interpretation.durationMs,
-            inputs: {
-              originalQuery: input.request.query,
-            },
-            outputs: {
-              responseIntent: input.interpretation.result.responseIntent,
-              retrievalSkipped: true,
-              promptHistoryCount: input.interpretation.result.promptHistory.length,
-              responseLanguagePolicy: input.interpretation.result.rewrittenQuery.responseLanguagePolicy,
-              continuityDecision: input.interpretation.result.continuityDecision,
-            },
-            metrics: {
-              intentConfidence: Number(input.interpretation.result.rewrittenQuery.confidence.toFixed(3)),
-            },
-            reason: "Retrieval was intentionally skipped for a non-retrieval chat turn.",
-          },
-          {
-            stageId: "diagnostics",
-            kind: "diagnostics",
-            label: "Diagnostics",
-            status: "skipped",
-            startedAt: toIso(traceCompletedAtMs),
-            durationMs: 0,
-            outputs: {
-              responseIntent: diagnostics.responseIntent,
-              retrievalSkipped: diagnostics.retrievalSkipped,
-              continuityDecision: diagnostics.continuityDecision,
-            },
-          },
-        ],
-        links: [
-          { fromStageId: "context", toStageId: "interpretation", kind: "sequence" },
-          { fromStageId: "interpretation", toStageId: "diagnostics", kind: "sequence" },
-        ],
-      },
+      trace,
     };
   }
 

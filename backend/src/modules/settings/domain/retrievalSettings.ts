@@ -134,7 +134,7 @@ export const DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS =
 export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS =
   "Rewrite for lexical retrieval using exact literals likely to appear in the corpus. Prefer aliases, abbreviations, citation forms, and corpus-native notation when grounded.";
 
-export const DEFAULT_ANSWER_SUPPORT_POLICY: AnswerSupportPolicy = "strict";
+export const DEFAULT_ANSWER_SUPPORT_POLICY: AnswerSupportPolicy = "off";
 export const DEFAULT_CONVERSATION_MODE: ConversationMode = "guided";
 
 export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettingsRecord => ({

@@ -1435,8 +1435,10 @@ describe("chat retrieval domain", () => {
     expect(result.prompt).toContain("The page parses content.");
     expect(result.prompt).not.toContain("Warmth:");
     expect(result.prompt).toContain("Respond in the same language as the current user question.");
-    expect(result.prompt).toContain("synthesize a representative spread");
-    expect(result.prompt).toContain("aim to use 6 to 10 distinct results");
+    expect(result.prompt).toContain("Website Excerpts:");
+    expect(result.prompt).toContain("do not pad the answer just to use more results");
+    expect(result.prompt).toContain("Do not end with generic offers");
+    expect(result.prompt).toContain("Never mention internal evidence mechanics");
     expect(result.prompt).toContain("include exactly one inline Markdown link in the answer by default");
     expect(result.prompt).toContain("Do this even for definitional answers");
     expect(result.prompt).toContain("append <<UNSUPPORTED>> at the very end");

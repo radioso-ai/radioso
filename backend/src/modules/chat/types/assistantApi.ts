@@ -41,8 +41,6 @@ export interface AssistantChatRequest {
   sourceOrigin?: string | null;
 }
 
-export type AssistantChatResponse = ChatResponse & {
-  route: AssistantRoute;
-};
+export type AssistantChatResponse = ChatResponse;
 
 export type AssistantChatStreamEvent = ChatStreamEvent;

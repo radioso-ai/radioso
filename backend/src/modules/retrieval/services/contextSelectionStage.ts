@@ -10,17 +10,21 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
   ) {}
 
   async execute(input: CandidatePreparationStageResult) {
-    const rerankCandidateCount = Math.min(input.settings.rerankTopK, RETRIEVAL_BEHAVIOR.rerank.candidateLimit);
+    const finalContextTopK = RETRIEVAL_BEHAVIOR.finalContextTopK;
+    const rerankCandidateCount = Math.min(
+      Math.max(input.settings.rerankTopK, finalContextTopK),
+      RETRIEVAL_BEHAVIOR.rerank.candidateLimit,
+    );
     const rerankCandidates = input.scoredCandidates.slice(0, rerankCandidateCount);
     const reranked = await this.rerankService.rerank({
       query: input.activeParsedQuery.semanticQuery || input.activeQuery,
       contexts: rerankCandidates,
       enabled: input.settings.rerankEnabled,
-      topK: input.settings.rerankTopK,
+      topK: rerankCandidateCount,
     });
     const contexts = this.promptContextSelectorService.select({
       contexts: reranked.contexts,
-      topK: RETRIEVAL_BEHAVIOR.finalContextTopK,
+      topK: finalContextTopK,
     });
 
     return {

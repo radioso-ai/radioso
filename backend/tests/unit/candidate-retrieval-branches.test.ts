@@ -56,7 +56,6 @@ describe("candidate retrieval branches", () => {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
-        answerSupportPolicy: "strict",
         conversationMode: "guided",
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 3,

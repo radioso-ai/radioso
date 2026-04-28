@@ -4,7 +4,6 @@ import fixedWindowChunkSizeSource from '../../../docs/settings-docs/ingestion/fi
 import reprocessSource from '../../../docs/settings-docs/ingestion/reprocess-existing-documents.md'
 import structuredMaxChunkSizeSource from '../../../docs/settings-docs/ingestion/structured-max-chunk-size.md'
 import structuredMinChunkSizeSource from '../../../docs/settings-docs/ingestion/structured-min-chunk-size.md'
-import answerSupportPolicySource from '../../../docs/settings-docs/retrieval/answer-support-policy.md'
 import citationDisplayEnabledSource from '../../../docs/settings-docs/retrieval/citation-display-enabled.md'
 import conversationModeSource from '../../../docs/settings-docs/retrieval/conversation-mode.md'
 import customInstructionSource from '../../../docs/settings-docs/retrieval/custom-instruction.md'
@@ -91,7 +90,6 @@ export const retrievalSettingDocs = {
   conversationMode: parseSettingDoc(conversationModeSource),
   suggestedQuestionsEnabled: parseSettingDoc(suggestedQuestionsEnabledSource),
   suggestedQuestionsCount: parseSettingDoc(suggestedQuestionsCountSource),
-  answerSupportPolicy: parseSettingDoc(answerSupportPolicySource),
   citationDisplayEnabled: parseSettingDoc(citationDisplayEnabledSource),
   customInstruction: parseSettingDoc(customInstructionSource),
   metadataKey: parseSettingDoc(metadataKeySource),

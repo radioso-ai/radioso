@@ -1,6 +1,6 @@
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { RetrievedCandidate, RerankedCandidate, RerankStatus } from "../domain/retrievalPipelineTypes.js";
 
@@ -11,10 +11,8 @@ export interface RerankGateway {
   }): Promise<Array<{ chunkId: string; relevanceScore: number }>>;
 }
 
-const RERANK_INSTRUCTIONS = loadPromptTemplate("retrieval/rerank-instructions.txt");
-
 const buildRerankPrompt = (input: { query: string; candidates: string }): string =>
-  renderPromptTemplate("retrieval/rerank-user.md", input);
+  renderPromptTemplate("retrieval/rerank.md", input);
 
 export class ModelRerankGateway implements RerankGateway {
   constructor(
@@ -29,7 +27,6 @@ export class ModelRerankGateway implements RerankGateway {
     const candidates = buildRerankCandidateList(input.contexts);
 
     const content = await this.client.complete({
-      systemPrompt: RERANK_INSTRUCTIONS,
       prompt: buildRerankPrompt({ query: input.query, candidates }),
       temperature: RETRIEVAL_BEHAVIOR.rerank.temperature,
       maxOutputTokens: RETRIEVAL_BEHAVIOR.rerank.modelMaxCompletionTokens,
@@ -121,7 +118,6 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
       model: this.model,
       temperature: RETRIEVAL_BEHAVIOR.rerank.temperature,
       max_output_tokens: maxOutputTokens,
-      instructions: RERANK_INSTRUCTIONS,
       input: buildRerankPrompt({ query: input.query, candidates }),
       text: {
         format: OpenAISemanticRerankGateway.RESPONSE_FORMAT,
@@ -157,7 +153,7 @@ export class RerankService {
     contexts: RetrievedCandidate[];
     enabled: boolean;
     topK: number;
-    }): Promise<{ contexts: RerankedCandidate[]; status: RerankStatus }> {
+  }): Promise<{ contexts: RerankedCandidate[]; status: RerankStatus }> {
     if (!input.enabled) {
       return {
         contexts: this.bySimilarity(input.contexts, input.topK),

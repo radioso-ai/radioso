@@ -34,7 +34,6 @@ await client.settings.updateRetrieval({
   queryRewriteEnabled: true,
   semanticRewriteInstructions: "",
   lexicalRewriteInstructions: "",
-  answerSupportPolicy: "strict",
   rerankEnabled: true,
   vectorTopK: 20,
   similarityThreshold: 0.2,
@@ -54,7 +53,6 @@ For most teams:
 - `vectorTopK: 20`
 - `similarityThreshold: 0.2`
 - `rerankTopK: 20`
-- `answerSupportPolicy: "strict"`
 - `citationDisplayEnabled: true`
 
 This is a safe default: look for a good set of matches, reorder them, show citations, and stay conservative when the system is not confident.
@@ -81,18 +79,6 @@ Extra guidance for exact-word rewrite.
 
 Recommendation:
 - Leave empty unless exact-word matching keeps missing important wording.
-
-### `answerSupportPolicy`
-
-Controls how strict the system should be when the answer is not well supported by the documents it found.
-
-Options:
-- `strict`: safest default for most production use
-- `warn`: useful when you still want an answer even when support is weak
-- `off`: useful only when you do not want the system enforcing this check
-
-Recommendation:
-- Start with `strict`.
 
 ### `rerankEnabled`
 
@@ -156,4 +142,4 @@ Recommendation:
 - Test with a stable set of representative queries.
 - Prefer small adjustments before large jumps.
 - If search results are poor, inspect the documents and chunking before over-tuning search settings.
-- If answers are going beyond what the documents actually say, check `answerSupportPolicy` and `similarityThreshold` first.
+- If answers are going beyond what the documents actually say, adjust `similarityThreshold` first.

@@ -532,15 +532,9 @@ components:
         lexicalRewriteInstructions:
           type: string
           maxLength: 2000
-        answerSupportPolicy:
-          type: string
-          enum: &a3
-            - strict
-            - warn
-            - off
         conversationMode:
           type: string
-          enum: &a4
+          enum: &a3
             - factual
             - guided
             - exploratory
@@ -640,14 +634,14 @@ components:
                 default: []
               effect:
                 type: string
-                enum: &a5
+                enum: &a4
                   - boost
                   - filter
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: &a6
+                enum: &a5
                   - always_on
                   - match_turn
               triggerInstruction:
@@ -676,7 +670,6 @@ components:
         - queryRewriteEnabled
         - semanticRewriteInstructions
         - lexicalRewriteInstructions
-        - answerSupportPolicy
         - conversationMode
         - suggestedQuestionsEnabled
         - suggestedQuestionsCount
@@ -699,12 +692,9 @@ components:
         lexicalRewriteInstructions:
           type: string
           maxLength: 2000
-        answerSupportPolicy:
-          type: string
-          enum: *a3
         conversationMode:
           type: string
-          enum: *a4
+          enum: *a3
         suggestedQuestionsEnabled:
           type: boolean
         suggestedQuestionsCount:
@@ -743,7 +733,7 @@ components:
                 type: string
               combinator:
                 type: string
-                enum: &a10
+                enum: &a9
                   - and
                   - or
               conditions:
@@ -773,12 +763,12 @@ components:
                     - value
               effect:
                 type: string
-                enum: *a5
+                enum: *a4
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: *a6
+                enum: *a5
               triggerInstruction:
                 type: string
                 maxLength: 500
@@ -804,7 +794,7 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a7
+          enum: &a6
             - fixed_window
             - structured_semantic
         fixedWindowChunkSize:
@@ -835,7 +825,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a7
+          enum: *a6
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -905,12 +895,12 @@ components:
           default: []
         effect:
           type: string
-          enum: *a5
+          enum: *a4
         enabled:
           type: boolean
         triggerMode:
           type: string
-          enum: *a6
+          enum: *a5
         triggerInstruction:
           type: string
       required:
@@ -1041,13 +1031,13 @@ components:
           maxLength: 80
         websiteEmbedLauncherIcon:
           type: string
-          enum: &a8
+          enum: &a7
             - chat
             - sparkles
             - message
         websiteEmbedLauncherPosition:
           type: string
-          enum: &a9
+          enum: &a8
             - bottom-right
             - bottom-left
     GeneralSettingsResponse:
@@ -1099,10 +1089,10 @@ components:
           type: string
         websiteEmbedLauncherIcon:
           type: string
-          enum: *a8
+          enum: *a7
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a9
+          enum: *a8
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
@@ -1142,7 +1132,7 @@ components:
           readOnly: true
         conversationMode:
           type: string
-          enum: *a4
+          enum: *a3
         suggestedQuestionsEnabled:
           type: boolean
         suggestedQuestionsCount:
@@ -1173,9 +1163,6 @@ components:
         lexicalRewriteInstructions:
           type: string
           maxLength: 2000
-        answerSupportPolicy:
-          type: string
-          enum: *a3
         rerankEnabled:
           type: boolean
         vectorTopK:
@@ -1240,12 +1227,12 @@ components:
                 default: []
               effect:
                 type: string
-                enum: *a5
+                enum: *a4
               enabled:
                 type: boolean
               triggerMode:
                 type: string
-                enum: *a6
+                enum: *a5
               triggerInstruction:
                 type: string
             required:
@@ -1276,7 +1263,6 @@ components:
         - queryRewriteEnabled
         - semanticRewriteInstructions
         - lexicalRewriteInstructions
-        - answerSupportPolicy
         - rerankEnabled
         - vectorTopK
         - similarityThreshold
@@ -1309,10 +1295,10 @@ components:
           type: string
         websiteEmbedLauncherIcon:
           type: string
-          enum: *a8
+          enum: *a7
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a9
+          enum: *a8
         websiteEmbedScriptUrl:
           type:
             - string
@@ -1370,7 +1356,7 @@ components:
               type: boolean
             conversationMode:
               type: string
-              enum: *a4
+              enum: *a3
             suggestedQuestionsEnabled:
               type: boolean
             suggestedQuestionsCount:
@@ -1391,9 +1377,6 @@ components:
             lexicalRewriteInstructions:
               type: string
               maxLength: 2000
-            answerSupportPolicy:
-              type: string
-              enum: *a3
             rerankEnabled:
               type: boolean
             vectorTopK:
@@ -1425,7 +1408,7 @@ components:
                     type: string
                   combinator:
                     type: string
-                    enum: *a10
+                    enum: *a9
                   conditions:
                     type: array
                     items:
@@ -1453,12 +1436,12 @@ components:
                         - value
                   effect:
                     type: string
-                    enum: *a5
+                    enum: *a4
                   enabled:
                     type: boolean
                   triggerMode:
                     type: string
-                    enum: *a6
+                    enum: *a5
                   triggerInstruction:
                     type: string
                     maxLength: 500
@@ -1492,10 +1475,10 @@ components:
               maxLength: 80
             websiteEmbedLauncherIcon:
               type: string
-              enum: *a8
+              enum: *a7
             websiteEmbedLauncherPosition:
               type: string
-              enum: *a9
+              enum: *a8
     PublicEmbedSessionResponse:
       type: object
       properties:
@@ -2260,12 +2243,8 @@ components:
                 - supported
                 - unsupported
                 - not_checked
-            policy:
-              type: string
-              enum: *a3
           required:
             - status
-            - policy
         retrievalInfo:
           $ref: "#/components/schemas/RetrievalInfo"
         retrievalTrace:
@@ -2390,20 +2369,20 @@ components:
             $ref: "#/components/schemas/ChatSuggestion"
         conversationMode:
           type: string
-          enum: *a4
+          enum: *a3
         conversationModeMetadata:
           type: object
           properties:
             conversationMode:
               type: string
-              enum: *a4
+              enum: *a3
             brevityOverrideApplied:
               type: boolean
             expansionApplied:
               type: boolean
             expansionKind:
               type: string
-              enum: &a11
+              enum: &a10
                 - none
                 - focused
                 - expansive
@@ -2432,6 +2411,7 @@ components:
         - conversationModeMetadata
         - retrievalInfo
         - retrievalTrace
+        - route
     AssistantChatResponse:
       type: object
       properties:
@@ -2454,20 +2434,20 @@ components:
             $ref: "#/components/schemas/ChatSuggestion"
         conversationMode:
           type: string
-          enum: *a4
+          enum: *a3
         conversationModeMetadata:
           type: object
           properties:
             conversationMode:
               type: string
-              enum: *a4
+              enum: *a3
             brevityOverrideApplied:
               type: boolean
             expansionApplied:
               type: boolean
             expansionKind:
               type: string
-              enum: *a11
+              enum: *a10
             suggestionCount:
               type: integer
               minimum: 0
@@ -2788,9 +2768,6 @@ components:
         nonSubstantiveSegmentCount:
           type: integer
           minimum: 0
-        answerSupportPolicy:
-          type: string
-          enum: *a3
         hiddenSupportUsed:
           type: boolean
         hiddenSupportKindsUsed:
@@ -2835,12 +2812,9 @@ components:
             - grounded_degraded_unsupported_segments
             - no_context_refusal
             - non_retrieval_response
-        answerSupportPolicy:
-          type: string
-          enum: *a3
         conversationMode:
           type: string
-          enum: *a4
+          enum: *a3
         route:
           $ref: "#/components/schemas/AssistantRouteDiagnostics"
         conversationModeMetadata:
@@ -2848,7 +2822,7 @@ components:
           properties:
             conversationMode:
               type: string
-              enum: *a4
+              enum: *a3
             brevityOverrideApplied:
               type: boolean
             expansionApplied:

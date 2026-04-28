@@ -11,7 +11,7 @@ export const sendChatJson = (
   res: Response,
   payload: {
     conversationId: string;
-    route?: ChatRoute;
+    route: ChatRoute;
     answer: string;
     citations?: ChatCitation[];
     answerSegments?: AnswerSegment[];

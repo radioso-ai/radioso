@@ -1,46 +1,63 @@
 import { notFound } from "../../../shared/domain/errors.js";
-import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import type { AuditService } from "../../audit/services/auditService.js";
-import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
+import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import { RetrievalTracePresenter } from "../../retrieval/services/retrievalTracePresenter.js";
 import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
-import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
+import { resolveContextSourceUrl } from "../../retrieval/services/contextSourceUrl.js";
+import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
+import {
+  AnswerPresentationService,
+  remapAnswerSegmentsToCitationEvidence,
+  type AnswerSegment,
+  type ChatCitation,
+} from "./answerPresentationService.js";
+import { AnswerSupportValidator } from "./answerSupportValidator.js";
+import {
+  ASSISTANT_TURN_OUTCOME,
+  type AnswerSegmentValidationResult,
+  type AnswerValidationSummary,
+  type AssistantTurnOutcome,
+  type HiddenSupportEvidence,
+} from "./answerSupportValidationTypes.js";
+import { AssistantTurnOutcomeClassifier } from "./assistantTurnOutcomeClassifier.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import {
   MissingGroundedMissResponseComposer,
   type GroundedMissResponseComposer,
 } from "./groundedMissResponseComposer.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
+import { ConversationModeExpansionService } from "./conversationModeExpansionService.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { RetrievalTrace, RewriteContinuityState } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { ChatResponse, ChatRoute, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
+import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
+import { buildNonRetrievalAnswerPrompt } from "./nonRetrievalAnswerPromptBuilder.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
-import { ChatTurnAuditRecorder, type ChatAnswerAuditMetadata } from "./chatTurnAuditRecorder.js";
-import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
-import { ChatAnswerPresentationFlow } from "./chatAnswerPresentationFlow.js";
-import type { PreparedSession, PresentedAnswer } from "./chatTurnTypes.js";
 
 export interface ChatGateway {
   answer(input: {
     query: string;
     history: MessageRecord[];
     prompt: string;
+    systemPrompt?: string;
   }): Promise<string>;
   streamAnswer(input: {
     query: string;
     history: MessageRecord[];
     prompt: string;
+    systemPrompt?: string;
   }): AsyncIterable<string>;
 }
 
@@ -51,18 +68,27 @@ export class BlankChatAnswerError extends Error {
   }
 }
 
+const isBlankChatAnswerError = (error: unknown): error is BlankChatAnswerError => error instanceof BlankChatAnswerError;
+
+const DIRECT_ANSWER_PATTERNS = [
+  /\bjust the answer\b/i,
+  /\bjust answer\b/i,
+  /\bbriefly\b/i,
+  /\bbe brief\b/i,
+  /\bshort answer\b/i,
+  /\bone sentence\b/i,
+  /\bconcise\b/i,
+  /\bsuccinct\b/i,
+  /\bno follow[- ]up\b/i,
+  /\bwithout extra detail/i,
+  /\bsolo la risposta\b/i,
+  /\bin breve\b/i,
+];
+
+const shouldSuppressOptionalSuggestions = (query: string): boolean =>
+  DIRECT_ANSWER_PATTERNS.some((pattern) => pattern.test(query));
+
 type ChatIntentCapableRetrievalPipeline = Pick<RetrievalPipelineService, "run" | "interpret" | "runInterpreted" | "runWithoutRetrieval">;
-
-const supportsChatIntentRouting = (
-  pipeline: RetrievalPipelineService,
-): boolean => {
-  const candidate = pipeline as Partial<ChatIntentCapableRetrievalPipeline>;
-
-  return typeof candidate.run === "function"
-    && typeof candidate.interpret === "function"
-    && typeof candidate.runInterpreted === "function"
-    && typeof candidate.runWithoutRetrieval === "function";
-};
 
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
@@ -84,19 +110,88 @@ export type ChatStreamEvent =
       conversationModeMetadata: ConversationModeMetadata;
       retrievalInfo: RetrievalInfo;
       retrievalTrace: RetrievalTrace;
-      route?: ChatRoute;
+      route: ChatRoute;
     };
 
-interface FinalizedPresentedAnswer extends ChatResponse {
-  assistantMessageId: string;
+interface PreparedSession {
+  conversation: ConversationRecord;
+  history: MessageRecord[];
+  retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
+  turnRoute: ChatTurnRoute;
+  userMessage: MessageRecord;
+  priorRewriteContinuityState?: RewriteContinuityState;
 }
+
+interface ChatAnswerAuditMetadata {
+  workflow?: string;
+  executionClass?: string;
+  answerOutcome?: AssistantTurnOutcome;
+  conversationMode?: ConversationMode;
+  conversationModeMetadata?: ConversationModeMetadata;
+  validation?: AnswerValidationSummary & {
+    segmentResults?: Array<
+      Pick<AnswerSegmentValidationResult, "originalText" | "text" | "disposition" | "replacementApplied" | "reason" | "citationIndices">
+    >;
+  };
+  rewriteContinuityState?: RewriteContinuityState;
+  citations?: ChatCitation[];
+  answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
+  retrievalTrace?: RetrievalTrace;
+}
+
+interface PresentedAnswer {
+  answer: string;
+  citations?: ChatCitation[];
+  answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
+  planningCitations?: ChatCitation[];
+  answerOutcome: AssistantTurnOutcome;
+  validation: AnswerValidationSummary;
+  segmentResults: AnswerSegmentValidationResult[];
+  conversationModeMetadata: ConversationModeMetadata;
+}
+
+const inferConversationModeMetadata = (input: {
+  conversationMode: ConversationMode;
+  brevityOverrideApplied: boolean;
+  suggestionCount: number;
+  followUpQuestionApplied?: boolean;
+}): Omit<ConversationModeMetadata, "conversationMode" | "brevityOverrideApplied"> => {
+  if (input.brevityOverrideApplied) {
+    return {
+      expansionApplied: false,
+      expansionKind: "none",
+      suggestionCount: 0,
+      followUpQuestionApplied: false,
+    };
+  }
+
+  const expansionApplied = input.suggestionCount > 0;
+  if (!expansionApplied) {
+    return {
+      expansionApplied: false,
+      expansionKind: "none",
+      suggestionCount: 0,
+      followUpQuestionApplied: Boolean(input.followUpQuestionApplied),
+    };
+  }
+
+  return {
+    expansionApplied: true,
+    expansionKind: input.conversationMode === "exploratory" ? "expansive" : "focused",
+    suggestionCount: input.suggestionCount,
+    followUpQuestionApplied: Boolean(input.followUpQuestionApplied),
+  };
+};
 
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly client: TextGenerationClient) {}
 
-  async answer(input: { query: string; history: MessageRecord[]; prompt: string }): Promise<string> {
+  async answer(input: { query: string; history: MessageRecord[]; prompt: string; systemPrompt?: string }): Promise<string> {
     const response = await this.client.complete({
       prompt: input.prompt,
+      systemPrompt: input.systemPrompt,
     });
 
     if (!response?.trim()) {
@@ -106,9 +201,10 @@ export class ModelChatGateway implements ChatGateway {
     return response;
   }
 
-  async *streamAnswer(input: { query: string; history: MessageRecord[]; prompt: string }): AsyncIterable<string> {
+  async *streamAnswer(input: { query: string; history: MessageRecord[]; prompt: string; systemPrompt?: string }): AsyncIterable<string> {
     for await (const chunk of this.client.stream({
       prompt: input.prompt,
+      systemPrompt: input.systemPrompt,
     })) {
       if (chunk.length > 0) {
         yield chunk;
@@ -120,11 +216,14 @@ export class ModelChatGateway implements ChatGateway {
 export class OpenAIChatGateway extends ModelChatGateway {}
 
 export class ChatService {
+  private readonly answerPresentationService = new AnswerPresentationService();
+  private readonly answerSupportValidator = new AnswerSupportValidator();
+  private readonly assistantTurnOutcomeClassifier = new AssistantTurnOutcomeClassifier();
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
+  private readonly assistantInstructionBuilder = new AssistantInstructionBuilder();
   private readonly chatTurnIntentService = new ChatTurnIntentService();
-  private readonly chatTurnAuditRecorder: ChatTurnAuditRecorder;
-  private readonly answerPresentationFlow: ChatAnswerPresentationFlow;
+  private readonly conversationModeExpansionService: ConversationModeExpansionService;
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
@@ -132,15 +231,15 @@ export class ChatService {
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
-    productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
+    private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
   ) {
-    this.chatTurnAuditRecorder = new ChatTurnAuditRecorder(
-      conversationRepository,
-      auditService,
-      productAnalyticsService,
-    );
-    this.answerPresentationFlow = new ChatAnswerPresentationFlow(chatGateway, groundedMissResponseComposer);
+    this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, history, prompt }) =>
+      this.chatGateway.answer({
+        query,
+        history,
+        prompt,
+      }));
   }
 
   private async resolveResponseIdentity(workspaceId: string): Promise<ResponseIdentity | null> {
@@ -163,6 +262,30 @@ export class ChatService {
       : null;
   }
 
+  private getConversationMode(session: PreparedSession): ConversationMode {
+    return session.retrieval.responseSettings?.conversationMode ?? "guided";
+  }
+
+  private getSuggestedQuestionsEnabled(session: PreparedSession): boolean {
+    return session.retrieval.responseSettings?.suggestedQuestionsEnabled ?? true;
+  }
+
+  private getSuggestedQuestionsCount(session: PreparedSession): number {
+    return session.retrieval.responseSettings?.suggestedQuestionsCount ?? 3;
+  }
+
+  private getConversationModeMetadata(session: PreparedSession, input?: Partial<ConversationModeMetadata>): ConversationModeMetadata {
+    return {
+      conversationMode: this.getConversationMode(session),
+      brevityOverrideApplied: false,
+      expansionApplied: false,
+      expansionKind: "none",
+      suggestionCount: 0,
+      followUpQuestionApplied: false,
+      ...input,
+    };
+  }
+
   private getRoute(session: PreparedSession): ChatRoute {
     if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
       return {
@@ -176,6 +299,65 @@ export class ChatService {
     return {
       type: "retrieval",
       reason: "evidence_required",
+    };
+  }
+
+  private async generateNonRetrievalAnswer(
+    session: PreparedSession,
+    query: string,
+  ): Promise<PresentedAnswer | null> {
+    if (session.turnRoute === CHAT_TURN_ROUTE.RETRIEVAL) {
+      return null;
+    }
+
+    let answer: string;
+    try {
+      answer = (await this.chatGateway.answer({
+        query,
+        history: session.history,
+        prompt: buildNonRetrievalAnswerPrompt({
+          route: session.turnRoute,
+          responseIdentity: session.retrieval.responseIdentity,
+          history: session.history,
+          query,
+          answerInstructionBlock: this.assistantInstructionBuilder.buildCombinedBlock({
+            responseIdentity: session.retrieval.responseIdentity,
+            customInstruction: session.retrieval.responseSettings.customInstruction,
+            conversationMode: session.retrieval.responseSettings.conversationMode,
+            responseLanguagePolicy: session.retrieval.responseSettings.responseLanguagePolicy,
+          }),
+        }),
+      })).trim();
+    } catch (error) {
+      if (isBlankChatAnswerError(error)) {
+        return null;
+      }
+      throw error;
+    }
+    if (!answer) {
+      return null;
+    }
+
+    const presented = this.answerPresentationService.present({
+      answer,
+      citations: [],
+      citationDisplayEnabled: false,
+    });
+
+    return {
+      ...presented,
+      planningCitations: [],
+      answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
+      validation: {
+        ran: false,
+        answerModified: false,
+        unsupportedSegmentCount: 0,
+        substantiveUnsupportedSegmentCount: 0,
+        supportedSegmentCount: 0,
+        nonSubstantiveSegmentCount: 0,
+      },
+      segmentResults: [],
+      conversationModeMetadata: this.getConversationModeMetadata(session),
     };
   }
 
@@ -199,31 +381,72 @@ export class ChatService {
     try {
       session = await this.prepareSession(input);
       const answerStartedAt = Date.now();
-      const presentation = await this.answerPresentationFlow.generateAnswerPresentation(session, input.query, input.userExpectedLocale);
-      const finalized = await this.finalizePresentedAnswer({
+      const presentation = await this.generateAnswerPresentation(session, input.query, input.userExpectedLocale);
+      const route = this.getRoute(session);
+      const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics, {
+        execution: {
+          surface: "assistant",
+          path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
+          retrievalInvoked: route.type === "retrieval",
+        },
+      });
+      const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
+        trace: session.retrieval.trace,
+        summary: retrievalInfo,
+        outcome: {
+          answer: presentation.answer,
+          stream: input.stream,
+          hadContexts: session.retrieval.contexts.length > 0,
+          retrievalSkipped: session.retrieval.diagnostics.retrievalSkipped,
+          durationMs: Date.now() - answerStartedAt,
+          answerOutcome: presentation.answerOutcome,
+          validation: presentation.validation,
+        },
+      });
+
+      const assistantMessage = await this.messageRepository.create({
+        conversationId: session.conversation.id,
+        workspaceId: input.workspaceId,
+        role: "assistant",
+        content: presentation.answer,
+      });
+      assistantMessageId = assistantMessage.id;
+      await this.finalizeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
+        conversationId: session.conversation.id,
+        userMessageId: session.userMessage.id,
+        assistantMessageId,
+        answerOutcome: presentation.answerOutcome,
+        validation: presentation.validation,
+        segmentResults: presentation.segmentResults,
+        citations: presentation.citations ?? [],
+        answerSegments: presentation.answerSegments,
+        suggestions: presentation.suggestions,
+        conversationMode: presentation.conversationModeMetadata.conversationMode,
+        conversationModeMetadata: presentation.conversationModeMetadata,
+        priorRewriteContinuityState: session.priorRewriteContinuityState,
+        diagnostics: session.retrieval.diagnostics,
+        retrievalTrace,
+        route,
         stream: input.stream,
-        session,
-        presentation,
-        answerStartedAt,
       });
-      assistantMessageId = finalized.assistantMessageId;
 
-      return finalized;
+      return {
+        conversationId: session.conversation.id,
+        route,
+        answer: presentation.answer,
+        citations: presentation.citations,
+        answerSegments: presentation.answerSegments,
+        suggestions: presentation.suggestions,
+        conversationMode: presentation.conversationModeMetadata.conversationMode,
+        conversationModeMetadata: presentation.conversationModeMetadata,
+        retrievalInfo,
+        retrievalTrace,
+      };
     } catch (error) {
       const normalizedError = normalizeProviderCredentialError(error);
-      await this.chatTurnAuditRecorder.recordFailure({
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        conversationId: input.conversationId,
-        stream: input.stream,
-        session,
-        existingAssistantMessageId: assistantMessageId,
-        route: session ? this.getRoute(session) : undefined,
-        error: normalizedError,
-        workflowPolicy,
-      });
+      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     }
   }
@@ -261,11 +484,11 @@ export class ChatService {
       const answerStartedAt = Date.now();
 
       if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
-        noContextPresentation = await this.answerPresentationFlow.generateNonRetrievalAnswer(session, input.query);
+        noContextPresentation = await this.generateNonRetrievalAnswer(session, input.query);
         rawAnswer = noContextPresentation?.answer
           ?? await this.groundedMissResponseComposer.composeNoContext({
             query: input.query,
-            conversationMode: this.answerPresentationFlow.getConversationMode(session),
+            conversationMode: this.getConversationMode(session),
             userExpectedLocale: input.userExpectedLocale,
           });
         yield {
@@ -275,7 +498,7 @@ export class ChatService {
       } else if (session.retrieval.contexts.length === 0) {
         rawAnswer = await this.groundedMissResponseComposer.composeNoContext({
           query: input.query,
-          conversationMode: this.answerPresentationFlow.getConversationMode(session),
+          conversationMode: this.getConversationMode(session),
           userExpectedLocale: input.userExpectedLocale,
         });
         yield {
@@ -287,6 +510,7 @@ export class ChatService {
         for await (const text of this.chatGateway.streamAnswer({
           query: input.query,
           history: session.history,
+          systemPrompt: session.retrieval.systemPrompt,
           prompt: session.retrieval.prompt,
         })) {
           if (!text) {
@@ -319,7 +543,7 @@ export class ChatService {
         }
       }
 
-      const presentationWithoutSuggestions = noContextPresentation ?? await this.answerPresentationFlow.presentAnswerWithoutSuggestions(
+      const presentationWithoutSuggestions = noContextPresentation ?? await this.presentAnswerWithoutSuggestions(
         session,
         rawAnswer,
         input.query,
@@ -330,49 +554,80 @@ export class ChatService {
             suggestions: noContextPresentation.suggestions,
             conversationModeMetadata: noContextPresentation.conversationModeMetadata,
           })
-        : this.answerPresentationFlow.applyConversationMode(session, presentationWithoutSuggestions);
+        : this.applyConversationMode(session, presentationWithoutSuggestions);
       const presentation: PresentedAnswer = {
         ...presentationWithoutSuggestions,
         suggestions: undefined,
-        conversationModeMetadata: noContextPresentation?.conversationModeMetadata ?? this.answerPresentationFlow.getConversationModeMetadata(session),
+        conversationModeMetadata: noContextPresentation?.conversationModeMetadata ?? this.getConversationModeMetadata(session),
       };
-      const finalized = await this.finalizePresentedAnswer({
+
+      const route = this.getRoute(session);
+      const retrievalInfo = this.retrievalInfoPresenter.present(session.retrieval.diagnostics, {
+        execution: {
+          surface: "assistant",
+          path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
+          retrievalInvoked: route.type === "retrieval",
+        },
+      });
+      const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
+        trace: session.retrieval.trace,
+        summary: retrievalInfo,
+        outcome: {
+          answer: presentation.answer,
+          stream: input.stream,
+          hadContexts: session.retrieval.contexts.length > 0,
+          retrievalSkipped: session.retrieval.diagnostics.retrievalSkipped,
+          durationMs: Date.now() - answerStartedAt,
+          answerOutcome: presentation.answerOutcome,
+          validation: presentation.validation,
+        },
+      });
+
+      const assistantMessage = await this.messageRepository.create({
+        conversationId: session.conversation.id,
+        workspaceId: input.workspaceId,
+        role: "assistant",
+        content: presentation.answer,
+      });
+      assistantMessageId = assistantMessage.id;
+      await this.finalizeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
+        conversationId: session.conversation.id,
+        userMessageId: session.userMessage.id,
+        assistantMessageId,
+        answerOutcome: presentation.answerOutcome,
+        validation: presentation.validation,
+        segmentResults: presentation.segmentResults,
+        citations: presentation.citations ?? [],
+        answerSegments: presentation.answerSegments,
+        suggestions: presentation.suggestions,
+        conversationMode: presentation.conversationModeMetadata.conversationMode,
+        conversationModeMetadata: presentation.conversationModeMetadata,
+        priorRewriteContinuityState: session.priorRewriteContinuityState,
+        diagnostics: session.retrieval.diagnostics,
+        retrievalTrace,
+        route,
         stream: input.stream,
-        session,
-        presentation,
-        answerStartedAt,
       });
-      assistantMessageId = finalized.assistantMessageId;
 
       yield {
         type: "done",
-        conversationId: finalized.conversationId,
-        route: finalized.route,
-        answer: finalized.answer,
-        citations: finalized.citations,
-        answerSegments: finalized.answerSegments,
+        conversationId: session.conversation.id,
+        route,
+        answer: presentation.answer,
+        citations: presentation.citations,
+        answerSegments: presentation.answerSegments,
         suggestions: undefined,
-        conversationMode: finalized.conversationMode,
-        conversationModeMetadata: finalized.conversationModeMetadata,
-        retrievalInfo: finalized.retrievalInfo,
-        retrievalTrace: finalized.retrievalTrace,
+        conversationMode: presentation.conversationModeMetadata.conversationMode,
+        conversationModeMetadata: presentation.conversationModeMetadata,
+        retrievalInfo,
+        retrievalTrace,
       };
 
     } catch (error) {
       const normalizedError = normalizeProviderCredentialError(error);
-      await this.chatTurnAuditRecorder.recordFailure({
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        conversationId: input.conversationId,
-        stream: input.stream,
-        session,
-        existingAssistantMessageId: assistantMessageId,
-        route: session ? this.getRoute(session) : undefined,
-        error: normalizedError,
-        workflowPolicy,
-      });
+      await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     }
 
@@ -437,18 +692,14 @@ export class ChatService {
     let retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
     let turnRoute: ChatTurnRoute = CHAT_TURN_ROUTE.RETRIEVAL;
 
-    if (supportsChatIntentRouting(this.retrievalPipeline)) {
-      const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
-      const interpretation = await retrievalPipeline.interpret(pipelineInput);
-      turnRoute = this.chatTurnIntentService.resolve({
-        responseIntent: interpretation.interpretation.result.responseIntent,
-      }).route;
-      retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
-        ? await retrievalPipeline.runInterpreted(interpretation)
-        : await retrievalPipeline.runWithoutRetrieval(interpretation);
-    } else {
-      retrieval = await this.retrievalPipeline.run(pipelineInput);
-    }
+    const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
+    const interpretation = await retrievalPipeline.interpret(pipelineInput);
+    turnRoute = this.chatTurnIntentService.resolve({
+      responseIntent: interpretation.interpretation.result.responseIntent,
+    });
+    retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
+      ? await retrievalPipeline.runInterpreted(interpretation)
+      : await retrievalPipeline.runWithoutRetrieval(interpretation);
     const persistedConversation =
       conversation ?? await this.conversationRepository.create(
         input.workspaceId,
@@ -475,78 +726,416 @@ export class ChatService {
     };
   }
 
-  private async finalizePresentedAnswer(input: {
-    workspaceId: string;
-    accountId?: string;
-    stream: boolean;
-    session: PreparedSession;
-    presentation: PresentedAnswer;
-    answerStartedAt: number;
-  }): Promise<FinalizedPresentedAnswer> {
-    const route = this.getRoute(input.session);
-    const retrievalInfo = this.retrievalInfoPresenter.present(input.session.retrieval.diagnostics, {
-      execution: {
-        surface: "assistant",
-        path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
-        retrievalInvoked: route.type === "retrieval",
-      },
-    });
-    const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
-      trace: input.session.retrieval.trace,
-      summary: retrievalInfo,
-      outcome: {
-        answer: input.presentation.answer,
-        stream: input.stream,
-        hadContexts: input.session.retrieval.contexts.length > 0,
-        retrievalSkipped: input.session.retrieval.diagnostics.retrievalSkipped,
-        durationMs: Date.now() - input.answerStartedAt,
-        answerOutcome: input.presentation.answerOutcome,
-        validation: input.presentation.validation,
-      },
-    });
+  private async generateAnswerPresentation(
+    session: PreparedSession,
+    query: string,
+    userExpectedLocale?: string | null,
+  ): Promise<PresentedAnswer> {
+    if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
+      const nonRetrievalAnswer = await this.generateNonRetrievalAnswer(session, query);
+      if (nonRetrievalAnswer) {
+        return nonRetrievalAnswer;
+      }
+    }
 
-    const assistantMessage = await this.messageRepository.create({
-      conversationId: input.session.conversation.id,
-      workspaceId: input.workspaceId,
-      role: "assistant",
-      content: input.presentation.answer,
-    });
+    const answer = session.retrieval.contexts.length === 0
+      ? await this.groundedMissResponseComposer.composeNoContext({
+          query,
+          conversationMode: this.getConversationMode(session),
+          userExpectedLocale,
+        })
+      : await this.chatGateway.answer({
+          query,
+          history: session.history,
+          systemPrompt: session.retrieval.systemPrompt,
+          prompt: session.retrieval.prompt,
+        });
 
-    await this.chatTurnAuditRecorder.recordSuccess({
-      workspaceId: input.workspaceId,
-      accountId: input.accountId,
-      conversationId: input.session.conversation.id,
-      userMessageId: input.session.userMessage.id,
-      assistantMessageId: assistantMessage.id,
-      answerOutcome: input.presentation.answerOutcome,
-      validation: input.presentation.validation,
-      segmentResults: input.presentation.segmentResults,
-      citations: input.presentation.citations ?? [],
-      answerSegments: input.presentation.answerSegments,
-      suggestions: input.presentation.suggestions,
-      answerSupportPolicy: input.presentation.validation.answerSupportPolicy,
-      conversationMode: input.presentation.conversationModeMetadata.conversationMode,
-      conversationModeMetadata: input.presentation.conversationModeMetadata,
-      priorRewriteContinuityState: input.session.priorRewriteContinuityState,
-      diagnostics: input.session.retrieval.diagnostics,
-      retrievalTrace,
-      route,
-      stream: input.stream,
+    return this.presentAnswer(session, answer, query, userExpectedLocale);
+  }
+
+  private async presentAnswerWithoutSuggestions(
+    session: PreparedSession,
+    answer: string,
+    query: string,
+    userExpectedLocale?: string | null,
+  ): Promise<PresentedAnswer> {
+    const citationEvidence = session.retrieval.contexts.map((context) => ({
+      documentId: context.documentId,
+      chunkId: context.chunkId,
+      title: context.title,
+      content: context.content,
+      sourceUrl: resolveContextSourceUrl(context.metadata),
+    }));
+    const hiddenSupportEvidence = buildHiddenSupportEvidence(session.retrieval.responseIdentity);
+    const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
+
+    if (session.retrieval.contexts.length === 0) {
+      const presented = this.answerPresentationService.present({
+        answer,
+        citations: citationEvidence,
+        citationDisplayEnabled,
+      });
+
+      return {
+        ...presented,
+        suggestions: undefined,
+        planningCitations: [],
+        answerOutcome: ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL,
+        validation: {
+          ran: false,
+          answerModified: false,
+          unsupportedSegmentCount: 0,
+          substantiveUnsupportedSegmentCount: 0,
+          supportedSegmentCount: 0,
+          nonSubstantiveSegmentCount: 0,
+        },
+        segmentResults: [],
+        conversationModeMetadata: this.getConversationModeMetadata(session),
+      };
+    }
+
+    const normalized = this.answerPresentationService.normalize({
+      answer,
+      citations: citationEvidence,
+    });
+    const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
+      normalized.answerSegments,
+      normalized.citationEvidence,
+      citationEvidence,
+    );
+
+    const validated = await this.answerSupportValidator.validate({
+      query,
+      answer: normalized.answer,
+      answerSegments: validationAnswerSegments,
+      citationEvidence,
+      hiddenSupportEvidence,
+      retrievedContextSummaries: citationEvidence.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled,
+      conversationMode: this.getConversationMode(session),
+      groundedMissResponseComposer: this.groundedMissResponseComposer,
+      unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
+      userExpectedLocale,
     });
 
     return {
-      assistantMessageId: assistantMessage.id,
-      conversationId: input.session.conversation.id,
-      route,
-      answer: input.presentation.answer,
-      citations: input.presentation.citations,
-      answerSegments: input.presentation.answerSegments,
-      suggestions: input.presentation.suggestions,
-      conversationMode: input.presentation.conversationModeMetadata.conversationMode,
-      conversationModeMetadata: input.presentation.conversationModeMetadata,
-      retrievalInfo,
-      retrievalTrace,
+      ...validated,
+      suggestions: undefined,
+      planningCitations: normalized.citationEvidence.map((citation) => ({
+        documentId: citation.documentId,
+        chunkId: citation.chunkId,
+        title: citation.title,
+      })),
+      answerOutcome: this.assistantTurnOutcomeClassifier.classify({
+        hadRetrievedContext: true,
+        validation: validated.validation,
+      }),
+      conversationModeMetadata: this.getConversationModeMetadata(session),
     };
+  }
+
+  private async presentAnswer(
+    session: PreparedSession,
+    answer: string,
+    query: string,
+    userExpectedLocale?: string | null,
+  ): Promise<PresentedAnswer> {
+    const citationEvidence = session.retrieval.contexts.map((context) => ({
+      documentId: context.documentId,
+      chunkId: context.chunkId,
+      title: context.title,
+      content: context.content,
+      sourceUrl: resolveContextSourceUrl(context.metadata),
+    }));
+    const hiddenSupportEvidence = buildHiddenSupportEvidence(session.retrieval.responseIdentity);
+    const citationDisplayEnabled = session.retrieval.responseSettings?.citationDisplayEnabled ?? true;
+
+    if (session.retrieval.contexts.length === 0) {
+      const presented = this.answerPresentationService.present({
+        answer,
+        citations: citationEvidence,
+        citationDisplayEnabled,
+      });
+      const expanded = await this.applyConversationMode(session, {
+        ...presented,
+        answerOutcome: ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL,
+        validation: {
+          ran: false,
+          answerModified: false,
+          unsupportedSegmentCount: 0,
+          substantiveUnsupportedSegmentCount: 0,
+          supportedSegmentCount: 0,
+          nonSubstantiveSegmentCount: 0,
+        },
+        segmentResults: [],
+      });
+      return expanded;
+    }
+
+    const normalized = this.answerPresentationService.normalize({
+      answer,
+      citations: citationEvidence,
+    });
+    const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
+      normalized.answerSegments,
+      normalized.citationEvidence,
+      citationEvidence,
+    );
+
+    const validated = await this.answerSupportValidator.validate({
+      query,
+      answer: normalized.answer,
+      answerSegments: validationAnswerSegments,
+      citationEvidence,
+      hiddenSupportEvidence,
+      retrievedContextSummaries: citationEvidence.map((citation) => ({
+        title: citation.title,
+        content: citation.content,
+      })),
+      citationDisplayEnabled,
+      conversationMode: this.getConversationMode(session),
+      groundedMissResponseComposer: this.groundedMissResponseComposer,
+      unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
+      userExpectedLocale,
+    });
+
+    return await this.applyConversationMode(session, {
+      ...validated,
+      planningCitations: normalized.citationEvidence.map((citation) => ({
+        documentId: citation.documentId,
+        chunkId: citation.chunkId,
+        title: citation.title,
+      })),
+      answerOutcome: this.assistantTurnOutcomeClassifier.classify({
+        hadRetrievedContext: true,
+        validation: validated.validation,
+      }),
+    });
+  }
+
+  private async finalizeAssistantTurn(input: {
+    workspaceId: string;
+    accountId?: string;
+    conversationId: string;
+    userMessageId: string;
+    assistantMessageId: string;
+    answerOutcome: AssistantTurnOutcome;
+    validation: AnswerValidationSummary;
+    segmentResults: AnswerSegmentValidationResult[];
+    citations: ChatCitation[];
+    answerSegments?: AnswerSegment[];
+    suggestions?: ChatSuggestion[];
+    conversationMode: ConversationMode;
+    conversationModeMetadata: ConversationModeMetadata;
+    priorRewriteContinuityState?: RewriteContinuityState;
+    diagnostics: PreparedSession["retrieval"]["diagnostics"];
+    retrievalTrace: RetrievalTrace;
+    route: ChatRoute;
+    stream: boolean;
+  }): Promise<void> {
+    const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
+    await this.conversationRepository.touch(input.conversationId, input.workspaceId);
+    await this.auditService.record({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        workflow: workflowPolicy.workflow,
+        executionClass: workflowPolicy.executionClass,
+        conversationId: input.conversationId,
+        userMessageId: input.userMessageId,
+        assistantMessageId: input.assistantMessageId,
+        stream: input.stream,
+        answerOutcome: input.answerOutcome,
+        route: {
+          generator: "assistant",
+          routeType: input.route.type,
+          routeReason: input.route.reason,
+          retrievalInvoked: input.route.type === "retrieval",
+        },
+        conversationMode: input.conversationMode,
+        conversationModeMetadata: input.conversationModeMetadata,
+        validation: {
+          ...input.validation,
+          segmentResults: input.segmentResults.map((segment) => ({
+            originalText: segment.originalText,
+            text: segment.text,
+            disposition: segment.disposition,
+            replacementApplied: segment.replacementApplied,
+            reason: segment.reason,
+            citationIndices: segment.citationIndices,
+          })),
+        },
+        citationCount: input.citations.length,
+        citations: input.citations,
+        answerSegments: input.answerSegments,
+        suggestions: input.suggestions,
+        rewriteContinuityState: this.buildRewriteContinuityState({
+          previousState: input.priorRewriteContinuityState,
+          diagnostics: input.diagnostics,
+          citations: input.citations,
+        }),
+        retrieval: input.diagnostics,
+        retrievalTrace: input.retrievalTrace,
+      },
+    });
+    try {
+      await this.productAnalyticsService.track({
+        eventName: "chat.completed",
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        subjectType: "conversation",
+        subjectId: input.conversationId,
+        properties: {
+          stream: input.stream,
+          answerOutcome: input.answerOutcome,
+          conversationMode: input.conversationMode,
+          citationCount: input.citations.length,
+          suggestionCount: input.suggestions?.length ?? 0,
+        },
+        source: "backend",
+      });
+    } catch {
+      // Analytics fan-out must not change successful chat behavior.
+    }
+  }
+
+  private async applyConversationMode(
+    session: PreparedSession,
+    presentation: Omit<PresentedAnswer, "conversationModeMetadata">,
+  ): Promise<PresentedAnswer> {
+    const conversationMode = this.getConversationMode(session);
+    const brevityOverrideApplied = shouldSuppressOptionalSuggestions(session.userMessage.content);
+
+    if (brevityOverrideApplied) {
+      return {
+        ...presentation,
+        suggestions: undefined,
+        conversationModeMetadata: this.getConversationModeMetadata(session, {
+          brevityOverrideApplied: true,
+          ...inferConversationModeMetadata({
+            conversationMode,
+            brevityOverrideApplied: true,
+            suggestionCount: 0,
+          }),
+        }),
+      };
+    }
+
+    const conversationIntentSnapshot = buildConversationIntentSnapshot({
+      history: session.history,
+      latestQuery: session.userMessage.content,
+      priorRewriteContinuityState: session.priorRewriteContinuityState,
+      rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
+    });
+    const expanded = await this.conversationModeExpansionService.apply({
+      query: session.userMessage.content,
+      conversationMode,
+      suggestedQuestionsEnabled: this.getSuggestedQuestionsEnabled(session),
+      suggestedQuestionsCount: this.getSuggestedQuestionsCount(session),
+      groundedAnswerSupported: presentation.validation.supportedSegmentCount > 0,
+      answer: presentation.answer,
+      citations: presentation.citations,
+      contexts: session.retrieval.contexts.map((context) => ({
+        documentId: context.documentId,
+        chunkId: context.chunkId,
+        title: context.title,
+        content: context.content,
+      })),
+      history: session.history,
+      conversationIntentSnapshot,
+      suppressOptionalSuggestions: brevityOverrideApplied,
+    });
+    const suggestions = expanded.suggestions;
+
+    return {
+      ...presentation,
+      suggestions,
+      conversationModeMetadata: this.getConversationModeMetadata(session, inferConversationModeMetadata({
+        conversationMode,
+        brevityOverrideApplied,
+        suggestionCount: suggestions?.length ?? 0,
+      })),
+    };
+  }
+
+  private async recordFailure(
+    input: {
+      workspaceId: string;
+      accountId?: string;
+      conversationId?: string;
+      query: string;
+      stream: boolean;
+    },
+    session: PreparedSession | null,
+    existingAssistantMessageId: string | undefined,
+    error: unknown,
+    workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn"),
+  ) {
+    let assistantMessageId = existingAssistantMessageId;
+
+    if (session && assistantMessageId) {
+      await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
+    }
+
+    await this.auditService.record({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType: "chat.answer",
+      eventStatus: "failure",
+      metadata: {
+        stage: "chat.answer",
+        workflow: workflowPolicy.workflow,
+        executionClass: workflowPolicy.executionClass,
+        conversationId: session?.conversation.id ?? input.conversationId,
+        userMessageId: session?.userMessage.id,
+        assistantMessageId,
+        stream: input.stream,
+        citationCount: 0,
+        retrieval: session?.retrieval.diagnostics,
+        retrievalTrace: session?.retrieval.trace
+          ? this.retrievalTracePresenter.appendAnswerOutcome({
+              trace: session.retrieval.trace,
+              summary: this.retrievalInfoPresenter.present(session.retrieval.diagnostics, {
+                execution: {
+                  surface: "assistant",
+                  path: this.getRoute(session).type === "direct" ? "assistant_direct" : "assistant_retrieval",
+                  retrievalInvoked: this.getRoute(session).type === "retrieval",
+                },
+              }),
+              outcome: {
+                answer: "",
+                stream: input.stream,
+                hadContexts: session.retrieval.contexts.length > 0,
+                retrievalSkipped: session.retrieval.diagnostics.retrievalSkipped,
+                durationMs: 0,
+              },
+            })
+          : undefined,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      },
+    });
+    try {
+      await this.productAnalyticsService.track({
+        eventName: "chat.failed",
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        subjectType: "conversation",
+        subjectId: session?.conversation.id ?? input.conversationId,
+        properties: {
+          stream: input.stream,
+          errorMessage: error instanceof Error ? error.message : "Unknown error",
+        },
+        source: "backend",
+      });
+    } catch {
+      // Analytics fan-out must not change failure behavior.
+    }
   }
 
   private async ensureConversation(conversationId: string, workspaceId: string, anonymousSessionId?: string | null) {
@@ -581,6 +1170,133 @@ export class ChatService {
       conversationId,
     }) as ChatAnswerAuditMetadata | null;
 
-    return normalizeRewriteContinuityState(metadata?.rewriteContinuityState);
+    return this.normalizeRewriteContinuityState(metadata?.rewriteContinuityState);
+  }
+
+  private buildRewriteContinuityState(input: {
+    previousState?: RewriteContinuityState;
+    diagnostics: PreparedSession["retrieval"]["diagnostics"];
+    citations: ChatCitation[];
+  }): RewriteContinuityState | undefined {
+    const groundedTitles = this.collectContinuityValues([
+      ...(input.previousState?.groundedTitles ?? []),
+      ...input.citations.map((citation) => citation.title),
+    ]);
+    const activeSubject = this.resolveContinuityActiveSubject(
+      this.normalizeContinuityValue(input.diagnostics.rewriteProposal?.proposedActiveSubject)
+        ?? input.previousState?.activeSubject,
+      groundedTitles,
+    );
+    const relatedEntities: string[] = [];
+
+    if (!activeSubject && relatedEntities.length === 0 && groundedTitles.length === 0) {
+      return undefined;
+    }
+
+    return {
+      activeSubject,
+      relatedEntities,
+      groundedTitles,
+    };
+  }
+
+  private normalizeRewriteContinuityState(state: unknown): RewriteContinuityState | undefined {
+    if (!state || typeof state !== "object") {
+      return undefined;
+    }
+
+    const candidate = state as Partial<Record<keyof RewriteContinuityState, unknown>>;
+    const groundedTitles = this.collectContinuityValues(
+      Array.isArray(candidate.groundedTitles)
+        ? candidate.groundedTitles.map((value) => (typeof value === "string" ? value : undefined))
+        : [],
+    );
+    const activeSubject = this.resolveContinuityActiveSubject(
+      typeof candidate.activeSubject === "string" ? candidate.activeSubject : undefined,
+      groundedTitles,
+    );
+    const relatedEntities: string[] = [];
+
+    if (!activeSubject && relatedEntities.length === 0 && groundedTitles.length === 0) {
+      return undefined;
+    }
+
+    return {
+      activeSubject,
+      relatedEntities,
+      groundedTitles,
+    };
+  }
+
+  private resolveContinuityActiveSubject(candidate: string | undefined, groundedTitles: string[]): string | undefined {
+    const normalizedCandidate = this.normalizeContinuityValue(candidate);
+    if (normalizedCandidate) {
+      return normalizedCandidate;
+    }
+
+    return groundedTitles.length === 1 ? groundedTitles[0] : undefined;
+  }
+
+  private collectContinuityValues(values: Array<string | undefined>): string[] {
+    const unique: string[] = [];
+    for (const value of values) {
+      const normalized = this.normalizeContinuityValue(value);
+      if (!normalized || unique.includes(normalized)) {
+        continue;
+      }
+      unique.push(normalized);
+      if (unique.length >= CHAT_BEHAVIOR.carryForward.maxLiterals) {
+        break;
+      }
+    }
+    return unique;
+  }
+
+  private normalizeContinuityValue(value?: string): string | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    if (normalized.length === 0 || normalized.length > CHAT_BEHAVIOR.carryForward.maxLiteralLength) {
+      return undefined;
+    }
+
+    try {
+      const url = new URL(normalized);
+      if (url.protocol) {
+        return undefined;
+      }
+    } catch {
+      // Keep non-URL values.
+    }
+
+    return normalized;
   }
 }
+
+const buildHiddenSupportEvidence = (
+  responseIdentity?: ResponseIdentity | null,
+): HiddenSupportEvidence[] => {
+  if (!responseIdentity) {
+    return [];
+  }
+
+  const evidence: HiddenSupportEvidence[] = [];
+
+  if (responseIdentity.name) {
+    evidence.push({
+      kind: "assistant_name",
+      content: responseIdentity.name,
+    });
+  }
+
+  if (responseIdentity.role) {
+    evidence.push({
+      kind: "assistant_role",
+      content: responseIdentity.role,
+    });
+  }
+
+  return evidence;
+};

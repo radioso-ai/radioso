@@ -26,6 +26,80 @@ const groundedMissResponseComposer: GroundedMissResponseComposer = {
   },
 };
 
+const asChatRetrievalPipeline = (pipeline: Record<string, unknown>) => {
+  if (
+    typeof pipeline.interpret === "function"
+    && typeof pipeline.runInterpreted === "function"
+    && typeof pipeline.runWithoutRetrieval === "function"
+  ) {
+    return pipeline;
+  }
+
+  if (typeof pipeline.run !== "function") {
+    return pipeline;
+  }
+
+  return {
+    ...pipeline,
+    async interpret(input: {
+      workspaceId: string;
+      query: string;
+      history: unknown[];
+      responseIdentity?: unknown;
+      responseBehaviorEnabled?: boolean;
+      metadataFilter?: Record<string, unknown>;
+    }) {
+      return {
+        request: input,
+        traceStartedAtMs: Date.now(),
+        context: {
+          startedAt: Date.now(),
+          durationMs: 1,
+          result: {
+            request: input,
+            settings: {
+              workspaceId: input.workspaceId,
+              queryRewriteEnabled: true,
+              semanticRewriteInstructions: "",
+              lexicalRewriteInstructions: "",
+              conversationMode: "guided",
+              suggestedQuestionsEnabled: true,
+              suggestedQuestionsCount: 3,
+              rerankEnabled: false,
+              vectorTopK: 20,
+              similarityThreshold: 0.1,
+              rerankTopK: 5,
+              citationDisplayEnabled: true,
+              customInstruction: "",
+              metadataRules: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            contextWindow: {
+              selectedMessages: [],
+              truncated: false,
+              selectionReason: "full-history",
+            },
+          },
+        },
+        interpretation: {
+          startedAt: Date.now(),
+          durationMs: 1,
+          result: {
+            responseIntent: "retrieval",
+          },
+        },
+      };
+    },
+    async runInterpreted(interpretation: { request: unknown }) {
+      return (pipeline.run as (input: unknown) => unknown | Promise<unknown>)(interpretation.request);
+    },
+    async runWithoutRetrieval() {
+      throw new Error("runWithoutRetrieval should not be used for retrieval turns");
+    },
+  };
+};
+
 describe("chat service streaming", () => {
   const createIntentRoutedNoContextPipeline = (input: {
     query: string;
@@ -63,7 +137,6 @@ describe("chat service streaming", () => {
               queryRewriteEnabled: true,
               semanticRewriteInstructions: "",
               lexicalRewriteInstructions: "",
-              answerSupportPolicy: "strict",
               conversationMode: "guided",
               suggestedQuestionsEnabled: true,
               suggestedQuestionsCount: 3,
@@ -105,7 +178,6 @@ describe("chat service streaming", () => {
         responseIdentity: input.responseIdentity ?? null,
         responseSettings: {
           citationDisplayEnabled: true,
-          answerSupportPolicy: "strict",
           conversationMode: "guided",
           suggestedQuestionsEnabled: true,
           suggestedQuestionsCount: 3,
@@ -189,7 +261,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
           },
         };
@@ -207,7 +278,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -335,7 +406,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
           },
         };
@@ -354,7 +424,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -415,7 +485,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -456,7 +526,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -495,7 +565,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -543,7 +613,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -591,7 +661,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -651,7 +721,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
           },
         };
       },
@@ -667,7 +736,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -734,7 +803,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
           },
         };
       },
@@ -750,7 +818,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -822,7 +890,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
           },
         };
       },
@@ -838,7 +905,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -907,7 +974,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1021,7 +1088,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1139,7 +1206,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1182,7 +1249,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
     );
@@ -1232,7 +1299,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
           },
         };
       },
@@ -1248,7 +1314,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
     );
@@ -1313,7 +1379,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "factual",
           },
         };
@@ -1330,7 +1395,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1395,7 +1460,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
           },
         };
       },
@@ -1412,7 +1476,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
     );
@@ -1491,7 +1555,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "warn",
           },
         };
       },
@@ -1508,7 +1571,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
     );
@@ -1584,7 +1647,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "warn",
             conversationMode: "exploratory",
           },
         };
@@ -1609,7 +1671,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1687,7 +1749,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -1713,7 +1774,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1801,7 +1862,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 2,
@@ -1827,7 +1887,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -1918,7 +1978,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 2,
@@ -1940,7 +1999,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2004,7 +2063,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2028,7 +2086,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2096,7 +2154,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2122,7 +2179,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2188,7 +2245,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2218,7 +2274,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2339,7 +2395,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2378,7 +2433,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2452,7 +2507,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2479,7 +2533,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2546,7 +2600,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2574,7 +2627,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2652,7 +2705,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
             suggestedQuestionsCount: 3,
           },
@@ -2681,7 +2733,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2758,7 +2810,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
           },
         };
@@ -2775,7 +2826,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -2836,7 +2887,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
           },
         };
@@ -2861,7 +2911,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       fallbackComposer,
@@ -2920,7 +2970,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
           },
         };
@@ -2939,7 +2988,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3008,7 +3057,6 @@ describe("chat service streaming", () => {
                 queryRewriteEnabled: true,
                 semanticRewriteInstructions: "",
                 lexicalRewriteInstructions: "",
-                answerSupportPolicy: "strict",
                 conversationMode: "guided",
                 suggestedQuestionsEnabled: true,
                 suggestedQuestionsCount: 3,
@@ -3055,7 +3103,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 3,
@@ -3123,7 +3170,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       fallbackComposer,
@@ -3221,7 +3268,6 @@ describe("chat service streaming", () => {
                 queryRewriteEnabled: true,
                 semanticRewriteInstructions: "",
                 lexicalRewriteInstructions: "",
-                answerSupportPolicy: "strict",
                 conversationMode: "guided",
                 suggestedQuestionsEnabled: true,
                 suggestedQuestionsCount: 3,
@@ -3266,7 +3312,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 3,
@@ -3325,7 +3370,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3373,7 +3418,7 @@ describe("chat service streaming", () => {
     const service = new ChatService(
       conversationRepository,
       messageRepository,
-      retrievalPipeline as never,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
       chatGateway,
       auditService,
       groundedMissResponseComposer,
@@ -3385,8 +3430,8 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(observedPrompt).toContain("No stable assistant identity is configured for this workspace.");
-    expect(observedPrompt).toContain("Say that briefly instead of inventing a name, role, or capabilities.");
+    expect(observedPrompt).toContain("Identity status: not_configured");
+    expect(observedPrompt).toContain("Say that you are the assistant that can answer the user's questions.");
   });
 
 });

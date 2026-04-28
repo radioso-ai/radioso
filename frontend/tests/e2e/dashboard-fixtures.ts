@@ -23,7 +23,6 @@ export const basePlatformSettings = () => ({
     queryRewriteEnabled: false,
     semanticRewriteInstructions: "Keep semantic rewrites standalone.",
     lexicalRewriteInstructions: "Prefer exact phrases.",
-    answerSupportPolicy: "strict",
     rerankEnabled: false,
     vectorTopK: 20,
     similarityThreshold: 0.2,

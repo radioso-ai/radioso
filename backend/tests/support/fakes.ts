@@ -688,7 +688,6 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       queryRewriteEnabled: input.queryRewriteEnabled,
       semanticRewriteInstructions: input.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.lexicalRewriteInstructions,
-      answerSupportPolicy: input.answerSupportPolicy,
       conversationMode: input.conversationMode,
       suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
       suggestedQuestionsCount: input.suggestedQuestionsCount,

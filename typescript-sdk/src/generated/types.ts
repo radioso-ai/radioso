@@ -969,8 +969,6 @@ export interface components {
             semanticRewriteInstructions: string;
             lexicalRewriteInstructions: string;
             /** @enum {string} */
-            answerSupportPolicy: "strict" | "warn" | "off";
-            /** @enum {string} */
             conversationMode: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled: boolean;
             suggestedQuestionsCount: number;
@@ -1026,8 +1024,6 @@ export interface components {
             queryRewriteEnabled: boolean;
             semanticRewriteInstructions?: string;
             lexicalRewriteInstructions?: string;
-            /** @enum {string} */
-            answerSupportPolicy?: "strict" | "warn" | "off";
             /** @enum {string} */
             conversationMode?: "factual" | "guided" | "exploratory";
             suggestedQuestionsEnabled?: boolean;
@@ -1198,8 +1194,6 @@ export interface components {
             queryRewriteEnabled: boolean;
             semanticRewriteInstructions: string;
             lexicalRewriteInstructions: string;
-            /** @enum {string} */
-            answerSupportPolicy: "strict" | "warn" | "off";
             rerankEnabled: boolean;
             vectorTopK: number;
             similarityThreshold: number;
@@ -1280,8 +1274,6 @@ export interface components {
                 queryRewriteEnabled?: boolean;
                 semanticRewriteInstructions?: string;
                 lexicalRewriteInstructions?: string;
-                /** @enum {string} */
-                answerSupportPolicy?: "strict" | "warn" | "off";
                 rerankEnabled?: boolean;
                 vectorTopK?: number;
                 similarityThreshold?: number;
@@ -1624,8 +1616,6 @@ export interface components {
             validation: {
                 /** @enum {string} */
                 status: "supported" | "unsupported" | "not_checked";
-                /** @enum {string} */
-                policy: "strict" | "warn" | "off";
             };
             retrievalInfo: components["schemas"]["RetrievalInfo"];
             retrievalTrace: components["schemas"]["RetrievalTrace"];
@@ -1692,7 +1682,7 @@ export interface components {
             };
             retrievalInfo: components["schemas"]["RetrievalInfo"];
             retrievalTrace: components["schemas"]["RetrievalTrace"];
-            route?: components["schemas"]["AssistantRoute"];
+            route: components["schemas"]["AssistantRoute"];
         };
         AssistantChatResponse: {
             /** Format: uuid */
@@ -1841,8 +1831,6 @@ export interface components {
             substantiveUnsupportedSegmentCount: number;
             supportedSegmentCount: number;
             nonSubstantiveSegmentCount: number;
-            /** @enum {string} */
-            answerSupportPolicy?: "strict" | "warn" | "off";
             hiddenSupportUsed?: boolean;
             hiddenSupportKindsUsed?: ("assistant_name" | "assistant_role")[];
             segmentResults: components["schemas"]["ValidationSegmentResult"][];
@@ -1856,8 +1844,6 @@ export interface components {
             citationCount: number;
             /** @enum {string} */
             answerOutcome?: "grounded_success" | "grounded_degraded_unsupported_segments" | "no_context_refusal" | "non_retrieval_response";
-            /** @enum {string} */
-            answerSupportPolicy?: "strict" | "warn" | "off";
             /** @enum {string} */
             conversationMode?: "factual" | "guided" | "exploratory";
             route?: components["schemas"]["AssistantRouteDiagnostics"];

@@ -95,7 +95,6 @@ describe("chat history service", () => {
           links: [],
         },
         answerOutcome: "grounded_degraded_unsupported_segments",
-        answerSupportPolicy: "strict",
         conversationMode: "exploratory",
         conversationModeMetadata: {
           conversationMode: "exploratory",
@@ -122,7 +121,6 @@ describe("chat history service", () => {
           substantiveUnsupportedSegmentCount: 1,
           supportedSegmentCount: 1,
           nonSubstantiveSegmentCount: 1,
-          answerSupportPolicy: "strict",
           hiddenSupportUsed: true,
           hiddenSupportKindsUsed: ["assistant_name", "assistant_role"],
           segmentResults: [
@@ -182,7 +180,6 @@ describe("chat history service", () => {
       routeReason: "evidence_required",
       retrievalInvoked: true,
     });
-    expect(debug?.answerSupportPolicy).toBe("strict");
     expect(debug?.conversationMode).toBe("exploratory");
     expect(debug?.conversationModeMetadata).toEqual({
       conversationMode: "exploratory",
@@ -210,7 +207,6 @@ describe("chat history service", () => {
       substantiveUnsupportedSegmentCount: 1,
       supportedSegmentCount: 1,
       nonSubstantiveSegmentCount: 1,
-      answerSupportPolicy: "strict",
       hiddenSupportUsed: true,
       hiddenSupportKindsUsed: ["assistant_name", "assistant_role"],
       segmentResults: [

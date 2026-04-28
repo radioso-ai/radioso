@@ -7,7 +7,7 @@
 
 Add a workspace-scoped conversation mode (`factual`, `guided`,
 `exploratory`) that shapes all grounded chat responses while keeping
-`answerSupportPolicy` as a separate trust boundary. The implementation extends
+`answerPolicy` as a separate trust boundary. The implementation extends
 retrieval settings and settings APIs, adds a focused backend response-strategy
 instruction seam plus a bounded grounded expansion planner/composer, preserves
 `chatService.ts` as orchestration-only, exposes additive debug metadata, and

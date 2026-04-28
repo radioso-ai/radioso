@@ -83,7 +83,6 @@ export interface RetrievalSettings {
   queryRewriteEnabled: boolean
   semanticRewriteInstructions: string
   lexicalRewriteInstructions: string
-  answerSupportPolicy: 'strict' | 'warn' | 'off'
   conversationMode: 'factual' | 'guided' | 'exploratory'
   suggestedQuestionsEnabled: boolean
   suggestedQuestionsCount: number
@@ -518,7 +517,6 @@ export interface ChatConversationTurnDebug {
   stream: boolean
   citationCount: number
   answerOutcome?: 'grounded_success' | 'grounded_degraded_unsupported_segments' | 'no_context_refusal'
-  answerSupportPolicy?: 'strict' | 'warn' | 'off'
   conversationMode?: 'factual' | 'guided' | 'exploratory'
   conversationModeMetadata?: {
     conversationMode: 'factual' | 'guided' | 'exploratory'
@@ -535,7 +533,6 @@ export interface ChatConversationTurnDebug {
     substantiveUnsupportedSegmentCount: number
     supportedSegmentCount: number
     nonSubstantiveSegmentCount: number
-    answerSupportPolicy?: 'strict' | 'warn' | 'off'
     hiddenSupportUsed?: boolean
     hiddenSupportKindsUsed?: Array<'assistant_name' | 'assistant_role'>
     segmentResults: Array<{
@@ -971,7 +968,6 @@ export const settingsApi = {
           queryRewriteEnabled: payload.queryRewriteEnabled,
           semanticRewriteInstructions: payload.semanticRewriteInstructions,
           lexicalRewriteInstructions: payload.lexicalRewriteInstructions,
-          answerSupportPolicy: payload.answerSupportPolicy,
           rerankEnabled: payload.rerankEnabled,
           vectorTopK: payload.vectorTopK,
           similarityThreshold: payload.similarityThreshold,

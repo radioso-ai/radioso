@@ -8,6 +8,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
     const includeResponseBehavior = input.request.responseBehaviorEnabled ?? input.request.responseIdentity !== null;
     const prompt = this.promptBuilder.build({
       query: input.request.query,
+      retrievalQuery: input.activeQuery,
       history: input.promptHistory,
       settings: {
         responseIdentity: input.request.responseIdentity,
@@ -20,11 +21,11 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
 
     return {
       ...input,
+      systemPrompt: prompt.systemPrompt,
       prompt: prompt.prompt,
       citations: prompt.citations,
       responseSettings: {
         citationDisplayEnabled: input.settings.citationDisplayEnabled,
-        answerSupportPolicy: input.settings.answerSupportPolicy,
         conversationMode: includeResponseBehavior ? input.settings.conversationMode : "factual",
         suggestedQuestionsEnabled: includeResponseBehavior ? input.settings.suggestedQuestionsEnabled : false,
         suggestedQuestionsCount: includeResponseBehavior ? input.settings.suggestedQuestionsCount : 0,

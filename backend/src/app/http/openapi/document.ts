@@ -47,7 +47,6 @@ import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/
 import {
   MAX_SUGGESTED_QUESTIONS_COUNT,
   MIN_SUGGESTED_QUESTIONS_COUNT,
-  answerSupportPolicies,
   conversationModes,
   metadataRuleEffects,
   metadataRuleOperators,
@@ -288,7 +287,6 @@ const RetrievalSettingsSchema = registry.register(
     queryRewriteEnabled: z.boolean(),
     semanticRewriteInstructions: z.string().max(2000),
     lexicalRewriteInstructions: z.string().max(2000),
-    answerSupportPolicy: z.enum(answerSupportPolicies),
     conversationMode: z.enum(conversationModes),
     suggestedQuestionsEnabled: z.boolean(),
     suggestedQuestionsCount: z.number().int().min(MIN_SUGGESTED_QUESTIONS_COUNT).max(MAX_SUGGESTED_QUESTIONS_COUNT),
@@ -468,7 +466,6 @@ const PlatformRetrievalSettingsSectionSchema = registry.register(
     queryRewriteEnabled: z.boolean(),
     semanticRewriteInstructions: z.string().max(2000),
     lexicalRewriteInstructions: z.string().max(2000),
-    answerSupportPolicy: z.enum(answerSupportPolicies),
     rerankEnabled: z.boolean(),
     vectorTopK: z.number().int().min(1).max(300),
     similarityThreshold: z.number().min(0).max(1),
@@ -867,7 +864,6 @@ const RetrievalAnswerSuccessSchema = registry.register(
     evidence: z.array(RetrievalAnswerEvidenceSchema),
     validation: z.object({
       status: z.enum(["supported", "unsupported", "not_checked"]),
-      policy: z.enum(answerSupportPolicies),
     }),
     retrievalInfo: RetrievalInfoSchema,
     retrievalTrace: RetrievalTraceSchema,
@@ -945,7 +941,7 @@ const ChatResponseSchema = registry.register(
   "ChatResponse",
   z.object({
     ...chatResponseShape,
-    route: AssistantRouteSchema.optional(),
+    route: AssistantRouteSchema,
   }),
 );
 
@@ -1080,7 +1076,6 @@ const ValidationDebugSchema = registry.register(
     substantiveUnsupportedSegmentCount: z.number().int().min(0),
     supportedSegmentCount: z.number().int().min(0),
     nonSubstantiveSegmentCount: z.number().int().min(0),
-    answerSupportPolicy: z.enum(answerSupportPolicies).optional(),
     hiddenSupportUsed: z.boolean().optional(),
     hiddenSupportKindsUsed: z.array(z.enum(["assistant_name", "assistant_role"])).optional(),
     segmentResults: z.array(ValidationSegmentResultSchema),
@@ -1095,7 +1090,6 @@ const ChatConversationMessageDebugSchema = registry.register(
     stream: z.boolean(),
     citationCount: z.number().int().min(0),
     answerOutcome: z.enum(["grounded_success", "grounded_degraded_unsupported_segments", "no_context_refusal", "non_retrieval_response"]).optional(),
-    answerSupportPolicy: z.enum(answerSupportPolicies).optional(),
     conversationMode: z.enum(conversationModes).optional(),
     route: AssistantRouteDiagnosticsSchema.optional(),
     conversationModeMetadata: z.object({

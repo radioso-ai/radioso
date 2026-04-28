@@ -11,7 +11,7 @@ Document the approved additive contract changes for retrieval settings and the r
   - `PUT /api/v1/settings/retrieval`
 - The settings payload remains backward-compatible and additive.
 - New retrieval settings field:
-  - `answerSupportPolicy`
+  - `answerPolicy`
 - Supported values:
   - `strict`
   - `warn`
@@ -31,13 +31,13 @@ Document the approved additive contract changes for retrieval settings and the r
 
 ## Behavioral Contract Notes
 
-- Existing workspaces that have never stored `answerSupportPolicy` must receive `strict` on read.
+- Existing workspaces that have never stored `answerPolicy` must receive `strict` on read.
 - Older clients that omit the field during save must not break retrieval settings reads.
 - The code-first source of truth for these schema changes is `backend/src/app/http/openapi/document.ts`.
 - `backend/openapi.yaml` and `backend/openapi.json` are generated artifacts that must be regenerated after implementation; they are not planning sources of truth.
 
 ## Chat Diagnostics / History Notes
 
-- Stored assistant-turn validation metadata should include the active `answerSupportPolicy`.
+- Stored assistant-turn validation metadata should include the active `answerPolicy`.
 - Existing debug/history payloads should continue to expose whether validation ran and whether the answer was modified.
 - These additions are additive to existing chat history/debug contracts rather than a new endpoint family.

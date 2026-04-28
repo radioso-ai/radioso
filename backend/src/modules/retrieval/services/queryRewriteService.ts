@@ -15,6 +15,7 @@ import type {
   StructuredRewriteResult,
 } from "../domain/retrievalPipelineTypes.js";
 import { RESPONSE_INTENT, REWRITE_STATUS, REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
+import { buildLexicalAlternativeSubqueries } from "../domain/lexicalQueryPlan.js";
 import { RewriteEligibilityService } from "./rewritePolicyService.js";
 
 export interface QueryRewriteGatewayFallbackResult {
@@ -32,7 +33,6 @@ export interface TriggerAnalysisGatewayInput {
   rules: RetrievalMetadataRule[];
 }
 
-const QUERY_REWRITE_SYSTEM_PROMPT = loadPromptTemplate("retrieval/query-rewrite-system.md");
 const TRIGGER_ANALYSIS_SYSTEM_PROMPT = loadPromptTemplate("retrieval/trigger-analysis-system.md");
 
 const DEFAULT_RESPONSE_LANGUAGE_POLICY: ResponseLanguagePolicy = "match_user_question";
@@ -45,7 +45,7 @@ const buildQueryRewritePrompt = (input: {
   lexicalRewriteInstructions?: string;
   query: string;
 }): string =>
-  renderPromptTemplate("retrieval/query-rewrite-user.md", {
+  renderPromptTemplate("retrieval/query-rewrite.md", {
     context_section: input.context || "No prior context",
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
@@ -132,7 +132,6 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
     lexicalRewriteInstructions?: string;
   }): Promise<StructuredRewriteResult> {
     const raw = await this.client.complete({
-      systemPrompt: QUERY_REWRITE_SYSTEM_PROMPT,
       prompt: buildQueryRewritePrompt({
         context: formatConversationContext(input.contextMessages),
         semanticRewriteInstructions: input.semanticRewriteInstructions,
@@ -169,10 +168,6 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: [
-        {
-          role: "system",
-          content: QUERY_REWRITE_SYSTEM_PROMPT,
-        },
         {
           role: "user",
           content: buildQueryRewritePrompt({
@@ -252,11 +247,22 @@ export class QueryRewriteService {
       );
       const responseIntent = rawResponseIntent;
       const compatibilityRewrite = semanticQuery;
+      const responseLanguagePolicy = normalizedStructuredResult.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY;
+      const lexicalRewriteAccepted = lexicalQuery !== input.query;
+      const retrievalSubqueries =
+        normalizedStructuredResult.retrievalSubqueries ??
+        (lexicalRewriteAccepted
+          ? buildLexicalAlternativeSubqueries({
+              semanticQuery,
+              lexicalQuery,
+              responseLanguagePolicy,
+            })
+          : undefined);
       const applied =
         responseIntent !== RESPONSE_INTENT.RETRIEVAL
         || semanticQuery !== input.query
         || lexicalQuery !== input.query
-        || Boolean(normalizedStructuredResult.retrievalSubqueries && normalizedStructuredResult.retrievalSubqueries.length > 1);
+        || Boolean(retrievalSubqueries && retrievalSubqueries.length > 1);
 
       if (!applied) {
         return {
@@ -276,6 +282,7 @@ export class QueryRewriteService {
         rewrittenQuery: compatibilityRewrite,
         semanticQuery,
         lexicalQuery,
+        retrievalSubqueries: stripLexicalPlans(retrievalSubqueries),
       };
       const eligibility = this.eligibilityService.evaluate({
         originalQuery: input.query,
@@ -292,8 +299,8 @@ export class QueryRewriteService {
         semanticQuery: retrievalEligible ? semanticQuery : input.query,
         lexicalQuery: retrievalEligible ? lexicalQuery : input.query,
         responseIntent,
-        responseLanguagePolicy: normalizedStructuredResult.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY,
-        retrievalSubqueries: retrievalEligible ? normalizedStructuredResult.retrievalSubqueries : undefined,
+        responseLanguagePolicy,
+        retrievalSubqueries: retrievalEligible ? retrievalSubqueries : undefined,
         rewriteApplied: retrievalEligible,
         retrievalEligible,
         status: retrievalEligible || responseIntent !== RESPONSE_INTENT.RETRIEVAL ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
@@ -438,15 +445,16 @@ export class QueryRewriteService {
   }
 
   private normalizeRewrite(rewrittenQuery?: string): string {
-    return (rewrittenQuery ?? "")
+    const normalized = (rewrittenQuery ?? "")
       .trim()
       .replace(/^```(?:json)?/i, "")
       .replace(/```$/i, "")
       .replace(/^rewritten query:\s*/i, "")
       .replace(/^query:\s*/i, "")
-      .replace(/^["']|["']$/g, "")
       .replace(/\s+/g, " ")
       .trim();
+
+    return stripSingleWrappingQuotePair(normalized);
   }
 
   private normalizeStructuredResult(
@@ -454,12 +462,16 @@ export class QueryRewriteService {
     result?: QueryRewriteGatewayResult,
   ): StructuredRewriteResult {
     if (result && "turnKind" in result) {
+      const semanticQuery = this.normalizeRewrite(result.semanticQuery ?? result.rewrittenQuery);
+      const lexicalQuery = this.normalizeLexicalRewrite(result.lexicalQuery ?? result.rewrittenQuery);
+      const responseLanguagePolicy = this.normalizeResponseLanguagePolicy(result.responseLanguagePolicy);
+
       return {
         rewrittenQuery: this.normalizeRewrite(result.rewrittenQuery),
-        semanticQuery: this.normalizeRewrite(result.semanticQuery ?? result.rewrittenQuery),
-        lexicalQuery: this.normalizeRewrite(result.lexicalQuery ?? result.rewrittenQuery),
+        semanticQuery,
+        lexicalQuery,
         responseIntent: this.normalizeResponseIntent(result.responseIntent),
-        responseLanguagePolicy: this.normalizeResponseLanguagePolicy(result.responseLanguagePolicy),
+        responseLanguagePolicy,
         retrievalSubqueries: this.normalizeRetrievalSubqueries(result.retrievalSubqueries),
         turnKind: this.normalizeTurnKind(result.turnKind),
         proposedActiveSubject: result.proposedActiveSubject?.trim() || undefined,
@@ -472,7 +484,7 @@ export class QueryRewriteService {
     return {
       rewrittenQuery: this.normalizeRewrite(result?.rewrittenQuery ?? originalQuery),
       semanticQuery: this.normalizeRewrite(result?.semanticQuery ?? result?.rewrittenQuery ?? originalQuery),
-      lexicalQuery: this.normalizeRewrite(result?.lexicalQuery ?? result?.rewrittenQuery ?? originalQuery),
+      lexicalQuery: this.normalizeLexicalRewrite(result?.lexicalQuery ?? result?.rewrittenQuery ?? originalQuery),
       responseIntent: RESPONSE_INTENT.RETRIEVAL,
       responseLanguagePolicy: DEFAULT_RESPONSE_LANGUAGE_POLICY,
       retrievalSubqueries: undefined,
@@ -507,7 +519,7 @@ export class QueryRewriteService {
       .map((subquery, index) => {
         const label = this.normalizeRewrite(subquery?.label);
         const semanticQuery = this.normalizeRewrite(subquery?.semanticQuery);
-        const lexicalQuery = this.normalizeRewrite(subquery?.lexicalQuery ?? semanticQuery);
+        const lexicalQuery = this.normalizeLexicalRewrite(subquery?.lexicalQuery ?? semanticQuery);
         if (!label || !semanticQuery || !lexicalQuery) {
           return null;
         }
@@ -530,6 +542,17 @@ export class QueryRewriteService {
   private normalizeOptionalRewrite(rewrittenQuery?: string): string | undefined {
     const normalized = this.normalizeRewrite(rewrittenQuery);
     return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private normalizeLexicalRewrite(rewrittenQuery?: string): string {
+    return (rewrittenQuery ?? "")
+      .trim()
+      .replace(/^```(?:json)?/i, "")
+      .replace(/```$/i, "")
+      .replace(/^rewritten query:\s*/i, "")
+      .replace(/^query:\s*/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   private normalizeResponseLanguagePolicy(value?: string): ResponseLanguagePolicy {
@@ -582,11 +605,23 @@ export class QueryRewriteService {
       return originalQuery;
     }
 
-    if (!hasConversationContext) {
+    if (!hasConversationContext && !this.isFocusedLexicalQuery(originalQuery, selected)) {
       return originalQuery;
     }
 
     return selected;
+  }
+
+  private isFocusedLexicalQuery(originalQuery: string, candidateQuery: string): boolean {
+    const originalTerms = tokenizeRewriteTerms(originalQuery);
+    const candidateTerms = tokenizeRewriteTerms(candidateQuery);
+
+    if (candidateTerms.length === 0 || candidateTerms.length >= originalTerms.length) {
+      return false;
+    }
+
+    const originalTermSet = new Set(originalTerms);
+    return candidateTerms.every((term) => originalTermSet.has(term));
   }
 
   private introducesExcessiveTermDrift(originalQuery: string, candidateQuery: string): boolean {
@@ -608,6 +643,20 @@ const tokenizeRewriteTerms = (value: string): string[] =>
     .split(/\s+/)
     .map((term) => term.trim())
     .filter((term) => term.length >= 3);
+
+const stripSingleWrappingQuotePair = (value: string): string => {
+  const first = value[0];
+  const last = value[value.length - 1];
+  if ((first !== '"' && first !== "'") || first !== last) {
+    return value;
+  }
+
+  const quoteCount = [...value].filter((char) => char === first).length;
+  return quoteCount === 2 ? value.slice(1, -1).trim() : value;
+};
+
+const stripLexicalPlans = (subqueries?: RetrievalSubquery[]): RetrievalSubquery[] | undefined =>
+  subqueries?.map(({ lexicalPlan: _lexicalPlan, ...subquery }) => subquery);
 
 const truncateTriggerInstruction = (value: string): string => value.trim().replace(/\s+/g, " ").slice(0, 160);
 

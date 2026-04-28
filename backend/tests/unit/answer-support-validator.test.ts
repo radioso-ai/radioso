@@ -50,7 +50,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -73,7 +72,6 @@ describe("answer support validator", () => {
       substantiveUnsupportedSegmentCount: 2,
       supportedSegmentCount: 1,
       nonSubstantiveSegmentCount: 2,
-      answerSupportPolicy: "strict",
     });
     expect(result.segmentResults.map((segment) => segment.disposition)).toEqual([
       "supported",
@@ -97,7 +95,6 @@ describe("answer support validator", () => {
       citationEvidence: [],
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -113,7 +110,6 @@ describe("answer support validator", () => {
       substantiveUnsupportedSegmentCount: 1,
       supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 1,
-      answerSupportPolicy: "strict",
     });
   });
 
@@ -127,7 +123,6 @@ describe("answer support validator", () => {
       citationEvidence: [],
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -141,7 +136,6 @@ describe("answer support validator", () => {
       substantiveUnsupportedSegmentCount: 1,
       supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 0,
-      answerSupportPolicy: "strict",
     });
   });
 
@@ -166,7 +160,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -191,7 +184,6 @@ describe("answer support validator", () => {
       substantiveUnsupportedSegmentCount: 0,
       supportedSegmentCount: 2,
       nonSubstantiveSegmentCount: 0,
-      answerSupportPolicy: "strict",
       hiddenSupportUsed: true,
       hiddenSupportKindsUsed: ["assistant_name", "assistant_role"],
     });
@@ -208,7 +200,6 @@ describe("answer support validator", () => {
       hiddenSupportEvidence: [{ kind: "assistant_name", content: "Vikram" }],
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -233,7 +224,6 @@ describe("answer support validator", () => {
       ],
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -263,7 +253,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: false,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -298,7 +287,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -340,7 +328,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -384,7 +371,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -394,7 +380,7 @@ describe("answer support validator", () => {
     expect(result.validation.substantiveUnsupportedSegmentCount).toBe(1);
   });
 
-  it("preserves unsupported content under warn without replacing it", async () => {
+  it("replaces fully unsupported content with a grounded-miss response", async () => {
     const validator = new AnswerSupportValidator();
 
     const result = await validator.validate({
@@ -404,17 +390,15 @@ describe("answer support validator", () => {
       citationEvidence: [],
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,
-      answerSupportPolicy: "warn",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
 
-    expect(result.answer).toBe("Narayani is a teacher and author.");
-    expect(result.validation.answerModified).toBe(false);
-    expect(result.validation.answerSupportPolicy).toBe("warn");
+    expect(result.answer).toBe("No se pudo verificar esa respuesta con los documentos recuperados.");
+    expect(result.validation.answerModified).toBe(true);
     expect(result.segmentResults[0]).toMatchObject({
-      text: "Narayani is a teacher and author",
-      replacementApplied: false,
+      text: "",
+      replacementApplied: true,
       disposition: "unsupported",
     });
   });
@@ -446,7 +430,6 @@ describe("answer support validator", () => {
         },
       ],
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -490,7 +473,6 @@ describe("answer support validator", () => {
         },
       ],
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -509,7 +491,6 @@ describe("answer support validator", () => {
       substantiveUnsupportedSegmentCount: 1,
       supportedSegmentCount: 1,
       nonSubstantiveSegmentCount: 0,
-      answerSupportPolicy: "strict",
     });
   });
 
@@ -534,7 +515,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -559,7 +539,6 @@ describe("answer support validator", () => {
       substantiveUnsupportedSegmentCount: 0,
       supportedSegmentCount: 2,
       nonSubstantiveSegmentCount: 0,
-      answerSupportPolicy: "strict",
     });
   });
 
@@ -584,7 +563,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -609,7 +587,6 @@ describe("answer support validator", () => {
       substantiveUnsupportedSegmentCount: 0,
       supportedSegmentCount: 2,
       nonSubstantiveSegmentCount: 0,
-      answerSupportPolicy: "strict",
     });
   });
 
@@ -630,7 +607,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -668,7 +644,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -707,7 +682,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -753,7 +727,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -787,7 +760,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -820,7 +792,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer,
     });
@@ -854,7 +825,6 @@ describe("answer support validator", () => {
         content: citation.content,
       })),
       citationDisplayEnabled: true,
-      answerSupportPolicy: "strict",
       conversationMode: "guided",
       groundedMissResponseComposer: {
         async composeUnsupportedWithContext() {
@@ -882,7 +852,6 @@ describe("answer support validator", () => {
       substantiveUnsupportedSegmentCount: 1,
       supportedSegmentCount: 0,
       nonSubstantiveSegmentCount: 0,
-      answerSupportPolicy: "strict",
     });
   });
 });
@@ -937,7 +906,6 @@ describe("assistant turn outcome classifier", () => {
           substantiveUnsupportedSegmentCount: 1,
           supportedSegmentCount: 0,
           nonSubstantiveSegmentCount: 0,
-          answerSupportPolicy: "warn",
         },
       }),
     ).toBe(ASSISTANT_TURN_OUTCOME.GROUNDED_DEGRADED_UNSUPPORTED_SEGMENTS);

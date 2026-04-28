@@ -52,7 +52,7 @@ The retrieval settings surface exists because the stages are intentionally adjus
 
 ## What happens after retrieval
 
-Retrieval does not directly become the user-visible answer. The chat layer presents the model output as answer segments with citations, then runs answer-support validation. Unsupported substantive segments can be preserved or replaced depending on the workspace answer-support policy.
+Retrieval does not directly become the user-visible answer. The chat layer presents the model output as answer segments with citations, then runs answer-support validation. Unsupported substantive segments can be preserved or replaced focusing on answer-support outcomes and validation status.
 
 <Callout type="info" emoji="i">
   In practice, poor answers usually come from weak retrieval inputs, weak candidate selection, or overly aggressive filtering. Prompt tweaking should usually come after you verify those earlier stages.
@@ -62,7 +62,7 @@ Retrieval does not directly become the user-visible answer. The chat layer prese
 
 1. Confirm the document was fully processed and chunked.
 2. Check whether the query needed rewriting or metadata filters.
-3. Increase candidate depth before loosening support policy.
+3. Increase candidate depth before strengthening retrieval signals.
 4. Revisit `customInstruction` only after retrieval evidence looks correct.
 
 Related pages:

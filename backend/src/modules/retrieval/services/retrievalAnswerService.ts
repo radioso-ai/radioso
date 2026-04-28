@@ -61,6 +61,7 @@ export class RetrievalAnswerService {
     const rawAnswer = (await this.dependencies.chatGateway.answer({
       query: input.query,
       history,
+      systemPrompt: retrieval.systemPrompt,
       prompt: retrieval.prompt,
     })).trim();
     const evidence = retrieval.contexts.map((context) => ({
@@ -90,7 +91,6 @@ export class RetrievalAnswerService {
         content: context.content,
       })),
       citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
-      answerSupportPolicy: retrieval.responseSettings.answerSupportPolicy,
       conversationMode: retrieval.responseSettings.conversationMode,
       groundedMissResponseComposer: this.groundedMissResponseComposer,
       unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
@@ -125,7 +125,6 @@ export class RetrievalAnswerService {
             ? "supported"
             : "unsupported"
           : "not_checked",
-        policy: retrieval.responseSettings.answerSupportPolicy,
       },
       retrievalInfo,
       retrievalTrace,

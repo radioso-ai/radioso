@@ -20,6 +20,8 @@ Make sure the document was processed successfully and chunked with a strategy th
 
 If users ask vague, shorthand, or multi-part questions, start with `queryRewriteEnabled` and the semantic or lexical rewrite instructions.
 
+For lexical rewrite instructions, prefer guidance that asks for exact aliases and phrase alternatives as separate search options. Avoid asking the model to write backend-specific search syntax such as raw `OR` expressions.
+
 ### Tune candidate depth
 
 Adjust `vectorTopK` and `similarityThreshold` to control how many semantic matches survive early filtering.
@@ -34,7 +36,7 @@ Use metadata rules or request-level metadata filters when the right answer exist
 
 ### Adjust response behavior last
 
-Use `customInstruction`, citation display, conversation mode, and answer-support policy after the retrieval evidence looks healthy.
+Use `customInstruction`, citation display, conversation mode, and support validation after the retrieval evidence looks healthy.
 </Steps>
 
 ## Highest-leverage settings
@@ -45,13 +47,14 @@ Use `customInstruction`, citation display, conversation mode, and answer-support
 - `rerankTopK`: controls the size of the rerank candidate set
 - `metadataRules`: boosts or constrains candidates based on document metadata
 - `queryRewriteEnabled`: helps when user phrasing does not match stored document language
+- `lexicalRewriteInstructions`: helps exact aliases, abbreviations, and phrase alternatives become separate lexical searches
 
 ## Symptom to setting map
 
 - Right documents never appear: raise retrieval depth or revisit chunking.
 - Too many near-matches appear: raise threshold or add metadata constraints.
 - Right documents appear but wrong snippets win: enable or retune reranking.
-- Answers sound plausible but unsupported: inspect citations and answer-support policy before changing style instructions.
+- Answers sound plausible but unsupported: inspect citations and validation outcomes before changing style instructions.
 
 <Callout type="warning" emoji="!">
   `customInstruction` can improve answer style, but it will not fix missing or weak evidence.

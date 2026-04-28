@@ -1,6 +1,6 @@
 # Tasks: Configurable Answer Support Policy
 
-**Input**: Design documents from `/specs/034-answer-policy/`  
+**Input**: Design documents from `/specs/034-answer-policy/`
 **Prerequisites**: [plan.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/plan.md), [spec.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/spec.md), [research.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/research.md), [data-model.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/data-model.md), [quickstart.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/quickstart.md), [retrieval-settings-contract.md](/Users/dm/conductor/workspaces/radioso/sacramento/specs/034-answer-policy/contracts/retrieval-settings-contract.md)
 
 **Tests**: Backend tests are REQUIRED and MUST be written before implementation. Frontend verification follows the feature spec and existing repo practices.

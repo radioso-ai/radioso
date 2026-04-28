@@ -1,4 +1,6 @@
 import type { Database } from "../../../shared/infra/database.js";
+import { buildPlainLexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
+import type { LexicalQueryPlan } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievedChunk } from "./vectorSearch.js";
 import { hasNonEmptyFilter } from "./vectorSearch.js";
 
@@ -8,6 +10,7 @@ export interface LexicalSearchPort {
     query: string;
     topK: number;
     metadataFilter?: Record<string, unknown>;
+    lexicalPlan?: LexicalQueryPlan;
   }): Promise<RetrievedChunk[]>;
 }
 
@@ -32,46 +35,71 @@ export class PgLexicalSearch implements LexicalSearchPort {
     query: string;
     topK: number;
     metadataFilter?: Record<string, unknown>;
+    lexicalPlan?: LexicalQueryPlan;
   }): Promise<RetrievedChunk[]> {
     const normalizedQuery = input.query.trim();
     if (!normalizedQuery) {
       return [];
     }
 
-    const params: unknown[] = [input.workspaceId, normalizedQuery, input.topK];
+    const plan = input.lexicalPlan ?? buildPlainLexicalQueryPlan(normalizedQuery);
+    const compiledPlan = compilePostgresLexicalPlan(plan);
+    if (!compiledPlan) {
+      return [];
+    }
+
+    const params: unknown[] = [input.workspaceId];
     const hasFilter = hasNonEmptyFilter(input.metadataFilter);
-    const metadataClause = hasFilter ? `AND c.metadata @> $4::jsonb` : "";
+    const metadataClause = hasFilter ? `AND c.metadata @> $${params.length + 1}::jsonb` : "";
 
     if (hasFilter) {
       params.push(JSON.stringify(input.metadataFilter));
     }
 
+    let querySql = compiledPlan.sql;
+    compiledPlan.params.forEach((value, index) => {
+      params.push(value);
+      const token = `__LEXICAL_PARAM_${index}__`;
+      const placeholder = `$${params.length}`;
+      querySql = {
+        where: querySql.where.replaceAll(token, placeholder),
+        rank: querySql.rank.replaceAll(token, placeholder),
+      };
+    });
+    params.push(input.topK);
+
     const rows = await this.database.query<LexicalSearchRow>(
-      `WITH search_query AS (
-         SELECT plainto_tsquery('simple', $2) AS query
+      `WITH searchable_chunks AS (
+         SELECT c.id AS chunk_id,
+                c.document_id,
+                d.title,
+                c.content,
+                c.search_text,
+                c.chunk_index,
+                c.start_offset,
+                c.end_offset,
+                c.metadata,
+                to_tsvector('simple', coalesce(c.search_text, c.content, '')) AS search_vector
+         FROM chunks c
+         JOIN documents d ON d.id = c.document_id
+         WHERE c.workspace_id = $1
+           AND d.status = 'ready'
+           ${metadataClause}
        )
-       SELECT c.id AS chunk_id,
+       SELECT c.chunk_id,
               c.document_id,
-              d.title,
+              c.title,
               c.content,
               c.search_text,
               c.chunk_index,
               c.start_offset,
               c.end_offset,
               c.metadata,
-              ts_rank_cd(
-                to_tsvector('simple', coalesce(c.search_text, c.content, '')),
-                search_query.query
-              ) AS rank
-       FROM chunks c
-       CROSS JOIN search_query
-       JOIN documents d ON d.id = c.document_id
-       WHERE c.workspace_id = $1
-         AND d.status = 'ready'
-         AND search_query.query @@ to_tsvector('simple', coalesce(c.search_text, c.content, ''))
-         ${metadataClause}
+              ${querySql.rank} AS rank
+       FROM searchable_chunks c
+       WHERE ${querySql.where}
        ORDER BY rank DESC, c.chunk_index ASC
-       LIMIT $3`,
+       LIMIT $${params.length}`,
       params,
     );
 
@@ -98,4 +126,61 @@ const normalizeLexicalRank = (rank: number, maxRank: number): number => {
   }
 
   return Math.max(0, Math.min(1, rank / maxRank));
+};
+
+type CompiledLexicalPlan = {
+  sql: {
+    where: string;
+    rank: string;
+  };
+  params: string[];
+};
+
+const compilePostgresLexicalPlan = (plan: LexicalQueryPlan): CompiledLexicalPlan | null => {
+  const params: string[] = [];
+  const addParam = (value: string): string => {
+    params.push(value);
+    return `__LEXICAL_PARAM_${params.length - 1}__`;
+  };
+  const optionClauses = plan.options
+    .map((option) => {
+      const positiveQueries: string[] = [];
+      const requiredTerms = option.requiredTerms.join(" ").trim();
+      if (requiredTerms) {
+        positiveQueries.push(`plainto_tsquery('simple', ${addParam(requiredTerms)})`);
+      }
+
+      for (const phrase of option.phrases) {
+        positiveQueries.push(`phraseto_tsquery('simple', ${addParam(phrase)})`);
+      }
+
+      if (positiveQueries.length === 0) {
+        return null;
+      }
+
+      const negativeQueries = option.excludedTerms.map((term) => {
+        return `plainto_tsquery('simple', ${addParam(term)})`;
+      });
+
+      return {
+        where: [
+          ...positiveQueries.map((query) => `${query} @@ c.search_vector`),
+          ...negativeQueries.map((query) => `NOT (${query} @@ c.search_vector)`),
+        ].join(" AND "),
+        rank: positiveQueries.map((query) => `ts_rank_cd(c.search_vector, ${query})`).join(" + "),
+      };
+    })
+    .filter((option): option is { where: string; rank: string } => option !== null);
+
+  if (optionClauses.length === 0) {
+    return null;
+  }
+
+  return {
+    sql: {
+      where: optionClauses.map((option) => `(${option.where})`).join(" OR "),
+      rank: `GREATEST(${optionClauses.map((option) => `CASE WHEN ${option.where} THEN ${option.rank} ELSE 0 END`).join(", ")})`,
+    },
+    params,
+  };
 };

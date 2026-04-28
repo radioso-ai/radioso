@@ -22,6 +22,8 @@ It matters most when the documents use exact terms such as:
 
 They help the system include the words the corpus is likely to use, even if the user asked more casually.
 
+When there are several exact alternatives, describe the kinds of alternatives to search for. Do not ask the assistant to write raw search-engine syntax such as `OR`; Radioso handles separate lexical search options internally.
+
 ### Distinction From Semantic Rewrite
 
 Semantic rewrite focuses on meaning.

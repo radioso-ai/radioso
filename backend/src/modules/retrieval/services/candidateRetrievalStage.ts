@@ -14,23 +14,34 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
   async execute(input: QueryInterpretationStageResult) {
     const embeddingStartedAt = Date.now();
     const semanticQueries = input.activeRetrievalSubqueries.map((subquery) => subquery.semanticQuery);
-    const embeddings = await this.embeddingService.embedChunks(semanticQueries);
+    const uniqueSemanticQueries = [...new Set(semanticQueries)];
+    const embeddings = await this.embeddingService.embedChunks(uniqueSemanticQueries);
+    const embeddingBySemanticQuery = new Map(
+      uniqueSemanticQueries.map((query, index) => [query, embeddings[index] ?? []] as const),
+    );
     const activeEmbeddingDurationMs = Math.max(0, Date.now() - embeddingStartedAt);
+    const semanticSearchByQuery = new Map(
+      uniqueSemanticQueries.map((query) => [
+        query,
+        this.searchWithFallback({
+          workspaceId: input.request.workspaceId,
+          queryEmbedding: embeddingBySemanticQuery.get(query) ?? [],
+          topK: input.settings.vectorTopK,
+          similarityThreshold: input.settings.similarityThreshold,
+          metadataFilter: input.request.metadataFilter,
+        }),
+      ] as const),
+    );
     const retrievalBranches = await Promise.all(
-      input.activeRetrievalSubqueries.map(async (subquery, index) => {
+      input.activeRetrievalSubqueries.map(async (subquery) => {
         const [semanticSearch, lexicalContexts] = await Promise.all([
-          this.searchWithFallback({
-            workspaceId: input.request.workspaceId,
-            queryEmbedding: embeddings[index] ?? [],
-            topK: input.settings.vectorTopK,
-            similarityThreshold: input.settings.similarityThreshold,
-            metadataFilter: input.request.metadataFilter,
-          }),
+          semanticSearchByQuery.get(subquery.semanticQuery) ?? Promise.resolve({ contexts: [], fallbackApplied: true }),
           this.lexicalSearch.search({
             workspaceId: input.request.workspaceId,
             query: subquery.lexicalQuery,
             topK: RETRIEVAL_BEHAVIOR.hybrid.lexicalTopK,
             metadataFilter: input.request.metadataFilter,
+            lexicalPlan: subquery.lexicalPlan,
           }),
         ]);
 
@@ -59,7 +70,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
 
     return {
       ...input,
-      activeEmbedding: embeddings[0] ?? [],
+      activeEmbedding: embeddingBySemanticQuery.get(input.activeRetrievalSubqueries[0]?.semanticQuery ?? "") ?? [],
       activeEmbeddingDurationMs,
       originalContexts,
       rewrittenContexts,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { deriveLexicalQueryPlan } from "../../src/modules/retrieval/domain/lexicalQueryPlan.js";
 import { PgLexicalSearch } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
@@ -119,6 +120,71 @@ describe("hybrid retrieval search", () => {
     });
 
     expect(executedSql).toContain("coalesce(c.search_text, c.content, '')");
+  });
+
+  it("compiles phrase and OR-compatible lexical syntax instead of executing raw backend syntax", async () => {
+    let executedSql = "";
+    const search = new PgLexicalSearch({
+      async query(sql: string, params: unknown[]) {
+        executedSql = sql;
+        expect(params).toEqual(["a1", "forgot password", "reset token", 5]);
+        return [];
+      },
+    } as never);
+
+    await search.search({
+      workspaceId: "a1",
+      query: '"forgot password" OR "reset token"',
+      topK: 5,
+      lexicalPlan: deriveLexicalQueryPlan('"forgot password" OR "reset token"'),
+    });
+
+    expect(executedSql).toContain("phraseto_tsquery('simple', $2)");
+    expect(executedSql).toContain("phraseto_tsquery('simple', $3)");
+    expect(executedSql).not.toContain("websearch_to_tsquery");
+    expect(executedSql).not.toContain('"forgot password" OR "reset token"');
+  });
+
+  it("treats raw lexical query strings as plain text by default", async () => {
+    let executedSql = "";
+    const search = new PgLexicalSearch({
+      async query(sql: string, params: unknown[]) {
+        executedSql = sql;
+        expect(params).toEqual(["a1", "What does OR mean? -expired", 5]);
+        return [];
+      },
+    } as never);
+
+    await search.search({
+      workspaceId: "a1",
+      query: "What does OR mean? -expired",
+      topK: 5,
+    });
+
+    expect(executedSql).toContain("plainto_tsquery('simple', $2)");
+    expect(executedSql).not.toContain("phraseto_tsquery");
+    expect(executedSql).not.toContain("NOT (");
+  });
+
+  it("compiles exclusions from validated lexical plans as negative term filters", async () => {
+    let executedSql = "";
+    const search = new PgLexicalSearch({
+      async query(sql: string, params: unknown[]) {
+        executedSql = sql;
+        expect(params).toEqual(["a1", "reset", "expired", 5]);
+        return [];
+      },
+    } as never);
+
+    await search.search({
+      workspaceId: "a1",
+      query: "reset -expired",
+      topK: 5,
+      lexicalPlan: deriveLexicalQueryPlan("reset -expired"),
+    });
+
+    expect(executedSql).toContain("plainto_tsquery('simple', $2) @@ c.search_vector");
+    expect(executedSql).toContain("NOT (plainto_tsquery('simple', $3) @@ c.search_vector)");
   });
 
   it("uses a materialized CTE and enables iterative scan for filtered semantic retrieval when available", async () => {

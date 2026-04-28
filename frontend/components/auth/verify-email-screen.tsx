@@ -29,8 +29,6 @@ export function VerifyEmailScreen({ token }: { token?: string }) {
 
   useEffect(() => {
     if (!token) {
-      setStatus('error')
-      setError('Verification link is missing or incomplete.')
       return
     }
 

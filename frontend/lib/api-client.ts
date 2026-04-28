@@ -137,7 +137,7 @@ export const activateWorkspaceToken = (workspaceId: string, workspacePublicRoute
   return true;
 };
 
-export const seedWorkspaceSession = (workspaceId: string, workspacePublicRouteKey?: string, _token?: string) => {
+export const seedWorkspaceSession = (workspaceId: string, workspacePublicRouteKey?: string) => {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
     if (workspacePublicRouteKey) {

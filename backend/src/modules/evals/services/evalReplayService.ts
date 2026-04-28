@@ -24,7 +24,6 @@ import {
 import { assertInteractiveAssistantWorkflow } from "../../chat/services/chatExecutionPolicy.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "../../chat/services/chatTurnIntentService.js";
 import { buildNonRetrievalAnswerPrompt } from "../../chat/services/nonRetrievalAnswerPromptBuilder.js";
-import { DEFAULT_ANSWER_SUPPORT_POLICY } from "../../settings/domain/retrievalSettings.js";
 import { SharedAnswerInstructionBuilder } from "../../retrieval/services/sharedAnswerInstructionBuilder.js";
 import type { EvalCaseConversationMessage, EvalReplayDiagnostics } from "../domain/evalTypes.js";
 
@@ -71,7 +70,6 @@ export class EvalReplayService {
     retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
       ? await retrievalPipeline.runInterpreted(interpretation)
       : await retrievalPipeline.runWithoutRetrieval(interpretation);
-    const answerSupportPolicy = retrieval.responseSettings?.answerSupportPolicy ?? DEFAULT_ANSWER_SUPPORT_POLICY;
     const conversationMode = retrieval.responseSettings?.conversationMode ?? "guided";
     const nonRetrievalAnswer =
       turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL
@@ -157,7 +155,6 @@ export class EvalReplayService {
           content: citation.content,
         })),
         citationDisplayEnabled,
-        answerSupportPolicy,
         conversationMode,
         groundedMissResponseComposer: this.groundedMissResponseComposer,
         unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
@@ -210,7 +207,6 @@ export class EvalReplayService {
       citations,
       answerSegments,
       answerOutcome,
-      answerSupportPolicy,
       answer,
       latencyMs: Date.now() - startedAt,
     };

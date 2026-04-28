@@ -18,7 +18,6 @@ describe("retrieval trace assembler", () => {
           queryRewriteEnabled: true,
           semanticRewriteInstructions: "",
           lexicalRewriteInstructions: "",
-          answerSupportPolicy: "strict",
           conversationMode: "guided",
           suggestedQuestionsEnabled: true,
           suggestedQuestionsCount: 3,
@@ -213,7 +212,6 @@ describe("retrieval trace assembler", () => {
         citations: [],
         responseSettings: {
           citationDisplayEnabled: true,
-          answerSupportPolicy: "strict",
           conversationMode: "guided",
           suggestedQuestionsEnabled: true,
           suggestedQuestionsCount: 3,

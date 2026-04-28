@@ -31,7 +31,7 @@ The dashboard presents settings in pipeline order:
 1. Ingestion: choose chunking strategy -> tune chunk sizing -> reprocess existing documents
 2. Retrieval: rewrite query -> retrieve/filter candidates -> rerank -> present grounded evidence
 
-Assistant identity, conversation mode, custom answer instruction, proactive greeting, and suggested follow-up behavior belong to the assistant settings surface. Retrieval settings should stay focused on evidence gathering, ranking, filters, support policy, and citation presentation.
+Assistant identity, conversation mode, custom answer instruction, proactive greeting, and suggested follow-up behavior belong to the assistant settings surface. Retrieval settings should stay focused on evidence gathering, ranking, filters, validation outcomes, and citation presentation.
 
 The connector-style stage separators are rendered in [`frontend/components/dashboard/settings/settings-flow.tsx`](../../frontend/components/dashboard/settings/settings-flow.tsx) and reused by the retrieval trace graph for visual consistency.
 

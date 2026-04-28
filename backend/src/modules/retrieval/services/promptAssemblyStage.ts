@@ -26,7 +26,6 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       citations: prompt.citations,
       responseSettings: {
         citationDisplayEnabled: input.settings.citationDisplayEnabled,
-        answerSupportPolicy: input.settings.answerSupportPolicy,
         conversationMode: includeResponseBehavior ? input.settings.conversationMode : "factual",
         suggestedQuestionsEnabled: includeResponseBehavior ? input.settings.suggestedQuestionsEnabled : false,
         suggestedQuestionsCount: includeResponseBehavior ? input.settings.suggestedQuestionsCount : 0,

@@ -62,7 +62,6 @@ const asChatRetrievalPipeline = (pipeline: Record<string, unknown>) => {
               queryRewriteEnabled: true,
               semanticRewriteInstructions: "",
               lexicalRewriteInstructions: "",
-              answerSupportPolicy: "strict",
               conversationMode: "guided",
               suggestedQuestionsEnabled: true,
               suggestedQuestionsCount: 3,
@@ -138,7 +137,6 @@ describe("chat service streaming", () => {
               queryRewriteEnabled: true,
               semanticRewriteInstructions: "",
               lexicalRewriteInstructions: "",
-              answerSupportPolicy: "strict",
               conversationMode: "guided",
               suggestedQuestionsEnabled: true,
               suggestedQuestionsCount: 3,
@@ -180,7 +178,6 @@ describe("chat service streaming", () => {
         responseIdentity: input.responseIdentity ?? null,
         responseSettings: {
           citationDisplayEnabled: true,
-          answerSupportPolicy: "strict",
           conversationMode: "guided",
           suggestedQuestionsEnabled: true,
           suggestedQuestionsCount: 3,
@@ -264,7 +261,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
           },
         };
@@ -410,7 +406,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
           },
         };
@@ -726,7 +721,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
           },
         };
       },
@@ -809,7 +803,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
           },
         };
       },
@@ -897,7 +890,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
           },
         };
       },
@@ -1307,7 +1299,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
           },
         };
       },
@@ -1388,7 +1379,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "factual",
           },
         };
@@ -1470,7 +1460,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
           },
         };
       },
@@ -1566,7 +1555,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "warn",
           },
         };
       },
@@ -1659,7 +1647,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "warn",
             conversationMode: "exploratory",
           },
         };
@@ -1762,7 +1749,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -1876,7 +1862,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 2,
@@ -1993,7 +1978,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 2,
@@ -2079,7 +2063,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2171,7 +2154,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2263,7 +2245,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2414,7 +2395,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2527,7 +2507,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2621,7 +2600,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
           },
         };
@@ -2727,7 +2705,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "exploratory",
             suggestedQuestionsCount: 3,
           },
@@ -2833,7 +2810,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
           },
         };
@@ -2911,7 +2887,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
           },
         };
@@ -2995,7 +2970,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
           },
         };
@@ -3083,7 +3057,6 @@ describe("chat service streaming", () => {
                 queryRewriteEnabled: true,
                 semanticRewriteInstructions: "",
                 lexicalRewriteInstructions: "",
-                answerSupportPolicy: "strict",
                 conversationMode: "guided",
                 suggestedQuestionsEnabled: true,
                 suggestedQuestionsCount: 3,
@@ -3130,7 +3103,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 3,
@@ -3296,7 +3268,6 @@ describe("chat service streaming", () => {
                 queryRewriteEnabled: true,
                 semanticRewriteInstructions: "",
                 lexicalRewriteInstructions: "",
-                answerSupportPolicy: "strict",
                 conversationMode: "guided",
                 suggestedQuestionsEnabled: true,
                 suggestedQuestionsCount: 3,
@@ -3341,7 +3312,6 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 3,

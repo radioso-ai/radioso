@@ -81,7 +81,6 @@ export class RetrievalSettingsService {
           properties: {
             queryRewriteEnabled: settings.queryRewriteEnabled,
             conversationMode: settings.conversationMode,
-            answerSupportPolicy: settings.answerSupportPolicy,
             rerankEnabled: settings.rerankEnabled,
             suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
           },

@@ -49,7 +49,6 @@ const asReplayRetrievalPipeline = (pipeline: Record<string, unknown>) => {
               queryRewriteEnabled: true,
               semanticRewriteInstructions: "",
               lexicalRewriteInstructions: "",
-              answerSupportPolicy: "strict",
               conversationMode: "guided",
               suggestedQuestionsEnabled: true,
               suggestedQuestionsCount: 3,
@@ -118,7 +117,6 @@ describe("EvalReplayService", () => {
             links: [],
           },
           responseSettings: {
-            answerSupportPolicy: "warn",
             citationDisplayEnabled: true,
           },
         };
@@ -187,7 +185,6 @@ describe("EvalReplayService", () => {
                 queryRewriteEnabled: true,
                 semanticRewriteInstructions: "",
                 lexicalRewriteInstructions: "",
-                answerSupportPolicy: "strict",
                 conversationMode: "guided",
                 suggestedQuestionsEnabled: true,
                 suggestedQuestionsCount: 3,
@@ -229,7 +226,6 @@ describe("EvalReplayService", () => {
           responseIdentity: null,
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 3,
@@ -327,7 +323,6 @@ describe("EvalReplayService", () => {
                 queryRewriteEnabled: true,
                 semanticRewriteInstructions: "",
                 lexicalRewriteInstructions: "",
-                answerSupportPolicy: "strict",
                 conversationMode: "guided",
                 suggestedQuestionsEnabled: true,
                 suggestedQuestionsCount: 3,
@@ -369,7 +364,6 @@ describe("EvalReplayService", () => {
           responseIdentity: null,
           responseSettings: {
             citationDisplayEnabled: true,
-            answerSupportPolicy: "strict",
             conversationMode: "guided",
             suggestedQuestionsEnabled: true,
             suggestedQuestionsCount: 3,
@@ -453,7 +447,6 @@ describe("EvalReplayService", () => {
             links: [],
           },
           responseSettings: {
-            answerSupportPolicy: "warn",
             citationDisplayEnabled: true,
           },
         };
@@ -528,7 +521,6 @@ describe("EvalReplayService", () => {
             links: [],
           },
           responseSettings: {
-            answerSupportPolicy: "strict",
             citationDisplayEnabled: true,
             conversationMode: "guided",
           },
@@ -613,7 +605,6 @@ describe("EvalReplayService", () => {
             links: [],
           },
           responseSettings: {
-            answerSupportPolicy: "strict",
             citationDisplayEnabled: true,
             conversationMode: "guided",
           },

@@ -44,7 +44,6 @@ export interface RetrievalPipelineResult {
   responseIdentity: ResponseIdentity | null;
   responseSettings: {
     citationDisplayEnabled: boolean;
-    answerSupportPolicy: import("../../settings/domain/retrievalSettings.js").AnswerSupportPolicy;
     conversationMode: import("../../settings/domain/retrievalSettings.js").ConversationMode;
     suggestedQuestionsEnabled: boolean;
     suggestedQuestionsCount: number;
@@ -164,7 +163,6 @@ export class RetrievalPipelineService {
   async runWithoutRetrieval(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult> {
     const responseSettings = {
       citationDisplayEnabled: input.context.result.settings.citationDisplayEnabled,
-      answerSupportPolicy: input.context.result.settings.answerSupportPolicy,
       conversationMode: input.context.result.settings.conversationMode,
       suggestedQuestionsEnabled: input.context.result.settings.suggestedQuestionsEnabled,
       suggestedQuestionsCount: input.context.result.settings.suggestedQuestionsCount,

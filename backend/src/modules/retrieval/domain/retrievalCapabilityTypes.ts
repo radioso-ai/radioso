@@ -1,5 +1,4 @@
 import type { ChatCitation } from "../../chat/services/answerPresentationService.js";
-import type { AnswerSupportPolicy } from "../../settings/domain/retrievalSettings.js";
 import type { RetrievalInfo } from "../services/retrievalInfoPresenter.js";
 import type { RetrievalExecutionSurface, RetrievalTrace, ResponseIntent } from "./retrievalPipelineTypes.js";
 
@@ -56,7 +55,6 @@ export interface RetrievalAnswerSuccess {
   }>;
   validation: {
     status: "supported" | "unsupported" | "not_checked";
-    policy: AnswerSupportPolicy;
   };
   retrievalInfo: RetrievalInfo;
   retrievalTrace: RetrievalTrace;

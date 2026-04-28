@@ -91,7 +91,6 @@ export class RetrievalAnswerService {
         content: context.content,
       })),
       citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
-      answerSupportPolicy: retrieval.responseSettings.answerSupportPolicy,
       conversationMode: retrieval.responseSettings.conversationMode,
       groundedMissResponseComposer: this.groundedMissResponseComposer,
       unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
@@ -126,7 +125,6 @@ export class RetrievalAnswerService {
             ? "supported"
             : "unsupported"
           : "not_checked",
-        policy: retrieval.responseSettings.answerSupportPolicy,
       },
       retrievalInfo,
       retrievalTrace,

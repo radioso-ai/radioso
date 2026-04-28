@@ -121,12 +121,12 @@ describe("hybrid retrieval search", () => {
     expect(executedSql).toContain("coalesce(c.search_text, c.content, '')");
   });
 
-  it("uses web-search query parsing for phrase and OR-compatible lexical syntax", async () => {
+  it("compiles phrase and OR-compatible lexical syntax instead of executing raw backend syntax", async () => {
     let executedSql = "";
     const search = new PgLexicalSearch({
       async query(sql: string, params: unknown[]) {
         executedSql = sql;
-        expect(params).toEqual(["a1", '"forgot password" OR "reset token"', 5]);
+        expect(params).toEqual(["a1", "forgot password", "reset token", 5]);
         return [];
       },
     } as never);
@@ -137,7 +137,30 @@ describe("hybrid retrieval search", () => {
       topK: 5,
     });
 
-    expect(executedSql).toContain("websearch_to_tsquery('simple', $2)");
+    expect(executedSql).toContain("phraseto_tsquery('simple', $2)");
+    expect(executedSql).toContain("phraseto_tsquery('simple', $3)");
+    expect(executedSql).not.toContain("websearch_to_tsquery");
+    expect(executedSql).not.toContain('"forgot password" OR "reset token"');
+  });
+
+  it("compiles exclusions as validated negative term filters", async () => {
+    let executedSql = "";
+    const search = new PgLexicalSearch({
+      async query(sql: string, params: unknown[]) {
+        executedSql = sql;
+        expect(params).toEqual(["a1", "reset", "expired", 5]);
+        return [];
+      },
+    } as never);
+
+    await search.search({
+      workspaceId: "a1",
+      query: "reset -expired",
+      topK: 5,
+    });
+
+    expect(executedSql).toContain("plainto_tsquery('simple', $2) @@ c.search_vector");
+    expect(executedSql).toContain("NOT (plainto_tsquery('simple', $3) @@ c.search_vector)");
   });
 
   it("uses a materialized CTE and enables iterative scan for filtered semantic retrieval when available", async () => {

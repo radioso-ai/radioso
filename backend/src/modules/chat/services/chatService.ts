@@ -88,6 +88,15 @@ const DIRECT_ANSWER_PATTERNS = [
 const shouldSuppressOptionalSuggestions = (query: string): boolean =>
   DIRECT_ANSWER_PATTERNS.some((pattern) => pattern.test(query));
 
+const buildSkippedValidationSummary = (): AnswerValidationSummary => ({
+  ran: false,
+  answerModified: false,
+  unsupportedSegmentCount: 0,
+  substantiveUnsupportedSegmentCount: 0,
+  supportedSegmentCount: 0,
+  nonSubstantiveSegmentCount: 0,
+});
+
 type ChatIntentCapableRetrievalPipeline = Pick<RetrievalPipelineService, "run" | "interpret" | "runInterpreted" | "runWithoutRetrieval">;
 
 export type ChatStreamEvent =
@@ -121,6 +130,9 @@ interface PreparedSession {
   userMessage: MessageRecord;
   priorRewriteContinuityState?: RewriteContinuityState;
 }
+
+const isAnswerSupportValidationEnabled = (session: PreparedSession): boolean =>
+  session.retrieval.responseSettings?.answerSupportValidationEnabled !== false;
 
 interface ChatAnswerAuditMetadata {
   workflow?: string;
@@ -799,6 +811,31 @@ export class ChatService {
       answer,
       citations: citationEvidence,
     });
+    if (!isAnswerSupportValidationEnabled(session)) {
+      const presented = this.answerPresentationService.present({
+        answer,
+        citations: citationEvidence,
+        citationDisplayEnabled,
+      });
+      const validation = buildSkippedValidationSummary();
+
+      return {
+        ...presented,
+        suggestions: undefined,
+        planningCitations: normalized.citationEvidence.map((citation) => ({
+          documentId: citation.documentId,
+          chunkId: citation.chunkId,
+          title: citation.title,
+        })),
+        answerOutcome: this.assistantTurnOutcomeClassifier.classify({
+          hadRetrievedContext: true,
+          validation,
+        }),
+        validation,
+        segmentResults: [],
+        conversationModeMetadata: this.getConversationModeMetadata(session),
+      };
+    }
     const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
       normalized.answerSegments,
       normalized.citationEvidence,
@@ -880,6 +917,29 @@ export class ChatService {
       answer,
       citations: citationEvidence,
     });
+    if (!isAnswerSupportValidationEnabled(session)) {
+      const presented = this.answerPresentationService.present({
+        answer,
+        citations: citationEvidence,
+        citationDisplayEnabled,
+      });
+      const validation = buildSkippedValidationSummary();
+
+      return await this.applyConversationMode(session, {
+        ...presented,
+        planningCitations: normalized.citationEvidence.map((citation) => ({
+          documentId: citation.documentId,
+          chunkId: citation.chunkId,
+          title: citation.title,
+        })),
+        answerOutcome: this.assistantTurnOutcomeClassifier.classify({
+          hadRetrievedContext: true,
+          validation,
+        }),
+        validation,
+        segmentResults: [],
+      });
+    }
     const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
       normalized.answerSegments,
       normalized.citationEvidence,

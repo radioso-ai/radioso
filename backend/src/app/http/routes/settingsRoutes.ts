@@ -42,6 +42,7 @@ export const updateSettingsSchema = z.object({
   similarityThreshold: z.number(),
   rerankTopK: z.number().int().max(RETRIEVAL_BEHAVIOR.rerank.candidateLimit),
   citationDisplayEnabled: z.boolean(),
+  answerSupportValidationEnabled: z.boolean().optional(),
   metadataRules: z
     .array(
       z.object({
@@ -108,6 +109,7 @@ export const updatePlatformSettingsSchema = z.object({
     similarityThreshold: z.number().optional(),
     rerankTopK: z.number().int().optional(),
     citationDisplayEnabled: z.boolean().optional(),
+    answerSupportValidationEnabled: z.boolean().optional(),
     metadataRules: updateSettingsSchema.shape.metadataRules,
   }).optional(),
   channels: z.object({
@@ -217,6 +219,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
           similarityThreshold: req.body.similarityThreshold,
           rerankTopK: req.body.rerankTopK,
           citationDisplayEnabled: req.body.citationDisplayEnabled,
+          answerSupportValidationEnabled: req.body.answerSupportValidationEnabled,
           metadataRules: req.body.metadataRules,
         },
       });

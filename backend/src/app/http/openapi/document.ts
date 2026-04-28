@@ -295,6 +295,7 @@ const RetrievalSettingsSchema = registry.register(
     similarityThreshold: z.number().min(0).max(1),
     rerankTopK: z.number().int().min(1),
     citationDisplayEnabled: z.boolean(),
+    answerSupportValidationEnabled: z.boolean(),
     metadataFieldSuggestions: z.array(
       z.object({
         field: z.string(),
@@ -471,6 +472,7 @@ const PlatformRetrievalSettingsSectionSchema = registry.register(
     similarityThreshold: z.number().min(0).max(1),
     rerankTopK: z.number().int().min(1),
     citationDisplayEnabled: z.boolean(),
+    answerSupportValidationEnabled: z.boolean(),
     metadataRules: z.array(
       z.object({
         id: z.string(),

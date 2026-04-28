@@ -33,7 +33,7 @@ export interface FrontendProductAnalyticsInput {
 }
 
 export class NoopFrontendProductAnalyticsSink implements FrontendProductAnalyticsSink {
-  async emit(_event: FrontendProductAnalyticsEvent): Promise<void> {}
+  async emit(): Promise<void> {}
 }
 
 interface BeaconSinkOptions {

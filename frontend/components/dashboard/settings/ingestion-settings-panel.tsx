@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, Search, Settings2, SlidersHorizontal } from 'lucide-react'
 
-import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
 import { chunkingStrategyOptions } from '@/components/dashboard/settings/settings-options'
@@ -46,6 +45,7 @@ export function IngestionSettingsPanel({
 
   useEffect(() => {
     if (isWorkspaceLoading || !activeWorkspaceId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Workspace changes reset this async settings panel to loading.
       setIsLoading(true)
       return
     }
@@ -104,10 +104,9 @@ export function IngestionSettingsPanel({
 
     const saveId = saveSequenceRef.current + 1
     saveSequenceRef.current = saveId
-    setSaveState('saving')
-    setSaveError(null)
-
     const timeout = window.setTimeout(async () => {
+      setSaveState('saving')
+      setSaveError(null)
       const draftVersionAtRequestStart = draftVersionRef.current
       try {
         const updated = await persistSettings(settings)

@@ -4,7 +4,6 @@ import {
   buildWebsiteEmbedTestHarnessUrl,
   buildWebsiteEmbedSnippet,
   formatWebsiteEmbedOrigins,
-  getWebsiteEmbedTheme,
   LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL,
   normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedDisplayMode,

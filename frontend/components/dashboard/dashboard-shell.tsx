@@ -8,7 +8,6 @@ import { AppSidebar } from './app-sidebar'
 import { ChatView } from './chat-view'
 import { ChatHistoryView } from './chat-history-view'
 import { DocumentsView } from './documents-view'
-import { EvalsView } from './evals-view'
 import { SettingsView } from './settings-view'
 import { UsersView } from './users-view'
 import { FirstRunExperience } from './first-run-experience'
@@ -157,12 +156,6 @@ export function DashboardShell({
               selectedDocumentId={routeState.documentId ?? null}
               onSelectedDocumentChange={openDocument}
               onboarding={onboarding}
-            />
-          )}
-          {currentView === 'evals' && (
-            <EvalsView
-              accountId={accountId}
-              routeState={routeState}
             />
           )}
           {currentView === 'settings' && (

@@ -56,7 +56,6 @@ const navigation: NavItem[] = [
       { title: 'Chat and history', href: '/api/chat-and-history' },
       { title: 'Public chat and embed', href: '/api/public-chat-and-embed' },
       { title: 'Settings', href: '/api/settings' },
-      { title: 'Evals', href: '/api/evals' },
       { title: 'Connectors and webhooks', href: '/api/connectors-and-webhooks' },
       { title: 'API reference', href: '/api-reference' },
     ],

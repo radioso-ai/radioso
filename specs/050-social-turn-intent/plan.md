@@ -19,12 +19,12 @@ answer-instruction docs.
 
 **Language/Version**: TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend)  
 **Primary Dependencies**: Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing prompt-loader and retrieval/chat service seams  
-**Storage**: PostgreSQL 16 with existing conversations, messages, retrieval settings, and additive assistant-turn audit metadata only  
-**Testing**: Vitest unit and integration tests in `backend/tests`; targeted frontend copy/doc verification for settings surfaces  
-**Target Platform**: Web application with authenticated chat, public/anonymous chat, workspace settings, and existing history/audit diagnostics  
-**Project Type**: Web application with separate `backend/` and `frontend/` projects  
-**Performance Goals**: Preserve one interpretation-model pass per retrieval-backed chat turn, avoid an extra classifier round-trip, and keep non-retrieval replies bounded to one normal answer generation call  
-**Constraints**: No deterministic keyword or regex intent routing, no new public HTTP endpoint, no global weakening of `answerPolicy`, no duplication of answer-instruction logic, `chatService.ts` remains orchestration-focused, runtime prompts stay under `backend/prompts/`  
+**Storage**: PostgreSQL 16 with existing conversations, messages, retrieval settings, and additive assistant-turn audit metadata only
+**Testing**: Vitest unit and integration tests in `backend/tests`; targeted frontend copy/doc verification for settings surfaces
+**Target Platform**: Web application with authenticated chat, public/anonymous chat, workspace settings, and existing history/audit diagnostics
+**Project Type**: Web application with separate `backend/` and `frontend/` projects
+**Performance Goals**: Preserve one interpretation-model pass per retrieval-backed chat turn, avoid an extra classifier round-trip, and keep non-retrieval replies bounded to one normal answer generation call
+**Constraints**: No deterministic keyword or regex intent routing, no new public HTTP endpoint, no global weakening of `answerPolicy`, no duplication of answer-instruction logic, `chatService.ts` remains orchestration-focused, runtime prompts stay under `backend/prompts/`
 **Scale/Scope**: Cross-cutting backend feature touching query interpretation, chat orchestration, prompt assembly, audit metadata, targeted docs, and one assistant-settings helper copy string
 
 ## Constitution Check

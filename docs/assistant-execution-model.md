@@ -18,13 +18,10 @@ Long-running assistant-adjacent work belongs in a separate deferred class when R
 
 Use deferred execution for workflows such as:
 
-- eval replay and replay batches
 - exports and offline analysis
 - notifications or other post-turn follow-up jobs
 
 These workflows should present themselves as background work from the start. They should expose status, completion, and failure clearly instead of pretending to be a live chat turn.
-
-Today, eval replay still runs inline on the request path. It is a future candidate for explicit background execution, not a shipped deferred workflow.
 
 ## Operator Guidance
 

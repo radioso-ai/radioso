@@ -7,7 +7,6 @@ const meta = {
   'chat-and-history': 'Chat and history',
   'public-chat-and-embed': 'Public chat and embed',
   settings: 'Settings',
-  evals: 'Evals',
   'connectors-and-webhooks': 'Connectors and webhooks',
 }
 

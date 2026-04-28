@@ -14,7 +14,6 @@ export default function ApiReferencePage() {
     { href: '/api/chat-and-history', label: 'Chat and history' },
     { href: '/api/public-chat-and-embed', label: 'Public chat and embed' },
     { href: '/api/settings', label: 'Settings' },
-    { href: '/api/evals', label: 'Evals' },
     { href: '/api/connectors-and-webhooks', label: 'Connectors and webhooks' },
   ]
 

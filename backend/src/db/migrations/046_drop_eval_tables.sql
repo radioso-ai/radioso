@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS eval_runs;
+DROP TABLE IF EXISTS eval_cases;
+DROP TABLE IF EXISTS eval_datasets;

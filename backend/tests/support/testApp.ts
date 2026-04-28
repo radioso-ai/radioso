@@ -56,8 +56,6 @@ import { WorkspaceSessionService } from "../../src/modules/auth/services/workspa
 import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
-import { EvalReplayService } from "../../src/modules/evals/services/evalReplayService.js";
-import { EvalLabService } from "../../src/modules/evals/services/evalLabService.js";
 import { buildAnalyticsSinks } from "../../src/shared/analytics/buildAnalyticsSinks.js";
 import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
 import { buildIncidentSinks } from "../../src/shared/incidents/buildIncidentSinks.js";
@@ -91,7 +89,6 @@ import {
   InMemoryWorkspaceRepository,
   InMemoryConnectorDatabase,
   InMemoryAbuseControlRepository,
-  InMemoryEvalRepository,
 } from "./fakes.js";
 
 export const createTestEnv = (): Env => ({
@@ -737,17 +734,6 @@ export const createTestDependencies = (overrides: {
     auditService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
   });
-  const evalLabService = new EvalLabService(
-    new InMemoryEvalRepository(),
-    chatHistoryService,
-    new EvalReplayService(
-      retrievalPipeline,
-      chatGateway,
-      overrides.groundedMissResponseComposer ?? new TestGroundedMissResponseComposer(),
-      workspaceRepository,
-    ),
-  );
-
   const dependencies: AppDependencies = {
     env,
     logger,
@@ -803,7 +789,6 @@ export const createTestDependencies = (overrides: {
     retrievalSearchService,
     retrievalAnswerService,
     platformSettingsService,
-    evalLabService,
     accountRepository,
     workspaceRepository,
     bootstrapGreetingCacheRepository,

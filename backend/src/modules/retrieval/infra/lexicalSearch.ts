@@ -1,5 +1,6 @@
 import type { Database } from "../../../shared/infra/database.js";
-import { deriveLexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
+import { buildPlainLexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
+import type { LexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
 import type { RetrievedChunk } from "./vectorSearch.js";
 import { hasNonEmptyFilter } from "./vectorSearch.js";
 
@@ -9,6 +10,7 @@ export interface LexicalSearchPort {
     query: string;
     topK: number;
     metadataFilter?: Record<string, unknown>;
+    lexicalPlan?: LexicalQueryPlan;
   }): Promise<RetrievedChunk[]>;
 }
 
@@ -33,13 +35,14 @@ export class PgLexicalSearch implements LexicalSearchPort {
     query: string;
     topK: number;
     metadataFilter?: Record<string, unknown>;
+    lexicalPlan?: LexicalQueryPlan;
   }): Promise<RetrievedChunk[]> {
     const normalizedQuery = input.query.trim();
     if (!normalizedQuery) {
       return [];
     }
 
-    const plan = deriveLexicalQueryPlan(normalizedQuery);
+    const plan = input.lexicalPlan ?? buildPlainLexicalQueryPlan(normalizedQuery);
     const compiledPlan = compilePostgresLexicalPlan(plan);
     if (!compiledPlan) {
       return [];
@@ -133,7 +136,7 @@ type CompiledLexicalPlan = {
   params: string[];
 };
 
-const compilePostgresLexicalPlan = (plan: ReturnType<typeof deriveLexicalQueryPlan>): CompiledLexicalPlan | null => {
+const compilePostgresLexicalPlan = (plan: LexicalQueryPlan): CompiledLexicalPlan | null => {
   const params: string[] = [];
   const addParam = (value: string): string => {
     params.push(value);

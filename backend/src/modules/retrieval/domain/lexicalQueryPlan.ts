@@ -21,6 +21,25 @@ export const deriveLexicalQueryPlan = (
   options: deriveLexicalOptions(lexicalQuery, options),
 });
 
+export const buildPlainLexicalQueryPlan = (lexicalQuery: string): LexicalQueryPlan => {
+  const normalizedQuery = normalizeLexicalQuery(lexicalQuery);
+  if (!hasSearchableContent(normalizedQuery)) {
+    return { options: [] };
+  }
+
+  return {
+    options: [
+      {
+        label: normalizedQuery,
+        lexicalQuery: normalizedQuery,
+        phrases: [],
+        requiredTerms: [normalizedQuery],
+        excludedTerms: [],
+      },
+    ],
+  };
+};
+
 export const deriveLexicalAlternatives = (
   lexicalQuery: string,
   options: { maxAlternatives?: number } = {},

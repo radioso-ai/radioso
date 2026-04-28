@@ -91,10 +91,11 @@ export class EvalReplayService {
               conversationMode,
             })
           : await this.chatGateway.answer({
-              query: input.query,
-              history,
-              prompt: retrieval.prompt,
-            });
+            query: input.query,
+            history,
+            systemPrompt: retrieval.systemPrompt,
+            prompt: retrieval.prompt,
+          });
 
     const citationEvidence = retrieval.contexts.map((context) => ({
       documentId: context.documentId,

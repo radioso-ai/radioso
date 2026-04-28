@@ -208,6 +208,7 @@ describe("retrieval trace assembler", () => {
         rerankedContexts: [],
         rerankStatus: "applied",
         contexts: [],
+        systemPrompt: "system prompt",
         prompt: "prompt",
         citations: [],
         responseSettings: {

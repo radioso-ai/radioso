@@ -7,6 +7,7 @@ import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
 
 export interface PromptBuildResult {
+  systemPrompt: string;
   prompt: string;
   citations: Array<{ documentId: string; chunkId: string; title: string }>;
 }
@@ -18,6 +19,7 @@ export class PromptBuilder {
 
   build(input: {
     query: string;
+    retrievalQuery?: string;
     history: MessageRecord[];
     contexts: FinalPromptContext[];
     settings: {
@@ -47,7 +49,7 @@ export class PromptBuilder {
     });
 
     return {
-      prompt: renderPromptTemplate("retrieval/answer.md", {
+      systemPrompt: renderPromptTemplate("retrieval/answer.md", {
         response_identity_block: answerInstructionBlocks.responseIdentityBlock
           ? `${answerInstructionBlocks.responseIdentityBlock}\n`
           : "",
@@ -58,9 +60,12 @@ export class PromptBuilder {
           ? `${answerInstructionBlocks.conversationModeInstructionBlock}\n`
           : "",
         response_language_instruction: answerInstructionBlocks.responseLanguageInstruction,
+      }),
+      prompt: renderPromptTemplate("retrieval/answer-user.md", {
         history_section: historySection || "No prior history",
         contexts_section: contextsSection || "No retrieved context",
         query: input.query,
+        retrieval_query: input.retrievalQuery ?? input.query,
       }),
       citations: input.contexts.map((context) => ({
         documentId: context.documentId,

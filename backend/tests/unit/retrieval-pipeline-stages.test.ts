@@ -1178,6 +1178,7 @@ describe("retrieval pipeline stages", () => {
       rerankedContexts: [],
       rerankStatus: "skipped",
       contexts: [],
+      systemPrompt: "system prompt",
       prompt: "prompt",
       citations: [],
       responseSettings: {

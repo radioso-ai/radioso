@@ -1433,21 +1433,23 @@ describe("chat retrieval domain", () => {
     });
 
     expect(result.prompt).toContain("The page parses content.");
-    expect(result.prompt).not.toContain("Warmth:");
-    expect(result.prompt).toContain("Respond in the same language as the current user question.");
     expect(result.prompt).toContain("Website Excerpts:");
-    expect(result.prompt).toContain("aim to use 6 to 10 distinct useful results");
-    expect(result.prompt).toContain("You do not have to narrate every result");
-    expect(result.prompt).toContain("Choose the items that best cover the topic");
-    expect(result.prompt).toContain("Do not end with generic offers");
-    expect(result.prompt).toContain("Never mention internal evidence mechanics");
-    expect(result.prompt).toContain("Put the link on the descriptive noun phrase inside the answer sentence");
-    expect(result.prompt).toContain("not as a trailing");
-    expect(result.prompt).toContain("include exactly one inline Markdown link in the answer by default");
-    expect(result.prompt).toContain("Do this even for definitional answers");
-    expect(result.prompt).toContain("append <<UNSUPPORTED>> at the very end");
+    expect(result.prompt).toContain("Latest user question:");
+    expect(result.prompt).toContain("Standalone retrieval query:");
     expect(result.prompt).toContain("Result 1 (Intro):");
-    expect(result.prompt).toContain("[[n]]");
+    expect(result.systemPrompt).not.toContain("Warmth:");
+    expect(result.systemPrompt).toContain("Respond in the same language as the current user question.");
+    expect(result.systemPrompt).toContain("Do not use outside knowledge");
+    expect(result.systemPrompt).toContain("The Website Excerpts may be incomplete or irrelevant");
+    expect(result.systemPrompt).toContain("Do not invent or supply unsupported dates");
+    expect(result.systemPrompt).toContain("Format as polished Markdown for a web chat");
+    expect(result.systemPrompt).toContain("Do not expose raw source chunks or internal retrieval details");
+    expect(result.systemPrompt).toContain("End with a natural next step or focused follow-up question only when");
+    expect(result.systemPrompt).toContain("Citation contract:");
+    expect(result.systemPrompt).toContain("Link contract:");
+    expect(result.systemPrompt).toContain("Put the link on the descriptive noun phrase inside the answer sentence");
+    expect(result.systemPrompt).toContain("append <<UNSUPPORTED>> at the very end");
+    expect(result.systemPrompt).toContain("[[n]]");
     expect(result.citations).toEqual([{ documentId: "d1", chunkId: "c1", title: "Intro" }]);
   });
 

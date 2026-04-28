@@ -40,6 +40,7 @@ import type {
 export interface RetrievalPipelineResult {
   rewrittenQuery: string;
   contexts: import("../domain/retrievalPipelineTypes.js").FinalPromptContext[];
+  systemPrompt: string;
   prompt: string;
   citations: PromptBuildResult["citations"];
   responseIdentity: ResponseIdentity | null;
@@ -187,6 +188,7 @@ export class RetrievalPipelineService {
     return {
       rewrittenQuery: prompt.result.activeQuery,
       contexts: prompt.result.contexts,
+      systemPrompt: prompt.result.systemPrompt,
       prompt: prompt.result.prompt,
       citations: prompt.result.citations,
       responseIdentity: input.request.responseIdentity ?? null,
@@ -244,6 +246,7 @@ export class RetrievalPipelineService {
     return {
       rewrittenQuery: input.request.query,
       contexts: [],
+      systemPrompt: "",
       prompt: "",
       citations: [],
       responseIdentity: input.request.responseIdentity ?? null,

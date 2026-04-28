@@ -82,6 +82,7 @@ export interface ContextSelectionStageResult extends CandidatePreparationStageRe
 }
 
 export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
+  systemPrompt: string;
   prompt: string;
   citations: PromptBuildResult["citations"];
   responseSettings: {

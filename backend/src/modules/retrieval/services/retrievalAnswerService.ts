@@ -61,6 +61,7 @@ export class RetrievalAnswerService {
     const rawAnswer = (await this.dependencies.chatGateway.answer({
       query: input.query,
       history,
+      systemPrompt: retrieval.systemPrompt,
       prompt: retrieval.prompt,
     })).trim();
     const evidence = retrieval.contexts.map((context) => ({

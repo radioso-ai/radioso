@@ -45,6 +45,7 @@ test("shared settings saves assistant, retrieval, and channel sections without c
       queryRewriteEnabled: true,
       vectorTopK: 20,
       citationDisplayEnabled: true,
+      answerSupportValidationEnabled: true,
     },
   });
   expect(settingsUpdates.at(-1)).not.toHaveProperty("channels");

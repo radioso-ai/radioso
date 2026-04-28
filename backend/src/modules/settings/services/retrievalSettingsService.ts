@@ -41,10 +41,10 @@ export class RetrievalSettingsService {
         ...existing,
         metadataRules: normalizeMetadataRules(existing.metadataRules),
       });
-      return this.disableQueryRewrite({
+      return {
         ...existing,
         ...normalized,
-      });
+      };
     }
 
     const defaults = defaultRetrievalSettings(workspaceId);
@@ -53,10 +53,10 @@ export class RetrievalSettingsService {
 
   async updateForWorkspace(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
     try {
-      const runtimeInput = this.disableQueryRewrite({
+      const runtimeInput = {
         ...input,
         metadataRules: normalizeMetadataRules(input.metadataRules),
-      });
+      };
       const settings = await this.repository.upsert(workspaceId, validateRetrievalSettings(runtimeInput));
       try {
         await this.auditService.record({
@@ -99,11 +99,4 @@ export class RetrievalSettingsService {
     }
   }
 
-  private disableQueryRewrite<T extends Pick<RetrievalSettingsRecord, "queryRewriteEnabled" | "metadataRules">>(input: T): T {
-    return {
-      ...input,
-      queryRewriteEnabled: false,
-      metadataRules: normalizeMetadataRules(input.metadataRules),
-    };
-  }
 }

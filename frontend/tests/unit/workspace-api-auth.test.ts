@@ -56,6 +56,7 @@ const platformSettingsPayload = {
     similarityThreshold: 0.2,
     rerankTopK: 5,
     citationDisplayEnabled: true,
+    answerSupportValidationEnabled: true,
     metadataRules: [],
     metadataFieldSuggestions: [],
   },

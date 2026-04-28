@@ -696,6 +696,7 @@ export class InMemoryRetrievalSettingsRepository implements RetrievalSettingsRep
       similarityThreshold: input.similarityThreshold,
       rerankTopK: input.rerankTopK,
       citationDisplayEnabled: input.citationDisplayEnabled,
+      answerSupportValidationEnabled: input.answerSupportValidationEnabled ?? true,
       metadataRules: input.metadataRules,
       customInstruction: input.customInstruction,
       createdAt: existing?.createdAt ?? new Date(),

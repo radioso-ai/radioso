@@ -76,25 +76,41 @@ export class RetrievalAnswerService {
       answer: rawAnswer,
       citations: evidence,
     });
-    const validationAnswerSegments = remapAnswerSegmentsToCitationEvidence(
-      normalized.answerSegments,
-      normalized.citationEvidence,
-      evidence,
-    );
-    const validated = await this.answerSupportValidator.validate({
-      query: input.query,
-      answer: normalized.answer,
-      answerSegments: validationAnswerSegments,
-      citationEvidence: evidence,
-      retrievedContextSummaries: evidence.map((context) => ({
-        title: context.title,
-        content: context.content,
-      })),
-      citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
-      conversationMode: retrieval.responseSettings.conversationMode,
-      groundedMissResponseComposer: this.groundedMissResponseComposer,
-      unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
-    });
+    const validated = retrieval.responseSettings.answerSupportValidationEnabled === false
+      ? {
+          ...this.answerPresentationService.present({
+            answer: rawAnswer,
+            citations: evidence,
+            citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
+          }),
+          validation: {
+            ran: false,
+            answerModified: false,
+            unsupportedSegmentCount: 0,
+            substantiveUnsupportedSegmentCount: 0,
+            supportedSegmentCount: 0,
+            nonSubstantiveSegmentCount: 0,
+          },
+          segmentResults: [],
+        }
+      : await this.answerSupportValidator.validate({
+          query: input.query,
+          answer: normalized.answer,
+          answerSegments: remapAnswerSegmentsToCitationEvidence(
+            normalized.answerSegments,
+            normalized.citationEvidence,
+            evidence,
+          ),
+          citationEvidence: evidence,
+          retrievedContextSummaries: evidence.map((context) => ({
+            title: context.title,
+            content: context.content,
+          })),
+          citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
+          conversationMode: retrieval.responseSettings.conversationMode,
+          groundedMissResponseComposer: this.groundedMissResponseComposer,
+          unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
+        });
     const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
       trace: retrieval.trace,
       summary: retrievalInfo,

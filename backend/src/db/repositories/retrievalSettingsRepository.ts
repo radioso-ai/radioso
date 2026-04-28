@@ -19,6 +19,7 @@ interface RetrievalSettingsPayload {
   conversationMode?: unknown;
   suggestedQuestionsEnabled?: unknown;
   suggestedQuestionsCount?: unknown;
+  answerSupportValidationEnabled?: unknown;
 }
 
 interface RetrievalSettingsRow {
@@ -65,6 +66,10 @@ const mapSettings = (row: RetrievalSettingsRow): RetrievalSettingsRecord => {
     similarityThreshold: row.similarity_threshold,
     rerankTopK: row.rerank_top_k,
     citationDisplayEnabled: row.citation_display_enabled,
+    answerSupportValidationEnabled:
+      typeof payload.answerSupportValidationEnabled === "boolean"
+        ? payload.answerSupportValidationEnabled
+        : true,
     metadataRules: normalizeMetadataRules(payload.metadataRules),
     customInstruction: row.custom_instruction,
     createdAt: new Date(row.created_at),
@@ -129,6 +134,7 @@ export class RetrievalSettingsRepository implements RetrievalSettingsRepositoryP
           conversationMode: input.conversationMode,
           suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
           suggestedQuestionsCount: input.suggestedQuestionsCount,
+          answerSupportValidationEnabled: input.answerSupportValidationEnabled ?? true,
         }),
         input.customInstruction,
       ],

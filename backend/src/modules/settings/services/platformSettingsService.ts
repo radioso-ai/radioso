@@ -267,6 +267,8 @@ export class PlatformSettingsService {
       similarityThreshold: retrieval.similarityThreshold ?? existing.similarityThreshold,
       rerankTopK: retrieval.rerankTopK ?? existing.rerankTopK,
       citationDisplayEnabled: retrieval.citationDisplayEnabled ?? existing.citationDisplayEnabled,
+      answerSupportValidationEnabled:
+        retrieval.answerSupportValidationEnabled ?? existing.answerSupportValidationEnabled,
       metadataRules: retrieval.metadataRules ?? existing.metadataRules,
       customInstruction: assistant.customInstruction ?? existing.customInstruction,
     });
@@ -301,6 +303,7 @@ export class PlatformSettingsService {
       similarityThreshold: settings.similarityThreshold,
       rerankTopK: settings.rerankTopK,
       citationDisplayEnabled: settings.citationDisplayEnabled,
+      answerSupportValidationEnabled: settings.answerSupportValidationEnabled ?? true,
       metadataRules: settings.metadataRules,
       metadataFieldSuggestions,
     };

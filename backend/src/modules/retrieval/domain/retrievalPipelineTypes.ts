@@ -65,6 +65,19 @@ export interface RetrievalSubquery {
   lexicalQuery: string;
   reason?: string;
   responseLanguagePolicy?: ResponseLanguagePolicy;
+  lexicalPlan?: LexicalQueryPlan;
+}
+
+export interface LexicalSearchOption {
+  label: string;
+  lexicalQuery: string;
+  phrases: string[];
+  requiredTerms: string[];
+  excludedTerms: string[];
+}
+
+export interface LexicalQueryPlan {
+  options: LexicalSearchOption[];
 }
 
 export type ContinuityDecision = "unchanged" | "reused" | "updated" | "unresolved" | "rejected";

@@ -254,13 +254,16 @@ export class QueryRewriteService {
       const responseIntent = rawResponseIntent;
       const compatibilityRewrite = semanticQuery;
       const responseLanguagePolicy = normalizedStructuredResult.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY;
+      const lexicalRewriteAccepted = lexicalQuery !== input.query;
       const retrievalSubqueries =
         normalizedStructuredResult.retrievalSubqueries ??
-        buildLexicalAlternativeSubqueries({
-          semanticQuery,
-          lexicalQuery,
-          responseLanguagePolicy,
-        });
+        (lexicalRewriteAccepted
+          ? buildLexicalAlternativeSubqueries({
+              semanticQuery,
+              lexicalQuery,
+              responseLanguagePolicy,
+            })
+          : undefined);
       const applied =
         responseIntent !== RESPONSE_INTENT.RETRIEVAL
         || semanticQuery !== input.query
@@ -285,7 +288,7 @@ export class QueryRewriteService {
         rewrittenQuery: compatibilityRewrite,
         semanticQuery,
         lexicalQuery,
-        retrievalSubqueries,
+        retrievalSubqueries: stripLexicalPlans(retrievalSubqueries),
       };
       const eligibility = this.eligibilityService.evaluate({
         originalQuery: input.query,
@@ -645,6 +648,9 @@ const stripSingleWrappingQuotePair = (value: string): string => {
   const quoteCount = [...value].filter((char) => char === first).length;
   return quoteCount === 2 ? value.slice(1, -1).trim() : value;
 };
+
+const stripLexicalPlans = (subqueries?: RetrievalSubquery[]): RetrievalSubquery[] | undefined =>
+  subqueries?.map(({ lexicalPlan: _lexicalPlan, ...subquery }) => subquery);
 
 const truncateTriggerInstruction = (value: string): string => value.trim().replace(/\s+/g, " ").slice(0, 160);
 

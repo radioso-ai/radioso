@@ -138,6 +138,83 @@ describe("query rewrite subqueries", () => {
     expect(result.lexicalQuery).toBe("who are these teachers?");
   });
 
+  it("does not split original user text containing OR when lexical rewrite falls back", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "What does OR mean?",
+          semanticQuery: "What does OR mean?",
+          lexicalQuery: "What does OR mean?",
+          responseLanguagePolicy: "match_user_question",
+          turnKind: "fresh_subject",
+          proposedActiveSubject: "OR",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.91,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "What does OR mean?",
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+      enabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+    });
+
+    expect(result.status).toBe("fallback");
+    expect(result.retrievalSubqueries).toBeUndefined();
+  });
+
+  it("attaches internal lexical plans only to derived lexical alternatives", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "account recovery",
+          semanticQuery: "account recovery",
+          lexicalQuery: '"forgot password" OR "reset token"',
+          responseLanguagePolicy: "match_user_question",
+          turnKind: "fresh_subject",
+          proposedActiveSubject: "account recovery",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.91,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "how do I recover account access?",
+      contextWindow: {
+        selectedMessages: [
+          {
+            id: "u1",
+            conversationId: "c1",
+            workspaceId: "w1",
+            role: "user",
+            content: "We call password recovery reset tokens.",
+            createdAt: new Date(),
+          },
+        ],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+      enabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+    });
+
+    expect(result.retrievalSubqueries?.map((subquery) => subquery.lexicalPlan?.options[0]?.lexicalQuery)).toEqual([
+      '"forgot password"',
+      '"reset token"',
+    ]);
+  });
+
   it("preserves exact phrase quotes in model-provided lexical subqueries", async () => {
     const service = new QueryRewriteService({
       async rewrite() {

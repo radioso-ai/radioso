@@ -1,18 +1,6 @@
-import type { ResponseLanguagePolicy, RetrievalSubquery } from "./retrievalPipelineTypes.js";
+import type { LexicalQueryPlan, LexicalSearchOption, ResponseLanguagePolicy, RetrievalSubquery } from "./retrievalPipelineTypes.js";
 
 const DEFAULT_MAX_ALTERNATIVES = 4;
-
-export interface LexicalSearchOption {
-  label: string;
-  lexicalQuery: string;
-  phrases: string[];
-  requiredTerms: string[];
-  excludedTerms: string[];
-}
-
-export interface LexicalQueryPlan {
-  options: LexicalSearchOption[];
-}
 
 export const deriveLexicalQueryPlan = (
   lexicalQuery: string,
@@ -96,6 +84,7 @@ export const buildLexicalAlternativeSubqueries = (input: {
     lexicalQuery: alternative.lexicalQuery,
     reason: "lexical_alternative",
     responseLanguagePolicy: input.responseLanguagePolicy,
+    lexicalPlan: { options: [alternative] },
   }));
 };
 

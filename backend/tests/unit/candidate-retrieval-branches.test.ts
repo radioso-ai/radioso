@@ -7,6 +7,7 @@ describe("candidate retrieval branches", () => {
   it("runs semantic and lexical retrieval separately for each active subquery", async () => {
     const vectorQueries: number[] = [];
     const lexicalQueries: string[] = [];
+    const lexicalPlans: unknown[] = [];
     const stage = new CandidateRetrievalStageService(
       new EmbeddingService({
         async embedTexts(texts) {
@@ -30,6 +31,7 @@ describe("candidate retrieval branches", () => {
       {
         async search(input) {
           lexicalQueries.push(input.query);
+          lexicalPlans.push(input.lexicalPlan);
           return [
             {
               chunkId: `lexical-${input.query}`,
@@ -138,6 +140,7 @@ describe("candidate retrieval branches", () => {
     const embeddedTexts: string[][] = [];
     const vectorQueries: number[] = [];
     const lexicalQueries: string[] = [];
+    const lexicalPlans: unknown[] = [];
     const stage = new CandidateRetrievalStageService(
       new EmbeddingService({
         async embedTexts(texts) {
@@ -162,6 +165,7 @@ describe("candidate retrieval branches", () => {
       {
         async search(input) {
           lexicalQueries.push(input.query);
+          lexicalPlans.push(input.lexicalPlan);
           return [
             {
               chunkId: `lexical-${input.query}`,
@@ -244,7 +248,23 @@ describe("candidate retrieval branches", () => {
       activeSemanticQuery: "recover account access",
       activeRetrievalSubqueries: [
         { id: "subquery_1", label: "forgot password", semanticQuery: "account recovery", lexicalQuery: '"forgot password"' },
-        { id: "subquery_2", label: "reset token", semanticQuery: "account recovery", lexicalQuery: '"reset token"' },
+        {
+          id: "subquery_2",
+          label: "reset token",
+          semanticQuery: "account recovery",
+          lexicalQuery: '"reset token"',
+          lexicalPlan: {
+            options: [
+              {
+                label: "reset token",
+                lexicalQuery: '"reset token"',
+                phrases: ["reset token"],
+                requiredTerms: [],
+                excludedTerms: [],
+              },
+            ],
+          },
+        },
       ],
       triggerAnalysis: {
         status: "skipped_not_configured" as const,
@@ -263,6 +283,20 @@ describe("candidate retrieval branches", () => {
     expect(embeddedTexts).toEqual([["account recovery"]]);
     expect(vectorQueries).toEqual([1]);
     expect(lexicalQueries).toEqual(['"forgot password"', '"reset token"']);
+    expect(lexicalPlans).toEqual([
+      undefined,
+      {
+        options: [
+          {
+            label: "reset token",
+            lexicalQuery: '"reset token"',
+            phrases: ["reset token"],
+            requiredTerms: [],
+            excludedTerms: [],
+          },
+        ],
+      },
+    ]);
     expect(result.retrievalBranches).toHaveLength(2);
     expect(result.rewrittenContexts).toHaveLength(2);
   });

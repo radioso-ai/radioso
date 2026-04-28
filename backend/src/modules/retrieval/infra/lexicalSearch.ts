@@ -1,6 +1,6 @@
 import type { Database } from "../../../shared/infra/database.js";
 import { buildPlainLexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
-import type { LexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
+import type { LexicalQueryPlan } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievedChunk } from "./vectorSearch.js";
 import { hasNonEmptyFilter } from "./vectorSearch.js";
 

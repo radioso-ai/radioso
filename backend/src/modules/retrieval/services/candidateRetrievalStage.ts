@@ -1,6 +1,5 @@
 import type { EmbeddingService } from "./embeddingService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { deriveLexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import type { RetrievedChunk, VectorSearchPort } from "../infra/vectorSearch.js";
 import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
@@ -42,7 +41,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
             query: subquery.lexicalQuery,
             topK: RETRIEVAL_BEHAVIOR.hybrid.lexicalTopK,
             metadataFilter: input.request.metadataFilter,
-            lexicalPlan: subquery.reason === "lexical_alternative" ? deriveLexicalQueryPlan(subquery.lexicalQuery) : undefined,
+            lexicalPlan: subquery.lexicalPlan,
           }),
         ]);
 

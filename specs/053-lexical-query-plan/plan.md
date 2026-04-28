@@ -9,14 +9,14 @@ Radioso will stop treating LLM lexical alternatives as one plain-text query. The
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node.js 22  
-**Primary Dependencies**: Express, pg, OpenAI SDK, Zod, Pino, Vitest, Supertest  
-**Storage**: PostgreSQL 16 with `pgvector`; no schema change planned  
-**Testing**: Vitest unit tests and focused integration coverage where needed  
-**Target Platform**: Node.js backend service  
-**Project Type**: Backend retrieval feature in existing web application  
-**Performance Goals**: Preserve bounded lexical retrieval by capping generated alternatives and per-branch candidates  
-**Constraints**: No retrieval pipeline stage contract changes; no public chat/retrieval API contract changes; no custom BM25 engine; no new search service  
+**Language/Version**: TypeScript 5.x on Node.js 22
+**Primary Dependencies**: Express, pg, OpenAI SDK, Zod, Pino, Vitest, Supertest
+**Storage**: PostgreSQL 16 with `pgvector`; no schema change planned
+**Testing**: Vitest unit tests and focused integration coverage where needed
+**Target Platform**: Node.js backend service
+**Project Type**: Backend retrieval feature in existing web application
+**Performance Goals**: Preserve bounded lexical retrieval by capping generated alternatives and per-branch candidates
+**Constraints**: No retrieval pipeline stage contract changes; no public chat/retrieval API contract changes; no custom BM25 engine; no new search service
 **Scale/Scope**: Existing retrieval path only; frontend changes are not required unless additive diagnostics need display adjustments
 
 ## Constitution Check

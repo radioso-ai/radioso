@@ -2,22 +2,46 @@ import type { ResponseLanguagePolicy, RetrievalSubquery } from "./retrievalPipel
 
 const DEFAULT_MAX_ALTERNATIVES = 4;
 
+export interface LexicalSearchOption {
+  label: string;
+  lexicalQuery: string;
+  phrases: string[];
+  requiredTerms: string[];
+  excludedTerms: string[];
+}
+
+export interface LexicalQueryPlan {
+  options: LexicalSearchOption[];
+}
+
+export const deriveLexicalQueryPlan = (
+  lexicalQuery: string,
+  options: { maxAlternatives?: number } = {},
+): LexicalQueryPlan => ({
+  options: deriveLexicalOptions(lexicalQuery, options),
+});
+
 export const deriveLexicalAlternatives = (
   lexicalQuery: string,
   options: { maxAlternatives?: number } = {},
-): string[] => {
+): string[] => deriveLexicalOptions(lexicalQuery, options).map((alternative) => alternative.lexicalQuery);
+
+const deriveLexicalOptions = (
+  lexicalQuery: string,
+  options: { maxAlternatives?: number } = {},
+): LexicalSearchOption[] => {
   const maxAlternatives = Math.max(1, options.maxAlternatives ?? DEFAULT_MAX_ALTERNATIVES);
   const rawAlternatives = splitTopLevelOr(lexicalQuery);
   const seen = new Set<string>();
-  const alternatives: string[] = [];
+  const alternatives: LexicalSearchOption[] = [];
 
   for (const rawAlternative of rawAlternatives) {
-    const alternative = normalizeLexicalAlternative(rawAlternative);
-    if (!hasSearchableContent(alternative)) {
+    const alternative = buildLexicalSearchOption(rawAlternative);
+    if (!hasSearchableContent(alternative.lexicalQuery)) {
       continue;
     }
 
-    const key = alternative.toLocaleLowerCase();
+    const key = alternative.label.toLocaleLowerCase();
     if (seen.has(key)) {
       continue;
     }
@@ -38,7 +62,7 @@ export const buildLexicalAlternativeSubqueries = (input: {
   responseLanguagePolicy: ResponseLanguagePolicy;
   maxAlternatives?: number;
 }): RetrievalSubquery[] | undefined => {
-  const alternatives = deriveLexicalAlternatives(input.lexicalQuery, {
+  const alternatives = deriveLexicalOptions(input.lexicalQuery, {
     maxAlternatives: input.maxAlternatives,
   });
 
@@ -48,9 +72,9 @@ export const buildLexicalAlternativeSubqueries = (input: {
 
   return alternatives.map((alternative, index) => ({
     id: `subquery_${index + 1}`,
-    label: alternative,
+    label: alternative.label,
     semanticQuery: input.semanticQuery,
-    lexicalQuery: alternative,
+    lexicalQuery: alternative.lexicalQuery,
     reason: "lexical_alternative",
     responseLanguagePolicy: input.responseLanguagePolicy,
   }));
@@ -93,11 +117,48 @@ const isOrOperatorAt = (value: string, index: number): boolean => {
   return /\s|\(|\|/.test(before) && /\s|\)|\|/.test(after);
 };
 
-const normalizeLexicalAlternative = (value: string): string =>
-  value
-    .trim()
-    .replace(/^["']|["']$/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+const buildLexicalSearchOption = (value: string): LexicalSearchOption => {
+  const lexicalQuery = normalizeLexicalQuery(value);
+  const label = lexicalQuery.replace(/["']/g, "").replace(/\s+/g, " ").trim();
+
+  return {
+    label,
+    lexicalQuery,
+    phrases: extractQuotedPhrases(lexicalQuery),
+    requiredTerms: extractRequiredTerms(lexicalQuery),
+    excludedTerms: extractExcludedTerms(lexicalQuery),
+  };
+};
+
+const normalizeLexicalQuery = (value: string): string => value.trim().replace(/\s+/g, " ").trim();
 
 const hasSearchableContent = (value: string): boolean => /[\p{L}\p{N}]/u.test(value);
+
+const extractQuotedPhrases = (value: string): string[] => {
+  const phrases: string[] = [];
+  const phrasePattern = /"([^"]+)"|'([^']+)'/g;
+  let match: RegExpExecArray | null;
+  while ((match = phrasePattern.exec(value)) !== null) {
+    const phrase = (match[1] ?? match[2] ?? "").trim();
+    if (phrase) {
+      phrases.push(phrase);
+    }
+  }
+
+  return phrases;
+};
+
+const extractRequiredTerms = (value: string): string[] =>
+  removeQuotedPhrases(value)
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter((term) => term.length > 0 && !term.startsWith("-") && term.toUpperCase() !== "OR");
+
+const extractExcludedTerms = (value: string): string[] =>
+  removeQuotedPhrases(value)
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter((term) => term.startsWith("-") && term.length > 1)
+    .map((term) => term.slice(1));
+
+const removeQuotedPhrases = (value: string): string => value.replace(/"[^"]+"|'[^']+'/g, " ");

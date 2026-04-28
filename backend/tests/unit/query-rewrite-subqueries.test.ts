@@ -97,10 +97,96 @@ describe("query rewrite subqueries", () => {
     expect(result.status).toBe("applied");
     expect(result.retrievalEligible).toBe(true);
     expect(result.retrievalSubqueries?.map((subquery) => subquery.lexicalQuery)).toEqual([
-      "forgot password",
-      "reset token",
-      "magic link",
+      '"forgot password"',
+      '"reset token"',
+      '"magic link"',
     ]);
     expect(result.retrievalSubqueries?.every((subquery) => subquery.semanticQuery === "how do users recover account access?")).toBe(true);
+  });
+
+  it("does not let derived lexical alternatives bypass the first-turn lexical guard", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "who are these teachers?",
+          semanticQuery: "who are these teachers?",
+          lexicalQuery: '"Narayani" OR "Swami Kriyananda"',
+          responseLanguagePolicy: "match_user_question",
+          turnKind: "fresh_subject",
+          proposedActiveSubject: "teachers",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.91,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "who are these teachers?",
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+      enabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "Prefer exact aliases as alternatives.",
+    });
+
+    expect(result.status).toBe("fallback");
+    expect(result.retrievalSubqueries).toBeUndefined();
+    expect(result.lexicalQuery).toBe("who are these teachers?");
+  });
+
+  it("preserves exact phrase quotes in model-provided lexical subqueries", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "account recovery",
+          semanticQuery: "account recovery",
+          lexicalQuery: "account recovery",
+          responseLanguagePolicy: "match_user_question",
+          retrievalSubqueries: [
+            {
+              id: "",
+              label: "Reset token",
+              semanticQuery: "account recovery",
+              lexicalQuery: '"reset token"',
+              responseLanguagePolicy: "match_user_question",
+            },
+            {
+              id: "",
+              label: "Magic link",
+              semanticQuery: "account recovery",
+              lexicalQuery: '"magic link"',
+              responseLanguagePolicy: "match_user_question",
+            },
+          ],
+          turnKind: "fresh_subject",
+          proposedActiveSubject: "account recovery",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.91,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "how do I recover account access?",
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+      enabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "Prefer exact aliases as alternatives.",
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.retrievalSubqueries?.map((subquery) => subquery.lexicalQuery)).toEqual([
+      '"reset token"',
+      '"magic link"',
+    ]);
   });
 });

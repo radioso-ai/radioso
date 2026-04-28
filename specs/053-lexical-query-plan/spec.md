@@ -1,8 +1,8 @@
 # Feature Specification: Structured Lexical Query Plans
 
-**Feature Branch**: `053-lexical-query-plan`  
-**Created**: 2026-04-28  
-**Status**: Draft  
+**Feature Branch**: `053-lexical-query-plan`
+**Created**: 2026-04-28
+**Status**: Draft
 **Input**: User description: "Add structured LLM-produced lexical query plans for Radioso retrieval. The LLM should produce validated alternatives such as terms, phrases, should-groups, exclusions, and multiple lexical search options rather than raw backend-specific OR syntax. Radioso should compile the plan into the active lexical backend, keep current Postgres lexical search as the first implementation, preserve a backend-agnostic lexical search port for future BM25 backends, expose diagnostics for the generated plan and executed branches, and avoid custom BM25 implementation or immediate OpenSearch/Elasticsearch migration."
 
 ## User Scenarios & Testing *(mandatory)*

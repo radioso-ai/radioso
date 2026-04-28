@@ -1439,6 +1439,8 @@ describe("chat retrieval domain", () => {
     expect(result.prompt).toContain("do not pad the answer just to use more results");
     expect(result.prompt).toContain("Do not end with generic offers");
     expect(result.prompt).toContain("Never mention internal evidence mechanics");
+    expect(result.prompt).toContain("Put the link on the descriptive noun phrase inside the answer sentence");
+    expect(result.prompt).toContain("not as a trailing");
     expect(result.prompt).toContain("include exactly one inline Markdown link in the answer by default");
     expect(result.prompt).toContain("Do this even for definitional answers");
     expect(result.prompt).toContain("append <<UNSUPPORTED>> at the very end");

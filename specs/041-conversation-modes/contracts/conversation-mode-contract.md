@@ -24,7 +24,7 @@ debug behavior before implementation.
 
 - `conversationMode` shapes the response behavior for grounded success,
   degraded/unsupported, and no-context turns, but it does not replace
-  `answerSupportPolicy`.
+  `answerPolicy`.
 - Explicit user requests for brevity or “just the answer” may suppress optional
   guided/exploratory expansion for the current turn without changing the stored
   workspace default.

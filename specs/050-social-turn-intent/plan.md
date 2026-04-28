@@ -24,7 +24,7 @@ answer-instruction docs.
 **Target Platform**: Web application with authenticated chat, public/anonymous chat, workspace settings, and existing history/audit diagnostics  
 **Project Type**: Web application with separate `backend/` and `frontend/` projects  
 **Performance Goals**: Preserve one interpretation-model pass per retrieval-backed chat turn, avoid an extra classifier round-trip, and keep non-retrieval replies bounded to one normal answer generation call  
-**Constraints**: No deterministic keyword or regex intent routing, no new public HTTP endpoint, no global weakening of `answerSupportPolicy`, no duplication of answer-instruction logic, `chatService.ts` remains orchestration-focused, runtime prompts stay under `backend/prompts/`  
+**Constraints**: No deterministic keyword or regex intent routing, no new public HTTP endpoint, no global weakening of `answerPolicy`, no duplication of answer-instruction logic, `chatService.ts` remains orchestration-focused, runtime prompts stay under `backend/prompts/`  
 **Scale/Scope**: Cross-cutting backend feature touching query interpretation, chat orchestration, prompt assembly, audit metadata, targeted docs, and one assistant-settings helper copy string
 
 ## Constitution Check

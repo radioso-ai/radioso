@@ -1,4 +1,3 @@
-import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import {
   buildResponseIdentityLines,
   type ResponseIdentity,
@@ -10,7 +9,6 @@ import { ConversationModeInstructionBuilder } from "./conversationModeInstructio
 export interface SharedAnswerInstructionBlocks {
   responseIdentityBlock: string | null;
   customInstructionBlock: string | null;
-  responseFormattingGuidelinesBlock: string | null;
   conversationModeInstructionBlock: string | null;
   responseLanguageInstruction: string;
 }
@@ -29,7 +27,6 @@ export class SharedAnswerInstructionBuilder {
     return {
       responseIdentityBlock: this.renderResponseIdentity(input.responseIdentity),
       customInstructionBlock: this.renderCustomInstruction(input.customInstruction),
-      responseFormattingGuidelinesBlock: this.renderResponseFormattingGuidelines(),
       conversationModeInstructionBlock: input.conversationMode
         ? this.conversationModeInstructionBuilder.build({ conversationMode: input.conversationMode })
         : null,
@@ -45,7 +42,6 @@ export class SharedAnswerInstructionBuilder {
     return [
       blocks.responseIdentityBlock,
       blocks.customInstructionBlock,
-      blocks.responseFormattingGuidelinesBlock,
       blocks.conversationModeInstructionBlock,
       blocks.responseLanguageInstruction,
     ]
@@ -81,11 +77,6 @@ export class SharedAnswerInstructionBuilder {
       ...identityLines,
       "When the caller asks about the configured name, role, or purpose, answer consistently with this identity.",
     ].join("\n");
-  }
-
-  private renderResponseFormattingGuidelines(): string | null {
-    const guidelines = loadPromptTemplate("retrieval/response-formatting-guidelines.md");
-    return guidelines.trim() ? `Response formatting guidance:\n${guidelines}` : null;
   }
 
   private renderResponseLanguageInstruction(responseLanguagePolicy: ResponseLanguagePolicy): string {

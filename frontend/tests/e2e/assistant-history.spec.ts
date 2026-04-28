@@ -77,7 +77,6 @@ test("shared history navigation shows assistant route diagnostics", async ({ pag
           stream: false,
           citationCount: 1,
           answerOutcome: "grounded_success",
-          answerSupportPolicy: "strict",
           conversationMode: "guided",
           conversationModeMetadata: {
             conversationMode: "guided",
@@ -94,7 +93,6 @@ test("shared history navigation shows assistant route diagnostics", async ({ pag
             substantiveUnsupportedSegmentCount: 0,
             supportedSegmentCount: 1,
             nonSubstantiveSegmentCount: 0,
-            answerSupportPolicy: "strict",
             segmentResults: [],
           },
           retrievalInfo: {

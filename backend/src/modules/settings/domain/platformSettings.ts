@@ -5,7 +5,6 @@ import type {
 import type {
   MetadataFieldSuggestion,
   RetrievalMetadataRule,
-  AnswerSupportPolicy,
 } from "./retrievalSettings.js";
 import type {
   WebsiteEmbedLauncherIcon,
@@ -16,7 +15,6 @@ export interface PlatformRetrievalSettingsSection {
   queryRewriteEnabled: boolean;
   semanticRewriteInstructions: string;
   lexicalRewriteInstructions: string;
-  answerSupportPolicy: AnswerSupportPolicy;
   rerankEnabled: boolean;
   vectorTopK: number;
   similarityThreshold: number;
@@ -50,7 +48,6 @@ export interface PlatformRetrievalSettingsPatch {
   queryRewriteEnabled?: boolean;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
-  answerSupportPolicy?: AnswerSupportPolicy;
   rerankEnabled?: boolean;
   vectorTopK?: number;
   similarityThreshold?: number;

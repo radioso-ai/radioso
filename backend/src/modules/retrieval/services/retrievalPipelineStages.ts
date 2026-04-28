@@ -82,11 +82,11 @@ export interface ContextSelectionStageResult extends CandidatePreparationStageRe
 }
 
 export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
+  systemPrompt: string;
   prompt: string;
   citations: PromptBuildResult["citations"];
   responseSettings: {
     citationDisplayEnabled: boolean;
-    answerSupportPolicy: RetrievalSettingsRecord["answerSupportPolicy"];
     conversationMode: RetrievalSettingsRecord["conversationMode"];
     suggestedQuestionsEnabled: RetrievalSettingsRecord["suggestedQuestionsEnabled"];
     suggestedQuestionsCount: RetrievalSettingsRecord["suggestedQuestionsCount"];

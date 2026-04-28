@@ -10,7 +10,6 @@ const createAdapter = (): RadiosoApiAdapter => ({
   deleteDocument: vi.fn().mockResolvedValue(undefined),
   getDocument: vi.fn(),
   getRetrievalSettings: vi.fn().mockResolvedValue({
-    answerSupportPolicy: "strict",
     citationDisplayEnabled: true,
     conversationMode: "guided",
     customInstruction: "",

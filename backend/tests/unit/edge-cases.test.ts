@@ -49,9 +49,9 @@ describe("edge cases", () => {
       contexts: [],
     });
 
-    expect(result.prompt).toContain("Stable response identity:");
-    expect(result.prompt).toContain("Response identity name: Marta");
-    expect(result.prompt).toContain("Response identity role: Museum guide");
+    expect(result.systemPrompt).toContain("Stable response identity:");
+    expect(result.systemPrompt).toContain("Response identity name: Marta");
+    expect(result.systemPrompt).toContain("Response identity role: Museum guide");
   });
   it("falls back to the original query when rewrite assistance errors", async () => {
     const service = new QueryRewriteService({

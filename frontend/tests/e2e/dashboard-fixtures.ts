@@ -28,6 +28,7 @@ export const basePlatformSettings = () => ({
     similarityThreshold: 0.2,
     rerankTopK: 5,
     citationDisplayEnabled: true,
+    answerSupportValidationEnabled: true,
     metadataFieldSuggestions: [],
     metadataRules: [],
   },

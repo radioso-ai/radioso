@@ -765,6 +765,28 @@ export function RetrievalSettingsPanel({
               />
             </div>
 
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="answerSupportValidation" className="text-foreground">
+                    {retrievalSettingDocs.answerSupportValidationEnabled.label}
+                  </Label>
+                  <SettingTooltip
+                    label={retrievalSettingDocs.answerSupportValidationEnabled.label}
+                    content={retrievalSettingDocs.answerSupportValidationEnabled.details}
+                  />
+                </div>
+                <div className="mt-0.5 text-sm text-muted-foreground">
+                  <AssistantMarkdownContent content={retrievalSettingDocs.answerSupportValidationEnabled.summary} inline />
+                </div>
+              </div>
+              <Switch
+                id="answerSupportValidation"
+                checked={settings.answerSupportValidationEnabled}
+                onCheckedChange={(checked) => updateSetting('answerSupportValidationEnabled', checked)}
+              />
+            </div>
+
           </div>
         </SettingsCard>
 

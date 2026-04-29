@@ -56,7 +56,7 @@ export function SettingsView({
   }, [accountId, routeState, router])
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <Tabs
         value={activeTab}
         onValueChange={(value) => {
@@ -67,9 +67,9 @@ export function SettingsView({
             settingsAnchor: undefined,
           }))
         }}
-        className="flex flex-1 flex-col"
+        className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="sticky top-0 z-20 border-b border-border bg-background/95 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/95 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <div className="flex w-full flex-col gap-3 px-4 sm:px-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
@@ -128,23 +128,23 @@ export function SettingsView({
           </div>
         </div>
 
-        <TabsContent value="workspace" className="flex-1 overflow-hidden">
+        <TabsContent value="workspace" className="min-h-0 flex-1 overflow-hidden">
           <WorkspaceAssistantChannelsTab accountId={accountId} mode="workspace" onSaveStateChange={setGeneralSaveState} />
         </TabsContent>
 
-        <TabsContent value="assistant" className="flex-1 overflow-hidden">
+        <TabsContent value="assistant" className="min-h-0 flex-1 overflow-hidden">
           <WorkspaceAssistantChannelsTab accountId={accountId} mode="assistant" onSaveStateChange={setGeneralSaveState} />
         </TabsContent>
 
-        <TabsContent value="channels" className="flex-1 overflow-hidden">
+        <TabsContent value="channels" className="min-h-0 flex-1 overflow-hidden">
           <WorkspaceAssistantChannelsTab accountId={accountId} mode="channels" onSaveStateChange={setGeneralSaveState} />
         </TabsContent>
 
-        <TabsContent value="ingestion" className="flex-1 overflow-hidden">
+        <TabsContent value="ingestion" className="min-h-0 flex-1 overflow-hidden">
           <IngestionSettingsPanel onSaveStateChange={setIngestionSaveState} />
         </TabsContent>
 
-        <TabsContent value="retrieval" className="flex-1 overflow-hidden">
+        <TabsContent value="retrieval" className="min-h-0 flex-1 overflow-hidden">
           <RetrievalSettingsPanel onSaveStateChange={setRetrievalSaveState} />
         </TabsContent>
       </Tabs>

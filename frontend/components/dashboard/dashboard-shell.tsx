@@ -109,9 +109,9 @@ export function DashboardShell({
     (requestedWorkspaceId && requestedWorkspaceExists && activeWorkspaceId !== requestedWorkspaceId)
   ) {
     return (
-      <SidebarProvider>
+      <SidebarProvider className="h-svh min-h-0 overflow-hidden">
         <AppSidebar accountId={accountId} currentView={currentView} />
-        <SidebarInset>
+        <SidebarInset className="min-h-0 overflow-hidden">
           <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
             <SidebarTrigger />
           </header>
@@ -124,9 +124,9 @@ export function DashboardShell({
   }
 
   return (
-    <SidebarProvider>
+    <SidebarProvider className="h-svh min-h-0 overflow-hidden">
       <AppSidebar accountId={accountId} currentView={currentView} />
-      <SidebarInset>
+      <SidebarInset className="min-h-0 overflow-hidden">
         <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
           <SidebarTrigger />
         </header>

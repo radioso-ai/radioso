@@ -107,12 +107,14 @@ export const installDashboardApiMocks = async (
   page: Page,
   options: {
     platformSettings?: PlatformSettingsFixture;
+    documentList?: unknown;
     settingsUpdates?: unknown[];
     historyList?: unknown;
     conversationDetail?: unknown;
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
+  const documents = options.documentList ?? documentListResponse;
   const settingsUpdates = options.settingsUpdates;
   const historyList = options.historyList ?? {
     conversations: [],
@@ -172,7 +174,7 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/document/") {
-      await json(route, documentListResponse);
+      await json(route, documents);
       return;
     }
 

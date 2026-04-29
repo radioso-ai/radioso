@@ -328,6 +328,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspace/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get lightweight workspace dashboard summary */
+        get: operations["getWorkspaceSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspace/resolve/{workspaceKey}": {
         parameters: {
             query?: never;
@@ -676,6 +693,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/history/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a saved assistant conversation and its debug metadata
+         * @deprecated
+         * @description Deprecated compatibility alias. Prefer `/api/v1/history/chat/{conversationId}`.
+         */
+        get: operations["getLegacyHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/history/search/{searchId}": {
         parameters: {
             query?: never;
@@ -881,6 +919,19 @@ export interface components {
         };
         WorkspaceListResponse: {
             workspaces: components["schemas"]["Workspace"][];
+        };
+        WorkspaceSummaryResponse: {
+            documentCount: number;
+            readyDocumentCount: number;
+            pendingDocumentCount: number;
+            sampleDocumentCount: number;
+            sampleDocumentSlugs: string[];
+            conversationCount: number;
+            hasDocuments: boolean;
+            hasPendingDocuments: boolean;
+            hasReadyDocuments: boolean;
+            hasCompletedChat: boolean;
+            sampleDocumentsImported: boolean;
         };
         WorkspaceTokenResponse: {
             token: string;
@@ -2956,6 +3007,35 @@ export interface operations {
             };
         };
     };
+    getWorkspaceSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace summary returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSummaryResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     resolveWorkspaceRouteKey: {
         parameters: {
             query?: never;
@@ -4055,6 +4135,59 @@ export interface operations {
         };
     };
     getHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Historical conversation detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatConversationDetail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getLegacyHistoryConversation: {
         parameters: {
             query?: {
                 limit?: number;

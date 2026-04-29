@@ -30,6 +30,7 @@ export type {
   UpdateGeneralSettingsRequest,
   UpdateIngestionSettingsRequest,
   UpdateRetrievalSettingsRequest,
+  WorkspaceSummaryResponse,
   WorkspaceIngestionReprocessResponse,
 } from "./generated/client.js";
 export type { RadiosoClientOptions } from "./core/config.js";
@@ -51,6 +52,9 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
       getGeneral: () => generated.getGeneralSettings(),
       updateGeneral: (body: Parameters<GeneratedRadiosoClient["updateGeneralSettings"]>[0]) =>
         generated.updateGeneralSettings(body),
+    },
+    workspace: {
+      getSummary: () => generated.getWorkspaceSummary(),
     },
     documents: {
       list: (query?: Parameters<GeneratedRadiosoClient["listDocuments"]>[0]) => generated.listDocuments(query),

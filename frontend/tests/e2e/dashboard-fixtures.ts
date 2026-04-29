@@ -103,12 +103,47 @@ const emptySearchHistory = {
   hasMore: false,
 };
 
+const buildWorkspaceSummary = (input: {
+  documentList: unknown;
+  historyList: unknown;
+}) => {
+  const documentList = input.documentList as {
+    documents?: Array<{ ragStatus?: string; status?: string; metadata?: Record<string, unknown> }>;
+    total?: number;
+  };
+  const historyList = input.historyList as { total?: number };
+  const documents = Array.isArray(documentList.documents) ? documentList.documents : [];
+  const documentCount = documentList.total ?? documents.length;
+  const readyDocumentCount = documents.filter((document) => document.ragStatus === "processed" || document.status === "ready").length;
+  const pendingDocumentCount = Math.max(0, documentCount - readyDocumentCount);
+  const sampleDocumentSlugs = documents
+    .filter((document) => document.metadata?.sampleDocument === true)
+    .map((document) => document.metadata?.sampleSlug)
+    .filter((value): value is string => typeof value === "string");
+  const conversationCount = historyList.total ?? 0;
+
+  return {
+    documentCount,
+    readyDocumentCount,
+    pendingDocumentCount,
+    sampleDocumentCount: sampleDocumentSlugs.length,
+    sampleDocumentSlugs,
+    conversationCount,
+    hasDocuments: documentCount > 0,
+    hasPendingDocuments: pendingDocumentCount > 0,
+    hasReadyDocuments: readyDocumentCount > 0,
+    hasCompletedChat: conversationCount > 0,
+    sampleDocumentsImported: sampleDocumentSlugs.length > 0,
+  };
+};
+
 export const installDashboardApiMocks = async (
   page: Page,
   options: {
     platformSettings?: PlatformSettingsFixture;
     settingsUpdates?: unknown[];
     documentList?: unknown;
+    workspaceSummary?: unknown;
     historyList?: unknown;
     historyItems?: unknown;
     searchHistory?: unknown;
@@ -139,6 +174,7 @@ export const installDashboardApiMocks = async (
     nextCursor: null,
     hasMore: (historyList as { hasMore?: boolean }).hasMore ?? false,
   };
+  const workspaceSummary = options.workspaceSummary ?? buildWorkspaceSummary({ documentList: documents, historyList });
 
   await page.route("**/backend/api/v1/**", async (route) => {
     const request = route.request();
@@ -169,6 +205,11 @@ export const installDashboardApiMocks = async (
           },
         ],
       });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/workspace/summary") {
+      await json(route, workspaceSummary);
       return;
     }
 

@@ -872,6 +872,20 @@ export interface WorkspaceRouteResolutionResponse {
   organizationName: string
 }
 
+export interface WorkspaceSummaryResponse {
+  documentCount: number
+  readyDocumentCount: number
+  pendingDocumentCount: number
+  sampleDocumentCount: number
+  sampleDocumentSlugs: string[]
+  conversationCount: number
+  hasDocuments: boolean
+  hasPendingDocuments: boolean
+  hasReadyDocuments: boolean
+  hasCompletedChat: boolean
+  sampleDocumentsImported: boolean
+}
+
 // Workspace API
 export const workspaceApi = {
   async list(): Promise<Workspace[]> {
@@ -905,6 +919,12 @@ export const workspaceApi = {
     return request<WorkspaceRouteResolutionResponse>(`/workspace/resolve/${encodeURIComponent(workspaceKey)}`, {
       method: "GET",
     }, { withSession: true })
+  },
+
+  async getSummary(): Promise<WorkspaceSummaryResponse> {
+    return request<WorkspaceSummaryResponse>("/workspace/summary", {
+      method: "GET",
+    }, { withApiToken: true })
   },
 }
 

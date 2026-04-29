@@ -865,6 +865,21 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     this.jobRepository = jobRepository;
   }
 
+  async summarizeWorkspace(workspaceId: string) {
+    const documents = [...this.items.values()].filter((item) => item.workspaceId === workspaceId);
+    const sampleDocuments = documents.filter((item) => item.metadata.sampleDocument === true);
+
+    return {
+      documentCount: documents.length,
+      readyDocumentCount: documents.filter((item) => item.status === "ready").length,
+      pendingDocumentCount: documents.filter((item) => item.status !== "ready").length,
+      sampleDocumentCount: sampleDocuments.length,
+      sampleDocumentSlugs: sampleDocuments
+        .map((item) => item.metadata.sampleSlug)
+        .filter((value): value is string => typeof value === "string"),
+    };
+  }
+
   async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
     const record: DocumentRecord = {
       id: randomUUID(),
@@ -1667,6 +1682,10 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     return [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)
       .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+  }
+
+  async countByWorkspaceId(workspaceId: string): Promise<number> {
+    return [...this.items.values()].filter((item) => item.workspaceId === workspaceId).length;
   }
 
   async listPageByWorkspaceId(

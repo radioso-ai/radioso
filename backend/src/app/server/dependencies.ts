@@ -31,6 +31,7 @@ import { AccountInvitationService } from "../../modules/account/services/account
 import { AuditService } from "../../modules/audit/services/auditService.js";
 import { createEmailService } from "../../modules/email/services/emailService.js";
 import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
+import { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
@@ -274,6 +275,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
   });
   const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
+  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository);
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(database));
   const connectorRegistry = new ConnectorRegistry();
@@ -337,6 +339,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     abuseControlService,
     auditService,
     workspaceService,
+    workspaceSummaryService,
     ingestionSettingsService,
     retrievalSettingsService,
     documentIngestionService,

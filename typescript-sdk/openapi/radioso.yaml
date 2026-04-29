@@ -186,6 +186,50 @@ components:
             $ref: "#/components/schemas/Workspace"
       required:
         - workspaces
+    WorkspaceSummaryResponse:
+      type: object
+      properties:
+        documentCount:
+          type: integer
+          minimum: 0
+        readyDocumentCount:
+          type: integer
+          minimum: 0
+        pendingDocumentCount:
+          type: integer
+          minimum: 0
+        sampleDocumentCount:
+          type: integer
+          minimum: 0
+        sampleDocumentSlugs:
+          type: array
+          items:
+            type: string
+        conversationCount:
+          type: integer
+          minimum: 0
+        hasDocuments:
+          type: boolean
+        hasPendingDocuments:
+          type: boolean
+        hasReadyDocuments:
+          type: boolean
+        hasCompletedChat:
+          type: boolean
+        sampleDocumentsImported:
+          type: boolean
+      required:
+        - documentCount
+        - readyDocumentCount
+        - pendingDocumentCount
+        - sampleDocumentCount
+        - sampleDocumentSlugs
+        - conversationCount
+        - hasDocuments
+        - hasPendingDocuments
+        - hasReadyDocuments
+        - hasCompletedChat
+        - sampleDocumentsImported
     WorkspaceTokenResponse:
       type: object
       properties:
@@ -3933,6 +3977,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspace/summary:
+    get:
+      tags:
+        - Workspace
+      summary: Get lightweight workspace dashboard summary
+      operationId: getWorkspaceSummary
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Workspace summary returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSummaryResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspace/resolve/{workspaceKey}:
     get:
       tags:
@@ -4885,6 +4950,67 @@ paths:
         - History
       summary: Get a saved assistant conversation and its debug metadata
       operationId: getHistoryConversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
+      responses:
+        "200":
+          description: Historical conversation detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatConversationDetail"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/history/{conversationId}:
+    get:
+      tags:
+        - History
+      summary: Get a saved assistant conversation and its debug metadata
+      description: Deprecated compatibility alias. Prefer `/api/v1/history/chat/{conversationId}`.
+      operationId: getLegacyHistoryConversation
+      deprecated: true
       security:
         - bearerAuth: []
       parameters:

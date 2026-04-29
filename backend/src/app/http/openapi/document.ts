@@ -172,6 +172,23 @@ const WorkspaceListResponseSchema = registry.register(
   }),
 );
 
+const WorkspaceSummaryResponseSchema = registry.register(
+  "WorkspaceSummaryResponse",
+  z.object({
+    documentCount: z.number().int().min(0),
+    readyDocumentCount: z.number().int().min(0),
+    pendingDocumentCount: z.number().int().min(0),
+    sampleDocumentCount: z.number().int().min(0),
+    sampleDocumentSlugs: z.array(z.string()),
+    conversationCount: z.number().int().min(0),
+    hasDocuments: z.boolean(),
+    hasPendingDocuments: z.boolean(),
+    hasReadyDocuments: z.boolean(),
+    hasCompletedChat: z.boolean(),
+    sampleDocumentsImported: z.boolean(),
+  }),
+);
+
 const WorkspaceTokenResponseSchema = registry.register(
   "WorkspaceTokenResponse",
   z.object({
@@ -2116,6 +2133,33 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/v1/workspace/summary",
+  tags: ["Workspace"],
+  summary: "Get lightweight workspace dashboard summary",
+  operationId: "getWorkspaceSummary",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Workspace summary returned",
+      content: {
+        "application/json": {
+          schema: WorkspaceSummaryResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/v1/workspace/resolve/{workspaceKey}",
   tags: ["Workspace"],
   summary: "Resolve a workspace public route key for the authenticated user",
@@ -3254,6 +3298,59 @@ registry.registerPath({
   tags: ["History"],
   summary: "Get a saved assistant conversation and its debug metadata",
   operationId: "getHistoryConversation",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: conversationParamsSchema,
+    query: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      offset: z.number().int().min(0).optional(),
+      cursor: z.string().min(1).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Historical conversation detail",
+      content: {
+        "application/json": {
+          schema: ChatConversationDetailSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Conversation not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/history/{conversationId}",
+  tags: ["History"],
+  summary: "Get a saved assistant conversation and its debug metadata",
+  description: "Deprecated compatibility alias. Prefer `/api/v1/history/chat/{conversationId}`.",
+  operationId: "getLegacyHistoryConversation",
+  deprecated: true,
   security: [{ [bearerAuthScheme.name]: [] }],
   request: {
     params: conversationParamsSchema,

@@ -23,6 +23,7 @@ import type { AccountInvitationService } from "../../modules/account/services/ac
 import type { AuditService } from "../../modules/audit/services/auditService.js";
 import type { EmailService } from "../../modules/email/services/emailService.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
+import type { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
@@ -56,6 +57,7 @@ export interface AppDependencies {
   abuseControlService: AbuseControlService;
   auditService: AuditService;
   workspaceService: WorkspaceService;
+  workspaceSummaryService: WorkspaceSummaryService;
   ingestionSettingsService: IngestionSettingsService;
   retrievalSettingsService: RetrievalSettingsService;
   documentIngestionService: DocumentIngestionService;

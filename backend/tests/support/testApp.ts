@@ -52,6 +52,7 @@ import { PlatformSettingsService } from "../../src/modules/settings/services/pla
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
+import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
 import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
@@ -681,6 +682,7 @@ export const createTestDependencies = (overrides: {
   };
   const chatGateway = overrides.chatGateway ?? defaultChatGateway;
   const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
+  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository);
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(
     overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),
@@ -774,6 +776,7 @@ export const createTestDependencies = (overrides: {
       workspaceService,
     }),
     workspaceService,
+    workspaceSummaryService,
     ingestionSettingsService,
     retrievalSettingsService,
     documentIngestionService,

@@ -29,6 +29,9 @@ describe("history contract", () => {
     const detail = await request(app)
       .get(`/api/v1/history/chat/${chat.body.conversationId}`)
       .set(adminSessionHeaders(session));
+    const legacyDetail = await request(app)
+      .get(`/api/v1/history/${chat.body.conversationId}`)
+      .set(adminSessionHeaders(session));
 
     expect(chat.status).toBe(200);
     expect(list.status).toBe(200);
@@ -79,6 +82,11 @@ describe("history contract", () => {
         }),
       ]),
     });
+    expect(legacyDetail.status).toBe(200);
+    expect(legacyDetail.body).toMatchObject({
+      conversationId: chat.body.conversationId,
+      messageCount: 2,
+    });
   });
 
   it("documents shared history in the generated schema", () => {
@@ -88,6 +96,7 @@ describe("history contract", () => {
     expect(spec).toContain("/api/v1/history/chat:");
     expect(spec).toContain("/api/v1/history/search:");
     expect(spec).toContain("/api/v1/history/chat/{conversationId}:");
+    expect(spec).toContain("/api/v1/history/{conversationId}:");
     expect(spec).toContain("/api/v1/history/search/{searchId}:");
     expect(spec).not.toContain("/api/v1/chat/history:");
   });

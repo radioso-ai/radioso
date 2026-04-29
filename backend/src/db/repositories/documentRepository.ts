@@ -8,6 +8,7 @@ import type {
   DocumentRepositoryPort,
   DocumentSummaryRecord,
   DocumentUpdateInput,
+  DocumentWorkspaceSummaryRecord,
 } from "../../modules/documents/services/documentIngestionService.js";
 import type { MetadataFieldSuggestion, MetadataValueType } from "../../modules/settings/domain/retrievalSettings.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
@@ -29,6 +30,41 @@ interface QueuedDocumentRow {
 
 export class DocumentRepository implements DocumentRepositoryPort {
   constructor(private readonly database: Database) {}
+
+  async summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord> {
+    const [row] = await this.database.query<{
+      document_count: string;
+      ready_document_count: string;
+      pending_document_count: string;
+      sample_document_count: string;
+      sample_document_slugs: string[];
+    }>(
+      `SELECT
+         COUNT(*)::text AS document_count,
+         COUNT(*) FILTER (WHERE status = 'ready')::text AS ready_document_count,
+         COUNT(*) FILTER (WHERE status <> 'ready')::text AS pending_document_count,
+         COUNT(*) FILTER (WHERE metadata ->> 'sampleDocument' = 'true')::text AS sample_document_count,
+         COALESCE(
+           ARRAY_AGG(metadata ->> 'sampleSlug')
+             FILTER (
+               WHERE metadata ->> 'sampleDocument' = 'true'
+                 AND NULLIF(metadata ->> 'sampleSlug', '') IS NOT NULL
+             ),
+           ARRAY[]::text[]
+         ) AS sample_document_slugs
+       FROM documents
+       WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+
+    return {
+      documentCount: Number(row?.document_count ?? "0"),
+      readyDocumentCount: Number(row?.ready_document_count ?? "0"),
+      pendingDocumentCount: Number(row?.pending_document_count ?? "0"),
+      sampleDocumentCount: Number(row?.sample_document_count ?? "0"),
+      sampleDocumentSlugs: row?.sample_document_slugs ?? [],
+    };
+  }
 
   async listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]> {
     const rows = await this.database.query<{ metadata: Record<string, unknown> | null }>(

@@ -595,6 +595,27 @@ export interface ChatHistoryListResponse {
   hasMore: boolean
 }
 
+export type HistoryItem =
+  | {
+      kind: 'chat'
+      id: string
+      sortAt: string
+      conversation: ChatConversationSummary
+    }
+  | {
+      kind: 'search'
+      id: string
+      sortAt: string
+      search: DocumentSearchHistoryEntry
+    }
+
+export interface HistoryItemsResponse {
+  items: HistoryItem[]
+  total: number
+  nextCursor: null
+  hasMore: boolean
+}
+
 interface ChatStreamHandlers {
   onConversation?: (payload: ChatStreamConversation) => void
   onChunk?: (payload: ChatStreamChunk) => void
@@ -851,6 +872,20 @@ export interface WorkspaceRouteResolutionResponse {
   organizationName: string
 }
 
+export interface WorkspaceSummaryResponse {
+  documentCount: number
+  readyDocumentCount: number
+  pendingDocumentCount: number
+  sampleDocumentCount: number
+  sampleDocumentSlugs: string[]
+  conversationCount: number
+  hasDocuments: boolean
+  hasPendingDocuments: boolean
+  hasReadyDocuments: boolean
+  hasCompletedChat: boolean
+  sampleDocumentsImported: boolean
+}
+
 // Workspace API
 export const workspaceApi = {
   async list(): Promise<Workspace[]> {
@@ -884,6 +919,12 @@ export const workspaceApi = {
     return request<WorkspaceRouteResolutionResponse>(`/workspace/resolve/${encodeURIComponent(workspaceKey)}`, {
       method: "GET",
     }, { withSession: true })
+  },
+
+  async getSummary(): Promise<WorkspaceSummaryResponse> {
+    return request<WorkspaceSummaryResponse>("/workspace/summary", {
+      method: "GET",
+    }, { withApiToken: true })
   },
 }
 
@@ -1177,7 +1218,22 @@ export const chatApi = {
     }, { withApiToken: true })
   },
 
-  async listHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<ChatHistoryListResponse> {
+  async listHistory(input?: { limit?: number; offset?: number }): Promise<HistoryItemsResponse> {
+    const searchParams = new URLSearchParams()
+    if (input?.limit !== undefined) {
+      searchParams.set('limit', String(input.limit))
+    }
+    if (input?.offset !== undefined) {
+      searchParams.set('offset', String(input.offset))
+    }
+
+    const query = searchParams.toString()
+    return request<HistoryItemsResponse>(`/history${query ? `?${query}` : ''}`, {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async listChatHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<ChatHistoryListResponse> {
     const searchParams = new URLSearchParams()
     if (input?.limit !== undefined) {
       searchParams.set('limit', String(input.limit))
@@ -1190,7 +1246,25 @@ export const chatApi = {
     }
 
     const query = searchParams.toString()
-    return request<ChatHistoryListResponse>(`/history${query ? `?${query}` : ''}`, {
+    return request<ChatHistoryListResponse>(`/history/chat${query ? `?${query}` : ''}`, {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async listSearchHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentSearchHistoryListResponse> {
+    const searchParams = new URLSearchParams()
+    if (input?.limit !== undefined) {
+      searchParams.set('limit', String(input.limit))
+    }
+    if (input?.offset !== undefined) {
+      searchParams.set('offset', String(input.offset))
+    }
+    if (input?.cursor !== undefined) {
+      searchParams.set('cursor', input.cursor)
+    }
+
+    const query = searchParams.toString()
+    return request<DocumentSearchHistoryListResponse>(`/history/search${query ? `?${query}` : ''}`, {
       method: 'GET',
     }, { withApiToken: true })
   },
@@ -1211,7 +1285,13 @@ export const chatApi = {
     }
 
     const query = searchParams.toString()
-    return request<ChatConversationDetail>(`/history/${conversationId}${query ? `?${query}` : ''}`, {
+    return request<ChatConversationDetail>(`/history/chat/${conversationId}${query ? `?${query}` : ''}`, {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async getSearchHistory(searchId: string): Promise<DocumentSearchResponse> {
+    return request<DocumentSearchResponse>(`/history/search/${searchId}`, {
       method: 'GET',
     }, { withApiToken: true })
   },

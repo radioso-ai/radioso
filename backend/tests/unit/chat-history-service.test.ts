@@ -4,15 +4,26 @@ import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryS
 import {
   InMemoryAuditEventRepository,
   InMemoryConversationRepository,
+  InMemoryHistoryItemsRepository,
   InMemoryMessageRepository,
 } from "../support/fakes.js";
 
+const createService = () => {
+  const conversationRepository = new InMemoryConversationRepository();
+  const messageRepository = new InMemoryMessageRepository();
+  const auditRepository = new InMemoryAuditEventRepository();
+  const historyItemsRepository = new InMemoryHistoryItemsRepository(conversationRepository, auditRepository);
+  return {
+    conversationRepository,
+    messageRepository,
+    auditRepository,
+    service: new ChatHistoryService(conversationRepository, messageRepository, auditRepository, historyItemsRepository),
+  };
+};
+
 describe("chat history service", () => {
   it("replays retrieval trace metadata for assistant turns", async () => {
-    const conversationRepository = new InMemoryConversationRepository();
-    const messageRepository = new InMemoryMessageRepository();
-    const auditRepository = new InMemoryAuditEventRepository();
-    const service = new ChatHistoryService(conversationRepository, messageRepository, auditRepository);
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
     const conversation = await conversationRepository.create("workspace-1");
     await messageRepository.create({
@@ -229,10 +240,7 @@ describe("chat history service", () => {
   });
 
   it("normalizes legacy stored suggestions without kind as deeper suggestions", async () => {
-    const conversationRepository = new InMemoryConversationRepository();
-    const messageRepository = new InMemoryMessageRepository();
-    const auditRepository = new InMemoryAuditEventRepository();
-    const service = new ChatHistoryService(conversationRepository, messageRepository, auditRepository);
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
     const conversation = await conversationRepository.create("workspace-1");
     await messageRepository.create({
@@ -283,5 +291,130 @@ describe("chat history service", () => {
         },
       }),
     ]);
+  });
+
+  it("lists mixed history items entries ordered by newest activity", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+    const olderConversation = await conversationRepository.create("workspace-1");
+    olderConversation.updatedAt = new Date("2026-04-20T10:00:00.000Z");
+    olderConversation.createdAt = new Date("2026-04-20T09:00:00.000Z");
+    await messageRepository.create({
+      conversationId: olderConversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "What is older?",
+    });
+    await messageRepository.create({
+      conversationId: olderConversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Older answer",
+    });
+
+    const searchEvent = await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "document.search",
+      eventStatus: "success",
+      metadata: {
+        searchId: "11111111-1111-4111-8111-111111111111",
+        query: "course calendar",
+        resultCount: 2,
+        results: [
+          {
+            documentId: "22222222-2222-4222-8222-222222222222",
+            title: "Course Calendar",
+            status: "ready",
+            ragStatus: "processed",
+            metadata: {},
+            score: 0.92,
+            rank: 1,
+            matchEvidence: ["calendar"],
+            sourceKind: "inline_text",
+          },
+          {
+            documentId: "33333333-3333-4333-8333-333333333333",
+            title: "Workshop Notes",
+            status: "ready",
+            ragStatus: "processed",
+            metadata: {},
+            score: 0.75,
+            rank: 2,
+            matchEvidence: ["workshop"],
+            sourceKind: "inline_text",
+          },
+        ],
+        retrievalTrace: {
+          traceId: "trace-1",
+          startedAt: "2026-04-21T10:00:00.000Z",
+          stages: [],
+          links: [],
+        },
+      },
+    });
+    searchEvent.createdAt = new Date("2026-04-21T10:00:00.000Z");
+
+    const newestConversation = await conversationRepository.create("workspace-1");
+    newestConversation.updatedAt = new Date("2026-04-22T10:00:00.000Z");
+    await messageRepository.create({
+      conversationId: newestConversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Newest question",
+    });
+
+    const itemsPage = await service.listItems("workspace-1", { limit: 10, offset: 0 });
+
+    expect(itemsPage.total).toBe(3);
+    expect(itemsPage.hasMore).toBe(false);
+    expect(itemsPage.nextCursor).toBeNull();
+    expect(itemsPage.items.map((item) => item.kind)).toEqual(["chat", "search", "chat"]);
+    expect(itemsPage.items[0]).toMatchObject({
+      kind: "chat",
+      id: newestConversation.id,
+      conversation: {
+        messageCount: 1,
+        preview: "Newest question",
+      },
+    });
+    expect(itemsPage.items[1]).toMatchObject({
+      kind: "search",
+      id: "11111111-1111-4111-8111-111111111111",
+      search: {
+        query: "course calendar",
+        resultCount: 2,
+        traceAvailable: true,
+        previewTopTitles: ["Course Calendar", "Workshop Notes"],
+      },
+    });
+  });
+
+  it("applies offset pagination to the merged history items", async () => {
+    const { conversationRepository, auditRepository, service } = createService();
+    const first = await conversationRepository.create("workspace-1");
+    first.updatedAt = new Date("2026-04-23T10:00:00.000Z");
+    const second = await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "document.search",
+      eventStatus: "success",
+      metadata: {
+        searchId: "44444444-4444-4444-8444-444444444444",
+        query: "second",
+        resultCount: 0,
+        results: [],
+      },
+    });
+    second.createdAt = new Date("2026-04-22T10:00:00.000Z");
+    const third = await conversationRepository.create("workspace-1");
+    third.updatedAt = new Date("2026-04-21T10:00:00.000Z");
+
+    const itemsPage = await service.listItems("workspace-1", { limit: 1, offset: 1 });
+
+    expect(itemsPage.total).toBe(3);
+    expect(itemsPage.hasMore).toBe(true);
+    expect(itemsPage.items).toHaveLength(1);
+    expect(itemsPage.items[0]).toMatchObject({
+      kind: "search",
+      id: "44444444-4444-4444-8444-444444444444",
+    });
   });
 });

@@ -149,16 +149,21 @@ test("shared history navigation shows assistant route diagnostics", async ({ pag
       },
     ],
   };
+  const requestLog: string[] = [];
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     historyList,
     conversationDetail,
+    requestLog,
   });
 
   await page.goto(`/w/${workspaceKey}/history`);
 
   await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+  expect(requestLog).toContain("GET /history?limit=50&offset=0");
+  expect(requestLog).not.toContain("GET /history/chat?limit=50&offset=0");
+  expect(requestLog).not.toContain("GET /history/search?limit=50&offset=0");
   await page.getByRole("button", { name: /What courses are coming up next month/ }).click();
 
   await expect(page).toHaveURL(/itemKind=chat/);
@@ -167,4 +172,62 @@ test("shared history navigation shows assistant route diagnostics", async ({ pag
   await expect(page.getByText("retrieval").first()).toBeVisible();
   await expect(page.getByText("evidence required")).toBeVisible();
   await expect(page.getByText("Retrieval was invoked for this assistant response.")).toBeVisible();
+});
+
+test("history filtered pages request one offset-backed page", async ({ page }) => {
+  const requestLog: string[] = [];
+  const historyList = {
+    conversations: [],
+    total: 151,
+    nextCursor: null,
+    hasMore: false,
+  };
+  const searchHistory = {
+    searches: [],
+    total: 101,
+    nextCursor: null,
+    hasMore: false,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList,
+    requestLog,
+    searchHistory,
+  });
+
+  await page.goto(`/w/${workspaceKey}/history?filter=chat&page=3`);
+  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+
+  expect(requestLog).toContain("GET /history/chat?limit=50&offset=100");
+  expect(requestLog).not.toContain("GET /history/chat?limit=50&offset=0");
+  expect(requestLog).not.toContain("GET /history?limit=50&offset=100");
+
+  requestLog.length = 0;
+  await page.goto(`/w/${workspaceKey}/history?filter=search&page=2`);
+  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+
+  expect(requestLog).toContain("GET /history/search?limit=50&offset=50");
+  expect(requestLog).not.toContain("GET /history/search?limit=50&offset=0");
+  expect(requestLog).not.toContain("GET /history?limit=50&offset=50");
+});
+
+test("documents direct page links request only the target offset page", async ({ page }) => {
+  const requestLog: string[] = [];
+  const documentList = {
+    documents: [],
+    total: 250,
+    nextCursor: null,
+    hasMore: false,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { documentList, requestLog });
+
+  await page.goto(`/w/${workspaceKey}/documents?page=3`);
+  await expect(page.getByRole("heading", { name: "Documents", exact: true })).toBeVisible();
+
+  expect(requestLog).toContain("GET /document/?limit=100&offset=200");
+  expect(requestLog).not.toContain("GET /document/?limit=100&offset=100");
+  expect(requestLog.some((request) => request.startsWith("GET /document/?limit=100&cursor="))).toBe(false);
 });

@@ -8,6 +8,7 @@ export type IngestionSettings = components["schemas"]["IngestionSettings"];
 export type UpdateIngestionSettingsRequest = components["schemas"]["UpdateIngestionSettingsRequest"];
 export type GeneralSettingsResponse = components["schemas"]["GeneralSettingsResponse"];
 export type UpdateGeneralSettingsRequest = components["schemas"]["UpdateGeneralSettingsRequest"];
+export type WorkspaceSummaryResponse = components["schemas"]["WorkspaceSummaryResponse"];
 export type WorkspaceIngestionReprocessResponse = components["schemas"]["WorkspaceIngestionReprocessResponse"];
 export type DocumentCreateRequest = components["schemas"]["DocumentCreateRequest"];
 export type DocumentOperationResponse = components["schemas"]["DocumentOperationResponse"];
@@ -20,6 +21,7 @@ export type AssistantChatRequest = components["schemas"]["AssistantChatRequest"]
 export type ChatRequest = AssistantChatRequest;
 export type AssistantChatResponse = components["schemas"]["AssistantChatResponse"];
 export type ChatResponse = components["schemas"]["ChatResponse"];
+export type HistoryItemsResponse = components["schemas"]["HistoryItemsResponse"];
 export type ChatHistoryListResponse = components["schemas"]["ChatHistoryListResponse"];
 export type ChatConversationDetail = components["schemas"]["ChatConversationDetail"];
 export type AssistantChatTurnRequest = Extract<AssistantChatRequest, { message: string }>;
@@ -97,6 +99,13 @@ export class GeneratedRadiosoClient {
       method: "PUT",
       path: "/api/v1/settings/general",
       body,
+    });
+  }
+
+  getWorkspaceSummary(): Promise<WorkspaceSummaryResponse> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: "/api/v1/workspace/summary",
     });
   }
 
@@ -180,7 +189,7 @@ export class GeneratedRadiosoClient {
     });
   }
 
-  listChatHistory(query?: PaginationQuery): Promise<ChatHistoryListResponse> {
+  listHistory(query?: Omit<PaginationQuery, "cursor">): Promise<HistoryItemsResponse> {
     return requestJson(this.config, {
       method: "GET",
       path: "/api/v1/history",
@@ -188,11 +197,46 @@ export class GeneratedRadiosoClient {
     });
   }
 
+  listChatHistory(query?: PaginationQuery): Promise<ChatHistoryListResponse> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: "/api/v1/history/chat",
+      query: query as Record<string, string | number | boolean | null | undefined> | undefined,
+    });
+  }
+
+  listHistorySearches(query?: PaginationQuery): Promise<DocumentSearchHistoryListResponse> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: "/api/v1/history/search",
+      query: query as Record<string, string | number | boolean | null | undefined> | undefined,
+    });
+  }
+
+  getHistoryConversation(conversationId: string, query?: PaginationQuery): Promise<ChatConversationDetail> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: `/api/v1/history/chat/${conversationId}`,
+      query: query as Record<string, string | number | boolean | null | undefined> | undefined,
+    });
+  }
+
   getChatHistoryConversation(conversationId: string, query?: PaginationQuery): Promise<ChatConversationDetail> {
+    return this.getHistoryConversation(conversationId, query);
+  }
+
+  getLegacyHistoryConversation(conversationId: string, query?: PaginationQuery): Promise<ChatConversationDetail> {
     return requestJson(this.config, {
       method: "GET",
       path: `/api/v1/history/${conversationId}`,
       query: query as Record<string, string | number | boolean | null | undefined> | undefined,
+    });
+  }
+
+  getHistorySearch(searchId: string): Promise<DocumentSearchResponse> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: `/api/v1/history/search/${searchId}`,
     });
   }
 }

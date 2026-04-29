@@ -71,7 +71,7 @@ module "radioso" {
   app_base_url_override                 = var.app_base_url_override
   public_chat_base_url_override         = var.public_chat_base_url_override
   worker_tasks_service_url_override     = var.worker_tasks_service_url_override
-  mail_driver                           = "log"
+  mail_driver                           = var.mail_driver
   mail_from_email                       = var.mail_from_email
   mail_from_name                        = var.mail_from_name
   mail_smtp_host                        = var.mail_smtp_host

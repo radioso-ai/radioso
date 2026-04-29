@@ -40,6 +40,9 @@ COPY --from=build /app/backend/dist ./dist
 COPY --from=build /app/backend/openapi.yaml ./openapi.yaml
 COPY --from=build /app/backend/prompts ./prompts
 
+RUN mkdir -p /app/.context/document-storage && chown -R node:node /app
+USER node
+
 EXPOSE 8080
 
 CMD ["npm", "run", "start:http"]

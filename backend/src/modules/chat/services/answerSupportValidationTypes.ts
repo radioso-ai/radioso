@@ -38,7 +38,7 @@ export interface AnswerSegmentValidationResult {
 }
 
 export interface HiddenSupportEvidence {
-  kind: "assistant_name" | "assistant_role";
+  kind: "assistant_name";
   content: string;
 }
 

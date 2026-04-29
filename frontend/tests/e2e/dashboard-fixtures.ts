@@ -9,7 +9,6 @@ export const nowIso = "2026-04-26T12:00:00.000Z";
 export const basePlatformSettings = () => ({
   assistant: {
     assistantName: "Marta",
-    assistantRole: "Document guide",
     greetingInstruction: "",
     assistantDefaultLocale: "en-US",
     proactiveGreetingEnabled: true,

@@ -37,7 +37,6 @@ const createErrorResponse = (status: number, payload: unknown) => ({
 const platformSettingsPayload = {
   assistant: {
     assistantName: '',
-    assistantRole: '',
     greetingInstruction: '',
     assistantDefaultLocale: null,
     proactiveGreetingEnabled: false,

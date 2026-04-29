@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 
 import { FileText, RotateCcw, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { type CitationOpenResult } from './chat-citations'
@@ -150,14 +151,11 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
         }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-medium text-foreground">Chat</h1>
-            <p className="text-sm text-muted-foreground">Ask questions about your documents</p>
-          </div>
-          <Button
+    <DashboardPage
+      title="Chat"
+      description="Ask questions about your documents"
+      actions={
+        <Button
             type="button"
             size="sm"
             variant="outline"
@@ -167,10 +165,23 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
             <RotateCcw className="mr-2 h-4 w-4" />
             New chat
           </Button>
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+      }
+      footer={isInitializingView ? null : (
+        <form onSubmit={handleSubmit} className="mx-auto flex max-w-3xl items-end gap-3">
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask a question..."
+            className="min-h-[44px] max-h-32 resize-none"
+          />
+          <Button type="submit" size="icon" className="h-[44px] w-[44px] shrink-0" disabled={isLoading || isBootstrapping || !input.trim()}>
+            <Send className="w-4 h-4" />
+            <span className="sr-only">Send message</span>
+          </Button>
+        </form>
+      )}
+    >
         {isInitializingView ? (
           <div className="flex h-full items-center justify-center">
             <LogoSpinner imageClassName="h-7 w-7" />
@@ -198,25 +209,6 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
             <div ref={messagesEndRef} />
           </div>
         )}
-      </div>
-
-      {isInitializingView ? null : (
-        <div className="sticky bottom-0 z-20 shrink-0 border-t border-border bg-background p-4">
-          <form onSubmit={handleSubmit} className="max-w-3xl mx-auto flex items-end gap-3">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask a question..."
-              className="min-h-[44px] max-h-32 resize-none"
-            />
-            <Button type="submit" size="icon" className="h-[44px] w-[44px] shrink-0" disabled={isLoading || isBootstrapping || !input.trim()}>
-              <Send className="w-4 h-4" />
-              <span className="sr-only">Send message</span>
-            </Button>
-          </form>
-        </div>
-      )}
-    </div>
+    </DashboardPage>
   )
 }

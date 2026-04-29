@@ -7,7 +7,7 @@ INSTALL_STATE_FILE="node_modules/.install-state"
 CURRENT_HASH="$(sha256sum package-lock.json | awk '{print $1}')"
 NODE_VERSION="$(node -p 'process.version')"
 EXPECTED_SWC_PACKAGE="$(
-  node -p '
+  node -e '
     const platform = process.platform;
     const arch = process.arch;
     const report = process.report?.getReport?.();
@@ -31,7 +31,7 @@ EXPECTED_SWC_PACKAGE="$(
   '
 )"
 EXPECTED_LIGHTNINGCSS_PACKAGE="$(
-  node -p '
+  node -e '
     const platform = process.platform;
     const arch = process.arch;
     const report = process.report?.getReport?.();
@@ -51,7 +51,7 @@ EXPECTED_LIGHTNINGCSS_PACKAGE="$(
   '
 )"
 EXPECTED_TAILWIND_OXIDE_PACKAGE="$(
-  node -p '
+  node -e '
     const platform = process.platform;
     const arch = process.arch;
     const report = process.report?.getReport?.();
@@ -72,49 +72,79 @@ EXPECTED_TAILWIND_OXIDE_PACKAGE="$(
 )"
 CURRENT_INSTALL_STATE="${CURRENT_HASH}:${NODE_VERSION}:${EXPECTED_SWC_PACKAGE}:${EXPECTED_LIGHTNINGCSS_PACKAGE}:${EXPECTED_TAILWIND_OXIDE_PACKAGE}"
 SAVED_INSTALL_STATE=""
-SWC_READY=1
-LIGHTNINGCSS_READY=1
-TAILWIND_OXIDE_READY=1
-NEXT_RUNTIME_READY=1
 
 if [ -f "$INSTALL_STATE_FILE" ]; then
   SAVED_INSTALL_STATE="$(cat "$INSTALL_STATE_FILE")"
 fi
 
-if [ -n "$EXPECTED_SWC_PACKAGE" ]; then
-  if ! node -e "require.resolve('${EXPECTED_SWC_PACKAGE}/package.json')" >/dev/null 2>&1; then
-    SWC_READY=0
-  fi
-fi
+module_is_ready() {
+  node -e "require.resolve(process.argv[1])" "$1" >/dev/null 2>&1
+}
 
-if [ -n "$EXPECTED_LIGHTNINGCSS_PACKAGE" ]; then
-  if ! node -e "require.resolve('${EXPECTED_LIGHTNINGCSS_PACKAGE}/package.json')" >/dev/null 2>&1; then
-    LIGHTNINGCSS_READY=0
+frontend_modules_ready() {
+  if [ ! -d node_modules ]; then
+    return 1
   fi
-fi
 
-if [ -n "$EXPECTED_TAILWIND_OXIDE_PACKAGE" ]; then
-  if ! node -e "require.resolve('${EXPECTED_TAILWIND_OXIDE_PACKAGE}/package.json')" >/dev/null 2>&1; then
-    TAILWIND_OXIDE_READY=0
+  if [ ! -x node_modules/.bin/next ]; then
+    return 1
   fi
-fi
 
-for required_module in \
-  "next/package.json" \
-  "next/dist/pages/_error" \
-  "next/dist/compiled/jest-worker/processChild.js" \
-  "@swc/helpers/package.json"
-do
-  if ! node -e "require.resolve('${required_module}')" >/dev/null 2>&1; then
-    NEXT_RUNTIME_READY=0
-    break
+  if [ -n "$EXPECTED_SWC_PACKAGE" ]; then
+    module_is_ready "${EXPECTED_SWC_PACKAGE}/package.json" || return 1
   fi
-done
 
-if [ ! -d node_modules ] || [ "$CURRENT_INSTALL_STATE" != "$SAVED_INSTALL_STATE" ] || [ "$SWC_READY" -ne 1 ] || [ "$LIGHTNINGCSS_READY" -ne 1 ] || [ "$TAILWIND_OXIDE_READY" -ne 1 ] || [ "$NEXT_RUNTIME_READY" -ne 1 ]; then
+  if [ -n "$EXPECTED_LIGHTNINGCSS_PACKAGE" ]; then
+    module_is_ready "${EXPECTED_LIGHTNINGCSS_PACKAGE}/package.json" || return 1
+  fi
+
+  if [ -n "$EXPECTED_TAILWIND_OXIDE_PACKAGE" ]; then
+    module_is_ready "${EXPECTED_TAILWIND_OXIDE_PACKAGE}/package.json" || return 1
+  fi
+
+  for required_module in \
+    "next/package.json" \
+    "next/dist/pages/_error" \
+    "next/dist/compiled/jest-worker/processChild.js" \
+    "@swc/helpers/package.json"
+  do
+    module_is_ready "$required_module" || return 1
+  done
+
+  return 0
+}
+
+frontend_dependencies_ready() {
+  if [ "$CURRENT_INSTALL_STATE" != "$SAVED_INSTALL_STATE" ]; then
+    return 1
+  fi
+
+  frontend_modules_ready
+}
+
+install_frontend_dependencies() {
   echo "Installing frontend dependencies..."
-  npm ci
+  npm install --include=optional --no-audit --no-fund
+  mkdir -p node_modules
   printf '%s' "$CURRENT_INSTALL_STATE" > "$INSTALL_STATE_FILE"
+  SAVED_INSTALL_STATE="$CURRENT_INSTALL_STATE"
+}
+
+if [ ! -f "$INSTALL_STATE_FILE" ] && frontend_modules_ready; then
+  printf '%s' "$CURRENT_INSTALL_STATE" > "$INSTALL_STATE_FILE"
+  SAVED_INSTALL_STATE="$CURRENT_INSTALL_STATE"
 fi
 
-exec npx next dev --webpack -H 0.0.0.0 -p 3000
+if ! frontend_dependencies_ready; then
+  if ! install_frontend_dependencies || ! frontend_dependencies_ready; then
+    echo "Frontend dependency install incomplete; clearing npm cache and retrying..."
+    npm cache clean --force
+
+    if ! install_frontend_dependencies || ! frontend_dependencies_ready; then
+      echo "Frontend dependency install failed; the Compose node_modules volume may need to be recreated." >&2
+      exit 1
+    fi
+  fi
+fi
+
+exec ./node_modules/.bin/next dev --webpack -H 0.0.0.0 -p 3000

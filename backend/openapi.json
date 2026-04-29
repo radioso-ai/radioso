@@ -1568,10 +1568,6 @@
             "type": "string",
             "maxLength": 200
           },
-          "assistantRole": {
-            "type": "string",
-            "maxLength": 200
-          },
           "greetingInstruction": {
             "type": "string",
             "maxLength": 200
@@ -1641,9 +1637,6 @@
           "assistantName": {
             "type": "string"
           },
-          "assistantRole": {
-            "type": "string"
-          },
           "greetingInstruction": {
             "type": "string"
           },
@@ -1710,7 +1703,6 @@
           "anonymousChatUrl",
           "anonymousRateLimit",
           "assistantName",
-          "assistantRole",
           "greetingInstruction",
           "assistantDefaultLocale",
           "proactiveGreetingEnabled",
@@ -1729,9 +1721,6 @@
         "type": "object",
         "properties": {
           "assistantName": {
-            "type": "string"
-          },
-          "assistantRole": {
             "type": "string"
           },
           "greetingInstruction": {
@@ -1773,7 +1762,6 @@
         },
         "required": [
           "assistantName",
-          "assistantRole",
           "greetingInstruction",
           "assistantDefaultLocale",
           "proactiveGreetingEnabled",
@@ -2087,10 +2075,6 @@
             "type": "object",
             "properties": {
               "assistantName": {
-                "type": "string",
-                "maxLength": 200
-              },
-              "assistantRole": {
                 "type": "string",
                 "maxLength": 200
               },
@@ -4307,8 +4291,7 @@
             "items": {
               "type": "string",
               "enum": [
-                "assistant_name",
-                "assistant_role"
+                "assistant_name"
               ]
             }
           },

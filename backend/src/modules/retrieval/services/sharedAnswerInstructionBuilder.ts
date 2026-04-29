@@ -75,7 +75,7 @@ export class SharedAnswerInstructionBuilder {
     return [
       "Stable response identity:",
       ...identityLines,
-      "When the caller asks about the configured name, role, or purpose, answer consistently with this identity.",
+      "When the caller asks about the configured name, answer consistently with this identity.",
     ].join("\n");
   }
 

@@ -449,7 +449,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       name,
       publicRouteKey: publicRouteKey ?? createWorkspacePublicRouteKey(name, randomUUID),
       assistantName: "",
-      assistantRole: "",
       greetingInstruction: "",
       assistantDefaultLocale: null,
       proactiveGreetingEnabled: false,
@@ -533,7 +532,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     workspaceId: string,
     input: {
       assistantName?: string;
-      assistantRole?: string;
       greetingInstruction?: string;
       assistantDefaultLocale?: string | null;
       proactiveGreetingEnabled?: boolean;
@@ -547,7 +545,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     const updated = {
       ...item,
       assistantName: input.assistantName?.trim().replace(/\s+/g, " ") ?? "",
-      assistantRole: input.assistantRole?.trim().replace(/\s+/g, " ") ?? "",
       greetingInstruction: input.greetingInstruction?.trim().replace(/\s+/g, " ") ?? "",
       assistantDefaultLocale: input.assistantDefaultLocale?.trim() || null,
       proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),
@@ -564,7 +561,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       anonymousChatToken: string | null;
       anonymousRateLimit: number;
       assistantName: string;
-      assistantRole: string;
       greetingInstruction: string;
       assistantDefaultLocale: string | null;
       proactiveGreetingEnabled: boolean;
@@ -586,7 +582,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       anonymousChatToken: input.anonymousChatToken,
       anonymousRateLimit: input.anonymousRateLimit,
       assistantName: input.assistantName,
-      assistantRole: input.assistantRole,
       greetingInstruction: input.greetingInstruction,
       assistantDefaultLocale: input.assistantDefaultLocale,
       proactiveGreetingEnabled: input.proactiveGreetingEnabled,

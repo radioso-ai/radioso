@@ -5,7 +5,6 @@ import type { AuditService } from "../../audit/services/auditService.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { buildAssistantSettingsSection } from "../domain/assistantSettings.js";
 import {
-  isAssistantBootstrapActive,
   resolveAssistantDisplayName,
   validateAssistantBootstrapSettings,
 } from "../domain/assistantBootstrapSettings.js";
@@ -145,7 +144,6 @@ export class PlatformSettingsService {
 
     const normalizedBootstrap = validateAssistantBootstrapSettings({
       assistantName: assistant.assistantName ?? workspace.assistantName,
-      assistantRole: assistant.assistantRole ?? workspace.assistantRole,
       greetingInstruction: assistant.greetingInstruction ?? workspace.greetingInstruction,
       assistantDefaultLocale:
         assistant.assistantDefaultLocale === undefined

@@ -9,7 +9,6 @@ describe("shared answer instruction builder", () => {
     const result = builder.buildCombinedBlock({
       responseIdentity: {
         name: "Vikram",
-        role: "Guide to self-realization",
       },
       customInstruction: "Keep the tone calm.",
       conversationMode: "guided",

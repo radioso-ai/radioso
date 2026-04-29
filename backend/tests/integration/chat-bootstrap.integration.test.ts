@@ -29,7 +29,6 @@ describe("chat bootstrap integration", () => {
       .set(headers)
       .send({
         assistantName: "Marta",
-        assistantRole: "Document assistant",
         greetingInstruction: "Warm and concise",
         proactiveGreetingEnabled: true,
       })

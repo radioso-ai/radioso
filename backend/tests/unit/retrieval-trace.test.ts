@@ -110,7 +110,7 @@ describe("retrieval trace presenter", () => {
           supportedSegmentCount: 2,
           unsupportedSegmentCount: 0,
           hiddenSupportUsed: true,
-          hiddenSupportKindsUsed: ["assistant_name", "assistant_role"],
+          hiddenSupportKindsUsed: ["assistant_name"],
         },
       },
     });
@@ -119,7 +119,7 @@ describe("retrieval trace presenter", () => {
       stageId: "answer",
       outputs: expect.objectContaining({
         hiddenSupportUsed: true,
-        hiddenSupportKindsUsed: ["assistant_name", "assistant_role"],
+        hiddenSupportKindsUsed: ["assistant_name"],
         supportedSegmentCount: 2,
       }),
     });

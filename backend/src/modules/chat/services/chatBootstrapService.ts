@@ -4,6 +4,7 @@ import type { AuditService } from "../../audit/services/auditService.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
+import type { RetrievalSettingsService } from "../../settings/services/retrievalSettingsService.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatGateway } from "./chatService.js";
 import type { ChatResponse } from "../types/chatResponses.js";
@@ -67,6 +68,7 @@ export class ChatBootstrapService {
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
+    private readonly retrievalSettingsService: Pick<RetrievalSettingsService, "getForWorkspace">,
   ) {}
 
   async startConversation(input: {
@@ -82,6 +84,7 @@ export class ChatBootstrapService {
     if (!workspace || !isAssistantBootstrapActive(workspace)) {
       return null;
     }
+    const retrievalSettings = await this.retrievalSettingsService.getForWorkspace(input.workspaceId);
 
     const localeUsed = resolveChatLocale({
       userExpectedLocale: input.userExpectedLocale,
@@ -89,7 +92,7 @@ export class ChatBootstrapService {
     });
     const fingerprint = createBootstrapFingerprint({
       assistantName: workspace.assistantName,
-      assistantRole: workspace.assistantRole,
+      customInstruction: retrievalSettings.customInstruction,
       assistantDefaultLocale: workspace.assistantDefaultLocale,
       localeUsed,
     });
@@ -105,7 +108,7 @@ export class ChatBootstrapService {
           history: [],
           prompt: buildBootstrapPrompt({
             assistantName: workspace.assistantName,
-            assistantRole: workspace.assistantRole,
+            customInstruction: retrievalSettings.customInstruction,
             localeUsed,
           }),
         })).trim();
@@ -172,7 +175,7 @@ export class ChatBootstrapService {
 
 const buildBootstrapPrompt = (input: {
   assistantName: string;
-  assistantRole: string;
+  customInstruction: string;
   localeUsed: string | null;
 }): string => {
   const localeInstruction = input.localeUsed
@@ -180,25 +183,27 @@ const buildBootstrapPrompt = (input: {
     : "Write the greeting in the best available language for the workspace.";
   const identityLines = buildPublicAssistantIdentityLines({
     assistantName: input.assistantName,
-    assistantRole: input.assistantRole,
   });
+  const customInstruction = input.customInstruction.trim()
+    ? `Answer instruction: ${input.customInstruction.trim()}`
+    : "";
 
   return renderPromptTemplate("chat/bootstrap-greeting.md", {
     locale_instruction: localeInstruction,
-    identity_lines: identityLines.join("\n"),
+    identity_lines: [...identityLines, customInstruction].filter(Boolean).join("\n"),
   });
 };
 
 const createBootstrapFingerprint = (input: {
   assistantName: string;
-  assistantRole: string;
+  customInstruction: string;
   assistantDefaultLocale: string | null;
   localeUsed: string | null;
 }): string =>
   createHash("sha256")
     .update(JSON.stringify({
       assistantName: input.assistantName,
-      assistantRole: input.assistantRole,
+      customInstruction: input.customInstruction,
       assistantDefaultLocale: input.assistantDefaultLocale,
       localeUsed: input.localeUsed,
     }))

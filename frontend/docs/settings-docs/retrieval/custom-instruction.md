@@ -6,7 +6,7 @@ Add assistant-owned answer guidance for customer-facing chat responses.
 ## Details
 ### Overview
 
-This is the workspace-level assistant instruction for how customer-facing answers should be written.
+This is the workspace-level assistant instruction for what the assistant helps with and how customer-facing answers should be written.
 
 In practice, it applies to assistant chat responses after the assistant decides whether the current message can be answered directly or needs retrieval. It is not a retrieval tuning field.
 
@@ -15,6 +15,7 @@ In practice, it applies to assistant chat responses after the assistant decides 
 - formatting rules
 - answer style
 - citation style
+- assistant purpose and scope
 - domain-specific response habits
 
 ### Inappropriate Uses

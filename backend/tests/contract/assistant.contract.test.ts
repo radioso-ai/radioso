@@ -63,7 +63,6 @@ describe("assistant contract", () => {
       .send({
         assistant: {
           assistantName: "Marta",
-          assistantRole: "Workspace guide",
           greetingInstruction: "Warm and concise",
           proactiveGreetingEnabled: true,
         },

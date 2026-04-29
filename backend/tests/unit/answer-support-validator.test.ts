@@ -144,16 +144,15 @@ describe("answer support validator", () => {
 
     const result = await validator.validate({
       query: "Who are you and what does the page explain?",
-      answer: "I'm Vikram, your museum guide. The page explains testing and parsing content for users.",
+      answer: "I'm Vikram. The page explains testing and parsing content for users.",
       answerSegments: [
         {
-          text: "I'm Vikram, your museum guide. The page explains testing and parsing content for users.",
+          text: "I'm Vikram. The page explains testing and parsing content for users.",
         },
       ],
       citationEvidence: citations,
       hiddenSupportEvidence: [
         { kind: "assistant_name", content: "Vikram" },
-        { kind: "assistant_role", content: "Museum guide" },
       ],
       retrievedContextSummaries: citations.map((citation) => ({
         title: citation.title,
@@ -165,13 +164,12 @@ describe("answer support validator", () => {
     });
 
     expect(result.answer).toContain("Vikram");
-    expect(result.answer).toContain("museum guide");
     expect(result.answer).toContain("testing and parsing");
     expect(result.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
     ]);
     expect(result.answerSegments).toEqual([
-      { text: "I'm Vikram, your museum guide. " },
+      { text: "I'm Vikram. " },
       {
         text: "The page explains testing and parsing content for users.",
         citationIndices: [0],
@@ -185,7 +183,7 @@ describe("answer support validator", () => {
       supportedSegmentCount: 2,
       nonSubstantiveSegmentCount: 0,
       hiddenSupportUsed: true,
-      hiddenSupportKindsUsed: ["assistant_name", "assistant_role"],
+      hiddenSupportKindsUsed: ["assistant_name"],
     });
   });
 
@@ -220,7 +218,6 @@ describe("answer support validator", () => {
       citationEvidence: [],
       hiddenSupportEvidence: [
         { kind: "assistant_name", content: "Vikram" },
-        { kind: "assistant_role", content: "Museum guide" },
       ],
       retrievedContextSummaries: [],
       citationDisplayEnabled: true,

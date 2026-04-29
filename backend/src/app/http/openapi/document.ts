@@ -443,7 +443,6 @@ const GeneralSettingsResponseSchema = registry.register(
     anonymousChatUrl: z.string().nullable(),
     anonymousRateLimit: z.number().int().min(1).max(60),
     assistantName: z.string(),
-    assistantRole: z.string(),
     greetingInstruction: z.string(),
     assistantDefaultLocale: z.string().nullable(),
     proactiveGreetingEnabled: z.boolean(),
@@ -463,7 +462,6 @@ const AssistantSettingsSectionSchema = registry.register(
   "AssistantSettingsSection",
   z.object({
     assistantName: z.string(),
-    assistantRole: z.string(),
     greetingInstruction: z.string(),
     assistantDefaultLocale: z.string().nullable(),
     proactiveGreetingEnabled: z.boolean(),
@@ -1124,7 +1122,7 @@ const ValidationDebugSchema = registry.register(
     supportedSegmentCount: z.number().int().min(0),
     nonSubstantiveSegmentCount: z.number().int().min(0),
     hiddenSupportUsed: z.boolean().optional(),
-    hiddenSupportKindsUsed: z.array(z.enum(["assistant_name", "assistant_role"])).optional(),
+    hiddenSupportKindsUsed: z.array(z.enum(["assistant_name"])).optional(),
     segmentResults: z.array(ValidationSegmentResultSchema),
   }),
 );

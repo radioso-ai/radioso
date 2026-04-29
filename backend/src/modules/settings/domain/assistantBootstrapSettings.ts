@@ -6,7 +6,6 @@ const LOCALE_PATTERN = /^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{
 
 export interface AssistantBootstrapSettingsRecord {
   assistantName: string;
-  assistantRole: string;
   greetingInstruction: string;
   assistantDefaultLocale: string | null;
   proactiveGreetingEnabled: boolean;
@@ -14,7 +13,6 @@ export interface AssistantBootstrapSettingsRecord {
 
 export interface AssistantBootstrapSettingsInput {
   assistantName?: string;
-  assistantRole?: string;
   greetingInstruction?: string;
   assistantDefaultLocale?: string | null;
   proactiveGreetingEnabled?: boolean;
@@ -60,7 +58,6 @@ export const normalizeLocaleTag = (value: unknown): string | null => {
 
 export const defaultAssistantBootstrapSettings = (): AssistantBootstrapSettingsRecord => ({
   assistantName: "",
-  assistantRole: "",
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
@@ -70,14 +67,13 @@ export const validateAssistantBootstrapSettings = (
   input: AssistantBootstrapSettingsInput,
 ): AssistantBootstrapSettingsRecord => ({
   assistantName: normalizeText(input.assistantName, "assistantName"),
-  assistantRole: normalizeText(input.assistantRole, "assistantRole"),
   greetingInstruction: normalizeText(input.greetingInstruction, "greetingInstruction"),
   assistantDefaultLocale: normalizeLocaleTag(input.assistantDefaultLocale),
   proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),
 });
 
 export const isAssistantBootstrapConfigured = (input: AssistantBootstrapSettingsRecord): boolean =>
-  input.assistantName.length > 0 || input.assistantRole.length > 0;
+  input.assistantName.length > 0;
 
 export const isAssistantBootstrapActive = (input: AssistantBootstrapSettingsRecord): boolean =>
   input.proactiveGreetingEnabled && isAssistantBootstrapConfigured(input);
@@ -95,9 +91,8 @@ export const resolveAssistantDisplayName = (input: {
 };
 
 export const buildPublicAssistantIdentityLines = (
-  input: Pick<AssistantBootstrapSettingsRecord, "assistantName" | "assistantRole">,
+  input: Pick<AssistantBootstrapSettingsRecord, "assistantName">,
 ): string[] =>
   [
     input.assistantName ? `Assistant name: ${input.assistantName}` : null,
-    input.assistantRole ? `What this assistant helps with: ${input.assistantRole}` : null,
   ].filter((line): line is string => line !== null);

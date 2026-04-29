@@ -265,11 +265,9 @@ export class ChatService {
     }
 
     const name = workspace.assistantName.trim();
-    const role = workspace.assistantRole.trim();
-    return name || role
+    return name
       ? {
-          name: name || undefined,
-          role: role || undefined,
+          name,
         }
       : null;
   }
@@ -1348,13 +1346,6 @@ const buildHiddenSupportEvidence = (
     evidence.push({
       kind: "assistant_name",
       content: responseIdentity.name,
-    });
-  }
-
-  if (responseIdentity.role) {
-    evidence.push({
-      kind: "assistant_role",
-      content: responseIdentity.role,
     });
   }
 

@@ -76,7 +76,6 @@ export const updateGeneralSettingsSchema = z.object({
   anonymousRateLimit: z.number().int().min(1).max(60).optional(),
   rotateAnonymousChatToken: z.boolean().optional(),
   assistantName: z.string().max(200).optional(),
-  assistantRole: z.string().max(200).optional(),
   greetingInstruction: z.string().max(200).optional(),
   assistantDefaultLocale: z.string().max(35).nullable().optional(),
   proactiveGreetingEnabled: z.boolean().optional(),
@@ -91,7 +90,6 @@ export const updateGeneralSettingsSchema = z.object({
 export const updatePlatformSettingsSchema = z.object({
   assistant: z.object({
     assistantName: z.string().max(200).optional(),
-    assistantRole: z.string().max(200).optional(),
     greetingInstruction: z.string().max(200).optional(),
     assistantDefaultLocale: z.string().max(35).nullable().optional(),
     proactiveGreetingEnabled: z.boolean().optional(),
@@ -325,7 +323,6 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
       anonymousChatUrl: buildAnonymousChatUrl(workspace.anonymousChatToken, workspace.anonymousChatEnabled),
       anonymousRateLimit: workspace.anonymousRateLimit,
       assistantName: workspace.assistantName,
-      assistantRole: workspace.assistantRole,
       greetingInstruction: workspace.greetingInstruction,
       assistantDefaultLocale: workspace.assistantDefaultLocale,
       proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
@@ -405,7 +402,6 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
 
       const normalizedBootstrap = validateAssistantBootstrapSettings({
         assistantName: req.body.assistantName ?? workspace.assistantName,
-        assistantRole: req.body.assistantRole ?? workspace.assistantRole,
         greetingInstruction: req.body.greetingInstruction ?? workspace.greetingInstruction,
         assistantDefaultLocale:
           req.body.assistantDefaultLocale === undefined

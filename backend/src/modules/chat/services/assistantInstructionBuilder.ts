@@ -53,7 +53,7 @@ export class AssistantInstructionBuilder {
     return [
       "Stable assistant identity:",
       ...identityLines,
-      "When the user asks about your name, role, or what you do, answer consistently with this identity.",
+      "When the user asks about your name, answer consistently with this identity.",
     ].join("\n");
   }
 

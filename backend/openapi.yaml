@@ -1052,9 +1052,6 @@ components:
         assistantName:
           type: string
           maxLength: 200
-        assistantRole:
-          type: string
-          maxLength: 200
         greetingInstruction:
           type: string
           maxLength: 200
@@ -1104,8 +1101,6 @@ components:
           maximum: 60
         assistantName:
           type: string
-        assistantRole:
-          type: string
         greetingInstruction:
           type: string
         assistantDefaultLocale:
@@ -1147,7 +1142,6 @@ components:
         - anonymousChatUrl
         - anonymousRateLimit
         - assistantName
-        - assistantRole
         - greetingInstruction
         - assistantDefaultLocale
         - proactiveGreetingEnabled
@@ -1164,8 +1158,6 @@ components:
       type: object
       properties:
         assistantName:
-          type: string
-        assistantRole:
           type: string
         greetingInstruction:
           type: string
@@ -1192,7 +1184,6 @@ components:
           type: string
       required:
         - assistantName
-        - assistantRole
         - greetingInstruction
         - assistantDefaultLocale
         - proactiveGreetingEnabled
@@ -1391,9 +1382,6 @@ components:
           type: object
           properties:
             assistantName:
-              type: string
-              maxLength: 200
-            assistantRole:
               type: string
               maxLength: 200
             greetingInstruction:
@@ -2889,7 +2877,6 @@ components:
             type: string
             enum:
               - assistant_name
-              - assistant_role
         segmentResults:
           type: array
           items:

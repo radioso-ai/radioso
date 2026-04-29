@@ -34,6 +34,7 @@ import {
   normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedDisplayMode,
   normalizeWebsiteEmbedInitialState,
+  normalizeWebsiteEmbedLocale,
   parseWebsiteEmbedJsonOverrides,
   parseWebsiteEmbedOrigins,
   sanitizeWebsiteEmbedCopyOverrides,
@@ -56,6 +57,52 @@ const stringifyWebsiteEmbedJsonOverrideRecord = (value: JsonOverrideRecord) =>
   Object.keys(value).length > 0 ? JSON.stringify(value, null, 2) : ''
 
 const getOrganizationNameCacheKey = (accountId: string) => `radioso.organizationName:${accountId}`
+
+export const ASSISTANT_GREETING_LOCALE_OPTIONS = [
+  { label: 'English', tag: 'en' },
+  { label: 'Italian', tag: 'it' },
+  { label: 'Spanish', tag: 'es' },
+  { label: 'French', tag: 'fr' },
+  { label: 'German', tag: 'de' },
+  { label: 'Portuguese', tag: 'pt' },
+  { label: 'Dutch', tag: 'nl' },
+  { label: 'Swedish', tag: 'sv' },
+  { label: 'Norwegian', tag: 'no' },
+  { label: 'Danish', tag: 'da' },
+  { label: 'Finnish', tag: 'fi' },
+  { label: 'Estonian', tag: 'et' },
+  { label: 'Russian', tag: 'ru' },
+  { label: 'Japanese', tag: 'ja' },
+  { label: 'Korean', tag: 'ko' },
+  { label: 'Chinese', tag: 'zh' },
+] as const
+
+export const NO_GREETING_LOCALE_LABEL = 'No fallback'
+
+export const getAssistantLocaleLabel = (tag: string | null) => {
+  if (!tag) {
+    return NO_GREETING_LOCALE_LABEL
+  }
+
+  return ASSISTANT_GREETING_LOCALE_OPTIONS.find((option) => option.tag === tag)?.label ?? `Custom locale: ${tag}`
+}
+
+export const resolveAssistantLocaleInput = (value: string) => {
+  const trimmed = value.trim()
+  const normalized = trimmed.toLowerCase()
+  if (!trimmed || normalized === NO_GREETING_LOCALE_LABEL.toLowerCase()) {
+    return null
+  }
+
+  const configuredOption = ASSISTANT_GREETING_LOCALE_OPTIONS.find(
+    (option) => option.label.toLowerCase() === normalized || option.tag.toLowerCase() === normalized,
+  )
+  if (configuredOption) {
+    return configuredOption.tag
+  }
+
+  return normalizeWebsiteEmbedLocale(trimmed) ?? undefined
+}
 
 const readCachedOrganizationName = (accountId: string) => {
   if (typeof window === 'undefined') {
@@ -148,6 +195,7 @@ export function WorkspaceAssistantChannelsTab({
   const [isPreparingWebsiteEmbedDemo, setIsPreparingWebsiteEmbedDemo] = useState(false)
   const [websiteEmbedDemoError, setWebsiteEmbedDemoError] = useState<string | null>(null)
   const [assistantSettingsError, setAssistantSettingsError] = useState<string | null>(null)
+  const [assistantLocaleInput, setAssistantLocaleInput] = useState(NO_GREETING_LOCALE_LABEL)
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
@@ -211,6 +259,7 @@ export function WorkspaceAssistantChannelsTab({
         if (!active) return
         setAnonSettings(data)
         setSavedAnonSettings(data)
+        setAssistantLocaleInput(getAssistantLocaleLabel(data.assistantDefaultLocale))
         setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(data.websiteEmbedAllowedOrigins ?? []))
         setAssistantSettingsError(null)
       } catch (error) {
@@ -365,6 +414,14 @@ export function WorkspaceAssistantChannelsTab({
     setAnonSettings({ ...anonSettings, [key]: value })
   }
 
+  const handleAssistantLocaleInputChange = (value: string) => {
+    setAssistantLocaleInput(value)
+    const resolvedLocale = resolveAssistantLocaleInput(value)
+    if (resolvedLocale !== undefined) {
+      handleAssistantSettingChange('assistantDefaultLocale', resolvedLocale)
+    }
+  }
+
   const updateAssistantBehaviorDraft = (updater: (current: RetrievalSettings) => RetrievalSettings) => {
     assistantBehaviorDraftVersionRef.current += 1
     setAssistantBehaviorSettings((current) => (current ? updater(current) : current))
@@ -374,7 +431,6 @@ export function WorkspaceAssistantChannelsTab({
     anonSettings && savedAnonSettings
       ? (
           anonSettings.assistantName !== savedAnonSettings.assistantName ||
-          anonSettings.assistantRole !== savedAnonSettings.assistantRole ||
           anonSettings.assistantDefaultLocale !== savedAnonSettings.assistantDefaultLocale ||
           anonSettings.proactiveGreetingEnabled !== savedAnonSettings.proactiveGreetingEnabled
         )
@@ -711,7 +767,6 @@ export function WorkspaceAssistantChannelsTab({
       try {
         const updated = await generalSettingsApi.updateGeneralSettings({
           assistantName: anonSettings.assistantName,
-          assistantRole: anonSettings.assistantRole,
           assistantDefaultLocale: anonSettings.assistantDefaultLocale,
           proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
         })
@@ -1031,37 +1086,24 @@ export function WorkspaceAssistantChannelsTab({
                     </p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="assistantDefaultLocale" className="text-foreground">First-message locale fallback</Label>
+                    <Label htmlFor="assistantDefaultLocale" className="text-foreground">Greeting language fallback</Label>
                     <Input
                       id="assistantDefaultLocale"
-                      value={anonSettings.assistantDefaultLocale ?? ''}
-                      maxLength={35}
-                      onChange={(event) =>
-                        handleAssistantSettingChange(
-                          'assistantDefaultLocale',
-                          event.target.value.trim().length > 0 ? event.target.value : null,
-                        )
-                      }
-                      placeholder="e.g. it-IT"
+                      list="assistant-greeting-locale-options"
+                      value={assistantLocaleInput}
+                      onChange={(event) => handleAssistantLocaleInputChange(event.target.value)}
+                      placeholder="Search for a language"
                     />
+                    <datalist id="assistant-greeting-locale-options">
+                      <option value={NO_GREETING_LOCALE_LABEL} />
+                      {ASSISTANT_GREETING_LOCALE_OPTIONS.map((option) => (
+                        <option key={option.tag} value={option.label} />
+                      ))}
+                    </datalist>
                     <p className="text-xs text-muted-foreground">
-                      Used when the first greeting needs a language and the channel does not provide one.
+                      Used only for the automatic first greeting when the chat or embed does not provide a language. Normal replies follow the user’s message language.
                     </p>
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="assistantRole" className="text-foreground">What this assistant helps with</Label>
-                  <Input
-                    id="assistantRole"
-                    value={anonSettings.assistantRole}
-                    maxLength={200}
-                    onChange={(event) => handleAssistantSettingChange('assistantRole', event.target.value)}
-                    placeholder="e.g. Guidance on meditation, philosophy, and self-inquiry"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Public description of the assistant’s scope. Used in identity answers and the first greeting.
-                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -1075,11 +1117,11 @@ export function WorkspaceAssistantChannelsTab({
                         customInstruction: event.target.value.slice(0, 2000),
                       }))
                     }
-                    placeholder="e.g. Keep answers concise, practical, and concrete."
+                    placeholder="e.g. Help visitors choose the right course. Be concise, practical, and concrete."
                     rows={4}
                   />
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Answer guidance applied to responses.</span>
+                    <span>Purpose, scope, tone, and answer guidance applied to responses.</span>
                     <span>{assistantBehaviorSettings.customInstruction.length} / 2000</span>
                   </div>
                 </div>
@@ -1161,7 +1203,7 @@ export function WorkspaceAssistantChannelsTab({
                       Whether a brand-new chat begins with an assistant-first greeting.
                     </p>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Status: {anonSettings.assistantBootstrapActive ? 'active' : 'inactive until name or purpose is configured'}
+                      Status: {anonSettings.assistantBootstrapActive ? 'active' : 'inactive until assistant name is configured'}
                     </p>
                   </div>
                   <Switch

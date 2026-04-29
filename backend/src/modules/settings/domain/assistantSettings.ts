@@ -8,7 +8,6 @@ import type {
 
 export interface AssistantSettingsSection {
   assistantName: string;
-  assistantRole: string;
   greetingInstruction: string;
   assistantDefaultLocale: string | null;
   proactiveGreetingEnabled: boolean;
@@ -31,7 +30,6 @@ export const buildAssistantSettingsSection = (
   retrievalSettings: RetrievalSettingsRecord,
 ): AssistantSettingsSection => ({
   assistantName: workspace.assistantName,
-  assistantRole: workspace.assistantRole,
   greetingInstruction: workspace.greetingInstruction,
   assistantDefaultLocale: workspace.assistantDefaultLocale,
   proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,

@@ -404,7 +404,6 @@ describe("public chat contract", () => {
       .send({
         anonymousChatEnabled: true,
         assistantName: "Marta",
-        assistantRole: "Document assistant",
         proactiveGreetingEnabled: true,
       })
       .expect(200);
@@ -442,7 +441,6 @@ describe("public chat contract", () => {
       .send({
         anonymousChatEnabled: true,
         assistantName: "Marta",
-        assistantRole: "Document assistant",
         proactiveGreetingEnabled: true,
       })
       .expect(200);
@@ -484,7 +482,6 @@ describe("public chat contract", () => {
         anonymousChatEnabled: true,
         anonymousRateLimit: 1,
         assistantName: "Marta",
-        assistantRole: "Document assistant",
         proactiveGreetingEnabled: true,
       });
     const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1];

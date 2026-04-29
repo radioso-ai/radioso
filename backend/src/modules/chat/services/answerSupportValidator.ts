@@ -507,7 +507,7 @@ export class AnswerSupportValidator {
           .slice("has_hidden_support_reference:".length)
           .split(",")
           .filter((kind): kind is HiddenSupportEvidence["kind"] => (
-            kind === "assistant_name" || kind === "assistant_role"
+            kind === "assistant_name"
           ));
       }),
     )];

@@ -13,7 +13,6 @@ describe("settings services", () => {
       id: "workspace-1",
       name: "Workspace",
       assistantName: "Marta",
-      assistantRole: "Museum guide",
       greetingInstruction: "Warm and concise",
       assistantDefaultLocale: "it-IT",
       proactiveGreetingEnabled: true,
@@ -52,7 +51,6 @@ describe("settings services", () => {
 
     expect(result.assistant).toMatchObject({
       assistantName: "Marta",
-      assistantRole: "Museum guide",
       greetingInstruction: "Warm and concise",
       assistantDefaultLocale: "it-IT",
       proactiveGreetingEnabled: true,
@@ -75,7 +73,6 @@ describe("settings services", () => {
       id: "workspace-1",
       name: "Workspace",
       assistantName: "",
-      assistantRole: "",
       greetingInstruction: "",
       assistantDefaultLocale: null,
       proactiveGreetingEnabled: false,
@@ -131,7 +128,6 @@ describe("settings services", () => {
       id: "workspace-1",
       name: "Workspace",
       assistantName: "",
-      assistantRole: "",
       greetingInstruction: "",
       assistantDefaultLocale: null,
       proactiveGreetingEnabled: false,
@@ -316,14 +312,12 @@ describe("settings services", () => {
     expect(
       validateAssistantBootstrapSettings({
         assistantName: "  Marta  ",
-        assistantRole: " Museum guide ",
         greetingInstruction: " Warm and concise ",
         assistantDefaultLocale: " ",
         proactiveGreetingEnabled: true,
       }),
     ).toEqual({
       assistantName: "Marta",
-      assistantRole: "Museum guide",
       greetingInstruction: "Warm and concise",
       assistantDefaultLocale: null,
       proactiveGreetingEnabled: true,
@@ -333,7 +327,6 @@ describe("settings services", () => {
   it("exposes blank assistant bootstrap defaults", () => {
     expect(defaultAssistantBootstrapSettings()).toEqual({
       assistantName: "",
-      assistantRole: "",
       greetingInstruction: "",
       assistantDefaultLocale: null,
       proactiveGreetingEnabled: false,

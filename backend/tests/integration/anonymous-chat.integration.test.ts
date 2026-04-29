@@ -37,7 +37,6 @@ describe("anonymous chat bootstrap integration", () => {
       .send({
         anonymousChatEnabled: true,
         assistantName: "Marta",
-        assistantRole: "Document assistant",
         proactiveGreetingEnabled: true,
       });
 
@@ -127,7 +126,6 @@ describe("anonymous chat bootstrap integration", () => {
       .send({
         anonymousChatEnabled: true,
         assistantName: "Marta",
-        assistantRole: "Document assistant",
         proactiveGreetingEnabled: false,
       });
     await request(app)

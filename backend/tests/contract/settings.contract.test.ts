@@ -18,7 +18,6 @@ describe("settings contract", () => {
     expect(response.body).toMatchObject({
       assistant: {
         assistantName: "",
-        assistantRole: "",
         greetingInstruction: "",
         assistantDefaultLocale: null,
         proactiveGreetingEnabled: false,

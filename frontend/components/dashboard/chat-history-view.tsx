@@ -39,7 +39,6 @@ import {
 
 const HIDDEN_SUPPORT_LABELS = {
   assistant_name: 'Assistant name',
-  assistant_role: 'Assistant role',
 } as const
 
 const formatDiagnosticLabel = (value: string) => value.replaceAll('_', ' ')

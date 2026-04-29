@@ -106,7 +106,6 @@ describe("chat service streaming", () => {
     responseIntent: "social_only" | "assistant_identity";
     responseIdentity?: {
       name: string;
-      role: string;
     };
     customInstruction?: string;
   }) => ({
@@ -471,7 +470,6 @@ describe("chat service streaming", () => {
       responseIntent: "assistant_identity",
       responseIdentity: {
         name: "Marta",
-        role: "Museum guide",
       },
     });
     const chatGateway: ChatGateway = {
@@ -512,7 +510,6 @@ describe("chat service streaming", () => {
       responseIntent: "assistant_identity",
       responseIdentity: {
         name: "Marta",
-        role: "Museum guide",
       },
     });
     const chatGateway: ChatGateway = {
@@ -551,7 +548,6 @@ describe("chat service streaming", () => {
       responseIntent: "assistant_identity",
       responseIdentity: {
         name: "Marta",
-        role: "Museum guide",
       },
     });
     const chatGateway: ChatGateway = {
@@ -599,7 +595,6 @@ describe("chat service streaming", () => {
       responseIntent: "assistant_identity",
       responseIdentity: {
         name: "Marta",
-        role: "Museum guide",
       },
     });
     const chatGateway: ChatGateway = {
@@ -647,7 +642,6 @@ describe("chat service streaming", () => {
       responseIntent: "assistant_identity",
       responseIdentity: {
         name: "Marta",
-        role: "Museum guide",
       },
     });
     const chatGateway: ChatGateway = {
@@ -701,7 +695,6 @@ describe("chat service streaming", () => {
           citations: [],
           responseIdentity: {
             name: "Marta",
-            role: "Museum guide",
           },
           diagnostics: {
             rewriteStatus: "skipped",
@@ -1435,7 +1428,6 @@ describe("chat service streaming", () => {
           citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
           responseIdentity: {
             name: "Vikram",
-            role: "Museum guide",
           },
           diagnostics: {
             rewriteStatus: "skipped",
@@ -1462,7 +1454,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "I'm Vikram, your museum guide. The page explains testing and parsing content for users.";
+        return "I'm Vikram. The page explains testing and parsing content for users.";
       },
       async *streamAnswer() {
         yield "unused";
@@ -1485,7 +1477,6 @@ describe("chat service streaming", () => {
     });
 
     expect(response.answer).toContain("Vikram");
-    expect(response.answer).toContain("museum guide");
     expect(response.answer).toContain("testing and parsing");
     expect(response.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
@@ -3111,7 +3102,6 @@ describe("chat service streaming", () => {
             history: [],
             responseIdentity: {
               name: "Vikram",
-              role: "Guide to Ananda",
             },
           },
           traceStartedAtMs: Date.now(),
@@ -3125,7 +3115,6 @@ describe("chat service streaming", () => {
                 history: [],
                 responseIdentity: {
                   name: "Vikram",
-                  role: "Guide to Ananda",
                 },
               },
               settings: {
@@ -3175,7 +3164,6 @@ describe("chat service streaming", () => {
           citations: [],
           responseIdentity: {
             name: "Vikram",
-            role: "Guide to Ananda",
           },
           responseSettings: {
             citationDisplayEnabled: true,
@@ -3322,7 +3310,6 @@ describe("chat service streaming", () => {
             history: [],
             responseIdentity: {
               name: "Vikram",
-              role: "Guide to Ananda",
             },
           },
           traceStartedAtMs: Date.now(),
@@ -3336,7 +3323,6 @@ describe("chat service streaming", () => {
                 history: [],
                 responseIdentity: {
                   name: "Vikram",
-                  role: "Guide to Ananda",
                 },
               },
               settings: {
@@ -3384,7 +3370,6 @@ describe("chat service streaming", () => {
           citations: [],
           responseIdentity: {
             name: "Vikram",
-            role: "Guide to Ananda",
           },
           responseSettings: {
             citationDisplayEnabled: true,
@@ -3437,7 +3422,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ prompt }) {
         observedPrompt = prompt;
-        return "I'm Vikram, your guide to Ananda.";
+        return "I'm Vikram.";
       },
       async *streamAnswer() {
         yield "unused";
@@ -3458,7 +3443,7 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(response.answer).toBe("I'm Vikram, your guide to Ananda.");
+    expect(response.answer).toBe("I'm Vikram.");
     expect(response.route).toEqual({
       type: "direct",
       reason: "assistant_identity",
@@ -3469,7 +3454,6 @@ describe("chat service streaming", () => {
     });
     expect(observedPrompt).toContain("Answer Instructions:");
     expect(observedPrompt).toContain("Vikram");
-    expect(observedPrompt).toContain("Guide to Ananda");
     expect(observedPrompt).toContain("Keep the reply brief.");
   });
 

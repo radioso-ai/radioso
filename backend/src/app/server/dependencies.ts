@@ -254,6 +254,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     conversationRepository,
     chatGateway,
     auditService,
+    retrievalSettingsService,
   );
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,

@@ -100,7 +100,6 @@ export interface RetrievalSettings {
 export interface PlatformSettings {
   assistant: {
     assistantName: string
-    assistantRole: string
     greetingInstruction: string
     assistantDefaultLocale: string | null
     proactiveGreetingEnabled: boolean
@@ -299,7 +298,6 @@ const toRetrievalSettings = (settings: PlatformSettings): RetrievalSettings => (
 const toGeneralSettings = (settings: PlatformSettings): GeneralSettings => ({
   ...settings.channels,
   assistantName: settings.assistant.assistantName,
-  assistantRole: settings.assistant.assistantRole,
   greetingInstruction: settings.assistant.greetingInstruction,
   assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
   proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
@@ -535,7 +533,7 @@ export interface ChatConversationTurnDebug {
     supportedSegmentCount: number
     nonSubstantiveSegmentCount: number
     hiddenSupportUsed?: boolean
-    hiddenSupportKindsUsed?: Array<'assistant_name' | 'assistant_role'>
+    hiddenSupportKindsUsed?: Array<'assistant_name'>
     segmentResults: Array<{
       originalText?: string
       text: string
@@ -1303,7 +1301,6 @@ export interface GeneralSettings {
   anonymousChatUrl: string | null
   anonymousRateLimit: number
   assistantName: string
-  assistantRole: string
   greetingInstruction: string
   assistantDefaultLocale: string | null
   proactiveGreetingEnabled: boolean
@@ -1341,7 +1338,6 @@ export const generalSettingsApi = {
     anonymousRateLimit?: number
     rotateAnonymousChatToken?: boolean
     assistantName?: string
-    assistantRole?: string
     greetingInstruction?: string
     assistantDefaultLocale?: string | null
     proactiveGreetingEnabled?: boolean
@@ -1360,7 +1356,6 @@ export const generalSettingsApi = {
       body: JSON.stringify({
         assistant: {
           assistantName: data.assistantName,
-          assistantRole: data.assistantRole,
           greetingInstruction: data.greetingInstruction,
           assistantDefaultLocale: data.assistantDefaultLocale,
           proactiveGreetingEnabled: data.proactiveGreetingEnabled,

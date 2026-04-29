@@ -724,6 +724,7 @@ export const createTestDependencies = (overrides: {
     conversationRepository,
     chatGateway,
     auditService,
+    retrievalSettingsService,
   );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);

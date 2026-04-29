@@ -17,7 +17,6 @@ describe("general settings contract", () => {
       anonymousChatUrl: null,
       anonymousRateLimit: 10,
       assistantName: "",
-      assistantRole: "",
       greetingInstruction: "",
       assistantDefaultLocale: null,
       proactiveGreetingEnabled: false,
@@ -202,7 +201,6 @@ describe("general settings contract", () => {
       .set(adminSessionHeaders(session))
       .send({
         assistantName: "Marta",
-        assistantRole: "Museum guide",
         greetingInstruction: "Warm and concise",
         assistantDefaultLocale: "it-IT",
         proactiveGreetingEnabled: true,
@@ -211,7 +209,6 @@ describe("general settings contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       assistantName: "Marta",
-      assistantRole: "Museum guide",
       greetingInstruction: "Warm and concise",
       assistantDefaultLocale: "it-IT",
       proactiveGreetingEnabled: true,
@@ -225,7 +222,6 @@ describe("general settings contract", () => {
     expect(fetched.status).toBe(200);
     expect(fetched.body).toMatchObject({
       assistantName: "Marta",
-      assistantRole: "Museum guide",
       greetingInstruction: "Warm and concise",
       assistantDefaultLocale: "it-IT",
       proactiveGreetingEnabled: true,
@@ -242,7 +238,6 @@ describe("general settings contract", () => {
       .set(adminSessionHeaders(session))
       .send({
         assistantName: "   ",
-        assistantRole: "",
         greetingInstruction: "",
         proactiveGreetingEnabled: true,
       });
@@ -250,7 +245,6 @@ describe("general settings contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       assistantName: "",
-      assistantRole: "",
       greetingInstruction: "",
       proactiveGreetingEnabled: true,
       assistantBootstrapActive: false,

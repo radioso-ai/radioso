@@ -70,6 +70,10 @@ export const DEFAULT_WEBSITE_EMBED_INITIAL_STATE: WebsiteEmbedInitialState = 'co
 export const DEFAULT_WEBSITE_EMBED_DISPLAY_MODE: WebsiteEmbedDisplayMode = 'bubble'
 export const APP_WEBSITE_EMBED_DEMO_PATH = '/embed-demo.html'
 export const LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL = 'http://127.0.0.1:4321'
+export const WEBSITE_EMBED_DESKTOP_PANEL_WIDTH_PX = 560
+export const WEBSITE_EMBED_PANEL_HANDLE_WIDTH_PX = 56
+export const WEBSITE_EMBED_NARROW_VIEWPORT_MAX_WIDTH_PX = 640
+export const WEBSITE_EMBED_KEYBOARD_SHRINK_THRESHOLD_PX = 120
 export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   launcherDefaultLabel: 'Chat with us',
   embeddedChatTitle: 'Radioso embedded chat',
@@ -335,6 +339,30 @@ export const formatWebsiteEmbedDisclaimer = (
   copy: Pick<WebsiteEmbedCopy, 'publicChatDisclaimerTemplate'>,
   name: string,
 ) => copy.publicChatDisclaimerTemplate.replaceAll('{name}', name)
+
+export interface WebsiteEmbedViewportSnapshot {
+  viewportWidth: number
+  layoutViewportHeight: number
+  visualViewportHeight?: number | null
+  editableFocused: boolean
+}
+
+export const shouldUseWebsiteEmbedCompactKeyboardLayout = ({
+  viewportWidth,
+  layoutViewportHeight,
+  visualViewportHeight,
+  editableFocused,
+}: WebsiteEmbedViewportSnapshot) => {
+  if (!editableFocused || viewportWidth > WEBSITE_EMBED_NARROW_VIEWPORT_MAX_WIDTH_PX) {
+    return false
+  }
+
+  if (typeof visualViewportHeight === 'number') {
+    return layoutViewportHeight - visualViewportHeight >= WEBSITE_EMBED_KEYBOARD_SHRINK_THRESHOLD_PX
+  }
+
+  return true
+}
 
 export const getWebsiteEmbedCopy = (
   _value: string | null | undefined,

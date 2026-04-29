@@ -17,9 +17,73 @@ import {
   formatWebsiteEmbedRateLimitRetry,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
+  shouldUseWebsiteEmbedCompactKeyboardLayout,
   type WebsiteEmbedCopyOverrides,
   type WebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
+
+type PublicChatSurface = 'public' | 'embed'
+
+const isEditableElement = (element: Element | null) => {
+  if (!element) {
+    return false
+  }
+
+  const tagName = element.tagName.toLowerCase()
+  return tagName === 'textarea' || tagName === 'input' || (element instanceof HTMLElement && element.isContentEditable)
+}
+
+export function readWebsiteEmbedViewportSnapshot() {
+  if (typeof window === 'undefined') {
+    return {
+      viewportWidth: Number.POSITIVE_INFINITY,
+      layoutViewportHeight: Number.POSITIVE_INFINITY,
+      visualViewportHeight: null,
+      editableFocused: false,
+    }
+  }
+
+  const visualViewport = window.visualViewport
+
+  return {
+    viewportWidth: visualViewport?.width ?? window.innerWidth,
+    layoutViewportHeight: window.innerHeight,
+    visualViewportHeight: visualViewport?.height ?? null,
+    editableFocused: isEditableElement(document.activeElement),
+  }
+}
+
+function useWebsiteEmbedCompactKeyboardLayout(enabled: boolean) {
+  const [isCompact, setIsCompact] = useState(false)
+
+  useEffect(() => {
+    if (!enabled) {
+      return
+    }
+
+    const update = () => {
+      setIsCompact(shouldUseWebsiteEmbedCompactKeyboardLayout(readWebsiteEmbedViewportSnapshot()))
+    }
+
+    const animationFrame = window.requestAnimationFrame(update)
+    window.addEventListener('resize', update)
+    window.addEventListener('focusin', update)
+    window.addEventListener('focusout', update)
+    window.visualViewport?.addEventListener('resize', update)
+    window.visualViewport?.addEventListener('scroll', update)
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame)
+      window.removeEventListener('resize', update)
+      window.removeEventListener('focusin', update)
+      window.removeEventListener('focusout', update)
+      window.visualViewport?.removeEventListener('resize', update)
+      window.visualViewport?.removeEventListener('scroll', update)
+    }
+  }, [enabled])
+
+  return enabled && isCompact
+}
 
 function AssistantAvatar({
   avatarUrl,
@@ -135,6 +199,7 @@ function PublicChatContent({
   avatarUrl,
   copyOverrides,
   themeOverrides,
+  surface,
 }: {
   initialWorkspaceName?: string | null
   localeOverride?: string | null
@@ -143,10 +208,12 @@ function PublicChatContent({
   avatarUrl?: string | null
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
+  surface: PublicChatSurface
 }) {
   const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
   const theme = getWebsiteEmbedTheme(themeOverrides)
   const [input, setInput] = useState('')
+  const isCompactKeyboardLayout = useWebsiteEmbedCompactKeyboardLayout(surface === 'embed')
   const {
     messages,
     workspaceName,
@@ -241,57 +308,75 @@ function PublicChatContent({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ color: theme.panelForeground }}>
-      <div
-        className="shrink-0 border-b px-6 py-4"
-        style={{
-          borderColor: theme.panelBorder,
-          background: theme.panelBackground,
-        }}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <AssistantAvatar avatarUrl={avatarUrl} label={resolvedWorkspaceName} themeOverrides={themeOverrides} />
-            <div>
-              <h1 className="text-lg font-medium">{resolvedWorkspaceName}</h1>
-              {copy.publicChatSubtitle.trim() ? (
-                <p className="text-sm" style={{ color: theme.mutedForeground }}>
-                  {copy.publicChatSubtitle}
-                </p>
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden" style={{ color: theme.panelForeground }}>
+      {isCompactKeyboardLayout && onRequestCollapse ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          onClick={onRequestCollapse}
+          className="absolute right-2 top-2 z-10 h-8 w-8 hover:opacity-90"
+          style={{ color: theme.mutedForeground }}
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+        </Button>
+      ) : null}
+
+      {!isCompactKeyboardLayout ? (
+        <div
+          className="shrink-0 border-b px-6 py-4"
+          style={{
+            borderColor: theme.panelBorder,
+            background: theme.panelBackground,
+          }}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <AssistantAvatar avatarUrl={avatarUrl} label={resolvedWorkspaceName} themeOverrides={themeOverrides} />
+              <div>
+                <h1 className="text-lg font-medium">{resolvedWorkspaceName}</h1>
+                {copy.publicChatSubtitle.trim() ? (
+                  <p className="text-sm" style={{ color: theme.mutedForeground }}>
+                    {copy.publicChatSubtitle}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex items-center gap-1 self-start">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => void handleStartNewChat()}
+                disabled={isLoading || isHydrating || isLoadingOlderMessages}
+                className="h-8 px-2 text-xs hover:opacity-90"
+                style={{ color: theme.mutedForeground }}
+              >
+                {copy.publicChatNewChatLabel}
+              </Button>
+              {onRequestCollapse ? (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={onRequestCollapse}
+                  className="hover:opacity-90"
+                  style={{ color: theme.mutedForeground }}
+                >
+                  <X className="h-4 w-4" />
+                  <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+                </Button>
               ) : null}
             </div>
           </div>
-          <div className="flex items-center gap-1 self-start">
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => void handleStartNewChat()}
-              disabled={isLoading || isHydrating || isLoadingOlderMessages}
-              className="h-8 px-2 text-xs hover:opacity-90"
-              style={{ color: theme.mutedForeground }}
-            >
-              {copy.publicChatNewChatLabel}
-            </Button>
-            {onRequestCollapse ? (
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={onRequestCollapse}
-                className="hover:opacity-90"
-                style={{ color: theme.mutedForeground }}
-              >
-                <X className="h-4 w-4" />
-                <span className="sr-only">{copy.publicChatCollapseLabel}</span>
-              </Button>
-            ) : null}
-          </div>
         </div>
-      </div>
+      ) : null}
 
       <div
-        className="min-h-0 flex-1 overflow-y-auto p-6"
+        className={`min-h-0 flex-1 overflow-y-auto ${
+          isCompactKeyboardLayout ? (onRequestCollapse ? 'px-3 pb-3 pt-10' : 'p-3') : 'p-6'
+        }`}
         style={{ background: theme.panelBackground }}
       >
         {messages.length === 0 ? (
@@ -305,7 +390,7 @@ function PublicChatContent({
             </p>
           </div>
         ) : (
-          <div className="mx-auto max-w-3xl space-y-6">
+          <div className={`mx-auto max-w-3xl ${isCompactKeyboardLayout ? 'space-y-4' : 'space-y-6'}`}>
             {hasOlderMessages ? (
               <div className="flex justify-center">
                 <Button
@@ -341,7 +426,7 @@ function PublicChatContent({
       </div>
 
       {rateLimitError && retryAfterSeconds ? (
-        <div className="shrink-0 px-4 pb-2">
+        <div className={`shrink-0 ${isCompactKeyboardLayout ? 'px-3 pb-2' : 'px-4 pb-2'}`}>
           <RateLimitBanner
             key={retryAfterSeconds}
             copy={copy}
@@ -353,19 +438,19 @@ function PublicChatContent({
       ) : null}
 
       <div
-        className="shrink-0 border-t p-4"
+        className={`shrink-0 border-t ${isCompactKeyboardLayout ? 'px-3 py-2' : 'p-4'}`}
         style={{
           borderColor: theme.panelBorder,
           background: theme.panelBackground,
         }}
       >
-        <form onSubmit={handleSubmit} className="mx-auto flex max-w-3xl items-end gap-3">
+        <form onSubmit={handleSubmit} className={`mx-auto flex max-w-3xl items-end ${isCompactKeyboardLayout ? 'gap-2' : 'gap-3'}`}>
           <Textarea
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={copy.startPrompt}
-            className="min-h-[44px] max-h-32 resize-none placeholder:text-[var(--radioso-input-placeholder)]"
+            className={`${isCompactKeyboardLayout ? 'min-h-10 max-h-24' : 'min-h-[44px] max-h-32'} resize-none placeholder:text-[var(--radioso-input-placeholder)]`}
             style={{
               background: theme.inputBackground,
               borderColor: theme.inputBorder,
@@ -375,7 +460,7 @@ function PublicChatContent({
           <Button
             type="submit"
             size="icon"
-            className="h-[44px] w-[44px] shrink-0 hover:opacity-90"
+            className={`${isCompactKeyboardLayout ? 'h-10 w-10' : 'h-[44px] w-[44px]'} shrink-0 hover:opacity-90`}
             disabled={isLoading || !input.trim()}
             style={{
               background: theme.accent,
@@ -386,11 +471,13 @@ function PublicChatContent({
             <span className="sr-only">{copy.publicChatSendMessageLabel}</span>
           </Button>
         </form>
-        <div className="mx-auto mt-3 flex max-w-3xl justify-center">
-          <p className="w-full text-center text-xs" style={{ color: theme.mutedForeground }}>
-            {formatWebsiteEmbedDisclaimer(copy, resolvedWorkspaceName)}
-          </p>
-        </div>
+        {!isCompactKeyboardLayout ? (
+          <div className="mx-auto mt-3 flex max-w-3xl justify-center">
+            <p className="w-full text-center text-xs" style={{ color: theme.mutedForeground }}>
+              {formatWebsiteEmbedDisclaimer(copy, resolvedWorkspaceName)}
+            </p>
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -405,6 +492,7 @@ export function PublicChatShell({
   avatarUrl,
   copyOverrides,
   themeOverrides,
+  surface = 'public',
 }: {
   token: string
   initialWorkspaceName?: string | null
@@ -414,6 +502,7 @@ export function PublicChatShell({
   avatarUrl?: string | null
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
+  surface?: PublicChatSurface
 }) {
   const theme = getWebsiteEmbedTheme(themeOverrides)
 
@@ -435,6 +524,7 @@ export function PublicChatShell({
           avatarUrl={avatarUrl}
           copyOverrides={copyOverrides}
           themeOverrides={themeOverrides}
+          surface={surface}
         />
       </div>
     </AnonymousChatProvider>

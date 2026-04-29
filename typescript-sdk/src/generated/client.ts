@@ -213,12 +213,16 @@ export class GeneratedRadiosoClient {
     });
   }
 
-  getChatHistoryConversation(conversationId: string, query?: PaginationQuery): Promise<ChatConversationDetail> {
+  getHistoryConversation(conversationId: string, query?: PaginationQuery): Promise<ChatConversationDetail> {
     return requestJson(this.config, {
       method: "GET",
       path: `/api/v1/history/chat/${conversationId}`,
       query: query as Record<string, string | number | boolean | null | undefined> | undefined,
     });
+  }
+
+  getChatHistoryConversation(conversationId: string, query?: PaginationQuery): Promise<ChatConversationDetail> {
+    return this.getHistoryConversation(conversationId, query);
   }
 
   getLegacyHistoryConversation(conversationId: string, query?: PaginationQuery): Promise<ChatConversationDetail> {

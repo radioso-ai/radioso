@@ -1,18 +1,10 @@
 'use client'
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { type ReactNode } from 'react'
 
 import {
-  type ChatConversationDetail,
-  type HistoryItem,
-  type ChatConversationSummary,
   type ChatConversationTurn,
-  type DocumentDetails,
-  type DocumentSearchHistoryEntry,
   type DocumentSearchResponse,
-  chatApi,
-  documentsApi,
 } from '@/lib/api'
 import {
   Drawer,
@@ -29,32 +21,28 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { ChatRetrievalInfo } from './chat-retrieval-info'
 import { ChatRetrievalTraceGraph } from './chat-retrieval-trace-graph'
 import { ChatMessageThread } from './chat-message-thread'
-import type { CitationOpenResult } from './chat-citations'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { Search, X } from 'lucide-react'
 import {
-  HistoryFilter,
   HistoryList,
-  HistoryListItem,
-  SelectedHistoryItem,
 } from '@/components/dashboard/history/history-list'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
-import { getApiErrorMessage } from '@/lib/api-error'
-import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { formatConversationSource } from '@/lib/history-source'
+import {
+  HISTORY_PAGE_SIZE,
+  useHistoryDetailState,
+  useHistoryDocumentDialogState,
+  useHistoryListState,
+} from '@/components/dashboard/history/use-chat-history-state'
 
-const HISTORY_PAGE_SIZE = 50
-const MESSAGE_WINDOW_SIZE = 50
 const HIDDEN_SUPPORT_LABELS = {
   assistant_name: 'Assistant name',
   assistant_role: 'Assistant role',
 } as const
 
 const formatDiagnosticLabel = (value: string) => value.replaceAll('_', ' ')
-
-const buildHistoryLoadKey = (workspaceId: string | undefined, filter: HistoryFilter, page: number) =>
-  `${workspaceId ?? ''}:${filter}:${page}`
 
 export function ChatHistoryView({
   accountId,
@@ -65,482 +53,60 @@ export function ChatHistoryView({
   onboarding: WorkspaceOnboardingState
   routeState: DashboardRouteState
 }) {
-  const router = useRouter()
-  const [filter, setFilter] = useState<HistoryFilter>(routeState.historyFilter ?? 'all')
-  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
-  const [historyItemsTotal, setHistoryItemsTotal] = useState(0)
-  const [hasHistoryItemsNextPage, setHasHistoryItemsNextPage] = useState(false)
-  const [conversations, setConversations] = useState<ChatConversationSummary[]>([])
-  const [conversationTotal, setConversationTotal] = useState(0)
-  const [hasConversationNextPage, setHasConversationNextPage] = useState(false)
-  const [conversationPage, setConversationPage] = useState(
-    routeState.historyFilter === 'chat' ? (routeState.historyPage ?? 1) : 1,
-  )
-  const [searches, setSearches] = useState<DocumentSearchHistoryEntry[]>([])
-  const [searchTotal, setSearchTotal] = useState(0)
-  const [hasSearchNextPage, setHasSearchNextPage] = useState(false)
-  const [searchPage, setSearchPage] = useState(
-    routeState.historyFilter === 'search' ? (routeState.historyPage ?? 1) : 1,
-  )
-  const [allPage, setAllPage] = useState(
-    routeState.historyFilter === 'all' || !routeState.historyFilter ? (routeState.historyPage ?? 1) : 1,
-  )
-  const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(
-    routeState.historyItemKind && routeState.historyItemId
-      ? { kind: routeState.historyItemKind, id: routeState.historyItemId }
-      : null,
-  )
-  const [conversationDetail, setConversationDetail] = useState<ChatConversationDetail | null>(null)
-  const [searchDetail, setSearchDetail] = useState<DocumentSearchResponse | null>(null)
-  const [isListLoading, setIsListLoading] = useState(true)
-  const [isDetailLoading, setIsDetailLoading] = useState(false)
-  const [listError, setListError] = useState<string | null>(null)
-  const [detailError, setDetailError] = useState<string | null>(null)
-  const [selectedThreadMessageId, setSelectedThreadMessageId] = useState<string | null>(null)
-  const [selectedAssistantMessageId, setSelectedAssistantMessageId] = useState<string | null>(null)
-  const [selectedStageId, setSelectedStageId] = useState<string | undefined>(undefined)
-  const [showGraph, setShowGraph] = useState(false)
-  const [loadedHistoryKey, setLoadedHistoryKey] = useState<string | null>(null)
-  const [isDocumentDialogOpen, setIsDocumentDialogOpen] = useState(false)
-  const [isDocumentLoading, setIsDocumentLoading] = useState(false)
-  const [documentDetail, setDocumentDetail] = useState<DocumentDetails | null>(null)
-  const [documentError, setDocumentError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const nextFilter = routeState.historyFilter ?? 'all'
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Syncs local history controls from the current URL route.
-    setFilter(nextFilter)
-
-    const nextPage = routeState.historyPage ?? 1
-    if (nextFilter === 'all') {
-      setAllPage(nextPage)
-    } else if (nextFilter === 'chat') {
-      setConversationPage(nextPage)
-    } else {
-      setSearchPage(nextPage)
-    }
-
-    if (routeState.historyItemKind && routeState.historyItemId) {
-      setSelectedItem({ kind: routeState.historyItemKind, id: routeState.historyItemId })
-      return
-    }
-
-    setSelectedItem(null)
-  }, [
-    routeState.historyFilter,
-    routeState.historyItemId,
-    routeState.historyItemKind,
-    routeState.historyPage,
-  ])
-
-  const pushHistoryRoute = useCallback((next: {
-    filter?: HistoryFilter
-    page?: number
-    selectedItem?: SelectedHistoryItem
-  }) => {
-    const nextFilter = next.filter ?? filter
-    const nextPage = next.page ?? (
-      nextFilter === 'all'
-        ? allPage
-        : nextFilter === 'chat'
-          ? conversationPage
-          : searchPage
-    )
-    const nextSelectedItem = next.selectedItem === undefined ? selectedItem : next.selectedItem
-
-    router.push(buildDashboardHref(accountId, {
-      ...routeState,
-      section: 'history',
-      historyFilter: nextFilter,
-      historyPage: nextPage,
-      historyItemKind: nextSelectedItem?.kind,
-      historyItemId: nextSelectedItem?.id,
-    }))
-  }, [
-    accountId,
-    allPage,
-    conversationPage,
+  const {
     filter,
-    routeState,
-    router,
-    searchPage,
-    selectedItem,
-  ])
-
-  const loadHistory = useCallback(async () => {
-    setIsListLoading(true)
-    setListError(null)
-    const page = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : searchPage
-    const loadKey = buildHistoryLoadKey(routeState.workspaceId, filter, page)
-
-    try {
-      if (filter === 'all') {
-        const response = await chatApi.listHistory({
-          limit: HISTORY_PAGE_SIZE,
-          offset: (allPage - 1) * HISTORY_PAGE_SIZE,
-        })
-        setHistoryItems(response.items)
-        setHistoryItemsTotal(response.total)
-        setHasHistoryItemsNextPage(response.hasMore)
-        setLoadedHistoryKey(loadKey)
-        return
-      }
-
-      if (filter === 'chat') {
-        const response = await chatApi.listChatHistory({
-          limit: HISTORY_PAGE_SIZE,
-          offset: (conversationPage - 1) * HISTORY_PAGE_SIZE,
-        })
-        setConversations(response.conversations)
-        setConversationTotal(response.total)
-        setHasConversationNextPage(response.hasMore)
-        setLoadedHistoryKey(loadKey)
-        return
-      }
-
-      const response = await chatApi.listSearchHistory({
-        limit: HISTORY_PAGE_SIZE,
-        offset: (searchPage - 1) * HISTORY_PAGE_SIZE,
-      })
-      setSearches(response.searches)
-      setSearchTotal(response.total)
-      setHasSearchNextPage(response.hasMore)
-      setLoadedHistoryKey(loadKey)
-    } catch (error) {
-      if (filter === 'all') {
-        setHistoryItems([])
-        setHistoryItemsTotal(0)
-        setHasHistoryItemsNextPage(false)
-      } else if (filter === 'chat') {
-        setConversations([])
-        setConversationTotal(0)
-        setHasConversationNextPage(false)
-      } else {
-        setSearches([])
-        setSearchTotal(0)
-        setHasSearchNextPage(false)
-      }
-
-      setListError(
-        getApiErrorMessage(
-          error,
-          filter === 'search'
-            ? 'Failed to load search history.'
-            : filter === 'chat'
-              ? 'Failed to load chat history.'
-              : 'Failed to load history.',
-        ),
-      )
-    } finally {
-      setIsListLoading(false)
-    }
-  }, [allPage, conversationPage, filter, routeState.workspaceId, searchPage])
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- History view fetches the current page after route/filter changes.
-    void loadHistory()
-  }, [loadHistory, accountId, routeState.workspaceId])
-
-  useEffect(() => {
-    if (!selectedItem) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Closing the drawer clears its detail state.
-      setConversationDetail(null)
-      setSearchDetail(null)
-      setDetailError(null)
-      setSelectedThreadMessageId(null)
-      setSelectedAssistantMessageId(null)
-      setSelectedStageId(undefined)
-      setShowGraph(false)
-      return
-    }
-
-    let isActive = true
-
-    const loadDetail = async () => {
-      setIsDetailLoading(true)
-      setDetailError(null)
-      setConversationDetail(null)
-        setSearchDetail(null)
-
-      try {
-        if (selectedItem.kind === 'chat') {
-          const detail = await chatApi.getHistoryConversation(selectedItem.id, {
-            limit: MESSAGE_WINDOW_SIZE,
-          })
-          if (!isActive) {
-            return
-          }
-          setConversationDetail(detail)
-          const traceBearingMessage =
-            [...detail.messages]
-              .reverse()
-              .find((message) => message.role === 'assistant' && message.debug) ?? null
-          setSelectedThreadMessageId(traceBearingMessage?.id ?? null)
-          setSelectedAssistantMessageId(traceBearingMessage?.id ?? null)
-          setSelectedStageId(traceBearingMessage?.debug?.retrievalTrace?.stages[0]?.stageId)
-          setShowGraph(false)
-          return
-        }
-
-        const detail = await chatApi.getSearchHistory(selectedItem.id)
-        if (!isActive) {
-          return
-        }
-        setSearchDetail(detail)
-        setSelectedStageId(detail.retrievalTrace?.stages[0]?.stageId)
-        setShowGraph(false)
-      } catch (error) {
-        if (!isActive) {
-          return
-        }
-        setDetailError(
-          getApiErrorMessage(
-            error,
-            selectedItem.kind === 'chat'
-              ? 'Failed to load conversation details.'
-              : 'Failed to load search details.',
-          ),
-        )
-        if (
-          error &&
-          typeof error === 'object' &&
-          'error' in error &&
-          error.error &&
-          typeof error.error === 'object' &&
-          'code' in error.error &&
-          error.error.code === 'not_found'
-        ) {
-          setSelectedItem(null)
-          pushHistoryRoute({ selectedItem: null })
-        }
-      } finally {
-        if (isActive) {
-          setIsDetailLoading(false)
-        }
-      }
-    }
-
-    void loadDetail()
-
-    return () => {
-      isActive = false
-    }
-  }, [pushHistoryRoute, selectedItem])
-
-  const assistantMessages = useMemo(
-    () => conversationDetail?.messages.filter((message) => message.role === 'assistant') ?? [],
-    [conversationDetail],
-  )
-
-  const selectedThreadMessage = useMemo(
-    () => conversationDetail?.messages.find((message) => message.id === selectedThreadMessageId) ?? null,
-    [conversationDetail, selectedThreadMessageId],
-  )
-
-  const selectedAssistantMessage = useMemo(
-    () =>
-      assistantMessages.find((message) => message.id === selectedAssistantMessageId) ??
-      assistantMessages[assistantMessages.length - 1] ??
-      null,
-    [assistantMessages, selectedAssistantMessageId],
-  )
-
-  const selectedDiagnosticsAssistantMessage = useMemo(() => {
-    if (!conversationDetail || !selectedThreadMessage) {
-      return selectedAssistantMessage
-    }
-
-    if (selectedThreadMessage.role === 'assistant') {
-      return selectedThreadMessage
-    }
-
-    const messageIndex = conversationDetail.messages.findIndex((message) => message.id === selectedThreadMessage.id)
-    if (messageIndex < 0) {
-      return null
-    }
-
-    return (
-      conversationDetail.messages
-        .slice(messageIndex + 1)
-        .find((message) => message.role === 'assistant') ?? null
-    )
-  }, [conversationDetail, selectedThreadMessage, selectedAssistantMessage])
-
-  const selectedDiagnosticsDebug =
-    selectedDiagnosticsAssistantMessage?.role === 'assistant' ? selectedDiagnosticsAssistantMessage.debug : undefined
-  const selectedDiagnosticsTrace = selectedDiagnosticsDebug?.retrievalTrace
-  const activeTrace = selectedItem?.kind === 'chat' ? selectedDiagnosticsTrace : searchDetail?.retrievalTrace
-  const activeTraceId = activeTrace?.traceId
-  const activeInitialStageId = activeTrace?.stages[0]?.stageId
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Active trace changes reset the selected diagnostics stage.
-    setSelectedStageId(activeInitialStageId)
-  }, [activeTraceId, activeInitialStageId])
-
-  const handleSelectThreadMessage = useCallback(
-    (messageId: string) => {
-      if (!conversationDetail) {
-        return
-      }
-
-      const messageIndex = conversationDetail.messages.findIndex((message) => message.id === messageId)
-      if (messageIndex < 0) {
-        return
-      }
-
-      const clickedMessage = conversationDetail.messages[messageIndex]
-      setSelectedThreadMessageId(clickedMessage.id)
-
-      const targetAssistant =
-        clickedMessage.role === 'assistant'
-          ? clickedMessage
-          : conversationDetail.messages
-              .slice(messageIndex + 1)
-              .find((message) => message.role === 'assistant')
-
-      if (!targetAssistant || targetAssistant.role !== 'assistant') {
-        return
-      }
-
-      setSelectedAssistantMessageId(targetAssistant.id)
-      setSelectedStageId(targetAssistant.debug?.retrievalTrace?.stages[0]?.stageId)
-    },
-    [conversationDetail],
-  )
-
-  const handleOpenCitation = useCallback(async (documentId: string): Promise<CitationOpenResult> => {
-    setIsDocumentLoading(true)
-    setDocumentError(null)
-
-    try {
-      const detail = await documentsApi.getDocument(documentId)
-      setDocumentDetail(detail)
-      setIsDocumentDialogOpen(true)
-      return 'opened'
-    } catch (error) {
-      setDocumentDetail(null)
-      setDocumentError(getApiErrorMessage(error, 'Failed to load document.'))
-      setIsDocumentDialogOpen(true)
-      if (
-        error &&
-        typeof error === 'object' &&
-        'error' in error &&
-        error.error &&
-        typeof error.error === 'object' &&
-        'code' in error.error &&
-        error.error.code === 'not_found'
-      ) {
-        return 'unavailable'
-      }
-
-      return 'error'
-    } finally {
-      setIsDocumentLoading(false)
-    }
-  }, [])
-
-  const conversationTotalPages = Math.max(1, Math.ceil(conversationTotal / HISTORY_PAGE_SIZE))
-  const searchTotalPages = Math.max(1, Math.ceil(searchTotal / HISTORY_PAGE_SIZE))
-  const allTotal = historyItemsTotal
-  const allTotalPages = Math.max(1, Math.ceil(allTotal / HISTORY_PAGE_SIZE))
-  const allHasNextPage = hasHistoryItemsNextPage
-
-  useEffect(() => {
-    const activePage = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : searchPage
-    const activeLoadKey = buildHistoryLoadKey(routeState.workspaceId, filter, activePage)
-    const activeTotalPages = filter === 'all'
-      ? allTotalPages
-      : filter === 'chat'
-        ? conversationTotalPages
-        : searchTotalPages
-
-    if (loadedHistoryKey !== activeLoadKey) {
-      return
-    }
-
-    if (activePage <= activeTotalPages) {
-      return
-    }
-
-    const nextPage = activeTotalPages
-    if (filter === 'all') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Clamps local pagination after result totals shrink.
-      setAllPage(nextPage)
-    } else if (filter === 'chat') {
-      setConversationPage(nextPage)
-    } else {
-      setSearchPage(nextPage)
-    }
-
-    router.replace(buildDashboardHref(accountId, {
-      ...routeState,
-      section: 'history',
-      historyFilter: filter,
-      historyPage: nextPage,
-      historyItemKind: selectedItem?.kind,
-      historyItemId: selectedItem?.id,
-    }))
-  }, [
-    accountId,
-    allPage,
-    allTotalPages,
+    isListLoading,
+    hasAnyHistory,
+    listError,
+    conversations: conversationPageItems,
+    conversationTotal,
     conversationPage,
     conversationTotalPages,
-    filter,
-    loadedHistoryKey,
-    routeState,
-    router,
+    searches: searchPageItems,
+    searchTotal,
     searchPage,
     searchTotalPages,
-    selectedItem?.id,
-    selectedItem?.kind,
-  ])
+    allHistoryItems,
+    allTotal,
+    allPage,
+    allTotalPages,
+    selectedItem,
+    setSelectedItem,
+    pushHistoryRoute,
+    onFilterChange,
+    onSelectItem,
+    onConversationPageChange,
+    onSearchPageChange,
+    onAllPageChange,
+    onNavigate,
+  } = useHistoryListState({ accountId, routeState })
 
-  const loadOlderMessages = useCallback(async () => {
-    if (
-      !selectedItem ||
-      selectedItem.kind !== 'chat' ||
-      !conversationDetail ||
-      !conversationDetail.hasOlderMessages ||
-      !conversationDetail.nextCursor
-    ) {
-      return
-    }
+  const {
+    conversationDetail,
+    searchDetail,
+    isDetailLoading,
+    detailError,
+    selectedThreadMessage,
+    selectedThreadMessageId,
+    selectedDiagnosticsAssistantMessage,
+    selectedDiagnosticsTrace,
+    activeInitialStageId,
+    selectedStageId,
+    setSelectedStageId,
+    showGraph,
+    setShowGraph,
+    handleSelectThreadMessage,
+    loadOlderMessages,
+  } = useHistoryDetailState({ selectedItem, setSelectedItem, pushHistoryRoute })
 
-    setIsDetailLoading(true)
-    setDetailError(null)
-
-    try {
-      const older = await chatApi.getHistoryConversation(selectedItem.id, {
-        limit: MESSAGE_WINDOW_SIZE,
-        ...(conversationDetail.nextCursor ? { cursor: conversationDetail.nextCursor } : {}),
-      })
-      setConversationDetail((current) => {
-        if (!current) {
-          return older
-        }
-        return {
-          ...older,
-          messages: [...older.messages, ...current.messages],
-        }
-      })
-    } catch (error) {
-      setDetailError(getApiErrorMessage(error, 'Failed to load older messages.'))
-    } finally {
-      setIsDetailLoading(false)
-    }
-  }, [conversationDetail, selectedItem])
-
-  const hasAnyHistory =
-    filter === 'all'
-      ? historyItemsTotal > 0
-      : filter === 'chat'
-        ? conversationTotal > 0
-        : searchTotal > 0
-  const allHistoryItems: HistoryListItem[] = historyItems
-  const conversationPageItems = conversations
-  const searchPageItems = searches
+  const {
+    isDocumentDialogOpen,
+    isDocumentLoading,
+    documentDetail,
+    documentError,
+    handleOpenCitation,
+    handleDocumentDialogOpenChange,
+  } = useHistoryDocumentDialogState()
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -566,39 +132,12 @@ export function ChatHistoryView({
         allTotal={allTotal}
         allPage={allPage}
         allTotalPages={allTotalPages}
-        onFilterChange={(nextFilter) => {
-          setFilter(nextFilter)
-          if (nextFilter === 'all') setAllPage(1)
-          if (nextFilter === 'chat') setConversationPage(1)
-          if (nextFilter === 'search') setSearchPage(1)
-          pushHistoryRoute({ filter: nextFilter, page: 1, selectedItem: null })
-        }}
-        onSelectItem={(item) => {
-          setSelectedItem(item)
-          pushHistoryRoute({ selectedItem: item })
-        }}
-        onConversationPageChange={(page) => {
-          if (page > conversationPage && !hasConversationNextPage) {
-            return
-          }
-          setConversationPage(page)
-          pushHistoryRoute({ filter: 'chat', page })
-        }}
-        onSearchPageChange={(page) => {
-          if (page > searchPage && !hasSearchNextPage) {
-            return
-          }
-          setSearchPage(page)
-          pushHistoryRoute({ filter: 'search', page })
-        }}
-        onAllPageChange={(page) => {
-          if (page > allPage && !allHasNextPage) {
-            return
-          }
-          setAllPage(page)
-          pushHistoryRoute({ filter: 'all', page })
-        }}
-        onNavigate={(href) => router.push(href)}
+        onFilterChange={onFilterChange}
+        onSelectItem={onSelectItem}
+        onConversationPageChange={onConversationPageChange}
+        onSearchPageChange={onSearchPageChange}
+        onAllPageChange={onAllPageChange}
+        onNavigate={onNavigate}
       />
 
       <Drawer
@@ -806,13 +345,7 @@ export function ChatHistoryView({
         isLoading={isDocumentLoading}
         error={documentError}
         document={documentDetail}
-        onOpenChange={(open) => {
-          setIsDocumentDialogOpen(open)
-          if (!open) {
-            setDocumentDetail(null)
-            setDocumentError(null)
-          }
-        }}
+        onOpenChange={handleDocumentDialogOpenChange}
       />
     </div>
   )

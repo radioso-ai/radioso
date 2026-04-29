@@ -1,22 +1,21 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {
-  ConversationRecord,
   ConversationRepositoryPort,
 } from "../../../db/repositories/conversationRepository.js";
 import type {
-  ConversationMessageSummary,
   MessageRecord,
   MessageRepositoryPort,
 } from "../../../db/repositories/messageRepository.js";
 import type { HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
-import { toDocumentSearchHistoryEntry, type DocumentSearchHistoryEntry } from "../../documents/services/documentSearchHistoryService.js";
+import type { DocumentSearchHistoryEntry } from "../../documents/services/documentSearchHistoryService.js";
 import type { RetrievalExecutionDiagnostics, RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
 import type { AssistantTurnOutcome, HiddenSupportEvidence, ValidationDisposition } from "./answerSupportValidationTypes.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
+import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
 
 export interface ChatConversationSummary {
   id: string;
@@ -314,7 +313,7 @@ export class ChatHistoryService {
     );
 
     return {
-      conversations: conversations.map((conversation) => this.buildSummary(conversation, messageSummaries.get(conversation.id))),
+      conversations: conversations.map((conversation) => buildChatConversationSummary(conversation, messageSummaries.get(conversation.id))),
       total,
       nextCursor,
       hasMore,
@@ -330,23 +329,10 @@ export class ChatHistoryService {
     const messageSummaries = await this.messageRepository.summarizeByConversationIds(workspaceId, conversationIds);
 
     return {
-      items: items.map((item): HistoryItem => {
-        if (item.kind === "chat") {
-          return {
-            kind: "chat",
-            id: item.id,
-            sortAt: toIsoString(item.sortAt),
-            conversation: this.buildSummary(item.conversation, messageSummaries.get(item.conversation.id)),
-          };
-        }
-
-        return {
-          kind: "search",
-          id: item.id,
-          sortAt: toIsoString(item.sortAt),
-          search: toDocumentSearchHistoryEntry(item.event),
-        };
-      }),
+      items: items.map((item): HistoryItem => buildHistoryItem(
+        item,
+        item.kind === "chat" ? messageSummaries.get(item.conversation.id) : undefined,
+      )),
       total,
       nextCursor: null,
       hasMore,
@@ -441,24 +427,6 @@ export class ChatHistoryService {
         suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
       })),
-    };
-  }
-
-  private buildSummary(
-    conversation: ConversationRecord,
-    messageSummary?: ConversationMessageSummary,
-  ): ChatConversationSummary {
-    return {
-      id: conversation.id,
-      sourceChannel: conversation.sourceChannel,
-      sourceOrigin: conversation.sourceOrigin,
-      anonymousSessionId: conversation.anonymousSessionId ?? null,
-      createdAt: toIsoString(conversation.createdAt),
-      updatedAt: toIsoString(conversation.updatedAt),
-      messageCount: messageSummary?.messageCount ?? 0,
-      userMessageCount: messageSummary?.userMessageCount ?? 0,
-      assistantMessageCount: messageSummary?.assistantMessageCount ?? 0,
-      preview: messageSummary?.preview ?? null,
     };
   }
 

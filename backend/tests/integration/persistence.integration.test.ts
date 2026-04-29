@@ -21,6 +21,7 @@ import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chu
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { AuditEventRepository } from "../../src/db/repositories/auditEventRepository.js";
+import { HistoryItemsRepository } from "../../src/db/repositories/historyItemsRepository.js";
 import { AuditEventAnalyticsSink } from "../../src/shared/analytics/auditEventAnalyticsSink.js";
 import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
 import { AuditIncidentSink } from "../../src/shared/incidents/auditIncidentSink.js";
@@ -287,6 +288,88 @@ describeIfDatabase("persistence integration", () => {
       thirdConversationId,
     ]);
 
+    await database.query("DELETE FROM conversations WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM workspaces WHERE id = $1", [workspace.id]);
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
+  });
+
+  it("orders merged history items by chat updates and search audit timestamps", async () => {
+    const accountRepository = new AccountRepository(database);
+    const historyItemsRepository = new HistoryItemsRepository(database);
+
+    const account = await accountRepository.create({
+      name: "Merged History Organization",
+      email: `merged-history-${randomUUID()}@example.com`,
+      passwordHash: "hash-merged-history",
+    });
+    const workspace = await workspaceRepository.create(account.id, "Merged History Workspace");
+
+    const newConversationId = randomUUID();
+    const oldConversationId = randomUUID();
+    const newSearchId = randomUUID();
+    const oldSearchId = randomUUID();
+
+    await database.query(
+      `INSERT INTO conversations (
+         id,
+         workspace_id,
+         source_channel,
+         anonymous_session_id,
+         created_at,
+         updated_at
+       )
+       VALUES
+         ($1, $2, NULL, NULL, $3, $4),
+         ($5, $2, NULL, NULL, $6, $7)`,
+      [
+        newConversationId,
+        workspace.id,
+        new Date("2026-01-01T00:00:00.000Z"),
+        new Date("2026-01-04T00:00:00.000Z"),
+        oldConversationId,
+        new Date("2026-01-01T00:00:00.000Z"),
+        new Date("2026-01-02T00:00:00.000Z"),
+      ],
+    );
+
+    await database.query(
+      `INSERT INTO audit_events (
+         id,
+         account_id,
+         workspace_id,
+         event_type,
+         event_status,
+         metadata_json,
+         created_at
+       )
+       VALUES
+         ($1, $2, $3, 'document.search', 'success', $4::jsonb, $5),
+         ($6, $2, $3, 'document.search', 'success', $7::jsonb, $8)`,
+      [
+        randomUUID(),
+        account.id,
+        workspace.id,
+        JSON.stringify({ searchId: newSearchId, query: "new search", results: [] }),
+        new Date("2026-01-03T00:00:00.000Z"),
+        randomUUID(),
+        JSON.stringify({ searchId: oldSearchId, query: "old search", results: [] }),
+        new Date("2026-01-01T00:00:00.000Z"),
+      ],
+    );
+
+    const firstWindow = await historyItemsRepository.listPageByWorkspaceId(workspace.id, {
+      limit: 2,
+      offset: 1,
+    });
+
+    expect(firstWindow.total).toBe(4);
+    expect(firstWindow.hasMore).toBe(true);
+    expect(firstWindow.items.map((item) => `${item.kind}:${item.id}`)).toEqual([
+      `search:${newSearchId}`,
+      `chat:${oldConversationId}`,
+    ]);
+
+    await database.query("DELETE FROM audit_events WHERE workspace_id = $1", [workspace.id]);
     await database.query("DELETE FROM conversations WHERE workspace_id = $1", [workspace.id]);
     await database.query("DELETE FROM workspaces WHERE id = $1", [workspace.id]);
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);

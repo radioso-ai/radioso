@@ -102,12 +102,27 @@ export class NoopEmailDriver implements EmailDriver {
   async send(_message: EmailMessage): Promise<void> {}
 }
 
+const redactSensitiveEmailMetadata = (
+  metadata: Record<string, string> | undefined,
+): Record<string, string> | undefined => {
+  if (!metadata) {
+    return undefined;
+  }
+
+  return Object.fromEntries(
+    Object.entries(metadata).map(([key, value]) => [
+      key,
+      key === "resetUrl" || key === "verificationUrl" ? "[redacted]" : value,
+    ]),
+  );
+};
+
 export class LogEmailDriver implements EmailDriver {
   async send(message: EmailMessage): Promise<void> {
     console.info("email.send", {
       to: message.to,
       subject: message.subject,
-      metadata: message.metadata,
+      metadata: redactSensitiveEmailMetadata(message.metadata),
     });
   }
 }

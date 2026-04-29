@@ -154,17 +154,66 @@ describe("resolveAnonymousSession", () => {
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
 
     const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
-    let setCookieName = "";
+    const setCookieNames: string[] = [];
     const { req, res, next } = createMockReqRes({ token: "test-token-1234567890" });
     (res as any).cookie = (name: string, _value: string, _options: unknown) => {
-      setCookieName = name;
+      setCookieNames.push(name);
     };
 
     await middleware(req, res, next);
 
-    expect(setCookieName).toBe(`anon_session_${workspace.id}`);
+    expect(setCookieNames).toContain(`anon_session_${workspace.id}`);
     expect(res.locals.anonymousSessionId).toBeDefined();
     expect(typeof res.locals.anonymousSessionId).toBe("string");
+  });
+
+  it("sets a signed anonymous rate-limit cookie separately from the resettable session cookie", async () => {
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
+
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
+    const cookies = new Map<string, string>();
+    const { req, res, next } = createMockReqRes({ token: "test-token-1234567890" });
+    (res as any).cookie = (name: string, value: string, _options: unknown) => {
+      cookies.set(name, value);
+    };
+
+    await middleware(req, res, next);
+
+    expect(cookies.has(`anon_session_${workspace.id}`)).toBe(true);
+    expect(cookies.get(`anon_rate_limit_${workspace.id}`)).toMatch(/^[^.]+\.[^.]+$/);
+    expect(res.locals.anonymousRateLimitId).toBeDefined();
+    expect(res.locals.anonymousRateLimitIdFromCookie).toBe(false);
+  });
+
+  it("reuses a valid anonymous rate-limit cookie when the chat session is reset", async () => {
+    const workspace = await workspaceRepository.create("account-1", "Test");
+    await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
+
+    const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
+    const cookies = new Map<string, string>();
+    const first = createMockReqRes({ token: "test-token-1234567890" });
+    (first.res as any).cookie = (name: string, value: string, _options: unknown) => {
+      cookies.set(name, value);
+    };
+
+    await middleware(first.req, first.res, first.next);
+
+    const originalRateLimitId = first.res.locals.anonymousRateLimitId;
+    const reset = createMockReqRes(
+      { token: "test-token-1234567890" },
+      {
+        [`anon_session_${workspace.id}`]: "existing-session-id",
+        [`anon_rate_limit_${workspace.id}`]: cookies.get(`anon_rate_limit_${workspace.id}`)!,
+      },
+      { [ANONYMOUS_SESSION_RESET_HEADER]: "1" },
+    );
+
+    await middleware(reset.req, reset.res, reset.next);
+
+    expect(reset.res.locals.anonymousSessionId).not.toBe("existing-session-id");
+    expect(reset.res.locals.anonymousRateLimitId).toBe(originalRateLimitId);
+    expect(reset.res.locals.anonymousRateLimitIdFromCookie).toBe(true);
   });
 
   it("does not mark anonymous cookies as secure for localhost hosts in production", async () => {

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { z } from "zod";
 
@@ -14,6 +14,7 @@ const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 export const ANONYMOUS_SESSION_HEADER = "x-radioso-anonymous-session";
 export const ANONYMOUS_SESSION_RESET_HEADER = "x-radioso-reset-anonymous-session";
 export const WEBSITE_EMBED_SESSION_HEADER = "x-radioso-embed-session";
+const ANONYMOUS_RATE_LIMIT_COOKIE_PREFIX = "anon_rate_limit_";
 const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
 });
@@ -44,9 +45,38 @@ export const shouldUseSecureAnonymousCookie = (req: Request) => {
   return !isLoopbackHost(req.get("host"));
 };
 
+const signRateLimitId = (secret: string, id: string) =>
+  createHmac("sha256", secret).update(id).digest("base64url");
+
+const issueAnonymousRateLimitCookie = (secret: string, id: string) => `${id}.${signRateLimitId(secret, id)}`;
+
+const verifyAnonymousRateLimitCookie = (value: string | undefined, secret: string | undefined) => {
+  if (!value || !secret) {
+    return null;
+  }
+
+  const [id, providedSignature] = value.split(".");
+  if (!id || !providedSignature) {
+    return null;
+  }
+
+  const expectedSignature = signRateLimitId(secret, id);
+  const providedBuffer = Buffer.from(providedSignature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  if (
+    providedBuffer.length !== expectedBuffer.length ||
+    !timingSafeEqual(providedBuffer, expectedBuffer)
+  ) {
+    return null;
+  }
+
+  return id;
+};
+
 export const resolveAnonymousSession = (
   workspaceRepository: WorkspaceRepositoryPort,
-  sessionSecret: string | undefined,
+  websiteEmbedSecret: string | undefined,
+  anonymousRateLimitCookieSecret: string | undefined = websiteEmbedSecret,
 ): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -59,7 +89,7 @@ export const resolveAnonymousSession = (
 
       const { token } = parsedParams.data;
       const workspace = await workspaceRepository.findByAnonymousChatToken(token);
-      const embedSession = verifyWebsiteEmbedSession(req.get(WEBSITE_EMBED_SESSION_HEADER), sessionSecret);
+      const embedSession = verifyWebsiteEmbedSession(req.get(WEBSITE_EMBED_SESSION_HEADER), websiteEmbedSecret);
       const hasValidEmbedSession =
         Boolean(workspace?.websiteEmbedEnabled) &&
         Boolean(embedSession) &&
@@ -72,6 +102,12 @@ export const resolveAnonymousSession = (
       }
 
       const cookieName = `anon_session_${workspace.id}`;
+      const rateLimitCookieName = `${ANONYMOUS_RATE_LIMIT_COOKIE_PREFIX}${workspace.id}`;
+      const rateLimitIdFromCookie = verifyAnonymousRateLimitCookie(
+        req.cookies?.[rateLimitCookieName] as string | undefined,
+        anonymousRateLimitCookieSecret,
+      );
+      const rateLimitId = rateLimitIdFromCookie ?? randomUUID();
       const shouldResetAnonymousSession = !hasValidEmbedSession && req.get(ANONYMOUS_SESSION_RESET_HEADER) === "1";
       let sessionId =
         (hasValidEmbedSession ? embedSession?.anonymousSessionId : undefined) ??
@@ -87,6 +123,14 @@ export const resolveAnonymousSession = (
         sameSite: "lax",
         maxAge: COOKIE_MAX_AGE_SECONDS * 1000,
       });
+      if (anonymousRateLimitCookieSecret) {
+        res.cookie(rateLimitCookieName, issueAnonymousRateLimitCookie(anonymousRateLimitCookieSecret, rateLimitId), {
+          httpOnly: true,
+          secure: shouldUseSecureAnonymousCookie(req),
+          sameSite: "lax",
+          maxAge: COOKIE_MAX_AGE_SECONDS * 1000,
+        });
+      }
       res.setHeader(ANONYMOUS_SESSION_HEADER, sessionId);
 
       res.locals.workspaceId = workspace.id;
@@ -95,6 +139,8 @@ export const resolveAnonymousSession = (
         workspaceName: workspace.name,
       });
       res.locals.anonymousSessionId = sessionId;
+      res.locals.anonymousRateLimitId = rateLimitId;
+      res.locals.anonymousRateLimitIdFromCookie = Boolean(rateLimitIdFromCookie);
       res.locals.anonymousRateLimit = workspace.anonymousRateLimit;
       res.locals.sourceChannel = hasValidEmbedSession ? "website_embed" : "anonymous";
       res.locals.sourceOrigin = hasValidEmbedSession ? embedSession?.sourceOrigin ?? null : null;

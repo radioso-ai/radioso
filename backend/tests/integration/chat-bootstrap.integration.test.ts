@@ -55,7 +55,7 @@ describe("chat bootstrap integration", () => {
     expect(followUp.body.conversationId).toBe(bootstrap.body.conversationId);
 
     const history = await request(app)
-      .get(`/api/v1/history/${bootstrap.body.conversationId}`)
+      .get(`/api/v1/history/chat/${bootstrap.body.conversationId}`)
       .set(headers);
 
     expect(history.status).toBe(200);

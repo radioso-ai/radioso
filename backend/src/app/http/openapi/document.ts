@@ -172,6 +172,23 @@ const WorkspaceListResponseSchema = registry.register(
   }),
 );
 
+const WorkspaceSummaryResponseSchema = registry.register(
+  "WorkspaceSummaryResponse",
+  z.object({
+    documentCount: z.number().int().min(0),
+    readyDocumentCount: z.number().int().min(0),
+    pendingDocumentCount: z.number().int().min(0),
+    sampleDocumentCount: z.number().int().min(0),
+    sampleDocumentSlugs: z.array(z.string()),
+    conversationCount: z.number().int().min(0),
+    hasDocuments: z.boolean(),
+    hasPendingDocuments: z.boolean(),
+    hasReadyDocuments: z.boolean(),
+    hasCompletedChat: z.boolean(),
+    sampleDocumentsImported: z.boolean(),
+  }),
+);
+
 const WorkspaceTokenResponseSchema = registry.register(
   "WorkspaceTokenResponse",
   z.object({
@@ -1048,6 +1065,34 @@ const ChatHistoryListResponseSchema = registry.register(
     conversations: z.array(ChatConversationSummarySchema),
     total: z.number().int().min(0),
     nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+  }),
+);
+
+const HistoryItemSchema = registry.register(
+  "HistoryItem",
+  z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("chat"),
+      id: z.string().uuid(),
+      sortAt: z.string().datetime(),
+      conversation: ChatConversationSummarySchema,
+    }),
+    z.object({
+      kind: z.literal("search"),
+      id: z.string().uuid(),
+      sortAt: z.string().datetime(),
+      search: DocumentSearchHistoryEntrySchema,
+    }),
+  ]),
+);
+
+const HistoryItemsResponseSchema = registry.register(
+  "HistoryItemsResponse",
+  z.object({
+    items: z.array(HistoryItemSchema),
+    total: z.number().int().min(0),
+    nextCursor: z.null(),
     hasMore: z.boolean(),
   }),
 );
@@ -2072,6 +2117,33 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: WorkspaceListResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/workspace/summary",
+  tags: ["Workspace"],
+  summary: "Get lightweight workspace dashboard summary",
+  operationId: "getWorkspaceSummary",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  responses: {
+    200: {
+      description: "Workspace summary returned",
+      content: {
+        "application/json": {
+          schema: WorkspaceSummaryResponseSchema,
         },
       },
     },
@@ -3123,8 +3195,41 @@ registry.registerPath({
   method: "get",
   path: "/api/v1/history",
   tags: ["History"],
-  summary: "List saved assistant conversations",
+  summary: "List merged chat and document search history",
   operationId: "listHistory",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    query: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      offset: z.number().int().min(0).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Merged history items",
+      content: {
+        "application/json": {
+          schema: HistoryItemsResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/history/chat",
+  tags: ["History"],
+  summary: "List saved assistant conversations",
+  operationId: "listChatHistory",
   security: [{ [bearerAuthScheme.name]: [] }],
   request: {
     query: z.object({
@@ -3155,7 +3260,41 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/v1/history/{conversationId}",
+  path: "/api/v1/history/search",
+  tags: ["History"],
+  summary: "List document search history for the authenticated workspace",
+  operationId: "listHistorySearches",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    query: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      offset: z.number().int().min(0).optional(),
+      cursor: z.string().min(1).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Document search history returned",
+      content: {
+        "application/json": {
+          schema: DocumentSearchHistoryListResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/history/chat/{conversationId}",
   tags: ["History"],
   summary: "Get a saved assistant conversation and its debug metadata",
   operationId: "getHistoryConversation",
@@ -3195,6 +3334,105 @@ registry.registerPath({
     },
     404: {
       description: "Conversation not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/history/{conversationId}",
+  tags: ["History"],
+  summary: "Get a saved assistant conversation and its debug metadata",
+  description: "Deprecated compatibility alias. Prefer `/api/v1/history/chat/{conversationId}`.",
+  operationId: "getLegacyHistoryConversation",
+  deprecated: true,
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: conversationParamsSchema,
+    query: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      offset: z.number().int().min(0).optional(),
+      cursor: z.string().min(1).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Historical conversation detail",
+      content: {
+        "application/json": {
+          schema: ChatConversationDetailSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Conversation not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/history/search/{searchId}",
+  tags: ["History"],
+  summary: "Replay one historical document search",
+  operationId: "getHistorySearch",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    params: documentSearchHistoryParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Document search replay returned",
+      content: {
+        "application/json": {
+          schema: DocumentSearchResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Search history entry not found",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

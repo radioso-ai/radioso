@@ -7,6 +7,8 @@ import {
   collectionPageQuerySchema,
   conversationParamsSchema,
   conversationWindowQuerySchema,
+  historySearchParamsSchema,
+  historyItemsPageQuerySchema,
 } from "./conversationRouteSchemas.js";
 
 export const createHistoryRoutes = (dependencies: AppDependencies): Router => {
@@ -16,6 +18,21 @@ export const createHistoryRoutes = (dependencies: AppDependencies): Router => {
   router.get("/", workspaceSession, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedQuery = historyItemsPageQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const page = await dependencies.assistantHistoryService.listItems(workspaceId, parsedQuery.data);
+      res.status(200).json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/chat", workspaceSession, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
       const parsedQuery = collectionPageQuerySchema.safeParse(req.query);
       if (!parsedQuery.success) {
         next(badRequest("Invalid request query", parsedQuery.error.flatten()));
@@ -23,6 +40,60 @@ export const createHistoryRoutes = (dependencies: AppDependencies): Router => {
       }
       const page = await dependencies.assistantHistoryService.listConversations(workspaceId, parsedQuery.data);
       res.status(200).json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/search", workspaceSession, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedQuery = collectionPageQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const page = await dependencies.documentSearchHistoryService.listHistory(workspaceId, parsedQuery.data);
+      res.status(200).json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/search/:searchId", workspaceSession, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedParams = historySearchParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      const search = await dependencies.documentSearchHistoryService.getHistory(workspaceId, parsedParams.data.searchId);
+      res.status(200).json(search);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/chat/:conversationId", workspaceSession, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedParams = conversationParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      const parsedQuery = conversationWindowQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const conversation = await dependencies.assistantHistoryService.getConversation(
+        workspaceId,
+        parsedParams.data.conversationId,
+        parsedQuery.data,
+      );
+      res.status(200).json(conversation);
     } catch (error) {
       next(error);
     }

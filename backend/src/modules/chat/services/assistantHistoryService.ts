@@ -10,6 +10,13 @@ export class AssistantHistoryService {
     return this.chatHistoryService.listConversations(workspaceId, input);
   }
 
+  listItems(
+    workspaceId: string,
+    input: { limit: number; offset?: number },
+  ) {
+    return this.chatHistoryService.listItems(workspaceId, input);
+  }
+
   getConversation(
     workspaceId: string,
     conversationId: string,

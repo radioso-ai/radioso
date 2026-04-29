@@ -105,6 +105,7 @@ export interface ChunkRecord {
 export interface DocumentRepositoryPort {
   createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord>;
   create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord>;
+  summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord>;
   setStatus(input: {
     documentId: string;
     workspaceId: string;
@@ -135,6 +136,14 @@ export interface DocumentRepositoryPort {
     queuedDocuments: Array<{ documentId: string; revision: number }>;
   }>;
   deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean>;
+}
+
+export interface DocumentWorkspaceSummaryRecord {
+  documentCount: number;
+  readyDocumentCount: number;
+  pendingDocumentCount: number;
+  sampleDocumentCount: number;
+  sampleDocumentSlugs: string[];
 }
 
 export interface ChunkRepositoryPort {

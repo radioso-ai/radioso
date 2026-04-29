@@ -103,30 +103,86 @@ const emptySearchHistory = {
   hasMore: false,
 };
 
+const buildWorkspaceSummary = (input: {
+  documentList: unknown;
+  historyList: unknown;
+}) => {
+  const documentList = input.documentList as {
+    documents?: Array<{ ragStatus?: string; status?: string; metadata?: Record<string, unknown> }>;
+    total?: number;
+  };
+  const historyList = input.historyList as { total?: number };
+  const documents = Array.isArray(documentList.documents) ? documentList.documents : [];
+  const documentCount = documentList.total ?? documents.length;
+  const readyDocumentCount = documents.filter((document) => document.ragStatus === "processed" || document.status === "ready").length;
+  const pendingDocumentCount = Math.max(0, documentCount - readyDocumentCount);
+  const sampleDocumentSlugs = documents
+    .filter((document) => document.metadata?.sampleDocument === true)
+    .map((document) => document.metadata?.sampleSlug)
+    .filter((value): value is string => typeof value === "string");
+  const conversationCount = historyList.total ?? 0;
+
+  return {
+    documentCount,
+    readyDocumentCount,
+    pendingDocumentCount,
+    sampleDocumentCount: sampleDocumentSlugs.length,
+    sampleDocumentSlugs,
+    conversationCount,
+    hasDocuments: documentCount > 0,
+    hasPendingDocuments: pendingDocumentCount > 0,
+    hasReadyDocuments: readyDocumentCount > 0,
+    hasCompletedChat: conversationCount > 0,
+    sampleDocumentsImported: sampleDocumentSlugs.length > 0,
+  };
+};
+
 export const installDashboardApiMocks = async (
   page: Page,
   options: {
     platformSettings?: PlatformSettingsFixture;
     documentList?: unknown;
     settingsUpdates?: unknown[];
+    documentList?: unknown;
+    workspaceSummary?: unknown;
     historyList?: unknown;
+    historyItems?: unknown;
+    searchHistory?: unknown;
     conversationDetail?: unknown;
+    requestLog?: string[];
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
   const documents = options.documentList ?? documentListResponse;
   const settingsUpdates = options.settingsUpdates;
+  const documents = options.documentList ?? documentListResponse;
   const historyList = options.historyList ?? {
     conversations: [],
     total: 0,
     nextCursor: null,
     hasMore: false,
   };
+  const searchHistory = options.searchHistory ?? emptySearchHistory;
+  const historyItems = options.historyItems ?? {
+    items: Array.isArray((historyList as { conversations?: unknown[] }).conversations)
+      ? (historyList as { conversations: Array<{ id: string; updatedAt: string }> }).conversations.map((conversation) => ({
+          kind: "chat",
+          id: conversation.id,
+          sortAt: conversation.updatedAt,
+          conversation,
+        }))
+      : [],
+    total: (historyList as { total?: number }).total ?? 0,
+    nextCursor: null,
+    hasMore: (historyList as { hasMore?: boolean }).hasMore ?? false,
+  };
+  const workspaceSummary = options.workspaceSummary ?? buildWorkspaceSummary({ documentList: documents, historyList });
 
   await page.route("**/backend/api/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace(/^\/backend\/api\/v1/, "");
+    options.requestLog?.push(`${request.method()} ${path}${url.search}`);
 
     if (request.method() === "GET" && path === `/workspace/resolve/${workspaceKey}`) {
       await json(route, {
@@ -151,6 +207,11 @@ export const installDashboardApiMocks = async (
           },
         ],
       });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/workspace/summary") {
+      await json(route, workspaceSummary);
       return;
     }
 
@@ -179,16 +240,26 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/document/search/history") {
-      await json(route, emptySearchHistory);
+      await json(route, searchHistory);
       return;
     }
 
     if (request.method() === "GET" && path === "/history") {
+      await json(route, historyItems);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/history/chat") {
       await json(route, historyList);
       return;
     }
 
-    if (request.method() === "GET" && path.startsWith("/history/") && options.conversationDetail) {
+    if (request.method() === "GET" && path === "/history/search") {
+      await json(route, searchHistory);
+      return;
+    }
+
+    if (request.method() === "GET" && path.startsWith("/history/chat/") && options.conversationDetail) {
       await json(route, options.conversationDetail);
       return;
     }

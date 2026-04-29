@@ -207,6 +207,7 @@ export function HistoryList({
   searchPage,
   searchTotalPages,
   allHistoryItems,
+  allTotal,
   allPage,
   allTotalPages,
   onFilterChange,
@@ -234,6 +235,7 @@ export function HistoryList({
   searchPage: number
   searchTotalPages: number
   allHistoryItems: HistoryListItem[]
+  allTotal: number
   allPage: number
   allTotalPages: number
   onFilterChange: (filter: HistoryFilter) => void
@@ -243,8 +245,6 @@ export function HistoryList({
   onAllPageChange: (page: number) => void
   onNavigate: (href: string) => void
 }) {
-  const allTotal = conversationTotal + searchTotal
-
   return (
     <>
       <div className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">

@@ -343,7 +343,7 @@ function PublicChatContent({
                 ) : null}
               </div>
             </div>
-            <div className="flex items-center gap-1 self-start">
+            <div className="mt-1 flex items-center gap-1">
               <Button
                 type="button"
                 size="sm"
@@ -361,7 +361,7 @@ function PublicChatContent({
                   size="icon"
                   variant="ghost"
                   onClick={onRequestCollapse}
-                  className="hover:opacity-90"
+                  className="h-8 w-8 hover:opacity-90"
                   style={{ color: theme.mutedForeground }}
                 >
                   <X className="h-4 w-4" />
@@ -438,12 +438,19 @@ function PublicChatContent({
       ) : null}
 
       <div
-        className={`shrink-0 border-t ${isCompactKeyboardLayout ? 'px-3 py-2' : 'p-4'}`}
+        className={`shrink-0 border-t ${isCompactKeyboardLayout ? 'px-3 py-2' : 'px-4 pb-3 pt-2'}`}
         style={{
           borderColor: theme.panelBorder,
           background: theme.panelBackground,
         }}
       >
+        {!isCompactKeyboardLayout ? (
+          <div className="mx-auto mb-2 flex max-w-3xl justify-center">
+            <p className="w-full text-center text-xs" style={{ color: theme.mutedForeground }}>
+              {formatWebsiteEmbedDisclaimer(copy, resolvedWorkspaceName)}
+            </p>
+          </div>
+        ) : null}
         <form onSubmit={handleSubmit} className={`mx-auto flex max-w-3xl items-end ${isCompactKeyboardLayout ? 'gap-2' : 'gap-3'}`}>
           <Textarea
             value={input}
@@ -471,13 +478,6 @@ function PublicChatContent({
             <span className="sr-only">{copy.publicChatSendMessageLabel}</span>
           </Button>
         </form>
-        {!isCompactKeyboardLayout ? (
-          <div className="mx-auto mt-3 flex max-w-3xl justify-center">
-            <p className="w-full text-center text-xs" style={{ color: theme.mutedForeground }}>
-              {formatWebsiteEmbedDisclaimer(copy, resolvedWorkspaceName)}
-            </p>
-          </div>
-        ) : null}
       </div>
     </div>
   )

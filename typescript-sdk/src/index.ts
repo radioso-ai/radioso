@@ -13,6 +13,7 @@ export type {
   ChatResponse,
   ChatConversationDetail,
   ChatHistoryListResponse,
+  HistoryItemsResponse,
   DocumentCreateRequest,
   DocumentDetails,
   DocumentListResponse,
@@ -63,6 +64,17 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
         generated.listDocumentSearchHistory(query),
       getHistory: (searchId: string) => generated.getDocumentSearchHistory(searchId),
       reprocess: (documentId: string) => generated.reprocessDocument(documentId),
+    },
+    history: {
+      list: (query?: Parameters<GeneratedRadiosoClient["listHistory"]>[0]) => generated.listHistory(query),
+      listChats: (query?: Parameters<GeneratedRadiosoClient["listChatHistory"]>[0]) => generated.listChatHistory(query),
+      listSearches: (query?: Parameters<GeneratedRadiosoClient["listHistorySearches"]>[0]) =>
+        generated.listHistorySearches(query),
+      getChat: (
+        conversationId: string,
+        query?: Parameters<GeneratedRadiosoClient["getChatHistoryConversation"]>[1],
+      ) => generated.getChatHistoryConversation(conversationId, query),
+      getSearch: (searchId: string) => generated.getHistorySearch(searchId),
     },
     chat: {
       create: (body: ChatCreateRequest) => {

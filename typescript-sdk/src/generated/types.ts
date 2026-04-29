@@ -615,7 +615,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List saved assistant conversations */
+        /** List merged chat and document search history */
         get: operations["listHistory"];
         put?: never;
         post?: never;
@@ -625,7 +625,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/history/{conversationId}": {
+    "/api/v1/history/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List saved assistant conversations */
+        get: operations["listChatHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List document search history for the authenticated workspace */
+        get: operations["listHistorySearches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/chat/{conversationId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -634,6 +668,23 @@ export interface paths {
         };
         /** Get a saved assistant conversation and its debug metadata */
         get: operations["getHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/search/{searchId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Replay one historical document search */
+        get: operations["getHistorySearch"];
         put?: never;
         post?: never;
         delete?: never;
@@ -977,6 +1028,7 @@ export interface components {
             similarityThreshold: number;
             rerankTopK: number;
             citationDisplayEnabled: boolean;
+            answerSupportValidationEnabled: boolean;
             /** @default [] */
             metadataFieldSuggestions: {
                 field: string;
@@ -1033,6 +1085,7 @@ export interface components {
             similarityThreshold: number;
             rerankTopK: number;
             citationDisplayEnabled: boolean;
+            answerSupportValidationEnabled?: boolean;
             metadataRules?: {
                 id: string;
                 field?: string;
@@ -1199,6 +1252,7 @@ export interface components {
             similarityThreshold: number;
             rerankTopK: number;
             citationDisplayEnabled: boolean;
+            answerSupportValidationEnabled: boolean;
             /** @default [] */
             metadataRules: {
                 id: string;
@@ -1279,6 +1333,7 @@ export interface components {
                 similarityThreshold?: number;
                 rerankTopK?: number;
                 citationDisplayEnabled?: boolean;
+                answerSupportValidationEnabled?: boolean;
                 metadataRules?: {
                     id: string;
                     field?: string;
@@ -1812,6 +1867,29 @@ export interface components {
             conversations: components["schemas"]["ChatConversationSummary"][];
             total: number;
             nextCursor: string | null;
+            hasMore: boolean;
+        };
+        HistoryItem: {
+            /** @enum {string} */
+            kind: "chat";
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            sortAt: string;
+            conversation: components["schemas"]["ChatConversationSummary"];
+        } | {
+            /** @enum {string} */
+            kind: "search";
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            sortAt: string;
+            search: components["schemas"]["DocumentSearchHistoryEntry"];
+        };
+        HistoryItemsResponse: {
+            items: components["schemas"]["HistoryItem"][];
+            total: number;
+            nextCursor: null;
             hasMore: boolean;
         };
         /** @enum {string} */
@@ -3883,6 +3961,38 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Merged history items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryItemsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listChatHistory: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
                 cursor?: string;
             };
             header?: never;
@@ -3898,6 +4008,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatHistoryListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listHistorySearches: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document search history returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSearchHistoryListResponse"];
                 };
             };
             /** @description Authentication required */
@@ -3954,6 +4097,55 @@ export interface operations {
                 };
             };
             /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getHistorySearch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                searchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document search replay returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSearchResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Search history entry not found */
             404: {
                 headers: {
                     [name: string]: unknown;

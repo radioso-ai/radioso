@@ -15,6 +15,7 @@ import { AuditEventRepository } from "../../db/repositories/auditEventRepository
 import { ChunkRepository } from "../../db/repositories/chunkRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { DocumentRepository } from "../../db/repositories/documentRepository.js";
+import { HistoryItemsRepository } from "../../db/repositories/historyItemsRepository.js";
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import { IngestionSettingsRepository } from "../../db/repositories/ingestionSettingsRepository.js";
@@ -257,6 +258,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     conversationRepository,
     messageRepository,
     auditEventRepository,
+    new HistoryItemsRepository(database),
   );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);

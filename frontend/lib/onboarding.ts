@@ -173,7 +173,7 @@ export const useWorkspaceOnboarding = (
     try {
       const [documentPage, conversationPage] = await Promise.all([
         documentsApi.listDocuments({ limit: 100, offset: 0 }),
-        chatApi.listHistory({ limit: 100, offset: 0 }),
+        chatApi.listChatHistory({ limit: 100, offset: 0 }),
       ])
       const nextDocuments = documentPage.documents
 

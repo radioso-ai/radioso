@@ -1,10 +1,11 @@
 'use client'
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import {
   type ChatConversationDetail,
+  type HistoryItem,
   type ChatConversationSummary,
   type ChatConversationTurn,
   type DocumentDetails,
@@ -52,12 +53,8 @@ const HIDDEN_SUPPORT_LABELS = {
 
 const formatDiagnosticLabel = (value: string) => value.replaceAll('_', ' ')
 
-interface HistoryPageSnapshot<T> {
-  items: T[]
-  total: number
-  hasMore: boolean
-  nextCursor: string | null
-}
+const buildHistoryLoadKey = (workspaceId: string | undefined, filter: HistoryFilter, page: number) =>
+  `${workspaceId ?? ''}:${filter}:${page}`
 
 export function ChatHistoryView({
   accountId,
@@ -69,11 +66,10 @@ export function ChatHistoryView({
   routeState: DashboardRouteState
 }) {
   const router = useRouter()
-  const conversationCursorByPageRef = useRef(new Map<number, string | null>([[1, null]]))
-  const conversationPageCacheRef = useRef(new Map<number, HistoryPageSnapshot<ChatConversationSummary>>())
-  const searchCursorByPageRef = useRef(new Map<number, string | null>([[1, null]]))
-  const searchPageCacheRef = useRef(new Map<number, HistoryPageSnapshot<DocumentSearchHistoryEntry>>())
   const [filter, setFilter] = useState<HistoryFilter>(routeState.historyFilter ?? 'all')
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
+  const [historyItemsTotal, setHistoryItemsTotal] = useState(0)
+  const [hasHistoryItemsNextPage, setHasHistoryItemsNextPage] = useState(false)
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([])
   const [conversationTotal, setConversationTotal] = useState(0)
   const [hasConversationNextPage, setHasConversationNextPage] = useState(false)
@@ -104,6 +100,7 @@ export function ChatHistoryView({
   const [selectedAssistantMessageId, setSelectedAssistantMessageId] = useState<string | null>(null)
   const [selectedStageId, setSelectedStageId] = useState<string | undefined>(undefined)
   const [showGraph, setShowGraph] = useState(false)
+  const [loadedHistoryKey, setLoadedHistoryKey] = useState<string | null>(null)
   const [isDocumentDialogOpen, setIsDocumentDialogOpen] = useState(false)
   const [isDocumentLoading, setIsDocumentLoading] = useState(false)
   const [documentDetail, setDocumentDetail] = useState<DocumentDetails | null>(null)
@@ -170,182 +167,79 @@ export function ChatHistoryView({
     selectedItem,
   ])
 
-  const resetConversationPagination = useCallback(() => {
-    conversationCursorByPageRef.current = new Map([[1, null]])
-    conversationPageCacheRef.current = new Map()
-  }, [])
-
-  const resetSearchPagination = useCallback(() => {
-    searchCursorByPageRef.current = new Map([[1, null]])
-    searchPageCacheRef.current = new Map()
-  }, [])
-
-  const loadConversationPages = useCallback(async (
-    pageCount: number,
-    options?: { reset?: boolean },
-  ): Promise<HistoryPageSnapshot<ChatConversationSummary>[]> => {
-    if (options?.reset) {
-      resetConversationPagination()
-    }
-
-    const cursorByPage = conversationCursorByPageRef.current
-    const pageCache = conversationPageCacheRef.current
-
-    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
-      if (pageCache.has(pageNumber)) {
-        const cached = pageCache.get(pageNumber)
-        if (cached && !cursorByPage.has(pageNumber + 1)) {
-          cursorByPage.set(pageNumber + 1, cached.nextCursor)
-        }
-        continue
-      }
-
-      const cursor = cursorByPage.get(pageNumber) ?? null
-      if (pageNumber > 1 && cursor === null) {
-        const previousPage = pageCache.get(pageNumber - 1)
-        const emptySnapshot: HistoryPageSnapshot<ChatConversationSummary> = {
-          items: [],
-          total: previousPage?.total ?? 0,
-          hasMore: false,
-          nextCursor: null,
-        }
-        pageCache.set(pageNumber, emptySnapshot)
-        continue
-      }
-
-      const response = await chatApi.listHistory({
-        limit: HISTORY_PAGE_SIZE,
-        ...(cursor ? { cursor } : {}),
-      })
-      const snapshot: HistoryPageSnapshot<ChatConversationSummary> = {
-        items: response.conversations,
-        total: response.total,
-        hasMore: response.hasMore,
-        nextCursor: response.nextCursor,
-      }
-
-      pageCache.set(pageNumber, snapshot)
-      cursorByPage.set(pageNumber + 1, response.nextCursor)
-    }
-
-    return Array.from({ length: pageCount }, (_, index) => (
-      pageCache.get(index + 1) ?? { items: [], total: 0, hasMore: false, nextCursor: null }
-    ))
-  }, [resetConversationPagination])
-
-  const loadSearchPages = useCallback(async (
-    pageCount: number,
-    options?: { reset?: boolean },
-  ): Promise<HistoryPageSnapshot<DocumentSearchHistoryEntry>[]> => {
-    if (options?.reset) {
-      resetSearchPagination()
-    }
-
-    const cursorByPage = searchCursorByPageRef.current
-    const pageCache = searchPageCacheRef.current
-
-    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
-      if (pageCache.has(pageNumber)) {
-        const cached = pageCache.get(pageNumber)
-        if (cached && !cursorByPage.has(pageNumber + 1)) {
-          cursorByPage.set(pageNumber + 1, cached.nextCursor)
-        }
-        continue
-      }
-
-      const cursor = cursorByPage.get(pageNumber) ?? null
-      if (pageNumber > 1 && cursor === null) {
-        const previousPage = pageCache.get(pageNumber - 1)
-        const emptySnapshot: HistoryPageSnapshot<DocumentSearchHistoryEntry> = {
-          items: [],
-          total: previousPage?.total ?? 0,
-          hasMore: false,
-          nextCursor: null,
-        }
-        pageCache.set(pageNumber, emptySnapshot)
-        continue
-      }
-
-      const response = await documentsApi.listSearchHistory({
-        limit: HISTORY_PAGE_SIZE,
-        ...(cursor ? { cursor } : {}),
-      })
-      const snapshot: HistoryPageSnapshot<DocumentSearchHistoryEntry> = {
-        items: response.searches,
-        total: response.total,
-        hasMore: response.hasMore,
-        nextCursor: response.nextCursor,
-      }
-
-      pageCache.set(pageNumber, snapshot)
-      cursorByPage.set(pageNumber + 1, response.nextCursor)
-    }
-
-    return Array.from({ length: pageCount }, (_, index) => (
-      pageCache.get(index + 1) ?? { items: [], total: 0, hasMore: false, nextCursor: null }
-    ))
-  }, [resetSearchPagination])
-
   const loadHistory = useCallback(async () => {
     setIsListLoading(true)
     setListError(null)
+    const page = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : searchPage
+    const loadKey = buildHistoryLoadKey(routeState.workspaceId, filter, page)
 
-    const [chatResult, searchResult] = await Promise.allSettled([
-      filter === 'search'
-        ? Promise.resolve<HistoryPageSnapshot<ChatConversationSummary>[]>([])
-        : loadConversationPages(filter === 'all' ? allPage : conversationPage),
-      filter === 'chat'
-        ? Promise.resolve<HistoryPageSnapshot<DocumentSearchHistoryEntry>[]>([])
-        : loadSearchPages(filter === 'all' ? allPage : searchPage),
-    ])
+    try {
+      if (filter === 'all') {
+        const response = await chatApi.listHistory({
+          limit: HISTORY_PAGE_SIZE,
+          offset: (allPage - 1) * HISTORY_PAGE_SIZE,
+        })
+        setHistoryItems(response.items)
+        setHistoryItemsTotal(response.total)
+        setHasHistoryItemsNextPage(response.hasMore)
+        setLoadedHistoryKey(loadKey)
+        return
+      }
 
-    if (chatResult.status === 'fulfilled') {
-      const loadedConversations = chatResult.value.flatMap((page) => page.items)
-      const lastChatPage = chatResult.value.at(-1)
-      setConversations(loadedConversations)
-      setConversationTotal(lastChatPage?.total ?? 0)
-      setHasConversationNextPage(lastChatPage?.hasMore ?? false)
-    } else {
-      setConversations([])
-      setConversationTotal(0)
-      setHasConversationNextPage(false)
+      if (filter === 'chat') {
+        const response = await chatApi.listChatHistory({
+          limit: HISTORY_PAGE_SIZE,
+          offset: (conversationPage - 1) * HISTORY_PAGE_SIZE,
+        })
+        setConversations(response.conversations)
+        setConversationTotal(response.total)
+        setHasConversationNextPage(response.hasMore)
+        setLoadedHistoryKey(loadKey)
+        return
+      }
+
+      const response = await chatApi.listSearchHistory({
+        limit: HISTORY_PAGE_SIZE,
+        offset: (searchPage - 1) * HISTORY_PAGE_SIZE,
+      })
+      setSearches(response.searches)
+      setSearchTotal(response.total)
+      setHasSearchNextPage(response.hasMore)
+      setLoadedHistoryKey(loadKey)
+    } catch (error) {
+      if (filter === 'all') {
+        setHistoryItems([])
+        setHistoryItemsTotal(0)
+        setHasHistoryItemsNextPage(false)
+      } else if (filter === 'chat') {
+        setConversations([])
+        setConversationTotal(0)
+        setHasConversationNextPage(false)
+      } else {
+        setSearches([])
+        setSearchTotal(0)
+        setHasSearchNextPage(false)
+      }
+
+      setListError(
+        getApiErrorMessage(
+          error,
+          filter === 'search'
+            ? 'Failed to load search history.'
+            : filter === 'chat'
+              ? 'Failed to load chat history.'
+              : 'Failed to load history.',
+        ),
+      )
+    } finally {
+      setIsListLoading(false)
     }
-
-    if (searchResult.status === 'fulfilled') {
-      const loadedSearches = searchResult.value.flatMap((page) => page.items)
-      const lastSearchPage = searchResult.value.at(-1)
-      setSearches(loadedSearches)
-      setSearchTotal(lastSearchPage?.total ?? 0)
-      setHasSearchNextPage(lastSearchPage?.hasMore ?? false)
-    } else {
-      setSearches([])
-      setSearchTotal(0)
-      setHasSearchNextPage(false)
-    }
-
-    const errors: string[] = []
-    if (chatResult.status === 'rejected') {
-      errors.push(getApiErrorMessage(chatResult.reason, 'Failed to load chat history.'))
-    }
-    if (searchResult.status === 'rejected') {
-      errors.push(getApiErrorMessage(searchResult.reason, 'Failed to load search history.'))
-    }
-
-    setListError(errors.length > 0 ? errors.join(' ') : null)
-    setIsListLoading(false)
-  }, [allPage, conversationPage, filter, loadConversationPages, loadSearchPages, searchPage])
+  }, [allPage, conversationPage, filter, routeState.workspaceId, searchPage])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- History view fetches the current page after route/filter changes.
     void loadHistory()
-  }, [loadHistory, accountId])
-
-  useEffect(() => {
-    resetConversationPagination()
-    resetSearchPagination()
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Workspace switches reset cursors and fetch the first history page.
-    void loadHistory()
-  }, [accountId, loadHistory, resetConversationPagination, resetSearchPagination, routeState.workspaceId])
+  }, [loadHistory, accountId, routeState.workspaceId])
 
   useEffect(() => {
     if (!selectedItem) {
@@ -388,7 +282,7 @@ export function ChatHistoryView({
           return
         }
 
-        const detail = await documentsApi.getSearchHistory(selectedItem.id)
+        const detail = await chatApi.getSearchHistory(selectedItem.id)
         if (!isActive) {
           return
         }
@@ -548,17 +442,22 @@ export function ChatHistoryView({
 
   const conversationTotalPages = Math.max(1, Math.ceil(conversationTotal / HISTORY_PAGE_SIZE))
   const searchTotalPages = Math.max(1, Math.ceil(searchTotal / HISTORY_PAGE_SIZE))
-  const allTotal = conversationTotal + searchTotal
+  const allTotal = historyItemsTotal
   const allTotalPages = Math.max(1, Math.ceil(allTotal / HISTORY_PAGE_SIZE))
-  const allHasNextPage = hasConversationNextPage || hasSearchNextPage
+  const allHasNextPage = hasHistoryItemsNextPage
 
   useEffect(() => {
     const activePage = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : searchPage
+    const activeLoadKey = buildHistoryLoadKey(routeState.workspaceId, filter, activePage)
     const activeTotalPages = filter === 'all'
       ? allTotalPages
       : filter === 'chat'
         ? conversationTotalPages
         : searchTotalPages
+
+    if (loadedHistoryKey !== activeLoadKey) {
+      return
+    }
 
     if (activePage <= activeTotalPages) {
       return
@@ -589,6 +488,7 @@ export function ChatHistoryView({
     conversationPage,
     conversationTotalPages,
     filter,
+    loadedHistoryKey,
     routeState,
     router,
     searchPage,
@@ -632,45 +532,15 @@ export function ChatHistoryView({
     }
   }, [conversationDetail, selectedItem])
 
-  const hasAnyHistory = conversationTotal > 0 || searchTotal > 0
-
-  const allHistoryItems = useMemo<HistoryListItem[]>(() => {
-    const merged: HistoryListItem[] = [
-      ...conversations.map((conversation) => ({
-        kind: 'chat' as const,
-        id: conversation.id,
-        sortAt: conversation.updatedAt,
-        conversation,
-      })),
-      ...searches.map((search) => ({
-        kind: 'search' as const,
-        id: search.searchId,
-        sortAt: search.createdAt,
-        search,
-      })),
-    ].sort((left, right) => new Date(right.sortAt).getTime() - new Date(left.sortAt).getTime())
-
-    const start = (allPage - 1) * HISTORY_PAGE_SIZE
-    return merged.slice(start, start + HISTORY_PAGE_SIZE)
-  }, [allPage, conversations, searches])
-
-  const conversationPageItems = useMemo(() => {
-    if (filter !== 'chat') {
-      return conversations
-    }
-
-    const start = (conversationPage - 1) * HISTORY_PAGE_SIZE
-    return conversations.slice(start, start + HISTORY_PAGE_SIZE)
-  }, [conversationPage, conversations, filter])
-
-  const searchPageItems = useMemo(() => {
-    if (filter !== 'search') {
-      return searches
-    }
-
-    const start = (searchPage - 1) * HISTORY_PAGE_SIZE
-    return searches.slice(start, start + HISTORY_PAGE_SIZE)
-  }, [filter, searchPage, searches])
+  const hasAnyHistory =
+    filter === 'all'
+      ? historyItemsTotal > 0
+      : filter === 'chat'
+        ? conversationTotal > 0
+        : searchTotal > 0
+  const allHistoryItems: HistoryListItem[] = historyItems
+  const conversationPageItems = conversations
+  const searchPageItems = searches
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -693,6 +563,7 @@ export function ChatHistoryView({
         searchPage={searchPage}
         searchTotalPages={searchTotalPages}
         allHistoryItems={allHistoryItems}
+        allTotal={allTotal}
         allPage={allPage}
         allTotalPages={allTotalPages}
         onFilterChange={(nextFilter) => {

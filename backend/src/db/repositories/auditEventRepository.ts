@@ -264,7 +264,7 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
        FROM audit_events
        WHERE workspace_id = $1
          AND event_type = 'document.search'
-         AND metadata_json ->> 'searchId' = $2
+         AND (metadata_json ->> 'searchId' = $2 OR id::text = $2)
        ORDER BY created_at DESC
        LIMIT 1`,
       [workspaceId, searchId],

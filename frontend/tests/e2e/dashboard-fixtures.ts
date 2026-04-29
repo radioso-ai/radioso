@@ -108,23 +108,43 @@ export const installDashboardApiMocks = async (
   options: {
     platformSettings?: PlatformSettingsFixture;
     settingsUpdates?: unknown[];
+    documentList?: unknown;
     historyList?: unknown;
+    historyItems?: unknown;
+    searchHistory?: unknown;
     conversationDetail?: unknown;
+    requestLog?: string[];
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
   const settingsUpdates = options.settingsUpdates;
+  const documents = options.documentList ?? documentListResponse;
   const historyList = options.historyList ?? {
     conversations: [],
     total: 0,
     nextCursor: null,
     hasMore: false,
   };
+  const searchHistory = options.searchHistory ?? emptySearchHistory;
+  const historyItems = options.historyItems ?? {
+    items: Array.isArray((historyList as { conversations?: unknown[] }).conversations)
+      ? (historyList as { conversations: Array<{ id: string; updatedAt: string }> }).conversations.map((conversation) => ({
+          kind: "chat",
+          id: conversation.id,
+          sortAt: conversation.updatedAt,
+          conversation,
+        }))
+      : [],
+    total: (historyList as { total?: number }).total ?? 0,
+    nextCursor: null,
+    hasMore: (historyList as { hasMore?: boolean }).hasMore ?? false,
+  };
 
   await page.route("**/backend/api/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace(/^\/backend\/api\/v1/, "");
+    options.requestLog?.push(`${request.method()} ${path}${url.search}`);
 
     if (request.method() === "GET" && path === `/workspace/resolve/${workspaceKey}`) {
       await json(route, {
@@ -172,21 +192,31 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/document/") {
-      await json(route, documentListResponse);
+      await json(route, documents);
       return;
     }
 
     if (request.method() === "GET" && path === "/document/search/history") {
-      await json(route, emptySearchHistory);
+      await json(route, searchHistory);
       return;
     }
 
     if (request.method() === "GET" && path === "/history") {
+      await json(route, historyItems);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/history/chat") {
       await json(route, historyList);
       return;
     }
 
-    if (request.method() === "GET" && path.startsWith("/history/") && options.conversationDetail) {
+    if (request.method() === "GET" && path === "/history/search") {
+      await json(route, searchHistory);
+      return;
+    }
+
+    if (request.method() === "GET" && path.startsWith("/history/chat/") && options.conversationDetail) {
       await json(route, options.conversationDetail);
       return;
     }

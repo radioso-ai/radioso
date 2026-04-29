@@ -83,6 +83,7 @@ import {
   InMemoryDocumentStorage,
   InMemoryDocumentProcessingJobRepository,
   InMemoryIngestionSettingsRepository,
+  InMemoryHistoryItemsRepository,
   InMemoryMessageRepository,
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
@@ -703,6 +704,7 @@ export const createTestDependencies = (overrides: {
     conversationRepository,
     messageRepository,
     auditEventRepository,
+    new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository),
   );
   const chatService = new ChatService(
     conversationRepository,

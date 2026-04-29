@@ -807,6 +807,9 @@
           "citationDisplayEnabled": {
             "type": "boolean"
           },
+          "answerSupportValidationEnabled": {
+            "type": "boolean"
+          },
           "metadataFieldSuggestions": {
             "type": "array",
             "items": {
@@ -983,6 +986,7 @@
           "similarityThreshold",
           "rerankTopK",
           "citationDisplayEnabled",
+          "answerSupportValidationEnabled",
           "customInstruction",
           "createdAt",
           "updatedAt"
@@ -1032,6 +1036,9 @@
             "maximum": 50
           },
           "citationDisplayEnabled": {
+            "type": "boolean"
+          },
+          "answerSupportValidationEnabled": {
             "type": "boolean"
           },
           "metadataRules": {
@@ -1752,6 +1759,9 @@
           "citationDisplayEnabled": {
             "type": "boolean"
           },
+          "answerSupportValidationEnabled": {
+            "type": "boolean"
+          },
           "metadataRules": {
             "type": "array",
             "items": {
@@ -1911,7 +1921,8 @@
           "vectorTopK",
           "similarityThreshold",
           "rerankTopK",
-          "citationDisplayEnabled"
+          "citationDisplayEnabled",
+          "answerSupportValidationEnabled"
         ]
       },
       "PlatformChannelsSettingsSection": {
@@ -2087,6 +2098,9 @@
                 "type": "integer"
               },
               "citationDisplayEnabled": {
+                "type": "boolean"
+              },
+              "answerSupportValidationEnabled": {
                 "type": "boolean"
               },
               "metadataRules": {
@@ -4067,6 +4081,93 @@
         },
         "required": [
           "conversations",
+          "total",
+          "nextCursor",
+          "hasMore"
+        ]
+      },
+      "HistoryItem": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "chat"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sortAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "conversation": {
+                "$ref": "#/components/schemas/ChatConversationSummary"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "sortAt",
+              "conversation"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "search"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sortAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "search": {
+                "$ref": "#/components/schemas/DocumentSearchHistoryEntry"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "sortAt",
+              "search"
+            ]
+          }
+        ]
+      },
+      "HistoryItemsResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nextCursor": {
+            "type": "null"
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
           "total",
           "nextCursor",
           "hasMore"
@@ -7280,8 +7381,65 @@
         "tags": [
           "History"
         ],
-        "summary": "List saved assistant conversations",
+        "summary": "List merged chat and document search history",
         "operationId": "listHistory",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Merged history items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryItemsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/chat": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "List saved assistant conversations",
+        "operationId": "listChatHistory",
         "security": [
           {
             "bearerAuth": []
@@ -7341,7 +7499,73 @@
         }
       }
     },
-    "/api/v1/history/{conversationId}": {
+    "/api/v1/history/search": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "List document search history for the authenticated workspace",
+        "operationId": "listHistorySearches",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document search history returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSearchHistoryListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/chat/{conversationId}": {
       "get": {
         "tags": [
           "History"
@@ -7425,6 +7649,73 @@
           },
           "404": {
             "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/search/{searchId}": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "Replay one historical document search",
+        "operationId": "getHistorySearch",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "searchId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document search replay returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Search history entry not found",
             "content": {
               "application/json": {
                 "schema": {

@@ -9,6 +9,8 @@ import type {
   MessageRecord,
   MessageRepositoryPort,
 } from "../../../db/repositories/messageRepository.js";
+import type { HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
+import { toDocumentSearchHistoryEntry, type DocumentSearchHistoryEntry } from "../../documents/services/documentSearchHistoryService.js";
 import type { RetrievalExecutionDiagnostics, RetrievalTrace } from "../../retrieval/domain/retrievalPipelineTypes.js";
 import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
 import { RetrievalInfoPresenter, type RetrievalInfo } from "../../retrieval/services/retrievalInfoPresenter.js";
@@ -100,6 +102,27 @@ export interface ChatConversationPage {
   conversations: ChatConversationSummary[];
   total: number;
   nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export type HistoryItem =
+  | {
+      kind: "chat";
+      id: string;
+      sortAt: string;
+      conversation: ChatConversationSummary;
+    }
+  | {
+      kind: "search";
+      id: string;
+      sortAt: string;
+      search: DocumentSearchHistoryEntry;
+    };
+
+export interface HistoryItemsPage {
+  items: HistoryItem[];
+  total: number;
+  nextCursor: null;
   hasMore: boolean;
 }
 
@@ -274,6 +297,7 @@ export class ChatHistoryService {
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
     private readonly auditEventRepository: AuditEventRepositoryPort,
+    private readonly historyItemsRepository: HistoryItemsRepositoryPort,
   ) {}
 
   async listConversations(
@@ -293,6 +317,38 @@ export class ChatHistoryService {
       conversations: conversations.map((conversation) => this.buildSummary(conversation, messageSummaries.get(conversation.id))),
       total,
       nextCursor,
+      hasMore,
+    };
+  }
+
+  async listItems(
+    workspaceId: string,
+    input: { limit: number; offset?: number } = { limit: 50, offset: 0 },
+  ): Promise<HistoryItemsPage> {
+    const { items, total, hasMore } = await this.historyItemsRepository.listPageByWorkspaceId(workspaceId, input);
+    const conversationIds = items.flatMap((item) => item.kind === "chat" ? [item.conversation.id] : []);
+    const messageSummaries = await this.messageRepository.summarizeByConversationIds(workspaceId, conversationIds);
+
+    return {
+      items: items.map((item): HistoryItem => {
+        if (item.kind === "chat") {
+          return {
+            kind: "chat",
+            id: item.id,
+            sortAt: toIsoString(item.sortAt),
+            conversation: this.buildSummary(item.conversation, messageSummaries.get(item.conversation.id)),
+          };
+        }
+
+        return {
+          kind: "search",
+          id: item.id,
+          sortAt: toIsoString(item.sortAt),
+          search: toDocumentSearchHistoryEntry(item.event),
+        };
+      }),
+      total,
+      nextCursor: null,
       hasMore,
     };
   }

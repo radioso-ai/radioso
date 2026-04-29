@@ -42,7 +42,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
       `SELECT
          COUNT(*)::text AS document_count,
          COUNT(*) FILTER (WHERE status = 'ready')::text AS ready_document_count,
-         COUNT(*) FILTER (WHERE status <> 'ready')::text AS pending_document_count,
+         COUNT(*) FILTER (WHERE status IN ('queued', 'processing'))::text AS pending_document_count,
          COUNT(*) FILTER (WHERE metadata ->> 'sampleDocument' = 'true')::text AS sample_document_count,
          COALESCE(
            ARRAY_AGG(metadata ->> 'sampleSlug')

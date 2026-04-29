@@ -872,7 +872,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return {
       documentCount: documents.length,
       readyDocumentCount: documents.filter((item) => item.status === "ready").length,
-      pendingDocumentCount: documents.filter((item) => item.status !== "ready").length,
+      pendingDocumentCount: documents.filter((item) => item.status === "queued" || item.status === "processing").length,
       sampleDocumentCount: sampleDocuments.length,
       sampleDocumentSlugs: sampleDocuments
         .map((item) => item.metadata.sampleSlug)

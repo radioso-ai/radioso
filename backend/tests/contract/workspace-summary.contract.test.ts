@@ -44,4 +44,45 @@ describe("workspace summary contract", () => {
       sampleDocumentsImported: true,
     });
   });
+
+  it("counts queued and processing documents as pending but excludes failed documents", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "workspace-summary-failed@example.com");
+
+    await repositories.documentRepository.create({
+      workspaceId: session.workspaceId,
+      title: "Failed Guide",
+      sourceContent: "This document failed processing.",
+      markdownContent: "This document failed processing.",
+      status: "failed",
+    });
+    await repositories.documentRepository.create({
+      workspaceId: session.workspaceId,
+      title: "Queued Guide",
+      sourceContent: "This document is queued.",
+      markdownContent: "This document is queued.",
+      status: "queued",
+    });
+    await repositories.documentRepository.create({
+      workspaceId: session.workspaceId,
+      title: "Processing Guide",
+      sourceContent: "This document is processing.",
+      markdownContent: "This document is processing.",
+      status: "processing",
+    });
+
+    const response = await request(app)
+      .get("/api/v1/workspace/summary")
+      .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      documentCount: 3,
+      readyDocumentCount: 0,
+      pendingDocumentCount: 2,
+      hasDocuments: true,
+      hasPendingDocuments: true,
+      hasReadyDocuments: false,
+    });
+  });
 });

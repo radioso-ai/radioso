@@ -12,6 +12,11 @@ describe('assistant greeting locale picker', () => {
     expect(resolveAssistantLocaleInput('ES')).toBe('es')
   })
 
+  it('persists valid custom locale tags typed directly', () => {
+    expect(resolveAssistantLocaleInput('en-US')).toBe('en-US')
+    expect(resolveAssistantLocaleInput(' fr-CA ')).toBe('fr-CA')
+  })
+
   it('supports no fallback and preserves unknown stored tags for display', () => {
     expect(resolveAssistantLocaleInput('No fallback')).toBeNull()
     expect(resolveAssistantLocaleInput('')).toBeNull()

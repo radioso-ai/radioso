@@ -34,6 +34,7 @@ import {
   normalizeWebsiteEmbedAvatarUrl,
   normalizeWebsiteEmbedDisplayMode,
   normalizeWebsiteEmbedInitialState,
+  normalizeWebsiteEmbedLocale,
   parseWebsiteEmbedJsonOverrides,
   parseWebsiteEmbedOrigins,
   sanitizeWebsiteEmbedCopyOverrides,
@@ -87,14 +88,20 @@ export const getAssistantLocaleLabel = (tag: string | null) => {
 }
 
 export const resolveAssistantLocaleInput = (value: string) => {
-  const normalized = value.trim().toLowerCase()
-  if (!normalized || normalized === NO_GREETING_LOCALE_LABEL.toLowerCase()) {
+  const trimmed = value.trim()
+  const normalized = trimmed.toLowerCase()
+  if (!trimmed || normalized === NO_GREETING_LOCALE_LABEL.toLowerCase()) {
     return null
   }
 
-  return ASSISTANT_GREETING_LOCALE_OPTIONS.find(
+  const configuredOption = ASSISTANT_GREETING_LOCALE_OPTIONS.find(
     (option) => option.label.toLowerCase() === normalized || option.tag.toLowerCase() === normalized,
-  )?.tag
+  )
+  if (configuredOption) {
+    return configuredOption.tag
+  }
+
+  return normalizeWebsiteEmbedLocale(trimmed) ?? undefined
 }
 
 const readCachedOrganizationName = (accountId: string) => {

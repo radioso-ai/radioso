@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { accountApi, type AccountInvitationSummary, type AccountUserSummary } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { CopyValueField } from '@/components/ui/copy-value-field'
@@ -84,26 +85,18 @@ export function UsersView() {
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <LogoSpinner imageClassName="h-7 w-7" />
-      </div>
-    )
-  }
-
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="space-y-2">
-          <h1 className="text-lg font-medium text-foreground">Users</h1>
-          <p className="text-sm text-muted-foreground">
-            Invite teammates to this account. All active users currently share the same access.
-          </p>
+    <DashboardPage
+      title="Users"
+      description="Invite teammates to this account. All active users currently share the same access."
+      contentClassName="space-y-6 p-6"
+    >
+      {isLoading ? (
+        <div className="flex h-full items-center justify-center">
+          <LogoSpinner imageClassName="h-7 w-7" />
         </div>
-      </div>
-
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
+      ) : (
+        <>
         <Card>
           <CardHeader>
             <CardTitle>Invite a teammate</CardTitle>
@@ -204,7 +197,8 @@ export function UsersView() {
             )}
           </CardContent>
         </Card>
-      </div>
-    </div>
+        </>
+      )}
+    </DashboardPage>
   )
 }

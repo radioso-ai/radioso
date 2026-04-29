@@ -33,7 +33,7 @@ export function DocumentSearchBar({
             }
           }}
           placeholder="Search across document content"
-          className="h-12 rounded-xl border-border/80 bg-background/80 pl-11 pr-24 text-base"
+          className="h-10 rounded-lg border-border/80 bg-background/80 pl-10 pr-20 text-sm"
         />
         <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-2">
           {isSearching ? <Spinner className="h-4 w-4 text-muted-foreground" /> : null}
@@ -42,7 +42,7 @@ export function DocumentSearchBar({
               type="button"
               size="icon"
               variant="ghost"
-              className="h-8 w-8 rounded-full text-muted-foreground"
+              className="h-7 w-7 rounded-full text-muted-foreground"
               onClick={onClear}
               disabled={isSearching}
             >

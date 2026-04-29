@@ -1,7 +1,7 @@
 'use client'
 
 import type { FormEvent } from 'react'
-import { ArrowLeft, FileText, PanelRight, Pencil, Save, X } from 'lucide-react'
+import { ArrowLeft, FileText, PanelRight, Pencil, Save, Trash2, X } from 'lucide-react'
 
 import { DocumentStatus } from '@/components/dashboard/document-status'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,7 @@ export function DocumentEditorPage({
   metadataError,
   isLoading,
   isSaving,
+  isDeleting,
   isEditing,
   isMetadataOpen,
   onBack,
@@ -30,6 +31,7 @@ export function DocumentEditorPage({
   onMetadataChange,
   onEditingChange,
   onMetadataOpenChange,
+  onDelete,
   onSubmit,
 }: {
   document: DocumentSummary | null
@@ -37,6 +39,7 @@ export function DocumentEditorPage({
   metadataError: string | null
   isLoading: boolean
   isSaving: boolean
+  isDeleting: boolean
   isEditing: boolean
   isMetadataOpen: boolean
   onBack: () => void
@@ -44,6 +47,7 @@ export function DocumentEditorPage({
   onMetadataChange: (value: string) => void
   onEditingChange: (editing: boolean) => void
   onMetadataOpenChange: (open: boolean) => void
+  onDelete: () => void
   onSubmit: (event: FormEvent) => void
 }) {
   if (isLoading) {
@@ -111,9 +115,20 @@ export function DocumentEditorPage({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => onMetadataOpenChange(true)}>
+            <Button type="button" variant="outline" onClick={() => onMetadataOpenChange(!isMetadataOpen)}>
               <PanelRight className="mr-2 h-4 w-4" />
               Metadata
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={onDelete}
+              disabled={isSaving || isDeleting}
+            >
+              {isDeleting ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
+              <span className="sr-only">Delete document</span>
             </Button>
             {isEditing ? (
               <>

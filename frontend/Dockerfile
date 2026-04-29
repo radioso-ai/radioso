@@ -19,5 +19,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL
 COPY --from=builder /app ./
+RUN chown -R node:node /app
+USER node
 EXPOSE 3000
 CMD ["npm", "run", "start", "--", "-H", "0.0.0.0", "-p", "3000"]

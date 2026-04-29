@@ -440,6 +440,40 @@ describe("auth integration", () => {
     expect(registration.status).toBe(201);
   });
 
+  it("rate limits invitation password attempts for existing users", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        AUTH_RATE_LIMIT_MAX_ATTEMPTS: 1,
+      },
+    });
+
+    await issueTestSession(app, "existing-invitee@example.com");
+    const owner = await issueTestSession(app, "owner-invite-rate-limit@example.com");
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: "existing-invitee@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+      .send({
+        email: "existing-invitee@example.com",
+        password: "wrong-password-a",
+      })
+      .expect(401);
+
+    const response = await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+      .send({
+        email: "rotated-invitee@example.com",
+        password: "wrong-password-b",
+      });
+
+    expect(response.status).toBe(429);
+    expect(response.body.error.code).toBe("rate_limit_exceeded");
+  });
+
   it("lets an account owner remove a member and immediately revoke that account access", async () => {
     const { app } = createTestApp();
 

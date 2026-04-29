@@ -4,8 +4,17 @@ import { anonymousRateLimiter, resetRateLimiterState } from "../../src/app/http/
 import { AppError } from "../../src/shared/domain/errors.js";
 import { createTestDependencies } from "../support/testApp.js";
 
-const createMockReqRes = (locals: Record<string, unknown> = {}) => {
-  const req = {} as Request;
+const createMockReqRes = (
+  locals: Record<string, unknown> = {},
+  options: { ip?: string; forwardedFor?: string } = {},
+) => {
+  const req = {
+    ip: options.ip ?? "203.0.113.10",
+    socket: { remoteAddress: options.ip ?? "203.0.113.10" },
+    get(name: string) {
+      return name.toLowerCase() === "x-forwarded-for" ? options.forwardedFor : undefined;
+    },
+  } as unknown as Request;
   let responseBody: unknown = undefined;
   let responseStatus = 200;
   let nextError: unknown = undefined;
@@ -93,29 +102,78 @@ describe("anonymousRateLimiter", () => {
     expect((getBody() as any).retryAfterSeconds).toBeGreaterThan(0);
   });
 
-  it("handles concurrent sessions independently", async () => {
+  it("handles request sources independently", async () => {
     const limit = 2;
     const rateLimiter = middleware();
 
-    // Fill session A
     for (let i = 0; i < limit; i++) {
       const { req, res, next } = createMockReqRes({
         workspaceId: "workspace-1",
         anonymousSessionId: "session-a",
         anonymousRateLimit: limit,
-      });
+      }, { ip: "203.0.113.10" });
       await rateLimiter(req, res, next);
     }
 
-    // Session B should still be allowed
     const { req, res, next, wasNextCalled } = createMockReqRes({
       workspaceId: "workspace-1",
       anonymousSessionId: "session-b",
       anonymousRateLimit: limit,
-    });
+    }, { ip: "203.0.113.11" });
     await rateLimiter(req, res, next);
 
     expect(wasNextCalled()).toBe(true);
+  });
+
+  it("uses cookie-backed browser ids independently behind the same request source", async () => {
+    const limit = 1;
+    const rateLimiter = middleware();
+
+    const { req: firstReq, res: firstRes, next: firstNext } = createMockReqRes({
+      workspaceId: "workspace-1",
+      anonymousSessionId: "session-a",
+      anonymousRateLimitId: "browser-a",
+      anonymousRateLimitIdFromCookie: true,
+      anonymousRateLimit: limit,
+    }, { ip: "203.0.113.50" });
+    await rateLimiter(firstReq, firstRes, firstNext);
+
+    const { req, res, next, wasNextCalled } = createMockReqRes({
+      workspaceId: "workspace-1",
+      anonymousSessionId: "session-b",
+      anonymousRateLimitId: "browser-b",
+      anonymousRateLimitIdFromCookie: true,
+      anonymousRateLimit: limit,
+    }, { ip: "203.0.113.50" });
+    await rateLimiter(req, res, next);
+
+    expect(wasNextCalled()).toBe(true);
+  });
+
+  it("does not reset the rate-limit bucket when the anonymous session id changes", async () => {
+    const limit = 1;
+    const rateLimiter = middleware();
+
+    const { req: firstReq, res: firstRes, next: firstNext } = createMockReqRes({
+      workspaceId: "workspace-1",
+      anonymousSessionId: "session-before-reset",
+      anonymousRateLimitId: "browser-before-reset",
+      anonymousRateLimitIdFromCookie: true,
+      anonymousRateLimit: limit,
+    }, { ip: "203.0.113.20" });
+    await rateLimiter(firstReq, firstRes, firstNext);
+
+    const { req, res, next, getStatus, wasNextCalled } = createMockReqRes({
+      workspaceId: "workspace-1",
+      anonymousSessionId: "session-after-reset",
+      anonymousRateLimitId: "browser-before-reset",
+      anonymousRateLimitIdFromCookie: true,
+      anonymousRateLimit: limit,
+    }, { ip: "203.0.113.20" });
+    await rateLimiter(req, res, next);
+
+    expect(wasNextCalled()).toBe(false);
+    expect(getStatus()).toBe(429);
   });
 
   it("passes through when no anonymousSessionId is set", async () => {
@@ -135,7 +193,7 @@ describe("anonymousRateLimiter", () => {
       anonymousSessionId: sessionId,
       workspaceId: "workspace-1",
       anonymousRateLimit: 1,
-    });
+    }, { ip: "203.0.113.30" });
     await rateLimiter(req1, res1, next1);
 
     // Second request — should be rejected even though a higher limit could allow it
@@ -143,7 +201,7 @@ describe("anonymousRateLimiter", () => {
       anonymousSessionId: sessionId,
       workspaceId: "workspace-1",
       anonymousRateLimit: 1,
-    });
+    }, { ip: "203.0.113.30" });
     await rateLimiter(req, res, next);
 
     expect(wasNextCalled()).toBe(false);
@@ -158,14 +216,14 @@ describe("anonymousRateLimiter", () => {
       workspaceId: "workspace-a",
       anonymousSessionId: sessionId,
       anonymousRateLimit: 1,
-    });
+    }, { ip: "203.0.113.40" });
     await rateLimiter(req1, res1, next1);
 
     const { req, res, next, wasNextCalled } = createMockReqRes({
       workspaceId: "workspace-b",
       anonymousSessionId: sessionId,
       anonymousRateLimit: 1,
-    });
+    }, { ip: "203.0.113.40" });
     await rateLimiter(req, res, next);
 
     expect(wasNextCalled()).toBe(true);

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 
@@ -99,6 +100,19 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
     resolveSubjectKey: (req) => {
       const email = typeof req.body?.email === "string" ? req.body.email : null;
       return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
+    },
+  });
+  const invitationAcceptRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "auth.invitation.accept",
+    limit: authLimit,
+    windowMs: authWindowMs,
+    resolveSubjectKey: (req) => {
+      const token = typeof req.params.invitationToken === "string" ? req.params.invitationToken : "unknown";
+      const tokenHash = createHash("sha256").update(token).digest("hex");
+      const source = req.ip ?? "unknown";
+      return `${tokenHash}:${source}`;
     },
   });
   const emailVerificationVerifyRateLimit = createRateLimitMiddleware({
@@ -237,6 +251,7 @@ export const createAuthRoutes = (dependencies: AppDependencies): Router => {
   router.post(
     "/invitations/:invitationToken/accept",
     validateBody(invitationAcceptSchema),
+    invitationAcceptRateLimit,
     async (req, res, next) => {
       try {
         const params = invitationTokenParamsSchema.parse(req.params);

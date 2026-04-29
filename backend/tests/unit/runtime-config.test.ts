@@ -168,6 +168,9 @@ describe("runtime configuration", () => {
     expect(githubActionsTf).toContain('https://token.actions.githubusercontent.com');
     expect(terraformMain).toContain('worker_tasks_service_url = coalesce(var.worker_tasks_service_url_override, "https://example.invalid")');
     expect(terraformMain).toContain('resource_name_prefix         = "${local.service_name}-${var.environment}"');
+    expect(githubActionsTf).toContain("assertion.ref == 'refs/heads/main'");
+    expect(stagingEnv).toContain("mail_driver                           = var.mail_driver");
+    expect(liveEnv).toContain("mail_driver                           = var.mail_driver");
     expect(stagingEnv).toMatch(/environment\s+= "staging"/);
     expect(liveEnv).toMatch(/environment\s+= "live"/);
   });

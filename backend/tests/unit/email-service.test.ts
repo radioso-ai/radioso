@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { EmailService } from "../../src/modules/email/services/emailService.js";
+import { EmailService, LogEmailDriver } from "../../src/modules/email/services/emailService.js";
 import type { EmailDriver } from "../../src/modules/email/services/emailService.js";
 
 class RecordingDriver implements EmailDriver {
@@ -34,5 +34,27 @@ describe("EmailService", () => {
     });
     expect(driver.sent[0]?.subject).toContain("password");
     expect(driver.sent[0]?.text).toContain("https://app.example.com/reset-password?token=abc123");
+  });
+
+  it("redacts tokenized email URLs from log-driver metadata", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const service = new EmailService(new LogEmailDriver(), {
+      fromEmail: "noreply@example.com",
+      fromName: "Radioso",
+    });
+
+    await service.sendPasswordResetEmail({
+      to: "user@example.com",
+      resetUrl: "https://app.example.com/reset-password?token=abc123",
+    });
+
+    expect(info).toHaveBeenCalledWith("email.send", {
+      to: "user@example.com",
+      subject: "Reset your password",
+      metadata: {
+        kind: "password_reset",
+        resetUrl: "[redacted]",
+      },
+    });
   });
 });

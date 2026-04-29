@@ -45,12 +45,54 @@ describe('offset-backed list APIs', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    await chatApi.listHistory({ limit: 50, offset: 100 })
+    const response = await chatApi.listHistory({ limit: 50, offset: 100 })
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/backend/api/v1/history?limit=50&offset=100',
       expect.objectContaining({ method: 'GET' }),
     )
+    expect(response.items).toEqual([])
+  })
+
+  it('normalizes changed chat history responses for the merged history view', async () => {
+    vi.stubGlobal('window', { localStorage: createLocalStorage() })
+    const fetchMock = vi.fn().mockResolvedValue(
+      createJsonResponse({
+        conversations: [
+          {
+            id: 'conversation-1',
+            preview: 'What records does history use?',
+            sourceChannel: null,
+            sourceOrigin: null,
+            createdAt: '2026-04-26T12:00:00.000Z',
+            updatedAt: '2026-04-26T12:05:00.000Z',
+            messageCount: 2,
+            userMessageCount: 1,
+            assistantMessageCount: 1,
+          },
+        ],
+        total: 1,
+        nextCursor: null,
+        hasMore: false,
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(chatApi.listHistory({ limit: 50, offset: 0 })).resolves.toMatchObject({
+      items: [
+        {
+          kind: 'chat',
+          id: 'conversation-1',
+          sortAt: '2026-04-26T12:05:00.000Z',
+          conversation: {
+            id: 'conversation-1',
+          },
+        },
+      ],
+      total: 1,
+      nextCursor: null,
+      hasMore: false,
+    })
   })
 
   it('requests filtered chat history with offset pagination', async () => {

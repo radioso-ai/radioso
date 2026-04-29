@@ -76,6 +76,9 @@ const getConversationSourceLabel = (conversation: ChatConversationSummary) => {
   return 'Dashboard chat'
 }
 
+const formatMessageCount = (messageCount: number) =>
+  `${messageCount} message${messageCount === 1 ? '' : 's'}`
+
 function HistoryBadge({ children }: { children: string }) {
   return (
     <span className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
@@ -183,7 +186,9 @@ function ConversationCard({
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="inline-flex min-w-0 items-center gap-1.5">
           <Globe2 className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{sourceLabel}</span>
+          <span className="truncate">
+            {sourceLabel} - {formatMessageCount(conversation.messageCount)}
+          </span>
         </span>
         <span className="shrink-0 sm:ml-auto">{formatTimestamp(conversation.updatedAt)}</span>
       </div>
@@ -302,7 +307,7 @@ export function HistoryList({
                   type="button"
                   onClick={() => onFilterChange(option.value)}
                   className={cn(
-                    'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-foreground transition-[color,box-shadow,background-color] focus-visible:ring-[3px] focus-visible:outline-1',
+                    'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-foreground transition-[color,box-shadow,background-color] hover:text-primary focus-visible:ring-[3px] focus-visible:outline-1 dark:hover:text-secondary',
                     filter === option.value
                       ? 'bg-background text-foreground shadow-sm dark:border-input dark:bg-input/30 dark:text-foreground'
                       : 'dark:text-muted-foreground',

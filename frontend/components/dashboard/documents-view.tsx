@@ -14,6 +14,7 @@ import { DocumentImportDialog } from '@/components/dashboard/documents/document-
 import { DocumentList } from '@/components/dashboard/documents/document-list'
 import { DocumentSearchBar } from '@/components/dashboard/document-search-bar'
 import { DocumentSearchResults } from '@/components/dashboard/document-search-results'
+import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { useDocumentSearch } from '@/components/dashboard/use-document-search'
 import { Button } from '@/components/ui/button'
 import {
@@ -520,6 +521,7 @@ export function DocumentsView({
           metadataError={metadataError}
           isLoading={isDocumentLoading}
           isSaving={isSaving}
+          isDeleting={activeDetailDocument ? deletingDocumentId === activeDetailDocument.id : false}
           isEditing={isEditingDetail}
           isMetadataOpen={isMetadataSheetOpen}
           onBack={() => {
@@ -539,39 +541,40 @@ export function DocumentsView({
             setIsEditingDetail(editing)
           }}
           onMetadataOpenChange={setIsMetadataSheetOpen}
+          onDelete={() => {
+            if (activeDetailDocument) {
+              setDeleteCandidate(activeDetailDocument)
+            }
+          }}
           onSubmit={handleSubmit}
         />
       ) : (
-        <>
-          <div className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              <div className="min-w-0 flex-1 space-y-2">
-                <div>
-                  <h1 className="text-lg font-medium text-foreground">Documents</h1>
-                  <p className="text-sm text-muted-foreground">Manage your knowledge base</p>
-                </div>
-                <DocumentSearchBar
-                  query={documentSearch.query}
-                  onQueryChange={documentSearch.setQuery}
-                  onSubmit={() => void documentSearch.runSearch()}
-                  onClear={documentSearch.clearSearch}
-                  isSearching={documentSearch.isSearching}
-                />
-              </div>
-              <div className="flex items-center gap-2 xl:shrink-0">
-                <Button size="sm" variant="outline" className="h-11 px-4" onClick={openImportDialog}>
-                  <FileText className="mr-2 h-4 w-4" />
-                  Import File
-                </Button>
-                <Button size="sm" className="h-11 px-4" onClick={openCreateDialog}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Document
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <DashboardPage
+          title="Documents"
+          description="Manage your knowledge base"
+          headerClassName="xl:items-end"
+          headerContent={
+            <DocumentSearchBar
+              query={documentSearch.query}
+              onQueryChange={documentSearch.setQuery}
+              onSubmit={() => void documentSearch.runSearch()}
+              onClear={documentSearch.clearSearch}
+              isSearching={documentSearch.isSearching}
+            />
+          }
+          actions={
+            <>
+              <Button size="sm" variant="outline" className="h-10 px-3.5" onClick={openImportDialog}>
+                <FileText className="mr-2 h-4 w-4" />
+                Import File
+              </Button>
+              <Button size="sm" className="h-10 px-3.5" onClick={openCreateDialog}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Document
+              </Button>
+            </>
+          }
+        >
             {documentSearch.activeSearch || documentSearch.searchError ? (
               <DocumentSearchResults
                 search={documentSearch.activeSearch}
@@ -615,8 +618,7 @@ export function DocumentsView({
                 onRetry={(documentId) => void handleRetry(documentId)}
               />
             )}
-          </div>
-        </>
+        </DashboardPage>
       )}
     </div>
   )

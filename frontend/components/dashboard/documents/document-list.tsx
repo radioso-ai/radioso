@@ -1,12 +1,11 @@
 'use client'
 
-import { FileText, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { FileText, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { DocumentStatus } from '@/components/dashboard/document-status'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
-import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import type { DocumentSummary } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
@@ -36,7 +35,7 @@ function DocumentsPagination({
 }) {
   return (
     <DashboardPagination
-      summary={`Showing ${pageStart + 1}-${pageEnd} of ${totalDocuments} documents`}
+      summary={`${pageStart + 1} to ${pageEnd} of ${totalDocuments}`}
       currentPage={safeCurrentPage}
       totalPages={totalPages}
       previousHref={buildDashboardHref(accountId, {
@@ -82,32 +81,32 @@ function DocumentCard({
   const isImported = document.sourceKind === 'uploaded_file'
 
   return (
-    <div className="grid w-full gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent/20 sm:grid-cols-[minmax(0,1fr)_auto]">
-      <button type="button" onClick={() => onOpen(document.id)} className="flex min-w-0 items-start gap-4 text-left">
-        <div className="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-muted">
-          <FileText className="h-5 w-5 text-muted-foreground" />
+    <div className="flex w-full flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3.5 transition-colors hover:border-primary/40 hover:bg-accent/20 sm:flex-row sm:items-center">
+      <button type="button" onClick={() => onOpen(document.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-muted">
+          <FileText className="h-4 w-4 text-muted-foreground" />
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-2">
-            <h3 className="text-sm font-medium text-foreground [overflow-wrap:anywhere]">{document.title}</h3>
-            {isImported ? null : <Pencil className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h3 className="text-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{document.title}</h3>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">Updated {formatDate(document.updatedAt)}</p>
-          {isImported && document.sourceFilename ? (
-            <p className="mt-1 text-xs text-muted-foreground">Imported from {document.sourceFilename}</p>
-          ) : null}
+          <p className="text-xs text-muted-foreground">
+            Updated {formatDate(document.updatedAt)}
+            {isImported && document.sourceFilename ? ` - Imported from ${document.sourceFilename}` : ''}
+          </p>
           {isFailed && document.failureReason ? (
-            <p className="mt-1 text-xs text-destructive">{document.failureReason}</p>
+            <p className="text-xs text-destructive">{document.failureReason}</p>
           ) : null}
-          <MetadataBadges metadata={document.metadata} />
+          {deleteError ? <p className="text-xs text-destructive">{deleteError}</p> : null}
+          {retryError ? <p className="text-xs text-destructive">{retryError}</p> : null}
         </div>
       </button>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2 sm:ml-auto">
         <DocumentStatus status={document.status} />
         {isFailed ? (
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-full border border-border px-2.5 py-1 text-muted-foreground hover:bg-accent/40 disabled:opacity-50"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent/40 disabled:opacity-50"
             onClick={() => onRetry(document.id)}
             disabled={retryingDocumentId === document.id}
           >
@@ -120,7 +119,7 @@ function DocumentCard({
         ) : null}
         <button
           type="button"
-          className="inline-flex items-center justify-center rounded-full border border-border px-2.5 py-1 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-destructive hover:bg-destructive/10 disabled:opacity-50"
           onClick={() => onDelete(document)}
           disabled={deletingDocumentId === document.id || retryingDocumentId === document.id}
         >
@@ -130,8 +129,6 @@ function DocumentCard({
             <Trash2 className="h-3.5 w-3.5" />
           )}
         </button>
-        {deleteError ? <p className="max-w-56 text-xs text-destructive">{deleteError}</p> : null}
-        {retryError ? <p className="max-w-56 text-xs text-destructive sm:text-right">{retryError}</p> : null}
       </div>
     </div>
   )
@@ -185,9 +182,11 @@ export function DocumentList({
   const totalPages = Math.max(1, Math.ceil(totalDocuments / pageSize))
   const safeCurrentPage = Math.min(currentPage, totalPages)
   const pageStart = totalDocuments === 0 ? 0 : (safeCurrentPage - 1) * pageSize
-  const pageEnd = Math.min(pageStart + documents.length, totalDocuments)
+  const pageItemCount = isLoading ? pageSize : documents.length
+  const pageEnd = Math.min(pageStart + pageItemCount, totalDocuments)
+  const shouldShowPagination = totalDocuments > pageSize
 
-  if (isLoading) {
+  if (isLoading && totalDocuments === 0) {
     return (
       <div className="flex h-full items-center justify-center">
         <LogoSpinner imageClassName="h-7 w-7" />
@@ -223,7 +222,7 @@ export function DocumentList({
 
   return (
     <div className="w-full space-y-4">
-      {totalDocuments > pageSize ? (
+      {shouldShowPagination ? (
         <DocumentsPagination
           accountId={accountId}
           routeState={routeState}
@@ -237,23 +236,29 @@ export function DocumentList({
           onNext={onNextPage}
         />
       ) : null}
-      <div className="grid w-full gap-3">
-        {documents.map((document) => (
-          <DocumentCard
-            key={document.id}
-            document={document}
-            deletingDocumentId={deletingDocumentId}
-            retryingDocumentId={retryingDocumentId}
-            deleteError={deleteErrorById[document.id]}
-            retryError={retryErrorById[document.id]}
-            onOpen={onOpenDocument}
-            onDelete={onDelete}
-            onRetry={onRetry}
-            formatDate={formatDate}
-          />
-        ))}
-      </div>
-      {totalDocuments > pageSize ? (
+      {isLoading ? (
+        <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border">
+          <LogoSpinner imageClassName="h-7 w-7" />
+        </div>
+      ) : (
+        <div className="grid w-full gap-3">
+          {documents.map((document) => (
+            <DocumentCard
+              key={document.id}
+              document={document}
+              deletingDocumentId={deletingDocumentId}
+              retryingDocumentId={retryingDocumentId}
+              deleteError={deleteErrorById[document.id]}
+              retryError={retryErrorById[document.id]}
+              onOpen={onOpenDocument}
+              onDelete={onDelete}
+              onRetry={onRetry}
+              formatDate={formatDate}
+            />
+          ))}
+        </div>
+      )}
+      {shouldShowPagination ? (
         <DocumentsPagination
           accountId={accountId}
           routeState={routeState}

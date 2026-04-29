@@ -616,6 +616,47 @@ export interface HistoryItemsResponse {
   hasMore: boolean
 }
 
+type HistoryItemsApiResponse =
+  | HistoryItemsResponse
+  | ChatHistoryListResponse
+  | DocumentSearchHistoryListResponse
+
+const normalizeHistoryItemsResponse = (response: HistoryItemsApiResponse): HistoryItemsResponse => {
+  if ('items' in response) {
+    return response
+  }
+
+  if ('conversations' in response) {
+    return {
+      items: response.conversations.map((conversation) => {
+        return {
+          kind: 'chat',
+          id: conversation.id,
+          sortAt: conversation.updatedAt,
+          conversation,
+        }
+      }),
+      total: response.total,
+      nextCursor: null,
+      hasMore: response.hasMore,
+    }
+  }
+
+  return {
+    items: response.searches.map((search) => {
+      return {
+        kind: 'search',
+        id: search.searchId,
+        sortAt: search.createdAt,
+        search,
+      }
+    }),
+    total: response.total,
+    nextCursor: null,
+    hasMore: response.hasMore,
+  }
+}
+
 interface ChatStreamHandlers {
   onConversation?: (payload: ChatStreamConversation) => void
   onChunk?: (payload: ChatStreamChunk) => void
@@ -1228,9 +1269,11 @@ export const chatApi = {
     }
 
     const query = searchParams.toString()
-    return request<HistoryItemsResponse>(`/history${query ? `?${query}` : ''}`, {
+    const response = await request<HistoryItemsApiResponse>(`/history${query ? `?${query}` : ''}`, {
       method: 'GET',
     }, { withApiToken: true })
+
+    return normalizeHistoryItemsResponse(response)
   },
 
   async listChatHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<ChatHistoryListResponse> {

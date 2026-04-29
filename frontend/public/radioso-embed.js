@@ -10,6 +10,8 @@
   const ERROR_MESSAGE = 'radioso:embed:error'
   const COLLAPSE_MESSAGE = 'radioso:embed:collapse'
   const PANEL_HANDLE_WIDTH = 56
+  const DESKTOP_PANEL_CONTENT_WIDTH = 560
+  const NARROW_VIEWPORT_MAX_WIDTH = 640
   const defaultCopy = {
     launcherDefaultLabel: 'Chat with us',
     iframeTitle: 'Radioso embedded chat',
@@ -195,6 +197,16 @@
     }
   }
 
+  const getViewportFrame = () => {
+    const viewport = window.visualViewport
+    return {
+      width: viewport?.width || window.innerWidth || document.documentElement.clientWidth,
+      height: viewport?.height || window.innerHeight || document.documentElement.clientHeight,
+      offsetLeft: viewport?.offsetLeft || 0,
+      offsetTop: viewport?.offsetTop || 0,
+    }
+  }
+
   const createPanel = (theme, displayMode, position) => {
     const panel = document.createElement('div')
     panel.setAttribute('aria-hidden', displayMode === 'bubble' ? 'true' : 'false')
@@ -223,7 +235,7 @@
       return panel
     }
 
-    panel.style.width = 'min(440px, calc(100vw - 2rem))'
+    panel.style.width = `min(${DESKTOP_PANEL_CONTENT_WIDTH}px, calc(100vw - 2rem))`
     panel.style.height = '100%'
     panel.style.maxHeight = 'calc(100vh - 2rem)'
     panel.style.borderRadius = '28px'
@@ -464,7 +476,7 @@
     if (displayMode === 'panel') {
       host.style.top = '0'
       host.style.bottom = '0'
-      host.style.width = 'min(496px, 100vw)'
+      host.style.width = `min(${DESKTOP_PANEL_CONTENT_WIDTH + PANEL_HANDLE_WIDTH}px, 100vw)`
       host.style.maxWidth = '100vw'
     } else {
       host.style.top = '16px'
@@ -503,8 +515,111 @@
     }
 
     let isOpen = initialState === 'open'
+    let isFullscreenOpen = false
     let bootstrapPromise = null
     let iframe = null
+
+    const applyResponsiveLayout = () => {
+      const viewport = getViewportFrame()
+      isFullscreenOpen = isOpen && viewport.width <= NARROW_VIEWPORT_MAX_WIDTH
+
+      if (isFullscreenOpen) {
+        host.style.top = `${viewport.offsetTop}px`
+        host.style.left = `${viewport.offsetLeft}px`
+        host.style.right = 'auto'
+        host.style.bottom = 'auto'
+        host.style.width = `${viewport.width}px`
+        host.style.height = `${viewport.height}px`
+        host.style.maxWidth = 'none'
+        host.style.display = 'block'
+        host.style.overflow = 'hidden'
+        host.style.alignItems = ''
+        host.style.justifyContent = ''
+        host.style.gap = ''
+
+        panel.style.width = '100%'
+        panel.style.height = '100%'
+        panel.style.maxHeight = 'none'
+        panel.style.border = '0'
+        panel.style.borderRadius = '0'
+        panel.style.boxShadow = 'none'
+        panel.style.left = '0'
+        panel.style.right = '0'
+
+        if (shell) {
+          shell.style.top = '0'
+          shell.style.bottom = '0'
+          shell.style.left = '0'
+          shell.style.right = '0'
+        }
+        return
+      }
+
+      host.style.height = ''
+      host.style.overflow = 'visible'
+
+      panel.style.border = `1px solid ${theme.panelBorder}`
+      panel.style.boxShadow = theme.panelShadow
+
+      if (displayMode === 'panel') {
+        host.style.top = '0'
+        host.style.bottom = '0'
+        host.style.width = `min(${DESKTOP_PANEL_CONTENT_WIDTH + PANEL_HANDLE_WIDTH}px, 100vw)`
+        host.style.maxWidth = '100vw'
+        host.style.display = 'block'
+
+        if (position === 'bottom-left') {
+          host.style.left = '0'
+          host.style.right = 'auto'
+        } else {
+          host.style.left = 'auto'
+          host.style.right = '0'
+        }
+
+        panel.style.width = `calc(100% - ${PANEL_HANDLE_WIDTH}px)`
+        panel.style.height = '100%'
+        panel.style.maxHeight = '100%'
+        panel.style.borderRadius = '0'
+        if (position === 'bottom-left') {
+          panel.style.left = '0'
+          panel.style.right = 'auto'
+          panel.style.borderLeft = '0'
+          panel.style.borderRight = ''
+        } else {
+          panel.style.left = 'auto'
+          panel.style.right = '0'
+          panel.style.borderLeft = ''
+          panel.style.borderRight = '0'
+        }
+        return
+      }
+
+      host.style.top = '16px'
+      host.style.bottom = '16px'
+      host.style.width = ''
+      host.style.maxWidth = 'calc(100vw - 2rem)'
+      host.style.display = 'flex'
+      host.style.flexDirection = 'column'
+      host.style.alignItems = position === 'bottom-left' ? 'flex-start' : 'flex-end'
+      host.style.justifyContent = 'flex-end'
+      host.style.gap = '12px'
+      if (position === 'bottom-left') {
+        host.style.left = '16px'
+        host.style.right = 'auto'
+      } else {
+        host.style.left = 'auto'
+        host.style.right = '16px'
+      }
+
+      panel.style.width = `min(${DESKTOP_PANEL_CONTENT_WIDTH}px, calc(100vw - 2rem))`
+      panel.style.height = '100%'
+      panel.style.maxHeight = 'calc(100vh - 2rem)'
+      panel.style.borderRadius = '28px'
+      panel.style.left = ''
+      panel.style.right = ''
+      panel.style.borderLeft = ''
+      panel.style.borderRight = ''
+    }
 
     const ensureIframe = () => {
       if (iframe) {
@@ -544,6 +659,9 @@
 
       if (event.data.type === COLLAPSE_MESSAGE) {
         isOpen = false
+        if (displayMode === 'bubble') {
+          destroyIframe()
+        }
         updatePanelVisibility()
         return
       }
@@ -589,20 +707,24 @@
     }
 
     const updatePanelVisibility = () => {
+      applyResponsiveLayout()
       if (displayMode === 'panel' && shell) {
         shell.style.transform =
-          isOpen
+          isOpen || isFullscreenOpen
             ? 'translateX(0)'
             : position === 'bottom-left'
               ? `translateX(calc(-100% + ${PANEL_HANDLE_WIDTH}px))`
               : `translateX(calc(100% - ${PANEL_HANDLE_WIDTH}px))`
         shell.style.pointerEvents = 'none'
+        button.style.display = isFullscreenOpen ? 'none' : 'inline-flex'
         button.style.opacity = isOpen ? '0' : '1'
         button.style.pointerEvents = isOpen ? 'none' : 'auto'
         panel.style.pointerEvents = isOpen ? 'auto' : 'none'
       } else {
         panel.style.display = isOpen ? 'block' : 'none'
+        button.style.display = isFullscreenOpen ? 'none' : 'inline-flex'
         button.style.opacity = isOpen ? '0.94' : '1'
+        button.style.pointerEvents = isFullscreenOpen ? 'none' : 'auto'
       }
       panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true')
       button.setAttribute('aria-expanded', isOpen ? 'true' : 'false')
@@ -631,6 +753,9 @@
       host.appendChild(button)
     }
     window.addEventListener('message', handleIframeMessage)
+    window.addEventListener('resize', updatePanelVisibility)
+    window.visualViewport?.addEventListener('resize', updatePanelVisibility)
+    window.visualViewport?.addEventListener('scroll', updatePanelVisibility)
     updatePanelVisibility()
     document.body.appendChild(host)
   }

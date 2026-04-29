@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { generalSettingsApi } from '@/lib/api'
+import { generalSettingsApi, workspaceApi } from '@/lib/api'
 
 const createLocalStorage = (seed: Record<string, string> = {}) => {
   const store = new Map(Object.entries(seed))
@@ -91,6 +91,40 @@ describe('workspace API auth', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(requestUrl).toBe('/backend/api/v1/settings')
+    expect(requestInit.credentials).toBe('omit')
+    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer sk_proj_cached_token')
+  })
+
+  it('requests workspace summary with bearer workspace auth', async () => {
+    vi.stubGlobal('window', {
+      localStorage: createLocalStorage({
+        'radioso.activeWorkspaceId': 'workspace-1',
+        'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'sk_proj_cached_token' }),
+      }),
+    })
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      createJsonResponse({
+        documentCount: 0,
+        readyDocumentCount: 0,
+        pendingDocumentCount: 0,
+        sampleDocumentCount: 0,
+        sampleDocumentSlugs: [],
+        conversationCount: 0,
+        hasDocuments: false,
+        hasPendingDocuments: false,
+        hasReadyDocuments: false,
+        hasCompletedChat: false,
+        sampleDocumentsImported: false,
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await workspaceApi.getSummary()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(requestUrl).toBe('/backend/api/v1/workspace/summary')
     expect(requestInit.credentials).toBe('omit')
     expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer sk_proj_cached_token')
   })

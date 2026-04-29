@@ -1100,7 +1100,7 @@ describe("chat integration", () => {
     });
 
     const detail = await request(app)
-      .get(`/api/v1/history/${response.body.conversationId}`)
+      .get(`/api/v1/history/chat/${response.body.conversationId}`)
       .set("Authorization", authorization)
       .expect(200);
     const assistantTurn = detail.body.messages.find((message: { role: string }) => message.role === "assistant");
@@ -1219,14 +1219,14 @@ describe("chat integration", () => {
     expect(failure.status).toBe(500);
 
     const history = await request(app)
-      .get("/api/v1/history")
+      .get("/api/v1/history/chat")
       .set("Authorization", authorization);
 
     expect(history.status).toBe(200);
     expect(history.body.conversations).toHaveLength(1);
 
     const detail = await request(app)
-      .get(`/api/v1/history/${history.body.conversations[0].id}`)
+      .get(`/api/v1/history/chat/${history.body.conversations[0].id}`)
       .set("Authorization", authorization);
 
     expect(detail.status).toBe(200);
@@ -1517,7 +1517,7 @@ describe("chat integration", () => {
     });
 
     const detail = await request(app)
-      .get(`/api/v1/history/${response.body.conversationId}`)
+      .get(`/api/v1/history/chat/${response.body.conversationId}`)
       .set("Authorization", authorization)
       .expect(200);
     const assistantTurn = detail.body.messages.find((message: { role: string }) => message.role === "assistant");

@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { requireSession } from "../middleware/requireSession.js";
+import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 
 export const createWorkspaceSchema = z.object({
@@ -25,6 +26,7 @@ export const workspaceKeyParamsSchema = z.object({
 export const createWorkspaceRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
   const authenticatedUserSession = requireSession(dependencies, { requireActiveMembership: false });
+  const workspaceSession = requireWorkspaceSession(dependencies);
   const workspaceMutationRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
@@ -42,6 +44,16 @@ export const createWorkspaceRoutes = (dependencies: AppDependencies): Router => 
       const { accountId } = res.locals as { accountId: string };
       const workspaces = await dependencies.workspaceService.listForAccount(accountId);
       res.status(200).json({ workspaces });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/summary", workspaceSession, async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const summary = await dependencies.workspaceSummaryService.getSummary(workspaceId);
+      res.status(200).json(summary);
     } catch (error) {
       next(error);
     }

@@ -2,64 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { chatApi, documentsApi, type DocumentSummary } from '@/lib/api'
+import { documentsApi, workspaceApi, type DocumentSummary } from '@/lib/api'
+import {
+  isOnboardingActive as getOnboardingActiveFlag,
+  isOnboardingCompleted as getOnboardingCompletedFlag,
+  markOnboardingActive,
+  markOnboardingCompleted,
+} from '@/lib/onboarding-storage'
 
-const ONBOARDING_ACTIVE_KEY = 'radioso.onboardingActive'
-const ONBOARDING_COMPLETED_KEY = 'radioso.onboardingCompleted'
-
-type OnboardingStorageMap = Record<string, boolean>
-
-const readBooleanMap = (key: string): OnboardingStorageMap => {
-  if (typeof window === 'undefined') {
-    return {}
-  }
-
-  try {
-    const raw = window.localStorage.getItem(key)
-    if (!raw) {
-      return {}
-    }
-
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return {}
-    }
-
-    return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'),
-    )
-  } catch {
-    return {}
-  }
-}
-
-const writeBooleanMap = (key: string, value: OnboardingStorageMap) => {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  window.localStorage.setItem(key, JSON.stringify(value))
-}
-
-const setWorkspaceFlag = (key: string, workspaceId: string, enabled: boolean) => {
-  const next = readBooleanMap(key)
-  if (enabled) {
-    next[workspaceId] = true
-  } else {
-    delete next[workspaceId]
-  }
-  writeBooleanMap(key, next)
-}
-
-const getWorkspaceFlag = (key: string, workspaceId: string) => readBooleanMap(key)[workspaceId] === true
-export const markOnboardingActive = (workspaceId: string) => {
-  setWorkspaceFlag(ONBOARDING_ACTIVE_KEY, workspaceId, true)
-}
-
-export const markOnboardingCompleted = (workspaceId: string) => {
-  setWorkspaceFlag(ONBOARDING_COMPLETED_KEY, workspaceId, true)
-  setWorkspaceFlag(ONBOARDING_ACTIVE_KEY, workspaceId, false)
-}
+export { markOnboardingActive, markOnboardingCompleted } from '@/lib/onboarding-storage'
 
 export const SAMPLE_DOCUMENTS = [
   {
@@ -123,13 +74,6 @@ export interface WorkspaceOnboardingState {
   markActive: () => void
 }
 
-const isPendingDocument = (document: DocumentSummary) => {
-  const normalizedStatus = document.status.toLowerCase()
-  return normalizedStatus === 'queued' || normalizedStatus === 'processing' || document.ragStatus === 'pending'
-}
-
-const isSampleDocument = (document: DocumentSummary) => document.metadata.sampleDocument === true
-
 export const shouldAutoActivateOnboarding = (input: {
   workspaceId: string
   workspaceCount: number
@@ -140,7 +84,7 @@ export const shouldAutoActivateOnboarding = (input: {
     return false
   }
 
-  if (getWorkspaceFlag(ONBOARDING_COMPLETED_KEY, input.workspaceId)) {
+  if (getOnboardingCompletedFlag(input.workspaceId)) {
     return false
   }
 
@@ -152,7 +96,11 @@ export const useWorkspaceOnboarding = (
   workspaceCount: number,
 ): WorkspaceOnboardingState => {
   const [isLoading, setIsLoading] = useState(true)
-  const [documents, setDocuments] = useState<DocumentSummary[]>([])
+  const [sampleDocumentSlugs, setSampleDocumentSlugs] = useState<string[]>([])
+  const [hasDocuments, setHasDocuments] = useState(false)
+  const [hasPendingDocuments, setHasPendingDocuments] = useState(false)
+  const [hasReadyDocuments, setHasReadyDocuments] = useState(false)
+  const [sampleDocumentsImported, setSampleDocumentsImported] = useState(false)
   const [hasCompletedChat, setHasCompletedChat] = useState(false)
   const [isOnboardingActive, setIsOnboardingActive] = useState(false)
   const [isOnboardingCompleted, setIsOnboardingCompleted] = useState(false)
@@ -160,7 +108,11 @@ export const useWorkspaceOnboarding = (
 
   const refresh = useCallback(async () => {
     if (!workspaceId) {
-      setDocuments([])
+      setSampleDocumentSlugs([])
+      setHasDocuments(false)
+      setHasPendingDocuments(false)
+      setHasReadyDocuments(false)
+      setSampleDocumentsImported(false)
       setHasCompletedChat(false)
       setIsOnboardingActive(false)
       setIsOnboardingCompleted(false)
@@ -171,29 +123,29 @@ export const useWorkspaceOnboarding = (
     setIsLoading(true)
 
     try {
-      const [documentPage, conversationPage] = await Promise.all([
-        documentsApi.listDocuments({ limit: 100, offset: 0 }),
-        chatApi.listHistory({ limit: 100, offset: 0 }),
-      ])
-      const nextDocuments = documentPage.documents
+      const summary = await workspaceApi.getSummary()
 
-      const nextCompleted = conversationPage.total > 0 || getWorkspaceFlag(ONBOARDING_COMPLETED_KEY, workspaceId)
+      const nextCompleted = summary.hasCompletedChat || getOnboardingCompletedFlag(workspaceId)
       const nextActive =
         !nextCompleted &&
-        (getWorkspaceFlag(ONBOARDING_ACTIVE_KEY, workspaceId) ||
+        (getOnboardingActiveFlag(workspaceId) ||
           shouldAutoActivateOnboarding({
             workspaceId,
             workspaceCount,
-            documentCount: documentPage.total,
-            conversationCount: conversationPage.total,
+            documentCount: summary.documentCount,
+            conversationCount: summary.conversationCount,
           }))
 
       if (nextActive) {
         markOnboardingActive(workspaceId)
       }
 
-      setDocuments(nextDocuments)
-      setHasCompletedChat(conversationPage.total > 0)
+      setSampleDocumentSlugs(summary.sampleDocumentSlugs)
+      setHasDocuments(summary.hasDocuments)
+      setHasPendingDocuments(summary.hasPendingDocuments)
+      setHasReadyDocuments(summary.hasReadyDocuments)
+      setSampleDocumentsImported(summary.sampleDocumentsImported)
+      setHasCompletedChat(summary.hasCompletedChat)
       setIsOnboardingCompleted(nextCompleted)
       setIsOnboardingActive(nextActive)
     } finally {
@@ -215,7 +167,7 @@ export const useWorkspaceOnboarding = (
       return
     }
 
-    if (!documents.some(isPendingDocument)) {
+    if (!hasPendingDocuments) {
       return
     }
 
@@ -224,7 +176,7 @@ export const useWorkspaceOnboarding = (
     }, 2000)
 
     return () => window.clearTimeout(timeoutId)
-  }, [documents, isOnboardingActive, refresh, workspaceId])
+  }, [hasPendingDocuments, isOnboardingActive, refresh, workspaceId])
 
   const importSampleDocs = useCallback(async () => {
     if (!workspaceId) {
@@ -236,12 +188,7 @@ export const useWorkspaceOnboarding = (
     setIsOnboardingActive(true)
 
     try {
-      const existingSlugs = new Set(
-        documents
-          .filter(isSampleDocument)
-          .map((document) => document.metadata.sampleSlug)
-          .filter((value): value is string => typeof value === 'string'),
-      )
+      const existingSlugs = new Set(sampleDocumentSlugs)
 
       const missingDocs = SAMPLE_DOCUMENTS.filter((document) => !existingSlugs.has(document.slug))
 
@@ -263,7 +210,7 @@ export const useWorkspaceOnboarding = (
     } finally {
       setIsImportingSampleDocs(false)
     }
-  }, [documents, refresh, workspaceId])
+  }, [refresh, sampleDocumentSlugs, workspaceId])
 
   const markCompleted = useCallback(() => {
     if (!workspaceId) {
@@ -285,15 +232,10 @@ export const useWorkspaceOnboarding = (
   }, [workspaceId])
 
   const value = useMemo<WorkspaceOnboardingState>(() => {
-    const hasDocuments = documents.length > 0
-    const hasPendingDocuments = documents.some(isPendingDocument)
-    const hasReadyDocuments = documents.some((document) => document.ragStatus === 'processed')
-    const sampleDocumentsImported = documents.some(isSampleDocument)
-
     return {
       isLoading,
       refresh,
-      documents,
+      documents: [],
       hasDocuments,
       hasPendingDocuments,
       hasReadyDocuments,
@@ -308,8 +250,10 @@ export const useWorkspaceOnboarding = (
       markActive,
     }
   }, [
-    documents,
     hasCompletedChat,
+    hasDocuments,
+    hasPendingDocuments,
+    hasReadyDocuments,
     importSampleDocs,
     isImportingSampleDocs,
     isLoading,
@@ -318,6 +262,7 @@ export const useWorkspaceOnboarding = (
     markActive,
     markCompleted,
     refresh,
+    sampleDocumentsImported,
   ])
 
   return value

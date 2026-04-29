@@ -13,6 +13,7 @@ export type {
   ChatResponse,
   ChatConversationDetail,
   ChatHistoryListResponse,
+  HistoryItemsResponse,
   DocumentCreateRequest,
   DocumentDetails,
   DocumentListResponse,
@@ -29,6 +30,7 @@ export type {
   UpdateGeneralSettingsRequest,
   UpdateIngestionSettingsRequest,
   UpdateRetrievalSettingsRequest,
+  WorkspaceSummaryResponse,
   WorkspaceIngestionReprocessResponse,
 } from "./generated/client.js";
 export type { RadiosoClientOptions } from "./core/config.js";
@@ -51,6 +53,9 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
       updateGeneral: (body: Parameters<GeneratedRadiosoClient["updateGeneralSettings"]>[0]) =>
         generated.updateGeneralSettings(body),
     },
+    workspace: {
+      getSummary: () => generated.getWorkspaceSummary(),
+    },
     documents: {
       list: (query?: Parameters<GeneratedRadiosoClient["listDocuments"]>[0]) => generated.listDocuments(query),
       create: (body: Parameters<GeneratedRadiosoClient["createDocument"]>[0]) => generated.createDocument(body),
@@ -63,6 +68,17 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
         generated.listDocumentSearchHistory(query),
       getHistory: (searchId: string) => generated.getDocumentSearchHistory(searchId),
       reprocess: (documentId: string) => generated.reprocessDocument(documentId),
+    },
+    history: {
+      list: (query?: Parameters<GeneratedRadiosoClient["listHistory"]>[0]) => generated.listHistory(query),
+      listChats: (query?: Parameters<GeneratedRadiosoClient["listChatHistory"]>[0]) => generated.listChatHistory(query),
+      listSearches: (query?: Parameters<GeneratedRadiosoClient["listHistorySearches"]>[0]) =>
+        generated.listHistorySearches(query),
+      getChat: (
+        conversationId: string,
+        query?: Parameters<GeneratedRadiosoClient["getChatHistoryConversation"]>[1],
+      ) => generated.getChatHistoryConversation(conversationId, query),
+      getSearch: (searchId: string) => generated.getHistorySearch(searchId),
     },
     chat: {
       create: (body: ChatCreateRequest) => {

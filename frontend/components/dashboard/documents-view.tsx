@@ -42,13 +42,6 @@ interface DocumentsViewProps {
   onboarding: WorkspaceOnboardingState
 }
 
-interface DocumentPageSnapshot {
-  documents: DocumentSummary[]
-  total: number
-  hasMore: boolean
-  nextCursor: string | null
-}
-
 const parseMetadata = (raw: string): Record<string, string | number | boolean | null> | null => {
   const trimmed = raw.trim()
   if (!trimmed) return {}
@@ -71,8 +64,6 @@ export function DocumentsView({
   const router = useRouter()
   const justClosedDocumentIdRef = useRef<string | null>(null)
   const documentWorkspaceKeyRef = useRef(`${accountId}:${routeState.workspaceId ?? ''}`)
-  const documentCursorByPageRef = useRef(new Map<number, string | null>([[1, null]]))
-  const documentPageCacheRef = useRef(new Map<number, DocumentPageSnapshot>())
   const documentLoadRequestIdRef = useRef(0)
   const documentSearch = useDocumentSearch()
 
@@ -104,11 +95,6 @@ export function DocumentsView({
 
   const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
 
-  const resetDocumentPagination = useCallback(() => {
-    documentCursorByPageRef.current = new Map([[1, null]])
-    documentPageCacheRef.current = new Map()
-  }, [])
-
   const loadDocuments = useCallback(async (
     page: number,
     options?: { background?: boolean; reset?: boolean },
@@ -122,62 +108,10 @@ export function DocumentsView({
     }
 
     try {
-      if (options?.reset) {
-        resetDocumentPagination()
-      }
-
-      const cursorByPage = documentCursorByPageRef.current
-      const pageCache = documentPageCacheRef.current
-
-      let response = pageCache.get(page)
-
-      if (!response) {
-        for (let pageNumber = 1; pageNumber <= page; pageNumber += 1) {
-          const cachedPage = pageCache.get(pageNumber)
-          if (cachedPage) {
-            if (!cursorByPage.has(pageNumber + 1)) {
-              cursorByPage.set(pageNumber + 1, cachedPage.nextCursor)
-            }
-            response = cachedPage
-            continue
-          }
-
-          const cursor = cursorByPage.get(pageNumber) ?? null
-          if (pageNumber > 1 && cursor === null) {
-            const previousPage = pageCache.get(pageNumber - 1)
-            const emptySnapshot: DocumentPageSnapshot = {
-              documents: [],
-              total: previousPage?.total ?? 0,
-              hasMore: false,
-              nextCursor: null,
-            }
-            pageCache.set(pageNumber, emptySnapshot)
-            response = emptySnapshot
-            continue
-          }
-
-          const nextResponse = await documentsApi.listDocuments({
-            limit: PAGE_SIZE,
-            ...(cursor ? { cursor } : {}),
-          })
-          const snapshot: DocumentPageSnapshot = {
-            documents: nextResponse.documents,
-            total: nextResponse.total,
-            hasMore: nextResponse.hasMore,
-            nextCursor: nextResponse.nextCursor,
-          }
-          pageCache.set(pageNumber, snapshot)
-          cursorByPage.set(pageNumber + 1, nextResponse.nextCursor)
-          response = snapshot
-        }
-      }
-
-      const pageSnapshot = response ?? {
-        documents: [],
-        total: 0,
-        hasMore: false,
-        nextCursor: null,
-      }
+      const pageSnapshot = await documentsApi.listDocuments({
+        limit: PAGE_SIZE,
+        offset: Math.max(0, page - 1) * PAGE_SIZE,
+      })
 
       if (documentLoadRequestIdRef.current !== requestId || documentWorkspaceKeyRef.current !== requestWorkspaceKey) {
         return
@@ -205,7 +139,7 @@ export function DocumentsView({
         }
       }
     }
-  }, [accountId, resetDocumentPagination, routeState.workspaceId])
+  }, [accountId, routeState.workspaceId])
 
   useEffect(() => {
     const nextWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
@@ -213,13 +147,12 @@ export function DocumentsView({
 
     if (workspaceChanged) {
       documentWorkspaceKeyRef.current = nextWorkspaceKey
-      resetDocumentPagination()
       void loadDocuments(currentPage, { reset: true })
       return
     }
 
     void loadDocuments(currentPage)
-  }, [accountId, currentPage, loadDocuments, resetDocumentPagination, routeState.workspaceId])
+  }, [accountId, currentPage, loadDocuments, routeState.workspaceId])
 
   useEffect(() => {
     setCurrentPage(routeState.documentsPage ?? 1)
@@ -243,23 +176,24 @@ export function DocumentsView({
   }, [currentPage, documents, loadDocuments])
 
   useEffect(() => {
-    setCurrentPage((page) => {
-      const nextPage = getSafeDocumentsPage({
-        currentPage: page,
-        totalDocuments,
-        pageSize: PAGE_SIZE,
-        hasLoadedDocuments,
-      })
-      if (nextPage !== page) {
-        router.replace(buildDashboardHref(accountId, {
-          ...routeState,
-          section: 'documents',
-          documentsPage: nextPage,
-        }))
-      }
-      return nextPage
+    const nextPage = getSafeDocumentsPage({
+      currentPage,
+      totalDocuments,
+      pageSize: PAGE_SIZE,
+      hasLoadedDocuments,
     })
-  }, [accountId, hasLoadedDocuments, routeState, router, totalDocuments])
+
+    if (nextPage === currentPage) {
+      return
+    }
+
+    setCurrentPage(nextPage)
+    router.replace(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'documents',
+      documentsPage: nextPage,
+    }))
+  }, [accountId, currentPage, hasLoadedDocuments, routeState, router, totalDocuments])
 
   const setDocumentsPage = useCallback((page: number) => {
     setCurrentPage(page)

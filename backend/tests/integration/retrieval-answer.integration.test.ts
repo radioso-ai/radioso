@@ -50,7 +50,7 @@ describe("retrieval answer integration", () => {
     expect(response.body).not.toHaveProperty("conversationId");
 
     const history = await request(app)
-      .get("/api/v1/history")
+      .get("/api/v1/history/chat")
       .set(headers)
       .expect(200);
     expect(history.body.conversations).toEqual([]);

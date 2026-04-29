@@ -32,6 +32,7 @@ export interface ConversationRepositoryPort {
     workspaceId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
+  countByWorkspaceId(workspaceId: string): Promise<number>;
   listPageByAnonymousSession(
     workspaceId: string,
     anonymousSessionId: string,
@@ -198,6 +199,17 @@ export class ConversationRepository implements ConversationRepositoryPort {
         : null,
       hasMore,
     };
+  }
+
+  async countByWorkspaceId(workspaceId: string): Promise<number> {
+    const [row] = await this.database.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM conversations
+       WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+
+    return Number(row?.count ?? "0");
   }
 
   async findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null> {

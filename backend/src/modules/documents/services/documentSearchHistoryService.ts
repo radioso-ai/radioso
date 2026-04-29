@@ -27,6 +27,18 @@ export interface DocumentSearchHistoryPage {
   hasMore: boolean;
 }
 
+export const toDocumentSearchHistoryEntry = (event: { id: string; metadata: unknown; createdAt: Date }): DocumentSearchHistoryEntry => {
+  const metadata = normalizeAuditMetadata(event.metadata, event.id);
+  return {
+    searchId: metadata.searchId,
+    query: metadata.query,
+    createdAt: event.createdAt.toISOString(),
+    resultCount: metadata.resultCount,
+    traceAvailable: Boolean(metadata.retrievalTrace),
+    previewTopTitles: metadata.results.slice(0, 3).map((result) => result.title),
+  };
+};
+
 export class DocumentSearchHistoryService {
   constructor(
     private readonly auditEventRepository: AuditEventRepositoryPort,
@@ -43,17 +55,7 @@ export class DocumentSearchHistoryService {
     );
 
     return {
-      searches: events.map((event) => {
-        const metadata = normalizeAuditMetadata(event.metadata, event.id);
-        return {
-          searchId: metadata.searchId,
-          query: metadata.query,
-          createdAt: event.createdAt.toISOString(),
-          resultCount: metadata.resultCount,
-          traceAvailable: Boolean(metadata.retrievalTrace),
-          previewTopTitles: metadata.results.slice(0, 3).map((result) => result.title),
-        };
-      }),
+      searches: events.map(toDocumentSearchHistoryEntry),
       total,
       nextCursor,
       hasMore,

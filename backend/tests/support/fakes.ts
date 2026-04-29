@@ -51,6 +51,10 @@ import type {
   AuditEventRecord,
   AuditEventRepositoryPort,
 } from "../../src/db/repositories/auditEventRepository.js";
+import type {
+  HistoryItemsRepositoryPort,
+  HistoryItemsSourceRecord,
+} from "../../src/db/repositories/historyItemsRepository.js";
 import type { AuditEventInput } from "../../src/modules/audit/services/auditService.js";
 import type {
   ConversationMessageSummary,
@@ -861,6 +865,21 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     this.jobRepository = jobRepository;
   }
 
+  async summarizeWorkspace(workspaceId: string) {
+    const documents = [...this.items.values()].filter((item) => item.workspaceId === workspaceId);
+    const sampleDocuments = documents.filter((item) => item.metadata.sampleDocument === true);
+
+    return {
+      documentCount: documents.length,
+      readyDocumentCount: documents.filter((item) => item.status === "ready").length,
+      pendingDocumentCount: documents.filter((item) => item.status === "queued" || item.status === "processing").length,
+      sampleDocumentCount: sampleDocuments.length,
+      sampleDocumentSlugs: sampleDocuments
+        .map((item) => item.metadata.sampleSlug)
+        .filter((value): value is string => typeof value === "string"),
+    };
+  }
+
   async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
     const record: DocumentRecord = {
       id: randomUUID(),
@@ -1665,6 +1684,10 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
   }
 
+  async countByWorkspaceId(workspaceId: string): Promise<number> {
+    return [...this.items.values()].filter((item) => item.workspaceId === workspaceId).length;
+  }
+
   async listPageByWorkspaceId(
     workspaceId: string,
     input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
@@ -1997,6 +2020,47 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
         );
       }) ?? null
     );
+  }
+}
+
+export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPort {
+  constructor(
+    private readonly conversationRepository: InMemoryConversationRepository,
+    private readonly auditEventRepository: InMemoryAuditEventRepository,
+  ) {}
+
+  async listPageByWorkspaceId(
+    workspaceId: string,
+    input: { limit: number; offset?: number } = { limit: 50, offset: 0 },
+  ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }> {
+    const offset = input.offset ?? 0;
+    const conversations: HistoryItemsSourceRecord[] = [...this.conversationRepository.items.values()]
+      .filter((conversation) => conversation.workspaceId === workspaceId)
+      .map((conversation) => ({
+        kind: "chat" as const,
+        id: conversation.id,
+        sortAt: conversation.updatedAt,
+        conversation,
+      }));
+    const searches: HistoryItemsSourceRecord[] = this.auditEventRepository.items
+      .filter((event) => event.workspaceId === workspaceId && event.eventType === "document.search")
+      .map((event) => ({
+        kind: "search" as const,
+        id: typeof event.metadata.searchId === "string" ? event.metadata.searchId : event.id,
+        sortAt: event.createdAt,
+        event,
+      }));
+    const items = [...conversations, ...searches].sort((left, right) => {
+      const timeDiff = right.sortAt.getTime() - left.sortAt.getTime();
+      return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
+    });
+    const pageItems = items.slice(offset, offset + input.limit);
+
+    return {
+      items: pageItems,
+      total: items.length,
+      hasMore: offset + pageItems.length < items.length,
+    };
   }
 }
 

@@ -1019,6 +1019,13 @@ const PublicChatRequestSchema = registry.register(
       startConversation: z.literal(false).optional().default(false),
       stream: z.boolean().default(false),
       userExpectedLocale: z.string().trim().max(35).optional(),
+      pageContext: z.object({
+        pageUrl: z.string().trim().max(2048).nullable().optional(),
+        pageTitle: z.string().trim().max(180).nullable().optional(),
+        pageLocale: z.string().trim().max(35).nullable().optional(),
+        browserLocale: z.string().trim().max(35).nullable().optional(),
+        content: z.string().trim().max(6000).nullable().optional(),
+      }).optional(),
       inputMetadata: z.object({
         method: z.enum(["typed", "suggestion_click"]),
         suggestionSourceMessageId: z.string().uuid().optional(),
@@ -1031,6 +1038,13 @@ const PublicChatRequestSchema = registry.register(
       stream: z.literal(false).default(false),
       message: z.string().min(1).optional(),
       userExpectedLocale: z.string().trim().max(35).optional(),
+      pageContext: z.object({
+        pageUrl: z.string().trim().max(2048).nullable().optional(),
+        pageTitle: z.string().trim().max(180).nullable().optional(),
+        pageLocale: z.string().trim().max(35).nullable().optional(),
+        browserLocale: z.string().trim().max(35).nullable().optional(),
+        content: z.string().trim().max(6000).nullable().optional(),
+      }).optional(),
       inputMetadata: z.object({
         method: z.enum(["typed", "suggestion_click"]),
         suggestionSourceMessageId: z.string().uuid().optional(),

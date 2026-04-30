@@ -19,6 +19,7 @@ import {
   readStoredAnonymousSessionId,
   readStoredEmbedBootstrapSession,
   storeEmbedBootstrapSession,
+  type WebsiteEmbedPageContext,
 } from '@/lib/api'
 
 function EmbeddedChatUnavailable({
@@ -52,12 +53,39 @@ function EmbeddedChatUnavailable({
 type BootstrapState =
   | { status: 'bootstrapping'; workspaceName?: string | null }
   | { status: 'error'; message: string }
-  | { status: 'ready'; publicChatToken: string; workspaceName?: string | null }
+  | { status: 'ready'; publicChatToken: string; workspaceName?: string | null; pageContext?: WebsiteEmbedPageContext | null }
 
 const READY_MESSAGE = 'radioso:embed:ready'
 const SESSION_MESSAGE = 'radioso:embed:session'
 const ERROR_MESSAGE = 'radioso:embed:error'
 const HANDSHAKE_TIMEOUT_MS = 30_000
+
+const sanitizePageContext = (value: unknown): WebsiteEmbedPageContext | null => {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const input = value as Record<string, unknown>
+  const pick = (key: string, maxLength: number) => {
+    const raw = input[key]
+    if (typeof raw !== 'string') {
+      return null
+    }
+
+    const trimmed = raw.trim()
+    return trimmed ? trimmed.slice(0, maxLength) : null
+  }
+
+  const pageContext: WebsiteEmbedPageContext = {
+    pageUrl: pick('pageUrl', 2048),
+    pageTitle: pick('pageTitle', 180),
+    pageLocale: pick('pageLocale', 35),
+    browserLocale: pick('browserLocale', 35),
+    content: pick('content', 6000),
+  }
+
+  return Object.values(pageContext).some(Boolean) ? pageContext : null
+}
 
 export function EmbeddedChatFrame({
   token,
@@ -148,6 +176,7 @@ export function EmbeddedChatFrame({
           status: 'ready',
           publicChatToken: session.publicChatToken,
           workspaceName: session.workspaceName,
+          pageContext: sanitizePageContext(event.data.pageContext),
         })
         return
       }
@@ -249,6 +278,7 @@ export function EmbeddedChatFrame({
       copyOverrides={copyOverrides}
       themeOverrides={themeOverrides}
       surface="embed"
+      pageContext={state.pageContext}
     />
   )
 }

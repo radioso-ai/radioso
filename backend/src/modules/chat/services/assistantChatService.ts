@@ -24,6 +24,7 @@ export class AssistantChatService {
         anonymousSessionId: input.anonymousSessionId,
         sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
         userExpectedLocale: input.userExpectedLocale,
+        pageContext: input.pageContext,
       });
       return response
         ? {
@@ -47,6 +48,7 @@ export class AssistantChatService {
       userExpectedLocale: input.userExpectedLocale,
       inputMetadata: input.inputMetadata,
       metadataFilter: input.metadataFilter,
+      pageContext: input.pageContext,
       sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
       anonymousSessionId: input.anonymousSessionId,
       sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
@@ -70,6 +72,7 @@ export class AssistantChatService {
       userExpectedLocale: input.userExpectedLocale,
       inputMetadata: input.inputMetadata,
       metadataFilter: input.metadataFilter,
+      pageContext: input.pageContext,
       sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
       anonymousSessionId: input.anonymousSessionId,
       sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,

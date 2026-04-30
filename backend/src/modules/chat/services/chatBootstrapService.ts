@@ -8,13 +8,14 @@ import type { RetrievalSettingsService } from "../../settings/services/retrieval
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatGateway } from "./chatService.js";
 import type { ChatResponse } from "../types/chatResponses.js";
+import type { AssistantPageContext } from "../types/assistantApi.js";
 import {
   buildPublicAssistantIdentityLines,
   isAssistantBootstrapActive,
 } from "../../settings/domain/assistantBootstrapSettings.js";
 import { DEFAULT_CONVERSATION_MODE } from "../../settings/domain/retrievalSettings.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
-import { resolveChatLocale } from "./chatLocale.js";
+import { isValidLocaleHint, resolveChatLocale } from "./chatLocale.js";
 
 const emptyChatResponse = (conversationId: string, answer: string): ChatResponse => ({
   conversationId,
@@ -78,6 +79,7 @@ export class ChatBootstrapService {
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
     userExpectedLocale?: string | null;
+    pageContext?: AssistantPageContext | null;
   }): Promise<ChatResponse | null> {
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.bootstrap");
     const workspace = await this.workspaceRepository.findById(input.workspaceId);
@@ -86,8 +88,14 @@ export class ChatBootstrapService {
     }
     const retrievalSettings = await this.retrievalSettingsService.getForWorkspace(input.workspaceId);
 
+    const requestedLocale =
+      isValidLocaleHint(input.userExpectedLocale)
+        ? input.userExpectedLocale
+        : isValidLocaleHint(input.pageContext?.pageLocale)
+          ? input.pageContext?.pageLocale
+          : input.pageContext?.browserLocale;
     const localeUsed = resolveChatLocale({
-      userExpectedLocale: input.userExpectedLocale,
+      userExpectedLocale: requestedLocale,
       assistantDefaultLocale: workspace.assistantDefaultLocale,
     });
     const fingerprint = createBootstrapFingerprint({

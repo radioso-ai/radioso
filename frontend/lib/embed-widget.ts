@@ -11,6 +11,7 @@ export interface WebsiteEmbedSnippetOverrides {
   displayMode?: string | null
   avatarUrl?: string | null
   collapsedAvatarUrl?: string | null
+  pageContext?: 'metadata' | 'content' | null
   copy?: WebsiteEmbedCopyOverrides | null
   theme?: WebsiteEmbedThemeOverrides | null
 }
@@ -61,6 +62,7 @@ export interface WebsiteEmbedTheme {
 
 export type WebsiteEmbedCopyOverrides = Partial<WebsiteEmbedCopy>
 export type WebsiteEmbedThemeOverrides = Partial<WebsiteEmbedTheme>
+export type WebsiteEmbedPageContextMode = 'metadata' | 'content'
 
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL = 'Chat with us'
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON: WebsiteEmbedLauncherIcon = 'chat'
@@ -267,6 +269,19 @@ export const normalizeWebsiteEmbedDisplayMode = (value: string | null | undefine
   return null
 }
 
+export const normalizeWebsiteEmbedPageContextMode = (value: string | null | undefined): WebsiteEmbedPageContextMode | null => {
+  if (!value) {
+    return null
+  }
+
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'metadata' || normalized === 'content') {
+    return normalized
+  }
+
+  return null
+}
+
 export const normalizeWebsiteEmbedAvatarUrl = (value: string | null | undefined): string | null => {
   if (!value) {
     return null
@@ -344,24 +359,35 @@ export interface WebsiteEmbedViewportSnapshot {
   viewportWidth: number
   layoutViewportHeight: number
   visualViewportHeight?: number | null
+  maxLayoutViewportHeight?: number | null
   editableFocused: boolean
 }
+
+export const shouldUseWebsiteEmbedNarrowLayout = (viewportWidth: number) =>
+  viewportWidth <= WEBSITE_EMBED_NARROW_VIEWPORT_MAX_WIDTH_PX
 
 export const shouldUseWebsiteEmbedCompactKeyboardLayout = ({
   viewportWidth,
   layoutViewportHeight,
   visualViewportHeight,
+  maxLayoutViewportHeight,
   editableFocused,
 }: WebsiteEmbedViewportSnapshot) => {
-  if (!editableFocused || viewportWidth > WEBSITE_EMBED_NARROW_VIEWPORT_MAX_WIDTH_PX) {
+  if (!editableFocused || !shouldUseWebsiteEmbedNarrowLayout(viewportWidth)) {
     return false
   }
 
   if (typeof visualViewportHeight === 'number') {
-    return layoutViewportHeight - visualViewportHeight >= WEBSITE_EMBED_KEYBOARD_SHRINK_THRESHOLD_PX
+    if (layoutViewportHeight - visualViewportHeight >= WEBSITE_EMBED_KEYBOARD_SHRINK_THRESHOLD_PX) {
+      return true
+    }
   }
 
-  return true
+  if (typeof maxLayoutViewportHeight === 'number') {
+    return maxLayoutViewportHeight - layoutViewportHeight >= WEBSITE_EMBED_KEYBOARD_SHRINK_THRESHOLD_PX
+  }
+
+  return visualViewportHeight === null
 }
 
 export const getWebsiteEmbedCopy = (
@@ -499,6 +525,7 @@ export const buildWebsiteEmbedTestHarnessUrl = (
   const avatarUrl = normalizeWebsiteEmbedAvatarUrl(overrides?.avatarUrl ?? overrides?.collapsedAvatarUrl)
   const copyOverrides = sanitizeWebsiteEmbedCopyOverrides(overrides?.copy)
   const themeOverrides = sanitizeWebsiteEmbedThemeOverrides(overrides?.theme)
+  const pageContextMode = normalizeWebsiteEmbedPageContextMode(overrides?.pageContext)
 
   if (displayMode && displayMode !== DEFAULT_WEBSITE_EMBED_DISPLAY_MODE) {
     params.set('displayMode', displayMode)
@@ -518,6 +545,10 @@ export const buildWebsiteEmbedTestHarnessUrl = (
 
   if (Object.keys(themeOverrides).length > 0) {
     params.set('theme', JSON.stringify(themeOverrides))
+  }
+
+  if (pageContextMode && pageContextMode !== 'metadata') {
+    params.set('pageContext', pageContextMode)
   }
 
   return `${harnessBaseUrl}/?${params.toString()}`
@@ -552,6 +583,7 @@ export const buildWebsiteEmbedSnippet = (
   const avatarUrl = normalizeWebsiteEmbedAvatarUrl(overrides?.avatarUrl ?? overrides?.collapsedAvatarUrl)
   const copyOverrides = sanitizeWebsiteEmbedCopyOverrides(overrides?.copy)
   const themeOverrides = sanitizeWebsiteEmbedThemeOverrides(overrides?.theme)
+  const pageContextMode = normalizeWebsiteEmbedPageContextMode(overrides?.pageContext)
   const displayModeAttribute =
     displayMode && displayMode !== DEFAULT_WEBSITE_EMBED_DISPLAY_MODE
       ? ` data-radioso-display-mode="${escapeHtmlAttribute(displayMode)}"`
@@ -568,6 +600,10 @@ export const buildWebsiteEmbedSnippet = (
     Object.keys(themeOverrides).length > 0
       ? ` data-radioso-theme="${escapeHtmlAttribute(JSON.stringify(themeOverrides))}"`
       : ''
+  const pageContextAttribute =
+    pageContextMode && pageContextMode !== 'metadata'
+      ? ` data-radioso-page-context="${escapeHtmlAttribute(pageContextMode)}"`
+      : ''
 
   return [
     `<script`,
@@ -576,7 +612,7 @@ export const buildWebsiteEmbedSnippet = (
     `  data-radioso-token="${escapeHtmlAttribute(settings.websiteEmbedToken)}"`,
     `  data-radioso-launcher-label="${escapeHtmlAttribute(launcherLabel)}"`,
     `  data-radioso-launcher-icon="${escapeHtmlAttribute(launcherIcon)}"`,
-    `  data-radioso-launcher-position="${escapeHtmlAttribute(launcherPosition)}"${originAttribute}${displayModeAttribute}${initialStateAttribute}${avatarAttribute}${copyAttribute}${themeAttribute}`,
+    `  data-radioso-launcher-position="${escapeHtmlAttribute(launcherPosition)}"${originAttribute}${displayModeAttribute}${initialStateAttribute}${avatarAttribute}${copyAttribute}${themeAttribute}${pageContextAttribute}`,
     `></script>`,
   ].join('\n')
 }

@@ -3957,6 +3957,46 @@
                 "type": "string",
                 "maxLength": 35
               },
+              "pageContext": {
+                "type": "object",
+                "properties": {
+                  "pageUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2048
+                  },
+                  "pageTitle": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 180
+                  },
+                  "pageLocale": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 35
+                  },
+                  "browserLocale": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 35
+                  },
+                  "content": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 6000
+                  }
+                }
+              },
               "inputMetadata": {
                 "type": "object",
                 "properties": {
@@ -4005,6 +4045,46 @@
               "userExpectedLocale": {
                 "type": "string",
                 "maxLength": 35
+              },
+              "pageContext": {
+                "type": "object",
+                "properties": {
+                  "pageUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2048
+                  },
+                  "pageTitle": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 180
+                  },
+                  "pageLocale": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 35
+                  },
+                  "browserLocale": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 35
+                  },
+                  "content": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 6000
+                  }
+                }
               },
               "inputMetadata": {
                 "type": "object",

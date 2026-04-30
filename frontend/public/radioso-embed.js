@@ -12,6 +12,7 @@
   const PANEL_HANDLE_WIDTH = 56
   const DESKTOP_PANEL_CONTENT_WIDTH = 560
   const NARROW_VIEWPORT_MAX_WIDTH = 640
+  const MAX_PAGE_CONTEXT_CONTENT_CHARS = 6000
   const defaultCopy = {
     launcherDefaultLabel: 'Chat with us',
     iframeTitle: 'Radioso embedded chat',
@@ -173,6 +174,45 @@
       next[key] = trimmed
     }
     return next
+  }
+
+  const normalizeWhitespace = (value) =>
+    typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+
+  const stripUrlQueryAndHash = (value) => {
+    try {
+      const url = new URL(value, window.location.href)
+      url.search = ''
+      url.hash = ''
+      return url.toString()
+    } catch {
+      return null
+    }
+  }
+
+  const normalizePageContextMode = (value) =>
+    typeof value === 'string' && value.trim().toLowerCase() === 'content' ? 'content' : 'metadata'
+
+  const collectPageContext = (mode) => {
+    const pageUrl = stripUrlQueryAndHash(window.location.href)
+    const pageTitle = normalizeWhitespace(document.title).slice(0, 180) || null
+    const pageLocale = normalizeWhitespace(document.documentElement?.lang).slice(0, 35) || null
+    const browserLocale = normalizeWhitespace(window.navigator?.languages?.[0] || window.navigator?.language).slice(0, 35) || null
+    const pageContext = {
+      pageUrl,
+      pageTitle,
+      pageLocale,
+      browserLocale,
+    }
+
+    if (mode === 'content') {
+      const bodyText = normalizeWhitespace(document.body?.innerText || document.body?.textContent)
+      if (bodyText) {
+        pageContext.content = bodyText.slice(0, MAX_PAGE_CONTEXT_CONTENT_CHARS)
+      }
+    }
+
+    return pageContext
   }
 
   const getCopy = (overrides) => {
@@ -461,6 +501,8 @@
     const position = script.dataset.radiosoLauncherPosition || DEFAULT_POSITION
     const displayMode = normalizeDisplayMode(script.dataset.radiosoDisplayMode) || DEFAULT_DISPLAY_MODE
     const initialState = normalizeInitialState(script.dataset.radiosoInitialState) || DEFAULT_INITIAL_STATE
+    const pageContextMode = normalizePageContextMode(script.dataset.radiosoPageContext)
+    const pageContext = collectPageContext(pageContextMode)
     const avatarUrl = resolveAvatarUrl(
       script.dataset.radiosoAvatarUrl || script.dataset.radiosoCollapsedAvatarUrl,
     )
@@ -670,7 +712,7 @@
               return
             }
 
-            activeContentWindow.postMessage({ type: SESSION_MESSAGE, session }, scriptUrl.origin)
+            activeContentWindow.postMessage({ type: SESSION_MESSAGE, session, pageContext }, scriptUrl.origin)
           })
           .catch((error) => {
             if (!activeContentWindow || iframe !== activeIframe) {

@@ -25,6 +25,14 @@ export interface AssistantSourceContext {
   sourceOrigin?: string | null;
 }
 
+export interface AssistantPageContext {
+  pageUrl?: string | null;
+  pageTitle?: string | null;
+  pageLocale?: string | null;
+  browserLocale?: string | null;
+  content?: string | null;
+}
+
 export interface AssistantChatRequest {
   workspaceId: string;
   accountId?: string;
@@ -39,6 +47,7 @@ export interface AssistantChatRequest {
   sourceChannel?: string | null;
   anonymousSessionId?: string | null;
   sourceOrigin?: string | null;
+  pageContext?: AssistantPageContext | null;
 }
 
 export type AssistantChatResponse = ChatResponse;

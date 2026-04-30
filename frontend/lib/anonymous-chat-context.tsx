@@ -23,6 +23,7 @@ import {
   type ErrorResponse,
   type RetrievalInfo,
   type RetrievalTrace,
+  type WebsiteEmbedPageContext,
 } from '@/lib/api'
 
 export interface ChatMessage {
@@ -164,12 +165,22 @@ const isValidLocaleHint = (value: string | null | undefined): value is string =>
 
 export const resolveAnonymousChatBootstrapLocale = ({
   localeOverride,
+  pageContext,
 }: {
   localeOverride?: string | null
+  pageContext?: WebsiteEmbedPageContext | null
   browserLocales?: readonly string[]
 }) => {
   if (isValidLocaleHint(localeOverride)) {
     return localeOverride.trim()
+  }
+
+  if (isValidLocaleHint(pageContext?.pageLocale)) {
+    return pageContext.pageLocale.trim()
+  }
+
+  if (isValidLocaleHint(pageContext?.browserLocale)) {
+    return pageContext.browserLocale.trim()
   }
 
   return undefined
@@ -178,10 +189,12 @@ export const resolveAnonymousChatBootstrapLocale = ({
 export function AnonymousChatProvider({
   token,
   localeOverride,
+  pageContext,
   children,
 }: {
   token: string
   localeOverride?: string | null
+  pageContext?: WebsiteEmbedPageContext | null
   children: ReactNode
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -218,11 +231,13 @@ export function AnonymousChatProvider({
             startConversation: true,
             userExpectedLocale: resolveAnonymousChatBootstrapLocale({
               localeOverride,
+              pageContext,
               browserLocales:
                 typeof navigator !== 'undefined'
                   ? [navigator.languages?.[0] ?? navigator.language].filter((value): value is string => Boolean(value))
                   : [],
             }),
+            pageContext,
           })
 
           if (bootstrap?.answer) {
@@ -261,7 +276,7 @@ export function AnonymousChatProvider({
     } finally {
       setIsHydrating(false)
     }
-  }, [localeOverride, token])
+  }, [localeOverride, pageContext, token])
 
   useEffect(() => {
     let cancelled = false
@@ -387,7 +402,9 @@ export function AnonymousChatProvider({
             inputMetadata,
             userExpectedLocale: resolveAnonymousChatBootstrapLocale({
               localeOverride,
+              pageContext,
             }),
+            pageContext,
           },
           {
             onConversation: ({ conversationId: newId }) => {
@@ -476,7 +493,7 @@ export function AnonymousChatProvider({
         setIsLoading(false)
       }
     },
-    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, recoverAssistantMessage, token],
+    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, pageContext, recoverAssistantMessage, token],
   )
 
   const loadOlderMessages = useCallback(async () => {

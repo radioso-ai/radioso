@@ -123,6 +123,29 @@ describe('ChatMessageThread', () => {
     expect(html.match(/<button/g)?.length).toBe(1)
   })
 
+  it('can hide assistant message avatars for narrow embedded chat layouts', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Answer text',
+            createdAt: '2026-04-02T10:00:00.000Z',
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        assistantAvatarUrl="https://cdn.example.com/avatar.png"
+        assistantAvatarLabel="Support assistant"
+        hideAssistantAvatar
+      />,
+    )
+
+    expect(html).toContain('Answer text')
+    expect(html).not.toContain('Support assistant')
+    expect(html).not.toContain('https://cdn.example.com/avatar.png')
+  })
+
   it('omits empty suggestion text entries', () => {
     const html = renderToStaticMarkup(
       <ChatMessageThread

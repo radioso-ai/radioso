@@ -275,6 +275,14 @@ export interface ChatRequest {
   inputMetadata?: ChatUserInputMetadata
 }
 
+export interface WebsiteEmbedPageContext {
+  pageUrl?: string | null
+  pageTitle?: string | null
+  pageLocale?: string | null
+  browserLocale?: string | null
+  content?: string | null
+}
+
 const toAssistantChatPayload = (data: ChatRequest) => ({
   conversationId: data.conversationId,
   message: data.query,
@@ -1491,7 +1499,7 @@ export const accountApi = {
 export const publicChatApi = {
   async sendMessage(
     token: string,
-    data: { message: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string },
+    data: { message: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null },
   ): Promise<ChatResponse> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',
@@ -1514,7 +1522,7 @@ export const publicChatApi = {
 
   async streamMessage(
     token: string,
-    data: { message: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string },
+    data: { message: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null },
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
     const response = await fetch(`${PUBLIC_CHAT_STREAMING_API_PATH}/${encodeURIComponent(token)}`, {
@@ -1561,7 +1569,7 @@ export const publicChatApi = {
 
   async bootstrapConversation(
     token: string,
-    data: { stream: boolean; startConversation: true; userExpectedLocale?: string },
+    data: { stream: boolean; startConversation: true; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null },
   ): Promise<ChatResponse | undefined> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',

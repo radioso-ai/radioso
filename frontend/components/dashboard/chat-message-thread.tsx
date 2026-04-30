@@ -47,6 +47,7 @@ export function ChatMessageThread({
   selectedMessageId,
   assistantAvatarUrl,
   assistantAvatarLabel,
+  hideAssistantAvatar = false,
   theme,
   themedSuggestionButtons = false,
 }: {
@@ -57,6 +58,7 @@ export function ChatMessageThread({
   selectedMessageId?: string
   assistantAvatarUrl?: string | null
   assistantAvatarLabel?: string
+  hideAssistantAvatar?: boolean
   theme?: WebsiteEmbedTheme | null
   themedSuggestionButtons?: boolean
 }) {
@@ -164,7 +166,7 @@ export function ChatMessageThread({
                   </>
                 ) : (
                   <div className="flex w-full items-start gap-3">
-                    {assistantAvatarUrl || assistantAvatarLabel ? (
+                    {!hideAssistantAvatar && (assistantAvatarUrl || assistantAvatarLabel) ? (
                       <Avatar
                         className="mt-0.5 size-8 border"
                         style={{

@@ -15,6 +15,7 @@ interface PublicChatProxyRequestBody {
   bootstrapGreeting?: boolean
   userExpectedLocale?: string
   inputMetadata?: unknown
+  pageContext?: unknown
 }
 
 export async function POST(
@@ -35,6 +36,7 @@ export async function POST(
     stream: parsedBody.stream,
     userExpectedLocale: parsedBody.userExpectedLocale,
     inputMetadata: parsedBody.inputMetadata,
+    pageContext: parsedBody.pageContext,
   })
 
   try {

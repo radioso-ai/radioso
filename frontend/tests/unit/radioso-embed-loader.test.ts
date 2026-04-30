@@ -12,6 +12,7 @@ class FakeElement {
   attributes: Record<string, string> = {}
   eventListeners = new Map<string, Array<() => void>>()
   innerHTML = ''
+  innerText = ''
   textContent = ''
   type = ''
   title = ''
@@ -79,19 +80,25 @@ const loadEmbedScript = () => {
   const scriptElement = new FakeElement('SCRIPT')
   scriptElement.dataset.radiosoToken = 'embed-token'
   scriptElement.src = 'https://app.example.com/radioso-embed.js'
+  scriptElement.dataset.radiosoPageContext = 'content'
   const windowListeners = new Map<string, Array<(event: unknown) => void>>()
+  const iframeMessages: unknown[] = []
 
   const body = new FakeElement('BODY')
+  body.innerText = 'Visible page copy about summer retreats and registration.'
   const document = {
     body,
     currentScript: scriptElement,
-    documentElement: { clientWidth: 1200, clientHeight: 900 },
+    documentElement: { clientWidth: 1200, clientHeight: 900, lang: 'et' },
     readyState: 'complete',
+    title: 'Demo product page',
     scripts: [scriptElement],
     createElement: (tagName: string) => {
       const element = new FakeElement(tagName.toUpperCase())
       if (tagName.toLowerCase() === 'iframe') {
-        element.contentWindow = {}
+        element.contentWindow = {
+          postMessage: (message: unknown) => iframeMessages.push(message),
+        }
       }
       return element
     },
@@ -101,7 +108,8 @@ const loadEmbedScript = () => {
     document,
     innerHeight: 900,
     innerWidth: 1200,
-    location: { href: 'https://site.example/page' },
+    location: { href: 'https://site.example/page?private=1#details' },
+    navigator: { language: 'en-US', languages: ['en-US', 'et'] },
     parent: null as unknown,
     __radiosoEmbedMounted: undefined,
     addEventListener: (type: string, listener: (event: unknown) => void) => {
@@ -125,11 +133,18 @@ const loadEmbedScript = () => {
     Array,
     URL,
     document,
-    fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+    fetch: () => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({
+        workspaceName: 'Support',
+        publicChatToken: 'public-token',
+        embedSessionToken: 'session-token',
+      }),
+    }),
     window,
   })
 
-  return { body, window }
+  return { body, iframeMessages, window }
 }
 
 describe('radioso embed loader', () => {
@@ -153,5 +168,33 @@ describe('radioso embed loader', () => {
       data: { type: 'radioso:embed:collapse' },
     })
     expect(findElements(body, 'IFRAME')[0]).toBe(firstIframe)
+  })
+
+  it('sends safe page metadata and opt-in page content to the embedded frame', async () => {
+    const { body, iframeMessages, window } = loadEmbedScript()
+    const button = findElements(body, 'BUTTON')[0]
+    button.click()
+    const iframe = findElements(body, 'IFRAME')[0]
+
+    window.dispatchEvent('message', {
+      source: iframe.contentWindow,
+      data: { type: 'radioso:embed:ready' },
+    })
+
+    for (let index = 0; index < 5; index += 1) {
+      await Promise.resolve()
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(iframeMessages[0]).toMatchObject({
+      type: 'radioso:embed:session',
+      pageContext: {
+        pageUrl: 'https://site.example/page',
+        pageTitle: 'Demo product page',
+        pageLocale: 'et',
+        browserLocale: 'en-US',
+        content: 'Visible page copy about summer retreats and registration.',
+      },
+    })
   })
 })

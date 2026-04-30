@@ -1442,6 +1442,79 @@ describe("chat integration", () => {
     expect(observedPrompt).toContain("Answer Instructions:");
   });
 
+  it("keeps social-only intent routing active when query rewriting is disabled", async () => {
+    let rewriteCalls = 0;
+    const { app } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite(input) {
+          rewriteCalls += 1;
+          return {
+            rewrittenQuery: input.query,
+            semanticQuery: input.query,
+            lexicalQuery: input.query,
+            responseIntent: "social_only" as const,
+            turnKind: "ambiguous" as const,
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.95,
+          };
+        },
+      },
+      chatGateway: {
+        async answer() {
+          return "You’re welcome. I can help with Ananda courses or booking when you’re ready.";
+        },
+        async *streamAnswer() {
+          yield "unused";
+        },
+      },
+    });
+
+    const { token } = await issueTestToken(app, "social-rewrite-disabled@example.com");
+    const authorization = `Bearer ${token}`;
+
+    await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set("Authorization", authorization)
+      .send({
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.1,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "Help users with Ananda courses and booking.",
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", authorization)
+      .send({ message: "thanks", stream: false })
+      .expect(200);
+
+    expect(rewriteCalls).toBe(1);
+    expect(response.body.route).toEqual({
+      type: "direct",
+      reason: "social_only",
+    });
+    expect(response.body.retrievalInfo).toMatchObject({
+      responseIntent: "social_only",
+      retrievalSkipped: true,
+      intentConfidence: 0.95,
+      rewrite: {
+        status: "skipped",
+        eligible: false,
+        ran: false,
+      },
+    });
+  });
+
   it("routes assistant-identity-only turns through the same non-retrieval path", async () => {
     let observedPrompt = "";
     const { app } = createTestApp({

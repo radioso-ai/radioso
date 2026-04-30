@@ -746,6 +746,88 @@ describe("chat service streaming", () => {
     expect(response.citations).toBeUndefined();
   });
 
+  it("passes assistant instructions into retrieval no-context fallback", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    let observedNoContextInstruction = "";
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "I like potato chips",
+          contexts: [],
+          prompt: "unused retrieval prompt",
+          citations: [],
+          responseIdentity: {
+            name: "Vikram",
+          },
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "fallback",
+            originalCandidateCount: 0,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 0,
+            normalizedCandidateCount: 0,
+            finalContextCount: 0,
+            candidateFallbackApplied: false,
+            fallbackApplied: true,
+            responseIntent: "retrieval",
+            retrievalSkipped: false,
+            parsedQuery: {
+              semanticQuery: "I like potato chips",
+              lexicalQuery: "I like potato chips",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            conversationMode: "exploratory",
+            customInstruction: "Help visitors choose and book Ananda courses.",
+            responseLanguagePolicy: "match_user_question",
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        throw new Error("retrieval answer should not run without contexts");
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const fallbackComposer: GroundedMissResponseComposer = {
+      async composeUnsupportedWithContext() {
+        return "unused";
+      },
+      async composeNoContext(input) {
+        observedNoContextInstruction = input.answerInstructionBlock ?? "";
+        return "I can't tell from that. I can help you choose and book Ananda courses.";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
+      chatGateway,
+      auditService,
+      fallbackComposer,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "I like potato chips",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("I can't tell from that. I can help you choose and book Ananda courses.");
+    expect(observedNoContextInstruction).toContain("Stable assistant identity:");
+    expect(observedNoContextInstruction).toContain("Vikram");
+    expect(observedNoContextInstruction).toContain("Workspace-specific instructions:");
+    expect(observedNoContextInstruction).toContain("Help visitors choose and book Ananda courses.");
+    expect(observedNoContextInstruction).toContain("Conversation mode: exploratory.");
+  });
+
   it("excludes URL-shaped citation titles from carry-forward literals", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

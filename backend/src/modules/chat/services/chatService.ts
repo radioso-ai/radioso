@@ -136,6 +136,22 @@ interface PreparedSession {
 const isAnswerSupportValidationEnabled = (session: PreparedSession): boolean =>
   session.retrieval.responseSettings?.answerSupportValidationEnabled !== false;
 
+const hasGroundedSuggestionSupport = (input: {
+  validation: AnswerValidationSummary;
+  answerOutcome: AssistantTurnOutcome;
+  hasRetrievedContext: boolean;
+}): boolean => {
+  if (!input.hasRetrievedContext) {
+    return false;
+  }
+
+  if (!input.validation.ran) {
+    return input.answerOutcome === ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS;
+  }
+
+  return input.validation.supportedSegmentCount > 0;
+};
+
 interface ChatAnswerAuditMetadata {
   workflow?: string;
   executionClass?: string;
@@ -1165,7 +1181,11 @@ export class ChatService {
       conversationMode,
       suggestedQuestionsEnabled: this.getSuggestedQuestionsEnabled(session),
       suggestedQuestionsCount: this.getSuggestedQuestionsCount(session),
-      groundedAnswerSupported: presentation.validation.supportedSegmentCount > 0,
+      groundedAnswerSupported: hasGroundedSuggestionSupport({
+        validation: presentation.validation,
+        answerOutcome: presentation.answerOutcome,
+        hasRetrievedContext: session.retrieval.contexts.length > 0,
+      }),
       answer: presentation.answer,
       citations: presentation.citations,
       contexts: session.retrieval.contexts.map((context) => ({

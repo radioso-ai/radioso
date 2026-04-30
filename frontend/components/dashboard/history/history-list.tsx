@@ -1,9 +1,17 @@
 'use client'
 
-import { FileText, Globe2, History, MessageSquareText } from 'lucide-react'
+import { FileText, History, MessageSquareText } from 'lucide-react'
 
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import {
+  DashboardTable,
+  DashboardTableBody,
+  DashboardTableCell,
+  DashboardTableHead,
+  DashboardTableHeader,
+  DashboardTableRow,
+} from '@/components/dashboard/shared/dashboard-table'
 import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
@@ -159,7 +167,7 @@ function HistoryPagination({
   )
 }
 
-function ConversationCard({
+function ConversationRow({
   conversation,
   onSelect,
 }: {
@@ -169,68 +177,120 @@ function ConversationCard({
   const sourceLabel = getConversationSourceLabel(conversation)
 
   return (
-    <button
-      type="button"
-      onClick={() => onSelect({ kind: 'chat', id: conversation.id })}
-      className="flex w-full flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3.5 text-left transition hover:border-primary/40 hover:bg-accent/30"
-    >
-      <div className="flex flex-wrap items-start gap-2">
-        <p className="min-w-0 flex-1 text-sm font-medium leading-6 text-foreground [overflow-wrap:anywhere]">
-          {conversation.preview || 'Untitled conversation'}
-        </p>
-        <div className="flex shrink-0 flex-wrap gap-1.5">
+    <DashboardTableRow>
+      <DashboardTableCell className="w-36">
+        <div className="flex flex-wrap gap-1.5">
           <HistoryBadge>Chat</HistoryBadge>
-          <HistoryBadge>{getConversationAuthLabel(conversation.sourceChannel)}</HistoryBadge>
         </div>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <Globe2 className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">
-            {sourceLabel} - {formatMessageCount(conversation.messageCount)}
-          </span>
+      </DashboardTableCell>
+      <DashboardTableCell>
+        <button
+          type="button"
+          onClick={() => onSelect({ kind: 'chat', id: conversation.id })}
+          className="block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <span className="block truncate">{conversation.preview || 'Untitled conversation'}</span>
+        </button>
+      </DashboardTableCell>
+      <DashboardTableCell className="w-44 text-sm text-muted-foreground">
+        <span className="block truncate">{sourceLabel}</span>
+      </DashboardTableCell>
+      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+        <span className="block truncate">
+          {getConversationAuthLabel(conversation.sourceChannel)} - {formatMessageCount(conversation.messageCount)}
         </span>
-        <span className="shrink-0 sm:ml-auto">{formatTimestamp(conversation.updatedAt)}</span>
-      </div>
-    </button>
+      </DashboardTableCell>
+      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+        {formatTimestamp(conversation.updatedAt)}
+      </DashboardTableCell>
+    </DashboardTableRow>
   )
 }
 
-function SearchCard({
+function SearchRow({
   search,
   onSelect,
 }: {
   search: DocumentSearchHistoryEntry
   onSelect: (item: SelectedHistoryItem) => void
 }) {
+  const resultLabel = search.resultCount === 1 ? '1 result' : `${search.resultCount} results`
+
   return (
-    <button
-      type="button"
-      onClick={() => onSelect({ kind: 'search', id: search.searchId })}
-      className="flex w-full flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3.5 text-left transition hover:border-primary/40 hover:bg-accent/30"
-    >
-      <div className="flex flex-wrap items-start gap-2">
-        <p className="min-w-0 flex-1 text-sm font-medium leading-6 text-foreground [overflow-wrap:anywhere]">
-          {search.query}
-        </p>
-        <div className="flex shrink-0 flex-wrap gap-1.5">
+    <DashboardTableRow>
+      <DashboardTableCell className="w-36">
+        <div className="flex flex-wrap gap-1.5">
           <HistoryBadge>Search</HistoryBadge>
-          <HistoryBadge>Authenticated</HistoryBadge>
         </div>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <Globe2 className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">
-            Document search
-            {search.resultCount > 0
-              ? ` - ${search.resultCount} result${search.resultCount === 1 ? '' : 's'}`
-              : ''}
-          </span>
+      </DashboardTableCell>
+      <DashboardTableCell>
+        <button
+          type="button"
+          onClick={() => onSelect({ kind: 'search', id: search.searchId })}
+          className="block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <span className="block truncate">{search.query}</span>
+        </button>
+        {search.previewTopTitles.length > 0 ? (
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            Top match: {search.previewTopTitles[0]}
+          </p>
+        ) : null}
+      </DashboardTableCell>
+      <DashboardTableCell className="w-44 text-sm text-muted-foreground">Document search</DashboardTableCell>
+      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+        <span className="block truncate">
+          Authenticated - {resultLabel}
+          {search.traceAvailable ? ' - trace available' : ''}
         </span>
-        <span className="shrink-0 sm:ml-auto">{formatTimestamp(search.createdAt)}</span>
+      </DashboardTableCell>
+      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+        {formatTimestamp(search.createdAt)}
+      </DashboardTableCell>
+    </DashboardTableRow>
+  )
+}
+
+function HistoryTable({
+  items,
+  emptyMessage,
+  onSelect,
+}: {
+  items: HistoryListItem[]
+  emptyMessage: string
+  onSelect: (item: SelectedHistoryItem) => void
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+        {emptyMessage}
       </div>
-    </button>
+    )
+  }
+
+  return (
+    <DashboardTable aria-label="History" minWidth="min-w-[880px]">
+      <DashboardTableHead>
+        <DashboardTableHeader className="w-36">Type</DashboardTableHeader>
+        <DashboardTableHeader>Title</DashboardTableHeader>
+        <DashboardTableHeader className="w-44">Source</DashboardTableHeader>
+        <DashboardTableHeader className="w-48">Details</DashboardTableHeader>
+        <DashboardTableHeader className="w-48">Updated</DashboardTableHeader>
+      </DashboardTableHead>
+      <DashboardTableBody>
+        {items.map((item) =>
+          item.kind === 'chat' ? (
+            <ConversationRow
+              key={item.id}
+              conversation={item.conversation}
+              onSelect={onSelect}
+            />
+          ) : (
+            <SearchRow key={item.id} search={item.search} onSelect={onSelect} />
+          ),
+        )}
+      </DashboardTableBody>
+    </DashboardTable>
   )
 }
 
@@ -403,17 +463,11 @@ export function HistoryList({
                     <LogoSpinner imageClassName="h-7 w-7" />
                   </div>
                 ) : (
-                  allHistoryItems.map((item) =>
-                    item.kind === 'chat' ? (
-                      <ConversationCard
-                        key={item.id}
-                        conversation={item.conversation}
-                        onSelect={onSelectItem}
-                      />
-                    ) : (
-                      <SearchCard key={item.id} search={item.search} onSelect={onSelectItem} />
-                    ),
-                  )
+                  <HistoryTable
+                    items={allHistoryItems}
+                    emptyMessage="No saved history on this page."
+                    onSelect={onSelectItem}
+                  />
                 )}
                 <HistoryPagination
                   accountId={accountId}
@@ -449,18 +503,17 @@ export function HistoryList({
                   <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border">
                     <LogoSpinner imageClassName="h-7 w-7" />
                   </div>
-                ) : conversations.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-                    No saved chats on this page.
-                  </div>
                 ) : (
-                  conversations.map((conversation) => (
-                    <ConversationCard
-                      key={conversation.id}
-                      conversation={conversation}
-                      onSelect={onSelectItem}
-                    />
-                  ))
+                  <HistoryTable
+                    items={conversations.map((conversation) => ({
+                      kind: 'chat',
+                      id: conversation.id,
+                      sortAt: conversation.updatedAt,
+                      conversation,
+                    }))}
+                    emptyMessage="No saved chats on this page."
+                    onSelect={onSelectItem}
+                  />
                 )}
                 <HistoryPagination
                   accountId={accountId}
@@ -496,12 +549,17 @@ export function HistoryList({
                   <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border">
                     <LogoSpinner imageClassName="h-7 w-7" />
                   </div>
-                ) : searches.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-                    No saved searches on this page.
-                  </div>
                 ) : (
-                  searches.map((search) => <SearchCard key={search.searchId} search={search} onSelect={onSelectItem} />)
+                  <HistoryTable
+                    items={searches.map((search) => ({
+                      kind: 'search',
+                      id: search.searchId,
+                      sortAt: search.createdAt,
+                      search,
+                    }))}
+                    emptyMessage="No saved searches on this page."
+                    onSelect={onSelectItem}
+                  />
                 )}
                 <HistoryPagination
                   accountId={accountId}

@@ -161,6 +161,7 @@ test("shared history navigation shows assistant route diagnostics", async ({ pag
   await page.goto(`/w/${workspaceKey}/history`);
 
   await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+  await expect(page.getByRole("table", { name: "History" })).toBeVisible();
   expect(requestLog).toContain("GET /history?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history/chat?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history/search?limit=50&offset=0");
@@ -226,6 +227,7 @@ test("documents direct page links request only the target offset page", async ({
 
   await page.goto(`/w/${workspaceKey}/documents?page=3`);
   await expect(page.getByRole("heading", { name: "Documents", exact: true })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Documents" })).toBeVisible();
 
   expect(requestLog).toContain("GET /document/?limit=100&offset=200");
   expect(requestLog).not.toContain("GET /document/?limit=100&offset=100");

@@ -6,6 +6,14 @@ import { Button } from '@/components/ui/button'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { DocumentStatus } from '@/components/dashboard/document-status'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
+import {
+  DashboardTable,
+  DashboardTableBody,
+  DashboardTableCell,
+  DashboardTableHead,
+  DashboardTableHeader,
+  DashboardTableRow,
+} from '@/components/dashboard/shared/dashboard-table'
 import type { DocumentSummary } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
@@ -56,7 +64,7 @@ function DocumentsPagination({
   )
 }
 
-function DocumentCard({
+function DocumentRow({
   document,
   deletingDocumentId,
   retryingDocumentId,
@@ -79,58 +87,75 @@ function DocumentCard({
 }) {
   const isFailed = document.status.toLowerCase() === 'failed'
   const isImported = document.sourceKind === 'uploaded_file'
+  const hasError = Boolean((isFailed && document.failureReason) || deleteError || retryError)
 
   return (
-    <div className="flex w-full flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3.5 transition-colors hover:border-primary/40 hover:bg-accent/20 sm:flex-row sm:items-center">
-      <button type="button" onClick={() => onOpen(document.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-muted">
+    <DashboardTableRow>
+      <DashboardTableCell className="w-12 pr-0">
+        <div className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-muted/60">
           <FileText className="h-4 w-4 text-muted-foreground" />
         </div>
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h3 className="text-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{document.title}</h3>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Updated {formatDate(document.updatedAt)}
-            {isImported && document.sourceFilename ? ` - Imported from ${document.sourceFilename}` : ''}
-          </p>
-          {isFailed && document.failureReason ? (
-            <p className="text-xs text-destructive">{document.failureReason}</p>
-          ) : null}
-          {deleteError ? <p className="text-xs text-destructive">{deleteError}</p> : null}
-          {retryError ? <p className="text-xs text-destructive">{retryError}</p> : null}
-        </div>
-      </button>
-      <div className="flex shrink-0 items-center gap-2 sm:ml-auto">
-        <DocumentStatus status={document.status} />
-        {isFailed ? (
-          <button
-            type="button"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent/40 disabled:opacity-50"
-            onClick={() => onRetry(document.id)}
-            disabled={retryingDocumentId === document.id}
-          >
-            {retryingDocumentId === document.id ? (
-              <Spinner className="h-3.5 w-3.5" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-          </button>
-        ) : null}
+      </DashboardTableCell>
+      <DashboardTableCell>
         <button
           type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-destructive hover:bg-destructive/10 disabled:opacity-50"
-          onClick={() => onDelete(document)}
-          disabled={deletingDocumentId === document.id || retryingDocumentId === document.id}
+          onClick={() => onOpen(document.id)}
+          className="block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          {deletingDocumentId === document.id ? (
-            <Spinner className="h-3.5 w-3.5" />
-          ) : (
-            <Trash2 className="h-3.5 w-3.5" />
-          )}
+          <span className="block truncate">{document.title}</span>
         </button>
-      </div>
-    </div>
+        {isImported && document.sourceFilename ? (
+          <p className="mt-1 truncate text-xs text-muted-foreground">Imported from {document.sourceFilename}</p>
+        ) : null}
+        {hasError ? (
+          <div className="mt-1 space-y-0.5">
+            {isFailed && document.failureReason ? (
+              <p className="truncate text-xs text-destructive">{document.failureReason}</p>
+            ) : null}
+            {deleteError ? <p className="truncate text-xs text-destructive">{deleteError}</p> : null}
+            {retryError ? <p className="truncate text-xs text-destructive">{retryError}</p> : null}
+          </div>
+        ) : null}
+      </DashboardTableCell>
+      <DashboardTableCell className="w-40 text-sm text-muted-foreground">
+        {formatDate(document.updatedAt)}
+      </DashboardTableCell>
+      <DashboardTableCell className="w-32">
+        <DocumentStatus status={document.status} />
+      </DashboardTableCell>
+      <DashboardTableCell className="w-28">
+        <div className="flex items-center justify-end gap-2">
+          {isFailed ? (
+            <button
+              type="button"
+              aria-label={`Retry processing ${document.title}`}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent/40 disabled:opacity-50"
+              onClick={() => onRetry(document.id)}
+              disabled={retryingDocumentId === document.id}
+            >
+              {retryingDocumentId === document.id ? (
+                <Spinner className="h-3.5 w-3.5" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            aria-label={`Delete ${document.title}`}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            onClick={() => onDelete(document)}
+            disabled={deletingDocumentId === document.id || retryingDocumentId === document.id}
+          >
+            {deletingDocumentId === document.id ? (
+              <Spinner className="h-3.5 w-3.5" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </div>
+      </DashboardTableCell>
+    </DashboardTableRow>
   )
 }
 
@@ -241,9 +266,17 @@ export function DocumentList({
           <LogoSpinner imageClassName="h-7 w-7" />
         </div>
       ) : (
-        <div className="grid w-full gap-3">
+        <DashboardTable aria-label="Documents">
+          <DashboardTableHead>
+            <DashboardTableHeader className="w-12" />
+            <DashboardTableHeader>Name</DashboardTableHeader>
+            <DashboardTableHeader className="w-40">Updated</DashboardTableHeader>
+            <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
+            <DashboardTableHeader className="w-28 text-right" />
+          </DashboardTableHead>
+          <DashboardTableBody>
           {documents.map((document) => (
-            <DocumentCard
+            <DocumentRow
               key={document.id}
               document={document}
               deletingDocumentId={deletingDocumentId}
@@ -256,7 +289,8 @@ export function DocumentList({
               formatDate={formatDate}
             />
           ))}
-        </div>
+          </DashboardTableBody>
+        </DashboardTable>
       )}
       {shouldShowPagination ? (
         <DocumentsPagination

@@ -1034,6 +1034,48 @@ export function WorkspaceAssistantChannelsTab({
                       Hide token
                     </Button>
                   ) : null}
+                  <Dialog
+                    open={rotateApiTokenDialogOpen}
+                    onOpenChange={(open) => {
+                      setRotateApiTokenDialogOpen(open)
+                      if (!open) {
+                        setRotateApiTokenError(null)
+                        setIsRotatingApiToken(false)
+                      }
+                    }}
+                  >
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="destructive" disabled={!activeWorkspaceId || isRotatingApiToken}>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Rotate token
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Rotate workspace API token</DialogTitle>
+                        <DialogDescription>
+                          The current workspace token will stop working immediately. Any scripts, SDK clients, or
+                          automations using it must be updated to the new token.
+                        </DialogDescription>
+                      </DialogHeader>
+                      {rotateApiTokenError ? (
+                        <p className="text-sm text-destructive">{rotateApiTokenError}</p>
+                      ) : null}
+                      <DialogFooter>
+                        <Button
+                          variant="outline"
+                          onClick={() => setRotateApiTokenDialogOpen(false)}
+                          disabled={isRotatingApiToken}
+                        >
+                          Cancel
+                        </Button>
+                        <Button variant="destructive" onClick={handleRotateApiToken} disabled={isRotatingApiToken}>
+                          {isRotatingApiToken ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                          Rotate token
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
                 {apiToken ? (
                   <CopyValueField value={apiToken} ariaLabel="Copy API token" wrap className="w-full" />
@@ -1746,59 +1788,6 @@ export function WorkspaceAssistantChannelsTab({
               title="Danger zone"
               description="Permanent workspace actions that cannot be undone."
             >
-            <div className="flex flex-col gap-4 border-b border-destructive/20 pb-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">Rotate workspace API token</p>
-                <p className="text-sm text-muted-foreground">
-                  Immediately revoke the current token and issue a new one for this workspace. Any scripts, SDK
-                  clients, or automations using the current token will need to be updated.
-                </p>
-              </div>
-
-              <Dialog
-                open={rotateApiTokenDialogOpen}
-                onOpenChange={(open) => {
-                  setRotateApiTokenDialogOpen(open)
-                  if (!open) {
-                    setRotateApiTokenError(null)
-                    setIsRotatingApiToken(false)
-                  }
-                }}
-              >
-                <DialogTrigger asChild>
-                  <Button variant="destructive" size="sm" className="sm:self-start">
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Rotate token
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Rotate workspace API token</DialogTitle>
-                    <DialogDescription>
-                      The current workspace token will stop working immediately. Any scripts, SDK clients, or
-                      automations using it must be updated to the new token.
-                    </DialogDescription>
-                  </DialogHeader>
-                  {rotateApiTokenError ? (
-                    <p className="text-sm text-destructive">{rotateApiTokenError}</p>
-                  ) : null}
-                  <DialogFooter>
-                    <Button
-                      variant="outline"
-                      onClick={() => setRotateApiTokenDialogOpen(false)}
-                      disabled={isRotatingApiToken}
-                    >
-                      Cancel
-                    </Button>
-                    <Button variant="destructive" onClick={handleRotateApiToken} disabled={isRotatingApiToken}>
-                      {isRotatingApiToken ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                      Rotate token
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">Delete this workspace</p>

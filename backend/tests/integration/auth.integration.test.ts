@@ -131,6 +131,16 @@ describe("auth integration", () => {
     expect(rotated.status).toBe(200);
     expect(rotated.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
     expect(rotated.body.token).not.toBe(revealed.body.token);
+
+    const staleTokenResponse = await request(app)
+      .get("/api/v1/settings/general")
+      .set("Authorization", `Bearer ${revealed.body.token}`);
+    const rotatedTokenResponse = await request(app)
+      .get("/api/v1/settings/general")
+      .set("Authorization", `Bearer ${rotated.body.token}`);
+
+    expect(staleTokenResponse.status).toBe(401);
+    expect(rotatedTokenResponse.status).toBe(200);
   });
 
   it("returns 503 for workspace token operations when the token secret is unset", async () => {

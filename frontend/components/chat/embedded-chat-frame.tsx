@@ -57,6 +57,7 @@ type BootstrapState =
 const READY_MESSAGE = 'radioso:embed:ready'
 const SESSION_MESSAGE = 'radioso:embed:session'
 const ERROR_MESSAGE = 'radioso:embed:error'
+const HANDSHAKE_TIMEOUT_MS = 30_000
 
 export function EmbeddedChatFrame({
   token,
@@ -185,7 +186,7 @@ export function EmbeddedChatFrame({
           message: 'This embedded chat launch could not be verified.',
         })
       }
-    }, 5000)
+    }, HANDSHAKE_TIMEOUT_MS)
 
     return () => {
       isDisposed = true

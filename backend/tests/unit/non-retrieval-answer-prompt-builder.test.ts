@@ -34,13 +34,40 @@ describe("non-retrieval answer prompt builder", () => {
         }),
       ],
       query: "Thanks!",
+      intentTopic: "gratitude",
     });
 
+    expect(prompt).toContain("Detected intent topic: gratitude");
     expect(prompt).toContain("Use the Answer Instructions to understand what this assistant is configured to help with.");
     expect(prompt).toContain("loop the user back to that configured scope");
     expect(prompt).toContain("Do not mention internal labels");
     expect(prompt).toContain("Help visitors choose retreats and courses.");
     expect(prompt).toContain("ASSISTANT: The course starts in June.");
+  });
+
+  it("treats detected intent topic as evidence for scope handling instead of answer authority", () => {
+    const prompt = buildNonRetrievalAnswerPrompt({
+      route: CHAT_TURN_ROUTE.SOCIAL_ONLY,
+      responseIdentity: {
+        name: "Vikram",
+      },
+      answerInstructionBlock: "Workspace-specific instructions:\nHelp visitors choose retreats and courses.",
+      history: [],
+      query: "sqrt(5)",
+      intentTopic: "math problem",
+      outsideScopeRequest: "solve sqrt(5)",
+    });
+
+    expect(prompt).toContain("Detected intent topic: math problem");
+    expect(prompt).toContain("Detected outside-scope request: solve sqrt(5)");
+    expect(prompt).toContain("classifier evidence only");
+    expect(prompt).toContain("change the language, wording, length, or format");
+    expect(prompt).toContain("If a detected outside-scope request is provided");
+    expect(prompt).toContain("briefly decline that topic");
+    expect(prompt).toContain("mixes an in-scope request with an outside-scope request");
+    expect(prompt).toContain("do not solve, explain, summarize, translate, calculate, debug, or partially answer");
+    expect(prompt).toContain("Do not include the result, formula, code output, factual answer, draft text, joke");
+    expect(prompt).toContain("not permission to leave the configured assistant scope");
   });
 
   it("instructs identity replies to describe the configured scope when asked what the assistant can do", () => {

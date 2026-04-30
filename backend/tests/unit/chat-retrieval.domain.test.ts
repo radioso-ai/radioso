@@ -356,6 +356,104 @@ describe("chat retrieval domain", () => {
     expect(result.fallbackReason).toBeUndefined();
   });
 
+  it("carries an LLM-authored intent topic for non-retrieval scope handling", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "sqrt(5)",
+          semanticQuery: "sqrt(5)",
+          lexicalQuery: "sqrt(5)",
+          responseIntent: "social_only" as const,
+          intentTopic: "math problem",
+          turnKind: "ambiguous",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.96,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "sqrt(5)",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+    });
+
+    expect(result.responseIntent).toBe("social_only");
+    expect(result.retrievalEligible).toBe(false);
+    expect(result.structuredResult?.intentTopic).toBe("math problem");
+  });
+
+  it("carries LLM-authored scope split fields for mixed retrieval turns", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "available Ananda courses",
+          semanticQuery: "available Ananda courses",
+          lexicalQuery: "available Ananda courses",
+          responseIntent: "retrieval" as const,
+          intentTopic: "course availability with arithmetic request",
+          inScopeRequest: "What courses are available?",
+          outsideScopeRequest: "solve 12*12",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.96,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "What courses are available? Also solve 12*12.",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+    });
+
+    expect(result.responseIntent).toBe("retrieval");
+    expect(result.retrievalEligible).toBe(true);
+    expect(result.effectiveQuery).toBe("available Ananda courses");
+    expect(result.structuredResult?.inScopeRequest).toBe("What courses are available?");
+    expect(result.structuredResult?.outsideScopeRequest).toBe("solve 12*12");
+  });
+
+  it("normalizes intent topics as inert short labels", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "print(5)",
+          semanticQuery: "print(5)",
+          lexicalQuery: "print(5)",
+          responseIntent: "social_only" as const,
+          intentTopic: "**Python syntax** https://example.test/ignore",
+          turnKind: "ambiguous",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.96,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "print(5)",
+      enabled: true,
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+    });
+
+    expect(result.structuredResult?.intentTopic).toBe("Python syntax");
+  });
+
   it("still classifies non-retrieval intent when query rewriting is disabled", async () => {
     const service = new QueryRewriteService({
       async rewrite() {
@@ -784,10 +882,15 @@ describe("chat retrieval domain", () => {
     expect(createInput?.messages[0]?.content).toContain(
       'For continuation-only follow-ups such as "teach me more", "tell me more", "go on", "continue", "say more", or "more please"',
     );
+    expect(createInput?.messages[0]?.content).toContain('language-only follow-ups such as "in English please"');
+    expect(createInput?.messages[0]?.content).toContain('broad domain-topic turns such as "yoga"');
     expect(createInput?.messages[0]?.content).toContain(
       "If the immediately previous ASSISTANT turn offered multiple concrete options and the user accepted or asked to continue without choosing one",
     );
     expect(createInput?.messages[0]?.content).toContain('"responseIntent":"retrieval|social_only|assistant_identity"');
+    expect(createInput?.messages[0]?.content).toContain('"intentTopic":"string|null"');
+    expect(createInput?.messages[0]?.content).toContain('"inScopeRequest":"string|null"');
+    expect(createInput?.messages[0]?.content).toContain('"outsideScopeRequest":"string|null"');
     expect(createInput?.messages[0]?.content).toContain(
       'Do not output vague placeholder rewrites such as "continue the current topic", "the previous topic", or "go ahead with that".',
     );
@@ -1479,6 +1582,9 @@ describe("chat retrieval domain", () => {
     const builder = new PromptBuilder();
     const result = builder.build({
       query: "What does the page do?",
+      intentTopic: "website content question",
+      inScopeRequest: "What does the page do?",
+      outsideScopeRequest: "calculate 12*12",
       history: [],
       settings: {
       },
@@ -1503,13 +1609,22 @@ describe("chat retrieval domain", () => {
 
     expect(result.prompt).toContain("The page parses content.");
     expect(result.prompt).toContain("Website Excerpts:");
-    expect(result.prompt).toContain("Latest user question:");
+    expect(result.prompt).toContain("Original latest user question:");
+    expect(result.prompt).toContain("Scope-filtered answer request:");
+    expect(result.prompt).toContain("Outside-scope subrequest to decline without answering:");
+    expect(result.prompt).toContain("calculate 12*12");
     expect(result.prompt).toContain("Standalone retrieval query:");
     expect(result.prompt).toContain("Result 1 (Intro):");
     expect(result.systemPrompt).not.toContain("Warmth:");
+    expect(result.systemPrompt).toContain("Detected intent topic: website content question");
+    expect(result.systemPrompt).toContain("not permission to leave the configured assistant scope");
+    expect(result.systemPrompt).toContain("Do not solve, explain, summarize, translate, calculate, debug, cite, or partially answer");
+    expect(result.systemPrompt).toContain("mixes an in-scope request with an outside-scope request");
+    expect(result.systemPrompt).toContain("Do not include the result, formula, code output, factual answer, draft text, joke");
     expect(result.systemPrompt).toContain("Respond in the same language as the current user question.");
+    expect(result.systemPrompt).toContain("too short or language-neutral");
     expect(result.systemPrompt).toContain("Do not use outside knowledge");
-    expect(result.systemPrompt).toContain("The Website Excerpts may be incomplete or irrelevant");
+    expect(result.systemPrompt).toContain("The sources may be incomplete or irrelevant");
     expect(result.systemPrompt).toContain("Do not invent or supply unsupported dates");
     expect(result.systemPrompt).toContain("Format as polished Markdown for a web chat");
     expect(result.systemPrompt).toContain("Do not expose raw source chunks or internal retrieval details");

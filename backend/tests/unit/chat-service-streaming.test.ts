@@ -1490,6 +1490,110 @@ describe("chat service streaming", () => {
     ]));
   });
 
+  it("still plans grounded suggestions when answer support validation is disabled", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does the guide cover",
+          contexts: [
+            {
+              chunkId: "chunk-1",
+              documentId: "doc-1",
+              title: "Guide",
+              content: "The guide covers parser setup and onboarding workflows. It also explains import audits.",
+            },
+          ],
+          prompt: "prompt text",
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: {
+              semanticQuery: "guide cover",
+              lexicalQuery: "guide cover",
+              constraints: [],
+            },
+          },
+          responseSettings: {
+            citationDisplayEnabled: true,
+            answerSupportValidationEnabled: false,
+            conversationMode: "exploratory",
+            suggestedQuestionsEnabled: true,
+            suggestedQuestionsCount: 2,
+          },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer({ prompt }) {
+        if (prompt.includes("Generate grounded follow-up suggestions")) {
+          return JSON.stringify({
+            suggestions: [
+              { text: "How do import audits work?", kind: "deeper", contextIndex: 1 },
+            ],
+          });
+        }
+
+        return "The guide covers parser setup and onboarding workflows[[1]].";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = new ChatService(
+      conversationRepository,
+      messageRepository,
+      asChatRetrievalPipeline(retrievalPipeline) as never,
+      chatGateway,
+      auditService,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does the guide cover?",
+      stream: false,
+    });
+
+    expect(response.suggestions).toEqual([
+      expect.objectContaining({
+        text: "How do import audits work?",
+        kind: "deeper",
+        citation: {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Guide",
+        },
+      }),
+    ]);
+    expect(response.conversationModeMetadata).toEqual({
+      conversationMode: "exploratory",
+      brevityOverrideApplied: false,
+      expansionApplied: true,
+      expansionKind: "expansive",
+      suggestionCount: 1,
+      followUpQuestionApplied: false,
+    });
+    expect(response.retrievalTrace.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        stageId: "answer",
+        outputs: expect.objectContaining({
+          validationRan: false,
+        }),
+      }),
+    ]));
+  });
+
   it("preserves assistant bootstrap claims alongside grounded document claims in non-streaming answers", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

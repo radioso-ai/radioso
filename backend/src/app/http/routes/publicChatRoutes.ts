@@ -10,6 +10,13 @@ import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 
 const localeHintSchema = z.string().trim().max(35);
+const pageContextSchema = z.object({
+  pageUrl: z.string().trim().max(2048).nullable().optional(),
+  pageTitle: z.string().trim().max(180).nullable().optional(),
+  pageLocale: z.string().trim().max(35).nullable().optional(),
+  browserLocale: z.string().trim().max(35).nullable().optional(),
+  content: z.string().trim().max(6000).nullable().optional(),
+}).optional();
 
 export const anonymousChatSchema = z.object({
   message: z.string().min(1).optional(),
@@ -17,6 +24,7 @@ export const anonymousChatSchema = z.object({
   conversationId: z.string().uuid().optional(),
   startConversation: z.boolean().optional(),
   userExpectedLocale: localeHintSchema.optional(),
+  pageContext: pageContextSchema,
   inputMetadata: z.object({
     method: z.enum(["typed", "suggestion_click"]),
     suggestionSourceMessageId: z.string().uuid().optional(),
@@ -83,6 +91,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
             anonymousSessionId,
             sourceOrigin,
             userExpectedLocale: req.body.userExpectedLocale,
+            pageContext: req.body.pageContext,
           });
           if (!bootstrap) {
             res.status(204).end();
@@ -99,6 +108,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
           userExpectedLocale: req.body.userExpectedLocale,
           conversationId: req.body.conversationId,
           inputMetadata: req.body.inputMetadata,
+          pageContext: req.body.pageContext,
           sourceChannel,
           anonymousSessionId,
           sourceOrigin,

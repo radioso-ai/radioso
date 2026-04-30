@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
+import type { WebsiteEmbedPageContext } from '@/lib/api'
 import {
   buildWebsiteEmbedSurfaceCssVars,
   formatWebsiteEmbedDisclaimer,
@@ -18,6 +19,7 @@ import {
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
   shouldUseWebsiteEmbedCompactKeyboardLayout,
+  shouldUseWebsiteEmbedNarrowLayout,
   type WebsiteEmbedCopyOverrides,
   type WebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
@@ -31,6 +33,19 @@ const isEditableElement = (element: Element | null) => {
 
   const tagName = element.tagName.toLowerCase()
   return tagName === 'textarea' || tagName === 'input' || (element instanceof HTMLElement && element.isContentEditable)
+}
+
+const isTypingControl = (element: EventTarget | null) => {
+  if (!(element instanceof Element)) {
+    return false
+  }
+
+  if (isEditableElement(element)) {
+    return true
+  }
+
+  const tagName = element.tagName.toLowerCase()
+  return tagName === 'button' || tagName === 'a' || tagName === 'select'
 }
 
 export function readWebsiteEmbedViewportSnapshot() {
@@ -53,8 +68,9 @@ export function readWebsiteEmbedViewportSnapshot() {
   }
 }
 
-function useWebsiteEmbedCompactKeyboardLayout(enabled: boolean) {
-  const [isCompact, setIsCompact] = useState(false)
+function useWebsiteEmbedViewportLayout(enabled: boolean) {
+  const [layout, setLayout] = useState({ isCompactKeyboardLayout: false, isNarrowLayout: false })
+  const maxLayoutViewportHeightRef = useRef(0)
 
   useEffect(() => {
     if (!enabled) {
@@ -62,7 +78,29 @@ function useWebsiteEmbedCompactKeyboardLayout(enabled: boolean) {
     }
 
     const update = () => {
-      setIsCompact(shouldUseWebsiteEmbedCompactKeyboardLayout(readWebsiteEmbedViewportSnapshot()))
+      const snapshot = readWebsiteEmbedViewportSnapshot()
+      const isNarrowLayout = shouldUseWebsiteEmbedNarrowLayout(snapshot.viewportWidth)
+
+      if (isNarrowLayout && !snapshot.editableFocused) {
+        maxLayoutViewportHeightRef.current = Math.max(
+          maxLayoutViewportHeightRef.current,
+          snapshot.layoutViewportHeight,
+        )
+      }
+
+      const isCompactKeyboardLayout = shouldUseWebsiteEmbedCompactKeyboardLayout({
+        ...snapshot,
+        maxLayoutViewportHeight: maxLayoutViewportHeightRef.current || snapshot.layoutViewportHeight,
+      })
+
+      if (isNarrowLayout && !isCompactKeyboardLayout) {
+        maxLayoutViewportHeightRef.current = Math.max(
+          maxLayoutViewportHeightRef.current,
+          snapshot.layoutViewportHeight,
+        )
+      }
+
+      setLayout({ isCompactKeyboardLayout, isNarrowLayout })
     }
 
     const animationFrame = window.requestAnimationFrame(update)
@@ -82,7 +120,7 @@ function useWebsiteEmbedCompactKeyboardLayout(enabled: boolean) {
     }
   }, [enabled])
 
-  return enabled && isCompact
+  return enabled ? layout : { isCompactKeyboardLayout: false, isNarrowLayout: false }
 }
 
 function AssistantAvatar({
@@ -213,7 +251,7 @@ function PublicChatContent({
   const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
   const theme = getWebsiteEmbedTheme(themeOverrides)
   const [input, setInput] = useState('')
-  const isCompactKeyboardLayout = useWebsiteEmbedCompactKeyboardLayout(surface === 'embed')
+  const { isCompactKeyboardLayout, isNarrowLayout } = useWebsiteEmbedViewportLayout(surface === 'embed')
   const {
     messages,
     workspaceName,
@@ -228,16 +266,41 @@ function PublicChatContent({
     sendMessage,
     startNewChat,
   } = useAnonymousChat()
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const messagesScrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const resolvedWorkspaceName = workspaceName ?? initialWorkspaceName ?? copy.embeddedChatTitle
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (messagesScrollRef.current) {
+      messagesScrollRef.current.scrollTo({
+        top: messagesScrollRef.current.scrollHeight,
+        behavior,
+      })
+      return
+    }
+
+    messagesEndRef.current?.scrollIntoView({ behavior })
   }
 
   useEffect(() => {
     scrollToBottom()
   }, [isLoading, messages])
+
+  useEffect(() => {
+    if (!isCompactKeyboardLayout) {
+      return
+    }
+
+    const scrollNow = () => scrollToBottom('auto')
+    const animationFrame = window.requestAnimationFrame(scrollNow)
+    const delayedScroll = window.setTimeout(scrollNow, 250)
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame)
+      window.clearTimeout(delayedScroll)
+    }
+  }, [isCompactKeyboardLayout, messages.length])
 
   useEffect(() => {
     if (!workspaceName) {
@@ -263,6 +326,46 @@ function PublicChatContent({
       handleSubmit(event)
     }
   }
+
+  useEffect(() => {
+    if (surface !== 'embed' || isHydrating || isUnavailable) {
+      return
+    }
+
+    const handleTypingShortcut = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.key.length !== 1 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        isTypingControl(event.target)
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      const inputNode = inputRef.current
+      const selectionStart = inputNode?.selectionStart ?? input.length
+      const selectionEnd = inputNode?.selectionEnd ?? input.length
+      const nextCursorPosition = selectionStart + event.key.length
+
+      setInput((currentInput) => {
+        const start = Math.min(selectionStart, currentInput.length)
+        const end = Math.min(Math.max(selectionEnd, start), currentInput.length)
+        return `${currentInput.slice(0, start)}${event.key}${currentInput.slice(end)}`
+      })
+
+      window.requestAnimationFrame(() => {
+        inputRef.current?.focus()
+        inputRef.current?.setSelectionRange(nextCursorPosition, nextCursorPosition)
+      })
+    }
+
+    window.addEventListener('keydown', handleTypingShortcut)
+    return () => window.removeEventListener('keydown', handleTypingShortcut)
+  }, [input.length, isHydrating, isUnavailable, surface])
 
   const handleSuggestionSelect = (text: string, messageId: string) => {
     if (isLoading) return
@@ -374,6 +477,7 @@ function PublicChatContent({
       ) : null}
 
       <div
+        ref={messagesScrollRef}
         className={`min-h-0 flex-1 overflow-y-auto ${
           isCompactKeyboardLayout ? (onRequestCollapse ? 'px-3 pb-3 pt-10' : 'p-3') : 'p-6'
         }`}
@@ -417,6 +521,7 @@ function PublicChatContent({
               onSuggestionSelect={handleSuggestionSelect}
               assistantAvatarUrl={avatarUrl}
               assistantAvatarLabel={resolvedWorkspaceName}
+              hideAssistantAvatar={surface === 'embed' && isNarrowLayout}
               theme={theme}
               themedSuggestionButtons
             />
@@ -453,6 +558,7 @@ function PublicChatContent({
         ) : null}
         <form onSubmit={handleSubmit} className={`mx-auto flex max-w-3xl items-end ${isCompactKeyboardLayout ? 'gap-2' : 'gap-3'}`}>
           <Textarea
+            ref={inputRef}
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
@@ -493,6 +599,7 @@ export function PublicChatShell({
   copyOverrides,
   themeOverrides,
   surface = 'public',
+  pageContext,
 }: {
   token: string
   initialWorkspaceName?: string | null
@@ -503,11 +610,12 @@ export function PublicChatShell({
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
   surface?: PublicChatSurface
+  pageContext?: WebsiteEmbedPageContext | null
 }) {
   const theme = getWebsiteEmbedTheme(themeOverrides)
 
   return (
-    <AnonymousChatProvider token={token} localeOverride={localeOverride}>
+    <AnonymousChatProvider token={token} localeOverride={localeOverride} pageContext={pageContext}>
       <div
         className="flex min-h-0 flex-1 flex-col overflow-hidden"
         style={{

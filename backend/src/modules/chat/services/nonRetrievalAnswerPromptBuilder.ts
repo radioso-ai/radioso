@@ -10,6 +10,9 @@ export const buildNonRetrievalAnswerPrompt = (input: {
   answerInstructionBlock: string;
   history: MessageRecord[];
   query: string;
+  intentTopic?: string;
+  inScopeRequest?: string;
+  outsideScopeRequest?: string;
 }): string => {
   const historySection = input.history
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
@@ -20,6 +23,9 @@ export const buildNonRetrievalAnswerPrompt = (input: {
       input.route === CHAT_TURN_ROUTE.ASSISTANT_IDENTITY && !input.responseIdentity
         ? "not_configured"
         : "configured_or_not_needed",
+    intent_topic: input.intentTopic || "not provided",
+    in_scope_request: input.inScopeRequest || "none",
+    outside_scope_request: input.outsideScopeRequest || "none",
     answer_instruction_block: input.answerInstructionBlock || "No additional answer instructions.",
     history_section: historySection || "No prior history",
     query: input.query,

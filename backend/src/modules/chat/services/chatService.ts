@@ -340,6 +340,9 @@ export class ChatService {
           responseIdentity: session.retrieval.responseIdentity,
           history: session.history,
           query,
+          intentTopic: session.retrieval.diagnostics.rewriteProposal?.intentTopic,
+          inScopeRequest: session.retrieval.diagnostics.rewriteProposal?.inScopeRequest,
+          outsideScopeRequest: session.retrieval.diagnostics.rewriteProposal?.outsideScopeRequest,
           answerInstructionBlock: this.buildAnswerInstructionBlock(session),
         }),
       })).trim();

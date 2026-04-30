@@ -49,6 +49,9 @@ export interface StructuredRewriteResult {
   semanticQuery?: string;
   lexicalQuery?: string;
   responseIntent?: ResponseIntent;
+  intentTopic?: string;
+  inScopeRequest?: string;
+  outsideScopeRequest?: string;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   retrievalSubqueries?: RetrievalSubquery[];
   turnKind: RewriteTurnKind;

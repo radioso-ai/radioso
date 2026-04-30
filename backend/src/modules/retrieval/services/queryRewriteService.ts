@@ -518,6 +518,9 @@ export class QueryRewriteService {
         semanticQuery,
         lexicalQuery,
         responseIntent: this.normalizeResponseIntent(result.responseIntent),
+        intentTopic: this.normalizeIntentTopic(result.intentTopic),
+        inScopeRequest: this.normalizeScopeRequest(result.inScopeRequest),
+        outsideScopeRequest: this.normalizeScopeRequest(result.outsideScopeRequest),
         responseLanguagePolicy,
         retrievalSubqueries: this.normalizeRetrievalSubqueries(result.retrievalSubqueries),
         turnKind: this.normalizeTurnKind(result.turnKind),
@@ -533,6 +536,9 @@ export class QueryRewriteService {
       semanticQuery: this.normalizeRewrite(result?.semanticQuery ?? result?.rewrittenQuery ?? originalQuery),
       lexicalQuery: this.normalizeLexicalRewrite(result?.lexicalQuery ?? result?.rewrittenQuery ?? originalQuery),
       responseIntent: RESPONSE_INTENT.RETRIEVAL,
+      intentTopic: undefined,
+      inScopeRequest: undefined,
+      outsideScopeRequest: undefined,
       responseLanguagePolicy: DEFAULT_RESPONSE_LANGUAGE_POLICY,
       retrievalSubqueries: undefined,
       turnKind: REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP,
@@ -615,6 +621,37 @@ export class QueryRewriteService {
       default:
         return RESPONSE_INTENT.RETRIEVAL;
     }
+  }
+
+  private normalizeIntentTopic(value?: string): string | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+
+    const normalized = value
+      .replace(/[`#*_~[\]()]/g, "")
+      .replace(/https?:\/\/\S+/gi, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80)
+      .trim();
+
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private normalizeScopeRequest(value?: string): string | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+
+    const normalized = value
+      .replace(/[`#_~[\]()]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 240)
+      .trim();
+
+    return normalized.length > 0 ? normalized : undefined;
   }
 
   private isUsableRewrite(originalQuery: string, rewrittenQuery: string): boolean {
@@ -766,6 +803,9 @@ const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
               : RESPONSE_INTENT.RETRIEVAL
           )
         : RESPONSE_INTENT.RETRIEVAL,
+    intentTopic: typeof parsed.intentTopic === "string" ? parsed.intentTopic : undefined,
+    inScopeRequest: typeof parsed.inScopeRequest === "string" ? parsed.inScopeRequest : undefined,
+    outsideScopeRequest: typeof parsed.outsideScopeRequest === "string" ? parsed.outsideScopeRequest : undefined,
     responseLanguagePolicy:
       typeof parsed.responseLanguagePolicy === "string" && parsed.responseLanguagePolicy === "match_user_question"
         ? parsed.responseLanguagePolicy

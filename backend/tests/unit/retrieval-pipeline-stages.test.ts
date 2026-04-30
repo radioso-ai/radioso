@@ -135,6 +135,89 @@ describe("retrieval pipeline stages", () => {
     });
   });
 
+  it("keeps intent routing active when query rewriting is disabled", async () => {
+    let rewriteCalls = 0;
+    const stage = new QueryInterpretationStageService(
+      new QueryRewriteService({
+        async rewrite() {
+          rewriteCalls += 1;
+          return {
+            rewrittenQuery: "Thanks",
+            semanticQuery: "Thanks",
+            lexicalQuery: "Thanks",
+            responseIntent: "social_only" as const,
+            turnKind: "ambiguous",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.94,
+          };
+        },
+      }, {
+        async analyze() {
+          throw new Error("trigger analysis should not run for social-only turns");
+        },
+      }),
+    );
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "a1",
+        query: "Thanks",
+        history: [],
+      },
+      settings: {
+        workspaceId: "a1",
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
+        lexicalRewriteInstructions: "Prefer exact literals and notation.",
+        conversationMode: "guided",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        citationDisplayEnabled: true,
+        customInstruction: "",
+        metadataRules: [
+          {
+            id: "events-only",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact when the user is asking about upcoming events.",
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(rewriteCalls).toBe(1);
+    expect(result.responseIntent).toBe("social_only");
+    expect(result.rewrittenQuery).toMatchObject({
+      status: "skipped",
+      rewriteApplied: false,
+      retrievalEligible: false,
+      responseIntent: "social_only",
+    });
+    expect(result.activeQuery).toBe("Thanks");
+    expect(result.triggerAnalysis).toMatchObject({
+      status: "skipped_non_retrieval",
+      matcherVersion: "non_retrieval",
+      matchCount: 0,
+    });
+  });
+
   it("skips trigger matching when no triggerable rules are configured", async () => {
     let triggerCalls = 0;
     const stage = new QueryInterpretationStageService(

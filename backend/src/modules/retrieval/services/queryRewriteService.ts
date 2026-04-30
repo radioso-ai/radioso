@@ -197,10 +197,13 @@ export class QueryRewriteService {
     query: string;
     contextWindow: ConversationContextWindow;
     enabled: boolean;
+    intentRoutingEnabled?: boolean;
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
   }): Promise<RewrittenRetrievalQuery> {
-    if (!input.enabled) {
+    const shouldInterpret = input.enabled || input.intentRoutingEnabled !== false;
+
+    if (!shouldInterpret) {
       return this.skipped(input.query);
     }
 
@@ -233,6 +236,14 @@ export class QueryRewriteService {
           intentFallbackApplied: true,
           structuredResult: normalizedStructuredResult,
         };
+      }
+
+      if (!input.enabled) {
+        return this.intentOnlyResult({
+          query: input.query,
+          result: normalizedStructuredResult,
+          responseIntent: rawResponseIntent,
+        });
       }
 
       const semanticQuery = this.selectSemanticQuery(
@@ -441,6 +452,42 @@ export class QueryRewriteService {
       confidence: 0,
       responseIntent: RESPONSE_INTENT.RETRIEVAL,
       fallbackReason: reason,
+    };
+  }
+
+  private intentOnlyResult(input: {
+    query: string;
+    result: StructuredRewriteResult;
+    responseIntent: ResponseIntent;
+  }): RewrittenRetrievalQuery {
+    if (input.responseIntent === RESPONSE_INTENT.RETRIEVAL) {
+      return {
+        ...this.skipped(input.query),
+        confidence: input.result.confidence,
+        responseLanguagePolicy: input.result.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY,
+        structuredResult: input.result,
+      };
+    }
+
+    return {
+      originalQuery: input.query,
+      rewrittenQuery: input.query,
+      effectiveQuery: input.query,
+      semanticQuery: input.query,
+      lexicalQuery: input.query,
+      responseIntent: input.responseIntent,
+      responseLanguagePolicy: input.result.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY,
+      retrievalSubqueries: undefined,
+      rewriteApplied: false,
+      retrievalEligible: false,
+      status: REWRITE_STATUS.SKIPPED,
+      confidence: input.result.confidence,
+      structuredResult: {
+        ...input.result,
+        rewrittenQuery: input.query,
+        semanticQuery: input.query,
+        lexicalQuery: input.query,
+      },
     };
   }
 

@@ -17,11 +17,13 @@ export interface GroundedMissResponseComposer {
     contexts: GroundedMissContextSummary[];
     conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
+    answerInstructionBlock?: string;
   }): Promise<string>;
   composeNoContext(input: {
     query: string;
     conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
+    answerInstructionBlock?: string;
   }): Promise<string>;
 }
 
@@ -32,6 +34,7 @@ export class MissingGroundedMissResponseComposer implements GroundedMissResponse
     contexts: GroundedMissContextSummary[];
     conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
+    answerInstructionBlock?: string;
   }): Promise<string> {
     return buildUnsupportedWithContextFallback(_input.contexts);
   }
@@ -40,6 +43,7 @@ export class MissingGroundedMissResponseComposer implements GroundedMissResponse
     query: string;
     conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
+    answerInstructionBlock?: string;
   }): Promise<string> {
     return buildNoContextFallback();
   }
@@ -136,6 +140,11 @@ const buildLocaleInstruction = (userExpectedLocale?: string | null): string => {
     : "Write the response in the same language as the user's question.";
 };
 
+const buildAnswerInstructionBlock = (answerInstructionBlock?: string): string => {
+  const normalized = normalizeWhitespace(answerInstructionBlock);
+  return normalized.length > 0 ? normalized : "No additional answer instructions.";
+};
+
 const buildNoContextFallback = (): string => renderGroundedMissSection("fallback_no_context", {});
 
 const buildUnsupportedWithContextFallback = (contexts: GroundedMissContextSummary[]): string => {
@@ -172,6 +181,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     contexts: GroundedMissContextSummary[];
     conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
+    answerInstructionBlock?: string;
   }): Promise<string> {
     try {
       const raw = await this.completeWithRetry({
@@ -180,6 +190,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
           locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
           query: input.query,
           conversation_mode: input.conversationMode ?? "guided",
+          answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
           has_retrieved_contexts: "yes",
           unsupported_text: input.unsupportedText.trim(),
           contexts_section: formatContextsForPrompt(input.contexts),
@@ -207,6 +218,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
     query: string;
     conversationMode?: ConversationMode;
     userExpectedLocale?: string | null;
+    answerInstructionBlock?: string;
   }): Promise<string> {
     try {
       const raw = await this.completeWithRetry({
@@ -215,6 +227,7 @@ export class ModelGroundedMissResponseComposer implements GroundedMissResponseCo
           locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
           query: input.query,
           conversation_mode: input.conversationMode ?? "guided",
+          answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
           has_retrieved_contexts: "no",
           unsupported_text: "None",
           contexts_section: "None",

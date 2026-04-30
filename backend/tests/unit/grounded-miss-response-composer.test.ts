@@ -59,6 +59,36 @@ describe("grounded miss response composer", () => {
     ).resolves.toBe("MODEL_NO_CONTEXT");
   });
 
+  it("passes assistant scope instructions into no-context generation", async () => {
+    let observedPrompt = "";
+    const composer = new ModelGroundedMissResponseComposer({
+      metadata: {
+        capability: "chat",
+        provider: "openai",
+        model: "test-model",
+      },
+      async complete({ prompt }) {
+        observedPrompt = prompt;
+        return "MODEL_NO_CONTEXT";
+      },
+      async *stream() {
+        yield "";
+      },
+    });
+
+    await composer.composeNoContext({
+      query: "I like potato chips",
+      conversationMode: "exploratory",
+      answerInstructionBlock: "Workspace-specific instructions:\nHelp visitors choose and book Ananda courses.",
+    });
+
+    expect(observedPrompt).toContain("Answer Instructions:");
+    expect(observedPrompt).toContain("Help visitors choose and book Ananda courses.");
+    expect(observedPrompt).toContain("points back to the configured assistant scope");
+    expect(observedPrompt).toContain("do not offer to help with unrelated topics from the user query");
+    expect(observedPrompt).toContain("Do not mention internal labels");
+  });
+
   it("passes explicit locale guidance into grounded-miss generation", async () => {
     const composer = new ModelGroundedMissResponseComposer({
       metadata: {

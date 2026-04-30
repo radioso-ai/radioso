@@ -312,6 +312,16 @@ export class ChatService {
     };
   }
 
+  private buildAnswerInstructionBlock(session: PreparedSession): string {
+    const responseSettings = session.retrieval.responseSettings;
+    return this.assistantInstructionBuilder.buildCombinedBlock({
+      responseIdentity: session.retrieval.responseIdentity,
+      customInstruction: responseSettings?.customInstruction,
+      conversationMode: responseSettings?.conversationMode,
+      responseLanguagePolicy: responseSettings?.responseLanguagePolicy,
+    });
+  }
+
   private async generateNonRetrievalAnswer(
     session: PreparedSession,
     query: string,
@@ -330,12 +340,7 @@ export class ChatService {
           responseIdentity: session.retrieval.responseIdentity,
           history: session.history,
           query,
-          answerInstructionBlock: this.assistantInstructionBuilder.buildCombinedBlock({
-            responseIdentity: session.retrieval.responseIdentity,
-            customInstruction: session.retrieval.responseSettings.customInstruction,
-            conversationMode: session.retrieval.responseSettings.conversationMode,
-            responseLanguagePolicy: session.retrieval.responseSettings.responseLanguagePolicy,
-          }),
+          answerInstructionBlock: this.buildAnswerInstructionBlock(session),
         }),
       })).trim();
     } catch (error) {
@@ -500,6 +505,7 @@ export class ChatService {
             query: input.query,
             conversationMode: this.getConversationMode(session),
             userExpectedLocale: input.userExpectedLocale,
+            answerInstructionBlock: this.buildAnswerInstructionBlock(session),
           });
         yield {
           type: "chunk",
@@ -510,6 +516,7 @@ export class ChatService {
           query: input.query,
           conversationMode: this.getConversationMode(session),
           userExpectedLocale: input.userExpectedLocale,
+          answerInstructionBlock: this.buildAnswerInstructionBlock(session),
         });
         yield {
           type: "chunk",
@@ -753,6 +760,7 @@ export class ChatService {
           query,
           conversationMode: this.getConversationMode(session),
           userExpectedLocale,
+          answerInstructionBlock: this.buildAnswerInstructionBlock(session),
         })
       : await this.chatGateway.answer({
           query,

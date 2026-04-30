@@ -356,6 +356,75 @@ describe("chat retrieval domain", () => {
     expect(result.fallbackReason).toBeUndefined();
   });
 
+  it("still classifies non-retrieval intent when query rewriting is disabled", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Thanks for the help",
+          semanticQuery: "Thanks for the help",
+          lexicalQuery: "Thanks for the help",
+          responseIntent: "social_only" as const,
+          turnKind: "ambiguous",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.93,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Thanks for the help",
+      enabled: false,
+      contextWindow: {
+        selectedMessages: [message("Tell me about the retreat")],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("skipped");
+    expect(result.rewriteApplied).toBe(false);
+    expect(result.retrievalEligible).toBe(false);
+    expect(result.responseIntent).toBe("social_only");
+    expect(result.effectiveQuery).toBe("Thanks for the help");
+  });
+
+  it("keeps retrieval queries unrevised when query rewriting is disabled but intent routing runs", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Ananda beginner meditation courses",
+          semanticQuery: "Ananda beginner meditation courses",
+          lexicalQuery: "\"Ananda\" \"beginner\" meditation courses",
+          responseIntent: "retrieval" as const,
+          turnKind: "referential_followup",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.88,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "I'm a beginner",
+      enabled: false,
+      contextWindow: {
+        selectedMessages: [message("Recommend courses")],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(result.status).toBe("skipped");
+    expect(result.rewriteApplied).toBe(false);
+    expect(result.retrievalEligible).toBe(false);
+    expect(result.responseIntent).toBe("retrieval");
+    expect(result.effectiveQuery).toBe("I'm a beginner");
+    expect(result.semanticQuery).toBe("I'm a beginner");
+    expect(result.lexicalQuery).toBe("I'm a beginner");
+    expect(result.structuredResult?.semanticQuery).toBe("Ananda beginner meditation courses");
+  });
+
   it("keeps assistant-identity intent on a non-retrieval path even when no rewrite is needed", async () => {
     const service = new QueryRewriteService({
       async rewrite() {

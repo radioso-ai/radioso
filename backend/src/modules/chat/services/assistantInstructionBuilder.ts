@@ -66,7 +66,11 @@ export class AssistantInstructionBuilder {
     switch (responseLanguagePolicy) {
       case "match_user_question":
       default:
-        return "Respond in the same language as the current user question. Do not switch to the language of the retrieved context or sources.";
+        return [
+          "Respond in the same language as the current user question.",
+          "If the current user question is too short or language-neutral, preserve the most recent explicit user language preference from the conversation.",
+          "Do not switch to the language of the retrieved context or sources.",
+        ].join(" ");
     }
   }
 }

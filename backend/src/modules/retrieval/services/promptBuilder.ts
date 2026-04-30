@@ -28,6 +28,9 @@ export class PromptBuilder {
       conversationMode?: ConversationMode;
       responseLanguagePolicy?: ResponseLanguagePolicy;
     };
+    intentTopic?: string;
+    inScopeRequest?: string;
+    outsideScopeRequest?: string;
   }): PromptBuildResult {
     const historySection = input.history
       .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
@@ -60,12 +63,15 @@ export class PromptBuilder {
           ? `${answerInstructionBlocks.conversationModeInstructionBlock}\n`
           : "",
         response_language_instruction: answerInstructionBlocks.responseLanguageInstruction,
+        intent_topic: input.intentTopic || "not provided",
       }),
       prompt: renderPromptTemplate("retrieval/answer-user.md", {
         history_section: historySection || "No prior history",
         contexts_section: contextsSection || "No retrieved context",
-        query: input.query,
+        original_query: input.query,
+        query: input.inScopeRequest ?? input.query,
         retrieval_query: input.retrievalQuery ?? input.query,
+        outside_scope_request: input.outsideScopeRequest ?? "none",
       }),
       citations: input.contexts.map((context) => ({
         documentId: context.documentId,

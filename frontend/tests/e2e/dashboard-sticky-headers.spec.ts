@@ -33,6 +33,11 @@ test("dashboard page headers stay fixed while content panes scroll", async ({ pa
 
   const header = page.getByRole("heading", { name: "Documents", exact: true });
   await expect(header).toBeVisible();
+  await expect(page.getByRole("table", { name: "Documents" })).toBeVisible();
+  await page.getByRole("button", { name: "Course Guide 1", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Back to documents" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Back to documents" }).first().click();
+  await expect(header).toBeVisible();
 
   const initialHeaderTop = await header.evaluate((element) => element.getBoundingClientRect().top);
   const initialWindowScrollY = await page.evaluate(() => window.scrollY);

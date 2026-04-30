@@ -13,6 +13,7 @@ export const buildNonRetrievalAnswerPrompt = (input: {
   intentTopic?: string;
   inScopeRequest?: string;
   outsideScopeRequest?: string;
+  pageContextBlock?: string;
 }): string => {
   const historySection = input.history
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
@@ -27,6 +28,7 @@ export const buildNonRetrievalAnswerPrompt = (input: {
     in_scope_request: input.inScopeRequest || "none",
     outside_scope_request: input.outsideScopeRequest || "none",
     answer_instruction_block: input.answerInstructionBlock || "No additional answer instructions.",
+    page_context_block: input.pageContextBlock ? `\n${input.pageContextBlock}` : "",
     history_section: historySection || "No prior history",
     query: input.query,
   });

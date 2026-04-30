@@ -12,6 +12,7 @@ import {
   sanitizeWebsiteEmbedCopyOverrides,
   sanitizeWebsiteEmbedThemeOverrides,
   shouldUseWebsiteEmbedCompactKeyboardLayout,
+  shouldUseWebsiteEmbedNarrowLayout,
 } from '@/lib/embed-widget'
 
 describe('website embed runtime helpers', () => {
@@ -40,7 +41,7 @@ describe('website embed runtime helpers', () => {
       }),
     )
 
-    expect(copyOverrides.invalidKey).toBeUndefined()
+    expect('invalidKey' in copyOverrides).toBe(false)
     expect(Object.keys(copyOverrides)).toHaveLength(2)
     expect(theme.accent).toBeTruthy()
   })
@@ -49,6 +50,8 @@ describe('website embed runtime helpers', () => {
     expect(WEBSITE_EMBED_DESKTOP_PANEL_WIDTH_PX).toBe(560)
     expect(WEBSITE_EMBED_PANEL_HANDLE_WIDTH_PX).toBe(56)
     expect(WEBSITE_EMBED_NARROW_VIEWPORT_MAX_WIDTH_PX).toBe(640)
+    expect(shouldUseWebsiteEmbedNarrowLayout(390)).toBe(true)
+    expect(shouldUseWebsiteEmbedNarrowLayout(900)).toBe(false)
   })
 
   it('uses compact keyboard layout only for narrow focused keyboard states', () => {
@@ -92,5 +95,17 @@ describe('website embed runtime helpers', () => {
         editableFocused: false,
       }),
     ).toBe(false)
+  })
+
+  it('uses compact keyboard layout when the host iframe itself shrinks', () => {
+    expect(
+      shouldUseWebsiteEmbedCompactKeyboardLayout({
+        viewportWidth: 390,
+        layoutViewportHeight: 480,
+        visualViewportHeight: 480,
+        maxLayoutViewportHeight: 800,
+        editableFocused: true,
+      }),
+    ).toBe(true)
   })
 })

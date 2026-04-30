@@ -57,6 +57,41 @@ describe("public chat contract", () => {
     expect(anonCookie).toBeDefined();
   });
 
+  it("accepts embedded page context as bounded supplemental prompt context", async () => {
+    const prompts: string[] = [];
+    const contextualGateway: ChatGateway = {
+      async answer(input) {
+        prompts.push(input.prompt);
+        return "The current page mentions summer retreats.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: contextualGateway });
+    const session = await issueTestSession(app, "public-chat-page-context@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .send({
+        message: "What is this page about?",
+        stream: false,
+        pageContext: {
+          pageUrl: "https://example.com/retreats",
+          pageTitle: "Summer Retreats",
+          pageLocale: "en",
+          browserLocale: "en-US",
+          content: "Summer retreats are open for registration.",
+        },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toBe("The current page mentions summer retreats.");
+    expect(prompts.some((prompt) => prompt.includes("Current page URL: https://example.com/retreats"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Visible page excerpt"))).toBe(true);
+  });
+
   it("subsequent requests with cookie reuse the same session", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-session@example.com");
@@ -416,6 +451,49 @@ describe("public chat contract", () => {
     expect(response.body.answer).toEqual(expect.any(String));
     expect(response.body.answer.length).toBeGreaterThan(0);
     expect(response.headers["set-cookie"]).toBeDefined();
+  });
+
+  it("uses embedded page locale for the public bootstrap greeting when no request locale is set", async () => {
+    const prompts: string[] = [];
+    const { app } = createTestApp({
+      chatGateway: {
+        async answer(input) {
+          prompts.push(input.prompt);
+          return "Tere! Olen Marta ja saan aidata dokumentidega.";
+        },
+        async *streamAnswer() {
+          yield "unused";
+        },
+      },
+    });
+    const session = await issueTestSession(app, "public-chat-bootstrap-page-locale@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+
+    await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+        assistantName: "Marta",
+        assistantDefaultLocale: "en-US",
+        proactiveGreetingEnabled: true,
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .send({
+        startConversation: true,
+        stream: false,
+        pageContext: {
+          pageLocale: "et",
+          browserLocale: "en-US",
+        },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toBe("Tere! Olen Marta ja saan aidata dokumentidega.");
+    expect(prompts[0]).toContain("Write the greeting in locale et.");
   });
 
   it("ignores malformed public bootstrap locale hints and falls back safely", async () => {

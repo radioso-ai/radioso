@@ -83,6 +83,7 @@ describe('embed widget helpers', () => {
         displayMode: 'panel',
         initialState: 'open',
         avatarUrl: 'https://cdn.example.com/avatar.gif',
+        pageContext: 'content',
         copy: {
           publicChatEmptyTitle: 'Ask us anything',
         },
@@ -93,6 +94,7 @@ describe('embed widget helpers', () => {
     expect(snippet).toContain('data-radioso-display-mode="panel"')
     expect(snippet).toContain('data-radioso-initial-state="open"')
     expect(snippet).toContain('data-radioso-avatar-url="https://cdn.example.com/avatar.gif"')
+    expect(snippet).toContain('data-radioso-page-context="content"')
   })
 
   it('builds a local harness URL from the current embed settings and overrides', () => {

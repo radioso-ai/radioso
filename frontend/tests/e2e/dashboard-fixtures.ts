@@ -141,8 +141,8 @@ export const installDashboardApiMocks = async (
   options: {
     platformSettings?: PlatformSettingsFixture;
     documentList?: unknown;
+    documentDetails?: Record<string, Record<string, unknown>>;
     settingsUpdates?: unknown[];
-    documentList?: unknown;
     workspaceSummary?: unknown;
     historyList?: unknown;
     historyItems?: unknown;
@@ -154,7 +154,6 @@ export const installDashboardApiMocks = async (
   let platformSettings = options.platformSettings ?? basePlatformSettings();
   const documents = options.documentList ?? documentListResponse;
   const settingsUpdates = options.settingsUpdates;
-  const documents = options.documentList ?? documentListResponse;
   const historyList = options.historyList ?? {
     conversations: [],
     total: 0,
@@ -236,6 +235,19 @@ export const installDashboardApiMocks = async (
     if (request.method() === "GET" && path === "/document/") {
       await json(route, documents);
       return;
+    }
+
+    if (request.method() === "GET" && path.startsWith("/document/")) {
+      const documentId = path.replace("/document/", "");
+      const documentListItems = (documents as { documents?: Array<Record<string, unknown>> }).documents ?? [];
+      const summary = options.documentDetails?.[documentId] ?? documentListItems.find((document) => document.id === documentId);
+      if (summary) {
+        await json(route, {
+          ...summary,
+          content: (summary as { content?: string }).content ?? "Document content",
+        });
+        return;
+      }
     }
 
     if (request.method() === "GET" && path === "/document/search/history") {

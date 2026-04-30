@@ -638,16 +638,6 @@
       return iframe
     }
 
-    const destroyIframe = () => {
-      if (!iframe) {
-        return
-      }
-
-      iframe.remove()
-      iframe = null
-      bootstrapPromise = null
-    }
-
     const handleIframeMessage = (event) => {
       if (event.source !== (iframe && iframe.contentWindow)) {
         return
@@ -659,9 +649,6 @@
 
       if (event.data.type === COLLAPSE_MESSAGE) {
         isOpen = false
-        if (displayMode === 'bubble') {
-          destroyIframe()
-        }
         updatePanelVisibility()
         return
       }
@@ -734,8 +721,6 @@
       isOpen = !isOpen
       if (isOpen) {
         ensureIframe()
-      } else if (displayMode === 'bubble') {
-        destroyIframe()
       }
       updatePanelVisibility()
     })

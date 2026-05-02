@@ -20,4 +20,15 @@ describe("application module loader", () => {
       "Loaded Radioso application module",
     );
   });
+
+  it("deduplicates modules exported by both name and default", async () => {
+    const logger = { info: vi.fn() };
+    const moduleSpecifier = new URL("../fixtures/application-module.fixture.mjs", import.meta.url).href;
+
+    const modules = await loadConfiguredApplicationModules({
+      RADIOSO_APPLICATION_MODULES: `${moduleSpecifier},${moduleSpecifier}`,
+    }, logger);
+
+    expect(modules.map((module) => module.id)).toEqual(["enterprise-module"]);
+  });
 });

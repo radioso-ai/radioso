@@ -1,1 +1,3 @@
-export default { id: "enterprise-module" };
+export const applicationModule = { id: "enterprise-module" };
+
+export default applicationModule;

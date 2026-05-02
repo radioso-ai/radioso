@@ -31,12 +31,31 @@ const asApplicationModules = (moduleExport: ApplicationModuleExport): Applicatio
     exportContainer.default,
   ];
 
-  return candidates.flatMap((candidate) => {
+  const modules = candidates.flatMap((candidate) => {
     if (!candidate) {
       return [];
     }
     return Array.isArray(candidate) ? candidate : [candidate];
   });
+
+  return modules.filter((module, index) =>
+    modules.findIndex((candidate) => candidate.id === module.id) === index
+  );
+};
+
+const appendUniqueModules = (
+  modules: ApplicationModule[],
+  nextModules: ApplicationModule[],
+  seenModuleIds: Set<string>,
+) => {
+  for (const module of nextModules) {
+    if (seenModuleIds.has(module.id)) {
+      continue;
+    }
+
+    seenModuleIds.add(module.id);
+    modules.push(module);
+  }
 };
 
 export const loadConfiguredApplicationModules = async (
@@ -49,9 +68,11 @@ export const loadConfiguredApplicationModules = async (
     .filter(Boolean) ?? [];
 
   const modules: ApplicationModule[] = [];
+  const seenModuleIds = new Set<string>();
   for (const specifier of specifiers) {
     const loaded = await import(specifier) as ApplicationModuleExport;
     const resolvedModules = asApplicationModules(loaded);
+    appendUniqueModules(modules, resolvedModules, seenModuleIds);
     logger.info(
       {
         moduleSpecifier: specifier,
@@ -59,7 +80,6 @@ export const loadConfiguredApplicationModules = async (
       },
       "Loaded Radioso application module",
     );
-    modules.push(...resolvedModules);
   }
 
   return modules;

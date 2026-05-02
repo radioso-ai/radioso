@@ -23,13 +23,13 @@ For enterprise embed development with a sibling `../radioso-enterprise` checkout
 ./run-enterprise-dev.sh
 ```
 
-This starts Postgres in Docker, builds and installs the private enterprise packages locally without saving them to the OSS package manifests, updates `backend/.env` with enterprise embed settings, and runs the backend, worker, and frontend dev servers on the host.
+This starts Postgres in Docker, builds and installs the private enterprise packages locally without saving them to the OSS package manifests, updates `backend/.env` with enterprise embed settings, and runs the backend, worker, frontend, and embed harness on the host.
 
 | Surface | URL |
 |---|---|
 | App | http://localhost:3000 |
 | API | http://localhost:8080 |
-| Embed test harness | http://127.0.0.1:4321 after running `node scripts/serve-embed-test-site.mjs` |
+| Embed test harness | http://127.0.0.1:4321 |
 
 ---
 

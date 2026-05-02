@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +16,7 @@ Starts the local enterprise development stack:
 - backend dev server on http://127.0.0.1:8080
 - document worker
 - frontend dev server on http://127.0.0.1:3000
+- embed test harness on http://127.0.0.1:4321
 
 Environment:
   RADIOSO_ENTERPRISE_REPO       Path to radioso-enterprise. Defaults to ../radioso-enterprise.
@@ -106,6 +108,20 @@ const updateEnvFile = async (filePath, updates) => {
   await fs.writeFile(filePath, `${nextLines.join("\n").replace(/\n+$/u, "")}\n`);
 };
 
+const readEnvValues = async (filePath) => {
+  const source = await fs.readFile(filePath, "utf8");
+  const values = new Map();
+
+  for (const line of source.split(/\r?\n/)) {
+    const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
+    if (match) {
+      values.set(match[1], match[2]);
+    }
+  }
+
+  return values;
+};
+
 const killServices = (services) => {
   for (const { child } of services) {
     if (!child.killed) {
@@ -167,8 +183,11 @@ const main = async () => {
   }
 
   console.log("Preparing backend/.env enterprise settings...");
+  const existingEnv = await readEnvValues(envPath);
   await updateEnvFile(envPath, {
     DATABASE_URL: "postgres://postgres:postgres@localhost:5432/radioso",
+    PUBLIC_CHAT_SESSION_SECRET:
+      existingEnv.get("PUBLIC_CHAT_SESSION_SECRET") || crypto.randomBytes(24).toString("base64"),
     RADIOSO_APPLICATION_MODULES: "@radioso/enterprise-backend-module",
     RADIOSO_ENTERPRISE_WIDGET_ORIGIN: appOrigin,
     PUBLIC_CHAT_BASE_URL: `${appOrigin}/chat`,
@@ -213,10 +232,14 @@ const main = async () => {
     enterpriseWidgetPackage,
   ], { cwd: frontendDir });
 
+  console.log("Clearing frontend build cache for enterprise route wiring...");
+  await fs.rm(path.join(frontendDir, ".next"), { recursive: true, force: true });
+
   console.log("\nEnterprise dev stack starting.");
   console.log(`Frontend: ${appOrigin}`);
   console.log("Backend:  http://127.0.0.1:8080");
-  console.log("Press Ctrl-C to stop backend, worker, and frontend.\n");
+  console.log("Embed harness: http://127.0.0.1:4321");
+  console.log("Press Ctrl-C to stop backend, worker, frontend, and embed harness.\n");
 
   const services = [
     spawnService("backend", "npm", ["run", "dev"], { cwd: backendDir }),
@@ -228,6 +251,9 @@ const main = async () => {
         RADIOSO_ENTERPRISE_FRONTEND: "true",
         BACKEND_INTERNAL_URL: "http://127.0.0.1:8080",
       },
+    }),
+    spawnService("embed-harness", "node", ["scripts/serve-embed-test-site.mjs"], {
+      cwd: repoRoot,
     }),
   ];
 

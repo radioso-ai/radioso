@@ -1,141 +1,168 @@
-# radioso Development Guidelines
+# Radioso
 
-Auto-generated from all feature plans. Last updated: 2026-02-17
+## What This Is
 
-## Active Technologies
-- TypeScript on Node.js 22 (backend), React 19 + Next.js 15 (frontend) + Express, pg, Playwright, OpenAI SDK (GPT-5.2 + embeddings), Next.js , LangChain
-- TypeScript 5.x on Node.js 22 + Express, `pg`, OpenAI SDK, Zod, Pino, a recursive text splitter package, cookie parsing/session utilities, password hashing library, Vitest, Supertes (001-rag-api-backend)
-- PostgreSQL 16+ with `pgvector`; filesystem only for local docs such as OpenAPI YAML (001-rag-api-backend)
-- TypeScript 5.x on Node.js 22 + Express, OpenAI SDK, `pg`, `pgvector`, Zod, Pino (002-improve-rag-pipeline)
-- PostgreSQL 16+ with `pgvector`; filesystem-backed feature artifacts under `/specs/002-improve-rag-pipeline/` (002-improve-rag-pipeline)
-- TypeScript 5.x on Node.js 22 + Express, pg, OpenAI SDK, Zod, Pino, Vitest, Supertes (004-strict-grounding)
-- PostgreSQL 16+ with `pgvector`; filesystem-backed Speckit artifacts (004-strict-grounding)
-- TypeScript 5.x on Node.js 22 for the backend, TypeScript 5.7 with React 19 and Next.js 16 for the frontend + Next.js App Router, React 19, Radix UI primitives, Express, Zod, browser Fetch and ReadableStream APIs (003-chat-route-citations)
-- Browser `localStorage` for authenticated user bootstrap, in-memory client state for active chat session, backend account-scoped document and chat APIs, PostgreSQL unchanged (003-chat-route-citations)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI Slider/Hover Card (006-chat-response-controls)
-- PostgreSQL account-scoped settings in `retrieval_settings`; existing chat response payloads and SSE events (006-chat-response-controls)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI primitives, Lucide icons (008-document-list-polish)
-- PostgreSQL 16+ (`documents`, `chunks` with `ON DELETE CASCADE`), no new storage systems (008-document-list-polish)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Pino, Next.js App Router, Radix UI primitives, existing audit service, PostgreSQL full-text search functions, existing embedding and rerank services (009-hybrid-retrieval)
-- PostgreSQL `chunks`, `retrieval_settings`, `documents`, `messages`, and `audit_events`; additive chunk-search and retrieval-settings columns only, no new external storage system (009-hybrid-retrieval)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, OpenAI SDK, pg, Zod, Pino, Vitest, Supertest, Next.js App Router, existing chat streaming route (010-precise-citations)
-- PostgreSQL unchanged; no new persisted data for this feature (010-precise-citations)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, pg, OpenAI SDK, Zod, Vitest, Supertest, Next.js App Router (012-async-document-processing)
-- PostgreSQL 16+ with `pgvector`; additive job/revision columns and processing-job table (012-async-document-processing)
-- TypeScript (Node.js backend, Next.js frontend) + Express, Next.js 14, React, shadcn/ui, Zod, pg (node-postgres), OpenAI SDK (014-multi-workspace)
-- PostgreSQL 16 with pgvector extension (014-multi-workspace)
-- TypeScript / Node.js 22 + Express, Zod, pg (node-postgres) (015-document-metadata)
-- PostgreSQL 16 with pgvector — JSONB columns with GIN indexes (015-document-metadata)
-- Node.js (TypeScript) backend, React (TypeScript) frontend + Express, Zod (validation), React, Tailwind CSS, shadcn/ui components (016-workspace-mgmt)
-- PostgreSQL with `pgvector` — workspaces table already has ON DELETE CASCADE on all child FK references (016-workspace-mgmt)
-- TypeScript / Node.js (backend), TypeScript / React + Next.js (frontend) + Express.js, pg (PostgreSQL driver), Vitest (testing), Shadcn/ui (frontend components) (016-chat-connectors)
-- PostgreSQL with `pgvector` extension (016-chat-connectors)
-- HCL (Terraform >= 1.5) + `hashicorp/google` provider (~> 5.x), `hashicorp/google-beta` provider (~> 5.x) (018-terraform-gcp-deploy)
-- GCS bucket for Terraform remote state; Cloud SQL PostgreSQL 16 for application data (018-terraform-gcp-deploy)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend), ESM local package under `/packages` + Express, Zod, `pg`, Vitest, Supertest, `@google-cloud/storage`, route-scoped multipart parsing, and file-format parsers for PDF, DOCX, TXT, and XLSX (020-document-import-gcs)
-- PostgreSQL 16 for document metadata and extracted text; GCP Cloud Storage bucket for original uploaded files (020-document-import-gcs)
-- TypeScript (Node.js backend, Next.js 16 / React 19 frontend) + Express, Next.js App Router, Shadcn/Radix UI, Tailwind CSS (020-anon-chat-access)
-- PostgreSQL with `pgvector` (existing) (020-anon-chat-access)
-- TypeScript 5.x on Node.js 22 + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertes (021-retrieval-stages)
-- PostgreSQL 16 with `pgvector` (unchanged) (021-retrieval-stages)
-- TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Next.js App Router, Radix UI, Vitest, Supertes (024-ingestion-settings)
-- PostgreSQL 16 with `pgvector`; additive workspace-scoped ingestion settings storage and existing document-processing tables (024-ingestion-settings)
-- Node.js 22 ESM script for the default bootstrap entry point, plus existing Bash wrapper compatibility; existing TypeScript backend/frontend remain unchanged + Node built-ins (`fs`, `path`, `child_process`, `readline`, `crypto`), Docker CLI with `docker compose`, existing Compose files under `infra/`, backend `.env.example` contract, Node test runner for bootstrap coverage (025-terminal-bootstrap)
-- Local filesystem for `backend/.env`; existing Docker-managed PostgreSQL volume via Compose (025-terminal-bootstrap)
-- TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives, React Flow for the trace graph UI (025-retrieval-trace-graph)
-- PostgreSQL 16 with `pgvector`; reuse existing audit-event metadata for persisted trace replay, no new storage system planned (025-retrieval-trace-graph)
-- PostgreSQL 16 with `pgvector` unchanged; additive audit-event metadata only, no schema change planned (026-answer-support-validator)
-- PostgreSQL 16 with `pgvector`; reuse `audit_events.metadata_json` for replayable search history snapshots and traces, no new storage system planned (026-document-search)
-- TypeScript 5.7 on Node.js 22, React 19, Next.js 16 + `react-markdown`, `remark-breaks`, existing Radix UI primitives, Lucide icons (027-markdown-chat)
-- N/A; presentation-only feature with no new persistence (027-markdown-chat)
-- TypeScript 5.x on Node.js 22 + Express, `pg`, Zod, Pino, Vitest, Supertest, local connector packages (029-split-document-worker)
-- PostgreSQL 16 with `pgvector`, existing `document_processing_jobs`, existing connector config persistence (029-split-document-worker)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend) + Express, pg, Zod, OpenAI SDK, Next.js App Router, Radix/shadcn UI, existing local parser package under `/packages` (031-security-remediation)
-- PostgreSQL 16 with `pgvector`; additive durable abuse-control persistence; existing sessions, workspace tokens, and connector config records (031-security-remediation)
-- TypeScript 5.x on Node.js 22 for backend, TypeScript 5.7 with React 19 and Next.js 16 for frontend + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives (032-split-rewrite-queries)
-- PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence for semantic and lexical rewrite instruction fields (032-split-rewrite-queries)
-- PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence for the workspace answer-support policy (034-answer-policy)
-- TypeScript 5.7 on Node.js 22 for the frontend application + React 19, Next.js 16 App Router, Radix UI primitives, Lucide icons (033-dashboard-deep-links)
-- Browser URL state plus existing browser local storage for workspace bootstrap (033-dashboard-deep-links)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, Vitest, Supertest, Next.js App Router, Radix UI primitives, Lucide icons (036-account-users)
-- PostgreSQL 16 with additive `users`, `account_memberships`, and `account_invitations` tables; existing `accounts`, `workspaces`, `sessions`, and `workspace_tokens` remain in use (036-account-users)
-- PostgreSQL 16 with `pgvector`; additive `documents.external_document_id` persistence with workspace-scoped uniqueness (037-external-document-id)
-- Node.js 22 ESM scripts for the benchmark harness, plus existing TypeScript 5.x backend and TypeScript 5.7 frontend + existing Node.js toolchain, `pg`, Docker Compose, benchmark-harness dependencies for HTTP load generation and result formatting, existing backend/frontend package scripts (037-performance-benchmarking)
-- PostgreSQL 16 for app state under test; filesystem-backed benchmark definitions in the repo and gitignored run artifacts under `.context/performance-runs/` (037-performance-benchmarking)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 + React 19 + Next.js 16 (frontend) + Express, `pg`, Zod, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router (039-assistant-bootstrap)
-- PostgreSQL 16 with additive workspace-scoped columns on `workspaces`; existing conversations/messages tables (039-assistant-bootstrap)
-- TypeScript 5.x on Node.js 22 + Express, Zod, pg, OpenAI SDK, Pino, Vitest, Supertes (039-unsupported-answer-refine)
-- PostgreSQL 16 with `pgvector`; no schema changes planned (039-unsupported-answer-refine)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, Next.js App Router, existing Radix/shadcn UI primitives, existing chat/public-chat frontend utilities (040-website-embed-widget)
-- PostgreSQL 16 with additive workspace columns; existing conversations/messages/audit events reused (040-website-embed-widget)
-- TypeScript 5.x on Node.js 22 + Express, `pg`, Zod, Pino, Vitest, Supertest, `@google-cloud/tasks`, existing local connector/document packages (042-autoscale-workers)
-- PostgreSQL 16 with `pgvector`; existing `document_processing_jobs`, `documents`, `chunks`, and audit events; Google Cloud Tasks for delivery only (042-autoscale-workers)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives (041-conversation-modes)
-- PostgreSQL 16 with `pgvector`; additive retrieval-settings persistence inside existing `attribute_controls` JSON plus additive assistant-turn audit metadata (041-conversation-modes)
-- TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, Zod v4, first-party Radioso HTTP/SDK client adapter, Vitest, tsx (043-mcp-context-server)
-- No new persistence; existing Radioso PostgreSQL state accessed only through existing HTTP APIs (043-mcp-context-server)
-- TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, `@modelcontextprotocol/node`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`) (043-mcp-context-server)
-- No new database persistence; existing Radioso PostgreSQL state is accessed only through existing HTTP APIs. MCP access sessions and approval grants are package-owned in-memory state behind replaceable store interfaces. (043-mcp-context-server)
-- TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`) (043-mcp-context-server)
-- TypeScript 5.9 on Node.js 22 + `@modelcontextprotocol/server`, Zod v4, Vitest, tsx, Node built-ins (`crypto`, `fs`, `http`), a Redis client for optional shared-store mode (043-mcp-context-server)
-- Existing Radioso PostgreSQL state remains behind HTTP APIs; package-owned MCP session and approval state must support both in-memory local mode and shared-store mode for multi-instance hosting (043-mcp-context-server)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend for later analytics emitters only) + Express, `pg`, Pino, Zod, OpenAI SDK, Vitest, Supertest, existing audit and retrieval modules; planned vendor-neutral telemetry and metrics libraries only when implementation begins (045-oss-observability)
-- PostgreSQL 16 with `pgvector`; existing `audit_events` as the initial durable event sink; no new external storage required for the planning phase (045-oss-observability)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, `pg`, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing dashboard settings docs pipeline (044-async-chat-jobs)
-- PostgreSQL 16 with `pgvector`; existing conversations, messages, audit events, and document-processing jobs; no new persistence required in this feature (044-async-chat-jobs)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, Vitest, Supertest, Next.js App Router, shadcn/Radix UI primitives (045-password-reset-email)
-- PostgreSQL 16 with existing `sessions`, `users`, `account_memberships`, `audit_events`; additive `password_reset_tokens` table (045-password-reset-email)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, Pino, OpenAI SDK, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives (048-triggered-retrieval-filters)
-- PostgreSQL 16 with existing `retrieval_settings.attribute_controls` JSON payloads plus existing `audit_events.metadata_json` diagnostics surfaces (048-triggered-retrieval-filters)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, `pg`, Zod, Pino, React 19, Next.js App Router, existing auth/workspace services (049-workspace-route-keys)
-- PostgreSQL 16 with existing `workspaces`, `sessions`, `account_memberships`, and dashboard URL state in the browser (049-workspace-route-keys)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing prompt-loader and retrieval/chat service seams (050-social-turn-intent)
-- PostgreSQL 16 with existing conversations, messages, retrieval settings, and additive assistant-turn audit metadata only (050-social-turn-intent)
-- TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing MCP package under `packages/radioso-mcp-server` (051-assistant-retrieval-boundary)
-- PostgreSQL 16 with existing `workspaces`, `retrieval_settings`, `conversations`, `messages`, `audit_events`, and existing public/embed workspace columns; no schema migration is required for the boundary split itself (051-assistant-retrieval-boundary)
-- TypeScript 5.x on Node.js 22 for backend packages; TypeScript 5.7 with React 19 and Next.js 16 for frontend if UI visibility is needed + Express, pg, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing local packages under `packages/` (054-modular-extension-points)
-- PostgreSQL 16 with `pgvector`; no new persisted data is planned for this feature (054-modular-extension-points)
+Radioso is a self-hosted context platform for grounded assistants. It provides document ingestion, retrieval, assistant chat, website embed, a REST API, a first-party TypeScript SDK, and an MCP server.
 
+This file is hand-maintained. Do not regenerate it from Speckit plans, append "recent changes", paste run logs, or add feature-specific scratch notes here. Use `specs/`, `docs/`, or `.context/` for work-in-progress context.
 
-## Project Structure
+## Stack
 
-```text
-backend/
-frontend/
-tests/
+| Concern | Choice |
+|---------|--------|
+| Backend | TypeScript on Node.js 22, Express |
+| Frontend | TypeScript 5.7, React 19, Next.js 16 App Router |
+| Database | PostgreSQL 16 with `pgvector` |
+| Validation | Zod |
+| Logging | Pino |
+| AI providers | OpenAI SDK and provider adapters |
+| UI primitives | Radix UI, shadcn-style components, Lucide icons |
+| Tests | Vitest, Supertest, Playwright |
+| Local runtime | Docker Compose via `./run-dev.sh` |
+| Package manager | `npm` in each package directory |
+
+## Architecture
+
 ```
+Browser / website embed
+          |
+          v
++----------------------+
+| frontend/            |  Next.js dashboard and chat UI
++----------+-----------+
+           | HTTP
+           v
++----------------------+
+| backend/             |  Express API, auth, settings, assistant, retrieval
++----+-----------+-----+
+     |           |
+     v           v
+PostgreSQL   document worker
+pgvector     chunking, parsing, embedding
+     ^
+     |
++----+-----------------+
+| packages/            |  MCP server, parser, connector contracts
++----------------------+
+```
+
+## Key Architectural Decisions
+
+- **Assistant and retrieval are separate surfaces.** Use assistant APIs for human-facing chat, persona, history, and channel routing. Use retrieval APIs for grounded search or answers without assistant behavior.
+- **PostgreSQL is the system of record.** Application state, documents, chunks, vectors, settings, sessions, and audit events live in Postgres. Do not introduce a new storage system without a feature plan.
+- **Document processing is asynchronous.** Upload paths should enqueue or update processing state; chunking, parsing, embedding, and connector work belong in worker flows.
+- **Runtime LLM prompt templates live under `backend/prompts/`.** Do not add runtime prompts at repo root.
+- **User-facing assistant copy comes from the LLM.** Do not hard-code conversational assistant responses in application code.
+- **Docs are product surface.** If a change affects setup, auth, APIs, ingestion, retrieval settings, SDK usage, or MCP usage, update the relevant docs in the same change.
 
 ## Commands
 
-# Add commands for 
+Full local stack:
+
+```bash
+./run-dev.sh
+```
+
+Backend:
+
+```bash
+cd backend
+npm run dev
+npm run dev:worker
+npm run build
+npm test
+npm run test:unit
+npm run test:integration
+npm run test:contract
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm run dev
+npm run build
+npm run lint
+npm test
+npm run test:e2e
+```
+
+Docs portal:
+
+```bash
+cd docs-portal
+npm run dev
+npm run build
+npm run lint
+```
+
+MCP server package:
+
+```bash
+cd packages/radioso-mcp-server
+npm run build
+npm test
+npm run smoke:all
+```
+
+TypeScript SDK:
+
+```bash
+cd typescript-sdk
+npm run sync
+npm run build
+npm test
+```
 
 ## Code Style
 
-: Follow standard conventions
-- Do not hard-code user-facing assistant or chat response strings in application code. This is a multilingual system, so runtime conversational copy must come from the LLM. If prompt text is extracted from backend code, store it under `backend/prompts/`.
-- Prefer Playwright coverage for frontend user journeys and visible UI behavior.
-- Frontend unit tests should focus on non-visual functionality such as state transitions, data transforms, API adapters, parsing, and routing logic; avoid assertions on markup structure, class names, design tokens, or cosmetic copy when an end-to-end test is the better fit.
+- Prefer small, named modules over large orchestration files. If a service mixes persistence, orchestration, audit, analytics, and formatting concerns, extract the most self-contained concern first.
+- Keep route handlers and high-level services readable top-to-bottom. Validation, mapping, trace formatting, audit metadata, and persistence details should live in named helpers.
+- Use explicit types at module boundaries. Avoid `any` in production code; use `unknown`, narrow it, or define a local type for third-party payloads.
+- Prefer pure helper modules for mapping, normalization, formatting, and trace or audit payload construction.
+- Keep comments for non-obvious constraints, safety decisions, or business rules. Do not narrate straightforward code.
+- Preserve behavior during refactors. Make extraction-only changes separately from behavior changes when practical, and verify with focused tests.
 
-### Brevity and Comprehensibility
+## Frontend Guidance
 
-- Prefer small, named modules over large orchestration files. When a service exceeds roughly 500 lines or mixes persistence, orchestration, presentation, audit, and analytics concerns, extract the most self-contained concern first.
-- Keep request and response orchestration readable top-to-bottom. Route handlers and high-level services should describe workflow, while validation, mapping, trace formatting, audit metadata, and persistence details should live in named helpers.
-- Use explicit types at module boundaries, but avoid repeating large inline object types in method signatures. Promote shared shapes to named interfaces when they appear in more than one place or obscure the workflow.
-- Prefer pure helper modules for mapping, normalization, formatting, and trace or audit payload construction. These helpers should be easy to test without database or network setup.
-- Keep comments reserved for non-obvious constraints, safety decisions, or business rules. Do not narrate straightforward code.
-- Avoid `any` in production code. Use `unknown`, narrow it, or define a local type for third-party payloads.
-- Frontend components should separate workflow state from rendering when they grow complex. Extract hooks for loading, pagination, URL synchronization, mutation flows, and derived view state.
-- Prefer domain-specific names over generic utilities. A helper named `buildNonRetrievalTrace` is better than `buildTracePayload` when the distinction matters.
-- When refactoring, preserve behavior first. Make extraction-only changes separately from behavior changes, and verify with focused tests before broad cleanup.
+- Prefer Playwright coverage for visible user journeys and UI behavior.
+- Keep frontend unit tests focused on state transitions, data transforms, API adapters, parsing, and routing logic.
+- Avoid unit-test assertions on markup structure, class names, design tokens, or cosmetic copy when an end-to-end test is a better fit.
+- Use existing Radix/shadcn patterns and Lucide icons before introducing new UI conventions.
 
 ## Documentation
 
-- Before creating or revising documentation, read [`docs/document-writer-prompt.md`](docs/document-writer-prompt.md) and follow it. This applies to `readme.md`, files under `docs/`, files under `docs-portal/content/`, and settings docs used by the product UI.
-- When delivering a new feature through Speckit, review the root `readme.md` before closing the work.
-- Update `readme.md` whenever the feature changes the Docker run flow, authentication or token setup, common API usage, or the most important ingestion or retrieval settings operators are likely to tune.
-- Store backend runtime LLM prompt templates under `backend/prompts/`. Do not add new runtime prompt files at repo root `/prompts`; if prompt text is extracted from backend code, the destination is `backend/prompts/`.
+Before editing `readme.md`, files under `docs/`, files under `docs-portal/content/`, or settings docs used by the product UI, read `docs/document-writer-prompt.md` and follow it.
 
-## Recent Changes
-- 054-modular-extension-points: Added TypeScript 5.x on Node.js 22 for backend packages; TypeScript 5.7 with React 19 and Next.js 16 for frontend if UI visibility is needed + Express, pg, OpenAI SDK, Zod, Pino, Vitest, Supertest, Next.js App Router, existing local packages under `packages/`
-- 051-assistant-retrieval-boundary: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing MCP package under `packages/radioso-mcp-server`
-- 050-social-turn-intent: Added TypeScript 5.x on Node.js 22 (backend), TypeScript 5.7 with React 19 and Next.js 16 (frontend) + Express, Zod, `pg`, OpenAI SDK, Pino, Vitest, Supertest, Next.js App Router, existing prompt-loader and retrieval/chat service seams
+Update `readme.md` whenever a feature changes Docker run flow, authentication or token setup, common API usage, or important ingestion or retrieval settings operators are likely to tune.
+
+## Project Layout
+
+```
+radioso/
+|-- AGENTS.md                    # this file; stable hand-maintained agent guide
+|-- readme.md                    # product overview and quick start
+|-- backend/                     # Express API and document workers
+|   |-- src/
+|   |-- prompts/                 # runtime LLM prompt templates
+|   `-- tests/
+|-- frontend/                    # Next.js application
+|-- packages/
+|   |-- radioso-mcp-server/      # standalone MCP server package
+|   |-- document-parser/         # local parser package
+|   `-- connector-api/           # connector contract package
+|-- typescript-sdk/              # first-party TypeScript SDK
+|-- docs/                        # product, SDK, MCP, and settings docs
+|-- docs-portal/                 # public documentation site
+|-- infra/                       # Docker Compose and Terraform
+|-- scripts/                     # bootstrap and performance scripts
+|-- specs/                       # Speckit feature artifacts
+`-- tests/                       # cross-cutting bootstrap/performance tests
+```
+
+## AGENTS.md Maintenance Rules
+
+- Keep this file concise and durable. It should describe how to work in the repo, not what happened in a single run.
+- Do not paste generated "Active Technologies" inventories, feature-plan histories, branch notes, logs, benchmark output, or TODO dumps here.
+- When adding a new package or workflow, update the relevant table, command block, or layout entry by hand.
+- Put temporary agent coordination notes in `.context/`; it is gitignored and exists for that purpose.

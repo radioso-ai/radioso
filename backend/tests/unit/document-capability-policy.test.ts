@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   capabilityNames,
   StrictCapabilityPolicy,
-} from "../../src/modules/capabilities/capabilityPolicy.js";
+} from "../../src/shared/domain/capabilityPolicy.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { createAuditService } from "../support/fakes.js";
 

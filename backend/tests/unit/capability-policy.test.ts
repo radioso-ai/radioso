@@ -5,7 +5,7 @@ import {
   DefaultAllowCapabilityPolicy,
   StrictCapabilityPolicy,
   assertKnownCapabilityName,
-} from "../../src/modules/capabilities/capabilityPolicy.js";
+} from "../../src/shared/domain/capabilityPolicy.js";
 
 describe("capability policy", () => {
   it("allows current product actions by default", async () => {

@@ -6,7 +6,7 @@ import type { TelemetrySink } from "../../shared/observability/telemetry/telemet
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { DocumentStoragePort } from "../../modules/documents/infra/gcsDocumentStorage.js";
 import type { DocumentJobDispatcherPort } from "../../modules/documents/services/documentJobDispatcher.js";
-import type { CapabilityPolicy } from "../../modules/capabilities/capabilityPolicy.js";
+import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 
 export interface ApplicationExtensionRegistry {
   connectors: ConnectorPlugin[];

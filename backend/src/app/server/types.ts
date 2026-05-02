@@ -39,7 +39,7 @@ import type { ProductAnalyticsPort } from "../../shared/analytics/productAnalyti
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import type { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
-import type { CapabilityPolicy } from "../../modules/capabilities/capabilityPolicy.js";
+import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { ApplicationModuleCoordinator } from "../composition/applicationModule.js";
 
 export interface AppDependencies {

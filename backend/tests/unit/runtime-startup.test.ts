@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../../src/app/config/env.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import { buildDependencies } from "../../src/app/server/dependencies.js";
-import { capabilityNames } from "../../src/modules/capabilities/capabilityPolicy.js";
+import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { startApiRuntime } from "../../src/runtime/startApiRuntime.js";
 import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
 import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";

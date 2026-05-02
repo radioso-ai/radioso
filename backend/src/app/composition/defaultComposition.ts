@@ -17,8 +17,8 @@ import type { AuditService } from "../../modules/audit/services/auditService.js"
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { buildTelemetrySinks, type TelemetrySinkBundle } from "../../shared/observability/telemetry/buildTelemetrySinks.js";
-import type { CapabilityPolicy } from "../../modules/capabilities/capabilityPolicy.js";
-import { DefaultAllowCapabilityPolicy } from "../../modules/capabilities/capabilityPolicy.js";
+import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import {
   ApplicationModuleCoordinator,
   createApplicationExtensionRegistry,

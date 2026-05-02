@@ -1,7 +1,7 @@
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { DocumentRecord } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../infra/gcsDocumentStorage.js";
-import { capabilityNames, DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../capabilities/capabilityPolicy.js";
+import { capabilityNames, DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import { forbidden, notFound } from "../../../shared/domain/errors.js";
 
 export interface DocumentDeletionRepositoryPort {

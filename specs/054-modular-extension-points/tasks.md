@@ -30,8 +30,8 @@
 
 ### Implementation
 
-- [x] T006 Create capability name catalog and policy interfaces in `backend/src/modules/capabilities/capabilityPolicy.ts`
-- [x] T007 Create default allow capability policy and test strict policy helper in `backend/src/modules/capabilities/capabilityPolicy.ts`
+- [x] T006 Create capability name catalog and policy interfaces in `backend/src/shared/domain/capabilityPolicy.ts`
+- [x] T007 Create default allow capability policy and test strict policy helper in `backend/src/shared/domain/capabilityPolicy.ts`
 - [x] T008 Create application module types, registration context, and lifecycle coordinator in `backend/src/app/composition/applicationModule.ts`
 - [x] T009 Export composition primitives from `backend/src/app/composition/index.ts`
 - [x] T010 Add capability policy to `AppDependencies` in `backend/src/app/server/types.ts`
@@ -100,7 +100,7 @@
 
 ### Implementation for User Story 3
 
-- [x] T028 [US3] Add representative document capability names to `backend/src/modules/capabilities/capabilityPolicy.ts`
+- [x] T028 [US3] Add representative document capability names to `backend/src/shared/domain/capabilityPolicy.ts`
 - [x] T029 [US3] Inject capability policy into the chosen document mutation service dependency path in `backend/src/app/server/dependencies.ts`
 - [x] T030 [US3] Apply the capability policy before the representative document mutation in the focused document service file under `backend/src/modules/documents/services/`
 - [x] T031 [US3] Ensure capability denials use operational errors from `backend/src/shared/domain/errors.ts` and do not introduce assistant/chat response strings

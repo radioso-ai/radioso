@@ -69,7 +69,7 @@ import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/bu
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
-import { DefaultAllowCapabilityPolicy } from "../../src/modules/capabilities/capabilityPolicy.js";
+import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import {
   createAuditService,

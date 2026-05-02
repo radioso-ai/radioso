@@ -59,8 +59,8 @@ const appendUniqueModules = (
 };
 
 export const loadConfiguredApplicationModules = async (
-  env: Pick<Env, "RADIOSO_APPLICATION_MODULES">,
-  logger: Pick<AppLogger, "info">,
+  env: Pick<Env, "NODE_ENV" | "RADIOSO_APPLICATION_MODULES">,
+  logger: Pick<AppLogger, "info" | "warn">,
 ): Promise<ApplicationModule[]> => {
   const specifiers = env.RADIOSO_APPLICATION_MODULES
     ?.split(",")
@@ -70,7 +70,21 @@ export const loadConfiguredApplicationModules = async (
   const modules: ApplicationModule[] = [];
   const seenModuleIds = new Set<string>();
   for (const specifier of specifiers) {
-    const loaded = await import(specifier) as ApplicationModuleExport;
+    let loaded: ApplicationModuleExport;
+    try {
+      loaded = await import(specifier) as ApplicationModuleExport;
+    } catch (error) {
+      if (env.NODE_ENV === "development" && isModuleNotFoundError(error)) {
+        logger.warn(
+          { moduleSpecifier: specifier, error },
+          "Skipping missing Radioso application module in development",
+        );
+        continue;
+      }
+
+      throw error;
+    }
+
     const resolvedModules = asApplicationModules(loaded);
     appendUniqueModules(modules, resolvedModules, seenModuleIds);
     logger.info(
@@ -84,3 +98,11 @@ export const loadConfiguredApplicationModules = async (
 
   return modules;
 };
+
+const isModuleNotFoundError = (error: unknown) =>
+  Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ERR_MODULE_NOT_FOUND",
+  );

@@ -107,6 +107,19 @@ const updateEnvFile = async (filePath, updates) => {
   await fs.writeFile(filePath, `${nextLines.join("\n").replace(/\n+$/u, "")}\n`);
 };
 
+const removeEnvFileKeys = async (filePath, keys) => {
+  const source = await fs.readFile(filePath, "utf8");
+  const keySet = new Set(keys);
+  const nextLines = source
+    .split(/\r?\n/)
+    .filter((line) => {
+      const match = line.match(/^([A-Z0-9_]+)=/);
+      return !match || !keySet.has(match[1]);
+    });
+
+  await fs.writeFile(filePath, `${nextLines.join("\n").replace(/\n+$/u, "")}\n`);
+};
+
 const readEnvValues = async (filePath) => {
   const source = await fs.readFile(filePath, "utf8");
   const values = new Map();
@@ -186,11 +199,13 @@ const main = async () => {
     DATABASE_URL: "postgres://postgres:postgres@localhost:5432/radioso",
     PUBLIC_CHAT_SESSION_SECRET:
       existingEnv.get("PUBLIC_CHAT_SESSION_SECRET") || crypto.randomBytes(24).toString("base64"),
-    RADIOSO_APPLICATION_MODULES: "@radioso/enterprise-backend-module",
-    RADIOSO_ENTERPRISE_WIDGET_ORIGIN: appOrigin,
     PUBLIC_CHAT_BASE_URL: `${appOrigin}/chat`,
     APP_BASE_URL: appOrigin,
   });
+  await removeEnvFileKeys(envPath, [
+    "RADIOSO_APPLICATION_MODULES",
+    "RADIOSO_ENTERPRISE_WIDGET_ORIGIN",
+  ]);
 
   console.log("Starting Postgres and freeing app ports from Compose containers...");
   await commandAllowFailure("docker", [
@@ -239,9 +254,23 @@ const main = async () => {
   console.log("Embed harness: http://127.0.0.1:4321");
   console.log("Press Ctrl-C to stop backend, worker, frontend, and embed harness.\n");
 
+  const enterpriseBackendEnv = {
+    ...process.env,
+    RADIOSO_APPLICATION_MODULES: "@radioso/enterprise-backend-module",
+    RADIOSO_ENTERPRISE_WIDGET_ORIGIN: appOrigin,
+    PUBLIC_CHAT_BASE_URL: `${appOrigin}/chat`,
+    APP_BASE_URL: appOrigin,
+  };
+
   const services = [
-    spawnService("backend", "npm", ["run", "dev"], { cwd: backendDir }),
-    spawnService("worker", "npm", ["run", "dev:worker"], { cwd: backendDir }),
+    spawnService("backend", "npm", ["run", "dev"], {
+      cwd: backendDir,
+      env: enterpriseBackendEnv,
+    }),
+    spawnService("worker", "npm", ["run", "dev:worker"], {
+      cwd: backendDir,
+      env: enterpriseBackendEnv,
+    }),
     spawnService("frontend", "npm", ["run", "dev"], {
       cwd: frontendDir,
       env: {

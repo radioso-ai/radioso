@@ -138,7 +138,8 @@ const loadEmbedScript = () => {
       json: () => Promise.resolve({
         workspaceName: 'Support',
         publicChatToken: 'public-token',
-        embedSessionToken: 'session-token',
+        publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
+        publicSessionToken: 'session-token',
       }),
     }),
     window,

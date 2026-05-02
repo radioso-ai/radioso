@@ -213,10 +213,10 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       env {
-        name = "WEBSITE_EMBED_SECRET"
+        name = "PUBLIC_CHAT_SESSION_SECRET"
         value_source {
           secret_key_ref {
-            secret  = google_secret_manager_secret.secrets["website-embed-secret"].secret_id
+            secret  = google_secret_manager_secret.secrets["public-chat-session-secret"].secret_id
             version = "latest"
           }
         }
@@ -307,21 +307,11 @@ resource "google_cloud_run_v2_service" "frontend" {
         name  = "BACKEND_INTERNAL_URL"
         value = google_cloud_run_v2_service.backend[0].uri
       }
-      env {
-        name = "WEBSITE_EMBED_SECRET"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.secrets["website-embed-secret"].secret_id
-            version = "latest"
-          }
-        }
-      }
     }
   }
 
   depends_on = [
     google_secret_manager_secret_version.secrets,
-    google_secret_manager_secret_iam_member.frontend_website_embed_access,
   ]
 
   lifecycle {
@@ -518,15 +508,6 @@ resource "google_cloud_run_v2_service" "document_worker" {
         value_source {
           secret_key_ref {
             secret  = google_secret_manager_secret.secrets["workspace-token-secret"].secret_id
-            version = "latest"
-          }
-        }
-      }
-      env {
-        name = "WEBSITE_EMBED_SECRET"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.secrets["website-embed-secret"].secret_id
             version = "latest"
           }
         }

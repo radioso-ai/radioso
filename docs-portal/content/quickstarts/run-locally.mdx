@@ -31,7 +31,7 @@ This is the intended local bootstrap path. It:
 - checks local prerequisites
 - creates or reuses `backend/.env`
 - prompts for the AI provider and required credentials
-- generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `WEBSITE_EMBED_SECRET`
+- generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `PUBLIC_CHAT_SESSION_SECRET`
 - writes `AUTH_SKIP_EMAIL_VERIFICATION=true` for the default local bootstrap flow
 - defaults outbound mail to `MAIL_DRIVER=log`
 - configures uploaded document storage to use the local filesystem by default

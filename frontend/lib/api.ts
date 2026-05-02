@@ -23,11 +23,12 @@ export {
   getStoredActiveWorkspacePublicRouteKey,
   readStoredAnonymousSessionId,
   readStoredEmbedBootstrapSession,
-  readStoredEmbedSessionToken,
+  readStoredPublicSessionToken,
   removeWorkspaceToken,
   seedWorkspaceSession,
   setPendingAccountSwitchId,
   storeEmbedBootstrapSession,
+  storePublicSessionToken,
 } from './api-client'
 
 // Types based on OpenAPI schema
@@ -281,6 +282,15 @@ export interface WebsiteEmbedPageContext {
   pageLocale?: string | null
   browserLocale?: string | null
   content?: string | null
+}
+
+export interface PublicChatSessionResponse {
+  workspaceName: string
+  publicChatToken: string
+  publicSessionId: string
+  publicSessionToken: string
+  assistantBootstrapActive: boolean
+  expiresAt: string
 }
 
 const toAssistantChatPayload = (data: ChatRequest) => ({
@@ -1497,6 +1507,38 @@ export const accountApi = {
 
 // Public Chat API (anonymous, cookie-based auth)
 export const publicChatApi = {
+  async createSession(
+    token: string,
+    data: {
+      channel: 'anonymous_link' | 'website_embed'
+      anonymousSessionId?: string | null
+      pageContext?: WebsiteEmbedPageContext | null
+    },
+  ): Promise<PublicChatSessionResponse> {
+    const response = await fetch(`${API_BASE}/public/chat/${token}/sessions`, {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-Prefix': '/backend',
+      },
+      body: JSON.stringify({
+        channel: data.channel,
+        anonymousSessionId: data.anonymousSessionId ?? undefined,
+        pageContext: data.pageContext,
+      }),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    const session = await response.json() as PublicChatSessionResponse
+    storePublicSessionToken(session.publicChatToken, session.publicSessionToken, session.expiresAt)
+    return session
+  },
+
   async sendMessage(
     token: string,
     data: { message: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null },

@@ -1521,14 +1521,17 @@ components:
             websiteEmbedLauncherPosition:
               type: string
               enum: *a8
-    PublicEmbedSessionResponse:
+    PublicChatSessionResponse:
       type: object
       properties:
         workspaceName:
           type: string
         publicChatToken:
           type: string
-        embedSessionToken:
+        publicSessionId:
+          type: string
+          format: uuid
+        publicSessionToken:
           type: string
         assistantBootstrapActive:
           type: boolean
@@ -1538,15 +1541,51 @@ components:
       required:
         - workspaceName
         - publicChatToken
-        - embedSessionToken
+        - publicSessionId
+        - publicSessionToken
         - assistantBootstrapActive
         - expiresAt
-    PublicEmbedSessionRequest:
+    PublicChatSessionRequest:
       type: object
       properties:
+        channel:
+          type: string
+          enum:
+            - anonymous_link
+            - website_embed
         anonymousSessionId:
           type: string
           format: uuid
+        pageContext:
+          type: object
+          properties:
+            pageUrl:
+              type:
+                - string
+                - "null"
+              maxLength: 2048
+            pageTitle:
+              type:
+                - string
+                - "null"
+              maxLength: 180
+            pageLocale:
+              type:
+                - string
+                - "null"
+              maxLength: 35
+            browserLocale:
+              type:
+                - string
+                - "null"
+              maxLength: 35
+            content:
+              type:
+                - string
+                - "null"
+              maxLength: 6000
+      required:
+        - channel
     WorkspaceIngestionReprocessResponse:
       type: object
       properties:
@@ -3354,12 +3393,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
-  /api/v1/public/embed/{token}/session:
+  /api/v1/public/chat/{token}/sessions:
     post:
       tags:
         - Assistant
-      summary: Bootstrap an embedded chat session for an approved website origin
-      operationId: createPublicEmbedSession
+      summary: Create a public chat session from a launch token
+      operationId: createPublicChatSession
       parameters:
         - schema:
             type: string
@@ -3371,14 +3410,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PublicEmbedSessionRequest"
+              $ref: "#/components/schemas/PublicChatSessionRequest"
       responses:
         "200":
-          description: Embedded chat session bootstrap returned
+          description: Public chat session returned
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PublicEmbedSessionResponse"
+                $ref: "#/components/schemas/PublicChatSessionResponse"
         "400":
           description: Request validation failed
           content:
@@ -3386,13 +3425,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Origin not allowed
+          description: Origin not allowed for this public chat channel
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Embedded chat not found
+          description: Public chat not found
           content:
             application/json:
               schema:

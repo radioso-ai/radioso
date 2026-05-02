@@ -156,7 +156,8 @@ export function EmbeddedChatFrame({
           typeof event.data.session === 'object' &&
           typeof event.data.session.workspaceName === 'string' &&
           typeof event.data.session.publicChatToken === 'string' &&
-          typeof event.data.session.embedSessionToken === 'string'
+          typeof event.data.session.publicSessionId === 'string' &&
+          typeof event.data.session.publicSessionToken === 'string'
             ? event.data.session
             : null
 
@@ -169,7 +170,8 @@ export function EmbeddedChatFrame({
         storeEmbedBootstrapSession(token, {
           workspaceName: session.workspaceName,
           publicChatToken: session.publicChatToken,
-          embedSessionToken: session.embedSessionToken,
+          publicSessionId: session.publicSessionId,
+          publicSessionToken: session.publicSessionToken,
           expiresAt: typeof session.expiresAt === 'string' ? session.expiresAt : new Date(Date.now() + 60_000).toISOString(),
         })
         setState({

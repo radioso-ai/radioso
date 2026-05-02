@@ -1,6 +1,6 @@
 ---
 title: Public chat and embed
-description: Bootstrap anonymous website embed sessions and use the public chat routes that preserve session continuity with cookies.
+description: Create public chat sessions and use the public chat routes that preserve visitor continuity.
 ---
 
 # Public chat and embed
@@ -10,7 +10,7 @@ These routes support anonymous or embedded chat experiences. They do not use the
 ## Relevant endpoints
 
 ```text
-POST /api/v1/public/embed/{token}/session
+POST /api/v1/public/chat/{token}/sessions
 GET  /api/v1/public/chat/{token}
 POST /api/v1/public/chat/{token}
 GET  /api/v1/public/chat/{token}/history/{conversationId}
@@ -19,21 +19,38 @@ GET  /api/v1/public/chat/{token}/history/{conversationId}
 ## How it works
 
 1. Enable public chat or website embed in general settings.
-2. Use the public token associated with that workspace.
-3. For website embed, bootstrap a session from an approved origin.
-4. Preserve the server-set anonymous session cookie across requests.
+2. Create a public chat session from the launch token.
+3. Send the returned `publicSessionToken` as `x-radioso-public-session` on chat and history requests.
+4. Preserve the server-set anonymous session cookie across requests when available.
 
-The key point is that session continuity is maintained by an HttpOnly cookie, not by a fixed anonymous secret stored in the client.
+The key point is that the launch token identifies the public surface. The public session identifies the visitor.
 
-## Bootstrap an embed session
+## Create a public chat session
 
-Use this route from an approved website origin:
+Use this route before sending chat messages:
 
 ```text
-POST /api/v1/public/embed/{token}/session
+POST /api/v1/public/chat/{token}/sessions
 ```
 
-The request can include `anonymousSessionId` when you want to reattach a known anonymous visitor identity.
+For a public link:
+
+```json
+{
+  "channel": "anonymous_link"
+}
+```
+
+For a website embed, call the route from an approved origin:
+
+```json
+{
+  "channel": "website_embed",
+  "anonymousSessionId": "optional-existing-session-id"
+}
+```
+
+The response includes `publicChatToken`, `publicSessionId`, `publicSessionToken`, `workspaceName`, `assistantBootstrapActive`, and `expiresAt`.
 
 ## Send a public chat message
 
@@ -55,7 +72,7 @@ Use `GET /api/v1/public/chat/{token}/history/{conversationId}` to fetch one conv
 
 ## Common failure modes
 
-- `403` on the embed session route usually means the origin is not in the allowlist.
+- `403` on a website embed session usually means the origin is not in the allowlist.
 - `404` usually means the public token is unknown or not active.
 - `429` on public chat means the anonymous rate limit has been reached.
 - If history appears empty, the browser or cookie jar is probably not preserving the HttpOnly anonymous session cookie.

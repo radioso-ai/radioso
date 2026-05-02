@@ -14,6 +14,7 @@ import { normalizeWebsiteEmbedLocale } from '@/lib/embed-widget'
 import {
   clearStoredAnonymousSession,
   publicChatApi,
+  readStoredAnonymousSessionId,
   type AnswerSegment,
   type Citation,
   type ChatSuggestion,
@@ -188,11 +189,13 @@ export const resolveAnonymousChatBootstrapLocale = ({
 
 export function AnonymousChatProvider({
   token,
+  sessionChannel,
   localeOverride,
   pageContext,
   children,
 }: {
   token: string
+  sessionChannel?: 'anonymous_link' | null
   localeOverride?: string | null
   pageContext?: WebsiteEmbedPageContext | null
   children: ReactNode
@@ -221,6 +224,14 @@ export function AnonymousChatProvider({
     setRetryAfterSeconds(null)
 
     try {
+      if (sessionChannel) {
+        await publicChatApi.createSession(token, {
+          channel: sessionChannel,
+          anonymousSessionId: readStoredAnonymousSessionId(token),
+          pageContext,
+        })
+      }
+
       const response = await publicChatApi.listConversations(token, { limit: 1 })
       setWorkspaceName(response.workspaceName ?? null)
 
@@ -276,7 +287,7 @@ export function AnonymousChatProvider({
     } finally {
       setIsHydrating(false)
     }
-  }, [localeOverride, pageContext, token])
+  }, [localeOverride, pageContext, sessionChannel, token])
 
   useEffect(() => {
     let cancelled = false

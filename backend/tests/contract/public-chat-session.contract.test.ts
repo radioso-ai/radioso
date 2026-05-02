@@ -3,7 +3,7 @@ import request from "supertest";
 
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
-describe("public embed contract", () => {
+describe("public chat session contract", () => {
   const enableWebsiteEmbed = async (app: any, session: { cookie: string; workspaceId: string }) => {
     const response = await request(app)
       .put("/api/v1/settings/general")
@@ -17,23 +17,27 @@ describe("public embed contract", () => {
     return response.body.websiteEmbedToken as string;
   };
 
-  it("bootstraps an embedded session for an approved origin", async () => {
+  const createWebsiteEmbedPublicSession = (app: any, token: string, origin = "https://example.com", body = {}) =>
+    request(app)
+      .post(`/api/v1/public/chat/${token}/sessions`)
+      .set("Origin", origin)
+      .send({ channel: "website_embed", ...body });
+
+  it("creates a website embed session for an approved origin", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-embed-approved@example.com");
 
     const token = await enableWebsiteEmbed(app, session);
     const origin = "https://example.com";
 
-    const response = await request(app)
-      .post(`/api/v1/public/embed/${token}/session`)
-      .set("Origin", origin);
+    const response = await createWebsiteEmbedPublicSession(app, token, origin);
 
     expect(response.status).toBe(200);
-    expect(response.headers["access-control-allow-origin"]).toBe(origin);
     expect(response.body).toMatchObject({
       workspaceName: expect.any(String),
       publicChatToken: expect.any(String),
-      embedSessionToken: expect.any(String),
+      publicSessionId: expect.any(String),
+      publicSessionToken: expect.any(String),
       assistantBootstrapActive: false,
     });
     expect(response.body.expiresAt).toEqual(expect.any(String));
@@ -42,22 +46,19 @@ describe("public embed contract", () => {
   it("returns 503 when website embed secret is unset", async () => {
     const { app } = createTestApp({
       envOverrides: {
-        WEBSITE_EMBED_SECRET: undefined,
+        PUBLIC_CHAT_SESSION_SECRET: undefined,
       },
     });
     const session = await issueTestSession(app, "public-embed-missing-secret@example.com");
 
     const token = await enableWebsiteEmbed(app, session);
     const origin = "https://example.com";
-    const response = await request(app)
-      .post(`/api/v1/public/embed/${token}/session`)
-      .set("Origin", origin);
+    const response = await createWebsiteEmbedPublicSession(app, token, origin);
 
     expect(response.status).toBe(503);
-    expect(response.headers["access-control-allow-origin"]).toBe(origin);
     expect(response.body.error).toMatchObject({
       code: "service_unavailable",
-      message: "Website embed sessions are not configured.",
+      message: "Public chat sessions are not configured.",
     });
   });
 
@@ -68,9 +69,7 @@ describe("public embed contract", () => {
     const token = await enableWebsiteEmbed(app, session);
     const origin = "https://not-approved.example.com";
 
-    const response = await request(app)
-      .post(`/api/v1/public/embed/${token}/session`)
-      .set("Origin", origin);
+    const response = await createWebsiteEmbedPublicSession(app, token, origin);
 
     expect(response.status).toBe(403);
     expect(response.body.error).toMatchObject({
@@ -93,31 +92,39 @@ describe("public embed contract", () => {
     const session = await issueTestSession(app, "public-embed-origin-header@example.com");
 
     const token = await enableWebsiteEmbed(app, session);
-    const response = await request(app).post(`/api/v1/public/embed/${token}/session`);
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${token}/sessions`)
+      .send({ channel: "website_embed" });
 
     expect(response.status).toBe(400);
     expect(response.body.error).toMatchObject({
       code: "bad_request",
-      message: "Invalid embed session request",
+      message: "Invalid public chat session request",
     });
   });
 
-  it("preflights an approved origin for browser CORS", async () => {
+  it("creates an anonymous link session", async () => {
     const { app } = createTestApp();
-    const session = await issueTestSession(app, "public-embed-preflight@example.com");
+    const session = await issueTestSession(app, "public-chat-session@example.com");
 
-    const token = await enableWebsiteEmbed(app, session);
-    const origin = "https://example.com";
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+      });
 
+    const anonymousChatToken = new URL(settings.body.anonymousChatUrl).pathname.split("/").at(-1);
     const response = await request(app)
-      .options(`/api/v1/public/embed/${token}/session`)
-      .set("Origin", origin)
-      .set("Access-Control-Request-Method", "POST")
-      .set("Access-Control-Request-Headers", "content-type");
+      .post(`/api/v1/public/chat/${anonymousChatToken}/sessions`)
+      .send({ channel: "anonymous_link" });
 
-    expect(response.status).toBe(204);
-    expect(response.headers["access-control-allow-origin"]).toBe(origin);
-    expect(response.headers["access-control-allow-methods"]).toContain("POST");
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      publicChatToken: anonymousChatToken,
+      publicSessionId: expect.any(String),
+      publicSessionToken: expect.any(String),
+    });
   });
 
   it("allows website embed launches even when anonymous chat is disabled", async () => {
@@ -135,16 +142,14 @@ describe("public embed contract", () => {
     const token = response.body.websiteEmbedToken as string;
     const origin = "https://example.com";
 
-    const embedSession = await request(app)
-      .post(`/api/v1/public/embed/${token}/session`)
-      .set("Origin", origin);
+    const publicSession = await createWebsiteEmbedPublicSession(app, token, origin);
 
     expect(response.body.anonymousChatEnabled).toBe(false);
-    expect(embedSession.status).toBe(200);
+    expect(publicSession.status).toBe(200);
 
     const chatResponse = await request(app)
-      .post(`/api/v1/public/chat/${embedSession.body.publicChatToken}`)
-      .set("x-radioso-embed-session", embedSession.body.embedSessionToken)
+      .post(`/api/v1/public/chat/${publicSession.body.publicChatToken}`)
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
       .send({
         message: "What can you do?",
         stream: false,
@@ -160,13 +165,11 @@ describe("public embed contract", () => {
     const token = await enableWebsiteEmbed(app, session);
     const origin = "https://example.com";
 
-    const firstEmbedSession = await request(app)
-      .post(`/api/v1/public/embed/${token}/session`)
-      .set("Origin", origin);
+    const firstPublicSession = await createWebsiteEmbedPublicSession(app, token, origin);
 
     const firstChat = await request(app)
-      .post(`/api/v1/public/chat/${firstEmbedSession.body.publicChatToken}`)
-      .set("x-radioso-embed-session", firstEmbedSession.body.embedSessionToken)
+      .post(`/api/v1/public/chat/${firstPublicSession.body.publicChatToken}`)
+      .set("x-radioso-public-session", firstPublicSession.body.publicSessionToken)
       .send({
         message: "What can you do?",
         stream: false,
@@ -174,18 +177,15 @@ describe("public embed contract", () => {
 
     expect(firstChat.status).toBe(200);
 
-    const resumedEmbedSession = await request(app)
-      .post(`/api/v1/public/embed/${token}/session`)
-      .set("Origin", origin)
-      .send({
-        anonymousSessionId: firstChat.headers["x-radioso-anonymous-session"],
-      });
+    const resumedPublicSession = await createWebsiteEmbedPublicSession(app, token, origin, {
+      anonymousSessionId: firstChat.headers["x-radioso-anonymous-session"],
+    });
 
-    expect(resumedEmbedSession.status).toBe(200);
+    expect(resumedPublicSession.status).toBe(200);
 
     const historyResponse = await request(app)
-      .get(`/api/v1/public/chat/${resumedEmbedSession.body.publicChatToken}`)
-      .set("x-radioso-embed-session", resumedEmbedSession.body.embedSessionToken);
+      .get(`/api/v1/public/chat/${resumedPublicSession.body.publicChatToken}`)
+      .set("x-radioso-public-session", resumedPublicSession.body.publicSessionToken);
 
     expect(historyResponse.status).toBe(200);
     expect(historyResponse.body.conversations).toEqual(
@@ -210,9 +210,7 @@ describe("public embed contract", () => {
       });
 
     const origin = "https://example.com";
-    const response = await request(app)
-      .post(`/api/v1/public/embed/${token}/session`)
-      .set("Origin", origin);
+    const response = await createWebsiteEmbedPublicSession(app, token, origin);
 
     expect(response.status).toBe(404);
 

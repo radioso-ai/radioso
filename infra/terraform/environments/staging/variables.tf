@@ -94,8 +94,8 @@ variable "workspace_token_secret" {
   sensitive   = true
 }
 
-variable "website_embed_secret" {
-  description = "Website embed signing secret for staging."
+variable "public_chat_session_secret" {
+  description = "Public chat session signing secret for staging."
   type        = string
   sensitive   = true
 }

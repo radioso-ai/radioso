@@ -2,12 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Request, Response, NextFunction } from "express";
 import {
   ANONYMOUS_SESSION_HEADER,
-  ANONYMOUS_SESSION_RESET_HEADER,
+  PUBLIC_CHAT_SESSION_HEADER,
   resolveAnonymousSession,
   shouldUseSecureAnonymousCookie,
-  WEBSITE_EMBED_SESSION_HEADER,
 } from "../../src/app/http/middleware/resolveAnonymousSession.js";
-import { issueWebsiteEmbedSession } from "../../src/modules/settings/domain/websiteEmbedSession.js";
+import { issuePublicChatSession } from "../../src/modules/settings/domain/publicChatSession.js";
 import { InMemoryWorkspaceRepository } from "../support/fakes.js";
 
 const originalNodeEnv = process.env.NODE_ENV;
@@ -42,6 +41,21 @@ const createMockReqRes = (
 
 describe("resolveAnonymousSession", () => {
   let workspaceRepository: InMemoryWorkspaceRepository;
+
+  const issueSessionHeader = (
+    workspaceId: string,
+    publicSessionId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+    sourceChannel: "anonymous" | "website_embed" = "anonymous",
+  ) => {
+    const session = issuePublicChatSession(SESSION_SECRET, {
+      workspaceId,
+      publicChatToken: "test-token-1234567890",
+      publicSessionId,
+      sourceChannel,
+      sourceOrigin: sourceChannel === "website_embed" ? "https://example.com" : null,
+    });
+    return { [PUBLIC_CHAT_SESSION_HEADER]: session.token };
+  };
 
   beforeEach(() => {
     workspaceRepository = new InMemoryWorkspaceRepository();
@@ -90,7 +104,11 @@ describe("resolveAnonymousSession", () => {
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 15);
 
     const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
-    const { req, res, next, getError } = createMockReqRes({ token: "test-token-1234567890" });
+    const { req, res, next, getError } = createMockReqRes(
+      { token: "test-token-1234567890" },
+      {},
+      issueSessionHeader(workspace.id),
+    );
 
     await middleware(req, res, next);
 
@@ -108,14 +126,15 @@ describe("resolveAnonymousSession", () => {
     const { req, res, next } = createMockReqRes(
       { token: "test-token-1234567890" },
       { [`anon_session_${workspace.id}`]: "existing-session-id" },
+      issueSessionHeader(workspace.id, "67acb0c8-caad-4a1b-9fef-70cbca3f7d12"),
     );
 
     await middleware(req, res, next);
 
-    expect(res.locals.anonymousSessionId).toBe("existing-session-id");
+    expect(res.locals.anonymousSessionId).toBe("67acb0c8-caad-4a1b-9fef-70cbca3f7d12");
   });
 
-  it("ignores caller-supplied anonymous session headers for plain public chat", async () => {
+  it("uses the signed public session instead of caller-supplied anonymous session headers", async () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
 
@@ -124,15 +143,18 @@ describe("resolveAnonymousSession", () => {
     const { req, res, next } = createMockReqRes(
       { token: "test-token-1234567890" },
       { [`anon_session_${workspace.id}`]: "existing-session-id" },
-      { [ANONYMOUS_SESSION_HEADER]: sessionId },
+      {
+        [ANONYMOUS_SESSION_HEADER]: sessionId,
+        ...issueSessionHeader(workspace.id, "4fb60e22-8373-44a0-8059-2b587a82a205"),
+      },
     );
 
     await middleware(req, res, next);
 
-    expect(res.locals.anonymousSessionId).toBe("existing-session-id");
+    expect(res.locals.anonymousSessionId).toBe("4fb60e22-8373-44a0-8059-2b587a82a205");
   });
 
-  it("creates a fresh anonymous session when reset is requested for plain public chat", async () => {
+  it("uses a new anonymous session when the caller presents a new signed public session", async () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateAnonymousChatSettings(workspace.id, true, "test-token-1234567890", 10);
 
@@ -140,13 +162,13 @@ describe("resolveAnonymousSession", () => {
     const { req, res, next } = createMockReqRes(
       { token: "test-token-1234567890" },
       { [`anon_session_${workspace.id}`]: "existing-session-id" },
-      { [ANONYMOUS_SESSION_RESET_HEADER]: "1" },
+      issueSessionHeader(workspace.id, "4fb60e22-8373-44a0-8059-2b587a82a205"),
     );
 
     await middleware(req, res, next);
 
     expect(res.locals.anonymousSessionId).toBeDefined();
-    expect(res.locals.anonymousSessionId).not.toBe("existing-session-id");
+    expect(res.locals.anonymousSessionId).toBe("4fb60e22-8373-44a0-8059-2b587a82a205");
   });
 
   it("generates a new session id and sets cookie when none exists", async () => {
@@ -155,7 +177,11 @@ describe("resolveAnonymousSession", () => {
 
     const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     const setCookieNames: string[] = [];
-    const { req, res, next } = createMockReqRes({ token: "test-token-1234567890" });
+    const { req, res, next } = createMockReqRes(
+      { token: "test-token-1234567890" },
+      {},
+      issueSessionHeader(workspace.id),
+    );
     (res as any).cookie = (name: string, _value: string, _options: unknown) => {
       setCookieNames.push(name);
     };
@@ -173,7 +199,11 @@ describe("resolveAnonymousSession", () => {
 
     const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     const cookies = new Map<string, string>();
-    const { req, res, next } = createMockReqRes({ token: "test-token-1234567890" });
+    const { req, res, next } = createMockReqRes(
+      { token: "test-token-1234567890" },
+      {},
+      issueSessionHeader(workspace.id),
+    );
     (res as any).cookie = (name: string, value: string, _options: unknown) => {
       cookies.set(name, value);
     };
@@ -192,7 +222,11 @@ describe("resolveAnonymousSession", () => {
 
     const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     const cookies = new Map<string, string>();
-    const first = createMockReqRes({ token: "test-token-1234567890" });
+    const first = createMockReqRes(
+      { token: "test-token-1234567890" },
+      {},
+      issueSessionHeader(workspace.id),
+    );
     (first.res as any).cookie = (name: string, value: string, _options: unknown) => {
       cookies.set(name, value);
     };
@@ -206,12 +240,12 @@ describe("resolveAnonymousSession", () => {
         [`anon_session_${workspace.id}`]: "existing-session-id",
         [`anon_rate_limit_${workspace.id}`]: cookies.get(`anon_rate_limit_${workspace.id}`)!,
       },
-      { [ANONYMOUS_SESSION_RESET_HEADER]: "1" },
+      issueSessionHeader(workspace.id, "4fb60e22-8373-44a0-8059-2b587a82a205"),
     );
 
     await middleware(reset.req, reset.res, reset.next);
 
-    expect(reset.res.locals.anonymousSessionId).not.toBe("existing-session-id");
+    expect(reset.res.locals.anonymousSessionId).toBe("4fb60e22-8373-44a0-8059-2b587a82a205");
     expect(reset.res.locals.anonymousRateLimitId).toBe(originalRateLimitId);
     expect(reset.res.locals.anonymousRateLimitIdFromCookie).toBe(true);
   });
@@ -254,7 +288,7 @@ describe("resolveAnonymousSession", () => {
     const { req, res, next } = createMockReqRes(
       { token: "test-token-1234567890" },
       {},
-      { host: "localhost:3000" },
+      { host: "localhost:3000", ...issueSessionHeader(workspace.id) },
     );
     (res as unknown as { cookie: (name: string, value: string, options: Record<string, unknown>) => void }).cookie =
       (_name, _value, options) => {
@@ -272,7 +306,11 @@ describe("resolveAnonymousSession", () => {
 
     const middleware = resolveAnonymousSession(workspaceRepository, SESSION_SECRET);
     let sessionHeaderValue = "";
-    const { req, res, next } = createMockReqRes({ token: "test-token-1234567890" });
+    const { req, res, next } = createMockReqRes(
+      { token: "test-token-1234567890" },
+      {},
+      issueSessionHeader(workspace.id),
+    );
     (res as unknown as { setHeader: (name: string, value: string) => void }).setHeader = (name, value) => {
       if (name.toLowerCase() === ANONYMOUS_SESSION_HEADER) {
         sessionHeaderValue = value;
@@ -286,7 +324,7 @@ describe("resolveAnonymousSession", () => {
     );
   });
 
-  it("accepts a valid embed session when anonymous chat is disabled", async () => {
+  it("accepts a valid website embed public session when anonymous chat is disabled", async () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateGeneralSettings(workspace.id, {
       anonymousChatEnabled: false,
@@ -304,10 +342,11 @@ describe("resolveAnonymousSession", () => {
       websiteEmbedLauncherPosition: "bottom-right",
     });
 
-    const embedSession = issueWebsiteEmbedSession(SESSION_SECRET, {
+    const embedSession = issuePublicChatSession(SESSION_SECRET, {
       workspaceId: workspace.id,
       publicChatToken: "test-token-1234567890",
-      anonymousSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+      publicSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+      sourceChannel: "website_embed",
       sourceOrigin: "https://example.com",
     });
 
@@ -316,7 +355,7 @@ describe("resolveAnonymousSession", () => {
       { token: "test-token-1234567890" },
       {},
       {
-        [WEBSITE_EMBED_SESSION_HEADER]: embedSession.token,
+        [PUBLIC_CHAT_SESSION_HEADER]: embedSession.token,
       },
     );
 
@@ -328,7 +367,7 @@ describe("resolveAnonymousSession", () => {
     expect(res.locals.sourceOrigin).toBe("https://example.com");
   });
 
-  it("rejects an invalid embed session when anonymous chat is disabled", async () => {
+  it("rejects an invalid public session when anonymous chat is disabled", async () => {
     const workspace = await workspaceRepository.create("account-1", "Test");
     await workspaceRepository.updateGeneralSettings(workspace.id, {
       anonymousChatEnabled: false,
@@ -346,10 +385,11 @@ describe("resolveAnonymousSession", () => {
       websiteEmbedLauncherPosition: "bottom-right",
     });
 
-    const embedSession = issueWebsiteEmbedSession(SESSION_SECRET, {
+    const embedSession = issuePublicChatSession(SESSION_SECRET, {
       workspaceId: workspace.id,
       publicChatToken: "test-token-1234567890",
-      anonymousSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+      publicSessionId: "67acb0c8-caad-4a1b-9fef-70cbca3f7d12",
+      sourceChannel: "website_embed",
       sourceOrigin: "https://example.com",
     });
 
@@ -358,7 +398,7 @@ describe("resolveAnonymousSession", () => {
       { token: "test-token-1234567890" },
       {},
       {
-        [WEBSITE_EMBED_SESSION_HEADER]: `${embedSession.token}tampered`,
+        [PUBLIC_CHAT_SESSION_HEADER]: `${embedSession.token}tampered`,
       },
     );
 

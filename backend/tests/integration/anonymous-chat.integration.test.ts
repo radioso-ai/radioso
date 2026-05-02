@@ -10,6 +10,14 @@ const findAnonymousCookie = (cookies: string[] | string | undefined) =>
     typeof cookie === "string" && cookie.startsWith("anon_session_"),
   );
 
+const createPublicSession = async (app: any, chatToken: string) => {
+  const response = await request(app)
+    .post(`/api/v1/public/chat/${chatToken}/sessions`)
+    .send({ channel: "anonymous_link" });
+  expect(response.status).toBe(200);
+  return response.body as { publicSessionToken: string };
+};
+
 describe("anonymous chat bootstrap integration", () => {
   beforeEach(() => {
     resetRateLimiterState();
@@ -42,9 +50,11 @@ describe("anonymous chat bootstrap integration", () => {
 
     expect(settings.status).toBe(200);
     const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1];
+    const publicSession = await createPublicSession(app, chatToken);
 
     const bootstrap = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ startConversation: true, stream: false, userExpectedLocale: "en-US" });
 
     expect(bootstrap.status).toBe(200);
@@ -53,6 +63,7 @@ describe("anonymous chat bootstrap integration", () => {
 
     const followUp = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!)
       .send({
         conversationId: bootstrap.body.conversationId,
@@ -65,6 +76,7 @@ describe("anonymous chat bootstrap integration", () => {
 
     const history = await request(app)
       .get(`/api/v1/public/chat/${chatToken}/history/${bootstrap.body.conversationId}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!);
 
     expect(history.status).toBe(200);
@@ -153,9 +165,11 @@ describe("anonymous chat bootstrap integration", () => {
 
     expect(settings.status).toBe(200);
     const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1];
+    const publicSession = await createPublicSession(app, chatToken);
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ message: "What do the testing docs cover?", stream: false });
 
     expect(response.status).toBe(200);
@@ -180,6 +194,7 @@ describe("anonymous chat bootstrap integration", () => {
     const anonCookie = findAnonymousCookie(response.headers["set-cookie"]);
     const history = await request(app)
       .get(`/api/v1/public/chat/${chatToken}/history/${response.body.conversationId}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!)
       .expect(200);
     const assistantTurn = history.body.messages.find((message: { role: string }) => message.role === "assistant");

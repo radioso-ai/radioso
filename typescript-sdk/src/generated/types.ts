@@ -21,7 +21,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/public/embed/{token}/session": {
+    "/api/v1/public/chat/{token}/sessions": {
         parameters: {
             query?: never;
             header?: never;
@@ -30,8 +30,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Bootstrap an embedded chat session for an approved website origin */
-        post: operations["createPublicEmbedSession"];
+        /** Create a public chat session from a launch token */
+        post: operations["createPublicChatSession"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1246,7 +1246,6 @@ export interface components {
             anonymousRateLimit?: number;
             rotateAnonymousChatToken?: boolean;
             assistantName?: string;
-            assistantRole?: string;
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
@@ -1264,7 +1263,6 @@ export interface components {
             anonymousChatUrl: string | null;
             anonymousRateLimit: number;
             assistantName: string;
-            assistantRole: string;
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
@@ -1282,7 +1280,6 @@ export interface components {
         };
         AssistantSettingsSection: {
             assistantName: string;
-            assistantRole: string;
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
@@ -1365,7 +1362,6 @@ export interface components {
         UpdatePlatformSettingsRequest: {
             assistant?: {
                 assistantName?: string;
-                assistantRole?: string;
                 greetingInstruction?: string;
                 assistantDefaultLocale?: string | null;
                 proactiveGreetingEnabled?: boolean;
@@ -1426,17 +1422,28 @@ export interface components {
                 websiteEmbedLauncherPosition?: "bottom-right" | "bottom-left";
             };
         };
-        PublicEmbedSessionResponse: {
+        PublicChatSessionResponse: {
             workspaceName: string;
             publicChatToken: string;
-            embedSessionToken: string;
+            /** Format: uuid */
+            publicSessionId: string;
+            publicSessionToken: string;
             assistantBootstrapActive: boolean;
             /** Format: date-time */
             expiresAt: string;
         };
-        PublicEmbedSessionRequest: {
+        PublicChatSessionRequest: {
+            /** @enum {string} */
+            channel: "anonymous_link" | "website_embed";
             /** Format: uuid */
             anonymousSessionId?: string;
+            pageContext?: {
+                pageUrl?: string | null;
+                pageTitle?: string | null;
+                pageLocale?: string | null;
+                browserLocale?: string | null;
+                content?: string | null;
+            };
         };
         WorkspaceIngestionReprocessResponse: {
             /** Format: uuid */
@@ -1876,6 +1883,13 @@ export interface components {
             /** @default false */
             stream: boolean;
             userExpectedLocale?: string;
+            pageContext?: {
+                pageUrl?: string | null;
+                pageTitle?: string | null;
+                pageLocale?: string | null;
+                browserLocale?: string | null;
+                content?: string | null;
+            };
             inputMetadata?: {
                 /** @enum {string} */
                 method: "typed" | "suggestion_click";
@@ -1892,6 +1906,13 @@ export interface components {
             stream: false;
             message?: string;
             userExpectedLocale?: string;
+            pageContext?: {
+                pageUrl?: string | null;
+                pageTitle?: string | null;
+                pageLocale?: string | null;
+                browserLocale?: string | null;
+                content?: string | null;
+            };
             inputMetadata?: {
                 /** @enum {string} */
                 method: "typed" | "suggestion_click";
@@ -1961,7 +1982,7 @@ export interface components {
             supportedSegmentCount: number;
             nonSubstantiveSegmentCount: number;
             hiddenSupportUsed?: boolean;
-            hiddenSupportKindsUsed?: ("assistant_name" | "assistant_role")[];
+            hiddenSupportKindsUsed?: "assistant_name"[];
             segmentResults: components["schemas"]["ValidationSegmentResult"][];
         };
         ChatConversationMessageDebug: {
@@ -2136,7 +2157,7 @@ export interface operations {
             };
         };
     };
-    createPublicEmbedSession: {
+    createPublicChatSession: {
         parameters: {
             query?: never;
             header?: never;
@@ -2147,17 +2168,17 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": components["schemas"]["PublicEmbedSessionRequest"];
+                "application/json": components["schemas"]["PublicChatSessionRequest"];
             };
         };
         responses: {
-            /** @description Embedded chat session bootstrap returned */
+            /** @description Public chat session returned */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PublicEmbedSessionResponse"];
+                    "application/json": components["schemas"]["PublicChatSessionResponse"];
                 };
             };
             /** @description Request validation failed */
@@ -2169,7 +2190,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Origin not allowed */
+            /** @description Origin not allowed for this public chat channel */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2178,7 +2199,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Embedded chat not found */
+            /** @description Public chat not found */
             404: {
                 headers: {
                     [name: string]: unknown;

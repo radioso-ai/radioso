@@ -6,7 +6,7 @@ project_id = "your-gcp-project-id"
 # openai_api_key           = ""
 # session_cookie_secret    = ""
 # workspace_token_secret   = ""
-# website_embed_secret     = ""
+# public_chat_session_secret     = ""
 # connector_encryption_key = ""
 # metrics_auth_token       = ""
 

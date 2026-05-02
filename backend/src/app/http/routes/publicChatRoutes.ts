@@ -1,13 +1,20 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { sendChatSse } from "../presenters/chatPresenter.js";
-import { badRequest } from "../../../shared/domain/errors.js";
+import { badRequest, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { anonymousRateLimiter } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
+import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/domain/websiteEmbedSettings.js";
+import {
+  isAssistantBootstrapActive,
+  resolveAssistantDisplayName,
+} from "../../../modules/settings/domain/assistantBootstrapSettings.js";
+import { issuePublicChatSession } from "../../../modules/settings/domain/publicChatSession.js";
 
 const localeHintSchema = z.string().trim().max(35);
 const pageContextSchema = z.object({
@@ -58,14 +65,171 @@ export const publicConversationParamsSchema = z.object({
   conversationId: z.string().uuid(),
 });
 
+const publicChatSessionSchema = z.object({
+  channel: z.enum(["anonymous_link", "website_embed"]),
+  anonymousSessionId: z.string().uuid().optional(),
+  pageContext: pageContextSchema,
+});
+
 export const createPublicChatRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
   const sessionMiddleware = resolveAnonymousSession(
     dependencies.workspaceRepository,
-    dependencies.env.WEBSITE_EMBED_SECRET,
+    dependencies.env.PUBLIC_CHAT_SESSION_SECRET,
     dependencies.env.SESSION_COOKIE_SECRET,
   );
   const rateLimitAnonymousChat = anonymousRateLimiter(dependencies);
+  const resolveOrigin = (value: string | undefined) => {
+    if (!value) {
+      return null;
+    }
+
+    try {
+      return new URL(value).origin;
+    } catch {
+      return null;
+    }
+  };
+
+  // POST /api/v1/public/chat/:token/sessions — exchange a public launch token for a chat session
+  router.post("/:token/sessions", validateBody(publicChatSessionSchema), async (req, res, next) => {
+    try {
+      const sessionSecret = dependencies.env.PUBLIC_CHAT_SESSION_SECRET;
+      if (!sessionSecret) {
+        throw serviceUnavailable("Public chat sessions are not configured.", {
+          missingEnv: "PUBLIC_CHAT_SESSION_SECRET",
+        });
+      }
+
+      const launchToken = String(req.params.token);
+      const origin = resolveOrigin(req.header("origin"));
+      const requestedSessionId = req.body.anonymousSessionId ?? randomUUID();
+
+      if (req.body.channel === "anonymous_link") {
+        const workspace = await dependencies.workspaceRepository.findByAnonymousChatToken(launchToken);
+        if (!workspace || !workspace.anonymousChatEnabled) {
+          res.status(404).json({
+            error: {
+              code: "not_found",
+              message: "Public chat not found",
+            },
+          });
+          return;
+        }
+
+        const session = issuePublicChatSession(sessionSecret, {
+          workspaceId: workspace.id,
+          publicChatToken: launchToken,
+          publicSessionId: requestedSessionId,
+          sourceChannel: "anonymous",
+          sourceOrigin: null,
+        });
+
+        res.status(200).json({
+          workspaceName: resolveAssistantDisplayName({
+            assistantName: workspace.assistantName,
+            workspaceName: workspace.name,
+          }),
+          publicChatToken: launchToken,
+          publicSessionId: session.publicSessionId,
+          publicSessionToken: session.token,
+          assistantBootstrapActive: isAssistantBootstrapActive(workspace),
+          expiresAt: session.expiresAt,
+        });
+        return;
+      }
+
+      if (!origin) {
+        res.status(400).json({
+          error: {
+            code: "bad_request",
+            message: "Invalid public chat session request",
+          },
+        });
+        return;
+      }
+
+      const workspace = await dependencies.workspaceRepository.findByWebsiteEmbedToken(launchToken);
+      if (!workspace) {
+        res.status(404).json({
+          error: {
+            code: "not_found",
+            message: "Public chat not found",
+          },
+        });
+        return;
+      }
+
+      if (!isAllowedWebsiteEmbedOrigin(workspace.websiteEmbedAllowedOrigins, origin)) {
+        await dependencies.auditService.record({
+          accountId: workspace.accountId,
+          workspaceId: workspace.id,
+          eventType: "website_embed.launch_denied",
+          eventStatus: "failure",
+          metadata: { origin },
+        });
+
+        res.status(403).json({
+          error: {
+            code: "forbidden",
+            message: "This website is not approved to host the embedded assistant.",
+          },
+        });
+        return;
+      }
+
+      if (!workspace.websiteEmbedEnabled || !workspace.anonymousChatToken) {
+        await dependencies.auditService.record({
+          accountId: workspace.accountId,
+          workspaceId: workspace.id,
+          eventType: "website_embed.launch_denied",
+          eventStatus: "failure",
+          metadata: {
+            origin,
+            reason: !workspace.websiteEmbedEnabled ? "embed_disabled" : "missing_public_chat_token",
+          },
+        });
+
+        res.status(404).json({
+          error: {
+            code: "not_found",
+            message: "Public chat not found",
+          },
+        });
+        return;
+      }
+
+      await dependencies.auditService.record({
+        accountId: workspace.accountId,
+        workspaceId: workspace.id,
+        eventType: "website_embed.launch_allowed",
+        eventStatus: "success",
+        metadata: { origin },
+      });
+
+      const session = issuePublicChatSession(sessionSecret, {
+        workspaceId: workspace.id,
+        publicChatToken: workspace.anonymousChatToken,
+        publicSessionId: requestedSessionId,
+        sourceChannel: "website_embed",
+        sourceOrigin: origin,
+      });
+
+      res.status(200).json({
+        workspaceName: resolveAssistantDisplayName({
+          assistantName: workspace.assistantName,
+          workspaceName: workspace.name,
+        }),
+        publicChatToken: workspace.anonymousChatToken,
+        publicSessionId: session.publicSessionId,
+        publicSessionToken: session.token,
+        assistantBootstrapActive: isAssistantBootstrapActive(workspace),
+        expiresAt: session.expiresAt,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   // POST /api/v1/public/chat/:token — send a message
   router.post(

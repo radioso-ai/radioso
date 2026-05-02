@@ -51,6 +51,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **IF EXISTS**: Read data-model.md for entities and relationships
    - **IF EXISTS**: Read contracts/ for API specifications and test requirements
    - **IF backend HTTP APIs are in scope**: Read `backend/src/app/http/openapi/document.ts`, `backend/scripts/generateOpenApi.ts`, and the generated `backend/openapi.yaml`
+   - **IF backend app composition is in scope**: Read `backend/src/app/composition/` and the runtime dependency wiring that consumes it
    - **IF EXISTS**: Read research.md for technical decisions and constraints
    - **IF EXISTS**: Read quickstart.md for integration scenarios
 
@@ -118,6 +119,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Integration work**: Database connections, middleware, logging, external services
    - **Backend API contract rule**: Update `backend/src/app/http/openapi/document.ts` as the source of truth for backend HTTP contract changes and regenerate `backend/openapi.yaml` / `backend/openapi.json`; do not hand-edit generated spec files
    - **Backend prompt asset rule**: Place backend runtime LLM prompt templates under `backend/prompts/`; Keep loaders, Docker/build steps, and tests aligned with `backend/prompts/`
+   - **Backend composition rule**: When adding or replacing app-wide adapters, registries, sinks, lifecycle hooks, capability policies, storage/dispatcher implementations, or cross-module runtime infrastructure, wire defaults and lifecycle through `backend/src/app/composition/`; keep product/domain rules in modules or shared domain files
    - **Polish and validation**: Unit tests, performance optimization, documentation
 
 8. Progress tracking and error handling:

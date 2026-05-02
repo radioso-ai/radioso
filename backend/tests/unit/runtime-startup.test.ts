@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Env } from "../../src/app/config/env.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
+import { buildDependencies } from "../../src/app/server/dependencies.js";
+import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { startApiRuntime } from "../../src/runtime/startApiRuntime.js";
 import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
 import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
+import type { ConnectorPlugin } from "@radioso/connector-api";
 
 const createEnv = (): Env => ({
   NODE_ENV: "test",
@@ -101,6 +104,10 @@ const createDependencies = () =>
       initializeAll: vi.fn().mockResolvedValue(undefined),
       shutdownAll: vi.fn().mockResolvedValue(undefined),
     },
+    applicationModules: {
+      initializeAll: vi.fn().mockResolvedValue(undefined),
+      shutdownAll: vi.fn().mockResolvedValue(undefined),
+    },
     connectorDb: {},
     chatService: {},
   } as unknown as AppDependencies);
@@ -132,9 +139,11 @@ describe("runtime startup", () => {
     expect(runMigrations).toHaveBeenCalledWith(env.DATABASE_URL, logger);
     expect(dependencies.connectorRegistry.runMigrations).toHaveBeenCalledWith(dependencies.connectorDb);
     expect(dependencies.connectorRegistry.initializeAll).toHaveBeenCalledOnce();
+    expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
+    expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.shutdownAll).toHaveBeenCalledOnce();
   });
 
@@ -154,6 +163,7 @@ describe("runtime startup", () => {
 
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
+    expect(dependencies.applicationModules.initializeAll).not.toHaveBeenCalled();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
   });
 
@@ -170,12 +180,14 @@ describe("runtime startup", () => {
     });
 
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
+    expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });
 
   it("starts the worker task runtime with the polling worker loop and internal task server", async () => {
@@ -201,10 +213,12 @@ describe("runtime startup", () => {
     });
 
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL);
+    expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
 
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });
 
   it("passes the metrics registry through API startup composition when metrics are enabled", async () => {
@@ -245,5 +259,42 @@ describe("runtime startup", () => {
     }));
 
     await runtime.shutdown("test");
+  });
+
+  it("builds default dependencies with capability policy and optional connector modules", async () => {
+    const connector: ConnectorPlugin = {
+      id: "test-connector",
+      name: "Test Connector",
+      description: "Test connector",
+      configSchema: () => [],
+      migrate: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      shutdown: vi.fn().mockResolvedValue(undefined),
+      getWebhookPath: () => "/api/connectors/test/webhook",
+      uniqueChannelField: () => null,
+      validateConfig: () => [],
+    };
+    const dependencies = buildDependencies(createEnv(), {
+      modules: [
+        {
+          id: "test-module",
+          register(context) {
+            context.registerConnector(connector);
+          },
+        },
+      ],
+    });
+
+    await expect(dependencies.capabilityPolicy.can({
+      capability: capabilityNames.documents.delete,
+      workspaceId: "workspace-1",
+    })).resolves.toEqual({ allowed: true });
+    expect(dependencies.connectorRegistry.listPlugins()).toContainEqual({
+      id: "test-connector",
+      name: "Test Connector",
+      description: "Test connector",
+    });
+
+    await dependencies.connectorDb.close();
   });
 });

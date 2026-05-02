@@ -19,7 +19,7 @@ test("buildEnvValues preserves existing values unless overridden", () => {
     {
       SESSION_COOKIE_SECRET: "generated",
       WORKSPACE_TOKEN_SECRET: "workspace-secret",
-      WEBSITE_EMBED_SECRET: "embed-secret",
+      PUBLIC_CHAT_SESSION_SECRET: "public-session-secret",
       CONNECTOR_ENCRYPTION_KEY: "connector",
     },
   );
@@ -27,7 +27,7 @@ test("buildEnvValues preserves existing values unless overridden", () => {
   assert.equal(values.OPENAI_API_KEY, "existing");
   assert.equal(values.SESSION_COOKIE_SECRET, "generated");
   assert.equal(values.WORKSPACE_TOKEN_SECRET, "workspace-secret");
-  assert.equal(values.WEBSITE_EMBED_SECRET, "embed-secret");
+  assert.equal(values.PUBLIC_CHAT_SESSION_SECRET, "public-session-secret");
 });
 
 test("env contract defaults local bootstrap to skip email verification", () => {
@@ -36,7 +36,7 @@ test("env contract defaults local bootstrap to skip email verification", () => {
     {
       SESSION_COOKIE_SECRET: "generated",
       WORKSPACE_TOKEN_SECRET: "workspace-secret",
-      WEBSITE_EMBED_SECRET: "embed-secret",
+      PUBLIC_CHAT_SESSION_SECRET: "public-session-secret",
       CONNECTOR_ENCRYPTION_KEY: "connector",
     },
   );
@@ -60,7 +60,7 @@ test("writeEnvFileAtomic writes rendered env content", async () => {
     SESSION_COOKIE_NAME: "radioso_session",
     SESSION_COOKIE_SECRET: "secret",
     WORKSPACE_TOKEN_SECRET: "workspace-secret",
-    WEBSITE_EMBED_SECRET: "embed-secret",
+    PUBLIC_CHAT_SESSION_SECRET: "public-session-secret",
     SESSION_TTL_HOURS: "168",
     CONNECTOR_ENCRYPTION_KEY: "connector",
     DOCUMENT_UPLOAD_MAX_BYTES: "10485760",
@@ -85,7 +85,7 @@ test("renderEnvFile omits blank optional values", () => {
     SESSION_COOKIE_NAME: "radioso_session",
     SESSION_COOKIE_SECRET: "secret",
     WORKSPACE_TOKEN_SECRET: "workspace-secret",
-    WEBSITE_EMBED_SECRET: "embed-secret",
+    PUBLIC_CHAT_SESSION_SECRET: "public-session-secret",
     SESSION_TTL_HOURS: "168",
     CONNECTOR_ENCRYPTION_KEY: "connector",
     DOCUMENT_UPLOAD_MAX_BYTES: "10485760",
@@ -112,7 +112,7 @@ test("renderEnvFile preserves autoscaling worker env keys", () => {
     SESSION_COOKIE_NAME: "radioso_session",
     SESSION_COOKIE_SECRET: "secret",
     WORKSPACE_TOKEN_SECRET: "workspace-secret",
-    WEBSITE_EMBED_SECRET: "embed-secret",
+    PUBLIC_CHAT_SESSION_SECRET: "public-session-secret",
     SESSION_TTL_HOURS: "168",
     CONNECTOR_ENCRYPTION_KEY: "connector",
     DOCUMENT_UPLOAD_MAX_BYTES: "10485760",

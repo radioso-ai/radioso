@@ -31,6 +31,22 @@ describe("public chat contract", () => {
       typeof cookie === "string" && cookie.startsWith("anon_session_"),
     );
 
+  const createPublicSession = async (
+    app: any,
+    chatToken: string,
+    anonymousSessionId?: string,
+  ): Promise<{ publicSessionToken: string; publicSessionId: string }> => {
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}/sessions`)
+      .send({
+        channel: "anonymous_link",
+        ...(anonymousSessionId ? { anonymousSessionId } : {}),
+      });
+
+    expect(response.status).toBe(200);
+    return response.body;
+  };
+
   it("POST /api/v1/public/chat/:token creates conversation and returns response", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-create@example.com");
@@ -42,9 +58,11 @@ describe("public chat contract", () => {
       .send({ title: "Test Doc", content: "The answer is 42." });
 
     const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ message: "What is the answer?", stream: false });
 
     expect(response.status).toBe(200);
@@ -71,9 +89,11 @@ describe("public chat contract", () => {
     const { app } = createTestApp({ chatGateway: contextualGateway });
     const session = await issueTestSession(app, "public-chat-page-context@example.com");
     const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({
         message: "What is this page about?",
         stream: false,
@@ -101,10 +121,12 @@ describe("public chat contract", () => {
       .send({ title: "Doc", content: "Hello world" });
 
     const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
 
     // First request — get cookie
     const first = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ message: "hello", stream: false });
 
     const cookies = first.headers["set-cookie"];
@@ -113,6 +135,7 @@ describe("public chat contract", () => {
     // Second request with cookie and conversationId
     const second = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!)
       .send({ message: "follow up", stream: false, conversationId: first.body.conversationId });
 
@@ -129,10 +152,12 @@ describe("public chat contract", () => {
       .send({ title: "Doc", content: "Content" });
 
     const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
 
     // Create a conversation
     const chat = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ message: "test", stream: false });
 
     const cookies = chat.headers["set-cookie"];
@@ -141,6 +166,7 @@ describe("public chat contract", () => {
     // List conversations
     const list = await request(app)
       .get(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!);
 
     expect(list.status).toBe(200);
@@ -155,9 +181,11 @@ describe("public chat contract", () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-bad-cursor@example.com");
     const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
 
     const first = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ message: "hello", stream: false });
 
     const cookies = first.headers["set-cookie"];
@@ -165,6 +193,7 @@ describe("public chat contract", () => {
 
     const response = await request(app)
       .get(`/api/v1/public/chat/${chatToken}?cursor=not-a-cursor`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!);
 
     expect(response.status).toBe(400);
@@ -183,9 +212,11 @@ describe("public chat contract", () => {
       .send({ title: "Intro", content: "This page parses content and answers questions." });
 
     const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
 
     const chat = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({
         message: "What does this page do?",
         stream: false,
@@ -199,6 +230,7 @@ describe("public chat contract", () => {
 
     const detail = await request(app)
       .get(`/api/v1/public/chat/${chatToken}/history/${chat.body.conversationId}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!);
 
     expect(detail.status).toBe(200);
@@ -242,9 +274,11 @@ describe("public chat contract", () => {
       .send({ title: "Doc", content: "Hello. Streaming response coverage." });
 
     const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .buffer(true)
       .parse((res, callback) => {
         let body = "";
@@ -275,9 +309,11 @@ describe("public chat contract", () => {
       .send({ title: "Doc", content: "Content" });
 
     const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
 
     const firstConversation = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ message: "first", stream: false });
 
     const cookies = firstConversation.headers["set-cookie"];
@@ -285,16 +321,19 @@ describe("public chat contract", () => {
 
     await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!)
       .send({ message: "second", stream: false });
 
     await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!)
       .send({ message: "third", stream: false });
 
     const firstPage = await request(app)
       .get(`/api/v1/public/chat/${chatToken}?limit=2`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!);
 
     expect(firstPage.status).toBe(200);
@@ -304,6 +343,7 @@ describe("public chat contract", () => {
 
     const secondPage = await request(app)
       .get(`/api/v1/public/chat/${chatToken}?limit=2&cursor=${encodeURIComponent(firstPage.body.nextCursor)}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!);
 
     expect(secondPage.status).toBe(200);
@@ -347,9 +387,11 @@ describe("public chat contract", () => {
       .expect(200);
 
     const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ message: "Who is Narayani?", stream: false });
 
     expect(response.status).toBe(200);
@@ -394,10 +436,12 @@ describe("public chat contract", () => {
       .send({ title: "Doc", content: "Content" });
 
     const chatToken = await enableAnonymousChat(app, session, 1);
+    const publicSession = await createPublicSession(app, chatToken);
 
     // First message should succeed
     const first = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ message: "first", stream: false });
     expect(first.status).toBe(200);
 
@@ -407,6 +451,7 @@ describe("public chat contract", () => {
     // Second message should be rate limited
     const second = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!)
       .send({ message: "second", stream: false });
 
@@ -442,9 +487,11 @@ describe("public chat contract", () => {
         proactiveGreetingEnabled: true,
       })
       .expect(200);
+    const publicSession = await createPublicSession(app, chatToken);
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ startConversation: true, stream: false, userExpectedLocale: "en" });
 
     expect(response.status).toBe(200);
@@ -479,9 +526,11 @@ describe("public chat contract", () => {
         proactiveGreetingEnabled: true,
       })
       .expect(200);
+    const publicSession = await createPublicSession(app, chatToken);
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({
         startConversation: true,
         stream: false,
@@ -522,9 +571,11 @@ describe("public chat contract", () => {
         proactiveGreetingEnabled: true,
       })
       .expect(200);
+    const publicSession = await createPublicSession(app, chatToken);
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ startConversation: true, stream: false, userExpectedLocale: "bad_locale_value" });
 
     expect(response.status).toBe(200);
@@ -563,14 +614,17 @@ describe("public chat contract", () => {
         proactiveGreetingEnabled: true,
       });
     const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1];
+    const publicSession = await createPublicSession(app, chatToken);
 
     const bootstrap = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ startConversation: true, stream: false, userExpectedLocale: "en-US" });
     const anonCookie = findAnonymousCookie(bootstrap.headers["set-cookie"]);
 
     const firstMessage = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!)
       .send({ message: "What is the answer?", stream: false, conversationId: bootstrap.body.conversationId });
 

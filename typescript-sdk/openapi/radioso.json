@@ -1568,10 +1568,6 @@
             "type": "string",
             "maxLength": 200
           },
-          "assistantRole": {
-            "type": "string",
-            "maxLength": 200
-          },
           "greetingInstruction": {
             "type": "string",
             "maxLength": 200
@@ -1641,9 +1637,6 @@
           "assistantName": {
             "type": "string"
           },
-          "assistantRole": {
-            "type": "string"
-          },
           "greetingInstruction": {
             "type": "string"
           },
@@ -1710,7 +1703,6 @@
           "anonymousChatUrl",
           "anonymousRateLimit",
           "assistantName",
-          "assistantRole",
           "greetingInstruction",
           "assistantDefaultLocale",
           "proactiveGreetingEnabled",
@@ -1729,9 +1721,6 @@
         "type": "object",
         "properties": {
           "assistantName": {
-            "type": "string"
-          },
-          "assistantRole": {
             "type": "string"
           },
           "greetingInstruction": {
@@ -1773,7 +1762,6 @@
         },
         "required": [
           "assistantName",
-          "assistantRole",
           "greetingInstruction",
           "assistantDefaultLocale",
           "proactiveGreetingEnabled",
@@ -2090,10 +2078,6 @@
                 "type": "string",
                 "maxLength": 200
               },
-              "assistantRole": {
-                "type": "string",
-                "maxLength": 200
-              },
               "greetingInstruction": {
                 "type": "string",
                 "maxLength": 200
@@ -2337,7 +2321,7 @@
           }
         }
       },
-      "PublicEmbedSessionResponse": {
+      "PublicChatSessionResponse": {
         "type": "object",
         "properties": {
           "workspaceName": {
@@ -2346,7 +2330,11 @@
           "publicChatToken": {
             "type": "string"
           },
-          "embedSessionToken": {
+          "publicSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "publicSessionToken": {
             "type": "string"
           },
           "assistantBootstrapActive": {
@@ -2360,19 +2348,70 @@
         "required": [
           "workspaceName",
           "publicChatToken",
-          "embedSessionToken",
+          "publicSessionId",
+          "publicSessionToken",
           "assistantBootstrapActive",
           "expiresAt"
         ]
       },
-      "PublicEmbedSessionRequest": {
+      "PublicChatSessionRequest": {
         "type": "object",
         "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "anonymous_link",
+              "website_embed"
+            ]
+          },
           "anonymousSessionId": {
             "type": "string",
             "format": "uuid"
+          },
+          "pageContext": {
+            "type": "object",
+            "properties": {
+              "pageUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 2048
+              },
+              "pageTitle": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 180
+              },
+              "pageLocale": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 35
+              },
+              "browserLocale": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 35
+              },
+              "content": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 6000
+              }
+            }
           }
-        }
+        },
+        "required": [
+          "channel"
+        ]
       },
       "WorkspaceIngestionReprocessResponse": {
         "type": "object",
@@ -3973,6 +4012,46 @@
                 "type": "string",
                 "maxLength": 35
               },
+              "pageContext": {
+                "type": "object",
+                "properties": {
+                  "pageUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2048
+                  },
+                  "pageTitle": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 180
+                  },
+                  "pageLocale": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 35
+                  },
+                  "browserLocale": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 35
+                  },
+                  "content": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 6000
+                  }
+                }
+              },
               "inputMetadata": {
                 "type": "object",
                 "properties": {
@@ -4021,6 +4100,46 @@
               "userExpectedLocale": {
                 "type": "string",
                 "maxLength": 35
+              },
+              "pageContext": {
+                "type": "object",
+                "properties": {
+                  "pageUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2048
+                  },
+                  "pageTitle": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 180
+                  },
+                  "pageLocale": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 35
+                  },
+                  "browserLocale": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 35
+                  },
+                  "content": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 6000
+                  }
+                }
               },
               "inputMetadata": {
                 "type": "object",
@@ -4307,8 +4426,7 @@
             "items": {
               "type": "string",
               "enum": [
-                "assistant_name",
-                "assistant_role"
+                "assistant_name"
               ]
             }
           },
@@ -4935,13 +5053,13 @@
         }
       }
     },
-    "/api/v1/public/embed/{token}/session": {
+    "/api/v1/public/chat/{token}/sessions": {
       "post": {
         "tags": [
           "Assistant"
         ],
-        "summary": "Bootstrap an embedded chat session for an approved website origin",
-        "operationId": "createPublicEmbedSession",
+        "summary": "Create a public chat session from a launch token",
+        "operationId": "createPublicChatSession",
         "parameters": [
           {
             "schema": {
@@ -4957,18 +5075,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PublicEmbedSessionRequest"
+                "$ref": "#/components/schemas/PublicChatSessionRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Embedded chat session bootstrap returned",
+            "description": "Public chat session returned",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PublicEmbedSessionResponse"
+                  "$ref": "#/components/schemas/PublicChatSessionResponse"
                 }
               }
             }
@@ -4984,7 +5102,7 @@
             }
           },
           "403": {
-            "description": "Origin not allowed",
+            "description": "Origin not allowed for this public chat channel",
             "content": {
               "application/json": {
                 "schema": {
@@ -4994,7 +5112,7 @@
             }
           },
           "404": {
-            "description": "Embedded chat not found",
+            "description": "Public chat not found",
             "content": {
               "application/json": {
                 "schema": {

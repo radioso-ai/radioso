@@ -615,7 +615,12 @@ export function PublicChatShell({
   const theme = getWebsiteEmbedTheme(themeOverrides)
 
   return (
-    <AnonymousChatProvider token={token} localeOverride={localeOverride} pageContext={pageContext}>
+    <AnonymousChatProvider
+      token={token}
+      sessionChannel={surface === 'public' ? 'anonymous_link' : null}
+      localeOverride={localeOverride}
+      pageContext={pageContext}
+    >
       <div
         className="flex min-h-0 flex-1 flex-col overflow-hidden"
         style={{

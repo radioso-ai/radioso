@@ -42,6 +42,7 @@
 - Module boundaries between transport, orchestration, domain logic, and persistence are explicit.
 - Existing responsibility-limited files are identified, and the plan explains how new behavior avoids turning them into god objects.
 - If the current structure is unclear or target files are already too large, the plan adds architecture/refactor stories that must land before feature work in those areas.
+- If backend work adds or replaces app-wide adapters, registries, sinks, lifecycle hooks, capability policies, storage/dispatcher implementations, or cross-module runtime infrastructure, the plan evaluates `backend/src/app/composition/` ownership and keeps domain rules in modules/shared domain files.
 - If backend HTTP contracts change, the plan identifies updates required in `backend/src/app/http/openapi/document.ts` and treats `backend/openapi.yaml` / `backend/openapi.json` as generated outputs, never hand-authored sources.
 - If contracts, workflows, settings behavior, or user-visible functionality change, the plan identifies which docs must be updated in the same feature work.
 
@@ -117,6 +118,7 @@ orchestration, domain logic, persistence, and UI concerns]
 - **Orchestration Layer**: [Services/controllers that coordinate workflow but delegate domain decisions]
 - **Domain Layer**: [Focused services/modules containing feature rules and decision-making]
 - **Persistence/Integration Layer**: [Repositories/clients/gateways that talk to DBs or external systems]
+- **Application Composition**: [Whether `backend/src/app/composition/` must wire new replaceable infrastructure, defaults, registries, lifecycle hooks, or capability policies; write N/A if not relevant]
 - **Files Kept Small**: [Existing files that must not absorb new concerns]
 - **Planned Extractions**: [New modules/interfaces/ports to introduce so responsibilities stay separated]
 - **Required Refactor Stories**: [Architecture stories that must be completed first when structure is unclear or files are already too large]

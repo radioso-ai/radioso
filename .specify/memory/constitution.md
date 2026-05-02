@@ -1,10 +1,10 @@
 <!--
 Sync Impact Report
-- Version change: 1.6.0 to 1.7.0
-- Modified principles: none
-- Added sections: XI. Frontend Testing Discipline
+- Version change: 1.7.0 to 1.8.0
+- Modified principles: VI. Modularity and Encapsulation
+- Added sections: none
 - Removed sections: none
-- Templates requiring updates: `.specify/templates/plan-template.md` ✅ updated; `.specify/templates/spec-template.md` ✅ updated; `.specify/templates/tasks-template.md` ✅ updated; `AGENTS.md` ✅ updated
+- Templates requiring updates: `.specify/templates/plan-template.md` ✅ updated; `.specify/templates/tasks-template.md` ✅ updated; `.codex/prompts/speckit.plan.md` ✅ updated; `.codex/prompts/speckit.tasks.md` ✅ updated; `.codex/prompts/speckit.implement.md` ✅ updated; `AGENTS.md` ✅ updated
 - Follow-up TODOs: none
 -->
 # Botobot Front Desk AI Constitution
@@ -48,7 +48,13 @@ expected seams, and any files that must remain orchestration-only or otherwise
 responsibility-limited. If discovery shows that code structure is unclear or an
 existing file is already too large to safely absorb more behavior, the work MUST
 add explicit architecture/refactor stories and tasks to restore clear ownership
-before feature development continues in that area.
+before feature development continues in that area. Backend features that add or
+replace application-wide adapters, registries, sinks, lifecycle hooks,
+capability policies, storage or dispatcher implementations, or other
+cross-module runtime infrastructure MUST evaluate whether
+`backend/src/app/composition/` should own the default wiring. Composition code
+MUST assemble implementations and lifecycle, while domain rules remain in
+`backend/src/modules/` or `backend/src/shared/domain/`.
 
 ### VII. Customer Data Protection and Reliability
 The system handles SME customer data. It MUST minimize data collection, enforce
@@ -100,6 +106,9 @@ No additional constraints beyond the Core Principles at this time.
 - Each feature MUST include a constitution check in plan.md and confirm that
   stack, TDD, secret-management rules, and modular boundary expectations are
   satisfied.
+- Backend features that touch replaceable runtime infrastructure MUST state
+  whether `backend/src/app/composition/` needs updates and must keep product
+  rules out of composition wiring.
 - Backend API changes MUST update the code-first OpenAPI registry and regenerate
   `backend/openapi.yaml` / `backend/openapi.json` rather than editing those
   generated files directly.
@@ -123,4 +132,4 @@ Compliance is enforced during plan/spec/task reviews and PR reviews. The
 constitution version, ratification date, and last amended date MUST be updated
 whenever changes are made.
 
-**Version**: 1.7.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-04-25
+**Version**: 1.8.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-05-02

@@ -51,6 +51,7 @@ pgvector     chunking, parsing, embedding
 - **Assistant and retrieval are separate surfaces.** Use assistant APIs for human-facing chat, persona, history, and channel routing. Use retrieval APIs for grounded search or answers without assistant behavior.
 - **PostgreSQL is the system of record.** Application state, documents, chunks, vectors, settings, sessions, and audit events live in Postgres. Do not introduce a new storage system without a feature plan.
 - **Document processing is asynchronous.** Upload paths should enqueue or update processing state; chunking, parsing, embedding, and connector work belong in worker flows.
+- **Application composition owns replaceable runtime wiring.** When backend work adds or swaps app-wide adapters, registries, sinks, lifecycle hooks, capability policies, storage/dispatcher implementations, or other cross-module infrastructure, evaluate `backend/src/app/composition/` and wire the default behavior there. Keep domain rules in `backend/src/modules/` or `backend/src/shared/domain/`; composition should assemble implementations, not own product logic.
 - **Runtime LLM prompt templates live under `backend/prompts/`.** Do not add runtime prompts at repo root.
 - **User-facing assistant copy comes from the LLM.** Do not hard-code conversational assistant responses in application code.
 - **Docs are product surface.** If a change affects setup, auth, APIs, ingestion, retrieval settings, SDK usage, or MCP usage, update the relevant docs in the same change.

@@ -29,7 +29,7 @@ Use this path when you want to evaluate the full product quickly on one machine.
 This is the intended local bootstrap path. It:
 
 - checks local prerequisites
-- creates or reuses `backend/.env`
+- creates or reuses `.env`
 - prompts for the AI provider and required credentials
 - generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `PUBLIC_CHAT_SESSION_SECRET`
 - writes `AUTH_SKIP_EMAIL_VERIFICATION=true` for the default local bootstrap flow
@@ -120,7 +120,7 @@ Local bootstrap is intentionally more permissive than production:
 
 ## Common failure modes
 
-- If the stack starts but answers fail, the most common issue is missing or invalid provider credentials in `backend/.env`.
+- If the stack starts but answers fail, the most common issue is missing or invalid provider credentials in `.env`.
 - If upload works but chat ignores the new document, document processing may still be running.
 - If auth links do not arrive by email, check backend logs first because local mail defaults to log mode.
 

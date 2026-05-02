@@ -74,7 +74,7 @@ One script tag. Paste it on any page of an approved origin. The launcher opens a
 5. Wait for document processing to finish.
 6. Ask one of the suggested questions in chat.
 
-New accounts must verify their email before the first sign-in completes, except in the default `./run-dev.sh` local setup where `AUTH_SKIP_EMAIL_VERIFICATION=true` is written into `backend/.env` for faster local iteration. Local runs also default to `MAIL_DRIVER=log`, so verification and password reset links are written to backend logs unless you point the app at a real SMTP server.
+New accounts must verify their email before the first sign-in completes, except in the default `./run-dev.sh` local setup where `AUTH_SKIP_EMAIL_VERIFICATION=true` is written into `.env` for faster local iteration. Local runs also default to `MAIL_DRIVER=log`, so verification and password reset links are written to backend logs unless you point the app at a real SMTP server.
 
 Authenticated dashboard URLs are workspace-first. After sign-in, the app navigates under `/w/<workspace-public-route-key>/...`. Older `/account/<account-id>/...` dashboard links still work, but they redirect to the canonical workspace URL after the app restores the correct organization and workspace context.
 

@@ -762,7 +762,7 @@ describe("chat integration", () => {
     expect(response.body).toMatchObject({
       error: {
         code: "service_unavailable",
-        message: "The configured AI provider rejected the credentials. Update backend/.env and restart Radioso.",
+        message: "The configured AI provider rejected the credentials. Update .env and restart Radioso.",
       },
     });
   });

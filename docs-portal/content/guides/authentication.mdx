@@ -57,7 +57,7 @@ This is the right model for customer-facing support widgets, not for operator au
 
 ## Local development behavior
 
-The default `./run-dev.sh` bootstrap flow writes `AUTH_SKIP_EMAIL_VERIFICATION=true` into `backend/.env` for faster local iteration. It also defaults `MAIL_DRIVER=log`, which means verification and password reset links are written to backend logs unless SMTP is configured.
+The default `./run-dev.sh` bootstrap flow writes `AUTH_SKIP_EMAIL_VERIFICATION=true` into `.env` for faster local iteration. It also defaults `MAIL_DRIVER=log`, which means verification and password reset links are written to backend logs unless SMTP is configured.
 
 <Callout type="warning" emoji="!">
   That local shortcut is a development convenience. It is not the production contract.

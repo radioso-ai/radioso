@@ -13,7 +13,7 @@ services:
       - "5432:5432"
     volumes:
       - radioso_postgres_data:/var/lib/postgresql/data
-      - ../backend/src/db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./backend/src/db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d radioso"]
       interval: 5s
@@ -24,10 +24,10 @@ services:
   backend:
     container_name: radioso-backend
     build:
-      context: ..
+      context: .
       dockerfile: infra/backend.Dockerfile
     env_file:
-      - ../backend/.env
+      - .env
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,10 +57,10 @@ services:
   backend-worker:
     container_name: radioso-backend-worker
     build:
-      context: ..
+      context: .
       dockerfile: infra/backend.Dockerfile
     env_file:
-      - ../backend/.env
+      - .env
     depends_on:
       backend:
         condition: service_healthy
@@ -77,12 +77,12 @@ services:
   frontend:
     container_name: radioso-frontend
     build:
-      context: ../frontend
+      context: ./frontend
       dockerfile: Dockerfile
       args:
         BACKEND_INTERNAL_URL: http://backend:8080
     env_file:
-      - ../backend/.env
+      - .env
     depends_on:
       backend:
         condition: service_healthy

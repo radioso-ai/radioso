@@ -6,14 +6,14 @@ import {
 } from '@/lib/dashboard-workspace-sync'
 
 describe('dashboard workspace route sync', () => {
-  it('waits instead of rewriting while a resolved route workspace is absent from the current workspace list', () => {
+  it('does not wait or rewrite when the requested workspace is absent from the current workspace list', () => {
     const input = {
       activeWorkspaceId: 'old-workspace',
       requestedWorkspaceId: 'route-workspace',
       requestedWorkspaceExists: false,
     }
 
-    expect(shouldWaitForRouteWorkspace(input)).toBe(true)
+    expect(shouldWaitForRouteWorkspace(input)).toBe(false)
     expect(shouldRewriteToActiveWorkspace(input)).toBe(false)
   })
 

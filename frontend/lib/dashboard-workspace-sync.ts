@@ -6,9 +6,14 @@ interface RouteWorkspaceSyncInput {
 
 export const shouldWaitForRouteWorkspace = ({
   activeWorkspaceId,
+  requestedWorkspaceExists,
   requestedWorkspaceId,
 }: RouteWorkspaceSyncInput) => {
   if (!requestedWorkspaceId || activeWorkspaceId === requestedWorkspaceId) {
+    return false
+  }
+
+  if (!requestedWorkspaceExists) {
     return false
   }
 

@@ -17,13 +17,13 @@ The bootstrap prompts for your AI provider credentials, generates secrets, and s
 
 In the Docker development stack, frontend and backend source changes are bind-mounted into the containers. TypeScript backend changes restart automatically, and backend prompt markdown under `backend/prompts/` is re-read on each request in development without a container restart.
 
-For enterprise embed development with a sibling `../radioso-enterprise` checkout, run:
+For Enterprise Edition embed development, run:
 
 ```bash
-./run-enterprise-dev.sh
+./run-ee-dev.sh
 ```
 
-This starts Postgres in Docker, builds and installs the private enterprise packages locally without saving them to the OSS package manifests, updates `backend/.env` with enterprise embed settings, and runs the backend, worker, frontend, and embed harness on the host.
+This starts Postgres in Docker, builds and installs the commercial packages from `ee/packages` locally without saving them to the OSS package manifests, updates `backend/.env` with Enterprise Edition embed settings, and runs the backend, worker, frontend, and embed harness on the host.
 
 | Surface | URL |
 |---|---|

@@ -13,7 +13,11 @@ const nextConfig = {
     unoptimized: true,
   },
   webpack(config) {
-    if (process.env.RADIOSO_ENTERPRISE_FRONTEND !== "true") {
+    const enterpriseFrontendEnabled =
+      process.env.RADIOSO_EE_FRONTEND === "true" ||
+      process.env.RADIOSO_ENTERPRISE_FRONTEND === "true"
+
+    if (!enterpriseFrontendEnabled) {
       config.resolve.alias["@radioso/enterprise-embed-widget"] = path.resolve(
         process.cwd(),
         "lib/enterprise-embed-widget-stub",

@@ -1,0 +1,17 @@
+{
+  "name": "radioso-ee",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm --workspaces run build",
+    "test": "npm --workspaces run test --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

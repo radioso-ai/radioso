@@ -58,7 +58,7 @@ module "radioso" {
   openai_api_key                        = var.openai_api_key
   session_cookie_secret                 = var.session_cookie_secret
   workspace_token_secret                = var.workspace_token_secret
-  website_embed_secret                  = var.website_embed_secret
+  public_chat_session_secret                  = var.public_chat_session_secret
   connector_encryption_key              = var.connector_encryption_key
   metrics_auth_token                    = var.metrics_auth_token
   openai_chat_model                     = var.openai_chat_model

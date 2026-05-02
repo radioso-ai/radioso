@@ -78,14 +78,17 @@ export async function POST(
   }
 
   try {
-    const upstream = await fetch(`${BACKEND_BASE}/api/v1/public/embed/${encodeURIComponent(token)}/session`, {
+    const upstream = await fetch(`${BACKEND_BASE}/api/v1/public/chat/${encodeURIComponent(token)}/sessions`, {
       method: 'POST',
       cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         Origin: requestOrigin,
       },
-      body: JSON.stringify(parsedBody.data),
+      body: JSON.stringify({
+        channel: 'website_embed',
+        anonymousSessionId: parsedBody.data.anonymousSessionId,
+      }),
     })
 
     const contentType = upstream.headers.get('content-type') ?? 'application/json'

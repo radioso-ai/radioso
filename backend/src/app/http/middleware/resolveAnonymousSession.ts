@@ -8,12 +8,12 @@ import {
   isAssistantBootstrapActive,
   resolveAssistantDisplayName,
 } from "../../../modules/settings/domain/assistantBootstrapSettings.js";
-import { verifyWebsiteEmbedSession } from "../../../modules/settings/domain/websiteEmbedSession.js";
+import { verifyPublicChatSession } from "../../../modules/settings/domain/publicChatSession.js";
 
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 export const ANONYMOUS_SESSION_HEADER = "x-radioso-anonymous-session";
-export const ANONYMOUS_SESSION_RESET_HEADER = "x-radioso-reset-anonymous-session";
-export const WEBSITE_EMBED_SESSION_HEADER = "x-radioso-embed-session";
+export const PUBLIC_CHAT_SESSION_HEADER = "x-radioso-public-session";
+export const PUBLIC_CHAT_SESSION_ID_HEADER = "x-radioso-public-session-id";
 const ANONYMOUS_RATE_LIMIT_COOKIE_PREFIX = "anon_rate_limit_";
 const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
@@ -75,8 +75,8 @@ const verifyAnonymousRateLimitCookie = (value: string | undefined, secret: strin
 
 export const resolveAnonymousSession = (
   workspaceRepository: WorkspaceRepositoryPort,
-  websiteEmbedSecret: string | undefined,
-  anonymousRateLimitCookieSecret: string | undefined = websiteEmbedSecret,
+  publicChatSessionSecret: string | undefined,
+  anonymousRateLimitCookieSecret: string | undefined = publicChatSessionSecret,
 ): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -89,14 +89,13 @@ export const resolveAnonymousSession = (
 
       const { token } = parsedParams.data;
       const workspace = await workspaceRepository.findByAnonymousChatToken(token);
-      const embedSession = verifyWebsiteEmbedSession(req.get(WEBSITE_EMBED_SESSION_HEADER), websiteEmbedSecret);
-      const hasValidEmbedSession =
-        Boolean(workspace?.websiteEmbedEnabled) &&
-        Boolean(embedSession) &&
-        embedSession?.workspaceId === workspace?.id &&
-        embedSession?.publicChatToken === token;
+      const publicSession = verifyPublicChatSession(req.get(PUBLIC_CHAT_SESSION_HEADER), publicChatSessionSecret);
+      const hasValidPublicSession =
+        Boolean(publicSession) &&
+        publicSession?.workspaceId === workspace?.id &&
+        publicSession?.publicChatToken === token;
 
-      if (!workspace || (!workspace.anonymousChatEnabled && !hasValidEmbedSession)) {
+      if (!workspace || !hasValidPublicSession) {
         next(notFound("Not found"));
         return;
       }
@@ -108,14 +107,7 @@ export const resolveAnonymousSession = (
         anonymousRateLimitCookieSecret,
       );
       const rateLimitId = rateLimitIdFromCookie ?? randomUUID();
-      const shouldResetAnonymousSession = !hasValidEmbedSession && req.get(ANONYMOUS_SESSION_RESET_HEADER) === "1";
-      let sessionId =
-        (hasValidEmbedSession ? embedSession?.anonymousSessionId : undefined) ??
-        (shouldResetAnonymousSession ? undefined : (req.cookies?.[cookieName] as string | undefined));
-
-      if (!sessionId) {
-        sessionId = randomUUID();
-      }
+      const sessionId = publicSession.publicSessionId;
 
       res.cookie(cookieName, sessionId, {
         httpOnly: true,
@@ -132,6 +124,7 @@ export const resolveAnonymousSession = (
         });
       }
       res.setHeader(ANONYMOUS_SESSION_HEADER, sessionId);
+      res.setHeader(PUBLIC_CHAT_SESSION_ID_HEADER, sessionId);
 
       res.locals.workspaceId = workspace.id;
       res.locals.workspaceName = resolveAssistantDisplayName({
@@ -142,8 +135,8 @@ export const resolveAnonymousSession = (
       res.locals.anonymousRateLimitId = rateLimitId;
       res.locals.anonymousRateLimitIdFromCookie = Boolean(rateLimitIdFromCookie);
       res.locals.anonymousRateLimit = workspace.anonymousRateLimit;
-      res.locals.sourceChannel = hasValidEmbedSession ? "website_embed" : "anonymous";
-      res.locals.sourceOrigin = hasValidEmbedSession ? embedSession?.sourceOrigin ?? null : null;
+      res.locals.sourceChannel = publicSession?.sourceChannel ?? "anonymous";
+      res.locals.sourceOrigin = publicSession?.sourceOrigin ?? null;
       res.locals.assistantBootstrapActive = isAssistantBootstrapActive(workspace);
       next();
     } catch (error) {

@@ -397,7 +397,7 @@
     })
 
     const payload = await response.json().catch(() => null)
-    if (!response.ok || !payload?.publicChatToken || !payload?.embedSessionToken) {
+    if (!response.ok || !payload?.publicChatToken || !payload?.publicSessionToken || !payload?.publicSessionId) {
       throw new Error(payload?.error?.message || 'Embedded chat could not be started from this website.')
     }
 

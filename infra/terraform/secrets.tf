@@ -5,7 +5,7 @@ locals {
       "openai-api-key"           = var.openai_api_key
       "session-cookie-secret"    = var.session_cookie_secret
       "workspace-token-secret"   = var.workspace_token_secret
-      "website-embed-secret"     = var.website_embed_secret
+      "public-chat-session-secret" = var.public_chat_session_secret
       "connector-encryption-key" = var.connector_encryption_key
     },
     nonsensitive(var.mail_smtp_username) == null ? {} : {
@@ -25,7 +25,7 @@ locals {
       "openai-api-key"           = true
       "session-cookie-secret"    = true
       "workspace-token-secret"   = true
-      "website-embed-secret"     = true
+      "public-chat-session-secret" = true
       "connector-encryption-key" = true
     },
     nonsensitive(var.mail_smtp_username) == null ? {} : {
@@ -63,12 +63,6 @@ resource "google_secret_manager_secret_iam_member" "backend_access" {
   secret_id = google_secret_manager_secret.secrets[each.key].secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.backend.email}"
-}
-
-resource "google_secret_manager_secret_iam_member" "frontend_website_embed_access" {
-  secret_id = google_secret_manager_secret.secrets["website-embed-secret"].secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.frontend.email}"
 }
 
 resource "google_secret_manager_secret_iam_member" "worker_access" {

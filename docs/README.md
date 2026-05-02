@@ -9,6 +9,7 @@ Before creating or revising documentation in this repo, read [Document Writer Pr
 - [Documentation Improvement Plan](./documentation-improvement-plan.md) - current audit of thin docs and the rewrite priorities
 - [OSS And SaaS Observability](./oss-saas-observability.md) - runtime flags, `/metrics`, and optional PostHog or Sentry adapters
 - [Assistant Execution Model](./assistant-execution-model.md) - why interactive chat and deferred work stay separate
+- [Architecture Extension Points](./architecture-extension-points.md) - supported module boundaries, default composition, and extension rules
 - [MCP Client Setup](./mcp-client-setup.md) - current MCP client connection patterns and constraints
 
 ## TypeScript SDK

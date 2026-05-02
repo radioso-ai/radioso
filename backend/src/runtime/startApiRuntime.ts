@@ -37,6 +37,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
     logger: dependencies.logger,
     chat: createConnectorChatPort(dependencies.chatService),
   });
+  await dependencies.applicationModules.initializeAll();
 
   const app = (options.createApp ?? createApp)(dependencies);
   const server = (options.listen ?? defaultListen)(app, options.env.PORT, () => {
@@ -64,6 +65,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
         });
       });
 
+      await dependencies.applicationModules.shutdownAll();
       await dependencies.connectorRegistry.shutdownAll();
     },
   };

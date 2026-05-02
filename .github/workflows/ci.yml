@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - backend/**
+      - packages/**
+      - .github/workflows/ci.yml
+  push:
+    branches:
+      - main
+    paths:
+      - backend/**
+      - packages/**
+      - .github/workflows/ci.yml
+
+jobs:
+  backend-default-composition:
+    name: Backend Default Composition
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Build backend default composition
+        working-directory: backend
+        run: npm run build
+
+      - name: Test backend composition seams
+        working-directory: backend
+        run: npm run test:composition

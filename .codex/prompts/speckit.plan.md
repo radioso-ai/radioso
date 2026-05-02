@@ -32,6 +32,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 1: Generate data-model.md, contracts/, quickstart.md
    - For backend API work, identify the code-first OpenAPI implementation target at `backend/src/app/http/openapi/document.ts` and treat `backend/openapi.yaml` / `backend/openapi.json` as generated outputs, not planning sources of truth
    - If backend runtime LLM prompts are in scope, identify `backend/prompts/` as the canonical asset directory and plan any loader, build, Docker, and test updates around that location
+   - If backend work adds or replaces app-wide adapters, registries, sinks, lifecycle hooks, capability policies, storage/dispatcher implementations, or other cross-module runtime infrastructure, evaluate whether `backend/src/app/composition/` should own the default wiring and lifecycle; keep domain rules in modules or shared domain files
    - Phase 1: Update agent context by running the agent script
    - Re-evaluate Constitution Check post-design
 
@@ -84,7 +85,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Add only new technology from current plan
    - Preserve manual additions between markers
 
-**Output**: data-model.md, optional `/contracts/*` design artifacts, quickstart.md, agent-specific file, explicit OpenAPI ownership notes for backend API changes, and explicit `backend/prompts/` ownership notes when runtime prompt assets are involved
+**Output**: data-model.md, optional `/contracts/*` design artifacts, quickstart.md, agent-specific file, explicit OpenAPI ownership notes for backend API changes, explicit `backend/prompts/` ownership notes when runtime prompt assets are involved, and explicit `backend/src/app/composition/` ownership notes when replaceable runtime infrastructure is involved
 
 ## Key rules
 

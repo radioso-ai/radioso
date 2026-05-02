@@ -40,21 +40,14 @@ import { DocumentSearchHistoryService } from "../../modules/documents/services/d
 import { DocumentSearchService } from "../../modules/documents/services/documentSearchService.js";
 import { DocumentProcessingService } from "../../modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
-import { CloudTasksDocumentJobDispatcher } from "../../modules/documents/infra/cloudTasksDocumentJobDispatcher.js";
 import { DocumentSourceContentService } from "../../modules/documents/services/documentSourceContentService.js";
-import { GcsDocumentStorage, type DocumentStoragePort } from "../../modules/documents/infra/gcsDocumentStorage.js";
-import { LocalDocumentStorage } from "../../modules/documents/infra/localDocumentStorage.js";
 import { WorkspaceIngestionReprocessService } from "../../modules/documents/services/workspaceIngestionReprocessService.js";
-import { NoopDocumentJobDispatcher } from "../../modules/documents/services/documentJobDispatcher.js";
 import { PgLexicalSearch } from "../../modules/retrieval/infra/lexicalSearch.js";
 import { PgVectorSearch } from "../../modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../modules/retrieval/services/candidatePreparationService.js";
 import { ConversationContextService } from "../../modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../modules/retrieval/services/promptBuilder.js";
 import { PromptContextSelectorService } from "../../modules/retrieval/services/promptContextSelectorService.js";
-import { ChunkingStrategyRegistry } from "../../modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
-import { FixedWindowChunkingStrategy } from "../../modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
-import { StructuredSemanticChunkingStrategy } from "../../modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
 import { QueryRewriteService } from "../../modules/retrieval/services/queryRewriteService.js";
 import { RerankService } from "../../modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../modules/retrieval/services/retrievalPipelineService.js";
@@ -65,31 +58,45 @@ import { EmbeddingService } from "../../modules/retrieval/services/embeddingServ
 import { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../modules/settings/services/platformSettingsService.js";
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
-import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
 import { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
-import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { Database } from "../../shared/infra/database.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
-import { buildAnalyticsSinks } from "../../shared/analytics/buildAnalyticsSinks.js";
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
-import { buildIncidentSinks } from "../../shared/incidents/buildIncidentSinks.js";
 import { createLogger } from "../../shared/observability/logger.js";
-import { buildTelemetrySinks } from "../../shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
+import {
+  createDefaultAnalyticsSinks,
+  createDefaultApplicationComposition,
+  createDefaultChunkingStrategyRegistry,
+  createDefaultConnectorRegistry,
+  createDefaultDocumentJobDispatcher,
+  createDefaultDocumentStorage,
+  createDefaultIncidentSinks,
+  createDefaultTelemetrySinks,
+  type ApplicationModule,
+} from "../composition/index.js";
 import type { AppDependencies } from "./types.js";
 
-export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
+export interface BuildDependenciesOptions {
+  modules?: ApplicationModule[];
+}
+
+export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = createLogger();
-  const { metricsRegistry, sinks: telemetrySinks } = buildTelemetrySinks(env);
+  const composition = createDefaultApplicationComposition({
+    logger,
+    modules: options.modules,
+  });
+  const { metricsRegistry, sinks: defaultTelemetrySinks } = createDefaultTelemetrySinks(env);
   const telemetryService = new TelemetryService({
     enabled: env.OBSERVABILITY_ENABLED,
     environment: env.OBSERVABILITY_ENVIRONMENT,
     logger,
     service: env.OBSERVABILITY_SERVICE_NAME,
-    sinks: telemetrySinks,
+    sinks: [...defaultTelemetrySinks, ...composition.telemetrySinks],
     version: env.OBSERVABILITY_VERSION,
   });
   const database = new Database(env.DATABASE_URL, {
@@ -105,11 +112,14 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const productAnalyticsService = new ProductAnalyticsService({
     enabled: env.OBSERVABILITY_ENABLED,
     logger,
-    sinks: buildAnalyticsSinks({
-      auditService,
-      env,
-      metricsRegistry,
-    }),
+    sinks: [
+      ...createDefaultAnalyticsSinks({
+        auditService,
+        env,
+        metricsRegistry,
+      }),
+      ...composition.productAnalyticsSinks,
+    ],
   });
   const persistentIncidentReportingService = new IncidentReportingService({
     enabled: env.OBSERVABILITY_ENABLED,
@@ -117,11 +127,14 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     logger,
     service: env.OBSERVABILITY_SERVICE_NAME,
     version: env.OBSERVABILITY_VERSION,
-    sinks: buildIncidentSinks({
-      auditService,
-      env,
-      metricsRegistry,
-    }),
+    sinks: [
+      ...createDefaultIncidentSinks({
+        auditService,
+        env,
+        metricsRegistry,
+      }),
+      ...composition.incidentSinks,
+    ],
   });
   const accountMembershipRepository = new AccountMembershipRepository(database);
   const accountRepository = new AccountRepository(database);
@@ -145,26 +158,12 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     documentRepository,
     productAnalyticsService,
   );
-  const documentStorage: DocumentStoragePort = env.DOCUMENT_STORAGE_DRIVER === "gcs"
-    ? new GcsDocumentStorage(env.DOCUMENT_STORAGE_BUCKET!)
-    : new LocalDocumentStorage(env.DOCUMENT_STORAGE_LOCAL_PATH);
+  const documentStorage = composition.documentStorage ?? createDefaultDocumentStorage(env);
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingJobRepository = new DocumentProcessingJobRepository(database);
-  const documentJobDispatcher = env.WORKER_DISPATCH_DRIVER === "cloud-tasks"
-    ? new CloudTasksDocumentJobDispatcher({
-        projectId: env.GOOGLE_CLOUD_PROJECT!,
-        location: env.WORKER_TASKS_QUEUE_LOCATION!,
-        queueName: env.WORKER_TASKS_QUEUE_NAME!,
-        workerServiceUrl: env.WORKER_TASKS_SERVICE_URL!,
-        invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
-        logger,
-      })
-    : new NoopDocumentJobDispatcher();
+  const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
   const chunkRepository = new ChunkRepository(database);
-  const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
-    new FixedWindowChunkingStrategy(),
-    new StructuredSemanticChunkingStrategy(embeddingService),
-  ]);
+  const chunkingStrategyRegistry = createDefaultChunkingStrategyRegistry(embeddingService);
   const documentProcessingService = new DocumentProcessingService(
     documentRepository,
     chunkRepository,
@@ -202,7 +201,12 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     env.DOCUMENT_PROCESSING_JOB_LEASE_MS,
     telemetryService,
   );
-  const documentDeletionService = new DocumentDeletionService(documentRepository, documentStorage, auditService);
+  const documentDeletionService = new DocumentDeletionService(
+    documentRepository,
+    documentStorage,
+    auditService,
+    composition.capabilityPolicy,
+  );
   const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(
     documentRepository,
     auditService,
@@ -279,8 +283,7 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
   const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository);
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(database));
-  const connectorRegistry = new ConnectorRegistry();
-  registerBuiltInConnectors(connectorRegistry);
+  const connectorRegistry = createDefaultConnectorRegistry(composition.connectors);
   if (env.CONNECTOR_ENCRYPTION_KEY) {
     connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY);
   } else {
@@ -330,6 +333,8 @@ export const buildDependencies = (env: Env = getEnv()): AppDependencies => {
     telemetryService,
     incidentReportingService: persistentIncidentReportingService,
     productAnalyticsService,
+    capabilityPolicy: composition.capabilityPolicy,
+    applicationModules: composition.lifecycle,
     authService: verificationAwareAuthService,
     passwordResetService,
     emailVerificationService,

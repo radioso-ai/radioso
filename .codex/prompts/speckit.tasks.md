@@ -34,6 +34,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - If data-model.md exists: Extract entities and map to user stories
    - If contracts/ exists: Map endpoints to user stories
    - If backend HTTP APIs are in scope: include explicit tasks to update `backend/src/app/http/openapi/document.ts`, regenerate `backend/openapi.yaml` / `backend/openapi.json`, and verify contract tests
+   - If backend app composition is in scope: include explicit tasks to update `backend/src/app/composition/`, wire defaults and lifecycle, and test the composition behavior without moving domain rules into composition files
    - If research.md exists: Extract decisions for setup tasks
    - Generate tasks organized by user story (see Task Generation Rules below)
    - Generate dependency graph showing user story completion order
@@ -128,6 +129,7 @@ Every task MUST strictly follow this format:
    - Shared infrastructure → Setup phase (Phase 1)
    - Foundational/blocking tasks → Foundational phase (Phase 2)
    - Story-specific setup → within that story's phase
+   - App-wide runtime wiring for replaceable adapters, registries, sinks, lifecycle hooks, capability policies, storage/dispatchers, or cross-module infrastructure → explicit `backend/src/app/composition/` tasks plus focused tests
 
 ### Phase Structure
 

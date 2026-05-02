@@ -40,7 +40,7 @@ jobs:
       TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
       TF_VAR_region: ${{ vars.GCP_REGION }}
       TF_VAR_session_cookie_secret: ${{ secrets.SESSION_COOKIE_SECRET }}
-      TF_VAR_website_embed_secret: ${{ secrets.WEBSITE_EMBED_SECRET }}
+      TF_VAR_public_chat_session_secret: ${{ secrets.PUBLIC_CHAT_SESSION_SECRET }}
       TF_VAR_workspace_token_secret: ${{ secrets.WORKSPACE_TOKEN_SECRET }}
 
     steps:
@@ -54,7 +54,7 @@ jobs:
             TF_VAR_connector_encryption_key \
             TF_VAR_openai_api_key \
             TF_VAR_session_cookie_secret \
-            TF_VAR_website_embed_secret \
+            TF_VAR_public_chat_session_secret \
             TF_VAR_workspace_token_secret
           do
             if [ -z "${!key}" ]; then

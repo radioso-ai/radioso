@@ -1,7 +1,8 @@
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { DocumentRecord } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../infra/gcsDocumentStorage.js";
-import { notFound } from "../../../shared/domain/errors.js";
+import { capabilityNames, DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../capabilities/capabilityPolicy.js";
+import { forbidden, notFound } from "../../../shared/domain/errors.js";
 
 export interface DocumentDeletionRepositoryPort {
   findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null>;
@@ -13,9 +14,19 @@ export class DocumentDeletionService {
     private readonly documentRepository: DocumentDeletionRepositoryPort,
     private readonly documentStorage: DocumentStoragePort,
     private readonly auditService: AuditService,
+    private readonly capabilityPolicy: CapabilityPolicy = new DefaultAllowCapabilityPolicy(),
   ) {}
 
   async delete(input: { workspaceId: string; documentId: string }): Promise<void> {
+    const capability = await this.capabilityPolicy.can({
+      capability: capabilityNames.documents.delete,
+      workspaceId: input.workspaceId,
+      subjectId: input.documentId,
+    });
+    if (!capability.allowed) {
+      throw forbidden("Capability is not available");
+    }
+
     const document = await this.documentRepository.findByIdAndWorkspaceId(input.documentId, input.workspaceId);
     if (!document) {
       await this.auditService.record({

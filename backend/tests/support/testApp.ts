@@ -68,6 +68,8 @@ import { createLogger } from "../../src/shared/observability/logger.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
+import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
+import { DefaultAllowCapabilityPolicy } from "../../src/modules/capabilities/capabilityPolicy.js";
 import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import {
   createAuditService,
@@ -746,6 +748,11 @@ export const createTestDependencies = (overrides: {
     telemetryService,
     incidentReportingService: persistentIncidentReportingService,
     productAnalyticsService,
+    capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    applicationModules: new ApplicationModuleCoordinator({
+      logger,
+      registry: createApplicationExtensionRegistry(),
+    }),
     auditService,
     emailService,
     accountAccessService,

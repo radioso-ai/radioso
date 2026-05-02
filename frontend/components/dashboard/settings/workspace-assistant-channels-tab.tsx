@@ -26,7 +26,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { accountApi, generalSettingsApi, settingsApi, type GeneralSettings, type RetrievalSettings } from '@/lib/api'
 import {
-  APP_WEBSITE_EMBED_DEMO_PATH,
   DEFAULT_WEBSITE_EMBED_THEME,
   buildWebsiteEmbedTestHarnessUrl,
   buildWebsiteEmbedSnippet,
@@ -655,7 +654,6 @@ export function WorkspaceAssistantChannelsTab({
         copy: websiteEmbedSnippetResolvedCopyOverrides,
         theme: websiteEmbedSnippetResolvedThemeOverrides,
       },
-      new URL(APP_WEBSITE_EMBED_DEMO_PATH, window.location.origin).toString(),
     )
   }, [
     anonSettings,

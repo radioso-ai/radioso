@@ -1,9 +1,7 @@
-import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { badRequest } from "../../../shared/domain/errors.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
@@ -18,13 +16,6 @@ import {
   metadataValueTypes,
 } from "../../../modules/settings/domain/retrievalSettings.js";
 import {
-  isAssistantBootstrapActive,
-  resolveAssistantDisplayName,
-  validateAssistantBootstrapSettings,
-} from "../../../modules/settings/domain/assistantBootstrapSettings.js";
-import {
-  DEFAULT_WEBSITE_EMBED_SCRIPT_PATH,
-  validateWebsiteEmbedSettings,
   websiteEmbedLauncherIcons,
   websiteEmbedLauncherPositions,
 } from "../../../modules/settings/domain/websiteEmbedSettings.js";
@@ -143,14 +134,6 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
 
-  const escapeHtmlAttribute = (value: string) =>
-    value
-      .replaceAll("&", "&amp;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;");
-
   router.get("/", workspaceSession, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
@@ -260,93 +243,32 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
 
   // --- General settings (anonymous chat) ---
 
-  const buildAnonymousChatUrl = (token: string | null, enabled: boolean): string | null => {
-    const baseUrl = dependencies.env.PUBLIC_CHAT_BASE_URL;
-    if (!baseUrl || !enabled || !token) return null;
-    return `${baseUrl}/${token}`;
-  };
-
-  const buildWebsiteEmbedScriptUrl = (): string | null => {
-    const baseUrl = dependencies.env.PUBLIC_CHAT_BASE_URL;
-    if (!baseUrl) return null;
-
-    try {
-      return new URL(DEFAULT_WEBSITE_EMBED_SCRIPT_PATH, new URL(baseUrl).origin).toString();
-    } catch {
-      return null;
-    }
-  };
-
-  const buildWebsiteEmbedSnippet = (
-    workspace: NonNullable<Awaited<ReturnType<typeof dependencies.workspaceRepository.findById>>>,
-  ): string | null => {
-    if (!workspace.websiteEmbedEnabled || !workspace.websiteEmbedToken) {
-      return null;
-    }
-
-    const scriptUrl = buildWebsiteEmbedScriptUrl();
-    if (!scriptUrl) {
-      return null;
-    }
-
-    const originAttribute =
-      workspace.websiteEmbedAllowedOrigins.length > 0
-        ? ` data-radioso-allowed-origins="${escapeHtmlAttribute(workspace.websiteEmbedAllowedOrigins.join(","))}"`
-        : "";
-    const displayName = resolveAssistantDisplayName({
-      assistantName: workspace.assistantName,
-      workspaceName: workspace.name,
-    });
-    const titleOverride = displayName
-      ? ` data-radioso-copy="${escapeHtmlAttribute(JSON.stringify({ embeddedChatTitle: displayName }))}"`
-      : "";
-
-    return [
-      `<script`,
-      `  async`,
-      `  src="${escapeHtmlAttribute(scriptUrl)}"`,
-      `  data-radioso-token="${escapeHtmlAttribute(workspace.websiteEmbedToken)}"`,
-      `  data-radioso-launcher-label="${escapeHtmlAttribute(workspace.websiteEmbedLauncherLabel)}"`,
-      `  data-radioso-launcher-icon="${escapeHtmlAttribute(workspace.websiteEmbedLauncherIcon)}"`,
-      `  data-radioso-launcher-position="${escapeHtmlAttribute(workspace.websiteEmbedLauncherPosition)}"${originAttribute}${titleOverride}`,
-      `></script>`,
-    ].join("\n");
-  };
-
-  const buildGeneralSettingsResponse = (workspace: Awaited<ReturnType<typeof dependencies.workspaceRepository.findById>>) => {
-    if (!workspace) {
-      return null;
-    }
-
-    return {
-      anonymousChatEnabled: workspace.anonymousChatEnabled,
-      anonymousChatUrl: buildAnonymousChatUrl(workspace.anonymousChatToken, workspace.anonymousChatEnabled),
-      anonymousRateLimit: workspace.anonymousRateLimit,
-      assistantName: workspace.assistantName,
-      greetingInstruction: workspace.greetingInstruction,
-      assistantDefaultLocale: workspace.assistantDefaultLocale,
-      proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
-      assistantBootstrapActive: isAssistantBootstrapActive(workspace),
-      websiteEmbedEnabled: workspace.websiteEmbedEnabled,
-      websiteEmbedToken: workspace.websiteEmbedToken,
-      websiteEmbedScriptUrl: buildWebsiteEmbedScriptUrl(),
-      websiteEmbedSnippet: buildWebsiteEmbedSnippet(workspace),
-      websiteEmbedAllowedOrigins: workspace.websiteEmbedAllowedOrigins,
-      websiteEmbedLauncherLabel: workspace.websiteEmbedLauncherLabel,
-      websiteEmbedLauncherIcon: workspace.websiteEmbedLauncherIcon,
-      websiteEmbedLauncherPosition: workspace.websiteEmbedLauncherPosition,
-    };
-  };
+  const presentLegacyGeneralSettings = (
+    settings: Awaited<ReturnType<typeof dependencies.platformSettingsService.getForWorkspace>>,
+  ) => ({
+    anonymousChatEnabled: settings.channels.anonymousChatEnabled,
+    anonymousChatUrl: settings.channels.anonymousChatUrl,
+    anonymousRateLimit: settings.channels.anonymousRateLimit,
+    assistantName: settings.assistant.assistantName,
+    greetingInstruction: settings.assistant.greetingInstruction,
+    assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
+    proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
+    assistantBootstrapActive: settings.assistant.assistantBootstrapActive,
+    websiteEmbedEnabled: settings.channels.websiteEmbedEnabled,
+    websiteEmbedToken: settings.channels.websiteEmbedToken,
+    websiteEmbedScriptUrl: settings.channels.websiteEmbedScriptUrl,
+    websiteEmbedSnippet: settings.channels.websiteEmbedSnippet,
+    websiteEmbedAllowedOrigins: settings.channels.websiteEmbedAllowedOrigins,
+    websiteEmbedLauncherLabel: settings.channels.websiteEmbedLauncherLabel,
+    websiteEmbedLauncherIcon: settings.channels.websiteEmbedLauncherIcon,
+    websiteEmbedLauncherPosition: settings.channels.websiteEmbedLauncherPosition,
+  });
 
   router.get("/general", workspaceSession, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const workspace = await dependencies.workspaceRepository.findById(workspaceId);
-      if (!workspace) {
-        res.status(404).json({ code: "not_found", message: "Workspace not found" });
-        return;
-      }
-      res.status(200).json(buildGeneralSettingsResponse(workspace));
+      const settings = await dependencies.platformSettingsService.getForWorkspace(workspaceId);
+      res.status(200).json(presentLegacyGeneralSettings(settings));
     } catch (error) {
       next(error);
     }
@@ -354,123 +276,32 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
 
   router.put("/general", workspaceSession, validateBody(updateGeneralSettingsSchema), async (req, res, next) => {
     try {
-      const { workspaceId } = res.locals as { workspaceId: string };
-      const workspace = await dependencies.workspaceRepository.findById(workspaceId);
-      if (!workspace) {
-        res.status(404).json({ code: "not_found", message: "Workspace not found" });
-        return;
-      }
-
-      const enabled = req.body.anonymousChatEnabled ?? workspace.anonymousChatEnabled;
-      const rateLimit = req.body.anonymousRateLimit ?? workspace.anonymousRateLimit;
-      const rotateAnonymousChatToken = req.body.rotateAnonymousChatToken ?? false;
-      const rotateWebsiteEmbedToken = req.body.rotateWebsiteEmbedToken ?? false;
-
-      // Generate token on first enable (preserve across toggles)
-      let token = workspace.anonymousChatToken;
-      if (rotateAnonymousChatToken) {
-        token = randomBytes(16).toString("base64url");
-      } else if (enabled && !token) {
-        token = randomBytes(16).toString("base64url");
-      }
-      let websiteEmbedToken = workspace.websiteEmbedToken;
-      if (rotateWebsiteEmbedToken) {
-        websiteEmbedToken = randomBytes(16).toString("base64url");
-      }
-      let normalizedWebsiteEmbed;
-      try {
-        normalizedWebsiteEmbed = validateWebsiteEmbedSettings({
-          websiteEmbedEnabled: req.body.websiteEmbedEnabled ?? workspace.websiteEmbedEnabled,
-          websiteEmbedToken,
-          websiteEmbedAllowedOrigins: req.body.websiteEmbedAllowedOrigins ?? workspace.websiteEmbedAllowedOrigins,
-          websiteEmbedLauncherLabel: req.body.websiteEmbedLauncherLabel ?? workspace.websiteEmbedLauncherLabel,
-          websiteEmbedLauncherIcon: req.body.websiteEmbedLauncherIcon ?? workspace.websiteEmbedLauncherIcon,
-          websiteEmbedLauncherPosition: req.body.websiteEmbedLauncherPosition ?? workspace.websiteEmbedLauncherPosition,
-        });
-      } catch (error) {
-        if (error instanceof Error) {
-          throw badRequest(error.message);
-        }
-        throw error;
-      }
-      if (normalizedWebsiteEmbed.websiteEmbedEnabled && !websiteEmbedToken) {
-        websiteEmbedToken = randomBytes(16).toString("base64url");
-      }
-      if (normalizedWebsiteEmbed.websiteEmbedEnabled && !token) {
-        token = randomBytes(16).toString("base64url");
-      }
-
-      const normalizedBootstrap = validateAssistantBootstrapSettings({
-        assistantName: req.body.assistantName ?? workspace.assistantName,
-        greetingInstruction: req.body.greetingInstruction ?? workspace.greetingInstruction,
-        assistantDefaultLocale:
-          req.body.assistantDefaultLocale === undefined
-            ? workspace.assistantDefaultLocale
-            : req.body.assistantDefaultLocale,
-        proactiveGreetingEnabled: req.body.proactiveGreetingEnabled ?? workspace.proactiveGreetingEnabled,
-      });
-
-      const updated = await dependencies.workspaceRepository.updateGeneralSettings(workspaceId, {
-        anonymousChatEnabled: enabled,
-        anonymousChatToken: token,
-        anonymousRateLimit: rateLimit,
-        ...normalizedBootstrap,
-        websiteEmbedEnabled: normalizedWebsiteEmbed.websiteEmbedEnabled,
-        websiteEmbedToken,
-        websiteEmbedAllowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
-        websiteEmbedLauncherLabel: normalizedWebsiteEmbed.websiteEmbedLauncherLabel,
-        websiteEmbedLauncherIcon: normalizedWebsiteEmbed.websiteEmbedLauncherIcon,
-        websiteEmbedLauncherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
-      });
-
-      if (enabled !== workspace.anonymousChatEnabled) {
-        const { accountId } = res.locals as { accountId: string };
-        await dependencies.auditService.record({
-          accountId,
-          workspaceId,
-          eventType: enabled ? "anonymous_chat.enabled" : "anonymous_chat.disabled",
-          eventStatus: "success",
-          metadata: { anonymousRateLimit: rateLimit },
-        });
-      }
-      if (rotateAnonymousChatToken) {
-        const { accountId } = res.locals as { accountId: string };
-        await dependencies.auditService.record({
-          accountId,
-          workspaceId,
-          eventType: "anonymous_chat.token_rotated",
-          eventStatus: "success",
-          metadata: { enabled },
-        });
-      }
-      if (normalizedWebsiteEmbed.websiteEmbedEnabled !== workspace.websiteEmbedEnabled) {
-        const { accountId } = res.locals as { accountId: string };
-        await dependencies.auditService.record({
-          accountId,
-          workspaceId,
-          eventType: normalizedWebsiteEmbed.websiteEmbedEnabled ? "website_embed.enabled" : "website_embed.disabled",
-          eventStatus: "success",
-          metadata: {
-            allowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
-            launcherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
+      const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
+      const settings = await dependencies.platformSettingsService.updateForWorkspace(
+        workspaceId,
+        {
+          assistant: {
+            assistantName: req.body.assistantName,
+            greetingInstruction: req.body.greetingInstruction,
+            assistantDefaultLocale: req.body.assistantDefaultLocale,
+            proactiveGreetingEnabled: req.body.proactiveGreetingEnabled,
           },
-        });
-      }
-      if (rotateWebsiteEmbedToken) {
-        const { accountId } = res.locals as { accountId: string };
-        await dependencies.auditService.record({
-          accountId,
-          workspaceId,
-          eventType: "website_embed.token_rotated",
-          eventStatus: "success",
-          metadata: {
-            enabled: normalizedWebsiteEmbed.websiteEmbedEnabled,
-            allowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
+          channels: {
+            anonymousChatEnabled: req.body.anonymousChatEnabled,
+            anonymousRateLimit: req.body.anonymousRateLimit,
+            rotateAnonymousChatToken: req.body.rotateAnonymousChatToken,
+            websiteEmbedEnabled: req.body.websiteEmbedEnabled,
+            rotateWebsiteEmbedToken: req.body.rotateWebsiteEmbedToken,
+            websiteEmbedAllowedOrigins: req.body.websiteEmbedAllowedOrigins,
+            websiteEmbedLauncherLabel: req.body.websiteEmbedLauncherLabel,
+            websiteEmbedLauncherIcon: req.body.websiteEmbedLauncherIcon,
+            websiteEmbedLauncherPosition: req.body.websiteEmbedLauncherPosition,
           },
-        });
-      }
+        },
+        { accountId },
+      );
 
-      res.status(200).json(buildGeneralSettingsResponse(updated));
+      res.status(200).json(presentLegacyGeneralSettings(settings));
     } catch (error) {
       next(error);
     }

@@ -4,6 +4,7 @@ import type { Server } from "node:http";
 import { createApp } from "../app/server/createApp.js";
 import { buildDependencies } from "../app/server/dependencies.js";
 import type { Env } from "../app/config/env.js";
+import type { ApplicationModule } from "../app/composition/index.js";
 import { runMigrations } from "../db/runMigrations.js";
 import { createConnectorChatPort } from "../modules/connectors/services/connectorChatPort.js";
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
@@ -21,6 +22,7 @@ export interface StartApiRuntimeOptions {
   buildDependencies?: (env: Env) => AppDependencies;
   createApp?: (dependencies: AppDependencies) => Express;
   listen?: (app: Express, port: number, onListening: () => void) => ServerLike;
+  applicationModules?: ApplicationModule[];
 }
 
 const defaultListen = (app: Express, port: number, onListening: () => void): Server =>
@@ -30,7 +32,9 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
   const logger = options.logger ?? createLogger();
   await (options.runMigrations ?? runMigrations)(options.env.DATABASE_URL, logger);
 
-  const dependencies = (options.buildDependencies ?? buildDependencies)(options.env);
+  const dependencies = options.buildDependencies
+    ? options.buildDependencies(options.env)
+    : buildDependencies(options.env, { modules: options.applicationModules });
   await dependencies.connectorRegistry.runMigrations(dependencies.connectorDb);
   await dependencies.connectorRegistry.initializeAll({
     db: dependencies.connectorDb,

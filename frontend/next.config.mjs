@@ -1,3 +1,5 @@
+import path from "node:path"
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
@@ -11,6 +13,13 @@ const nextConfig = {
     unoptimized: true,
   },
   webpack(config) {
+    if (process.env.RADIOSO_ENTERPRISE_FRONTEND !== "true") {
+      config.resolve.alias["@radioso/enterprise-embed-widget"] = path.resolve(
+        process.cwd(),
+        "lib/enterprise-embed-widget-stub",
+      )
+    }
+
     config.module.rules.push({
       test: /\.md$/i,
       type: "asset/source",

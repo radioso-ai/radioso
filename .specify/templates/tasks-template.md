@@ -12,7 +12,7 @@ description: "Task list template for feature implementation"
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
-**Architecture**: Tasks MUST preserve the module ownership defined in `plan.md`. Prefer explicit extraction tasks for new domain logic, interfaces, and persistence seams over silently extending the largest existing file. If the plan identifies unclear structure or oversized files, tasks MUST include architecture/refactor stories that are completed before feature implementation in the affected area.
+**Architecture**: Tasks MUST preserve the module ownership defined in `plan.md`. Prefer explicit extraction tasks for new domain logic, interfaces, and persistence seams over silently extending the largest existing file. If backend work touches replaceable runtime infrastructure, tasks MUST include any required updates to `backend/src/app/composition/` for default wiring and lifecycle while keeping product rules in modules or shared domain files. If the plan identifies unclear structure or oversized files, tasks MUST include architecture/refactor stories that are completed before feature implementation in the affected area.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -184,6 +184,7 @@ Examples of foundational tasks (adjust based on your project):
 - Frontend Playwright coverage comes first for user-visible behavior; add frontend unit tests only for non-visual logic
 - Complete required architecture/refactor stories first when the plan flags unclear structure or oversized files
 - Extract or create focused modules before wiring orchestration
+- Update `backend/src/app/composition/` when the story introduces or replaces app-wide adapters, registries, sinks, lifecycle hooks, capability policies, storage/dispatcher implementations, or cross-module runtime infrastructure
 - Models before services
 - Services before endpoints
 - Core implementation before integration
@@ -256,3 +257,4 @@ With multiple developers:
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
 - Avoid: monolithic "update chatService/api/page to do everything" tasks when the plan calls for focused modules
+- Avoid: hiding app-wide runtime wiring inside feature services when it belongs in `backend/src/app/composition/`

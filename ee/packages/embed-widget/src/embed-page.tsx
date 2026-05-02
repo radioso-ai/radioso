@@ -6,8 +6,8 @@ import {
   normalizeWebsiteEmbedDisplayMode,
   parseWebsiteEmbedCopyOverridesParam,
   parseWebsiteEmbedThemeOverridesParam,
-} from "../lib/embed-widget.js";
-import { resolveEmbedLocaleSearchParam } from "../lib/embed-locale.js";
+} from "@/lib/embed-widget";
+import { resolveEmbedLocaleSearchParam } from "@/lib/embed-locale";
 
 const firstSearchValue = (value?: string | string[]) => (Array.isArray(value) ? value[0] : value);
 

@@ -4,15 +4,15 @@ import { useEffect, useRef, useState } from 'react'
 
 import { AlertCircle } from 'lucide-react'
 
-import { PublicChatShell } from './public-chat-shell'
-import { LogoSpinner } from '../ui/spinner'
+import { PublicChatShell } from '@/components/chat/public-chat-shell'
+import { LogoSpinner } from '@/components/ui/spinner'
 import {
   formatWebsiteEmbedStartingMessage,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
   type WebsiteEmbedCopyOverrides,
   type WebsiteEmbedThemeOverrides,
-} from '../../lib/embed-widget'
+} from '@/lib/embed-widget'
 import {
   clearStoredAnonymousSession,
   clearStoredEmbedBootstrapSession,
@@ -20,7 +20,7 @@ import {
   readStoredEmbedBootstrapSession,
   storeEmbedBootstrapSession,
   type WebsiteEmbedPageContext,
-} from '../../lib/api'
+} from '@/lib/api'
 
 function EmbeddedChatUnavailable({
   localeOverride,

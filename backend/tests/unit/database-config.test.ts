@@ -38,7 +38,7 @@ describe("database configuration", () => {
     expect(env.DB_STATEMENT_TIMEOUT_MS).toBe(15_000);
     expect(env.DB_QUERY_TIMEOUT_MS).toBe(20_000);
     expect(env.WORKSPACE_TOKEN_SECRET).toBeUndefined();
-    expect(env.WEBSITE_EMBED_SECRET).toBeUndefined();
+    expect(env.PUBLIC_CHAT_SESSION_SECRET).toBeUndefined();
   });
 
   it("passes database controls through to the pg pool", () => {

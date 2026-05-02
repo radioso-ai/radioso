@@ -3,8 +3,7 @@ export const dynamic = 'force-dynamic'
 
 const BACKEND_BASE = process.env.BACKEND_INTERNAL_URL ?? 'http://localhost:8080'
 const ANONYMOUS_SESSION_HEADER = 'x-radioso-anonymous-session'
-const ANONYMOUS_SESSION_RESET_HEADER = 'x-radioso-reset-anonymous-session'
-const EMBED_SESSION_HEADER = 'x-radioso-embed-session'
+const PUBLIC_SESSION_HEADER = 'x-radioso-public-session'
 
 interface PublicChatProxyRequestBody {
   message?: string
@@ -25,8 +24,7 @@ export async function POST(
   const { token } = await context.params
   const cookie = request.headers.get('cookie')
   const anonymousSession = request.headers.get(ANONYMOUS_SESSION_HEADER)
-  const anonymousSessionReset = request.headers.get(ANONYMOUS_SESSION_RESET_HEADER)
-  const embedSession = request.headers.get(EMBED_SESSION_HEADER)
+  const publicSession = request.headers.get(PUBLIC_SESSION_HEADER)
   const rawBody = await request.text()
   const parsedBody = rawBody ? JSON.parse(rawBody) as PublicChatProxyRequestBody : {}
   const body = JSON.stringify({
@@ -47,8 +45,7 @@ export async function POST(
         'X-Forwarded-Prefix': '/backend',
         ...(cookie ? { Cookie: cookie } : {}),
         ...(anonymousSession ? { 'X-Radioso-Anonymous-Session': anonymousSession } : {}),
-        ...(anonymousSessionReset ? { 'X-Radioso-Reset-Anonymous-Session': anonymousSessionReset } : {}),
-        ...(embedSession ? { 'X-Radioso-Embed-Session': embedSession } : {}),
+        ...(publicSession ? { 'X-Radioso-Public-Session': publicSession } : {}),
       },
       body,
       cache: 'no-store',

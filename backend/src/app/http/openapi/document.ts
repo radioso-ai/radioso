@@ -551,21 +551,32 @@ const UpdatePlatformSettingsRequestSchema = registry.register(
   updatePlatformSettingsSchema,
 );
 
-const PublicEmbedSessionResponseSchema = registry.register(
-  "PublicEmbedSessionResponse",
+const PublicChatPageContextSchema = z.object({
+  pageUrl: z.string().trim().max(2048).nullable().optional(),
+  pageTitle: z.string().trim().max(180).nullable().optional(),
+  pageLocale: z.string().trim().max(35).nullable().optional(),
+  browserLocale: z.string().trim().max(35).nullable().optional(),
+  content: z.string().trim().max(6000).nullable().optional(),
+}).optional();
+
+const PublicChatSessionResponseSchema = registry.register(
+  "PublicChatSessionResponse",
   z.object({
     workspaceName: z.string(),
     publicChatToken: z.string(),
-    embedSessionToken: z.string(),
+    publicSessionId: z.string().uuid(),
+    publicSessionToken: z.string(),
     assistantBootstrapActive: z.boolean(),
     expiresAt: z.string().datetime(),
   }),
 );
 
-const PublicEmbedSessionRequestSchema = registry.register(
-  "PublicEmbedSessionRequest",
+const PublicChatSessionRequestSchema = registry.register(
+  "PublicChatSessionRequest",
   z.object({
+    channel: z.enum(["anonymous_link", "website_embed"]),
     anonymousSessionId: z.string().uuid().optional(),
+    pageContext: PublicChatPageContextSchema,
   }),
 );
 
@@ -1336,26 +1347,26 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/v1/public/embed/{token}/session",
+  path: "/api/v1/public/chat/{token}/sessions",
   tags: ["Assistant"],
-  summary: "Bootstrap an embedded chat session for an approved website origin",
-  operationId: "createPublicEmbedSession",
+  summary: "Create a public chat session from a launch token",
+  operationId: "createPublicChatSession",
   request: {
     params: tokenPathParamsSchema,
     body: {
       content: {
         "application/json": {
-          schema: PublicEmbedSessionRequestSchema,
+          schema: PublicChatSessionRequestSchema,
         },
       },
     },
   },
   responses: {
     200: {
-      description: "Embedded chat session bootstrap returned",
+      description: "Public chat session returned",
       content: {
         "application/json": {
-          schema: PublicEmbedSessionResponseSchema,
+          schema: PublicChatSessionResponseSchema,
         },
       },
     },
@@ -1368,7 +1379,7 @@ registry.registerPath({
       },
     },
     403: {
-      description: "Origin not allowed",
+      description: "Origin not allowed for this public chat channel",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
@@ -1376,7 +1387,7 @@ registry.registerPath({
       },
     },
     404: {
-      description: "Embedded chat not found",
+      description: "Public chat not found",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

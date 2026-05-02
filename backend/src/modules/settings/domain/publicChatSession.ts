@@ -1,17 +1,18 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
-const WEBSITE_EMBED_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const PUBLIC_CHAT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
-const websiteEmbedSessionPayloadSchema = z.object({
+const publicChatSessionPayloadSchema = z.object({
   workspaceId: z.string().uuid(),
   publicChatToken: z.string().min(1),
-  anonymousSessionId: z.string().uuid(),
-  sourceOrigin: z.string().min(1),
+  publicSessionId: z.string().uuid(),
+  sourceChannel: z.enum(["anonymous", "website_embed"]),
+  sourceOrigin: z.string().min(1).nullable(),
   expiresAt: z.string().datetime(),
 });
 
-export type WebsiteEmbedSessionPayload = z.infer<typeof websiteEmbedSessionPayloadSchema>;
+export type PublicChatSessionPayload = z.infer<typeof publicChatSessionPayloadSchema>;
 
 const toBase64Url = (value: string) => Buffer.from(value, "utf8").toString("base64url");
 const fromBase64Url = (value: string) => Buffer.from(value, "base64url").toString("utf8");
@@ -19,13 +20,13 @@ const fromBase64Url = (value: string) => Buffer.from(value, "base64url").toStrin
 const signPayload = (secret: string, payload: string) =>
   createHmac("sha256", secret).update(payload).digest("base64url");
 
-export const issueWebsiteEmbedSession = (
+export const issuePublicChatSession = (
   secret: string,
-  input: Omit<WebsiteEmbedSessionPayload, "expiresAt">,
-): WebsiteEmbedSessionPayload & { token: string } => {
-  const payload: WebsiteEmbedSessionPayload = {
+  input: Omit<PublicChatSessionPayload, "expiresAt">,
+): PublicChatSessionPayload & { token: string } => {
+  const payload: PublicChatSessionPayload = {
     ...input,
-    expiresAt: new Date(Date.now() + WEBSITE_EMBED_SESSION_TTL_MS).toISOString(),
+    expiresAt: new Date(Date.now() + PUBLIC_CHAT_SESSION_TTL_MS).toISOString(),
   };
 
   const encodedPayload = toBase64Url(JSON.stringify(payload));
@@ -37,10 +38,10 @@ export const issueWebsiteEmbedSession = (
   };
 };
 
-export const verifyWebsiteEmbedSession = (
+export const verifyPublicChatSession = (
   token: string | undefined,
   secret: string | undefined,
-): WebsiteEmbedSessionPayload | null => {
+): PublicChatSessionPayload | null => {
   if (!token || !secret) {
     return null;
   }
@@ -62,7 +63,7 @@ export const verifyWebsiteEmbedSession = (
   }
 
   try {
-    const parsed = websiteEmbedSessionPayloadSchema.safeParse(JSON.parse(fromBase64Url(encodedPayload)));
+    const parsed = publicChatSessionPayloadSchema.safeParse(JSON.parse(fromBase64Url(encodedPayload)));
     if (!parsed.success) {
       return null;
     }

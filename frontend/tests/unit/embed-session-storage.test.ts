@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   readStoredEmbedBootstrapSession,
-  readStoredEmbedSessionToken,
+  readStoredPublicSessionToken,
   storeEmbedBootstrapSession,
 } from '@/lib/api'
 
@@ -37,17 +37,19 @@ describe('embed session storage helpers', () => {
     storeEmbedBootstrapSession('embed-token', {
       workspaceName: 'Support concierge',
       publicChatToken: 'public-token',
-      embedSessionToken: 'grant-token',
+      publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
+      publicSessionToken: 'grant-token',
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     })
 
     expect(readStoredEmbedBootstrapSession('embed-token')).toEqual({
       workspaceName: 'Support concierge',
       publicChatToken: 'public-token',
-      embedSessionToken: 'grant-token',
+      publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
+      publicSessionToken: 'grant-token',
       expiresAt: expect.any(String),
     })
-    expect(readStoredEmbedSessionToken('public-token')).toBe('grant-token')
+    expect(readStoredPublicSessionToken('public-token')).toBe('grant-token')
 
     expect(readStoredEmbedBootstrapSession('other-embed-token')).toBeNull()
   })
@@ -59,11 +61,12 @@ describe('embed session storage helpers', () => {
     storeEmbedBootstrapSession('embed-token', {
       workspaceName: 'Support concierge',
       publicChatToken: 'public-token',
-      embedSessionToken: 'grant-token',
+      publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
+      publicSessionToken: 'grant-token',
       expiresAt: new Date(Date.now() - 60_000).toISOString(),
     })
 
     expect(readStoredEmbedBootstrapSession('embed-token')).toBeNull()
-    expect(readStoredEmbedSessionToken('public-token')).toBeNull()
+    expect(readStoredPublicSessionToken('public-token')).toBeNull()
   })
 })

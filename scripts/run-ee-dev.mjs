@@ -207,7 +207,7 @@ const main = async () => {
   await command("docker", ["compose", "-f", "infra/docker-compose.yml", "up", "-d", "postgres"]);
 
   console.log("Building Enterprise Edition packages...");
-  await command("npm", ["install", "--no-audit", "--no-fund"], { cwd: eeRoot });
+  await command("npm", ["install", "--package-lock=false", "--no-audit", "--no-fund"], { cwd: eeRoot });
   await command("npm", ["run", "build"], { cwd: eeRoot });
 
   console.log("Installing local app dependencies and private packages...");

@@ -30,6 +30,18 @@ At minimum, a production deployment needs:
 
 Relevant runtime flags are defined in `backend/.env.example` and enforced by `backend/src/app/config/env.ts`.
 
+## Required secrets
+
+The Terraform workflow expects these GitHub environment secrets for each deployed environment:
+
+- `OPENAI_API_KEY`
+- `SESSION_COOKIE_SECRET`
+- `WORKSPACE_TOKEN_SECRET`
+- `PUBLIC_CHAT_SESSION_SECRET`
+- `CONNECTOR_ENCRYPTION_KEY`
+
+`PUBLIC_CHAT_SESSION_SECRET` signs public chat session tokens for anonymous chat links and website embeds. In Terraform this maps to `public_chat_session_secret`, which is stored in Secret Manager and injected into the backend as `PUBLIC_CHAT_SESSION_SECRET`.
+
 ## Runtime separation
 
 The backend owns migrations, auth, retrieval, chat, and API routes. The worker owns queued document processing. Keep those services independently deployable and independently scalable.

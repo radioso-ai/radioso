@@ -46,6 +46,7 @@ import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
+import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -263,6 +264,7 @@ export class ChatService {
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
+    private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
   ) {
     this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, history, prompt }) =>
       this.chatGateway.answer({
@@ -464,6 +466,11 @@ export class ChatService {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
+    const usageReservation = await this.usageLimitPolicy.reserveAnswer({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      surface: input.sourceChannel ?? "assistant",
+    });
 
     try {
       session = await this.prepareSession(input);
@@ -518,6 +525,7 @@ export class ChatService {
         route,
         stream: input.stream,
       });
+      await usageReservation.commit();
 
       return {
         conversationId: session.conversation.id,
@@ -532,6 +540,7 @@ export class ChatService {
         retrievalTrace,
       };
     } catch (error) {
+      await usageReservation.release();
       const normalizedError = normalizeProviderCredentialError(error);
       await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
@@ -558,6 +567,20 @@ export class ChatService {
       | Promise<Pick<PresentedAnswer, "suggestions" | "conversationModeMetadata">>
       | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
+    const usageReservation = await this.usageLimitPolicy.reserveAnswer({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      surface: input.sourceChannel ?? "assistant",
+    });
+    let usageReservationCommitted = false;
+    let usageReservationReleased = false;
+    const releaseUsageReservation = async () => {
+      if (usageReservationCommitted || usageReservationReleased) {
+        return;
+      }
+      usageReservationReleased = true;
+      await usageReservation.release();
+    };
 
     try {
       session = await this.prepareSession(input);
@@ -701,6 +724,8 @@ export class ChatService {
         route,
         stream: input.stream,
       });
+      await usageReservation.commit();
+      usageReservationCommitted = true;
 
       yield {
         type: "done",
@@ -717,9 +742,12 @@ export class ChatService {
       };
 
     } catch (error) {
+      await releaseUsageReservation();
       const normalizedError = normalizeProviderCredentialError(error);
       await this.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
+    } finally {
+      await releaseUsageReservation();
     }
 
     try {

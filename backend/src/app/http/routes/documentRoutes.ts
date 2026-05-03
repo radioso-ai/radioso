@@ -135,8 +135,9 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
 
   router.post("/", workspaceSession, validateBody(documentSchema), async (req, res, next) => {
     try {
-      const { workspaceId } = res.locals as { workspaceId: string };
+      const { accountId, workspaceId } = res.locals as { accountId?: string; workspaceId: string };
       const result = await dependencies.documentIngestionService.ingest({
+        accountId,
         workspaceId,
         title: req.body.title,
         content: req.body.content,
@@ -150,24 +151,35 @@ export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
   });
 
   router.post("/import", workspaceSession, uploadRateLimit, async (req, res, next) => {
+    let usageReservation: Awaited<ReturnType<AppDependencies["usageLimitPolicy"]["reserveDocument"]>> | null = null;
     try {
+      const { accountId, workspaceId } = res.locals as { accountId?: string; workspaceId: string };
+      usageReservation = await dependencies.usageLimitPolicy.reserveDocument({
+        accountId,
+        workspaceId,
+        sourceKind: "uploaded_file",
+      });
       await runUploadSingle(req, res);
 
-      const { workspaceId } = res.locals as { workspaceId: string };
       if (!req.file) {
         throw badRequest("File is required");
       }
 
       const title = typeof req.body?.title === "string" ? req.body.title : undefined;
+      const importReservation = usageReservation;
+      usageReservation = null;
       const result = await dependencies.documentImportService.importDocument({
+        accountId,
         workspaceId,
         filename: req.file.originalname,
         mimeType: req.file.mimetype,
         buffer: req.file.buffer,
         title,
+        usageReservation: importReservation,
       });
       res.status(202).json(result);
     } catch (error) {
+      await usageReservation?.release();
       next(error);
     }
   });

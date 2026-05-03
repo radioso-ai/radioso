@@ -671,7 +671,7 @@ export function WorkspaceAssistantChannelsTab({
   const websiteEmbedDemoOrigin =
     typeof window !== 'undefined' ? window.location.origin : ''
 
-  const websiteEmbedHasLocalHarnessOrigin = useMemo(
+  const websiteEmbedHasDemoOrigin = useMemo(
     () => (websiteEmbedDemoOrigin ? parseWebsiteEmbedOrigins(websiteEmbedOrigins).includes(websiteEmbedDemoOrigin) : false),
     [websiteEmbedDemoOrigin, websiteEmbedOrigins],
   )
@@ -874,14 +874,14 @@ export function WorkspaceAssistantChannelsTab({
 
     try {
       const parsedOrigins = parseWebsiteEmbedOrigins(websiteEmbedOrigins)
-      const nextOrigins = websiteEmbedHasLocalHarnessOrigin
+      const nextOrigins = websiteEmbedHasDemoOrigin
         ? parsedOrigins
         : websiteEmbedDemoOrigin
           ? [...parsedOrigins, websiteEmbedDemoOrigin]
           : parsedOrigins
 
       const hasPersistedChanges =
-        !websiteEmbedHasLocalHarnessOrigin ||
+        !websiteEmbedHasDemoOrigin ||
         anonSettings.websiteEmbedEnabled !== (savedAnonSettings?.websiteEmbedEnabled ?? false) ||
         websiteEmbedOrigins !== formatWebsiteEmbedOrigins(savedAnonSettings?.websiteEmbedAllowedOrigins ?? []) ||
         anonSettings.websiteEmbedLauncherLabel !== savedAnonSettings?.websiteEmbedLauncherLabel ||
@@ -904,7 +904,7 @@ export function WorkspaceAssistantChannelsTab({
       window.open(websiteEmbedDemoUrl, '_blank', 'noopener,noreferrer')
     } catch (error) {
       console.error('Failed to prepare website embed demo page:', error)
-      setWebsiteEmbedDemoError(getApiErrorMessage(error, 'Failed to prepare the local demo page.'))
+      setWebsiteEmbedDemoError(getApiErrorMessage(error, 'Failed to prepare the demo page.'))
     } finally {
       setIsPreparingWebsiteEmbedDemo(false)
     }
@@ -1693,7 +1693,7 @@ export function WorkspaceAssistantChannelsTab({
                       image or GIF, and apply the text or color customizations configured above.
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Quick local tryout: this action saves the current website embed settings, adds the current app origin to the approved origins when needed, and opens a same-origin demo page prefilled with the current widget configuration.
+                      Quick tryout: this action saves the current website embed settings, adds the current app origin to the approved origins when needed, and opens a same-origin demo page prefilled with the current widget configuration.
                     </p>
                     {websiteEmbedDemoError ? (
                       <p className="text-xs text-destructive">{websiteEmbedDemoError}</p>
@@ -1719,7 +1719,7 @@ export function WorkspaceAssistantChannelsTab({
                         ) : (
                           <ExternalLink className="mr-2 h-4 w-4" />
                         )}
-                        Open local demo page
+                        Open demo page
                       </Button>
                       <Button variant="outline" onClick={handleWebsiteEmbedTokenRotate} disabled={isAnonSaving}>
                         {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}

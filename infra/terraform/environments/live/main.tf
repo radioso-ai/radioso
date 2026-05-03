@@ -36,8 +36,9 @@ module "radioso" {
   region          = var.region
   deploy_services = var.deploy_services
 
-  backend_image  = var.backend_image
-  frontend_image = var.frontend_image
+  backend_image   = var.backend_image
+  frontend_image  = var.frontend_image
+  radioso_edition = var.radioso_edition
 
   backend_min_instances  = 0
   backend_max_instances  = var.backend_max_instances
@@ -58,7 +59,7 @@ module "radioso" {
   openai_api_key                        = var.openai_api_key
   session_cookie_secret                 = var.session_cookie_secret
   workspace_token_secret                = var.workspace_token_secret
-  public_chat_session_secret                  = var.public_chat_session_secret
+  public_chat_session_secret            = var.public_chat_session_secret
   connector_encryption_key              = var.connector_encryption_key
   metrics_auth_token                    = var.metrics_auth_token
   openai_chat_model                     = var.openai_chat_model

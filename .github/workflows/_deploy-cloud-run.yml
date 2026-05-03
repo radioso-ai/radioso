@@ -24,6 +24,11 @@ on:
         required: false
         default: false
         type: boolean
+      radioso_edition:
+        description: Radioso edition to build and deploy.
+        required: false
+        default: enterprise
+        type: string
       worker_service:
         description: Cloud Run worker service name.
         required: true
@@ -49,6 +54,7 @@ jobs:
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_REGION: ${{ vars.GCP_REGION }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      RADIOSO_EDITION: ${{ inputs.radioso_edition }}
       WORKER_SERVICE: ${{ inputs.worker_service }}
 
     steps:
@@ -96,13 +102,13 @@ jobs:
           echo "FRONTEND_IMAGE=${ARTIFACT_REGISTRY_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/frontend:${GITHUB_SHA}" >> "$GITHUB_ENV"
 
       - name: Build backend image
-        run: docker build --platform linux/amd64 -f infra/backend.Dockerfile -t "${BACKEND_IMAGE}" .
+        run: docker build --platform linux/amd64 --build-arg RADIOSO_EDITION="${RADIOSO_EDITION}" -f infra/backend.Dockerfile -t "${BACKEND_IMAGE}" .
 
       - name: Push backend image
         run: docker push "${BACKEND_IMAGE}"
 
       - name: Build frontend image
-        run: docker build --platform linux/amd64 -f frontend/Dockerfile -t "${FRONTEND_IMAGE}" ./frontend
+        run: docker build --platform linux/amd64 --build-arg RADIOSO_EDITION="${RADIOSO_EDITION}" -f infra/frontend.Dockerfile -t "${FRONTEND_IMAGE}" .
 
       - name: Push frontend image
         run: docker push "${FRONTEND_IMAGE}"

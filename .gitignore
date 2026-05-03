@@ -21,6 +21,11 @@ yarn-error.log*
 *.pid
 *.seed
 
+# Generated Enterprise Edition frontend routes
+frontend/app/api/embed/
+frontend/app/embed/
+frontend/app/radioso-embed.js/
+
 # Editor and OS files
 .idea/
 .vscode/

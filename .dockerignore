@@ -9,5 +9,9 @@
 **/.turbo
 **/npm-debug.log*
 
+frontend/app/api/embed
+frontend/app/embed
+frontend/app/radioso-embed.js
+
 specs
 tests

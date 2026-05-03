@@ -23,7 +23,7 @@ describe("general settings contract", () => {
       assistantBootstrapActive: false,
       websiteEmbedEnabled: false,
       websiteEmbedToken: null,
-      websiteEmbedScriptUrl: "http://localhost:3000/radioso-embed.js",
+      websiteEmbedScriptUrl: null,
       websiteEmbedSnippet: null,
       websiteEmbedAllowedOrigins: [],
     });
@@ -84,11 +84,10 @@ describe("general settings contract", () => {
       websiteEmbedLauncherLabel: "Talk to Marta",
       websiteEmbedLauncherIcon: "sparkles",
       websiteEmbedLauncherPosition: "bottom-left",
-      websiteEmbedScriptUrl: "http://localhost:3000/radioso-embed.js",
+      websiteEmbedScriptUrl: null,
+      websiteEmbedSnippet: null,
     });
     expect(response.body.websiteEmbedToken).toEqual(expect.any(String));
-    expect(response.body.websiteEmbedSnippet).toContain('data-radioso-token="');
-    expect(response.body.websiteEmbedSnippet).toContain(response.body.websiteEmbedToken);
   });
 
   it("rejects enabling website embed without approved origins", async () => {
@@ -169,7 +168,7 @@ describe("general settings contract", () => {
     expect(rotated.body.websiteEmbedToken).toEqual(expect.any(String));
     expect(rotated.body.anonymousChatUrl).not.toBe(initialAnonymousUrl);
     expect(rotated.body.websiteEmbedToken).not.toBe(initialEmbedToken);
-    expect(rotated.body.websiteEmbedSnippet).toContain(rotated.body.websiteEmbedToken);
+    expect(rotated.body.websiteEmbedSnippet).toBeNull();
   });
 
   it("rejects unauthenticated access", async () => {

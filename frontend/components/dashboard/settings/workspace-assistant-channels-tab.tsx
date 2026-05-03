@@ -25,8 +25,8 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { accountApi, generalSettingsApi, settingsApi, type GeneralSettings, type RetrievalSettings } from '@/lib/api'
+import { WEBSITE_EMBED_CHANNEL_ENABLED } from '@/lib/enterprise-features'
 import {
-  APP_WEBSITE_EMBED_DEMO_PATH,
   DEFAULT_WEBSITE_EMBED_THEME,
   buildWebsiteEmbedTestHarnessUrl,
   buildWebsiteEmbedSnippet,
@@ -447,7 +447,7 @@ export function WorkspaceAssistantChannelsTab({
 	      : false
 
   const hasWebsiteEmbedChanges =
-    anonSettings && savedAnonSettings
+    WEBSITE_EMBED_CHANNEL_ENABLED && anonSettings && savedAnonSettings
       ? (
           anonSettings.websiteEmbedEnabled !== savedAnonSettings.websiteEmbedEnabled ||
           websiteEmbedOrigins !== formatWebsiteEmbedOrigins(savedAnonSettings.websiteEmbedAllowedOrigins ?? []) ||
@@ -655,7 +655,6 @@ export function WorkspaceAssistantChannelsTab({
         copy: websiteEmbedSnippetResolvedCopyOverrides,
         theme: websiteEmbedSnippetResolvedThemeOverrides,
       },
-      new URL(APP_WEBSITE_EMBED_DEMO_PATH, window.location.origin).toString(),
     )
   }, [
     anonSettings,
@@ -794,7 +793,7 @@ export function WorkspaceAssistantChannelsTab({
   }, [anonSettings, hasAssistantChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState])
 
   useEffect(() => {
-    if (!anonSettings || !savedAnonSettings || !hasWebsiteEmbedChanges) {
+    if (!WEBSITE_EMBED_CHANNEL_ENABLED || !anonSettings || !savedAnonSettings || !hasWebsiteEmbedChanges) {
       return
     }
     const timeout = window.setTimeout(async () => {
@@ -1310,7 +1309,7 @@ export function WorkspaceAssistantChannelsTab({
           </section>
           ) : null}
 
-          {mode === 'channels' && !isAnonLoading ? (
+          {WEBSITE_EMBED_CHANNEL_ENABLED && mode === 'channels' && !isAnonLoading ? (
           <section id="website-embed" className="space-y-6 scroll-mt-24">
             {anonSettings ? (
               <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">

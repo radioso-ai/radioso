@@ -19,4 +19,5 @@ locals {
       : null
     )
   )
+  enterprise_application_modules = var.radioso_edition == "enterprise" ? "@radioso/enterprise-backend-module" : null
 }

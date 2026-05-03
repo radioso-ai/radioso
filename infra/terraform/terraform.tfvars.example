@@ -13,6 +13,7 @@ project_id = "your-gcp-project-id"
 # Optional overrides (defaults shown)
 # region                  = "us-central1"
 # deploy_services         = false
+# radioso_edition         = "enterprise"
 # backend_image           = "us-central1-docker.pkg.dev/your-project/radioso-staging/backend:latest"
 # frontend_image          = "us-central1-docker.pkg.dev/your-project/radioso-staging/frontend:latest"
 # worker_min_instances   = 1

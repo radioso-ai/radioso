@@ -178,7 +178,7 @@ const main = async () => {
 
   const backendDir = path.join(repoRoot, "backend");
   const frontendDir = path.join(repoRoot, "frontend");
-  const envPath = path.join(backendDir, ".env");
+  const envPath = path.join(repoRoot, ".env");
   const enterpriseBackendPackage = path.join(eeRoot, "packages/backend-module");
   const enterpriseWidgetPackage = path.join(eeRoot, "packages/embed-widget");
   const appOrigin = process.env.RADIOSO_EE_APP_ORIGIN ?? "http://localhost:3000";
@@ -190,10 +190,10 @@ const main = async () => {
   }
 
   if (!(await pathExists(envPath))) {
-    throw new Error("backend/.env is missing. Run ./run-dev.sh once to create local provider configuration, then retry.");
+    throw new Error(".env is missing. Run ./run-dev.sh once to create local provider configuration, then retry.");
   }
 
-  console.log("Preparing backend/.env Enterprise Edition settings...");
+  console.log("Preparing .env Enterprise Edition settings...");
   const existingEnv = await readEnvValues(envPath);
   await updateEnvFile(envPath, {
     DATABASE_URL: "postgres://postgres:postgres@localhost:5432/radioso",
@@ -211,15 +211,15 @@ const main = async () => {
   await commandAllowFailure("docker", [
     "compose",
     "-f",
-    "infra/docker-compose.yml",
+    "docker-compose.yml",
     "-f",
-    "infra/docker-compose.dev.yml",
+    "docker-compose.dev.yml",
     "stop",
     "backend",
     "backend-worker",
     "frontend",
   ]);
-  await command("docker", ["compose", "-f", "infra/docker-compose.yml", "up", "-d", "postgres"]);
+  await command("docker", ["compose", "-f", "docker-compose.yml", "up", "-d", "postgres"]);
 
   console.log("Building Enterprise Edition packages...");
   await command("npm", ["install", "--package-lock=false", "--no-audit", "--no-fund"], { cwd: eeRoot });

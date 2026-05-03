@@ -68,6 +68,7 @@ export const DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL = 'Chat with us'
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON: WebsiteEmbedLauncherIcon = 'chat'
 export const DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION: WebsiteEmbedLauncherPosition = 'bottom-right'
 export const DEFAULT_WEBSITE_EMBED_SCRIPT_PATH = '/radioso-embed.js'
+export const DEFAULT_WEBSITE_EMBED_TEST_PATH = '/embed-test'
 export const DEFAULT_WEBSITE_EMBED_INITIAL_STATE: WebsiteEmbedInitialState = 'collapsed'
 export const DEFAULT_WEBSITE_EMBED_DISPLAY_MODE: WebsiteEmbedDisplayMode = 'bubble'
 export const LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL = 'http://127.0.0.1:4321'
@@ -489,6 +490,33 @@ export const resolveWebsiteEmbedAppOrigin = (scriptUrl?: string | null, baseUrl?
   }
 }
 
+const appendSearchParams = (baseUrl: string, params: URLSearchParams) => {
+  try {
+    const url = new URL(baseUrl)
+    url.search = params.toString()
+    return url.toString()
+  } catch {
+    return `${baseUrl.replace(/[?#].*$/, '')}?${params.toString()}`
+  }
+}
+
+export const resolveWebsiteEmbedTestHarnessUrl = (appBaseUrl?: string, harnessBaseUrl?: string) => {
+  const normalizedHarnessBaseUrl = harnessBaseUrl?.trim()
+  if (normalizedHarnessBaseUrl) {
+    return normalizedHarnessBaseUrl
+  }
+
+  if (appBaseUrl) {
+    return new URL(DEFAULT_WEBSITE_EMBED_TEST_PATH, appBaseUrl).toString()
+  }
+
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return new URL(DEFAULT_WEBSITE_EMBED_TEST_PATH, window.location.origin).toString()
+  }
+
+  return LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL
+}
+
 export const buildWebsiteEmbedTestHarnessUrl = (
   settings: Pick<
     GeneralSettings,
@@ -500,7 +528,7 @@ export const buildWebsiteEmbedTestHarnessUrl = (
   >,
   appBaseUrl?: string,
   overrides?: WebsiteEmbedSnippetOverrides,
-  harnessBaseUrl: string = LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL,
+  harnessBaseUrl?: string,
 ) => {
   if (!settings.websiteEmbedToken) {
     return null
@@ -550,7 +578,7 @@ export const buildWebsiteEmbedTestHarnessUrl = (
     params.set('pageContext', pageContextMode)
   }
 
-  return `${harnessBaseUrl}/?${params.toString()}`
+  return appendSearchParams(resolveWebsiteEmbedTestHarnessUrl(appBaseUrl, harnessBaseUrl), params)
 }
 
 export const buildWebsiteEmbedSnippet = (

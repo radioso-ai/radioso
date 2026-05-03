@@ -9,6 +9,7 @@ import type { RetrievalPipelineService } from "./retrievalPipelineService.js";
 import { RetrievalInfoPresenter } from "./retrievalInfoPresenter.js";
 import { RetrievalTracePresenter } from "./retrievalTracePresenter.js";
 import { RESPONSE_INTENT } from "../domain/retrievalPipelineTypes.js";
+import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import type {
   RetrievalAnswerRequest,
   RetrievalAnswerResult,
@@ -18,6 +19,7 @@ import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 export interface RetrievalAnswerServiceDependencies {
   retrievalPipeline: Pick<RetrievalPipelineService, "interpret" | "runInterpreted">;
   chatGateway: Pick<ChatGateway, "answer">;
+  usageLimitPolicy?: UsageLimitPolicy;
 }
 
 export class RetrievalAnswerService {
@@ -58,93 +60,103 @@ export class RetrievalAnswerService {
       },
     });
     const answerStartedAt = Date.now();
-    const rawAnswer = (await this.dependencies.chatGateway.answer({
-      query: input.query,
-      history,
-      systemPrompt: retrieval.systemPrompt,
-      prompt: retrieval.prompt,
-    })).trim();
-    const evidence = retrieval.contexts.map((context) => ({
-      documentId: context.documentId,
-      chunkId: context.chunkId,
-      title: context.title,
-      content: context.content,
-      metadata: context.metadata,
-      sourceUrl: resolveContextSourceUrl(context.metadata),
-    }));
-    const normalized = this.answerPresentationService.normalize({
-      answer: rawAnswer,
-      citations: evidence,
+    const usageReservation = await (this.dependencies.usageLimitPolicy ?? new NoopUsageLimitPolicy()).reserveAnswer({
+      workspaceId: input.workspaceId,
+      surface: executionSurface === "mcp_capability" ? "mcp.retrieval_answer" : "retrieval.answer",
     });
-    const validated = retrieval.responseSettings.answerSupportValidationEnabled === false
-      ? {
-          ...this.answerPresentationService.present({
-            answer: rawAnswer,
-            citations: evidence,
-            citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
-          }),
-          validation: {
-            ran: false,
-            answerModified: false,
-            unsupportedSegmentCount: 0,
-            substantiveUnsupportedSegmentCount: 0,
-            supportedSegmentCount: 0,
-            nonSubstantiveSegmentCount: 0,
-          },
-          segmentResults: [],
-        }
-      : await this.answerSupportValidator.validate({
-          query: input.query,
-          answer: normalized.answer,
-          answerSegments: remapAnswerSegmentsToCitationEvidence(
-            normalized.answerSegments,
-            normalized.citationEvidence,
-            evidence,
-          ),
-          citationEvidence: evidence,
-          retrievedContextSummaries: evidence.map((context) => ({
-            title: context.title,
-            content: context.content,
-          })),
-          citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
-          conversationMode: retrieval.responseSettings.conversationMode,
-          groundedMissResponseComposer: this.groundedMissResponseComposer,
-          unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
-        });
-    const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
-      trace: retrieval.trace,
-      summary: retrievalInfo,
-      outcome: {
-        answer: validated.answer,
-        stream: false,
-        hadContexts: retrieval.contexts.length > 0,
-        retrievalSkipped: false,
-        durationMs: Date.now() - answerStartedAt,
-        validation: validated.validation,
-      },
-    });
-
-    return {
-      outcome: "answer",
-      answer: validated.answer,
-      citations: validated.citations,
-      evidence: retrieval.contexts.map((context) => ({
+    try {
+      const rawAnswer = (await this.dependencies.chatGateway.answer({
+        query: input.query,
+        history,
+        systemPrompt: retrieval.systemPrompt,
+        prompt: retrieval.prompt,
+      })).trim();
+      const evidence = retrieval.contexts.map((context) => ({
         documentId: context.documentId,
         chunkId: context.chunkId,
         title: context.title,
         content: context.content,
         metadata: context.metadata,
-      })),
-      validation: {
-        status: validated.validation.ran
-          ? validated.validation.supportedSegmentCount > 0
-            ? "supported"
-            : "unsupported"
-          : "not_checked",
-      },
-      retrievalInfo,
-      retrievalTrace,
-    };
+        sourceUrl: resolveContextSourceUrl(context.metadata),
+      }));
+      const normalized = this.answerPresentationService.normalize({
+        answer: rawAnswer,
+        citations: evidence,
+      });
+      const validated = retrieval.responseSettings.answerSupportValidationEnabled === false
+        ? {
+            ...this.answerPresentationService.present({
+              answer: rawAnswer,
+              citations: evidence,
+              citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
+            }),
+            validation: {
+              ran: false,
+              answerModified: false,
+              unsupportedSegmentCount: 0,
+              substantiveUnsupportedSegmentCount: 0,
+              supportedSegmentCount: 0,
+              nonSubstantiveSegmentCount: 0,
+            },
+            segmentResults: [],
+          }
+        : await this.answerSupportValidator.validate({
+            query: input.query,
+            answer: normalized.answer,
+            answerSegments: remapAnswerSegmentsToCitationEvidence(
+              normalized.answerSegments,
+              normalized.citationEvidence,
+              evidence,
+            ),
+            citationEvidence: evidence,
+            retrievedContextSummaries: evidence.map((context) => ({
+              title: context.title,
+              content: context.content,
+            })),
+            citationDisplayEnabled: retrieval.responseSettings.citationDisplayEnabled,
+            conversationMode: retrieval.responseSettings.conversationMode,
+            groundedMissResponseComposer: this.groundedMissResponseComposer,
+            unsupportedNoticeMarked: normalized.unsupportedNoticeMarked,
+          });
+      const retrievalTrace = this.retrievalTracePresenter.appendAnswerOutcome({
+        trace: retrieval.trace,
+        summary: retrievalInfo,
+        outcome: {
+          answer: validated.answer,
+          stream: false,
+          hadContexts: retrieval.contexts.length > 0,
+          retrievalSkipped: false,
+          durationMs: Date.now() - answerStartedAt,
+          validation: validated.validation,
+        },
+      });
+
+      await usageReservation.commit();
+      return {
+        outcome: "answer",
+        answer: validated.answer,
+        citations: validated.citations,
+        evidence: retrieval.contexts.map((context) => ({
+          documentId: context.documentId,
+          chunkId: context.chunkId,
+          title: context.title,
+          content: context.content,
+          metadata: context.metadata,
+        })),
+        validation: {
+          status: validated.validation.ran
+            ? validated.validation.supportedSegmentCount > 0
+              ? "supported"
+              : "unsupported"
+            : "not_checked",
+        },
+        retrievalInfo,
+        retrievalTrace,
+      };
+    } catch (error) {
+      await usageReservation.release();
+      throw error;
+    }
   }
 
   private buildContextMessages(input: RetrievalAnswerRequest): MessageRecord[] {

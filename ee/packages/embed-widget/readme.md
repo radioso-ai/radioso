@@ -8,7 +8,7 @@ an EE frontend build:
 
 ```bash
 node scripts/sync-ee-frontend-routes.mjs enable
-RADIOSO_EE_FRONTEND=true npm run build --prefix frontend
+RADIOSO_EE_FRONTEND=true NEXT_PUBLIC_RADIOSO_EE_FRONTEND=true npm run build --prefix frontend
 ```
 
 It provides:

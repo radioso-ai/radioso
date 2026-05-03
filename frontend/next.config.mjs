@@ -1,5 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_RADIOSO_EE_FRONTEND:
+      process.env.NEXT_PUBLIC_RADIOSO_EE_FRONTEND ??
+      process.env.RADIOSO_EE_FRONTEND ??
+      process.env.RADIOSO_ENTERPRISE_FRONTEND ??
+      "false",
+    NEXT_PUBLIC_RADIOSO_ENTERPRISE_FRONTEND:
+      process.env.NEXT_PUBLIC_RADIOSO_ENTERPRISE_FRONTEND ??
+      process.env.RADIOSO_ENTERPRISE_FRONTEND ??
+      "false",
+  },
   typescript: {
     ignoreBuildErrors: true,
   },

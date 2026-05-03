@@ -279,6 +279,7 @@ const main = async () => {
       env: {
         ...process.env,
         RADIOSO_EE_FRONTEND: "true",
+        NEXT_PUBLIC_RADIOSO_EE_FRONTEND: "true",
         BACKEND_INTERNAL_URL: "http://127.0.0.1:8080",
       },
     }),

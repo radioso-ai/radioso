@@ -154,7 +154,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     }
   });
 
-  const presentLegacyRetrievalSettings = (
+  const presentRetrievalSettings = (
     settings: Awaited<ReturnType<typeof dependencies.platformSettingsService.getForWorkspace>>,
     record: Awaited<ReturnType<typeof dependencies.retrievalSettingsService.getForWorkspace>>,
   ) => ({
@@ -175,7 +175,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         dependencies.platformSettingsService.getForWorkspace(workspaceId),
         dependencies.retrievalSettingsService.getForWorkspace(workspaceId),
       ]);
-      res.status(200).json(presentLegacyRetrievalSettings(settings, record));
+      res.status(200).json(presentRetrievalSettings(settings, record));
     } catch (error) {
       next(error);
     }
@@ -205,7 +205,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         },
       });
       const record = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
-      res.status(200).json(presentLegacyRetrievalSettings(settings, record));
+      res.status(200).json(presentRetrievalSettings(settings, record));
     } catch (error) {
       next(error);
     }
@@ -243,7 +243,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
 
   // --- General settings (anonymous chat) ---
 
-  const presentLegacyGeneralSettings = (
+  const presentGeneralSettings = (
     settings: Awaited<ReturnType<typeof dependencies.platformSettingsService.getForWorkspace>>,
   ) => ({
     anonymousChatEnabled: settings.channels.anonymousChatEnabled,
@@ -268,7 +268,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.platformSettingsService.getForWorkspace(workspaceId);
-      res.status(200).json(presentLegacyGeneralSettings(settings));
+      res.status(200).json(presentGeneralSettings(settings));
     } catch (error) {
       next(error);
     }
@@ -301,7 +301,7 @@ export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
         { accountId },
       );
 
-      res.status(200).json(presentLegacyGeneralSettings(settings));
+      res.status(200).json(presentGeneralSettings(settings));
     } catch (error) {
       next(error);
     }

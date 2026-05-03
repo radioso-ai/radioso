@@ -19,6 +19,7 @@ This file is hand-maintained. Do not regenerate it from Speckit plans, append "r
 | UI primitives | Radix UI, shadcn-style components, Lucide icons |
 | Tests | Vitest, Supertest, Playwright |
 | Local runtime | Docker Compose via `./run-dev.sh` |
+| Enterprise local runtime | Host services via `./run-ee-dev.sh` |
 | Package manager | `npm` in each package directory |
 
 ## Architecture
@@ -116,6 +117,15 @@ npm run build
 npm test
 ```
 
+Enterprise Edition packages:
+
+```bash
+./run-ee-dev.sh
+cd ee
+npm run build
+npm test
+```
+
 ## Code Style
 
 - Prefer small, named modules over large orchestration files. If a service mixes persistence, orchestration, audit, analytics, and formatting concerns, extract the most self-contained concern first.
@@ -156,6 +166,8 @@ radioso/
 |-- typescript-sdk/              # first-party TypeScript SDK
 |-- docs/                        # product, SDK, MCP, and settings docs
 |-- docs-portal/                 # public documentation site
+|-- ee/                          # commercial Enterprise Edition packages and license
+|   `-- packages/
 |-- infra/                       # Docker Compose and Terraform
 |-- scripts/                     # bootstrap and performance scripts
 |-- specs/                       # Speckit feature artifacts

@@ -15,6 +15,7 @@ import {
   clearStoredAnonymousSession,
   publicChatApi,
   readStoredAnonymousSessionId,
+  readStoredPublicSessionToken,
   type AnswerSegment,
   type Citation,
   type ChatSuggestion,
@@ -212,6 +213,48 @@ export function AnonymousChatProvider({
   const [rateLimitError, setRateLimitError] = useState<string | null>(null)
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null)
 
+  const createPublicLaunchSession = useCallback(
+    async (input?: { resetSession?: boolean }) => {
+      if (!sessionChannel) {
+        return null
+      }
+
+      return publicChatApi.createSession(token, {
+        channel: sessionChannel,
+        anonymousSessionId: input?.resetSession ? null : readStoredAnonymousSessionId(token),
+        pageContext,
+      })
+    },
+    [pageContext, sessionChannel, token],
+  )
+
+  const ensurePublicLaunchSession = useCallback(async () => {
+    if (!sessionChannel || readStoredPublicSessionToken(token)) {
+      return
+    }
+
+    await createPublicLaunchSession()
+  }, [createPublicLaunchSession, sessionChannel, token])
+
+  const withPublicSessionRetry = useCallback(
+    async <T,>(operation: () => Promise<T>): Promise<T> => {
+      await ensurePublicLaunchSession()
+
+      try {
+        return await operation()
+      } catch (error) {
+        if (sessionChannel && getErrorResponse(error)?.code === 'not_found') {
+          clearStoredAnonymousSession(token)
+          await createPublicLaunchSession({ resetSession: true })
+          return operation()
+        }
+
+        throw error
+      }
+    },
+    [createPublicLaunchSession, ensurePublicLaunchSession, sessionChannel, token],
+  )
+
   const hydrateConversation = useCallback(async () => {
     setIsHydrating(true)
     setIsUnavailable(false)
@@ -224,32 +267,28 @@ export function AnonymousChatProvider({
     setRetryAfterSeconds(null)
 
     try {
-      if (sessionChannel) {
-        await publicChatApi.createSession(token, {
-          channel: sessionChannel,
-          anonymousSessionId: readStoredAnonymousSessionId(token),
-          pageContext,
-        })
-      }
+      await createPublicLaunchSession()
 
-      const response = await publicChatApi.listConversations(token, { limit: 1 })
+      const response = await withPublicSessionRetry(() => publicChatApi.listConversations(token, { limit: 1 }))
       setWorkspaceName(response.workspaceName ?? null)
 
       if (response.conversations.length === 0) {
         if (response.assistantBootstrapActive) {
-          const bootstrap = await publicChatApi.bootstrapConversation(token, {
-            stream: false,
-            startConversation: true,
-            userExpectedLocale: resolveAnonymousChatBootstrapLocale({
-              localeOverride,
+          const bootstrap = await withPublicSessionRetry(() =>
+            publicChatApi.bootstrapConversation(token, {
+              stream: false,
+              startConversation: true,
+              userExpectedLocale: resolveAnonymousChatBootstrapLocale({
+                localeOverride,
+                pageContext,
+                browserLocales:
+                  typeof navigator !== 'undefined'
+                    ? [navigator.languages?.[0] ?? navigator.language].filter((value): value is string => Boolean(value))
+                    : [],
+              }),
               pageContext,
-              browserLocales:
-                typeof navigator !== 'undefined'
-                  ? [navigator.languages?.[0] ?? navigator.language].filter((value): value is string => Boolean(value))
-                  : [],
             }),
-            pageContext,
-          })
+          )
 
           if (bootstrap?.answer) {
             setConversationId(bootstrap.conversationId)
@@ -271,9 +310,11 @@ export function AnonymousChatProvider({
         return
       }
 
-      const detail = await publicChatApi.getConversationDetail(token, response.conversations[0].id, {
-        limit: INITIAL_MESSAGE_WINDOW_SIZE,
-      })
+      const detail = await withPublicSessionRetry(() =>
+        publicChatApi.getConversationDetail(token, response.conversations[0].id, {
+          limit: INITIAL_MESSAGE_WINDOW_SIZE,
+        }),
+      )
 
       setConversationId(detail.conversationId)
       setMessages(toChatMessages(detail))
@@ -287,7 +328,7 @@ export function AnonymousChatProvider({
     } finally {
       setIsHydrating(false)
     }
-  }, [localeOverride, pageContext, sessionChannel, token])
+  }, [createPublicLaunchSession, localeOverride, pageContext, token, withPublicSessionRetry])
 
   useEffect(() => {
     let cancelled = false
@@ -404,49 +445,51 @@ export function AnonymousChatProvider({
       try {
         let didComplete = false
 
-        const completion = await publicChatApi.streamMessage(
-          token,
-          {
-            message: query,
-            stream: true,
-            conversationId,
-            inputMetadata,
-            userExpectedLocale: resolveAnonymousChatBootstrapLocale({
-              localeOverride,
+        const completion = await withPublicSessionRetry(() =>
+          publicChatApi.streamMessage(
+            token,
+            {
+              message: query,
+              stream: true,
+              conversationId,
+              inputMetadata,
+              userExpectedLocale: resolveAnonymousChatBootstrapLocale({
+                localeOverride,
+                pageContext,
+              }),
               pageContext,
-            }),
-            pageContext,
-          },
-          {
-            onConversation: ({ conversationId: newId }) => {
-              setConversationId(newId)
             },
-            onChunk: ({ text }) => {
-              setMessages((prev) =>
-                prev.map((message) =>
-                  message.id === assistantMessageId
-                    ? { ...message, content: `${message.content}${text}` }
-                    : message,
-                ),
-              )
+            {
+              onConversation: ({ conversationId: newId }) => {
+                setConversationId(newId)
+              },
+              onChunk: ({ text }) => {
+                setMessages((prev) =>
+                  prev.map((message) =>
+                    message.id === assistantMessageId
+                      ? { ...message, content: `${message.content}${text}` }
+                      : message,
+                  ),
+                )
+              },
+              onDone: (completion) => {
+                didComplete = true
+                applyCompletion(assistantMessageId, completion)
+              },
+              onSuggestions: ({ suggestions }) => {
+                setMessages((prev) =>
+                  prev.map((message) =>
+                    message.id === assistantMessageId
+                      ? {
+                          ...message,
+                          suggestions,
+                        }
+                      : message,
+                  ),
+                )
+              },
             },
-            onDone: (completion) => {
-              didComplete = true
-              applyCompletion(assistantMessageId, completion)
-            },
-            onSuggestions: ({ suggestions }) => {
-              setMessages((prev) =>
-                prev.map((message) =>
-                  message.id === assistantMessageId
-                    ? {
-                        ...message,
-                        suggestions,
-                      }
-                    : message,
-                ),
-              )
-            },
-          },
+          ),
         )
 
         const nextConversationId = completion.conversationId ?? conversationId
@@ -484,6 +527,13 @@ export function AnonymousChatProvider({
           return
         }
 
+        if (getErrorResponse(error)?.code === 'not_found') {
+          setIsUnavailable(true)
+          setMessages(previousMessages)
+          setIsLoading(false)
+          return
+        }
+
         const errorMessage = getErrorMessage(error)
         setMessages((prev) =>
           restoreMessageSuggestions(
@@ -504,7 +554,7 @@ export function AnonymousChatProvider({
         setIsLoading(false)
       }
     },
-    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, pageContext, recoverAssistantMessage, token],
+    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, pageContext, recoverAssistantMessage, token, withPublicSessionRetry],
   )
 
   const loadOlderMessages = useCallback(async () => {

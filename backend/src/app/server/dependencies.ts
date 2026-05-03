@@ -284,6 +284,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalSettingsService,
     auditService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
+    websiteEmbedIntegration: composition.websiteEmbedIntegration,
   });
   const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
   const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository);

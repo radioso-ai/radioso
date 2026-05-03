@@ -16,3 +16,4 @@ jobs:
       frontend_service: radioso-live-frontend
       worker_service: radioso-live-worker
       require_main_branch: true
+      radioso_edition: enterprise

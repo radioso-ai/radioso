@@ -64,6 +64,10 @@ describe("default application composition", () => {
     const telemetrySink = { emit: vi.fn().mockResolvedValue(undefined) };
     const productAnalyticsSink = { emit: vi.fn().mockResolvedValue(undefined) };
     const incidentSink = { record: vi.fn().mockResolvedValue(undefined) };
+    const websiteEmbedIntegration = {
+      buildScriptUrl: vi.fn().mockReturnValue("https://widget.example.com/radioso-embed.js"),
+      buildSnippet: vi.fn().mockReturnValue("<script></script>"),
+    };
     const documentStorage = {
       upload: vi.fn(),
       read: vi.fn(),
@@ -85,6 +89,7 @@ describe("default application composition", () => {
             context.registerIncidentSink(incidentSink);
             context.registerDocumentStorage(documentStorage);
             context.registerDocumentJobDispatcher(documentJobDispatcher);
+            context.registerWebsiteEmbedIntegration(websiteEmbedIntegration);
           },
         },
       ],
@@ -95,6 +100,7 @@ describe("default application composition", () => {
     expect(composition.incidentSinks).toEqual([incidentSink]);
     expect(composition.documentStorage).toBe(documentStorage);
     expect(composition.documentJobDispatcher).toBe(documentJobDispatcher);
+    expect(composition.websiteEmbedIntegration).toBe(websiteEmbedIntegration);
   });
 
   it("selects the no-op document dispatcher by default", () => {

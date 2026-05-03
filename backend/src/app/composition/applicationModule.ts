@@ -8,6 +8,7 @@ import type { DocumentStoragePort } from "../../modules/documents/infra/gcsDocum
 import type { DocumentJobConsumerPort } from "../../modules/documents/services/documentJobConsumer.js";
 import type { DocumentJobDispatcherPort } from "../../modules/documents/services/documentJobDispatcher.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/domain/websiteEmbedIntegration.js";
 
 export interface ApplicationExtensionRegistry {
   connectors: ConnectorPlugin[];
@@ -18,6 +19,7 @@ export interface ApplicationExtensionRegistry {
   documentStorage?: DocumentStoragePort;
   documentJobDispatcher?: DocumentJobDispatcherPort;
   documentJobConsumer?: DocumentJobConsumerPort;
+  websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
 }
 
 export interface ApplicationModuleRegistrationContext {
@@ -29,6 +31,7 @@ export interface ApplicationModuleRegistrationContext {
   registerDocumentStorage(storage: DocumentStoragePort): void;
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
   registerDocumentJobConsumer(consumer: DocumentJobConsumerPort): void;
+  registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
 }
 
 export interface ApplicationModule {
@@ -70,6 +73,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerDocumentJobConsumer(consumer) {
     registry.documentJobConsumer = consumer;
+  },
+  registerWebsiteEmbedIntegration(provider) {
+    registry.websiteEmbedIntegration = provider;
   },
 });
 

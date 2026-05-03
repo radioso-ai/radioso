@@ -37,6 +37,7 @@ export interface ApplicationComposition {
   documentStorage?: ReturnType<typeof createApplicationExtensionRegistry>["documentStorage"];
   documentJobDispatcher?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobDispatcher"];
   documentJobConsumer?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobConsumer"];
+  websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   lifecycle: ApplicationModuleCoordinator;
   modules: ApplicationModule[];
 }
@@ -61,6 +62,7 @@ export const createDefaultApplicationComposition = (options: {
     documentStorage: registry.documentStorage,
     documentJobDispatcher: registry.documentJobDispatcher,
     documentJobConsumer: registry.documentJobConsumer,
+    websiteEmbedIntegration: registry.websiteEmbedIntegration,
     lifecycle: coordinator,
     modules: coordinator.registeredModules,
   };

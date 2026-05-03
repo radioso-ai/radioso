@@ -106,6 +106,7 @@ const envSchema = z.object({
   WORKER_AMQP_PREFETCH: z.coerce.number().int().positive().default(1),
   DOCUMENT_PROCESSING_JOB_LEASE_MS: z.coerce.number().int().positive().default(300_000),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
+  RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
 }).superRefine((value, ctx) => {
   const invalidAnalyticsSinks = findInvalidConfiguredSinks(value.PRODUCT_ANALYTICS_SINKS, ["audit", "posthog"]);
   if (invalidAnalyticsSinks.length > 0) {

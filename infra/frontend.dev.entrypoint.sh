@@ -3,7 +3,7 @@ set -eu
 
 cd /app
 
-if [ "${RADIOSO_EE_FRONTEND:-}" != "true" ] && [ "${RADIOSO_ENTERPRISE_FRONTEND:-}" != "true" ]; then
+if [ "${RADIOSO_EDITION:-oss}" != "enterprise" ]; then
   rm -rf app/embed app/api/embed app/radioso-embed.js
 fi
 

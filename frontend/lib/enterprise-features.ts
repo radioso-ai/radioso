@@ -1,3 +1,3 @@
-export const WEBSITE_EMBED_CHANNEL_ENABLED =
-  process.env.NEXT_PUBLIC_RADIOSO_EE_FRONTEND === 'true' ||
-  process.env.NEXT_PUBLIC_RADIOSO_ENTERPRISE_FRONTEND === 'true'
+export const RADIOSO_EDITION = process.env.NEXT_PUBLIC_RADIOSO_EDITION ?? 'oss'
+
+export const WEBSITE_EMBED_CHANNEL_ENABLED = RADIOSO_EDITION === 'enterprise'

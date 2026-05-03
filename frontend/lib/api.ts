@@ -10,6 +10,7 @@ import {
   request,
   requestLongRunning,
   requireWorkspaceApiToken,
+  storePublicSessionToken,
   storeWorkspaceToken,
 } from './api-client'
 

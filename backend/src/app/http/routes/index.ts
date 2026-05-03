@@ -43,6 +43,9 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/connectors", createConnectorRoutes(dependencies));
   router.use("/api/v1/document", createDocumentRoutes(dependencies));
   router.use("/api/v1/public/chat", createPublicChatRoutes(dependencies));
+  for (const mount of dependencies.applicationRouteMounts) {
+    router.use(mount.path, mount.createRouter(dependencies));
+  }
   router.use("/api/connectors", dependencies.connectorRegistry.getRouter());
 
   return router;

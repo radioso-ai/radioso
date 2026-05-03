@@ -10,6 +10,7 @@ import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
+import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 
@@ -202,10 +203,12 @@ export class DocumentIngestionService {
     private readonly jobRepository?: Pick<DocumentProcessingJobRepositoryPort, "findByDocumentRevision">,
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
+    private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
   ) {}
 
   async ingest(input: {
     workspaceId: string;
+    accountId?: string | null;
     title: string;
     content: string;
     metadata?: Record<string, unknown>;
@@ -224,6 +227,12 @@ export class DocumentIngestionService {
           status: string;
         }
       | undefined;
+    const usageReservation = await this.usageLimitPolicy.reserveDocument({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      sourceKind: "inline_text",
+      externalDocumentId: input.externalDocumentId,
+    });
 
     try {
       document = await this.documentRepository.createAndQueue({
@@ -243,6 +252,7 @@ export class DocumentIngestionService {
       });
 
     } catch (error) {
+      await usageReservation.release();
       await this.auditService.record({
         workspaceId: input.workspaceId,
         eventType: "document.ingest",
@@ -301,6 +311,7 @@ export class DocumentIngestionService {
       workspaceId: input.workspaceId,
       revision: document.revision,
     });
+    await usageReservation.commit();
 
     return {
       documentId: document.id,

@@ -70,6 +70,8 @@ import { TelemetryService } from "../../src/shared/observability/telemetry/telem
 import type { AppDependencies } from "../../src/app/server/types.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
+import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
+import type { ApplicationRouteMount } from "../../src/app/composition/applicationModule.js";
 import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import {
   createAuditService,
@@ -344,6 +346,8 @@ export const createTestDependencies = (overrides: {
   envOverrides?: Partial<Env>;
   abuseControlRepository?: AbuseControlRepositoryPort;
   groundedMissResponseComposer?: GroundedMissResponseComposer;
+  usageLimitPolicy?: UsageLimitPolicy;
+  applicationRouteMounts?: ApplicationRouteMount[];
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
     ...createTestEnv(),
@@ -370,6 +374,7 @@ export const createTestDependencies = (overrides: {
       metricsRegistry,
     }),
   });
+  const usageLimitPolicy = overrides.usageLimitPolicy ?? new NoopUsageLimitPolicy();
   const persistentIncidentReportingService = new IncidentReportingService({
     enabled: env.OBSERVABILITY_ENABLED,
     environment: env.OBSERVABILITY_ENVIRONMENT,
@@ -593,12 +598,16 @@ export const createTestDependencies = (overrides: {
     undefined,
     undefined,
     productAnalyticsService,
+    usageLimitPolicy,
   );
   const documentImportService = new DocumentImportService(
     documentRepository,
     auditService,
     documentStorage,
     () => documentProcessingJobRepository.getQueueSnapshot(),
+    undefined,
+    undefined,
+    usageLimitPolicy,
   );
   const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
   const documentDeletionService = new DocumentDeletionService(
@@ -719,6 +728,7 @@ export const createTestDependencies = (overrides: {
     overrides.groundedMissResponseComposer ?? new TestGroundedMissResponseComposer(),
     productAnalyticsService,
     workspaceRepository,
+    usageLimitPolicy,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -727,6 +737,7 @@ export const createTestDependencies = (overrides: {
     chatGateway,
     auditService,
     retrievalSettingsService,
+    usageLimitPolicy,
   );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
@@ -734,6 +745,7 @@ export const createTestDependencies = (overrides: {
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline,
     chatGateway,
+    usageLimitPolicy,
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
@@ -749,6 +761,8 @@ export const createTestDependencies = (overrides: {
     incidentReportingService: persistentIncidentReportingService,
     productAnalyticsService,
     capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    usageLimitPolicy,
+    applicationRouteMounts: overrides.applicationRouteMounts ?? [],
     applicationModules: new ApplicationModuleCoordinator({
       logger,
       registry: createApplicationExtensionRegistry(),
@@ -840,6 +854,8 @@ export const createTestApp = (overrides: {
   envOverrides?: Partial<Env>;
   abuseControlRepository?: AbuseControlRepositoryPort;
   groundedMissResponseComposer?: GroundedMissResponseComposer;
+  usageLimitPolicy?: UsageLimitPolicy;
+  applicationRouteMounts?: ApplicationRouteMount[];
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);
   const app = createApp(dependencies);

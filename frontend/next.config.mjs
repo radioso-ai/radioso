@@ -1,3 +1,8 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   env: {
@@ -17,6 +22,12 @@ const nextConfig = {
     unoptimized: true,
   },
   webpack(config) {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': frontendRoot,
+      '@/components': path.join(frontendRoot, 'components'),
+      '@/lib': path.join(frontendRoot, 'lib'),
+    }
     config.module.rules.push({
       test: /\.md$/i,
       type: "asset/source",

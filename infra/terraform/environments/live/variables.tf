@@ -22,6 +22,12 @@ variable "frontend_image" {
   default     = null
 }
 
+variable "radioso_edition" {
+  description = "Radioso edition deployed to live."
+  type        = string
+  default     = "enterprise"
+}
+
 variable "backend_max_instances" {
   description = "Maximum backend Cloud Run instances for live."
   type        = number
@@ -165,6 +171,12 @@ variable "worker_tasks_service_url_override" {
   description = "Optional override for the worker service public URL."
   type        = string
   default     = null
+}
+
+variable "mail_driver" {
+  description = "Mail delivery driver for live."
+  type        = string
+  default     = "log"
 }
 
 variable "mail_from_email" {

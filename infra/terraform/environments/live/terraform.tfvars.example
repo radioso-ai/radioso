@@ -11,6 +11,7 @@ frontend_image = "us-central1-docker.pkg.dev/radioso-494120/radioso-live/fronten
 # Optional overrides
 # region                      = "us-central1"
 # deploy_services             = false
+# radioso_edition             = "enterprise"
 # db_tier                     = "db-f1-micro"
 # backend_max_instances       = 2
 # frontend_max_instances      = 2

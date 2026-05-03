@@ -245,6 +245,9 @@ const main = async () => {
     enterpriseWidgetPackage,
   ], { cwd: frontendDir });
 
+  console.log("Generating Enterprise Edition frontend routes...");
+  await command("node", ["scripts/sync-ee-frontend-routes.mjs", "enable"]);
+
   console.log("Clearing frontend build cache for enterprise route wiring...");
   await fs.rm(path.join(frontendDir, ".next"), { recursive: true, force: true });
 

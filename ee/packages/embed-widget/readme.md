@@ -2,10 +2,13 @@
 
 Commercial Radioso website embed package.
 
-This package is imported by the OSS frontend when the frontend is built with:
+This package does not add routes to the frontend by itself. Generate the
+Enterprise Edition frontend route files from the repository root before running
+an EE frontend build:
 
 ```bash
-RADIOSO_EE_FRONTEND=true
+node scripts/sync-ee-frontend-routes.mjs enable
+RADIOSO_EE_FRONTEND=true npm run build --prefix frontend
 ```
 
 It provides:
@@ -13,6 +16,6 @@ It provides:
 - `/radioso-embed.js` route implementation
 - `/embed/:token` page implementation
 - `/api/embed/session/:token` route implementation
-- shared client/UI code for the embedded chat surface
+- the embedded chat frame
 
 The package does not run a separate server.

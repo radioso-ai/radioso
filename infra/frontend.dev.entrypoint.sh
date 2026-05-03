@@ -3,6 +3,10 @@ set -eu
 
 cd /app
 
+if [ "${RADIOSO_EE_FRONTEND:-}" != "true" ] && [ "${RADIOSO_ENTERPRISE_FRONTEND:-}" != "true" ]; then
+  rm -rf app/embed app/api/embed app/radioso-embed.js
+fi
+
 INSTALL_STATE_FILE="node_modules/.install-state"
 CURRENT_HASH="$(sha256sum package-lock.json | awk '{print $1}')"
 NODE_VERSION="$(node -p 'process.version')"

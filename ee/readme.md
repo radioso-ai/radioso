@@ -15,6 +15,10 @@ From the repository root:
 ./run-ee-dev.sh
 ```
 
+This generates the Enterprise Edition frontend route files locally before
+starting Next.js. The generated route files are ignored by git and are removed
+again by the normal `./run-dev.sh` bootstrap path.
+
 From this directory:
 
 ```bash

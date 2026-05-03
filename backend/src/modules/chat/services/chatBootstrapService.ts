@@ -16,6 +16,7 @@ import {
 import { DEFAULT_CONVERSATION_MODE } from "../../settings/domain/retrievalSettings.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { isValidLocaleHint, resolveChatLocale } from "./chatLocale.js";
+import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 
 const emptyChatResponse = (conversationId: string, answer: string): ChatResponse => ({
   conversationId,
@@ -70,6 +71,7 @@ export class ChatBootstrapService {
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly retrievalSettingsService: Pick<RetrievalSettingsService, "getForWorkspace">,
+    private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
   ) {}
 
   async startConversation(input: {
@@ -105,11 +107,19 @@ export class ChatBootstrapService {
       localeUsed,
     });
 
+    let usageReservation: Awaited<ReturnType<UsageLimitPolicy["reserveAnswer"]>> | null = null;
     try {
       const cachedGreeting = await this.bootstrapGreetingCacheRepository.findByWorkspaceAndFingerprint(
         input.workspaceId,
         fingerprint,
       );
+      usageReservation = cachedGreeting
+        ? null
+        : await this.usageLimitPolicy.reserveAnswer({
+            accountId: input.accountId,
+            workspaceId: input.workspaceId,
+            surface: input.sourceChannel ?? "chat.bootstrap",
+          });
       const normalizedAnswer = cachedGreeting?.greetingText
         ?? (await this.chatGateway.answer({
           query: "",
@@ -121,6 +131,7 @@ export class ChatBootstrapService {
           }),
         })).trim();
       if (!normalizedAnswer) {
+        await usageReservation?.release();
         return null;
       }
 
@@ -158,9 +169,19 @@ export class ChatBootstrapService {
           proactiveGreetingEnabled: true,
         },
       });
+      await usageReservation?.commit();
 
       return emptyChatResponse(conversation.id, normalizedAnswer);
     } catch (error) {
+      await usageReservation?.release();
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "usage_limit_exceeded"
+      ) {
+        throw error;
+      }
       await this.auditService.record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,

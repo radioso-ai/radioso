@@ -11,6 +11,23 @@ const isPayloadTooLargeError = (error: unknown): error is { status?: number; typ
       (("status" in error && error.status === 413) || ("type" in error && error.type === "entity.too.large")),
   );
 
+const isStructuredAppError = (error: unknown): error is {
+  statusCode: number;
+  code: string;
+  message: string;
+  details?: unknown;
+} =>
+  Boolean(
+    error &&
+      typeof error === "object" &&
+      "statusCode" in error &&
+      typeof error.statusCode === "number" &&
+      "code" in error &&
+      typeof error.code === "string" &&
+      "message" in error &&
+      typeof error.message === "string",
+  );
+
 export const createErrorHandler = (incidentReportingService?: IncidentReportingService) =>
   (error: unknown, req: Request, res: Response, next: NextFunction): void => {
     if (res.headersSent) {
@@ -37,6 +54,17 @@ export const createErrorHandler = (incidentReportingService?: IncidentReportingS
     }
 
     if (error instanceof AppError) {
+      res.status(error.statusCode).json({
+        error: {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+        },
+      });
+      return;
+    }
+
+    if (isStructuredAppError(error)) {
       res.status(error.statusCode).json({
         error: {
           code: error.code,

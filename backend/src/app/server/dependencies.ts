@@ -79,6 +79,7 @@ import {
   type ApplicationModule,
 } from "../composition/index.js";
 import type { AppDependencies } from "./types.js";
+import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -107,6 +108,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     queryTimeoutMs: env.DB_QUERY_TIMEOUT_MS,
     applicationName: `radioso-${env.NODE_ENV}`,
   });
+  const usageLimitPolicy = !composition.usageLimitPolicyRegistration
+    ? new NoopUsageLimitPolicy()
+    : typeof composition.usageLimitPolicyRegistration === "function"
+      ? composition.usageLimitPolicyRegistration({ database, logger })
+      : composition.usageLimitPolicyRegistration;
   const auditEventRepository = new AuditEventRepository(database);
   const auditService = new AuditService(logger, auditEventRepository);
   const productAnalyticsService = new ProductAnalyticsService({
@@ -181,6 +187,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentProcessingJobRepository,
     documentJobDispatcher,
     productAnalyticsService,
+    usageLimitPolicy,
   );
   const documentImportService = new DocumentImportService(
     documentRepository,
@@ -189,6 +196,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     () => documentProcessingJobRepository.getQueueSnapshot(),
     documentProcessingJobRepository,
     documentJobDispatcher,
+    usageLimitPolicy,
   );
   const documentProcessingWorker = new DocumentProcessingWorker(
     documentRepository,
@@ -251,6 +259,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     groundedMissResponseComposer,
     productAnalyticsService,
     workspaceRepository,
+    usageLimitPolicy,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -259,6 +268,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatGateway,
     auditService,
     retrievalSettingsService,
+    usageLimitPolicy,
   );
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
@@ -272,6 +282,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline,
     chatGateway,
+    usageLimitPolicy,
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
@@ -335,6 +346,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     incidentReportingService: persistentIncidentReportingService,
     productAnalyticsService,
     capabilityPolicy: composition.capabilityPolicy,
+    usageLimitPolicy,
+    applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     authService: verificationAwareAuthService,
     passwordResetService,

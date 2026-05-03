@@ -19,6 +19,7 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import { buildTelemetrySinks, type TelemetrySinkBundle } from "../../shared/observability/telemetry/buildTelemetrySinks.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
   ApplicationModuleCoordinator,
   createApplicationExtensionRegistry,
@@ -31,9 +32,11 @@ export interface ApplicationComposition {
   telemetrySinks: ReturnType<typeof createApplicationExtensionRegistry>["telemetrySinks"];
   productAnalyticsSinks: ReturnType<typeof createApplicationExtensionRegistry>["productAnalyticsSinks"];
   incidentSinks: ReturnType<typeof createApplicationExtensionRegistry>["incidentSinks"];
+  routeMounts: ReturnType<typeof createApplicationExtensionRegistry>["routeMounts"];
   documentStorage?: ReturnType<typeof createApplicationExtensionRegistry>["documentStorage"];
   documentJobDispatcher?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobDispatcher"];
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
+  usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
   lifecycle: ApplicationModuleCoordinator;
   modules: ApplicationModule[];
 }
@@ -55,9 +58,11 @@ export const createDefaultApplicationComposition = (options: {
     telemetrySinks: registry.telemetrySinks,
     productAnalyticsSinks: registry.productAnalyticsSinks,
     incidentSinks: registry.incidentSinks,
+    routeMounts: registry.routeMounts,
     documentStorage: registry.documentStorage,
     documentJobDispatcher: registry.documentJobDispatcher,
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
+    usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
     lifecycle: coordinator,
     modules: coordinator.registeredModules,
   };

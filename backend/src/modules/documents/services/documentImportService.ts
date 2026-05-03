@@ -11,14 +11,21 @@ import type {
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../infra/gcsDocumentStorage.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+import {
+  NoopUsageLimitPolicy,
+  type UsageLimitPolicy,
+  type UsageLimitReservation,
+} from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 
 export interface DocumentImportInput {
   workspaceId: string;
+  accountId?: string | null;
   filename: string;
   mimeType: string;
   buffer: Buffer;
   title?: string;
+  usageReservation?: UsageLimitReservation;
 }
 
 const deriveTitleFromFilename = (filename: string): string =>
@@ -36,6 +43,7 @@ export class DocumentImportService {
     private readonly getQueueSnapshot?: () => Promise<DocumentProcessingQueueSnapshot>,
     private readonly jobRepository?: Pick<DocumentProcessingJobRepositoryPort, "findByDocumentRevision">,
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
+    private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
   ) {}
 
   async importDocument(input: DocumentImportInput): Promise<{ documentId: string; status: string }> {
@@ -55,6 +63,12 @@ export class DocumentImportService {
           status: string;
         }
       | undefined;
+    const usageReservation = input.usageReservation
+      ?? await this.usageLimitPolicy.reserveDocument({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        sourceKind: "uploaded_file",
+      });
     try {
       if (!Buffer.isBuffer(input.buffer) || input.buffer.length === 0) {
         throw badRequest("Uploaded file is empty");
@@ -97,6 +111,7 @@ export class DocumentImportService {
       });
 
     } catch (error) {
+      await usageReservation.release();
       if (storedObject && !document) {
         try {
           await this.storage.delete({
@@ -136,6 +151,7 @@ export class DocumentImportService {
       workspaceId: input.workspaceId,
       revision: document.revision,
     });
+    await usageReservation.commit();
 
     return {
       documentId: document.id,

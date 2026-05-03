@@ -1,4 +1,6 @@
+import type { Router } from "express";
 import type { ConnectorPlugin } from "@radioso/connector-api";
+import type { QueryResultRow } from "pg";
 
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
 import type { IncidentSink } from "../../shared/incidents/incidentSink.js";
@@ -7,14 +9,40 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 import type { DocumentStoragePort } from "../../modules/documents/infra/gcsDocumentStorage.js";
 import type { DocumentJobDispatcherPort } from "../../modules/documents/services/documentJobDispatcher.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/domain/websiteEmbedIntegration.js";
+import type { AppDependencies } from "../server/types.js";
+
+export interface ApplicationDatabasePort {
+  query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
+}
+
+export interface ApplicationDatabaseMigrator {
+  id: string;
+  migrate(database: ApplicationDatabasePort): Promise<void>;
+}
+
+export interface ApplicationRouteMount {
+  path: string;
+  createRouter(dependencies: AppDependencies): Router;
+}
+
+export type ApplicationUsageLimitPolicyRegistration =
+  | UsageLimitPolicy
+  | ((context: {
+      database: ApplicationDatabasePort;
+      logger: AppLogger;
+    }) => UsageLimitPolicy);
 
 export interface ApplicationExtensionRegistry {
   connectors: ConnectorPlugin[];
   telemetrySinks: TelemetrySink[];
   productAnalyticsSinks: ProductAnalyticsSink[];
   incidentSinks: IncidentSink[];
+  databaseMigrators: ApplicationDatabaseMigrator[];
+  routeMounts: ApplicationRouteMount[];
   capabilityPolicy?: CapabilityPolicy;
+  usageLimitPolicyRegistration?: ApplicationUsageLimitPolicyRegistration;
   documentStorage?: DocumentStoragePort;
   documentJobDispatcher?: DocumentJobDispatcherPort;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
@@ -25,7 +53,10 @@ export interface ApplicationModuleRegistrationContext {
   registerTelemetrySink(sink: TelemetrySink): void;
   registerProductAnalyticsSink(sink: ProductAnalyticsSink): void;
   registerIncidentSink(sink: IncidentSink): void;
+  registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
+  registerRouteMount(mount: ApplicationRouteMount): void;
   registerCapabilityPolicy(policy: CapabilityPolicy): void;
+  registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
   registerDocumentStorage(storage: DocumentStoragePort): void;
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
@@ -44,6 +75,8 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   telemetrySinks: [],
   productAnalyticsSinks: [],
   incidentSinks: [],
+  databaseMigrators: [],
+  routeMounts: [],
 });
 
 const createRegistrationContext = (registry: ApplicationExtensionRegistry): ApplicationModuleRegistrationContext => ({
@@ -59,8 +92,17 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   registerIncidentSink(sink) {
     registry.incidentSinks.push(sink);
   },
+  registerDatabaseMigrator(migrator) {
+    registry.databaseMigrators.push(migrator);
+  },
+  registerRouteMount(mount) {
+    registry.routeMounts.push(mount);
+  },
   registerCapabilityPolicy(policy) {
     registry.capabilityPolicy = policy;
+  },
+  registerUsageLimitPolicy(policy) {
+    registry.usageLimitPolicyRegistration = policy;
   },
   registerDocumentStorage(storage) {
     registry.documentStorage = storage;
@@ -116,6 +158,23 @@ export class ApplicationModuleCoordinator {
             err: error instanceof Error ? error.message : String(error),
           },
           "Application module failed to initialize",
+        );
+        throw error;
+      }
+    }
+  }
+
+  async migrateAll(database: ApplicationDatabasePort): Promise<void> {
+    for (const migrator of this.registry.databaseMigrators) {
+      try {
+        await migrator.migrate(database);
+      } catch (error) {
+        this.logger.error(
+          {
+            migratorId: migrator.id,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Application module migrator failed",
         );
         throw error;
       }

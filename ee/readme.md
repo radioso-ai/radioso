@@ -25,3 +25,25 @@ From this directory:
 npm run build
 npm test
 ```
+
+## Usage limit profiles
+
+The Enterprise backend module adds hosted usage limit profiles. Accounts without
+an assigned profile remain unlimited. The seeded `starter_250` profile allows
+250 customer-facing answer calls per UTC month and 250 stored documents across
+all workspaces in the account.
+
+Set `EE_USAGE_ADMIN_TOKEN` to enable the operator API:
+
+```bash
+EE_USAGE_ADMIN_TOKEN=change-me
+```
+
+Operator requests use `Authorization: Bearer <token>` against:
+
+```text
+/api/v1/ee/usage-limits
+```
+
+The API can list or upsert profiles, assign or clear an account profile, and
+inspect an account's current usage for a UTC month.

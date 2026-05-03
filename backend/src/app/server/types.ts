@@ -40,7 +40,8 @@ import type { TelemetryService } from "../../shared/observability/telemetry/tele
 import type { IncidentReportingService } from "../../shared/incidents/incidentReportingService.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
-import type { ApplicationModuleCoordinator } from "../composition/applicationModule.js";
+import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
 
 export interface AppDependencies {
   env: Env;
@@ -50,6 +51,8 @@ export interface AppDependencies {
   incidentReportingService: IncidentReportingService;
   productAnalyticsService: ProductAnalyticsPort;
   capabilityPolicy: CapabilityPolicy;
+  usageLimitPolicy: UsageLimitPolicy;
+  applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
   authService: AuthService;
   passwordResetService: PasswordResetService;

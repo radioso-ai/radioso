@@ -35,6 +35,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
   const dependencies = options.buildDependencies
     ? options.buildDependencies(options.env)
     : buildDependencies(options.env, { modules: options.applicationModules });
+  await dependencies.applicationModules.migrateAll(dependencies.connectorDb);
   await dependencies.connectorRegistry.runMigrations(dependencies.connectorDb);
   await dependencies.connectorRegistry.initializeAll({
     db: dependencies.connectorDb,

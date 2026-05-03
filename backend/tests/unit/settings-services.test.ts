@@ -123,6 +123,53 @@ describe("settings services", () => {
     expect(retrievalSettingsService.updateForWorkspace).not.toHaveBeenCalled();
   });
 
+  it("delegates website embed script and snippet construction to the configured integration provider", async () => {
+    const workspace = {
+      id: "workspace-1",
+      name: "Workspace",
+      assistantName: "Nora",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      anonymousChatEnabled: true,
+      anonymousChatToken: "public-token",
+      anonymousRateLimit: 10,
+      websiteEmbedEnabled: true,
+      websiteEmbedToken: "embed-token",
+      websiteEmbedAllowedOrigins: ["https://example.com"],
+      websiteEmbedLauncherLabel: "Ask Nora",
+      websiteEmbedLauncherIcon: "sparkles",
+      websiteEmbedLauncherPosition: "bottom-left",
+    };
+    const retrieval = defaultRetrievalSettings("workspace-1");
+    const websiteEmbedIntegration = {
+      buildScriptUrl: vi.fn().mockReturnValue("https://widget.radioso.example/radioso-embed.js"),
+      buildSnippet: vi.fn().mockReturnValue("<script src=\"https://widget.radioso.example/radioso-embed.js\"></script>"),
+    };
+    const service = new PlatformSettingsService({
+      workspaceRepository: {
+        findById: vi.fn().mockResolvedValue(workspace),
+        updateGeneralSettings: vi.fn(),
+      },
+      retrievalSettingsService: {
+        getForWorkspace: vi.fn().mockResolvedValue(retrieval),
+        listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
+        updateForWorkspace: vi.fn(),
+      },
+      publicChatBaseUrl: "http://localhost:3000/chat",
+      websiteEmbedIntegration,
+    } as never);
+
+    const result = await service.getForWorkspace("workspace-1");
+
+    expect(result.channels.websiteEmbedScriptUrl).toBe("https://widget.radioso.example/radioso-embed.js");
+    expect(result.channels.websiteEmbedSnippet).toBe("<script src=\"https://widget.radioso.example/radioso-embed.js\"></script>");
+    expect(websiteEmbedIntegration.buildSnippet).toHaveBeenCalledWith(expect.objectContaining({
+      websiteEmbedToken: "embed-token",
+      websiteEmbedLauncherLabel: "Ask Nora",
+    }));
+  });
+
   it("emits channel audit events from the shared settings update path", async () => {
     const workspace = {
       id: "workspace-1",

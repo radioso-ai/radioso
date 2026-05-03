@@ -7,6 +7,7 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 import type { DocumentStoragePort } from "../../modules/documents/infra/gcsDocumentStorage.js";
 import type { DocumentJobDispatcherPort } from "../../modules/documents/services/documentJobDispatcher.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/domain/websiteEmbedIntegration.js";
 
 export interface ApplicationExtensionRegistry {
   connectors: ConnectorPlugin[];
@@ -16,6 +17,7 @@ export interface ApplicationExtensionRegistry {
   capabilityPolicy?: CapabilityPolicy;
   documentStorage?: DocumentStoragePort;
   documentJobDispatcher?: DocumentJobDispatcherPort;
+  websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
 }
 
 export interface ApplicationModuleRegistrationContext {
@@ -26,6 +28,7 @@ export interface ApplicationModuleRegistrationContext {
   registerCapabilityPolicy(policy: CapabilityPolicy): void;
   registerDocumentStorage(storage: DocumentStoragePort): void;
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
+  registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
 }
 
 export interface ApplicationModule {
@@ -64,6 +67,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerDocumentJobDispatcher(dispatcher) {
     registry.documentJobDispatcher = dispatcher;
+  },
+  registerWebsiteEmbedIntegration(provider) {
+    registry.websiteEmbedIntegration = provider;
   },
 });
 

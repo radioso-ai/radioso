@@ -5,13 +5,18 @@ on:
     branches:
       - main
     paths:
+      - .github/workflows/_deploy-cloud-run.yml
+      - .github/workflows/deploy-staging.yml
       - .dockerignore
       - backend/**
       - frontend/**
       - infra/backend.Dockerfile
+      - infra/frontend.Dockerfile
       - frontend/Dockerfile
+      - ee/**
       - packages/connector-api/**
       - packages/document-parser/**
+      - scripts/sync-ee-frontend-routes.mjs
   workflow_dispatch:
 
 jobs:
@@ -26,3 +31,4 @@ jobs:
       backend_service: radioso-staging-backend
       frontend_service: radioso-staging-frontend
       worker_service: radioso-staging-worker
+      radioso_edition: enterprise

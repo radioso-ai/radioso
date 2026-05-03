@@ -17,11 +17,19 @@ The bootstrap prompts for your AI provider credentials, generates secrets, and s
 
 In the Docker development stack, frontend and backend source changes are bind-mounted into the containers. TypeScript backend changes restart automatically, and backend prompt markdown under `backend/prompts/` is re-read on each request in development without a container restart.
 
+For Enterprise Edition embed development, run:
+
+```bash
+./run-ee-dev.sh
+```
+
+This starts Postgres in Docker, builds and installs the commercial packages from `ee/packages` locally without saving them to the OSS package manifests, generates the local Enterprise Edition frontend routes, updates `backend/.env` with Enterprise Edition embed settings, and runs the backend, worker, frontend, and embed harness on the host. The normal `./run-dev.sh` path removes those generated routes before starting the OSS stack.
+
 | Surface | URL |
 |---|---|
 | App | http://localhost:3000 |
 | API | http://localhost:8080 |
-| Embed test harness | http://127.0.0.1:4321 after running `node scripts/serve-embed-test-site.mjs` |
+| Embed test harness | http://127.0.0.1:4321 |
 
 ---
 

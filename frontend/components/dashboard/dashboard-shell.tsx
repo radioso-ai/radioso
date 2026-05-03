@@ -12,6 +12,10 @@ import { SettingsView } from './settings-view'
 import { UsersView } from './users-view'
 import { FirstRunExperience } from './first-run-experience'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import {
+  shouldRewriteToActiveWorkspace,
+  shouldWaitForRouteWorkspace,
+} from '@/lib/dashboard-workspace-sync'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useWorkspaceOnboarding } from '@/lib/onboarding'
 import { LogoSpinner } from '@/components/ui/spinner'
@@ -75,7 +79,11 @@ export function DashboardShell({
       return
     }
 
-    if (routeState.workspaceId === activeWorkspaceId) {
+    if (!shouldRewriteToActiveWorkspace({
+      activeWorkspaceId,
+      requestedWorkspaceExists,
+      requestedWorkspaceId,
+    })) {
       return
     }
 
@@ -106,7 +114,11 @@ export function DashboardShell({
   if (
     isWorkspaceLoading ||
     (currentView === 'chat' && onboarding.isLoading) ||
-    (requestedWorkspaceId && requestedWorkspaceExists && activeWorkspaceId !== requestedWorkspaceId)
+    shouldWaitForRouteWorkspace({
+      activeWorkspaceId,
+      requestedWorkspaceExists,
+      requestedWorkspaceId,
+    })
   ) {
     return (
       <SidebarProvider className="h-svh min-h-0 overflow-hidden">

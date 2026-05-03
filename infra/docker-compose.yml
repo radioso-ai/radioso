@@ -23,6 +23,7 @@ services:
 
   backend:
     container_name: radioso-backend
+    pull_policy: build
     build:
       context: ..
       dockerfile: infra/backend.Dockerfile
@@ -56,6 +57,7 @@ services:
 
   backend-worker:
     container_name: radioso-backend-worker
+    pull_policy: build
     build:
       context: ..
       dockerfile: infra/backend.Dockerfile
@@ -76,6 +78,7 @@ services:
 
   frontend:
     container_name: radioso-frontend
+    pull_policy: build
     build:
       context: ../frontend
       dockerfile: Dockerfile

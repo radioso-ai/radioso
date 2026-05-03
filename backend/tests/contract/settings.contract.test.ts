@@ -49,7 +49,7 @@ describe("settings contract", () => {
         websiteEmbedLauncherLabel: expect.any(String),
         websiteEmbedLauncherIcon: expect.any(String),
         websiteEmbedLauncherPosition: expect.any(String),
-        websiteEmbedScriptUrl: "http://localhost:3000/radioso-embed.js",
+        websiteEmbedScriptUrl: null,
         websiteEmbedSnippet: null,
       },
     });

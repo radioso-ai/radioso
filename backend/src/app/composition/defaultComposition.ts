@@ -33,6 +33,7 @@ export interface ApplicationComposition {
   incidentSinks: ReturnType<typeof createApplicationExtensionRegistry>["incidentSinks"];
   documentStorage?: ReturnType<typeof createApplicationExtensionRegistry>["documentStorage"];
   documentJobDispatcher?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobDispatcher"];
+  websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   lifecycle: ApplicationModuleCoordinator;
   modules: ApplicationModule[];
 }
@@ -56,6 +57,7 @@ export const createDefaultApplicationComposition = (options: {
     incidentSinks: registry.incidentSinks,
     documentStorage: registry.documentStorage,
     documentJobDispatcher: registry.documentJobDispatcher,
+    websiteEmbedIntegration: registry.websiteEmbedIntegration,
     lifecycle: coordinator,
     modules: coordinator.registeredModules,
   };

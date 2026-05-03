@@ -70,7 +70,6 @@ export const DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION: WebsiteEmbedLauncherPositi
 export const DEFAULT_WEBSITE_EMBED_SCRIPT_PATH = '/radioso-embed.js'
 export const DEFAULT_WEBSITE_EMBED_INITIAL_STATE: WebsiteEmbedInitialState = 'collapsed'
 export const DEFAULT_WEBSITE_EMBED_DISPLAY_MODE: WebsiteEmbedDisplayMode = 'bubble'
-export const APP_WEBSITE_EMBED_DEMO_PATH = '/embed-demo.html'
 export const LOCAL_WEBSITE_EMBED_TEST_HARNESS_URL = 'http://127.0.0.1:4321'
 export const WEBSITE_EMBED_DESKTOP_PANEL_WIDTH_PX = 560
 export const WEBSITE_EMBED_PANEL_HANDLE_WIDTH_PX = 56
@@ -572,7 +571,11 @@ export const buildWebsiteEmbedSnippet = (
     return null
   }
 
-  const scriptUrl = resolveWebsiteEmbedScriptUrl(settings.websiteEmbedScriptUrl, baseUrl)
+  const scriptUrl = settings.websiteEmbedScriptUrl?.trim()
+    || (baseUrl ? resolveWebsiteEmbedScriptUrl(settings.websiteEmbedScriptUrl, baseUrl) : null)
+  if (!scriptUrl) {
+    return null
+  }
   const launcherLabel = settings.websiteEmbedLauncherLabel?.trim() || DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL
   const launcherIcon = settings.websiteEmbedLauncherIcon ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_ICON
   const launcherPosition = settings.websiteEmbedLauncherPosition ?? DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION

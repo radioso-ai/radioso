@@ -5,15 +5,15 @@ import type { AuditService } from "../../audit/services/auditService.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { buildAssistantSettingsSection } from "../domain/assistantSettings.js";
 import {
-  resolveAssistantDisplayName,
   validateAssistantBootstrapSettings,
 } from "../domain/assistantBootstrapSettings.js";
 import type { RetrievalSettingsRecord } from "../domain/retrievalSettings.js";
 import { validateRetrievalSettings } from "../domain/retrievalSettings.js";
+import { validateWebsiteEmbedSettings } from "../domain/websiteEmbedSettings.js";
 import {
-  DEFAULT_WEBSITE_EMBED_SCRIPT_PATH,
-  validateWebsiteEmbedSettings,
-} from "../domain/websiteEmbedSettings.js";
+  DefaultWebsiteEmbedIntegrationProvider,
+  type WebsiteEmbedIntegrationProvider,
+} from "../domain/websiteEmbedIntegration.js";
 import type {
   PlatformChannelsSettingsSection,
   PlatformRetrievalSettingsSection,
@@ -30,6 +30,7 @@ export interface PlatformSettingsServiceDependencies {
   >;
   auditService?: Pick<AuditService, "record">;
   publicChatBaseUrl?: string;
+  websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
 }
 
 export interface PlatformSettingsUpdateContext {
@@ -38,6 +39,11 @@ export interface PlatformSettingsUpdateContext {
 
 export class PlatformSettingsService {
   constructor(private readonly dependencies: PlatformSettingsServiceDependencies) {}
+
+  private get websiteEmbedIntegration(): WebsiteEmbedIntegrationProvider {
+    return this.dependencies.websiteEmbedIntegration
+      ?? new DefaultWebsiteEmbedIntegrationProvider(this.dependencies.publicChatBaseUrl);
+  }
 
   async getForWorkspace(workspaceId: string): Promise<PlatformSettingsResource> {
     const [workspace, retrievalSettings, metadataFieldSuggestions] = await Promise.all([
@@ -318,8 +324,8 @@ export class PlatformSettingsService {
       websiteEmbedLauncherLabel: workspace.websiteEmbedLauncherLabel,
       websiteEmbedLauncherIcon: workspace.websiteEmbedLauncherIcon,
       websiteEmbedLauncherPosition: workspace.websiteEmbedLauncherPosition,
-      websiteEmbedScriptUrl: this.buildWebsiteEmbedScriptUrl(),
-      websiteEmbedSnippet: this.buildWebsiteEmbedSnippet(workspace),
+      websiteEmbedScriptUrl: this.websiteEmbedIntegration.buildScriptUrl(),
+      websiteEmbedSnippet: this.websiteEmbedIntegration.buildSnippet(workspace),
     };
   }
 
@@ -331,58 +337,4 @@ export class PlatformSettingsService {
     return `${baseUrl}/${token}`;
   }
 
-  private buildWebsiteEmbedScriptUrl(): string | null {
-    const baseUrl = this.dependencies.publicChatBaseUrl;
-    if (!baseUrl) {
-      return null;
-    }
-
-    try {
-      return new URL(DEFAULT_WEBSITE_EMBED_SCRIPT_PATH, new URL(baseUrl).origin).toString();
-    } catch {
-      return null;
-    }
-  }
-
-  private buildWebsiteEmbedSnippet(workspace: WorkspaceRecord): string | null {
-    if (!workspace.websiteEmbedEnabled || !workspace.websiteEmbedToken) {
-      return null;
-    }
-
-    const scriptUrl = this.buildWebsiteEmbedScriptUrl();
-    if (!scriptUrl) {
-      return null;
-    }
-
-    const originAttribute =
-      workspace.websiteEmbedAllowedOrigins.length > 0
-        ? ` data-radioso-allowed-origins="${escapeHtmlAttribute(workspace.websiteEmbedAllowedOrigins.join(","))}"`
-        : "";
-    const displayName = resolveAssistantDisplayName({
-      assistantName: workspace.assistantName,
-      workspaceName: workspace.name,
-    });
-    const titleOverride = displayName
-      ? ` data-radioso-copy="${escapeHtmlAttribute(JSON.stringify({ embeddedChatTitle: displayName }))}"`
-      : "";
-
-    return [
-      `<script`,
-      `  async`,
-      `  src="${escapeHtmlAttribute(scriptUrl)}"`,
-      `  data-radioso-token="${escapeHtmlAttribute(workspace.websiteEmbedToken)}"`,
-      `  data-radioso-launcher-label="${escapeHtmlAttribute(workspace.websiteEmbedLauncherLabel)}"`,
-      `  data-radioso-launcher-icon="${escapeHtmlAttribute(workspace.websiteEmbedLauncherIcon)}"`,
-      `  data-radioso-launcher-position="${escapeHtmlAttribute(workspace.websiteEmbedLauncherPosition)}"${originAttribute}${titleOverride}`,
-      `></script>`,
-    ].join("\n");
-  }
 }
-
-const escapeHtmlAttribute = (value: string) =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");

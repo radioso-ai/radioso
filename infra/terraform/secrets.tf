@@ -1,12 +1,12 @@
 locals {
   secret_values = merge(
     {
-      "database-password"        = random_password.db_password.result
-      "openai-api-key"           = var.openai_api_key
-      "session-cookie-secret"    = var.session_cookie_secret
-      "workspace-token-secret"   = var.workspace_token_secret
+      "database-password"          = random_password.db_password.result
+      "openai-api-key"             = var.openai_api_key
+      "session-cookie-secret"      = var.session_cookie_secret
+      "workspace-token-secret"     = var.workspace_token_secret
       "public-chat-session-secret" = var.public_chat_session_secret
-      "connector-encryption-key" = var.connector_encryption_key
+      "connector-encryption-key"   = var.connector_encryption_key
     },
     nonsensitive(var.mail_smtp_username) == null ? {} : {
       "mail-smtp-username" = var.mail_smtp_username
@@ -21,12 +21,12 @@ locals {
 
   secret_names = toset(keys(merge(
     {
-      "database-password"        = true
-      "openai-api-key"           = true
-      "session-cookie-secret"    = true
-      "workspace-token-secret"   = true
+      "database-password"          = true
+      "openai-api-key"             = true
+      "session-cookie-secret"      = true
+      "workspace-token-secret"     = true
       "public-chat-session-secret" = true
-      "connector-encryption-key" = true
+      "connector-encryption-key"   = true
     },
     nonsensitive(var.mail_smtp_username) == null ? {} : {
       "mail-smtp-username" = true

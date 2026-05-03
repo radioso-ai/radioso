@@ -128,6 +128,25 @@ describe('embed widget helpers', () => {
     expect(url.searchParams.get('avatarUrl')).toBe('https://cdn.example.com/avatar.gif')
   })
 
+  it('builds a hosted harness URL when an app base URL is available', () => {
+    const harnessUrl = buildWebsiteEmbedTestHarnessUrl(
+      {
+        websiteEmbedToken: 'embed-token',
+        websiteEmbedScriptUrl: 'https://app.example.com/radioso-embed.js',
+        websiteEmbedLauncherLabel: 'Talk to us',
+        websiteEmbedLauncherIcon: 'message',
+        websiteEmbedLauncherPosition: 'bottom-left',
+      },
+      'https://app.example.com/settings',
+    )
+
+    const url = new URL(harnessUrl ?? '')
+    expect(url.origin).toBe('https://app.example.com')
+    expect(url.pathname).toBe('/embed-test')
+    expect(url.searchParams.get('appOrigin')).toBe('https://app.example.com')
+    expect(url.searchParams.get('token')).toBe('embed-token')
+  })
+
   it('normalizes locale, display-mode, initial-state, and avatar overrides', () => {
     expect(normalizeWebsiteEmbedLocale(' it-IT ')).toBe('it-IT')
     expect(normalizeWebsiteEmbedDisplayMode(' PANEL ')).toBe('panel')

@@ -2,3 +2,6 @@
 .next
 node_modules
 npm-debug.log*
+app/api/embed/
+app/embed/
+app/radioso-embed.js/

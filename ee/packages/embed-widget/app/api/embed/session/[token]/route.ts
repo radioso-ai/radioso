@@ -3,7 +3,10 @@ import { z } from 'zod'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const BACKEND_BASE = process.env.BACKEND_INTERNAL_URL ?? 'http://localhost:8080'
+const BACKEND_BASE =
+  process.env.RADIOSO_API_INTERNAL_URL ??
+  process.env.BACKEND_INTERNAL_URL ??
+  'http://localhost:8080'
 const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'OPTIONS, POST',
   'Access-Control-Allow-Headers': 'Content-Type',

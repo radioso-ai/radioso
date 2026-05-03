@@ -49,6 +49,17 @@ variable "deploy_services" {
   default     = true
 }
 
+variable "radioso_edition" {
+  description = "Radioso edition deployed to Cloud Run. Enterprise enables the hosted website embed module and frontend routes."
+  type        = string
+  default     = "oss"
+
+  validation {
+    condition     = contains(["oss", "enterprise"], var.radioso_edition)
+    error_message = "radioso_edition must be either oss or enterprise."
+  }
+}
+
 variable "worker_min_instances" {
   description = "Minimum number of worker Cloud Run instances. Must stay at least 1 so the durable document queue always has a live recovery poller."
   type        = number

@@ -71,6 +71,7 @@ import {
   createDefaultAnalyticsSinks,
   createDefaultApplicationComposition,
   createDefaultChunkingStrategyRegistry,
+  createDefaultDocumentJobConsumer,
   createDefaultConnectorRegistry,
   createDefaultDocumentJobDispatcher,
   createDefaultDocumentStorage,
@@ -200,6 +201,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentJobDispatcher,
     env.DOCUMENT_PROCESSING_JOB_LEASE_MS,
     telemetryService,
+  );
+  const documentJobConsumer = composition.documentJobConsumer ?? createDefaultDocumentJobConsumer(
+    env,
+    logger,
+    documentProcessingWorker,
   );
   const documentDeletionService = new DocumentDeletionService(
     documentRepository,
@@ -354,6 +360,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentSearchHistoryService,
     workspaceIngestionReprocessService,
     documentProcessingWorker,
+    documentJobConsumer,
     documentDeletionService,
     chatService,
     chatBootstrapService,

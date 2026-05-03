@@ -20,6 +20,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   dependencies.logger.info({ role: "worker" }, "Radioso document worker starting");
   await dependencies.applicationModules.initializeAll();
   await dependencies.documentProcessingWorker.start();
+  await dependencies.documentJobConsumer?.start();
 
   let shuttingDown = false;
 
@@ -30,6 +31,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
       }
       shuttingDown = true;
       dependencies.logger.info({ role: "worker", signal }, "Radioso document worker shutting down");
+      await dependencies.documentJobConsumer?.stop();
       await dependencies.documentProcessingWorker.stop();
       await dependencies.applicationModules.shutdownAll();
     },

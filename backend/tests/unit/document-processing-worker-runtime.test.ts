@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
+import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
+import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
 import { createAuditService, InMemoryDocumentProcessingJobRepository, InMemoryDocumentRepository } from "../support/fakes.js";
+import { createTestDependencies } from "../support/testApp.js";
 
 describe("document processing worker runtime signals", () => {
   it("logs the initial queue snapshot when the worker starts", async () => {
@@ -172,5 +175,64 @@ describe("document processing worker runtime signals", () => {
         tags: { outcome: "retry_scheduled" },
       }),
     );
+  });
+
+  it("starts and stops the optional document job consumer with the worker runtime", async () => {
+    const { dependencies } = createTestDependencies();
+    const documentJobConsumer = {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+    };
+    const workerStartSpy = vi.spyOn(dependencies.documentProcessingWorker, "start");
+    const workerStopSpy = vi.spyOn(dependencies.documentProcessingWorker, "stop");
+
+    const runtime = await startWorkerRuntime({
+      env: { DATABASE_URL: "postgres://test:test@localhost:5432/test" } as any,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => ({
+        ...dependencies,
+        documentJobConsumer,
+      }),
+    });
+
+    expect(workerStartSpy).toHaveBeenCalledOnce();
+    expect(documentJobConsumer.start).toHaveBeenCalledOnce();
+
+    await runtime.shutdown("test");
+
+    expect(documentJobConsumer.stop).toHaveBeenCalledOnce();
+    expect(workerStopSpy).toHaveBeenCalledOnce();
+  });
+
+  it("starts and stops the optional document job consumer with the worker task runtime", async () => {
+    const { dependencies } = createTestDependencies();
+    const documentJobConsumer = {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+    };
+    const close = vi.fn((callback?: (error?: Error) => void) => callback?.());
+
+    const runtime = await startWorkerTaskRuntime({
+      env: {
+        DATABASE_URL: "postgres://test:test@localhost:5432/test",
+        PORT: 8099,
+      } as any,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => ({
+        ...dependencies,
+        documentJobConsumer,
+      }),
+      listen: (_app, _port, onListening) => {
+        onListening();
+        return { close };
+      },
+    });
+
+    expect(documentJobConsumer.start).toHaveBeenCalledOnce();
+
+    await runtime.shutdown("test");
+
+    expect(documentJobConsumer.stop).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
   });
 });

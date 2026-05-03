@@ -9,6 +9,7 @@ import type { DocumentImportService } from "../../modules/documents/services/doc
 import type { DocumentSearchHistoryService } from "../../modules/documents/services/documentSearchHistoryService.js";
 import type { DocumentSearchService } from "../../modules/documents/services/documentSearchService.js";
 import type { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
+import type { DocumentJobConsumerPort } from "../../modules/documents/services/documentJobConsumer.js";
 import type { WorkspaceIngestionReprocessService } from "../../modules/documents/services/workspaceIngestionReprocessService.js";
 import type { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import type { PlatformSettingsService } from "../../modules/settings/services/platformSettingsService.js";
@@ -70,6 +71,7 @@ export interface AppDependencies {
   documentSearchHistoryService: DocumentSearchHistoryService;
   workspaceIngestionReprocessService: WorkspaceIngestionReprocessService;
   documentProcessingWorker: DocumentProcessingWorker;
+  documentJobConsumer?: DocumentJobConsumerPort;
   documentDeletionService: DocumentDeletionService;
   chatService: ChatService;
   chatBootstrapService: ChatBootstrapService;

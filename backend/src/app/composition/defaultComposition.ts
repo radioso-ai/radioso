@@ -1,10 +1,13 @@
 import type { Env } from "../config/env.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
+import { AmqpDocumentJobConsumer, AmqpDocumentJobDispatcher } from "../../modules/documents/infra/amqpDocumentJobQueue.js";
 import { CloudTasksDocumentJobDispatcher } from "../../modules/documents/infra/cloudTasksDocumentJobDispatcher.js";
 import { GcsDocumentStorage, type DocumentStoragePort } from "../../modules/documents/infra/gcsDocumentStorage.js";
 import { LocalDocumentStorage } from "../../modules/documents/infra/localDocumentStorage.js";
+import type { DocumentJobConsumerPort } from "../../modules/documents/services/documentJobConsumer.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "../../modules/documents/services/documentJobDispatcher.js";
+import type { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
 import { ChunkingStrategyRegistry } from "../../modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { StructuredSemanticChunkingStrategy } from "../../modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
@@ -33,6 +36,7 @@ export interface ApplicationComposition {
   incidentSinks: ReturnType<typeof createApplicationExtensionRegistry>["incidentSinks"];
   documentStorage?: ReturnType<typeof createApplicationExtensionRegistry>["documentStorage"];
   documentJobDispatcher?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobDispatcher"];
+  documentJobConsumer?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobConsumer"];
   lifecycle: ApplicationModuleCoordinator;
   modules: ApplicationModule[];
 }
@@ -56,6 +60,7 @@ export const createDefaultApplicationComposition = (options: {
     incidentSinks: registry.incidentSinks,
     documentStorage: registry.documentStorage,
     documentJobDispatcher: registry.documentJobDispatcher,
+    documentJobConsumer: registry.documentJobConsumer,
     lifecycle: coordinator,
     modules: coordinator.registeredModules,
   };
@@ -100,6 +105,9 @@ export const createDefaultDocumentJobDispatcher = (
     | "WORKER_TASKS_QUEUE_NAME"
     | "WORKER_TASKS_SERVICE_URL"
     | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
+    | "WORKER_AMQP_URL"
+    | "WORKER_AMQP_QUEUE_NAME"
+    | "WORKER_AMQP_PREFETCH"
   >,
   logger: AppLogger,
 ): DocumentJobDispatcherPort =>
@@ -112,7 +120,33 @@ export const createDefaultDocumentJobDispatcher = (
         invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
         logger,
       })
+    : env.WORKER_DISPATCH_DRIVER === "amqp"
+      ? new AmqpDocumentJobDispatcher({
+          amqpUrl: env.WORKER_AMQP_URL!,
+          queueName: env.WORKER_AMQP_QUEUE_NAME!,
+          logger,
+        })
     : new NoopDocumentJobDispatcher();
+
+export const createDefaultDocumentJobConsumer = (
+  env: Pick<Env,
+    | "WORKER_DISPATCH_DRIVER"
+    | "WORKER_AMQP_URL"
+    | "WORKER_AMQP_QUEUE_NAME"
+    | "WORKER_AMQP_PREFETCH"
+  >,
+  logger: AppLogger,
+  worker: Pick<DocumentProcessingWorker, "runJobById">,
+): DocumentJobConsumerPort | undefined =>
+  env.WORKER_DISPATCH_DRIVER === "amqp"
+    ? new AmqpDocumentJobConsumer({
+        amqpUrl: env.WORKER_AMQP_URL!,
+        queueName: env.WORKER_AMQP_QUEUE_NAME!,
+        prefetch: env.WORKER_AMQP_PREFETCH,
+        logger,
+        worker,
+      })
+    : undefined;
 
 export const createDefaultChunkingStrategyRegistry = (embeddingService: EmbeddingService): ChunkingStrategyRegistry =>
   new ChunkingStrategyRegistry([

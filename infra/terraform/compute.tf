@@ -55,6 +55,24 @@ resource "google_cloud_run_v2_service" "backend" {
         value = "radioso-api"
       }
       env {
+        name  = "RADIOSO_EDITION"
+        value = var.radioso_edition
+      }
+      dynamic "env" {
+        for_each = local.enterprise_application_modules == null ? [] : [local.enterprise_application_modules]
+        content {
+          name  = "RADIOSO_APPLICATION_MODULES"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [local.app_base_url] : []
+        content {
+          name  = "RADIOSO_ENTERPRISE_WIDGET_ORIGIN"
+          value = env.value
+        }
+      }
+      env {
         name  = "GOOGLE_CLOUD_PROJECT"
         value = var.project_id
       }
@@ -307,6 +325,14 @@ resource "google_cloud_run_v2_service" "frontend" {
         name  = "BACKEND_INTERNAL_URL"
         value = google_cloud_run_v2_service.backend[0].uri
       }
+      env {
+        name  = "RADIOSO_EDITION"
+        value = var.radioso_edition
+      }
+      env {
+        name  = "NEXT_PUBLIC_RADIOSO_EDITION"
+        value = var.radioso_edition
+      }
     }
   }
 
@@ -366,6 +392,24 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "OBSERVABILITY_SERVICE_NAME"
         value = "radioso-worker"
+      }
+      env {
+        name  = "RADIOSO_EDITION"
+        value = var.radioso_edition
+      }
+      dynamic "env" {
+        for_each = local.enterprise_application_modules == null ? [] : [local.enterprise_application_modules]
+        content {
+          name  = "RADIOSO_APPLICATION_MODULES"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [local.app_base_url] : []
+        content {
+          name  = "RADIOSO_ENTERPRISE_WIDGET_ORIGIN"
+          value = env.value
+        }
       }
       env {
         name  = "GOOGLE_CLOUD_PROJECT"

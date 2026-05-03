@@ -44,6 +44,8 @@ When it finishes successfully, open:
 - API: `http://localhost:8080`
 - Embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
 
+For Enterprise Edition embed development, use `./run-ee-dev.sh` instead. It builds the commercial packages from `ee/packages`, generates the local EE frontend routes, configures the local backend, starts the same app and API URLs, and starts the embed test harness automatically. The normal `./run-dev.sh` path removes those generated routes before starting the OSS stack.
+
 ## Pick a local goal
 
 <Steps>

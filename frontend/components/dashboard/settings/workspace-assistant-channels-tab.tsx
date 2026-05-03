@@ -25,8 +25,8 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { accountApi, generalSettingsApi, settingsApi, type GeneralSettings, type RetrievalSettings } from '@/lib/api'
+import { WEBSITE_EMBED_CHANNEL_ENABLED } from '@/lib/enterprise-features'
 import {
-  APP_WEBSITE_EMBED_DEMO_PATH,
   DEFAULT_WEBSITE_EMBED_THEME,
   buildWebsiteEmbedTestHarnessUrl,
   buildWebsiteEmbedSnippet,
@@ -447,7 +447,7 @@ export function WorkspaceAssistantChannelsTab({
 	      : false
 
   const hasWebsiteEmbedChanges =
-    anonSettings && savedAnonSettings
+    WEBSITE_EMBED_CHANNEL_ENABLED && anonSettings && savedAnonSettings
       ? (
           anonSettings.websiteEmbedEnabled !== savedAnonSettings.websiteEmbedEnabled ||
           websiteEmbedOrigins !== formatWebsiteEmbedOrigins(savedAnonSettings.websiteEmbedAllowedOrigins ?? []) ||
@@ -655,7 +655,6 @@ export function WorkspaceAssistantChannelsTab({
         copy: websiteEmbedSnippetResolvedCopyOverrides,
         theme: websiteEmbedSnippetResolvedThemeOverrides,
       },
-      new URL(APP_WEBSITE_EMBED_DEMO_PATH, window.location.origin).toString(),
     )
   }, [
     anonSettings,
@@ -672,7 +671,7 @@ export function WorkspaceAssistantChannelsTab({
   const websiteEmbedDemoOrigin =
     typeof window !== 'undefined' ? window.location.origin : ''
 
-  const websiteEmbedHasLocalHarnessOrigin = useMemo(
+  const websiteEmbedHasDemoOrigin = useMemo(
     () => (websiteEmbedDemoOrigin ? parseWebsiteEmbedOrigins(websiteEmbedOrigins).includes(websiteEmbedDemoOrigin) : false),
     [websiteEmbedDemoOrigin, websiteEmbedOrigins],
   )
@@ -794,7 +793,7 @@ export function WorkspaceAssistantChannelsTab({
   }, [anonSettings, hasAssistantChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState])
 
   useEffect(() => {
-    if (!anonSettings || !savedAnonSettings || !hasWebsiteEmbedChanges) {
+    if (!WEBSITE_EMBED_CHANNEL_ENABLED || !anonSettings || !savedAnonSettings || !hasWebsiteEmbedChanges) {
       return
     }
     const timeout = window.setTimeout(async () => {
@@ -875,14 +874,14 @@ export function WorkspaceAssistantChannelsTab({
 
     try {
       const parsedOrigins = parseWebsiteEmbedOrigins(websiteEmbedOrigins)
-      const nextOrigins = websiteEmbedHasLocalHarnessOrigin
+      const nextOrigins = websiteEmbedHasDemoOrigin
         ? parsedOrigins
         : websiteEmbedDemoOrigin
           ? [...parsedOrigins, websiteEmbedDemoOrigin]
           : parsedOrigins
 
       const hasPersistedChanges =
-        !websiteEmbedHasLocalHarnessOrigin ||
+        !websiteEmbedHasDemoOrigin ||
         anonSettings.websiteEmbedEnabled !== (savedAnonSettings?.websiteEmbedEnabled ?? false) ||
         websiteEmbedOrigins !== formatWebsiteEmbedOrigins(savedAnonSettings?.websiteEmbedAllowedOrigins ?? []) ||
         anonSettings.websiteEmbedLauncherLabel !== savedAnonSettings?.websiteEmbedLauncherLabel ||
@@ -905,7 +904,7 @@ export function WorkspaceAssistantChannelsTab({
       window.open(websiteEmbedDemoUrl, '_blank', 'noopener,noreferrer')
     } catch (error) {
       console.error('Failed to prepare website embed demo page:', error)
-      setWebsiteEmbedDemoError(getApiErrorMessage(error, 'Failed to prepare the local demo page.'))
+      setWebsiteEmbedDemoError(getApiErrorMessage(error, 'Failed to prepare the demo page.'))
     } finally {
       setIsPreparingWebsiteEmbedDemo(false)
     }
@@ -1310,7 +1309,7 @@ export function WorkspaceAssistantChannelsTab({
           </section>
           ) : null}
 
-          {mode === 'channels' && !isAnonLoading ? (
+          {WEBSITE_EMBED_CHANNEL_ENABLED && mode === 'channels' && !isAnonLoading ? (
           <section id="website-embed" className="space-y-6 scroll-mt-24">
             {anonSettings ? (
               <section className="scroll-mt-24 rounded-2xl border border-border bg-card/95 p-5 shadow-sm">
@@ -1694,7 +1693,7 @@ export function WorkspaceAssistantChannelsTab({
                       image or GIF, and apply the text or color customizations configured above.
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Quick local tryout: this action saves the current website embed settings, adds the current app origin to the approved origins when needed, and opens a same-origin demo page prefilled with the current widget configuration.
+                      Quick tryout: this action saves the current website embed settings, adds the current app origin to the approved origins when needed, and opens a same-origin demo page prefilled with the current widget configuration.
                     </p>
                     {websiteEmbedDemoError ? (
                       <p className="text-xs text-destructive">{websiteEmbedDemoError}</p>
@@ -1720,7 +1719,7 @@ export function WorkspaceAssistantChannelsTab({
                         ) : (
                           <ExternalLink className="mr-2 h-4 w-4" />
                         )}
-                        Open local demo page
+                        Open demo page
                       </Button>
                       <Button variant="outline" onClick={handleWebsiteEmbedTokenRotate} disabled={isAnonSaving}>
                         {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}

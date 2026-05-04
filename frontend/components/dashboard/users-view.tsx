@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 
-export function UsersView() {
+export function UsersPanel() {
   const [users, setUsers] = useState<AccountUserSummary[]>([])
   const [invitations, setInvitations] = useState<AccountInvitationSummary[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -86,11 +86,7 @@ export function UsersView() {
   }
 
   return (
-    <DashboardPage
-      title="Users"
-      description="Invite teammates to this account. All active users currently share the same access."
-      contentClassName="space-y-6 p-6"
-    >
+    <div className="space-y-6">
       {isLoading ? (
         <div className="flex h-full items-center justify-center">
           <LogoSpinner imageClassName="h-7 w-7" />
@@ -199,6 +195,18 @@ export function UsersView() {
         </Card>
         </>
       )}
+    </div>
+  )
+}
+
+export function UsersView() {
+  return (
+    <DashboardPage
+      title="Users"
+      description="Invite teammates to this account. All active users currently share the same access."
+      contentClassName="space-y-6 p-6"
+    >
+      <UsersPanel />
     </DashboardPage>
   )
 }

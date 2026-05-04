@@ -47,7 +47,7 @@ export function InvitationAcceptForm({
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       await login(email, response.userId, response.accountId)
       router.replace(buildDashboardHref(response.accountId, {
-        section: 'chat',
+        section: 'agents',
         workspaceId: response.workspaceId,
         workspacePublicRouteKey: response.workspacePublicRouteKey,
       }))

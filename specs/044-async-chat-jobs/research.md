@@ -39,13 +39,13 @@
 - Document the decision only in the spec: rejected because the implementation would still lack an enforceable source of truth.
 - Keep the policy only in documentation: rejected because future code changes could drift away from the approved execution model unnoticed.
 
-## Decision: Use eval replay as the first reference workflow for future deferred assistant work
+## Decision: Use operator-triggered analysis as the first reference category for future deferred assistant work
 
 ### Rationale
 
-- Eval replay is already a non-interactive, operator-oriented workflow that resembles background assistant work more than live chat.
-- It provides a concrete example for classification without forcing immediate implementation of a generic async chat runtime.
-- In this feature it remains inline, which keeps the documentation honest while still identifying a plausible future deferred candidate.
+- Operator-triggered analysis is non-interactive and resembles background assistant work more than live chat.
+- It provides a concrete category for classification without forcing immediate implementation of a generic async chat runtime.
+- In this feature it remains future scope, which keeps the documentation honest while still identifying plausible deferred candidates.
 
 ### Alternatives considered
 

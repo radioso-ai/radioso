@@ -5,11 +5,10 @@ import { useRouter } from 'next/navigation'
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from './app-sidebar'
-import { ChatView } from './chat-view'
+import { AgentView } from './agent-view'
 import { ChatHistoryView } from './chat-history-view'
-import { DocumentsView } from './documents-view'
+import { KnowledgeView } from './knowledge-view'
 import { SettingsView } from './settings-view'
-import { UsersView } from './users-view'
 import { FirstRunExperience } from './first-run-experience'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
@@ -42,6 +41,7 @@ export function DashboardShell({
     ? workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.publicRouteKey
     : undefined
   const currentView = routeState.section
+  const isAgentChatView = currentView === 'agents' && (routeState.agentTab ?? 'chat') === 'chat'
 
   useEffect(() => {
     const syncKey = requestedWorkspaceExists ? (requestedWorkspaceId ?? null) : null
@@ -105,7 +105,8 @@ export function DashboardShell({
   const openDocument = (documentId: string | null) => {
     router.push(buildDashboardHref(accountId, {
       ...routeState,
-      section: 'documents',
+      section: 'knowledge',
+      knowledgeTab: 'documents',
       documentId: documentId ?? undefined,
       workspacePublicRouteKey: activeWorkspacePublicRouteKey,
     }))
@@ -113,7 +114,7 @@ export function DashboardShell({
 
   if (
     isWorkspaceLoading ||
-    (currentView === 'chat' && onboarding.isLoading) ||
+    (isAgentChatView && onboarding.isLoading) ||
     shouldWaitForRouteWorkspace({
       activeWorkspaceId,
       requestedWorkspaceExists,
@@ -143,26 +144,27 @@ export function DashboardShell({
           <SidebarTrigger />
         </header>
         <div key={activeWorkspaceId} className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 flex-col md:h-screen">
-          {currentView === 'chat' && (
-            onboarding.shouldShowFirstRun ? (
+          {currentView === 'agents' && (
+            isAgentChatView && onboarding.shouldShowFirstRun ? (
               <FirstRunExperience accountId={accountId} onboarding={onboarding} />
             ) : (
-              <ChatView
+              <AgentView
                 accountId={accountId}
-                onOpenDocument={openDocument}
+                routeState={routeState}
                 onboarding={onboarding}
+                onOpenDocument={openDocument}
               />
             )
           )}
-          {currentView === 'history' && (
+          {currentView === 'activity' && (
             <ChatHistoryView
               accountId={accountId}
               onboarding={onboarding}
               routeState={routeState}
             />
           )}
-          {currentView === 'documents' && (
-            <DocumentsView
+          {currentView === 'knowledge' && (
+            <KnowledgeView
               routeState={routeState}
               accountId={accountId}
               selectedDocumentId={routeState.documentId ?? null}
@@ -172,9 +174,6 @@ export function DashboardShell({
           )}
           {currentView === 'settings' && (
             <SettingsView accountId={accountId} routeState={routeState} />
-          )}
-          {currentView === 'users' && (
-            <UsersView />
           )}
         </div>
       </SidebarInset>

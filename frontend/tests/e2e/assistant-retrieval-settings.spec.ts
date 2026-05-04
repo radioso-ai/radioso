@@ -16,9 +16,9 @@ test("shared settings saves assistant, retrieval, and channel sections without c
     settingsUpdates,
   });
 
-  await page.goto(`/w/${workspaceKey}/settings?tab=assistant`);
+  await page.goto(`/w/${workspaceKey}/agents/current?tab=behavior`);
 
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agent" })).toBeVisible();
   await page.getByLabel("Assistant name").fill("Marta Knowledge Desk");
 
   await expect.poll(() => settingsUpdates.length).toBeGreaterThanOrEqual(1);
@@ -29,7 +29,7 @@ test("shared settings saves assistant, retrieval, and channel sections without c
   });
   expect(settingsUpdates.at(-1)).not.toHaveProperty("retrieval");
 
-  await page.getByRole("tab", { name: "Retrieval" }).click();
+  await page.goto(`/w/${workspaceKey}/knowledge?tab=retrieval`);
   await expect(page.getByRole("heading", { name: "Query rewrite", exact: true })).toBeVisible();
   await page.locator("#queryRewrite").click();
 
@@ -50,7 +50,7 @@ test("shared settings saves assistant, retrieval, and channel sections without c
   });
   expect(settingsUpdates.at(-1)).not.toHaveProperty("channels");
 
-  await page.getByRole("tab", { name: "Channels" }).click();
+  await page.goto(`/w/${workspaceKey}/agents/current?tab=channels`);
   await expect(page.getByText("Anonymous chat")).toBeVisible();
   await page.locator("#anonChatToggle").click();
 

@@ -21,6 +21,10 @@ describe('frontend product analytics', () => {
       subjectId: 'conversation-1',
     })
 
+    expect(event).not.toBeNull()
+    if (!event) {
+      throw new Error('Expected analytics event')
+    }
     expect(event.eventName).toBe('chat.citation_clicked')
     expect(event.timestamp).toBe('2026-04-22T10:00:00.000Z')
     expect(event.subjectType).toBe('conversation')

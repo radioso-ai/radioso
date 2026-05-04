@@ -48,12 +48,12 @@ function DocumentsPagination({
       totalPages={totalPages}
       previousHref={buildDashboardHref(accountId, {
         ...routeState,
-        section: 'documents',
+        section: 'knowledge',
         documentsPage: Math.max(1, safeCurrentPage - 1),
       })}
       nextHref={buildDashboardHref(accountId, {
         ...routeState,
-        section: 'documents',
+        section: 'knowledge',
         documentsPage: Math.min(totalPages, safeCurrentPage + 1),
       })}
       onPrevious={onPrevious}

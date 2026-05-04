@@ -108,6 +108,7 @@ const createDependencies = () =>
       shutdownAll: vi.fn().mockResolvedValue(undefined),
     },
     applicationModules: {
+      migrateAll: vi.fn().mockResolvedValue(undefined),
       initializeAll: vi.fn().mockResolvedValue(undefined),
       shutdownAll: vi.fn().mockResolvedValue(undefined),
     },

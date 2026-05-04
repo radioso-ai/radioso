@@ -28,7 +28,7 @@ Primary implementation sources:
 - retrieval pipeline: `backend/src/modules/retrieval/services/`
 - auth and session behavior: `backend/src/modules/auth/`
 - deployment topology: `infra/terraform/`
-- runtime configuration: `backend/.env.example`, `backend/src/app/config/env.ts`
+- runtime configuration: `.env.example`, `backend/src/app/config/env.ts`
 
 ## Rewrite priorities
 

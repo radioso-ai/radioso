@@ -16,7 +16,7 @@ The default local start command for the full Radioso stack is:
 ./run-dev.sh
 ```
 
-That command checks Docker and other local prerequisites, asks which supported AI provider you want to use, collects the required API credentials into `backend/.env`, and starts the local frontend, backend, and database stack through Docker Compose.
+That command checks Docker and other local prerequisites, asks which supported AI provider you want to use, collects the required API credentials into `.env`, and starts the local frontend, backend, and database stack through Docker Compose.
 
 After the stack is ready, open the app on [http://localhost:3000](http://localhost:3000), sign in, let Radioso seed the starter docs for an empty workspace, wait for processing, and ask one of the suggested first questions. A valid provider key is required for document processing and chat.
 

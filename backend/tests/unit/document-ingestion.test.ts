@@ -791,7 +791,7 @@ describe("document ingestion", () => {
     const [document] = await documentRepository.listByWorkspaceId("workspace-1");
     expect(document.status).toBe("failed");
     expect(document.failureReason).toBe(
-      "The configured AI provider rejected the credentials. Update backend/.env and restart Radioso.",
+      "The configured AI provider rejected the credentials. Update .env and restart Radioso.",
     );
   });
 

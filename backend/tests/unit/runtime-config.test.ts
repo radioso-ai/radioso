@@ -19,10 +19,10 @@ describe("runtime configuration", () => {
   });
 
   it("defines a dedicated backend-worker service in local and compose orchestration", async () => {
-    const devCompose = YAML.parse(await readFile(new URL("../../../infra/docker-compose.dev.yml", import.meta.url), "utf8")) as {
+    const devCompose = YAML.parse(await readFile(new URL("../../../docker-compose.dev.yml", import.meta.url), "utf8")) as {
       services?: Record<string, unknown>;
     };
-    const prodCompose = YAML.parse(await readFile(new URL("../../../infra/docker-compose.yml", import.meta.url), "utf8")) as {
+    const prodCompose = YAML.parse(await readFile(new URL("../../../docker-compose.yml", import.meta.url), "utf8")) as {
       services?: Record<string, unknown>;
     };
 
@@ -33,7 +33,7 @@ describe("runtime configuration", () => {
   });
 
   it("uses the watch-oriented backend dev image and bind mounts in docker compose development", async () => {
-    const devCompose = YAML.parse(await readFile(new URL("../../../infra/docker-compose.dev.yml", import.meta.url), "utf8")) as {
+    const devCompose = YAML.parse(await readFile(new URL("../../../docker-compose.dev.yml", import.meta.url), "utf8")) as {
       services?: Record<string, {
         build?: { dockerfile?: string };
         command?: string[] | string;
@@ -49,13 +49,13 @@ describe("runtime configuration", () => {
     expect(backend?.command).toEqual(["backend-dev-entrypoint.sh", "dev:http"]);
     expect(worker?.command).toEqual(["backend-dev-entrypoint.sh", "dev:worker"]);
     expect(backend?.volumes).toEqual(expect.arrayContaining([
-      "../backend:/app/backend",
-      "../packages:/app/packages",
+      "./backend:/app/backend",
+      "./packages:/app/packages",
       "radioso_backend_node_modules:/app/backend/node_modules",
     ]));
     expect(worker?.volumes).toEqual(expect.arrayContaining([
-      "../backend:/app/backend",
-      "../packages:/app/packages",
+      "./backend:/app/backend",
+      "./packages:/app/packages",
       "radioso_backend_node_modules:/app/backend/node_modules",
     ]));
   });

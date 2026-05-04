@@ -56,7 +56,7 @@ export const waitForReadiness = async (options = {}) => {
     failedServices: finalStatuses.filter((status) => !status.ready).map((status) => status.name),
     applicationUrls: [],
     nextSteps: ["Inspect compose logs for the failing service.", "Retry after fixing the reported blocker."],
-    logHint: "docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml logs",
+    logHint: "docker compose -f docker-compose.yml -f docker-compose.dev.yml logs",
   };
 };
 
@@ -78,7 +78,7 @@ export const startComposeStack = async (options = {}) => {
           ? `Docker compose exited after receiving ${signal}.`
           : "Inspect the compose output above for the failing build or container.",
       ],
-      logHint: "docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up --build",
+      logHint: "docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build",
     };
   }
 

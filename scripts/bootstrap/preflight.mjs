@@ -7,8 +7,8 @@ import { isPortAvailable, runCommand } from "./support/process-utils.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const composeFiles = [
-  path.join(repoRoot, "infra/docker-compose.yml"),
-  path.join(repoRoot, "infra/docker-compose.dev.yml"),
+  path.join(repoRoot, "docker-compose.yml"),
+  path.join(repoRoot, "docker-compose.dev.yml"),
 ];
 
 const composeArgs = ["compose", ...composeFiles.flatMap((file) => ["-f", file])];

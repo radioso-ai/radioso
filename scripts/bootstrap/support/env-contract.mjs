@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const examplePath = path.join(repoRoot, "backend/.env.example");
+const examplePath = path.join(repoRoot, ".env.example");
 
 const parseEnvLike = (source) => {
   const values = {};

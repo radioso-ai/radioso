@@ -34,6 +34,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - If data-model.md exists: Extract entities and map to user stories
    - If contracts/ exists: Map endpoints to user stories
    - If backend HTTP APIs are in scope: include explicit tasks to update `backend/src/app/http/openapi/document.ts`, regenerate `backend/openapi.yaml` / `backend/openapi.json`, and verify contract tests
+   - If public APIs, SDK contracts, MCP contracts, connector contracts, worker payloads, or other cross-service contracts are in scope: include explicit tasks for the message-queue impact review and any required queue payload, retry, test, or documentation updates
    - If backend app composition is in scope: include explicit tasks to update `backend/src/app/composition/`, wire defaults and lifecycle, and test the composition behavior without moving domain rules into composition files
    - If research.md exists: Extract decisions for setup tasks
    - Generate tasks organized by user story (see Task Generation Rules below)
@@ -119,6 +120,7 @@ Every task MUST strictly follow this format:
    - Map each contract/endpoint → to the user story it serves
    - If tests requested: Each contract → contract test task [P] before implementation in that story's phase
    - For backend HTTP APIs in this repo: add implementation tasks for the code-first OpenAPI registry and generated outputs instead of hand-edit tasks against `backend/openapi.yaml`
+   - For public or cross-service contract changes: add a message-queue impact review task and any needed AMQP queue payload, document worker dispatch, retry semantics, queue test, or queue documentation tasks
 
 3. **From Data Model**:
    - Map each entity to the user story(ies) that need it

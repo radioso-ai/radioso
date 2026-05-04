@@ -109,7 +109,7 @@ Operators can rely on short stable public workspace route keys in URLs while the
 - **FR-002**: System MUST assign every workspace a globally unique readable public route key suitable for use in browser URLs.
 - **FR-003**: System MUST keep the existing internal workspace UUID as the durable persistence identifier for workspace relations, storage, and internal service logic.
 - **FR-004**: System MUST build canonical dashboard URLs from the workspace public route key plus supported dashboard deep-link state.
-- **FR-005**: System MUST continue to support the existing deep-link destinations for chat, documents, history, evals, settings, users, and supported section-specific state under the new canonical route structure.
+- **FR-005**: System MUST continue to support the existing deep-link destinations for chat, documents, history, settings, users, and supported section-specific state under the new canonical route structure.
 - **FR-006**: System MUST redirect legacy account-scoped dashboard URLs to the matching canonical workspace-first URL.
 - **FR-007**: System MUST preserve supported deep-link state during legacy-to-canonical redirects, including selected workspace, selected document, pagination, history filters, settings tabs, settings anchors, and connector selection.
 - **FR-008**: System MUST resolve the correct organization/account context from a canonical workspace link before rendering workspace-scoped content for authenticated users who can access multiple organizations.

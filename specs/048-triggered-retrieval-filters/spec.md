@@ -3,7 +3,7 @@
 **Feature Branch**: `048-triggered-retrieval-filters`  
 **Created**: 2026-04-23  
 **Status**: Draft  
-**Input**: User description: "Let workspace operators attach free-form trigger instructions to retrieval filters so those filters only enact when a query matches the intended situation; skip trigger analysis entirely when no triggerable filters exist; keep trigger decisions fully auditable in retrieval history, trace, and eval replay; support dynamic date comparisons such as today() for date-oriented filters; and improve the retrieval filter setup UI so common trigger/filter configurations are more convenient and understandable."
+**Input**: User description: "Let workspace operators attach free-form trigger instructions to retrieval filters so those filters only enact when a query matches the intended situation; skip trigger analysis entirely when no triggerable filters exist; keep trigger decisions fully auditable in retrieval history and trace; support dynamic date comparisons such as today() for date-oriented filters; and improve the retrieval filter setup UI so common trigger/filter configurations are more convenient and understandable."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -56,17 +56,17 @@ As a workspace operator authoring time-sensitive filters, I want to compare agai
 
 ### User Story 4 - Inspect And Replay Why A Filter Matched (Priority: P2)
 
-As an operator debugging a bad answer or comparing eval runs, I want to see exactly which triggerable filters were considered, which ones matched or did not match, and what evidence the system used so I can trust or revise the filter instructions.
+As an operator debugging a bad answer, I want to see exactly which triggerable filters were considered, which ones matched or did not match, and what evidence the system used so I can trust or revise the filter instructions.
 
 **Why this priority**: A hidden classifier would create a new opaque failure mode. This feature only earns trust if operators can inspect and replay its decisions.
 
-**Independent Test**: Can be fully tested by running a representative chat turn with configured triggerable filters, opening retrieval history/trace, and verifying that the trigger-analysis decision is visible there and preserved in eval replay diagnostics.
+**Independent Test**: Can be fully tested by running a representative chat turn with configured triggerable filters, opening retrieval history/trace, and verifying that the trigger-analysis decision is visible there.
 
 **Acceptance Scenarios**:
 
 1. **Given** a turn matched one or more triggerable filters, **When** an operator inspects the retrieval trace or chat history diagnostics, **Then** they can see the candidate filters, the matched filters, confidence or match strength, and a bounded textual reason for each enacted filter.
 2. **Given** a turn matched no filters, **When** an operator inspects diagnostics, **Then** they can see that the step ran, what it considered, and that no filter crossed the enactment threshold.
-3. **Given** an eval dataset replays a case before and after a trigger-instruction or retrieval-policy change, **When** the operator compares runs, **Then** the eval diagnostics show whether the trigger-matching outcome changed and whether that changed retrieval behavior.
+3. **Given** a trigger-instruction or retrieval-policy change affects a turn, **When** the operator inspects the before and after diagnostics, **Then** the trace shows whether the trigger-matching outcome changed and whether that changed retrieval behavior.
 
 ---
 
@@ -112,10 +112,10 @@ As a workspace operator, I want the retrieval filter setup UI to make common tri
 
 ## Architecture Constraints *(mandatory)*
 
-- **Boundary Rule**: Retrieval settings routes and presenters remain the only transport owners of triggerable-filter and relative-date configuration; settings services remain orchestration-only for persistence; retrieval query analysis remains the owner of per-turn trigger matching; candidate-preparation or policy-application stages remain the owner of enacting matched policies and evaluating active date-relative comparisons; retrieval trace, chat history diagnostics, and eval replay remain the owners of presenting decision facts.
+- **Boundary Rule**: Retrieval settings routes and presenters remain the only transport owners of triggerable-filter and relative-date configuration; settings services remain orchestration-only for persistence; retrieval query analysis remains the owner of per-turn trigger matching; candidate-preparation or policy-application stages remain the owner of enacting matched policies and evaluating active date-relative comparisons; retrieval trace and chat history diagnostics remain the owners of presenting decision facts.
 - **Encapsulation Rule**: [`backend/src/modules/retrieval/services/queryRewriteService.ts`](/Users/dm/conductor/workspaces/radioso/tripoli/backend/src/modules/retrieval/services/queryRewriteService.ts) and the query-interpretation stage may be extended to produce trigger-match decisions, but they MUST NOT absorb settings persistence or candidate-scoring logic; [`backend/src/modules/retrieval/services/metadataRuleScoringService.ts`](/Users/dm/conductor/workspaces/radioso/tripoli/backend/src/modules/retrieval/services/metadataRuleScoringService.ts) or its successor MUST consume already-decided active policies and MUST NOT become responsible for trigger prompt construction or settings parsing; the retrieval settings UI container MUST remain presentation-focused and MUST NOT own hidden policy-evaluation rules client-side.
 - **New Seams Required**: The feature MUST introduce an explicit triggerable-filter configuration model, a focused query-analysis sub-result for trigger matches, additive retrieval diagnostics fields that preserve considered filters, matched filters, confidence or match strength, enactment reason, and fallback/backoff decisions, plus a bounded date-relative comparison model that can represent `today()` safely and readably.
-- **Query-Analysis Placement Rule**: The first release MUST treat trigger matching as part of the existing query-interpretation phase rather than a new top-level retrieval pipeline stage, but it MUST surface as its own logical node in retrieval traces and eval diagnostics so operators can inspect it independently.
+- **Query-Analysis Placement Rule**: The first release MUST treat trigger matching as part of the existing query-interpretation phase rather than a new top-level retrieval pipeline stage, but it MUST surface as its own logical node in retrieval traces so operators can inspect it independently.
 - **Execution Rule**: If no triggerable filters are configured for the workspace, the query-interpretation phase MUST skip trigger matching entirely instead of making a no-op model or embeddings call.
 - **UI Review Rule**: The settings work MUST review and improve the existing retrieval-filter authoring experience for clarity and convenience rather than only bolting on one extra free-form field.
 - **Anti-Goals**: Do not introduce a user-authored scripting language for trigger logic. Do not require a fixed product-defined intent enum for operator-authored triggers. Do not make embeddings-only similarity the authoritative enactment mechanism in the first release. Do not force every turn into a single-label intent choice when multiple or zero matches are more truthful. Do not hide trigger decisions inside unstructured prompt text with no durable diagnostics.
@@ -139,16 +139,16 @@ As a workspace operator, I want the retrieval filter setup UI to make common tri
 - **FR-013**: The system MUST support a bounded dynamic date comparison token such as `today()` for date-oriented retrieval filters so operators can express relative present-day behavior without manually updating saved dates.
 - **FR-014**: The system MUST evaluate `today()` and any approved relative-date token at execution time using explicit product-defined semantics rather than treating the token as raw prompt text or an opaque saved literal.
 - **FR-015**: The system MUST validate that dynamic date tokens are used only in supported date-oriented contexts and fail safely when an operator attempts an unsupported combination.
-- **FR-016**: The system MUST expose trigger-match execution facts through retrieval diagnostics, retrieval trace, chat history diagnostics, and eval replay artifacts.
+- **FR-016**: The system MUST expose trigger-match execution facts through retrieval diagnostics, retrieval trace, and chat history diagnostics.
 - **FR-017**: The retrieval trace MUST present trigger matching as a distinct logical node or equivalent inspectable unit, even though execution occurs inside the broader query-interpretation stage.
-- **FR-018**: Eval replay and regression comparison MUST preserve and compare trigger-match decisions, including matched filter IDs, non-match outcome, fallback/backoff behavior, and any changed confidence or reasoning summaries.
+- **FR-018**: Retrieval trace and history diagnostics MUST preserve trigger-match decisions, including matched filter IDs, non-match outcome, fallback/backoff behavior, and any changed confidence or reasoning summaries.
 - **FR-019**: The first release MUST support an authoritative trigger-analysis mechanism that can evaluate a user query against free-form trigger instructions with bounded structured output.
 - **FR-020**: If embeddings are used in this feature, they MUST be optional and limited to preselection or acceleration of candidate trigger instructions; embeddings similarity alone MUST NOT be the only authority that enacts a filter in the first release.
 - **FR-021**: The system MUST keep trigger-analysis inputs and outputs bounded in diagnostics by recording the user query, bounded trigger instructions or IDs, structured decisions, and reasons, while excluding full raw prompts, unrestricted logs, or hidden chain-of-thought.
 - **FR-022**: The retrieval settings UI MUST make the distinction between always-on filters, trigger-based filters, and date-relative comparisons understandable in plain operator language.
 - **FR-023**: The retrieval settings UI MUST make common trigger/filter authoring tasks more convenient than the current experience, including discoverable trigger configuration, clear policy-behavior labels, and a readable way to select `today()` for supported date comparisons.
-- **FR-024**: The system MUST provide automated coverage for no-config skip behavior, single-match activation, multi-match handling, false-positive avoidance on broad factual questions, `today()` evaluation, invalid date-token handling, fallback/backoff after weak filtered retrieval, UI save/reload behavior, and eval replay parity.
-- **FR-025**: The system MUST preserve responsibility-limited module boundaries so settings persistence, query analysis, candidate policy enactment, date-relative evaluation, trace assembly, and eval comparison each remain owned by focused modules.
+- **FR-024**: The system MUST provide automated coverage for no-config skip behavior, single-match activation, multi-match handling, false-positive avoidance on broad factual questions, `today()` evaluation, invalid date-token handling, fallback/backoff after weak filtered retrieval, and UI save/reload behavior.
+- **FR-025**: The system MUST preserve responsibility-limited module boundaries so settings persistence, query analysis, candidate policy enactment, date-relative evaluation, and trace assembly each remain owned by focused modules.
 
 ### UI Tasks
 
@@ -157,14 +157,14 @@ As a workspace operator, I want the retrieval filter setup UI to make common tri
 - The settings UI must review and improve the current filter-authoring flow so common configurations feel easier to set up and easier to understand.
 - The settings UI must make dynamic date options such as `today()` discoverable and explain what they mean for upcoming or future-oriented filtering.
 - The retrieval trace/history UI must show a dedicated trigger-matching diagnostic view with considered filters, matched filters, match strength, and reasons.
-- Eval comparison surfaces must show when a case regressed because a trigger decision changed rather than only showing final answer differences.
+- Trace and history surfaces must show when a trigger decision changed rather than only showing final answer differences.
 
 ### Key Entities *(include if feature involves data)*
 
 - **Triggerable Retrieval Policy**: A retrieval policy or filter that includes an optional free-form instruction describing when it should enact for a turn.
 - **Trigger Match Decision**: The structured per-turn output of query analysis that records which triggerable policies were considered, matched, rejected, or left inactive, along with confidence or strength and bounded reasons.
 - **Dynamic Date Token**: A bounded operator-authored value such as `today()` that represents a relative execution-time date for supported comparisons.
-- **Trigger Analysis Diagnostic Node**: The logical retrieval-trace and eval artifact that exposes trigger-match execution facts independently from the rest of query interpretation.
+- **Trigger Analysis Diagnostic Node**: The logical retrieval-trace artifact that exposes trigger-match execution facts independently from the rest of query interpretation.
 - **Policy Backoff Decision**: The recorded fallback event where a trigger-enacted narrowing policy is relaxed because it produced weak or empty grounded support.
 
 ## Assumptions
@@ -172,7 +172,7 @@ As a workspace operator, I want the retrieval filter setup UI to make common tri
 - Existing retrieval settings and signal-policy work provide the right persistence surface for storing trigger instructions and relative-date values additively instead of creating a separate settings family.
 - Query interpretation is already the right architectural seam for per-turn semantic analysis, so trigger matching should live there rather than as a new top-level pipeline stage in the first release.
 - A model-backed structured-completion path is the safest first authoritative mechanism for matching free-form trigger instructions because it can produce bounded reasons and uncertainty handling; embeddings may still help as an optional acceleration path later.
-- Retrieval trace, chat history diagnostics, and eval replay already provide the right durable surfaces for operator-visible auditability, so this feature should extend them rather than inventing a separate analytics product.
+- Retrieval trace and chat history diagnostics already provide the right durable surfaces for operator-visible auditability, so this feature should extend them rather than inventing a separate analytics product.
 - The UI should keep working within the existing admin design system while improving comprehension and convenience for common retrieval-policy authoring tasks.
 - Operators will need to revise overly broad trigger instructions over time, so transparent diagnostics are a product requirement rather than a developer-only convenience.
 
@@ -185,6 +185,6 @@ As a workspace operator, I want the retrieval filter setup UI to make common tri
 - **SC-003**: In representative matched scenarios, triggerable filters activate with inspectable reasons and produce the expected retrieval-policy enactment for at least one single-match and one multi-match case.
 - **SC-004**: In validation of date-relative behavior, filters using `today()` continue to behave correctly across different execution dates without requiring settings edits.
 - **SC-005**: In trace and history validation, 100% of trigger-analysis executions expose either a bounded trigger diagnostic record or an explicit skipped/unavailable state.
-- **SC-006**: In eval replay comparison coverage, 100% of cases where trigger-match outcomes change between runs surface that change in per-case diagnostics.
+- **SC-006**: In trace and history coverage, 100% of cases where trigger-match outcomes change surface that change in per-turn diagnostics.
 - **SC-007**: In fallback validation, trigger-enacted narrow retrieval paths that produce weak or empty support can be identified and shown to have relaxed correctly instead of failing closed without explanation.
 - **SC-008**: In operator validation of the settings flow, common trigger/filter setups can be configured and understood without relying on hidden implementation knowledge or trial-and-error guessing.

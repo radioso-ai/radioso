@@ -8,7 +8,7 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
-test("shared history navigation shows assistant route diagnostics", async ({ page }) => {
+test("shared activity navigation shows assistant route diagnostics", async ({ page }) => {
   const conversationId = "conversation-1";
   const assistantMessageId = "assistant-message-1";
   const historyList = {
@@ -158,10 +158,10 @@ test("shared history navigation shows assistant route diagnostics", async ({ pag
     requestLog,
   });
 
-  await page.goto(`/w/${workspaceKey}/history`);
+  await page.goto(`/w/${workspaceKey}/activity`);
 
-  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
-  await expect(page.getByRole("table", { name: "History" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Activity" })).toBeVisible();
   expect(requestLog).toContain("GET /history?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history/chat?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history/search?limit=50&offset=0");
@@ -175,7 +175,7 @@ test("shared history navigation shows assistant route diagnostics", async ({ pag
   await expect(page.getByText("Retrieval was invoked for this assistant response.")).toBeVisible();
 });
 
-test("history filtered pages request one offset-backed page", async ({ page }) => {
+test("activity filtered pages request one offset-backed page", async ({ page }) => {
   const requestLog: string[] = [];
   const historyList = {
     conversations: [],
@@ -197,16 +197,16 @@ test("history filtered pages request one offset-backed page", async ({ page }) =
     searchHistory,
   });
 
-  await page.goto(`/w/${workspaceKey}/history?filter=chat&page=3`);
-  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+  await page.goto(`/w/${workspaceKey}/activity?filter=chat&page=3`);
+  await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
 
   expect(requestLog).toContain("GET /history/chat?limit=50&offset=100");
   expect(requestLog).not.toContain("GET /history/chat?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history?limit=50&offset=100");
 
   requestLog.length = 0;
-  await page.goto(`/w/${workspaceKey}/history?filter=search&page=2`);
-  await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+  await page.goto(`/w/${workspaceKey}/activity?filter=search&page=2`);
+  await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
 
   expect(requestLog).toContain("GET /history/search?limit=50&offset=50");
   expect(requestLog).not.toContain("GET /history/search?limit=50&offset=0");
@@ -225,8 +225,8 @@ test("documents direct page links request only the target offset page", async ({
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { documentList, requestLog });
 
-  await page.goto(`/w/${workspaceKey}/documents?page=3`);
-  await expect(page.getByRole("heading", { name: "Documents", exact: true })).toBeVisible();
+  await page.goto(`/w/${workspaceKey}/knowledge?page=3`);
+  await expect(page.getByRole("heading", { name: "Knowledge Base", exact: true })).toBeVisible();
   await expect(page.getByRole("table", { name: "Documents" })).toBeVisible();
 
   expect(requestLog).toContain("GET /document/?limit=100&offset=200");

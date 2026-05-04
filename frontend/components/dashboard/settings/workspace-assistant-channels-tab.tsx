@@ -772,6 +772,9 @@ export function WorkspaceAssistantChannelsTab({
         if (saveSequenceRef.current !== saveId) return
         setSavedAnonSettings(updated)
         setAssistantSettingsError(null)
+        window.dispatchEvent(new CustomEvent('radioso:assistant-name-updated', {
+          detail: { assistantName: updated.assistantName },
+        }))
         if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
           setAnonSettings(updated)
           setWebsiteEmbedOrigins(formatWebsiteEmbedOrigins(updated.websiteEmbedAllowedOrigins ?? []))

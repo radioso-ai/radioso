@@ -29,9 +29,9 @@ test("dashboard page headers stay fixed while content panes scroll", async ({ pa
     },
   });
 
-  await page.goto(`/w/${workspaceKey}/documents`);
+  await page.goto(`/w/${workspaceKey}/knowledge`);
 
-  const header = page.getByRole("heading", { name: "Documents", exact: true });
+  const header = page.getByRole("heading", { name: "Knowledge Base", exact: true });
   await expect(header).toBeVisible();
   await expect(page.getByRole("table", { name: "Documents" })).toBeVisible();
   await page.getByRole("button", { name: "Course Guide 1", exact: true }).click();

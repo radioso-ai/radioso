@@ -1,37 +1,45 @@
-export type DashboardSection = 'chat' | 'history' | 'documents' | 'settings' | 'users'
+export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'settings'
+export type AgentTab = 'chat' | 'behavior' | 'channels'
+export type KnowledgeTab = 'documents' | 'ingestion' | 'retrieval'
+export type SettingsTab = 'workspace' | 'users'
 export type HistoryFilter = 'all' | 'chat' | 'search'
 export type HistoryItemKind = 'chat' | 'search'
-export type SettingsTab = 'workspace' | 'assistant' | 'channels' | 'ingestion' | 'retrieval'
 
 export interface DashboardRouteState {
   section: DashboardSection
   workspaceId?: string
   workspacePublicRouteKey?: string
+  agentTab?: AgentTab
+  knowledgeTab?: KnowledgeTab
+  settingsTab?: SettingsTab
   documentId?: string
   documentsPage?: number
   historyFilter?: HistoryFilter
   historyPage?: number
   historyItemKind?: HistoryItemKind
   historyItemId?: string
-  settingsTab?: SettingsTab
-  settingsAnchor?: string
+  anchor?: string
 }
 
 const routeStateKeys: Array<keyof DashboardRouteState> = [
   'section',
   'workspaceId',
   'workspacePublicRouteKey',
+  'agentTab',
+  'knowledgeTab',
+  'settingsTab',
   'documentId',
   'documentsPage',
   'historyFilter',
   'historyPage',
   'historyItemKind',
   'historyItemId',
-  'settingsTab',
-  'settingsAnchor',
+  'anchor',
 ]
 
-const DEFAULT_SECTION: DashboardSection = 'chat'
+const DEFAULT_SECTION: DashboardSection = 'agents'
+const DEFAULT_AGENT_TAB: AgentTab = 'chat'
+const DEFAULT_KNOWLEDGE_TAB: KnowledgeTab = 'documents'
 const DEFAULT_HISTORY_FILTER: HistoryFilter = 'all'
 const DEFAULT_SETTINGS_TAB: SettingsTab = 'workspace'
 
@@ -42,14 +50,6 @@ const parsePositiveInt = (value: string | null): number | undefined => {
 
   const parsed = Number.parseInt(value, 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
-}
-
-const parseSection = (value: string | undefined): DashboardSection | null => {
-  if (value === 'chat' || value === 'history' || value === 'documents' || value === 'settings' || value === 'users') {
-    return value
-  }
-
-  return null
 }
 
 const parseHistoryFilter = (value: string | null): HistoryFilter | undefined => {
@@ -68,15 +68,31 @@ const parseHistoryItemKind = (value: string | null): HistoryItemKind | undefined
   return undefined
 }
 
+const parseAgentTab = (value: string | null): AgentTab | undefined => {
+  if (value === 'chat' || value === 'behavior' || value === 'channels') {
+    return value
+  }
+  if (value === 'assistant') {
+    return 'behavior'
+  }
+
+  return undefined
+}
+
+const parseKnowledgeTab = (value: string | null): KnowledgeTab | undefined => {
+  if (value === 'documents' || value === 'ingestion' || value === 'retrieval') {
+    return value
+  }
+
+  return undefined
+}
+
 const parseSettingsTab = (value: string | null): SettingsTab | undefined => {
-  if (value === 'workspace' || value === 'assistant' || value === 'channels' || value === 'ingestion' || value === 'retrieval') {
+  if (value === 'workspace' || value === 'users') {
     return value
   }
   if (value === 'general') {
     return 'workspace'
-  }
-  if (value === 'connectors') {
-    return 'channels'
   }
 
   return undefined
@@ -107,17 +123,33 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     ...(state.workspacePublicRouteKey ? { workspacePublicRouteKey: state.workspacePublicRouteKey } : {}),
   }
 
-  if (state.section === 'documents') {
-    if (state.documentId) {
-      normalized.documentId = state.documentId
+  if (state.section === 'agents') {
+    if (state.agentTab && state.agentTab !== DEFAULT_AGENT_TAB) {
+      normalized.agentTab = state.agentTab
     }
-    if (state.documentsPage && state.documentsPage > 1) {
-      normalized.documentsPage = state.documentsPage
+    if (state.anchor) {
+      normalized.anchor = state.anchor
     }
     return normalized
   }
 
-  if (state.section === 'history') {
+  if (state.section === 'knowledge') {
+    if (state.knowledgeTab && state.knowledgeTab !== DEFAULT_KNOWLEDGE_TAB) {
+      normalized.knowledgeTab = state.knowledgeTab
+    }
+    if (state.documentId && (state.knowledgeTab ?? DEFAULT_KNOWLEDGE_TAB) === 'documents') {
+      normalized.documentId = state.documentId
+    }
+    if (state.documentsPage && state.documentsPage > 1 && (state.knowledgeTab ?? DEFAULT_KNOWLEDGE_TAB) === 'documents') {
+      normalized.documentsPage = state.documentsPage
+    }
+    if (state.anchor) {
+      normalized.anchor = state.anchor
+    }
+    return normalized
+  }
+
+  if (state.section === 'activity') {
     if (state.historyFilter && state.historyFilter !== DEFAULT_HISTORY_FILTER) {
       normalized.historyFilter = state.historyFilter
     }
@@ -135,10 +167,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.settingsTab && state.settingsTab !== DEFAULT_SETTINGS_TAB) {
       normalized.settingsTab = state.settingsTab
     }
-    if (state.settingsAnchor) {
-      normalized.settingsAnchor = state.settingsAnchor
+    if (state.anchor) {
+      normalized.anchor = state.anchor
     }
-    return normalized
   }
 
   return normalized
@@ -165,11 +196,28 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     searchParams.set('workspace', normalized.workspaceId)
   }
 
-  if (normalized.section === 'documents' && normalized.documentsPage) {
-    searchParams.set('page', String(normalized.documentsPage))
+  if (normalized.section === 'agents') {
+    if (normalized.agentTab) {
+      searchParams.set('tab', normalized.agentTab)
+    }
+    if (normalized.anchor) {
+      searchParams.set('anchor', normalized.anchor)
+    }
   }
 
-  if (normalized.section === 'history') {
+  if (normalized.section === 'knowledge') {
+    if (normalized.knowledgeTab) {
+      searchParams.set('tab', normalized.knowledgeTab)
+    }
+    if (normalized.documentsPage) {
+      searchParams.set('page', String(normalized.documentsPage))
+    }
+    if (normalized.anchor) {
+      searchParams.set('anchor', normalized.anchor)
+    }
+  }
+
+  if (normalized.section === 'activity') {
     if (normalized.historyFilter) {
       searchParams.set('filter', normalized.historyFilter)
     }
@@ -186,8 +234,8 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     if (normalized.settingsTab) {
       searchParams.set('tab', normalized.settingsTab)
     }
-    if (normalized.settingsAnchor) {
-      searchParams.set('anchor', normalized.settingsAnchor)
+    if (normalized.anchor) {
+      searchParams.set('anchor', normalized.anchor)
     }
   }
 
@@ -203,8 +251,14 @@ export const buildLegacyDashboardHref = (
   const basePath = `/account/${accountId}`
   let pathname = `${basePath}/${normalized.section}`
 
-  if (normalized.section === 'documents' && normalized.documentId) {
-    pathname = `${basePath}/documents/${normalized.documentId}`
+  if (normalized.section === 'agents') {
+    pathname = `${basePath}/agents/current`
+  }
+
+  if (normalized.section === 'knowledge') {
+    pathname = normalized.documentId
+      ? `${basePath}/knowledge/documents/${normalized.documentId}`
+      : `${basePath}/knowledge`
   }
 
   return `${pathname}${buildQueryString(normalized)}`
@@ -223,8 +277,14 @@ export const buildDashboardHref = (
   const basePath = `/w/${normalized.workspacePublicRouteKey}`
   let pathname = `${basePath}/${normalized.section}`
 
-  if (normalized.section === 'documents' && normalized.documentId) {
-    pathname = `${basePath}/documents/${normalized.documentId}`
+  if (normalized.section === 'agents') {
+    pathname = `${basePath}/agents/current`
+  }
+
+  if (normalized.section === 'knowledge') {
+    pathname = normalized.documentId
+      ? `${basePath}/knowledge/documents/${normalized.documentId}`
+      : `${basePath}/knowledge`
   }
 
   return `${pathname}${buildQueryString(normalized)}`
@@ -237,42 +297,68 @@ export const buildAccountRoute = (
   workspaceId?: string,
 ) => buildDashboardHref(accountId, { section, documentId, workspaceId })
 
+const parseLegacySettingsRoute = (
+  searchParams?: Pick<URLSearchParams, 'get'> | null,
+): Pick<DashboardRouteState, 'section' | 'agentTab' | 'knowledgeTab' | 'settingsTab' | 'anchor'> => {
+  const legacyTab = searchParams?.get('tab') ?? null
+  const anchor = parseAnchor(searchParams?.get('anchor') ?? null)
+
+  if (legacyTab === 'assistant') {
+    return { section: 'agents', agentTab: 'behavior', ...(anchor ? { anchor } : {}) }
+  }
+  if (legacyTab === 'channels' || legacyTab === 'connectors') {
+    return { section: 'agents', agentTab: 'channels', ...(anchor ? { anchor } : {}) }
+  }
+  if (legacyTab === 'ingestion' || legacyTab === 'retrieval') {
+    return { section: 'knowledge', knowledgeTab: legacyTab, ...(anchor ? { anchor } : {}) }
+  }
+
+  return {
+    section: 'settings',
+    settingsTab: parseSettingsTab(legacyTab),
+    ...(anchor ? { anchor } : {}),
+  }
+}
+
 export const parseDashboardRoute = (
   segments: string[] | undefined,
   searchParams?: Pick<URLSearchParams, 'get'> | null,
 ): DashboardRouteState | null => {
+  const workspaceId = normalizeWorkspaceId(searchParams?.get('workspace') ?? null)
+
   if (!segments || segments.length === 0) {
     return {
       section: DEFAULT_SECTION,
-      workspaceId: normalizeWorkspaceId(searchParams?.get('workspace') ?? null),
+      workspaceId,
     }
   }
 
-  const [sectionCandidate, maybeDocumentId, ...rest] = segments
-  const section = parseSection(sectionCandidate)
+  const [sectionCandidate, secondSegment, thirdSegment, ...rest] = segments
 
-  if (!section || rest.length > 0) {
-    return null
+  if (sectionCandidate === 'chat') {
+    return rest.length === 0 && !secondSegment
+      ? normalizeState({ section: 'agents', workspaceId })
+      : null
   }
 
-  if (section !== 'documents' && maybeDocumentId) {
-    return null
-  }
-
-  const workspaceId = normalizeWorkspaceId(searchParams?.get('workspace') ?? null)
-
-  if (section === 'documents') {
+  if (sectionCandidate === 'documents') {
+    if (rest.length > 0 || thirdSegment) {
+      return null
+    }
     return normalizeState({
-      section,
+      section: 'knowledge',
       workspaceId,
-      ...(maybeDocumentId ? { documentId: maybeDocumentId } : {}),
+      ...(secondSegment ? { documentId: secondSegment } : {}),
       documentsPage: parsePositiveInt(searchParams?.get('page') ?? null),
     })
   }
 
-  if (section === 'history') {
+  if (sectionCandidate === 'history') {
+    if (secondSegment || thirdSegment || rest.length > 0) {
+      return null
+    }
     return normalizeState({
-      section,
+      section: 'activity',
       workspaceId,
       historyFilter: parseHistoryFilter(searchParams?.get('filter') ?? null),
       historyPage: parsePositiveInt(searchParams?.get('page') ?? null),
@@ -281,16 +367,66 @@ export const parseDashboardRoute = (
     })
   }
 
-  if (section === 'settings') {
+  if (sectionCandidate === 'users') {
+    return rest.length === 0 && !secondSegment
+      ? normalizeState({ section: 'settings', workspaceId, settingsTab: 'users' })
+      : null
+  }
+
+  if (sectionCandidate === 'agents') {
+    if ((secondSegment && secondSegment !== 'current') || thirdSegment || rest.length > 0) {
+      return null
+    }
     return normalizeState({
-      section,
+      section: 'agents',
       workspaceId,
-      settingsTab: parseSettingsTab(searchParams?.get('tab') ?? null),
-      settingsAnchor: parseAnchor(searchParams?.get('anchor') ?? null),
+      agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
+      anchor: parseAnchor(searchParams?.get('anchor') ?? null),
     })
   }
 
-  return normalizeState({ section, workspaceId })
+  if (sectionCandidate === 'knowledge') {
+    if (secondSegment && secondSegment !== 'documents') {
+      return null
+    }
+    if (rest.length > 0) {
+      return null
+    }
+    return normalizeState({
+      section: 'knowledge',
+      workspaceId,
+      knowledgeTab: parseKnowledgeTab(searchParams?.get('tab') ?? null),
+      ...(thirdSegment ? { documentId: thirdSegment } : {}),
+      documentsPage: parsePositiveInt(searchParams?.get('page') ?? null),
+      anchor: parseAnchor(searchParams?.get('anchor') ?? null),
+    })
+  }
+
+  if (sectionCandidate === 'activity') {
+    if (secondSegment || thirdSegment || rest.length > 0) {
+      return null
+    }
+    return normalizeState({
+      section: 'activity',
+      workspaceId,
+      historyFilter: parseHistoryFilter(searchParams?.get('filter') ?? null),
+      historyPage: parsePositiveInt(searchParams?.get('page') ?? null),
+      historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
+      historyItemId: searchParams?.get('itemId') ?? undefined,
+    })
+  }
+
+  if (sectionCandidate === 'settings') {
+    if (secondSegment || thirdSegment || rest.length > 0) {
+      return null
+    }
+    return normalizeState({
+      workspaceId,
+      ...parseLegacySettingsRoute(searchParams),
+    })
+  }
+
+  return null
 }
 
 export const withDashboardWorkspace = (

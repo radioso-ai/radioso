@@ -3,17 +3,20 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { IngestionSettingsPanel } from '@/components/dashboard/settings/ingestion-settings-panel'
-import { RetrievalSettingsPanel } from '@/components/dashboard/settings/retrieval-settings-panel'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
-import { getSettingsTabDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
+import { UsersPanel } from '@/components/dashboard/users-view'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   buildDashboardHref,
   type DashboardRouteState,
   type SettingsTab,
 } from '@/lib/dashboard-routes'
+
+const settingsTabSummaries: Record<SettingsTab, string> = {
+  workspace: 'Control workspace identity, API access, and lifecycle.',
+  users: 'Invite teammates and manage account access.',
+}
 
 export function SettingsView({
   accountId,
@@ -24,52 +27,36 @@ export function SettingsView({
 }) {
   const router = useRouter()
   const activeTab = routeState.settingsTab ?? 'workspace'
-  const activeTabDescriptor = getSettingsTabDescriptor(activeTab)
-  const [retrievalSaveState, setRetrievalSaveState] = useState<{
+  const [saveState, setSaveState] = useState<{
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
   }>({ state: 'idle' })
-  const [ingestionSaveState, setIngestionSaveState] = useState<{
-    state: 'idle' | 'saved' | 'saving' | 'error'
-    message?: string | null
-  }>({ state: 'idle' })
-  const [generalSaveState, setGeneralSaveState] = useState<{
-    state: 'idle' | 'saved' | 'saving' | 'error'
-    message?: string | null
-  }>({ state: 'idle' })
-  const activeSaveState =
-    activeTab === 'workspace' || activeTab === 'assistant' || activeTab === 'channels'
-      ? generalSaveState
-      : activeTab === 'retrieval'
-        ? retrievalSaveState
-        : activeTab === 'ingestion'
-          ? ingestionSaveState
-          : { state: 'idle' as const }
+
   const saveStateAccessory = (
     <div className="text-sm">
-      {activeSaveState.state === 'saving' ? (
-        <span className="text-muted-foreground">Saving…</span>
-      ) : activeSaveState.state === 'error' ? (
+      {saveState.state === 'saving' ? (
+        <span className="text-muted-foreground">Saving...</span>
+      ) : saveState.state === 'error' ? (
         <span className="text-destructive">
-          {activeSaveState.message ?? 'Failed to save changes'}
+          {saveState.message ?? 'Failed to save changes'}
         </span>
-      ) : activeSaveState.state === 'saved' ? (
+      ) : saveState.state === 'saved' ? (
         <span className="text-muted-foreground">Saved</span>
       ) : null}
     </div>
   )
 
   useEffect(() => {
-    if (!routeState.settingsAnchor) {
+    if (!routeState.anchor) {
       return
     }
 
-    const element = document.getElementById(routeState.settingsAnchor)
+    const element = document.getElementById(routeState.anchor)
     if (!element) {
       router.replace(buildDashboardHref(accountId, {
         ...routeState,
         section: 'settings',
-        settingsAnchor: undefined,
+        anchor: undefined,
       }))
       return
     }
@@ -81,51 +68,38 @@ export function SettingsView({
     <Tabs
       value={activeTab}
       onValueChange={(value) => {
+        setSaveState({ state: 'idle' })
         router.push(buildDashboardHref(accountId, {
           ...routeState,
           section: 'settings',
           settingsTab: value as SettingsTab,
-          settingsAnchor: undefined,
+          anchor: undefined,
         }))
       }}
       className="h-full min-h-0 gap-0"
     >
       <DashboardPage
         title="Settings"
-        description={activeTabDescriptor.summary}
-        titleAccessory={saveStateAccessory}
+        description={settingsTabSummaries[activeTab]}
+        titleAccessory={activeTab === 'workspace' ? saveStateAccessory : null}
         actions={
           <TabsList>
             <TabsTrigger value="workspace">Workspace</TabsTrigger>
-            <TabsTrigger value="assistant">Assistant</TabsTrigger>
-            <TabsTrigger value="channels">Channels</TabsTrigger>
-            <TabsTrigger value="ingestion">Ingestion</TabsTrigger>
-            <TabsTrigger value="retrieval">Retrieval</TabsTrigger>
+            <TabsTrigger value="users">Users</TabsTrigger>
           </TabsList>
         }
         actionsClassName="xl:self-start"
         contentClassName="flex flex-col overflow-hidden p-0"
         contentScroll={false}
       >
-
         <TabsContent value="workspace" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-          <WorkspaceAssistantChannelsTab accountId={accountId} mode="workspace" onSaveStateChange={setGeneralSaveState} />
+          <WorkspaceAssistantChannelsTab accountId={accountId} mode="workspace" onSaveStateChange={setSaveState} />
         </TabsContent>
 
-        <TabsContent value="assistant" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-          <WorkspaceAssistantChannelsTab accountId={accountId} mode="assistant" onSaveStateChange={setGeneralSaveState} />
-        </TabsContent>
-
-        <TabsContent value="channels" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-          <WorkspaceAssistantChannelsTab accountId={accountId} mode="channels" onSaveStateChange={setGeneralSaveState} />
-        </TabsContent>
-
-        <TabsContent value="ingestion" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-          <IngestionSettingsPanel onSaveStateChange={setIngestionSaveState} />
-        </TabsContent>
-
-        <TabsContent value="retrieval" className="min-h-0 flex flex-1 flex-col overflow-hidden">
-          <RetrievalSettingsPanel onSaveStateChange={setRetrievalSaveState} />
+        <TabsContent value="users" className="settings-surface min-h-0 flex-1 overflow-y-auto">
+          <div className="w-full p-6">
+            <UsersPanel />
+          </div>
         </TabsContent>
       </DashboardPage>
     </Tabs>

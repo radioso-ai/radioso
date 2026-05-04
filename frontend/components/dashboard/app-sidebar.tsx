@@ -2,6 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 
 import {
   Sidebar,
@@ -25,9 +26,9 @@ import {
 import { useAuth } from '@/lib/auth-context'
 import { useTheme } from '@/components/theme-provider'
 import {
-  MessageSquare,
-  History,
-  FileText,
+  Activity,
+  Bot,
+  BookOpen,
   Settings,
   LogOut,
   Moon,
@@ -43,6 +44,7 @@ import {
 } from '@/lib/dashboard-routes'
 import { WorkspaceSwitcher } from './workspace-switcher'
 import { useWorkspace } from '@/lib/workspace-context'
+import { generalSettingsApi } from '@/lib/api'
 
 interface AppSidebarProps {
   accountId: string
@@ -50,16 +52,70 @@ interface AppSidebarProps {
 }
 
 const navItems = [
-  { id: 'chat' as const, label: 'Chat', icon: MessageSquare },
-  { id: 'documents' as const, label: 'Documents', icon: FileText },
-  { id: 'history' as const, label: 'History', icon: History },
+  { id: 'knowledge' as const, label: 'Knowledge Base', icon: BookOpen },
+  { id: 'activity' as const, label: 'Activity', icon: Activity },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
+
+const assistantNameByWorkspace = new Map<string, string | null>()
 
 export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
   const { user, logout } = useAuth()
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const { theme, setTheme } = useTheme()
+  const workspaceCacheKey = activeWorkspaceId ? `${accountId}:${activeWorkspaceId}` : null
+  const [assistantNameState, setAssistantNameState] = useState<{
+    workspaceCacheKey: string | null
+    assistantName: string | null
+  }>(() => ({
+    workspaceCacheKey,
+    assistantName: workspaceCacheKey && assistantNameByWorkspace.has(workspaceCacheKey)
+      ? (assistantNameByWorkspace.get(workspaceCacheKey) ?? null)
+      : null,
+  }))
+  const cachedAssistantName = workspaceCacheKey && assistantNameByWorkspace.has(workspaceCacheKey)
+    ? assistantNameByWorkspace.get(workspaceCacheKey) ?? null
+    : null
+  const assistantName = assistantNameState.workspaceCacheKey === workspaceCacheKey
+    ? assistantNameState.assistantName
+    : cachedAssistantName
+  const agentName = assistantName?.trim() || activeWorkspace?.name || 'Agent'
+  const agentLabel = `Agent: ${agentName}`
+
+  useEffect(() => {
+    if (!workspaceCacheKey) {
+      return
+    }
+
+    let active = true
+    const loadAssistantName = async () => {
+      try {
+        const settings = await generalSettingsApi.getGeneralSettings()
+        if (!active) return
+        assistantNameByWorkspace.set(workspaceCacheKey, settings.assistantName)
+        setAssistantNameState({ workspaceCacheKey, assistantName: settings.assistantName })
+      } catch {
+        if (!active) return
+        if (!assistantNameByWorkspace.has(workspaceCacheKey)) {
+          setAssistantNameState({ workspaceCacheKey, assistantName: null })
+        }
+      }
+    }
+
+    void loadAssistantName()
+    const handleAssistantNameUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ assistantName?: string }>
+      const assistantName = customEvent.detail?.assistantName ?? null
+      assistantNameByWorkspace.set(workspaceCacheKey, assistantName)
+      setAssistantNameState({ workspaceCacheKey, assistantName })
+    }
+
+    window.addEventListener('radioso:assistant-name-updated', handleAssistantNameUpdated)
+    return () => {
+      active = false
+      window.removeEventListener('radioso:assistant-name-updated', handleAssistantNameUpdated)
+    }
+  }, [workspaceCacheKey])
 
   return (
     <Sidebar collapsible="icon">
@@ -86,6 +142,20 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={currentView === 'agents'} tooltip={agentLabel}>
+                  <Link
+                    href={buildDashboardHref(accountId, {
+                      section: 'agents',
+                      workspaceId: activeWorkspaceId ?? undefined,
+                      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                    })}
+                  >
+                    <Bot className="w-4 h-4" />
+                    <span>{agentLabel}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.id}>
                   <SidebarMenuButton asChild isActive={currentView === item.id} tooltip={item.label}>
@@ -153,7 +223,8 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
                 <DropdownMenuItem asChild>
                   <Link
                     href={buildDashboardHref(accountId, {
-                      section: 'users',
+                      section: 'settings',
+                      settingsTab: 'users',
                       workspaceId: activeWorkspaceId ?? undefined,
                       workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
                     })}

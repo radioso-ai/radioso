@@ -46,20 +46,21 @@ export default function LegacyAccountDashboardPage() {
     if (auth.isBootstrapping || !auth.user) {
       return
     }
+    const user = auth.user
 
     const redirectToCanonical = async () => {
       if (!parsedRoute) {
         const workspaceId = getStoredActiveWorkspaceId() ?? undefined
         const workspacePublicRouteKey = getStoredActiveWorkspacePublicRouteKey() ?? undefined
-        router.replace(buildDashboardHref(auth.user.accountId, {
-          section: 'chat',
+        router.replace(buildDashboardHref(user.accountId, {
+          section: 'agents',
           workspaceId,
           workspacePublicRouteKey,
         }))
         return
       }
 
-      if (routeAccountId && routeAccountId !== auth.user.accountId) {
+      if (routeAccountId && routeAccountId !== user.accountId) {
         const pendingAccountSwitchId = getPendingAccountSwitchId()
         if (pendingAccountSwitchId && pendingAccountSwitchId !== routeAccountId) {
           return
@@ -68,7 +69,7 @@ export default function LegacyAccountDashboardPage() {
         try {
           const response = await accountApi.switchAccount(routeAccountId, parsedRoute.workspaceId)
           seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-          await auth.login(auth.user.email, response.userId, response.accountId)
+          await auth.login(user.email, response.userId, response.accountId)
           router.replace(buildDashboardHref(response.accountId, {
             ...parsedRoute,
             workspaceId: response.workspaceId,
@@ -96,7 +97,7 @@ export default function LegacyAccountDashboardPage() {
         }
 
         seedWorkspaceSession(workspace.id, workspace.publicRouteKey)
-        router.replace(buildDashboardHref(auth.user.accountId, {
+        router.replace(buildDashboardHref(user.accountId, {
           ...parsedRoute,
           workspaceId: workspace.id,
           workspacePublicRouteKey: workspace.publicRouteKey,

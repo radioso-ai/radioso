@@ -36,22 +36,22 @@ export function DashboardPage({
   return (
     <div className={cn('flex h-full min-h-0 flex-col overflow-hidden', className)}>
       <div className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className={cn('flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between', headerClassName)}>
-          <div className="min-w-0 flex-1 space-y-2">
-            <div>
+        <div className={cn('space-y-4', headerClassName)}>
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-3">
                 <h1 className="text-lg font-medium text-foreground">{title}</h1>
                 {titleAccessory}
               </div>
               {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
             </div>
-            {headerContent}
+            {actions ? (
+              <div className={cn('flex shrink-0 flex-wrap items-center justify-end gap-2', actionsClassName)}>
+                {actions}
+              </div>
+            ) : null}
           </div>
-          {actions ? (
-            <div className={cn('flex items-center gap-2 xl:ml-auto xl:shrink-0', actionsClassName)}>
-              {actions}
-            </div>
-          ) : null}
+          {headerContent}
         </div>
       </div>
 

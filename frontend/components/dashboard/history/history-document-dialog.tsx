@@ -25,7 +25,7 @@ export function HistoryDocumentDialog({
         <DialogHeader>
           <DialogTitle>View Document</DialogTitle>
           <DialogDescription>
-            Review the document without leaving the current history view.
+            Review the document without leaving the current activity view.
           </DialogDescription>
         </DialogHeader>
         {isLoading ? (

@@ -1,6 +1,6 @@
 'use client'
 
-import { FileText, History, MessageSquareText } from 'lucide-react'
+import { Activity, FileText, MessageSquareText } from 'lucide-react'
 
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
@@ -149,14 +149,14 @@ function HistoryPagination({
       totalPages={totalPages}
       previousHref={buildDashboardHref(accountId, {
         ...routeState,
-        section: 'history',
+        section: 'activity',
         workspaceId,
         historyFilter: filter,
         historyPage: Math.max(1, currentPage - 1),
       })}
       nextHref={buildDashboardHref(accountId, {
         ...routeState,
-        section: 'history',
+        section: 'activity',
         workspaceId,
         historyFilter: filter,
         historyPage: Math.min(totalPages, currentPage + 1),
@@ -269,7 +269,7 @@ function HistoryTable({
   }
 
   return (
-    <DashboardTable aria-label="History" minWidth="min-w-[880px]">
+    <DashboardTable aria-label="Activity" minWidth="min-w-[880px]">
       <DashboardTableHead>
         <DashboardTableHeader className="w-36">Type</DashboardTableHeader>
         <DashboardTableHeader>Title</DashboardTableHeader>
@@ -353,7 +353,7 @@ export function HistoryList({
 }) {
   return (
     <DashboardPage
-      title="History"
+      title="Activity"
       description="Review past chats and searches. Retrieval diagnostics live here."
       actions={
         <div className="bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]">
@@ -394,19 +394,19 @@ export function HistoryList({
             ) : null}
             <div className="flex h-full flex-col items-center justify-center text-center">
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                <History className="h-5 w-5 text-primary" />
+                <Activity className="h-5 w-5 text-primary" />
               </div>
-              <h2 className="text-lg font-medium text-foreground">No history yet</h2>
+              <h2 className="text-lg font-medium text-foreground">No activity yet</h2>
               <p className="mt-1 max-w-md text-sm text-muted-foreground">
                 {filter === 'chat'
                   ? onboarding.hasReadyDocuments
                     ? 'Your workspace is ready. Ask the first question and it will appear here.'
-                    : 'Load content first, then ask one question. Conversation history will appear here after that.'
+                    : 'Load content first, then ask one question. Conversation activity will appear here after that.'
                   : filter === 'search'
                     ? 'Document searches will appear here after someone runs a search.'
                     : onboarding.hasReadyDocuments
-                      ? 'Your workspace is ready. Ask the first question or run a document search to start building history.'
-                      : 'Load content first, then ask one question or run a document search. History will appear here after that.'}
+                      ? 'Your workspace is ready. Ask the first question or run a document search to start building activity.'
+                      : 'Load content first, then ask one question or run a document search. Activity will appear here after that.'}
               </p>
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -414,7 +414,7 @@ export function HistoryList({
                 <Button
                   size="sm"
                   onClick={() => onNavigate(buildDashboardHref(accountId, {
-                    section: 'chat',
+                    section: 'agents',
                     workspaceId,
                   }))}
                 >
@@ -426,7 +426,7 @@ export function HistoryList({
                 <Button
                   size="sm"
                   onClick={() => onNavigate(buildDashboardHref(accountId, {
-                    section: 'documents',
+                    section: 'knowledge',
                     workspaceId,
                   }))}
                 >
@@ -465,7 +465,7 @@ export function HistoryList({
                 ) : (
                   <HistoryTable
                     items={allHistoryItems}
-                    emptyMessage="No saved history on this page."
+                    emptyMessage="No saved activity on this page."
                     onSelect={onSelectItem}
                   />
                 )}

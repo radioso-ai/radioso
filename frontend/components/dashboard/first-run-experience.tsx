@@ -89,7 +89,7 @@ export function FirstRunExperience({ accountId, onboarding }: FirstRunExperience
   const completedCount = Number(hasDocuments) + Number(isReady)
 
   const documentsHref = buildDashboardHref(accountId, {
-    section: 'documents',
+    section: 'knowledge',
     workspaceId: activeWorkspaceId ?? undefined,
     workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
   })
@@ -181,7 +181,7 @@ export function FirstRunExperience({ accountId, onboarding }: FirstRunExperience
                     onClick={() => {
                       onboarding.markCompleted()
                       router.push(buildDashboardHref(accountId, {
-                        section: 'chat',
+                        section: 'agents',
                         workspaceId: activeWorkspaceId ?? undefined,
                         workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
                       }))

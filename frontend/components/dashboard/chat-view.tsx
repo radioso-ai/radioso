@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { FileText, RotateCcw, Send } from 'lucide-react'
@@ -20,9 +20,10 @@ interface ChatViewProps {
   accountId: string
   onOpenDocument: (documentId: string) => void
   onboarding: WorkspaceOnboardingState
+  navigation?: ReactNode
 }
 
-export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProps) {
+export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: ChatViewProps) {
   const router = useRouter()
   const [input, setInput] = useState('')
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
@@ -112,7 +113,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
             size="sm"
             variant="outline"
             onClick={() => router.push(buildDashboardHref(accountId, {
-              section: 'documents',
+              section: 'knowledge',
               workspaceId: activeWorkspaceId ?? undefined,
               workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
             }))}
@@ -138,7 +139,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
               <Button
                 size="sm"
                 onClick={() => router.push(buildDashboardHref(accountId, {
-                  section: 'documents',
+                  section: 'knowledge',
                   workspaceId: activeWorkspaceId ?? undefined,
                   workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
                 }))}
@@ -154,8 +155,10 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
     <DashboardPage
       title="Chat"
       description="Ask questions about your documents"
-      actions={
-        <Button
+      actions={navigation}
+      headerContent={
+        <div className="flex justify-end">
+          <Button
             type="button"
             size="sm"
             variant="outline"
@@ -165,6 +168,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding }: ChatViewProp
             <RotateCcw className="mr-2 h-4 w-4" />
             New chat
           </Button>
+        </div>
       }
       footer={isInitializingView ? null : (
         <form onSubmit={handleSubmit} className="mx-auto flex max-w-3xl items-end gap-3">

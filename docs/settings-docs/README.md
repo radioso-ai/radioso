@@ -1,6 +1,6 @@
 # Settings Docs
 
-This directory is the source of truth for workspace settings copy used by the frontend settings UI.
+This directory is the source of truth for workspace control copy used by the frontend dashboard UI.
 
 ## Structure
 
@@ -22,16 +22,16 @@ Short inline copy shown next to the setting control.
 Long-form explanation shown in the right-side help panel.
 ```
 
-The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts`](../../frontend/components/dashboard/settings/settings-docs.ts) reads these sections and maps them into the settings UI.
+The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts`](../../frontend/components/dashboard/settings/settings-docs.ts) reads these sections and maps them into the dashboard help UI.
 
 ## UI mapping
 
-The dashboard presents settings in pipeline order:
+The Knowledge Base dashboard surface presents ingestion and retrieval controls in pipeline order:
 
 1. Ingestion: choose chunking strategy -> tune chunk sizing -> reprocess existing documents
 2. Retrieval: rewrite query -> retrieve/filter candidates -> rerank -> present grounded evidence
 
-Assistant identity, conversation mode, custom answer instruction, proactive greeting, and suggested follow-up behavior belong to the assistant settings surface. Retrieval settings should stay focused on evidence gathering, ranking, filters, validation outcomes, and citation presentation.
+Assistant identity, conversation mode, custom answer instruction, proactive greeting, and suggested follow-up behavior belong to the Agent behavior surface. Retrieval controls should stay focused on evidence gathering, ranking, filters, validation outcomes, and citation presentation.
 
 The connector-style stage separators are rendered in [`frontend/components/dashboard/settings/settings-flow.tsx`](../../frontend/components/dashboard/settings/settings-flow.tsx) and reused by the retrieval trace graph for visual consistency.
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 import { AuthPage } from '@/components/auth/auth-page'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
@@ -16,7 +16,7 @@ import {
   workspaceApi,
 } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
-import { parseDashboardRoute, withDashboardWorkspace } from '@/lib/dashboard-routes'
+import { buildDashboardHref, parseDashboardRoute, withDashboardWorkspace } from '@/lib/dashboard-routes'
 
 const getParamValue = (value: string | string[] | undefined) => {
   if (Array.isArray(value)) {
@@ -36,6 +36,7 @@ const getParamList = (value: string | string[] | undefined) => {
 
 export default function WorkspaceDashboardPage() {
   const params = useParams()
+  const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
   const { isAuthenticated, isBootstrapping, login, user } = useAuth()
@@ -135,6 +136,18 @@ export default function WorkspaceDashboardPage() {
     void resolveRoute()
     return () => { cancelled = true }
   }, [isBootstrapping, login, parsedRoute, router, user, workspaceKey])
+
+  useEffect(() => {
+    if (!user || !resolvedRouteState) {
+      return
+    }
+
+    const canonicalHref = buildDashboardHref(user.accountId, resolvedRouteState)
+    const currentHref = `${pathname}${searchParamsString ? `?${searchParamsString}` : ''}`
+    if (canonicalHref !== currentHref) {
+      router.replace(canonicalHref)
+    }
+  }, [pathname, resolvedRouteState, router, searchParamsString, user])
 
   if (isBootstrapping) {
     return (

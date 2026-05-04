@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FileText, Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -41,6 +41,7 @@ interface DocumentsViewProps {
   selectedDocumentId?: string | null
   onSelectedDocumentChange?: (documentId: string | null) => void
   onboarding: WorkspaceOnboardingState
+  navigation?: ReactNode
 }
 
 const parseMetadata = (raw: string): Record<string, string | number | boolean | null> | null => {
@@ -61,6 +62,7 @@ export function DocumentsView({
   selectedDocumentId = null,
   onSelectedDocumentChange,
   onboarding,
+  navigation,
 }: DocumentsViewProps) {
   const router = useRouter()
   const justClosedDocumentIdRef = useRef<string | null>(null)
@@ -191,7 +193,7 @@ export function DocumentsView({
     setCurrentPage(nextPage)
     router.replace(buildDashboardHref(accountId, {
       ...routeState,
-      section: 'documents',
+      section: 'knowledge',
       documentsPage: nextPage,
     }))
   }, [accountId, currentPage, hasLoadedDocuments, routeState, router, totalDocuments])
@@ -200,7 +202,7 @@ export function DocumentsView({
     setCurrentPage(page)
     router.push(buildDashboardHref(accountId, {
       ...routeState,
-      section: 'documents',
+      section: 'knowledge',
       documentsPage: page,
     }))
   }, [accountId, routeState, router])
@@ -550,30 +552,30 @@ export function DocumentsView({
         />
       ) : (
         <DashboardPage
-          title="Documents"
+          title="Knowledge Base"
           description="Manage your knowledge base"
-          headerClassName="xl:items-end"
           headerContent={
-            <DocumentSearchBar
-              query={documentSearch.query}
-              onQueryChange={documentSearch.setQuery}
-              onSubmit={() => void documentSearch.runSearch()}
-              onClear={documentSearch.clearSearch}
-              isSearching={documentSearch.isSearching}
-            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <DocumentSearchBar
+                query={documentSearch.query}
+                onQueryChange={documentSearch.setQuery}
+                onSubmit={() => void documentSearch.runSearch()}
+                onClear={documentSearch.clearSearch}
+                isSearching={documentSearch.isSearching}
+              />
+              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                <Button size="sm" variant="outline" className="h-10 px-3.5" onClick={openImportDialog}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Import File
+                </Button>
+                <Button size="sm" className="h-10 px-3.5" onClick={openCreateDialog}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Document
+                </Button>
+              </div>
+            </div>
           }
-          actions={
-            <>
-              <Button size="sm" variant="outline" className="h-10 px-3.5" onClick={openImportDialog}>
-                <FileText className="mr-2 h-4 w-4" />
-                Import File
-              </Button>
-              <Button size="sm" className="h-10 px-3.5" onClick={openCreateDialog}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Document
-              </Button>
-            </>
-          }
+          actions={navigation}
         >
             {documentSearch.activeSearch || documentSearch.searchError ? (
               <DocumentSearchResults

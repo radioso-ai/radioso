@@ -107,7 +107,7 @@ export function useHistoryListState({
 
     router.push(buildDashboardHref(accountId, {
       ...routeState,
-      section: 'history',
+      section: 'activity',
       historyFilter: nextFilter,
       historyPage: nextPage,
       historyItemKind: nextSelectedItem?.kind,
@@ -182,10 +182,10 @@ export function useHistoryListState({
         getApiErrorMessage(
           error,
           filter === 'search'
-            ? 'Failed to load search history.'
+            ? 'Failed to load search activity.'
             : filter === 'chat'
-              ? 'Failed to load chat history.'
-              : 'Failed to load history.',
+              ? 'Failed to load chat activity.'
+              : 'Failed to load activity.',
         ),
       )
     } finally {
@@ -233,7 +233,7 @@ export function useHistoryListState({
 
     router.replace(buildDashboardHref(accountId, {
       ...routeState,
-      section: 'history',
+      section: 'activity',
       historyFilter: filter,
       historyPage: nextPage,
       historyItemKind: selectedItem?.kind,

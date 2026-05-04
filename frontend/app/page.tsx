@@ -20,7 +20,7 @@ export default function Home() {
       const workspacePublicRouteKey =
         typeof window !== 'undefined' ? getStoredActiveWorkspacePublicRouteKey() ?? undefined : undefined
       router.replace(buildDashboardHref(user.accountId, {
-        section: 'chat',
+        section: 'agents',
         workspaceId,
         workspacePublicRouteKey,
       }))

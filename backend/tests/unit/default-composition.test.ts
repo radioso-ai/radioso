@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
+import {
+  createDefaultApplicationComposition,
+  createDefaultDocumentJobConsumer,
+  createDefaultDocumentJobDispatcher,
+} from "../../src/app/composition/defaultComposition.js";
+import { AmqpDocumentJobConsumer, AmqpDocumentJobDispatcher } from "../../src/modules/documents/infra/amqpDocumentJobQueue.js";
+import { NoopDocumentJobDispatcher } from "../../src/modules/documents/services/documentJobDispatcher.js";
 import type { ConnectorPlugin } from "@radioso/connector-api";
 
 const createConnector = (id: string): ConnectorPlugin => ({
@@ -95,5 +101,44 @@ describe("default application composition", () => {
     expect(composition.documentStorage).toBe(documentStorage);
     expect(composition.documentJobDispatcher).toBe(documentJobDispatcher);
     expect(composition.websiteEmbedIntegration).toBe(websiteEmbedIntegration);
+  });
+
+  it("selects the no-op document dispatcher by default", () => {
+    const dispatcher = createDefaultDocumentJobDispatcher({
+      WORKER_DISPATCH_DRIVER: "noop",
+      GOOGLE_CLOUD_PROJECT: undefined,
+      WORKER_TASKS_QUEUE_LOCATION: undefined,
+      WORKER_TASKS_QUEUE_NAME: undefined,
+      WORKER_TASKS_SERVICE_URL: undefined,
+      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+      WORKER_AMQP_URL: undefined,
+      WORKER_AMQP_QUEUE_NAME: undefined,
+      WORKER_AMQP_PREFETCH: 1,
+    }, createLogger() as any);
+
+    expect(dispatcher).toBeInstanceOf(NoopDocumentJobDispatcher);
+  });
+
+  it("selects AMQP document queue adapters when AMQP dispatch is configured", () => {
+    const env = {
+      WORKER_DISPATCH_DRIVER: "amqp" as const,
+      GOOGLE_CLOUD_PROJECT: undefined,
+      WORKER_TASKS_QUEUE_LOCATION: undefined,
+      WORKER_TASKS_QUEUE_NAME: undefined,
+      WORKER_TASKS_SERVICE_URL: undefined,
+      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+      WORKER_AMQP_URL: "amqp://localhost:5672",
+      WORKER_AMQP_QUEUE_NAME: "radioso-document-jobs",
+      WORKER_AMQP_PREFETCH: 2,
+    };
+    const logger = createLogger() as any;
+
+    const dispatcher = createDefaultDocumentJobDispatcher(env, logger);
+    const consumer = createDefaultDocumentJobConsumer(env, logger, {
+      runJobById: vi.fn(),
+    });
+
+    expect(dispatcher).toBeInstanceOf(AmqpDocumentJobDispatcher);
+    expect(consumer).toBeInstanceOf(AmqpDocumentJobConsumer);
   });
 });

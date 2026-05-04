@@ -86,6 +86,23 @@ New accounts must verify their email before the first sign-in completes, except 
 
 Authenticated dashboard URLs are workspace-first. After sign-in, the app navigates under `/w/<workspace-public-route-key>/...`. Older `/account/<account-id>/...` dashboard links still work, but they redirect to the canonical workspace URL after the app restores the correct organization and workspace context.
 
+### Worker dispatch
+
+Document ingestion always creates a durable PostgreSQL processing job first. Worker dispatch controls how the API wakes worker services after that durable job exists.
+
+Local runs default to `WORKER_DISPATCH_DRIVER=noop`, which keeps the worker polling the database. Google Cloud deployments can use `WORKER_DISPATCH_DRIVER=cloud-tasks` with `WORKER_TASKS_QUEUE_LOCATION`, `WORKER_TASKS_QUEUE_NAME`, `WORKER_TASKS_SERVICE_URL`, and `WORKER_TASKS_INVOKER_SERVICE_ACCOUNT`.
+
+Broker-based deployments can use `WORKER_DISPATCH_DRIVER=amqp` with a RabbitMQ-compatible AMQP 0-9-1 broker:
+
+```bash
+WORKER_DISPATCH_DRIVER=amqp
+WORKER_AMQP_URL=amqp://localhost:5672
+WORKER_AMQP_QUEUE_NAME=radioso-document-jobs
+WORKER_AMQP_PREFETCH=1
+```
+
+AMQP messages contain the document processing job id and trace metadata only. PostgreSQL remains the source of truth for job state, retries, leases, and recovery if broker dispatch is unavailable after a job has already been queued. AMQP mode is an eventing plus polling hybrid: broker messages wake workers quickly, and the worker polling loop stays active for recovery and scheduled retry eligibility. Delayed retries are governed by the job table's `available_at` value, not by broker-delayed delivery.
+
 ### API auth flow
 
 Register a user:

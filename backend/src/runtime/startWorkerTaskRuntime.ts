@@ -33,6 +33,7 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
   dependencies.logger.info({ role: "worker-task" }, "Radioso worker task runtime starting");
   await dependencies.applicationModules.initializeAll();
   await dependencies.documentProcessingWorker.start();
+  await dependencies.documentJobConsumer?.start();
   const app = (options.createApp ?? createWorkerTaskApp)(dependencies);
   const server = (options.listen ?? defaultListen)(app, options.env.PORT, () => {
     dependencies.logger.info({ role: "worker-task", port: options.env.PORT }, "Radioso worker task runtime listening");
@@ -57,6 +58,7 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
           resolve();
         });
       });
+      await dependencies.documentJobConsumer?.stop();
       await dependencies.documentProcessingWorker.stop();
       await dependencies.applicationModules.shutdownAll();
     },

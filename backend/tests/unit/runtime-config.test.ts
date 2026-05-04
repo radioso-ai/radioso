@@ -4,6 +4,16 @@ import { describe, expect, it } from "vitest";
 import YAML from "yaml";
 import { getEnv } from "../../src/app/config/env.js";
 
+const baseEnv = {
+  NODE_ENV: "test",
+  DATABASE_URL: "postgres://test:test@localhost:5432/test",
+  OPENAI_API_KEY: "test-key",
+  OPENAI_CHAT_MODEL: "gpt-5.2",
+  OPENAI_VECTOR_MODEL: "text-embedding-3-small",
+  LLM_PROVIDER: "openai",
+  SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+} as const;
+
 describe("runtime configuration", () => {
   it("defines explicit API and worker backend scripts", async () => {
     const packageJson = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8")) as {
@@ -62,13 +72,7 @@ describe("runtime configuration", () => {
 
   it("provides default observability configuration without extra vendor settings", () => {
     const env = getEnv({
-      NODE_ENV: "test",
-      DATABASE_URL: "postgres://test:test@localhost:5432/test",
-      OPENAI_API_KEY: "test-key",
-      OPENAI_CHAT_MODEL: "gpt-5.2",
-      OPENAI_VECTOR_MODEL: "text-embedding-3-small",
-      LLM_PROVIDER: "openai",
-      SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+      ...baseEnv,
     });
 
     expect(env.OBSERVABILITY_ENABLED).toBe(true);
@@ -84,52 +88,28 @@ describe("runtime configuration", () => {
 
   it("requires a metrics auth token when metrics exposure is enabled", () => {
     expect(() => getEnv({
-      NODE_ENV: "test",
-      DATABASE_URL: "postgres://test:test@localhost:5432/test",
-      OPENAI_API_KEY: "test-key",
-      OPENAI_CHAT_MODEL: "gpt-5.2",
-      OPENAI_VECTOR_MODEL: "text-embedding-3-small",
-      LLM_PROVIDER: "openai",
-      SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+      ...baseEnv,
       METRICS_ENABLED: "true",
     })).toThrow(/METRICS_AUTH_TOKEN/);
   });
 
   it("requires PostHog credentials when the adapter is enabled", () => {
     expect(() => getEnv({
-      NODE_ENV: "test",
-      DATABASE_URL: "postgres://test:test@localhost:5432/test",
-      OPENAI_API_KEY: "test-key",
-      OPENAI_CHAT_MODEL: "gpt-5.2",
-      OPENAI_VECTOR_MODEL: "text-embedding-3-small",
-      LLM_PROVIDER: "openai",
-      SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+      ...baseEnv,
       PRODUCT_ANALYTICS_SINKS: "audit,posthog",
     })).toThrow(/POSTHOG_/);
   });
 
   it("requires a Sentry DSN when the adapter is enabled", () => {
     expect(() => getEnv({
-      NODE_ENV: "test",
-      DATABASE_URL: "postgres://test:test@localhost:5432/test",
-      OPENAI_API_KEY: "test-key",
-      OPENAI_CHAT_MODEL: "gpt-5.2",
-      OPENAI_VECTOR_MODEL: "text-embedding-3-small",
-      LLM_PROVIDER: "openai",
-      SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+      ...baseEnv,
       INCIDENT_SINKS: "audit,sentry",
     })).toThrow(/SENTRY_DSN/);
   });
 
   it("accepts explicitly configured optional exporters", () => {
     const env = getEnv({
-      NODE_ENV: "test",
-      DATABASE_URL: "postgres://test:test@localhost:5432/test",
-      OPENAI_API_KEY: "test-key",
-      OPENAI_CHAT_MODEL: "gpt-5.2",
-      OPENAI_VECTOR_MODEL: "text-embedding-3-small",
-      LLM_PROVIDER: "openai",
-      SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+      ...baseEnv,
       PRODUCT_ANALYTICS_SINKS: "audit,posthog",
       POSTHOG_HOST: "https://app.posthog.com",
       POSTHOG_API_KEY: "posthog-test-key",
@@ -141,6 +121,54 @@ describe("runtime configuration", () => {
     expect(env.POSTHOG_HOST).toBe("https://app.posthog.com");
     expect(env.INCIDENT_SINKS).toBe("audit,sentry");
     expect(env.SENTRY_DSN).toBe("https://public@example.ingest.sentry.io/123456");
+  });
+
+  it("keeps no-op worker dispatch as the default without AMQP settings", () => {
+    const env = getEnv({
+      ...baseEnv,
+    });
+
+    expect(env.WORKER_DISPATCH_DRIVER).toBe("noop");
+    expect(env.WORKER_AMQP_URL).toBeUndefined();
+    expect(env.WORKER_AMQP_QUEUE_NAME).toBeUndefined();
+    expect(env.WORKER_AMQP_PREFETCH).toBe(1);
+  });
+
+  it("requires AMQP broker settings when AMQP worker dispatch is enabled", () => {
+    expect(() => getEnv({
+      ...baseEnv,
+      WORKER_DISPATCH_DRIVER: "amqp",
+    })).toThrow(/WORKER_AMQP_URL/);
+
+    expect(() => getEnv({
+      ...baseEnv,
+      WORKER_DISPATCH_DRIVER: "amqp",
+      WORKER_AMQP_URL: "amqp://localhost:5672",
+    })).toThrow(/WORKER_AMQP_QUEUE_NAME/);
+  });
+
+  it("accepts AMQP worker dispatch settings", () => {
+    const env = getEnv({
+      ...baseEnv,
+      WORKER_DISPATCH_DRIVER: "amqp",
+      WORKER_AMQP_URL: "amqp://localhost:5672",
+      WORKER_AMQP_QUEUE_NAME: "radioso-document-jobs",
+      WORKER_AMQP_PREFETCH: "3",
+    });
+
+    expect(env.WORKER_DISPATCH_DRIVER).toBe("amqp");
+    expect(env.WORKER_AMQP_URL).toBe("amqp://localhost:5672");
+    expect(env.WORKER_AMQP_QUEUE_NAME).toBe("radioso-document-jobs");
+    expect(env.WORKER_AMQP_PREFETCH).toBe(3);
+  });
+
+  it("documents AMQP worker dispatch settings in the example environment", async () => {
+    const example = await readFile(new URL("../../.env.example", import.meta.url), "utf8");
+
+    expect(example).toContain("WORKER_DISPATCH_DRIVER=noop");
+    expect(example).toContain("WORKER_AMQP_URL=");
+    expect(example).toContain("WORKER_AMQP_QUEUE_NAME=");
+    expect(example).toContain("WORKER_AMQP_PREFETCH=1");
   });
 
   it("pins environment-aware observability identity and cloud runtime URLs for the Cloud Run API and worker services", async () => {

@@ -100,7 +100,7 @@ export function DocsContent() {
           Run locally in 5 minutes
         </h2>
         <p className="mb-6 text-lg leading-relaxed text-muted-foreground">
-          The intended local path is the bootstrap script at the repo root. It prepares `backend/.env`, starts Postgres, the backend, the worker, and the frontend, then waits until the stack is healthy.
+          The intended local path is the bootstrap script at the repo root. It prepares `.env`, starts Postgres, the backend, the worker, and the frontend, then waits until the stack is healthy.
         </p>
         <CodeBlock code="./run-dev.sh" language="bash" filename="Terminal" showLineNumbers={false} />
         <div className="mt-4">

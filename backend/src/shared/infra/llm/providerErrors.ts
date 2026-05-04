@@ -30,7 +30,7 @@ export const isProviderCredentialError = (error: unknown): error is ProviderErro
 };
 
 export const getProviderCredentialErrorMessage = () =>
-  "The configured AI provider rejected the credentials. Update backend/.env and restart Radioso.";
+  "The configured AI provider rejected the credentials. Update .env and restart Radioso.";
 
 export const normalizeProviderCredentialError = (error: unknown) => {
   if (!isProviderCredentialError(error)) {

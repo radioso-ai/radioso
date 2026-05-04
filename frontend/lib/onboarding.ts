@@ -18,7 +18,7 @@ export const SAMPLE_DOCUMENTS = [
     slug: 'getting-started',
     content: `# Getting Started with Radioso
 
-Radioso is easiest to start with \`./run-dev.sh\`. The bootstrap checks Docker, prepares \`backend/.env\`, and starts the local stack.
+Radioso is easiest to start with \`./run-dev.sh\`. The bootstrap checks Docker, prepares \`.env\`, and starts the local stack.
 
 After the app opens, sign in or create an account. Radioso creates your first workspace automatically, so you can focus on loading content instead of configuring tenants.
 

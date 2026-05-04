@@ -14,7 +14,7 @@ import { detectAnsiSupport } from "./support/ansi-capabilities.mjs";
 import { formatMessage, renderHeader } from "./terminal-theme.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const envPath = path.join(repoRoot, "backend/.env");
+const envPath = path.join(repoRoot, ".env");
 
 const generatedValues = () => ({
   SESSION_COOKIE_SECRET: crypto.randomBytes(24).toString("base64"),
@@ -141,7 +141,7 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
       values = buildEnvValues(values, generated, contract);
       validateProviderConfig(values, contract);
       await writeEnv(targetEnvPath, renderEnvFile(values, contract));
-      out.write(`${formatMessage("helper", "Auto-completed backend/.env for non-interactive startup\n", ansi)}`);
+      out.write(`${formatMessage("helper", "Auto-completed .env for non-interactive startup\n", ansi)}`);
     } else {
       out.write(`\n${formatMessage("helper", "Collecting local configuration...\n", ansi)}`);
       const questions = planQuestions(values, contract, { reconfigure });
@@ -151,10 +151,10 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
         ...answers,
       }, contract);
       await writeEnv(targetEnvPath, renderEnvFile(values, contract));
-      out.write(`${formatMessage("success", "Updated backend/.env\n", ansi)}`);
+      out.write(`${formatMessage("success", "Updated .env\n", ansi)}`);
     }
   } else {
-    out.write(`${formatMessage("helper", "Using existing backend/.env\n", ansi)}`);
+    out.write(`${formatMessage("helper", "Using existing .env\n", ansi)}`);
   }
 
   validateProviderConfig(values, contract);

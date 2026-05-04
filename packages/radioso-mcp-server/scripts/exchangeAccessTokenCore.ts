@@ -53,7 +53,7 @@ Flags:
   --help
 
 Examples:
-  eval "$(RADIOSO_WORKSPACE_TOKEN=sk_proj_... npm --prefix packages/radioso-mcp-server run -s token:exchange)"
+  source <(RADIOSO_WORKSPACE_TOKEN=sk_proj_... npm --prefix packages/radioso-mcp-server run -s token:exchange)
   RADIOSO_WORKSPACE_TOKEN=sk_proj_... npm --prefix packages/radioso-mcp-server run -s token:exchange -- --format json
 `;
 

@@ -35,7 +35,7 @@ As a workspace operator or enterprise reviewer, I want long-running chat-adjacen
 
 1. **Given** the team reviews long-running assistant-adjacent workflows, **When** they classify them in the execution model, **Then** the model distinguishes current interactive behavior from future deferred candidates without implying a shipped background runtime.
 2. **Given** an enterprise reviewer asks how heavy assistant workflows will evolve, **When** the team uses the approved docs and policy seam, **Then** the answer identifies a future deferred path without claiming those workflows already outlive the initiating request.
-3. **Given** a current workflow such as eval replay still runs inline, **When** operators inspect the execution model, **Then** that workflow is described honestly as interactive today and only as a candidate for future deferred execution.
+3. **Given** a current analysis-style workflow still runs inline, **When** operators inspect the execution model, **Then** that workflow is described honestly as interactive today and only as a candidate for future deferred execution.
 
 ---
 
@@ -112,7 +112,7 @@ As a workspace operator or enterprise reviewer, I want clear documentation of wh
 - **FR-005**: When interactive chat cannot be served within defined interactive limits, the system MUST fail explicitly with a bounded overload, timeout, or cancellation outcome rather than implicitly queueing the turn.
 - **FR-006**: System MUST identify a separate category of future async chat-adjacent work that may use a durable background job path in a later feature.
 - **FR-007**: Future async chat-adjacent work MUST be limited to workflows whose value does not depend on immediate token streaming in the initiating request.
-- **FR-008**: The execution model MUST name initial future async chat-adjacent candidates, including eval replay, exports, bulk analysis, notifications, and other operator-triggered long-running workflows, while treating normal chat turns as out of scope for background execution.
+- **FR-008**: The execution model MUST name initial future async chat-adjacent candidates, including exports, bulk analysis, notifications, and other operator-triggered long-running workflows, while treating normal chat turns as out of scope for background execution.
 - **FR-009**: Future async chat-adjacent jobs MUST use durable job state that survives process restarts and allows operators to inspect queued, running, succeeded, and failed outcomes.
 - **FR-010**: The execution model MUST preserve the requirement for independent capacity planning between interactive chat serving and any future background job execution so long-running async work does not require the live chat path to block on background completion.
 - **FR-011**: The approved execution model MUST be documented clearly enough that product, engineering, and enterprise reviewers can map each major chat-related workflow to the correct execution class.

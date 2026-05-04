@@ -8,7 +8,7 @@
 Refine fully unsupported strict-mode answers and no-context refusals so they
 sound conversational and, when possible, point toward adjacent grounded
 material already retrieved for the turn. The implementation adds a focused
-backend response-composition seam reused by live chat and eval replay, keeps
+backend response-composition seam reused by live chat, keeps
 `chatService.ts` orchestration-only, preserves existing outcome semantics, and
 updates operator-facing docs to describe the refined behavior.
 
@@ -22,7 +22,7 @@ updates operator-facing docs to describe the refined behavior.
 **Project Type**: Web application with `backend/` and `frontend/`  
 **Performance Goals**: Preserve existing chat latency profile; add at most one bounded wording-generation step on the same chat model path already used for unsupported notices  
 **Constraints**: No generic model-knowledge fallback; no retrieval algorithm changes; `chatService.ts` remains orchestration-only; preserve existing answer outcome semantics and diagnostics  
-**Scale/Scope**: Backend chat presentation/refusal behavior, eval replay parity, operator-facing retrieval docs, and regression coverage across no-context and fully unsupported strict-mode turns
+**Scale/Scope**: Backend chat presentation/refusal behavior, operator-facing retrieval docs, and regression coverage across no-context and fully unsupported strict-mode turns
 
 ## Constitution Check
 
@@ -82,14 +82,11 @@ backend/
 │   │   ├── answerPresentationService.ts
 │   │   ├── unsupportedNoticeGenerator.ts
 │   │   └── [new grounded miss response composer module]
-│   ├── modules/evals/services/
-│   │   └── evalReplayService.ts
 │   └── shared/infra/llm/
 │       └── providerRegistry.ts
 └── tests/
     ├── integration/chat.integration.test.ts
     ├── unit/chat-service-streaming.test.ts
-    ├── unit/eval-replay-service.test.ts
     └── unit/[new composer tests]
 
 frontend/
@@ -100,15 +97,14 @@ frontend/
 **Structure Decision**: Keep transport untouched and implement the feature in
 backend domain services. `backend/src/modules/chat/services/chatService.ts`
 continues to coordinate flow only. A new focused composer module owns
-conversational no-context and fully unsupported strict-mode wording. Eval replay
-reuses the same composer to keep operator tooling aligned with live behavior.
+conversational no-context and fully unsupported strict-mode wording.
 
 ## Module Ownership & Seams
 
 - **Transport Layer**: Existing Express routes and presenters under
   `backend/src/app/http/routes/` keep translating requests and responses only.
 - **Orchestration Layer**: `backend/src/modules/chat/services/chatService.ts`
-  and `backend/src/modules/evals/services/evalReplayService.ts` coordinate
+  coordinates
   retrieval, composition, persistence, and trace assembly.
 - **Domain Layer**: `answerSupportValidator.ts` keeps support classification and
   segment replacement; a new grounded-miss response composer module owns the
@@ -119,7 +115,7 @@ reuses the same composer to keep operator tooling aligned with live behavior.
   handlers, and frontend chat renderers must not absorb new wording-selection
   logic.
 - **Planned Extractions**: Add a new composer interface plus deterministic and
-  model-backed implementations so live chat, tests, and eval replay can share a
+  model-backed implementations so live chat and tests can share a
   bounded seam.
 - **Required Refactor Stories**: None beyond the focused composer extraction
   needed to keep orchestration files responsibility-limited.
@@ -142,7 +138,7 @@ reuses the same composer to keep operator tooling aligned with live behavior.
    unsupported strict-mode responses while preserving existing outcome metadata.
 2. Implement the grounded-miss response composer with deterministic fallback and
    model-backed production wiring.
-3. Wire chat service and eval replay through the composer without changing
+3. Wire chat service through the composer without changing
    retrieval logic or outcome enums.
 4. Update operator-facing docs and review whether the root `readme.md` needs a
    small wording adjustment for `answerPolicy`.

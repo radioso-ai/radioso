@@ -118,6 +118,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Core development**: Implement models, services, CLI commands, endpoints
    - **Integration work**: Database connections, middleware, logging, external services
    - **Backend API contract rule**: Update `backend/src/app/http/openapi/document.ts` as the source of truth for backend HTTP contract changes and regenerate `backend/openapi.yaml` / `backend/openapi.json`; do not hand-edit generated spec files
+   - **Message queue contract review rule**: For public APIs, SDK contracts, MCP contracts, connector contracts, worker payloads, or other cross-service contract changes, verify the implementation includes the planned message-queue impact review and any required document worker dispatch, AMQP payload, retry semantics, queue tests, or queue docs updates
    - **Backend prompt asset rule**: Place backend runtime LLM prompt templates under `backend/prompts/`; Keep loaders, Docker/build steps, and tests aligned with `backend/prompts/`
    - **Backend composition rule**: When adding or replacing app-wide adapters, registries, sinks, lifecycle hooks, capability policies, storage/dispatcher implementations, or cross-module runtime infrastructure, wire defaults and lifecycle through `backend/src/app/composition/`; keep product/domain rules in modules or shared domain files
    - **Polish and validation**: Unit tests, performance optimization, documentation
@@ -135,6 +136,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Check that implemented features match the original specification
    - Validate that tests pass and coverage meets requirements
    - For backend API changes, run the OpenAPI generation flow and verify the generated spec stays in sync with implementation and contract tests
+   - For public or cross-service contract changes, confirm the message-queue impact review is recorded and queue-related tests/docs are updated when affected
    - Confirm the implementation follows the technical plan
    - Report final status with summary of completed work
 

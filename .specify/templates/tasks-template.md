@@ -185,6 +185,7 @@ Examples of foundational tasks (adjust based on your project):
 - Complete required architecture/refactor stories first when the plan flags unclear structure or oversized files
 - Extract or create focused modules before wiring orchestration
 - Update `backend/src/app/composition/` when the story introduces or replaces app-wide adapters, registries, sinks, lifecycle hooks, capability policies, storage/dispatcher implementations, or cross-module runtime infrastructure
+- For public APIs, SDK contracts, MCP contracts, connector contracts, worker payloads, or other cross-service contract changes, complete a message-queue impact review and add any needed AMQP payload, document worker dispatch, retry semantics, queue test, or queue documentation tasks
 - Models before services
 - Services before endpoints
 - Core implementation before integration

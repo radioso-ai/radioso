@@ -33,6 +33,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - For backend API work, identify the code-first OpenAPI implementation target at `backend/src/app/http/openapi/document.ts` and treat `backend/openapi.yaml` / `backend/openapi.json` as generated outputs, not planning sources of truth
    - If backend runtime LLM prompts are in scope, identify `backend/prompts/` as the canonical asset directory and plan any loader, build, Docker, and test updates around that location
    - If backend work adds or replaces app-wide adapters, registries, sinks, lifecycle hooks, capability policies, storage/dispatcher implementations, or other cross-module runtime infrastructure, evaluate whether `backend/src/app/composition/` should own the default wiring and lifecycle; keep domain rules in modules or shared domain files
+   - If public APIs, SDK contracts, MCP contracts, connector contracts, worker payloads, or other cross-service contracts change, include a message-queue impact review covering document worker dispatch, AMQP queue payloads, retry semantics, queue tests, and queue docs
    - Phase 1: Update agent context by running the agent script
    - Re-evaluate Constitution Check post-design
 
@@ -77,6 +78,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Use standard REST/GraphQL patterns
    - Output design-time contract notes to `/contracts/` when helpful for review, but for backend HTTP APIs explicitly map the approved contract to the runtime code-first registry in `backend/src/app/http/openapi/document.ts`
    - Never plan hand-edited changes to `backend/openapi.yaml` or `backend/openapi.json`; those are generated artifacts
+   - For any public or cross-service contract change, document whether the message queue contract, document worker dispatch behavior, AMQP payload shape, retry semantics, queue tests, or queue docs are affected
 
 3. **Agent context update**:
    - Run `.specify/scripts/bash/update-agent-context.sh codex`
@@ -85,7 +87,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Add only new technology from current plan
    - Preserve manual additions between markers
 
-**Output**: data-model.md, optional `/contracts/*` design artifacts, quickstart.md, agent-specific file, explicit OpenAPI ownership notes for backend API changes, explicit `backend/prompts/` ownership notes when runtime prompt assets are involved, and explicit `backend/src/app/composition/` ownership notes when replaceable runtime infrastructure is involved
+**Output**: data-model.md, optional `/contracts/*` design artifacts, quickstart.md, agent-specific file, explicit OpenAPI ownership notes for backend API changes, explicit message-queue impact notes for public or cross-service contract changes, explicit `backend/prompts/` ownership notes when runtime prompt assets are involved, and explicit `backend/src/app/composition/` ownership notes when replaceable runtime infrastructure is involved
 
 ## Key rules
 

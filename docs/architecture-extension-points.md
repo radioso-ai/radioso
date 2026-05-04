@@ -22,7 +22,7 @@ Default composition must build and run without optional modules or deployment-sp
 | Capability policy | Application composition | Capability policy contract | Default policy allows existing actions | Do not scatter availability checks through unrelated services |
 | Telemetry, analytics, and incidents | Shared observability modules | Sink contracts | Default sinks use existing audit, metrics, logs, or no-op behavior based on config | Do not put vendor payload logic in product workflows |
 | Document storage | Documents module | Storage adapter selection helper | Local or configured GCS storage follows existing environment behavior | Do not make storage-specific code part of document business logic |
-| Worker dispatch | Documents module | Job dispatcher adapter selection helper | No-op or configured Cloud Tasks dispatch follows existing environment behavior | Do not make queue-provider logic part of ingestion orchestration |
+| Worker dispatch | Documents module | Job dispatcher and consumer adapter selection helpers | No-op polling, configured Cloud Tasks dispatch, or configured AMQP dispatch follows environment behavior | Do not make queue-provider logic part of ingestion orchestration |
 | Retrieval construction | Retrieval module | Stage and strategy construction helpers | Existing vector, lexical, rewrite, rerank, and prompt assembly behavior remains the default | Do not add retrieval ranking behavior to HTTP routes |
 
 ## Capability Policy
@@ -42,6 +42,8 @@ Product services coordinate workflows. They may call stable contracts such as ca
 Composition code assembles defaults and optional modules. This is where adapter selection and module registration belong.
 
 Persistence and integration adapters talk to databases, queues, object storage, external telemetry targets, and similar systems. Their details stay behind focused ports.
+
+Worker dispatch has two parts. The dispatcher publishes a wake-up notification after a durable document processing job exists. The optional consumer listens for broker deliveries in worker runtimes and delegates back to the worker's job-by-id processing path. The PostgreSQL job table remains authoritative for status, retries, leases, and recovery. AMQP dispatch intentionally keeps the worker polling loop active; broker messages improve wake-up latency, while polling preserves recovery and scheduled retry behavior through `available_at`.
 
 ## Adding A New Extension
 

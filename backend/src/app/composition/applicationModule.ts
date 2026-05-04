@@ -7,6 +7,7 @@ import type { IncidentSink } from "../../shared/incidents/incidentSink.js";
 import type { TelemetrySink } from "../../shared/observability/telemetry/telemetrySink.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { DocumentStoragePort } from "../../modules/documents/infra/gcsDocumentStorage.js";
+import type { DocumentJobConsumerPort } from "../../modules/documents/services/documentJobConsumer.js";
 import type { DocumentJobDispatcherPort } from "../../modules/documents/services/documentJobDispatcher.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
@@ -45,6 +46,7 @@ export interface ApplicationExtensionRegistry {
   usageLimitPolicyRegistration?: ApplicationUsageLimitPolicyRegistration;
   documentStorage?: DocumentStoragePort;
   documentJobDispatcher?: DocumentJobDispatcherPort;
+  documentJobConsumer?: DocumentJobConsumerPort;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
 }
 
@@ -59,6 +61,7 @@ export interface ApplicationModuleRegistrationContext {
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
   registerDocumentStorage(storage: DocumentStoragePort): void;
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
+  registerDocumentJobConsumer(consumer: DocumentJobConsumerPort): void;
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
 }
 
@@ -109,6 +112,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerDocumentJobDispatcher(dispatcher) {
     registry.documentJobDispatcher = dispatcher;
+  },
+  registerDocumentJobConsumer(consumer) {
+    registry.documentJobConsumer = consumer;
   },
   registerWebsiteEmbedIntegration(provider) {
     registry.websiteEmbedIntegration = provider;

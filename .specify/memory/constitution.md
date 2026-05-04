@@ -1,7 +1,7 @@
 <!--
 Sync Impact Report
-- Version change: 1.7.0 to 1.8.0
-- Modified principles: VI. Modularity and Encapsulation
+- Version change: 1.8.0 to 1.8.1
+- Modified principles: VIII. Code-First API Contracts; IX. Documentation Parity
 - Added sections: none
 - Removed sections: none
 - Templates requiring updates: `.specify/templates/plan-template.md` ✅ updated; `.specify/templates/tasks-template.md` ✅ updated; `.codex/prompts/speckit.plan.md` ✅ updated; `.codex/prompts/speckit.tasks.md` ✅ updated; `.codex/prompts/speckit.implement.md` ✅ updated; `AGENTS.md` ✅ updated
@@ -69,7 +69,11 @@ and response schemas that govern runtime behavior where practical. The checked-i
 `backend/openapi.yaml` and `backend/openapi.json` files are generated artifacts
 and MUST NOT be hand-edited. Any feature that changes routes, auth, payloads,
 status codes, or error shapes MUST regenerate the OpenAPI outputs and keep
-contract tests aligned with the generated spec.
+contract tests aligned with the generated spec. Any change to public APIs, SDK
+contracts, MCP contracts, connector contracts, worker payloads, or other
+cross-service contracts MUST include a message-queue impact review that states
+whether document worker dispatch, AMQP queue payloads, retry semantics, or queue
+contract tests and docs need updates.
 
 ### IX. Documentation Parity
 Any change to public contracts, operator-facing settings, documented workflows,
@@ -77,7 +81,8 @@ or user-visible functionality MUST update the corresponding documentation in the
 same change. This includes API contract docs, setup or run instructions,
 settings explanations, and any repo-level docs that describe the affected
 behavior. Plans and tasks MUST identify the docs that need updates whenever
-contract or functionality changes are in scope.
+contract or functionality changes are in scope, including queue/message
+documentation when the message-queue impact review finds affected behavior.
 
 ### X. Prompt Asset Ownership
 Backend runtime LLM prompt templates MUST live under `backend/prompts/`. If a
@@ -112,6 +117,9 @@ No additional constraints beyond the Core Principles at this time.
 - Backend API changes MUST update the code-first OpenAPI registry and regenerate
   `backend/openapi.yaml` / `backend/openapi.json` rather than editing those
   generated files directly.
+- Contract changes MUST include a message-queue impact review covering document
+  worker dispatch, AMQP queue payloads, retry semantics, queue tests, and queue
+  docs.
 - Contract and functionality changes MUST identify and update the affected docs
   in the same feature work.
 - Backend runtime prompt extraction or creation MUST use `backend/prompts/` and
@@ -132,4 +140,4 @@ Compliance is enforced during plan/spec/task reviews and PR reviews. The
 constitution version, ratification date, and last amended date MUST be updated
 whenever changes are made.
 
-**Version**: 1.8.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-05-02
+**Version**: 1.8.1 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-05-03

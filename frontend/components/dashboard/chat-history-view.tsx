@@ -183,7 +183,7 @@ export function ChatHistoryView({
                     ) : null}
                   </div>
                 ) : null}
-                <DrawerDescription className="sr-only">History details panel</DrawerDescription>
+                <DrawerDescription className="sr-only">Activity details panel</DrawerDescription>
               </div>
               <DrawerClose className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
@@ -332,7 +332,7 @@ export function ChatHistoryView({
               </div>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                Select a history entry to inspect it.
+                Select an activity entry to inspect it.
               </div>
             )}
           </div>

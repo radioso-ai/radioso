@@ -28,9 +28,9 @@ npm run dev
 
 That starts the standalone Next.js app on [http://localhost:3000](http://localhost:3000).
 
-Workspace settings copy is sourced from repo-level markdown files under [`/docs/settings-docs`](../docs/settings-docs). Each setting owns a separate `.md` file that provides the label, inline summary, and tooltip copy rendered by the dashboard settings UI.
+Workspace control copy is sourced from repo-level markdown files under [`/docs/settings-docs`](../docs/settings-docs). Each setting owns a separate `.md` file that provides the label, inline summary, and tooltip copy rendered by the relevant dashboard surface, including Agent, Knowledge Base, and Settings.
 
-The dashboard account menu in the bottom-left corner now includes a `Users` page for account membership. Use that page to invite teammates, review active users, and copy the latest invitation link. Invitation links open the public join flow at `/invite/[token]`, where the invited person creates or reuses their own login and then lands in the shared account workspace context.
+The dashboard account menu in the bottom-left corner includes a `Users` shortcut for account membership. It opens the Users tab in Settings, where you can invite teammates, review active users, and copy the latest invitation link. Invitation links open the public join flow at `/invite/[token]`, where the invited person creates or reuses their own login and then lands in the shared account workspace context.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

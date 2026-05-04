@@ -94,11 +94,11 @@
   - `restoredCandidateCount?: number`
 - Constraints:
   - only applies when trigger-matched destructive narrowing reduced support below the accepted threshold.
-  - must be propagated to retrieval info, trace, history debug metadata, and eval replay artifacts.
+  - must be propagated to retrieval info, trace, and history debug metadata.
 
 ## Trigger Analysis Trace Node
 
-- Logical trace/eval/history presentation entity.
+- Logical trace/history presentation entity.
 - Fields:
   - `stageId = "trigger_analysis"`
   - `status`

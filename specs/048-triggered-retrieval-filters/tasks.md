@@ -7,7 +7,7 @@
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing.
 
-**Architecture**: Keep settings persistence in the settings domain/service, trigger matching inside query interpretation, rule enactment/date evaluation/backoff inside candidate preparation and metadata rule scoring, and diagnostics/history/eval surfaces presentation-only.
+**Architecture**: Keep settings persistence in the settings domain/service, trigger matching inside query interpretation, rule enactment/date evaluation/backoff inside candidate preparation and metadata rule scoring, and diagnostics/history surfaces presentation-only.
 
 ## Phase 1: Setup (Shared Infrastructure)
 
@@ -84,23 +84,22 @@
 
 ## Phase 5: User Story 4 - Inspect and replay why a filter matched (Priority: P2)
 
-**Goal**: Trigger decisions, considered rules, and backoff behavior are visible in retrieval info, trace, history, and eval replay.
+**Goal**: Trigger decisions, considered rules, and backoff behavior are visible in retrieval info, trace, and history.
 
-**Independent Test**: Run a trigger-aware turn, inspect chat history and eval replay, and verify the trigger-analysis node plus any backoff decision are preserved and comparable.
+**Independent Test**: Run a trigger-aware turn, inspect chat history and trace diagnostics, and verify the trigger-analysis node plus any backoff decision are preserved.
 
 ### Tests for User Story 4 (REQUIRED for backend)
 
 - [X] T024 [P] [US4] Add retrieval trace assembler coverage for trigger-analysis stages in `backend/tests/unit/retrieval-trace-assembler.test.ts`
 - [X] T025 [P] [US4] Add retrieval info presenter coverage for trigger diagnostics in `backend/tests/unit/hybrid-retrieval-info.test.ts`
 - [X] T026 [P] [US4] Add chat history replay coverage for trigger debug metadata in `backend/tests/unit/chat-history-service.test.ts`
-- [X] T027 [P] [US4] Add eval replay coverage for trigger diagnostics parity in `backend/tests/unit/eval-replay-service.test.ts`
-- [X] T028 [P] [US4] Add integration coverage for auditable trigger diagnostics in `backend/tests/integration/chat.integration.test.ts` and `backend/tests/integration/evals.integration.test.ts`
+- [X] T028 [P] [US4] Add integration coverage for auditable trigger diagnostics in `backend/tests/integration/chat.integration.test.ts`
 
 ### Implementation for User Story 4
 
 - [X] T029 [US4] Extend retrieval diagnostics creation in `backend/src/modules/retrieval/services/retrievalDiagnosticsStage.ts`, `backend/src/modules/retrieval/services/retrievalExecutionTelemetryService.ts`, and `backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts`
 - [X] T030 [US4] Add the logical trigger-analysis node and backoff details in `backend/src/modules/retrieval/services/retrievalTraceAssembler.ts` and `backend/src/modules/retrieval/services/retrievalTracePresenter.ts`
-- [X] T031 [US4] Surface trigger diagnostics in `backend/src/modules/retrieval/services/retrievalInfoPresenter.ts`, `backend/src/modules/chat/services/chatHistoryService.ts`, and `backend/src/modules/evals/services/evalReplayService.ts`
+- [X] T031 [US4] Surface trigger diagnostics in `backend/src/modules/retrieval/services/retrievalInfoPresenter.ts` and `backend/src/modules/chat/services/chatHistoryService.ts`
 
 **Checkpoint**: Operators can inspect and replay trigger decisions and fallback behavior across the existing diagnostics surfaces.
 
@@ -120,7 +119,7 @@
 
 - [X] T033 [US5] Extend retrieval settings client types in `frontend/lib/api.ts`
 - [X] T034 [US5] Refresh trigger-aware rule authoring and `today()` affordances in `frontend/components/dashboard/settings/retrieval-settings-panel.tsx`
-- [X] T035 [US5] Update retrieval trace detail and dashboard diagnostics views for trigger-analysis readability in `frontend/components/dashboard/chat-retrieval-trace-detail.tsx`, `frontend/components/dashboard/chat-history-view.tsx`, and `frontend/components/dashboard/evals-view.tsx`
+- [X] T035 [US5] Update retrieval trace detail and dashboard diagnostics views for trigger-analysis readability in `frontend/components/dashboard/chat-retrieval-trace-detail.tsx` and `frontend/components/dashboard/chat-history-view.tsx`
 
 **Checkpoint**: Operators can author and inspect trigger-aware rules from the existing settings and diagnostics surfaces.
 
@@ -168,7 +167,7 @@
 
 - T004 and T005 can be written in parallel before the foundational implementation.
 - Within US1, T009–T012 can be developed in parallel as red tests.
-- Within US4, trace/info/history/eval test coverage tasks can run in parallel.
+- Within US4, trace/info/history test coverage tasks can run in parallel.
 - UI work in T034 and diagnostics-view work in T035 can proceed separately once the backend contracts settle.
 
 ## Implementation Strategy
@@ -193,7 +192,7 @@
 ## Validation Notes
 
 - `backend`: `npm run generate:openapi`
-- `backend`: `npx vitest run tests/unit/retrieval-settings-and-chunking.test.ts tests/unit/metadata-rule-scoring.test.ts tests/unit/retrieval-pipeline-stages.test.ts tests/unit/candidate-preparation-stage.test.ts tests/unit/hybrid-retrieval-info.test.ts tests/unit/retrieval-trace-assembler.test.ts tests/unit/chat-history-service.test.ts tests/unit/eval-replay-service.test.ts tests/contract/settings.contract.test.ts tests/integration/chat.integration.test.ts tests/integration/evals.integration.test.ts`
+- `backend`: `npx vitest run tests/unit/retrieval-settings-and-chunking.test.ts tests/unit/metadata-rule-scoring.test.ts tests/unit/retrieval-pipeline-stages.test.ts tests/unit/candidate-preparation-stage.test.ts tests/unit/hybrid-retrieval-info.test.ts tests/unit/retrieval-trace-assembler.test.ts tests/unit/chat-history-service.test.ts tests/contract/settings.contract.test.ts tests/integration/chat.integration.test.ts`
 - `frontend`: `npm test -- --run tests/unit/retrieval-rule-helpers.test.ts tests/unit/retrieval-trace-diagnostics.test.tsx`
 
 ## Review Notes

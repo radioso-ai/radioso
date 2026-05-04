@@ -50,7 +50,7 @@ After joining the account, each active user can switch among the account's works
 **Acceptance Scenarios**:
 
 1. **Given** two active users belong to the same account, **When** each opens the workspace switcher, **Then** both see the same set of workspaces for that account.
-2. **Given** an invited user selects a workspace, **When** they navigate through documents, chat, history, evals, and settings, **Then** the workspace loads successfully without ownership errors.
+2. **Given** an invited user selects a workspace, **When** they navigate through documents, chat, history, and settings, **Then** the workspace loads successfully without ownership errors.
 3. **Given** a new workspace is created on an account, **When** any active user next refreshes or reopens the workspace list, **Then** that workspace is available to every active user on the account.
 
 ---

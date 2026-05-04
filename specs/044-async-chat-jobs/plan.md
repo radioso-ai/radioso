@@ -5,7 +5,7 @@
 
 ## Summary
 
-Codify Radioso's assistant execution model as two explicit classes while shipping only the interactive side for the covered workflows in this feature. The implementation keeps authenticated chat, public chat, embedded chat, bootstrap greeting, and eval replay on their current inline paths, adds a focused execution-policy seam so the classification lives in code instead of tribal knowledge, adds guardrail tests that prevent silent queue-backed fallback for normal chat, and updates operator-facing documentation so enterprise reviewers can understand the model without reading source code. This feature does not build a generic async chat runtime; it creates the policy, validation, and documentation foundation for later async job work.
+Codify Radioso's assistant execution model as two explicit classes while shipping only the interactive side for the covered workflows in this feature. The implementation keeps authenticated chat, public chat, embedded chat, and bootstrap greeting on their current inline paths, adds a focused execution-policy seam so the classification lives in code instead of tribal knowledge, adds guardrail tests that prevent silent queue-backed fallback for normal chat, and updates operator-facing documentation so enterprise reviewers can understand the model without reading source code. This feature does not build a generic async chat runtime; it creates the policy, validation, and documentation foundation for later async job work.
 
 ## Technical Context
 
@@ -17,7 +17,7 @@ Codify Radioso's assistant execution model as two explicit classes while shippin
 **Project Type**: Web application with `backend/`, `frontend/`, and repo-level docs  
 **Performance Goals**: Preserve the current interactive chat latency and streaming behavior by keeping normal chat on the live request path and avoiding any broker or durable job handoff in the critical path  
 **Constraints**: No silent downgrade from live chat to background work; no generic async chat queue in this feature; `chatService.ts` and chat routes remain responsibility-limited; operator-facing documentation must be updated in the same delivery  
-**Scale/Scope**: Cross-cutting policy/documentation feature touching current chat flows, bootstrap flow, eval replay classification, tests, and operator-facing docs, but not introducing a new public API or background runtime
+**Scale/Scope**: Cross-cutting policy/documentation feature touching current chat flows, bootstrap flow, future deferred workflow classification, tests, and operator-facing docs, but not introducing a new public API or background runtime
 
 ## Constitution Check
 
@@ -62,8 +62,6 @@ backend/
 │   │   ├── chatService.ts
 │   │   ├── chatBootstrapService.ts
 │   │   └── chatExecutionPolicy.ts
-│   ├── modules/evals/services/
-│   │   └── evalReplayService.ts
 │   └── modules/audit/services/
 │       └── auditService.ts
 ├── tests/
@@ -94,7 +92,6 @@ readme.md
 - **Orchestration Layer**:
   - `backend/src/modules/chat/services/chatService.ts`
   - `backend/src/modules/chat/services/chatBootstrapService.ts`
-  - `backend/src/modules/evals/services/evalReplayService.ts`
 - **Domain Layer**:
   - new execution-class policy module that classifies covered workflows
   - focused helpers for interactive overload/cancellation semantics if needed
@@ -127,7 +124,7 @@ readme.md
 
 ## Phase 2: Implementation Strategy
 
-1. Add failing backend tests that lock normal authenticated chat, public chat, embedded/bootstrap paths, and eval replay classification to the approved execution classes.
+1. Add failing backend tests that lock normal authenticated chat, public chat, embedded/bootstrap paths, and future deferred workflow classification to the approved execution classes.
 2. Introduce a focused execution-policy seam that defines the current interactive workflows and preserves room for a future durable async class without expanding the responsibilities of `chatService.ts` or route handlers.
 3. Wire the existing chat and bootstrap services to rely on the policy seam where needed for guardrail assertions and future extensibility, while preserving current live request behavior.
 4. Update operator-facing documentation in `readme.md` and `docs/` so the distinction between live chat and any future background work is explicit, plain-language, and enterprise-review ready.

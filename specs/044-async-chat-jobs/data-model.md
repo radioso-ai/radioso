@@ -24,10 +24,8 @@
   - anonymous/public chat
   - embedded chat
   - bootstrap greeting generation
-  - eval replay
 - Rules:
   - live chat surfaces map to `interactive_synchronous`
-  - eval replay maps to `interactive_synchronous` in this feature
   - operator-triggered long-running analysis-style work may map to `durable_async` in a future feature with a real background runtime
 
 ## Interactive Chat Contract

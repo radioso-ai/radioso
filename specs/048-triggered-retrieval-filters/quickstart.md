@@ -66,8 +66,8 @@
 2. Save and reload the page.
 3. Verify the UI preserves trigger mode, trigger instruction, readable policy labels, and the dynamic date value.
 
-### 9. History and eval replay preserve trigger diagnostics
+### 9. History preserves trigger diagnostics
 
 1. Run a chat turn with at least one triggerable rule configured.
 2. Open chat history diagnostics and confirm the dedicated trigger-analysis node is visible.
-3. Replay the case through evals and verify trigger decisions appear in replay diagnostics and comparison output.
+3. Open retrieval trace details and verify trigger decisions appear in diagnostics.

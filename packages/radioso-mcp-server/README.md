@@ -104,10 +104,10 @@ ACCESS_TOKEN=$(
 For Cursor or other local clients that read bearer tokens from the environment, use the helper script:
 
 ```bash
-eval "$(
+source <(
   RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
   npm run -s token:exchange
-)"
+)
 ```
 
 On macOS, if you launch Cursor from the Dock or Spotlight instead of from Terminal, install the token into the GUI app environment first:

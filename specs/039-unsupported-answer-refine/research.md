@@ -5,10 +5,10 @@
 - **Decision**: Add a dedicated backend service that composes conversational
   responses for two cases: fully unsupported strict-mode answers with retrieved
   context, and no-context refusals.
-- **Rationale**: The current behavior is split between `chatService.ts`,
-  `answerSupportValidator.ts`, and `evalReplayService.ts`. A focused composer
-  keeps wording rules out of orchestration while allowing the same bounded logic
-  to be reused across chat and eval replay.
+- **Rationale**: The current behavior is split between `chatService.ts` and
+  `answerSupportValidator.ts`. A focused composer keeps wording rules out of
+  orchestration while allowing the same bounded logic to be reused across chat
+  and tests.
 - **Alternatives considered**:
   - Add more branching inside `chatService.ts`: rejected because the spec and
     constitution both require that file to remain orchestration-only.

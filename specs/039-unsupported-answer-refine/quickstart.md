@@ -40,10 +40,10 @@
      turn
    - `no_context_refusal` for the no-context turn
 
-## Scenario 5: Eval replay matches live behavior
+## Scenario 5: Composer behavior stays consistent
 
-1. Run an eval replay case with no contexts.
-2. Run an eval replay case with retrieved contexts plus a fully unsupported
-   answer draft.
-3. Confirm both use the same conversational miss behavior as the live chat
-   service.
+1. Run a no-context chat turn.
+2. Run a chat turn with retrieved contexts plus a fully unsupported answer
+   draft.
+3. Confirm both use the same conversational miss behavior from the shared
+   composer.

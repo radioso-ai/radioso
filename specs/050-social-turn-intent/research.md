@@ -62,7 +62,7 @@ unless they opt in separately.
 **Rationale**:
 
 - `RetrievalPipelineService.run()` is used outside chat, including document
-  search and eval replay. A global non-retrieval shortcut would create behavior
+  search. A global non-retrieval shortcut would create behavior
   changes in those callers that are outside this feature’s scope.
 - Chat is the only workflow where greetings, thanks, and identity turns are a
   first-class product problem.

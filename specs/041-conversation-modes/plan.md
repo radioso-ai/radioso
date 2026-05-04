@@ -186,7 +186,7 @@ existing history/debug surfaces.
    three modes.
 3. Introduce a focused response-strategy instruction builder and a bounded
    grounded expansion planner/composer so `chatService.ts` stays orchestration-only.
-4. Wire authenticated chat, public chat, eval/debug/history metadata, and
+4. Wire authenticated chat, public chat, debug/history metadata, and
    streaming completion behavior through the new conversation-mode seams.
 5. Update frontend settings UI, API types, history/debug rendering, and
    operator-facing docs, then run targeted validation followed by broader

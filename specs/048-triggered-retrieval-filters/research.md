@@ -10,8 +10,8 @@
 
 ## Decision 2: Keep trigger matching inside query interpretation as a structured sub-result
 
-- Decision: Add trigger matching to the query-interpretation path, but represent it as an explicit structured result and dedicated logical trace/eval node.
-- Rationale: This satisfies the approved architecture rule that trigger matching remains part of query interpretation in v1 while still making it independently inspectable in retrieval trace, chat history, and eval replay.
+- Decision: Add trigger matching to the query-interpretation path, but represent it as an explicit structured result and dedicated logical trace node.
+- Rationale: This satisfies the approved architecture rule that trigger matching remains part of query interpretation in v1 while still making it independently inspectable in retrieval trace and chat history.
 - Alternatives considered:
   - New top-level pipeline stage before query interpretation: rejected because it conflicts with the approved spec placement rule.
   - Hide trigger decisions inside rewrite output only: rejected because it would make trace ownership and replay comparison too opaque.
@@ -41,10 +41,10 @@
 
 ## Decision 6: Record trigger matching, enactment, and backoff as first-class diagnostics
 
-- Decision: Extend retrieval diagnostics, retrieval info presentation, retrieval trace assembly, chat-history debug hydration, and eval replay surfaces with structured trigger-analysis data plus any filter backoff event.
+- Decision: Extend retrieval diagnostics, retrieval info presentation, retrieval trace assembly, and chat-history debug hydration with structured trigger-analysis data plus any filter backoff event.
 - Rationale: The feature’s value depends on trustworthy auditability. Existing retrieval info/trace surfaces are already the durable source for operator-visible diagnostics, so additive fields there preserve current ownership boundaries.
 - Alternatives considered:
-  - New standalone audit product or dashboard: rejected because the spec requires extending existing history/trace/eval surfaces.
+  - New standalone audit product or dashboard: rejected because the spec requires extending existing history and trace surfaces.
 
 ## Decision 7: Trigger-enacted hard filters must support explicit backoff
 

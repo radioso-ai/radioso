@@ -5,7 +5,7 @@
 
 ## Summary
 
-Add optional free-form trigger instructions to retrieval metadata rules so retrieval narrowing only activates for matching turns, skip trigger analysis entirely when no triggerable rules exist, evaluate `today()` as a bounded execution-time date token, and extend retrieval diagnostics, trace, history, eval replay, and the retrieval settings UI so trigger decisions and fallback/backoff behavior are clearly inspectable. The implementation keeps trigger matching inside query interpretation, exposes it as its own logical trace/eval node, and preserves completions as the v1 authority for trigger enactment.
+Add optional free-form trigger instructions to retrieval metadata rules so retrieval narrowing only activates for matching turns, skip trigger analysis entirely when no triggerable rules exist, evaluate `today()` as a bounded execution-time date token, and extend retrieval diagnostics, trace, history, and the retrieval settings UI so trigger decisions and fallback/backoff behavior are clearly inspectable. The implementation keeps trigger matching inside query interpretation, exposes it as its own logical trace node, and preserves completions as the v1 authority for trigger enactment.
 
 ## Technical Context
 
@@ -13,11 +13,11 @@ Add optional free-form trigger instructions to retrieval metadata rules so retri
 **Primary Dependencies**: Express, Zod, `pg`, Pino, OpenAI SDK, Vitest, Supertest, Next.js App Router, existing Radix/shadcn UI primitives  
 **Storage**: PostgreSQL 16 with existing `retrieval_settings.attribute_controls` JSON payloads plus existing `audit_events.metadata_json` diagnostics surfaces  
 **Testing**: Vitest and Supertest for backend TDD; Vitest for targeted frontend coverage where the feature changes client-side rule editing behavior  
-**Target Platform**: Radioso backend retrieval pipeline and authenticated web dashboard settings/history/evals surfaces  
+**Target Platform**: Radioso backend retrieval pipeline and authenticated web dashboard settings/history surfaces
 **Project Type**: Web application  
 **Performance Goals**: Preserve existing retrieval latency for workspaces without triggerable rules by skipping trigger matching entirely; keep trigger diagnostics bounded in payload size  
 **Constraints**: Trigger matching remains inside query interpretation; completions are authoritative in v1; embeddings may only be optional preselection later; no hidden chain-of-thought or unbounded prompt logging; no new operator scripting language or intent enum  
-**Scale/Scope**: One retrieval-settings contract, the retrieval pipeline query-interpretation/candidate-preparation path, existing trace/history/eval diagnostics surfaces, and the retrieval settings dashboard panel
+**Scale/Scope**: One retrieval-settings contract, the retrieval pipeline query-interpretation/candidate-preparation path, existing trace/history diagnostics surfaces, and the retrieval settings dashboard panel
 
 ## Constitution Check
 
@@ -76,8 +76,7 @@ backend/
 │   │   │       ├── retrievalInfoPresenter.ts
 │   │   │       ├── retrievalTraceAssembler.ts
 │   │   │       └── retrievalTracePresenter.ts
-│   │   ├── chat/services/chatHistoryService.ts
-│   │   └── evals/services/evalReplayService.ts
+│   │   └── chat/services/chatHistoryService.ts
 │   └── db/repositories/retrievalSettingsRepository.ts
 ├── openapi.yaml
 ├── openapi.json
@@ -91,20 +90,19 @@ frontend/
 │   ├── chat-retrieval-info.tsx
 │   ├── chat-retrieval-trace-detail.tsx
 │   ├── chat-history-view.tsx
-│   ├── evals-view.tsx
 │   └── settings/retrieval-settings-panel.tsx
 └── lib/api.ts
 ```
 
-**Structure Decision**: Keep retrieval settings transport and persistence in the existing settings route/domain/service path. Introduce focused retrieval trigger-analysis and dynamic-date helpers under `backend/src/modules/retrieval/services/` and `backend/src/modules/settings/domain/` so query interpretation owns trigger classification, candidate preparation owns enactment/backoff and date evaluation, and trace/history/eval presenters only consume structured facts. The dashboard retrieval settings panel remains the sole UI authoring surface for rule configuration, while history/eval trace components remain presentation-only.
+**Structure Decision**: Keep retrieval settings transport and persistence in the existing settings route/domain/service path. Introduce focused retrieval trigger-analysis and dynamic-date helpers under `backend/src/modules/retrieval/services/` and `backend/src/modules/settings/domain/` so query interpretation owns trigger classification, candidate preparation owns enactment/backoff and date evaluation, and trace/history presenters only consume structured facts. The dashboard retrieval settings panel remains the sole UI authoring surface for rule configuration, while history and trace components remain presentation-only.
 
 ## Module Ownership & Seams
 
 - **Transport Layer**: `backend/src/app/http/routes/settingsRoutes.ts`, `backend/src/app/http/openapi/document.ts`, and `frontend/lib/api.ts` own request/response schemas and client payload mapping only.
 - **Orchestration Layer**: `backend/src/modules/settings/services/retrievalSettingsService.ts`, `backend/src/modules/retrieval/services/queryInterpretationStage.ts`, `candidatePreparationStage.ts`, and `retrievalPipelineService.ts` coordinate the workflow but delegate trigger analysis, date evaluation, and diagnostics shaping to focused helpers.
 - **Domain Layer**: `backend/src/modules/settings/domain/retrievalSettings.ts` owns persisted rule validation/normalization; new focused retrieval services own trigger-match parsing, trigger-skip decisions, and dynamic-date evaluation semantics.
-- **Persistence/Integration Layer**: `backend/src/db/repositories/retrievalSettingsRepository.ts` continues to persist additive settings payloads; model integration stays behind the query-rewrite/trigger gateway seam; audit persistence continues through existing chat/eval/audit paths.
-- **Files Kept Small**: `queryRewriteService.ts` must not absorb settings parsing or candidate scoring; `metadataRuleScoringService.ts` must not absorb prompt construction or trigger settings persistence; `retrieval-settings-panel.tsx` must not own client-side policy evaluation rules; history/eval trace components must remain presentation-only.
+- **Persistence/Integration Layer**: `backend/src/db/repositories/retrievalSettingsRepository.ts` continues to persist additive settings payloads; model integration stays behind the query-rewrite/trigger gateway seam; audit persistence continues through existing chat and audit paths.
+- **Files Kept Small**: `queryRewriteService.ts` must not absorb settings parsing or candidate scoring; `metadataRuleScoringService.ts` must not absorb prompt construction or trigger settings persistence; `retrieval-settings-panel.tsx` must not own client-side policy evaluation rules; history and trace components must remain presentation-only.
 - **Planned Extractions**:
   - trigger-analysis result types in retrieval domain types
   - trigger-analysis helper/gateway in retrieval services

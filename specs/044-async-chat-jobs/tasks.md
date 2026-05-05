@@ -19,7 +19,7 @@
 
 - [ ] T001 Reconcile the approved feature artifacts in `specs/044-async-chat-jobs/spec.md`, `plan.md`, `research.md`, `data-model.md`, and `quickstart.md`
 - [ ] T002 [P] Review the existing live chat and bootstrap seams in `backend/src/modules/chat/services/chatService.ts`, `backend/src/modules/chat/services/chatBootstrapService.ts`, `backend/src/app/http/routes/chatRoutes.ts`, and `backend/src/app/http/routes/publicChatRoutes.ts`
-- [ ] T003 [P] Review the async reference workflow and docs seams in `backend/src/modules/evals/services/evalReplayService.ts`, `readme.md`, `docs/README.md`, and `frontend/components/dashboard/settings/settings-docs.ts`
+- [ ] T003 [P] Review the async reference workflow and docs seams in `readme.md`, `docs/README.md`, and `frontend/components/dashboard/settings/settings-docs.ts`
 
 ---
 
@@ -30,7 +30,6 @@
 **⚠️ CRITICAL**: No user story implementation starts before this phase is complete.
 
 - [ ] T004 [P] Add failing unit coverage for workflow classification and live-chat guardrails in `backend/tests/unit/chat-execution-policy.test.ts`
-- [ ] T005 [P] Add failing unit coverage for eval replay classification in `backend/tests/unit/eval-replay-service.test.ts`
 - [ ] T006 [P] Add failing integration coverage that normal chat remains on the live request path in `backend/tests/integration/chat.integration.test.ts`
 - [ ] T007 [P] Add failing integration coverage that bootstrap greeting remains interactive in `backend/tests/integration/chat-bootstrap.integration.test.ts`
 - [ ] T008 Create `backend/src/modules/chat/services/chatExecutionPolicy.ts` with the canonical execution-class definitions and covered workflow classifier
@@ -67,20 +66,17 @@
 
 **Goal**: Define the future deferred category clearly enough that long-running assistant-adjacent work has a credible enterprise story without pretending this feature already ships a generic async runtime.
 
-**Independent Test**: Classify eval replay and other covered workflows, then verify future deferred candidates are documented honestly without claiming a shipped durable-background runtime.
+**Independent Test**: Classify covered workflows, then verify future deferred candidates are documented honestly without claiming a shipped durable-background runtime.
 
 ### Tests for User Story 2
 
 - [ ] T017 [P] [US2] Add failing unit coverage for future deferred workflow classification in `backend/tests/unit/chat-execution-policy.test.ts`
-- [ ] T018 [P] [US2] Extend eval replay coverage to assert current inline classification and future-candidate assumptions in `backend/tests/unit/eval-replay-service.test.ts`
-
 ### Implementation for User Story 2
 
 - [ ] T019 [P] [US2] Extend `backend/src/modules/chat/services/chatExecutionPolicy.ts` with the future deferred workflow category and explanatory metadata
-- [ ] T020 [US2] Apply the execution policy to `backend/src/modules/evals/services/evalReplayService.ts` as the first concrete inline workflow that remains a future deferred reference candidate
 - [ ] T021 [US2] Add or update any shared types or internal metadata needed to expose execution-class decisions without introducing a new public API
 
-**Checkpoint**: The codebase has an explicit future deferred category for long-running assistant work, anchored by a real existing workflow that is still represented honestly as inline today.
+**Checkpoint**: The codebase has an explicit future deferred category for long-running assistant work that is represented honestly as future scope.
 
 ---
 
@@ -131,7 +127,7 @@
 **Purpose**: Final validation, task reconciliation, and cleanup across all stories.
 
 - [ ] T032 [P] Run the quickstart validation scenarios from `specs/044-async-chat-jobs/quickstart.md`
-- [ ] T033 [P] Run targeted backend validation for `backend/tests/unit/chat-execution-policy.test.ts`, `backend/tests/unit/chat-service-streaming.test.ts`, `backend/tests/unit/eval-replay-service.test.ts`, `backend/tests/integration/chat.integration.test.ts`, `backend/tests/integration/chat-bootstrap.integration.test.ts`, and `backend/tests/integration/anonymous-chat.integration.test.ts`
+- [ ] T033 [P] Run targeted backend validation for `backend/tests/unit/chat-execution-policy.test.ts`, `backend/tests/unit/chat-service-streaming.test.ts`, `backend/tests/integration/chat.integration.test.ts`, `backend/tests/integration/chat-bootstrap.integration.test.ts`, and `backend/tests/integration/anonymous-chat.integration.test.ts`
 - [ ] T034 Reconcile task completion state and feature notes across `specs/044-async-chat-jobs/`
 - [ ] T035 Perform final cleanup to confirm `chatService.ts`, `chatBootstrapService.ts`, and chat route files remained responsibility-limited
 
@@ -195,7 +191,7 @@ Task: "Wire chatExecutionPolicy.ts into backend/src/modules/chat/services/chatBo
 
 1. Add the execution-policy seam and guardrail tests
 2. Protect normal chat and bootstrap flows
-3. Classify the current workflow set while keeping eval replay explicit as an inline workflow and future deferred candidate
+3. Classify the current workflow set while keeping future deferred candidates explicit
 4. Clarify the operator service model
 5. Ship documentation and validation
 

@@ -581,7 +581,7 @@ describe("public chat contract", () => {
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));
     expect(response.body.answer.length).toBeGreaterThan(0);
-    expect(response.body.conversationId).toEqual(expect.any(String));
+    expect(response.body).not.toHaveProperty("conversationId");
   });
 
   it("counts bootstrap greeting requests against the anonymous rate limit", async () => {
@@ -626,7 +626,7 @@ describe("public chat contract", () => {
       .post(`/api/v1/public/chat/${chatToken}`)
       .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!)
-      .send({ message: "What is the answer?", stream: false, conversationId: bootstrap.body.conversationId });
+      .send({ message: "What is the answer?", stream: false });
 
     expect(bootstrap.status).toBe(200);
     expect(firstMessage.status).toBe(429);

@@ -80,8 +80,8 @@ describe("assistant contract", () => {
       });
 
     expect(response.status).toBe(200);
+    expect(response.body).not.toHaveProperty("conversationId");
     expect(response.body).toMatchObject({
-      conversationId: expect.any(String),
       route: {
         type: "direct",
         reason: "conversation_start",

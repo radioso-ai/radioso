@@ -20,4 +20,4 @@ Keep it concrete and operator-facing. The instruction should describe the user's
 
 If the instruction is vague, the rule may activate too often or not often enough.
 
-Short, specific instructions are easier to debug because the same text appears in retrieval diagnostics and eval replay.
+Short, specific instructions are easier to debug because the same text appears in retrieval diagnostics.

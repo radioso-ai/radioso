@@ -516,7 +516,7 @@ export interface RetrievalTrace {
 }
 
 export interface ChatResponse {
-  conversationId: string
+  conversationId?: string
   route?: {
     type: 'direct' | 'retrieval'
     reason: 'assistant_identity' | 'conversation_start' | 'evidence_required' | 'social_only'
@@ -1359,7 +1359,9 @@ export const chatApi = {
 
     if (!contentType.includes("text/event-stream")) {
       const payload = (await response.json()) as ChatResponse
-      handlers.onConversation?.({ conversationId: payload.conversationId })
+      if (payload.conversationId) {
+        handlers.onConversation?.({ conversationId: payload.conversationId })
+      }
       if (payload.answer) {
         handlers.onChunk?.({ text: payload.answer })
       }
@@ -1773,7 +1775,9 @@ export const publicChatApi = {
 
     if (!contentType.includes('text/event-stream')) {
       const payload = (await response.json()) as ChatResponse
-      handlers.onConversation?.({ conversationId: payload.conversationId })
+      if (payload.conversationId) {
+        handlers.onConversation?.({ conversationId: payload.conversationId })
+      }
       if (payload.answer) {
         handlers.onChunk?.({ text: payload.answer })
       }

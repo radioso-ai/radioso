@@ -3,11 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
-import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { RetrievalSettingsService } from "../../settings/services/retrievalSettingsService.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatGateway } from "./chatService.js";
-import type { ChatResponse } from "../types/chatResponses.js";
+import type { ChatBootstrapResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import {
   buildPublicAssistantIdentityLines,
@@ -17,9 +16,12 @@ import { DEFAULT_CONVERSATION_MODE } from "../../settings/domain/retrievalSettin
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { isValidLocaleHint, resolveChatLocale } from "./chatLocale.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
+import {
+  NoopProductAnalyticsService,
+  type ProductAnalyticsPort,
+} from "../../../shared/analytics/productAnalyticsService.js";
 
-const emptyChatResponse = (conversationId: string, answer: string): ChatResponse => ({
-  conversationId,
+const emptyChatResponse = (answer: string): ChatBootstrapResponse => ({
   route: {
     type: "direct",
     reason: "conversation_start",
@@ -67,11 +69,11 @@ export class ChatBootstrapService {
   constructor(
     private readonly workspaceRepository: WorkspaceRepositoryPort,
     private readonly bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort,
-    private readonly conversationRepository: ConversationRepositoryPort,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly retrievalSettingsService: Pick<RetrievalSettingsService, "getForWorkspace">,
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
+    private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
   ) {}
 
   async startConversation(input: {
@@ -82,7 +84,7 @@ export class ChatBootstrapService {
     sourceOrigin?: string | null;
     userExpectedLocale?: string | null;
     pageContext?: AssistantPageContext | null;
-  }): Promise<ChatResponse | null> {
+  }): Promise<ChatBootstrapResponse | null> {
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.bootstrap");
     const workspace = await this.workspaceRepository.findById(input.workspaceId);
     if (!workspace || !isAssistantBootstrapActive(workspace)) {
@@ -144,14 +146,6 @@ export class ChatBootstrapService {
         });
       }
 
-      const { conversation } = await this.conversationRepository.createWithInitialAssistantMessage({
-        workspaceId: input.workspaceId,
-        sourceChannel: input.sourceChannel ?? null,
-        anonymousSessionId: input.anonymousSessionId ?? null,
-        sourceOrigin: input.sourceOrigin ?? null,
-        content: normalizedAnswer,
-      });
-
       await this.auditService.record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
@@ -160,7 +154,6 @@ export class ChatBootstrapService {
         metadata: {
           workflow: workflowPolicy.workflow,
           executionClass: workflowPolicy.executionClass,
-          conversationId: conversation.id,
           sourceChannel: input.sourceChannel ?? null,
           sourceOrigin: input.sourceOrigin ?? null,
           localeUsed,
@@ -169,9 +162,29 @@ export class ChatBootstrapService {
           proactiveGreetingEnabled: true,
         },
       });
+      try {
+        await this.productAnalyticsService.track({
+          eventName: "chat.started",
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          actorType: input.accountId ? "authenticated_user" : "anonymous_user",
+          subjectType: "workspace",
+          subjectId: input.workspaceId,
+          properties: {
+            sourceChannel: input.sourceChannel ?? null,
+            sourceOrigin: input.sourceOrigin ?? null,
+            localeUsed,
+            cacheHit: Boolean(cachedGreeting),
+            proactiveGreetingEnabled: true,
+          },
+          source: "backend",
+        });
+      } catch {
+        // Analytics fan-out must not affect opening the chat.
+      }
       await usageReservation?.commit();
 
-      return emptyChatResponse(conversation.id, normalizedAnswer);
+      return emptyChatResponse(normalizedAnswer);
     } catch (error) {
       await usageReservation?.release();
       if (

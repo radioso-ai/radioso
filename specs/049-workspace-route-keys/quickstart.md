@@ -13,7 +13,7 @@ Validate that the authenticated dashboard now uses workspace-first canonical URL
 ## Validation Steps
 
 1. Sign in on `/` and confirm the app lands on `/w/<workspace-key>/chat` instead of an `/account/...` dashboard route.
-2. Navigate to Documents, History, Settings, Users, and Evals. Confirm each route stays under `/w/<workspace-key>/...` and preserves supported query state.
+2. Navigate to Documents, History, Settings, and Users. Confirm each route stays under `/w/<workspace-key>/...` and preserves supported query state.
 3. Copy a canonical document detail URL, open it in a fresh tab, and confirm the same workspace and document view reopen.
 4. Open a representative legacy link such as `/account/<account-id>/documents/<document-id>?workspace=<workspace-id>&page=2` and confirm the app redirects to the matching `/w/<workspace-key>/documents/<document-id>?page=2` URL.
 5. Rename a workspace and verify previously copied canonical links still open the same workspace successfully.

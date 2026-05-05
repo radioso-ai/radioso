@@ -65,6 +65,8 @@ Builds with optional chat-action modules may also include an `actions` object wi
 
 The public chat request also supports `startConversation: true` for bootstrap greeting requests, `userExpectedLocale`, and `inputMetadata`.
 
+Bootstrap greetings are not saved as conversations by themselves. A `startConversation: true` response can omit `conversationId`; use the `conversationId` returned by the first normal message when you need history or follow-up continuity.
+
 ## History in the anonymous flow
 
 Use `GET /api/v1/public/chat/{token}` to list conversations for the current anonymous session.

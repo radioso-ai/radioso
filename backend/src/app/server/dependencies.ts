@@ -297,11 +297,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
     bootstrapGreetingCacheRepository,
-    conversationRepository,
     chatGateway,
     auditService,
     retrievalSettingsService,
     usageLimitPolicy,
+    productAnalyticsService,
   );
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,

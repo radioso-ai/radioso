@@ -41,3 +41,7 @@ export interface ChatResponse {
   retrievalInfo: RetrievalInfo;
   retrievalTrace: RetrievalTrace;
 }
+
+export type ChatBootstrapResponse = Omit<ChatResponse, "conversationId"> & {
+  conversationId?: string;
+};

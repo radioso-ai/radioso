@@ -11,10 +11,10 @@ Cursor can connect to Radioso in two ways:
 2. Exchange a Radioso workspace token for an MCP access token:
 
 ```bash
-eval "$(
+source <(
   RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
   npm --prefix packages/radioso-mcp-server run -s token:exchange
-)"
+)
 ```
 
 3. Configure Cursor to connect to `http://127.0.0.1:8787/mcp` with `Authorization: Bearer ${env:RADIOSO_MCP_ACCESS_TOKEN}`, then open this repo in Cursor.

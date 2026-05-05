@@ -47,8 +47,6 @@ bounded adjacent suggestion, and preserves the degraded unsupported outcome.
 
 - [x] T007 [US1] Extend `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/src/modules/chat/services/answerSupportValidator.ts` to use the composer for fully unsupported strict-mode responses while preserving existing mixed-answer behavior
 - [x] T008 [US1] Update `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/src/modules/chat/services/chatService.ts` to inject and pass the composer without adding wording rules to the service
-- [x] T009 [US1] Update `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/src/modules/evals/services/evalReplayService.ts` to reuse the composer for fully unsupported replay behavior
-
 **Checkpoint**: Fully unsupported strict-mode turns now return conversational
 grounded misses and remain independently testable.
 
@@ -67,12 +65,9 @@ still classified as `no_context_refusal`.
 
 - [x] T010 [P] [US2] Update no-context unit coverage in `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/chat-service-streaming.test.ts`
 - [x] T011 [P] [US2] Update no-context integration coverage in `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/integration/chat.integration.test.ts`
-- [x] T012 [P] [US2] Add eval replay no-context coverage in `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/eval-replay-service.test.ts`
-
 ### Implementation for User Story 2
 
 - [x] T013 [US2] Replace hard-coded no-context copy in `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/src/modules/chat/services/chatService.ts` with composer output
-- [x] T014 [US2] Replace hard-coded no-context copy in `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/src/modules/evals/services/evalReplayService.ts` with composer output
 
 **Checkpoint**: No-context turns remain safe and explicit without relying on the
 old hard-coded refusal string.
@@ -105,7 +100,7 @@ remain unchanged.
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 - [x] T018 Mark completed tasks and reconcile final artifact wording in `/Users/dm/conductor/workspaces/radioso/madison-v1/specs/039-unsupported-answer-refine/tasks.md`
-- [x] T019 Run targeted backend validation for `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/grounded-miss-response-composer.test.ts`, `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/chat-service-streaming.test.ts`, `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/eval-replay-service.test.ts`, and `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/integration/chat.integration.test.ts`
+- [x] T019 Run targeted backend validation for `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/grounded-miss-response-composer.test.ts`, `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/unit/chat-service-streaming.test.ts`, and `/Users/dm/conductor/workspaces/radioso/madison-v1/backend/tests/integration/chat.integration.test.ts`
 - [x] T020 Run additional regression validation needed for confidence and update any affected docs or task state
 
 ## Dependencies & Execution Order

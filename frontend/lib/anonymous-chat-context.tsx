@@ -303,7 +303,9 @@ export function AnonymousChatProvider({
           )
 
           if (bootstrap?.answer) {
-            setConversationId(bootstrap.conversationId)
+            if (bootstrap.conversationId) {
+              setConversationId(bootstrap.conversationId)
+            }
             setMessages([
               {
                 id: crypto.randomUUID(),

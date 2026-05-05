@@ -1,7 +1,7 @@
 import type { InternalClientConfig } from "../core/config.js";
 import { normalizeError, RadiosoError } from "../core/errors.js";
 import { requestStream } from "../core/http.js";
-import type { AssistantChatRequest, AssistantChatResponse, ChatStreamRequest } from "../generated/client.js";
+import type { AssistantChatRequest, ChatResponse, ChatStreamRequest } from "../generated/client.js";
 
 export type RadiosoChatStreamEvent =
   | { type: "conversation"; conversationId: string }
@@ -9,10 +9,10 @@ export type RadiosoChatStreamEvent =
   | {
       type: "suggestions";
       conversationId: string;
-      suggestions: NonNullable<AssistantChatResponse["suggestions"]>;
-      conversationModeMetadata: AssistantChatResponse["conversationModeMetadata"];
+      suggestions: NonNullable<ChatResponse["suggestions"]>;
+      conversationModeMetadata: ChatResponse["conversationModeMetadata"];
     }
-  | ({ type: "done" } & AssistantChatResponse)
+  | ({ type: "done" } & ChatResponse)
   | { type: "error"; error: RadiosoError };
 
 const parsePayload = (value: string): Record<string, unknown> => JSON.parse(value) as Record<string, unknown>;
@@ -75,8 +75,8 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
     return {
       type: "suggestions",
       conversationId: payload.conversationId,
-      suggestions: payload.suggestions as NonNullable<AssistantChatResponse["suggestions"]>,
-      conversationModeMetadata: payload.conversationModeMetadata as AssistantChatResponse["conversationModeMetadata"],
+      suggestions: payload.suggestions as NonNullable<ChatResponse["suggestions"]>,
+      conversationModeMetadata: payload.conversationModeMetadata as ChatResponse["conversationModeMetadata"],
     };
   }
 

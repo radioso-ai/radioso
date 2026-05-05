@@ -357,7 +357,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               }
             : {
                 ...session,
-                conversationId: bootstrap.conversationId,
+                ...(bootstrap.conversationId ? { conversationId: bootstrap.conversationId } : {}),
                 messages: [
                   {
                     id: crypto.randomUUID(),
@@ -428,7 +428,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
 
         updateSession(accountId, () => ({
-          conversationId: bootstrap.conversationId,
+          ...(bootstrap.conversationId ? { conversationId: bootstrap.conversationId } : {}),
           messages: [
             {
               id: crypto.randomUUID(),

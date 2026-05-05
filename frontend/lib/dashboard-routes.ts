@@ -2,8 +2,8 @@ export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'settings'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'ingestion' | 'retrieval'
 export type SettingsTab = 'workspace' | 'users'
-export type HistoryFilter = 'all' | 'chat' | 'search'
-export type HistoryItemKind = 'chat' | 'search'
+export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
+export type HistoryItemKind = 'chat' | 'search' | 'contact'
 
 export interface DashboardRouteState {
   section: DashboardSection
@@ -53,7 +53,7 @@ const parsePositiveInt = (value: string | null): number | undefined => {
 }
 
 const parseHistoryFilter = (value: string | null): HistoryFilter | undefined => {
-  if (value === 'all' || value === 'chat' || value === 'search') {
+  if (value === 'all' || value === 'chat' || value === 'search' || value === 'contact') {
     return value
   }
 
@@ -61,7 +61,7 @@ const parseHistoryFilter = (value: string | null): HistoryFilter | undefined => 
 }
 
 const parseHistoryItemKind = (value: string | null): HistoryItemKind | undefined => {
-  if (value === 'chat' || value === 'search') {
+  if (value === 'chat' || value === 'search' || value === 'contact') {
     return value
   }
 

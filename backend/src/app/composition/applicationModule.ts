@@ -12,7 +12,14 @@ import type { DocumentJobDispatcherPort } from "../../modules/documents/services
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/domain/websiteEmbedIntegration.js";
+import type { ChatActionProviderPort } from "../../modules/chat/services/chatActionProvider.js";
 import type { AppDependencies } from "../server/types.js";
+import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
+import type { AuditService } from "../../modules/audit/services/auditService.js";
+import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
+import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
+import type { ContactHistoryProviderPort } from "../../modules/chat/services/contactHistoryProvider.js";
+import type { EmailService } from "../../modules/email/services/emailService.js";
 
 export interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
@@ -35,6 +42,26 @@ export type ApplicationUsageLimitPolicyRegistration =
       logger: AppLogger;
     }) => UsageLimitPolicy);
 
+export type ApplicationChatActionProviderRegistration =
+  | ChatActionProviderPort
+  | ((context: {
+      database: ApplicationDatabasePort;
+      chatGateway?: unknown;
+      logger: AppLogger;
+      conversationRepository: ConversationRepositoryPort;
+      messageRepository: MessageRepositoryPort;
+      auditService: AuditService;
+      abuseControlService: AbuseControlService;
+      emailService: EmailService;
+    }) => ChatActionProviderPort);
+
+export type ApplicationContactHistoryProviderRegistration =
+  | ContactHistoryProviderPort
+  | ((context: {
+      database: ApplicationDatabasePort;
+      logger: AppLogger;
+    }) => ContactHistoryProviderPort);
+
 export interface ApplicationExtensionRegistry {
   connectors: ConnectorPlugin[];
   telemetrySinks: TelemetrySink[];
@@ -48,6 +75,8 @@ export interface ApplicationExtensionRegistry {
   documentJobDispatcher?: DocumentJobDispatcherPort;
   documentJobConsumer?: DocumentJobConsumerPort;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
+  chatActionProviderRegistration?: ApplicationChatActionProviderRegistration;
+  contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
 }
 
 export interface ApplicationModuleRegistrationContext {
@@ -63,6 +92,8 @@ export interface ApplicationModuleRegistrationContext {
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
   registerDocumentJobConsumer(consumer: DocumentJobConsumerPort): void;
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
+  registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
+  registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
 }
 
 export interface ApplicationModule {
@@ -118,6 +149,12 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerWebsiteEmbedIntegration(provider) {
     registry.websiteEmbedIntegration = provider;
+  },
+  registerChatActionProvider(provider) {
+    registry.chatActionProviderRegistration = provider;
+  },
+  registerContactHistoryProvider(provider) {
+    registry.contactHistoryProviderRegistration = provider;
   },
 });
 

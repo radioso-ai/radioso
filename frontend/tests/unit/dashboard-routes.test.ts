@@ -51,6 +51,21 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('parses contact activity filter and selected request state', () => {
+    const params = new URLSearchParams({
+      filter: 'contact',
+      itemKind: 'contact',
+      itemId: 'request-77',
+    })
+
+    expect(parseDashboardRoute(['activity'], params)).toEqual({
+      section: 'activity',
+      historyFilter: 'contact',
+      historyItemKind: 'contact',
+      historyItemId: 'request-77',
+    })
+  })
+
   it('drops invalid section-specific parameters during parsing', () => {
     const params = new URLSearchParams({
       workspace: 'workspace-3',

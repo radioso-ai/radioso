@@ -291,6 +291,7 @@ export interface PublicChatSessionResponse {
   publicSessionId: string
   publicSessionToken: string
   assistantBootstrapActive: boolean
+  actions?: Record<string, unknown>
   expiresAt: string
 }
 
@@ -339,12 +340,67 @@ export interface AnswerSegment {
   citationIndices?: number[]
 }
 
-export type ChatSuggestionKind = 'deeper' | 'broader'
+export type ChatSuggestionKind = string
 
 export interface ChatSuggestion {
   text: string
   citation?: Citation
   kind?: ChatSuggestionKind
+  action?: {
+    kind: string
+    payload?: Record<string, unknown>
+  }
+}
+
+export type HumanContactTriggerSource =
+  | 'manual'
+  | 'assistant_suggestion'
+  | 'no_context_refusal'
+  | 'grounded_degraded_unsupported_segments'
+  | 'explicit_user_request'
+  | 'llm_classifier'
+
+export interface HumanContactDraftResponse {
+  draftMessage: string
+  defaultEmail?: string | null
+}
+
+export interface HumanContactSubmitResponse {
+  requestId: string
+}
+
+export interface HumanContactSubmitInput {
+  conversationId: string
+  assistantMessageId?: string
+  email: string
+  message: string
+  triggerSource: HumanContactTriggerSource
+  triggerReason?: string
+}
+
+export interface HumanContactAvailability {
+  enabled: boolean
+  configured: boolean
+  emailEnabled?: boolean
+  defaultEmail?: string | null
+  webhookEnabled?: boolean
+  webhookUrl?: string | null
+  signingSecretConfigured?: boolean
+  updatedAt?: string | null
+}
+
+export interface HumanContactSettingsUpdate {
+  enabled: boolean
+  emailEnabled?: boolean
+  defaultEmail?: string | null
+  webhookEnabled?: boolean
+  webhookUrl?: string | null
+  signingSecret?: string | null
+  rotateSigningSecret?: boolean
+}
+
+export interface HumanContactSigningSecretResponse {
+  signingSecret: string | null
 }
 
 export interface RetrievalInfo {
@@ -603,6 +659,41 @@ export interface ChatConversationDetail {
   messages: ChatConversationTurn[]
 }
 
+export interface ContactHistorySummary {
+  id: string
+  sortAt: string
+  workspaceId: string
+  conversationId: string
+  assistantMessageId: string | null
+  sourceChannel: string | null
+  sourceOrigin: string | null
+  userEmail: string
+  messagePreview: string
+  triggerSource: string
+  triggerReason: string | null
+  status: 'pending' | 'delivering' | 'delivered' | 'failed'
+  attempts: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ContactHistoryDetail extends ContactHistorySummary {
+  message: string
+  finalDeliveryError: string | null
+}
+
+export interface ContactHistoryListResponse {
+  contacts: ContactHistorySummary[]
+  total: number
+  nextCursor: null
+  hasMore: boolean
+}
+
+export interface ContactHistoryDetailResponse {
+  contact: ContactHistoryDetail
+  conversation: ChatConversationDetail
+}
+
 export interface ChatHistoryListResponse {
   workspaceName?: string
   assistantBootstrapActive?: boolean
@@ -625,6 +716,12 @@ export type HistoryItem =
       sortAt: string
       search: DocumentSearchHistoryEntry
     }
+  | {
+      kind: 'contact'
+      id: string
+      sortAt: string
+      contact: ContactHistorySummary
+    }
 
 export interface HistoryItemsResponse {
   items: HistoryItem[]
@@ -637,6 +734,7 @@ type HistoryItemsApiResponse =
   | HistoryItemsResponse
   | ChatHistoryListResponse
   | DocumentSearchHistoryListResponse
+  | ContactHistoryListResponse
 
 const normalizeHistoryItemsResponse = (response: HistoryItemsApiResponse): HistoryItemsResponse => {
   if ('items' in response) {
@@ -651,6 +749,22 @@ const normalizeHistoryItemsResponse = (response: HistoryItemsApiResponse): Histo
           id: conversation.id,
           sortAt: conversation.updatedAt,
           conversation,
+        }
+      }),
+      total: response.total,
+      nextCursor: null,
+      hasMore: response.hasMore,
+    }
+  }
+
+  if ('contacts' in response) {
+    return {
+      items: response.contacts.map((contact) => {
+        return {
+          kind: 'contact',
+          id: contact.id,
+          sortAt: contact.sortAt,
+          contact,
         }
       }),
       total: response.total,
@@ -1331,6 +1445,21 @@ export const chatApi = {
     }, { withApiToken: true })
   },
 
+  async listContactHistory(input?: { limit?: number; offset?: number }): Promise<ContactHistoryListResponse> {
+    const searchParams = new URLSearchParams()
+    if (input?.limit !== undefined) {
+      searchParams.set('limit', String(input.limit))
+    }
+    if (input?.offset !== undefined) {
+      searchParams.set('offset', String(input.offset))
+    }
+
+    const query = searchParams.toString()
+    return request<ContactHistoryListResponse>(`/history/contact${query ? `?${query}` : ''}`, {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
   async getHistoryConversation(
     conversationId: string,
     input?: { limit?: number; offset?: number; cursor?: string },
@@ -1355,6 +1484,62 @@ export const chatApi = {
   async getSearchHistory(searchId: string): Promise<DocumentSearchResponse> {
     return request<DocumentSearchResponse>(`/history/search/${searchId}`, {
       method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async getContactHistory(
+    requestId: string,
+    input?: { limit?: number; offset?: number; cursor?: string },
+  ): Promise<ContactHistoryDetailResponse> {
+    const searchParams = new URLSearchParams()
+    if (input?.limit !== undefined) {
+      searchParams.set('limit', String(input.limit))
+    }
+    if (input?.offset !== undefined) {
+      searchParams.set('offset', String(input.offset))
+    }
+    if (input?.cursor !== undefined) {
+      searchParams.set('cursor', input.cursor)
+    }
+
+    const query = searchParams.toString()
+    return request<ContactHistoryDetailResponse>(`/history/contact/${requestId}${query ? `?${query}` : ''}`, {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+}
+
+export const humanContactApi = {
+  async getSettings(): Promise<HumanContactAvailability> {
+    return request<HumanContactAvailability>('/ee/contact/settings', {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async revealSigningSecret(): Promise<HumanContactSigningSecretResponse> {
+    return request<HumanContactSigningSecretResponse>('/ee/contact/settings/signing-secret', {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async draft(input: { conversationId: string; assistantMessageId?: string }): Promise<HumanContactDraftResponse> {
+    return request<HumanContactDraftResponse>('/ee/contact/draft', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }, { withApiToken: true })
+  },
+
+  async submit(input: HumanContactSubmitInput): Promise<HumanContactSubmitResponse> {
+    return request<HumanContactSubmitResponse>('/ee/contact/submit', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }, { withApiToken: true })
+  },
+
+  async updateSettings(input: HumanContactSettingsUpdate): Promise<HumanContactAvailability> {
+    return request<HumanContactAvailability>('/ee/contact/settings', {
+      method: 'PUT',
+      body: JSON.stringify(input),
     }, { withApiToken: true })
   },
 }
@@ -1708,4 +1893,49 @@ export const publicChatApi = {
     persistAnonymousSessionHeader(token, response)
     return response.json() as Promise<ChatConversationDetail>
   },
+
+  async draftHumanContact(
+    token: string,
+    input: { conversationId: string; assistantMessageId?: string },
+  ): Promise<HumanContactDraftResponse> {
+    const response = await fetch(`${API_BASE}/ee/contact/public/chat/${encodeURIComponent(token)}/draft`, {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: attachAnonymousSessionHeader(token, {
+        'Content-Type': 'application/json',
+        'X-Forwarded-Prefix': '/backend',
+      }),
+      body: JSON.stringify(input),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    return response.json() as Promise<HumanContactDraftResponse>
+  },
+
+  async submitHumanContact(
+    token: string,
+    input: HumanContactSubmitInput,
+  ): Promise<HumanContactSubmitResponse> {
+    const response = await fetch(`${API_BASE}/ee/contact/public/chat/${encodeURIComponent(token)}/submit`, {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: attachAnonymousSessionHeader(token, {
+        'Content-Type': 'application/json',
+        'X-Forwarded-Prefix': '/backend',
+      }),
+      body: JSON.stringify(input),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    return response.json() as Promise<HumanContactSubmitResponse>
+  },
+
 }

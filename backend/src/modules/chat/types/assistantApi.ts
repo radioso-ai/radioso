@@ -1,5 +1,5 @@
 import type { ChatStreamEvent } from "../services/chatService.js";
-import type { ChatResponse } from "./chatResponses.js";
+import type { ChatBootstrapResponse, ChatResponse } from "./chatResponses.js";
 
 export type AssistantRouteType = "direct" | "retrieval";
 export type AssistantRouteReason =
@@ -50,6 +50,6 @@ export interface AssistantChatRequest {
   pageContext?: AssistantPageContext | null;
 }
 
-export type AssistantChatResponse = ChatResponse;
+export type AssistantChatResponse = ChatResponse | ChatBootstrapResponse;
 
 export type AssistantChatStreamEvent = ChatStreamEvent;

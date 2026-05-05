@@ -946,8 +946,7 @@ const AssistantRouteDiagnosticsSchema = registry.register(
   }),
 );
 
-const chatResponseShape = {
-  conversationId: z.string().uuid(),
+const chatResponseCoreShape = {
   answer: z.string(),
   citations: z.array(CitationSchema).optional(),
   answerSegments: z.array(AnswerSegmentSchema).optional(),
@@ -968,17 +967,26 @@ const chatResponseShape = {
 const ChatResponseSchema = registry.register(
   "ChatResponse",
   z.object({
-    ...chatResponseShape,
+    conversationId: z.string().uuid(),
+    ...chatResponseCoreShape,
     route: AssistantRouteSchema,
+  }),
+);
+
+const ChatBootstrapResponseSchema = registry.register(
+  "ChatBootstrapResponse",
+  z.object({
+    conversationId: z.string().uuid().optional(),
+    ...chatResponseCoreShape,
+    route: AssistantRouteSchema,
+  }).openapi({
+    description: "Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn.",
   }),
 );
 
 const AssistantChatResponseSchema = registry.register(
   "AssistantChatResponse",
-  z.object({
-    ...chatResponseShape,
-    route: AssistantRouteSchema,
-  }),
+  z.union([ChatResponseSchema, ChatBootstrapResponseSchema]),
 );
 
 const AssistantChatRequestSchema = registry.register(
@@ -3707,7 +3715,7 @@ registry.registerPath({
       description: "Public chat response returned as JSON or SSE",
       content: {
         "application/json": {
-          schema: ChatResponseSchema,
+          schema: AssistantChatResponseSchema,
         },
         "text/event-stream": {
           schema: z.string().openapi("PublicChatSseStream"),

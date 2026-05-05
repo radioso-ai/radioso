@@ -315,6 +315,7 @@ interface TestRepositories {
   documentRepository: InMemoryDocumentRepository;
   chunkRepository: InMemoryChunkRepository;
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
+  conversationRepository: InMemoryConversationRepository;
 }
 
 const appDependencyMap = new WeakMap<object, AppDependencies>();
@@ -736,11 +737,11 @@ export const createTestDependencies = (overrides: {
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
     bootstrapGreetingCacheRepository,
-    conversationRepository,
     chatGateway,
     auditService,
     retrievalSettingsService,
     usageLimitPolicy,
+    productAnalyticsService,
   );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
@@ -843,6 +844,7 @@ export const createTestDependencies = (overrides: {
       documentRepository,
       chunkRepository,
       documentProcessingJobRepository,
+      conversationRepository,
     },
   };
 };

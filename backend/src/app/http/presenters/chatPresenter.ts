@@ -10,7 +10,7 @@ import type { RetrievalTrace } from "../../../modules/retrieval/domain/retrieval
 export const sendChatJson = (
   res: Response,
   payload: {
-    conversationId: string;
+    conversationId?: string;
     route: ChatRoute;
     answer: string;
     citations?: ChatCitation[];

@@ -38,6 +38,8 @@ The chat request schema also supports:
 - `userExpectedLocale` when the caller knows the user's locale
 - `inputMetadata` and `metadataFilter` for richer routing and filtering
 
+Bootstrap responses are ephemeral. When `startConversation: true` returns a greeting, the response can omit `conversationId`. Save and reuse a `conversationId` only after the first normal user message returns one.
+
 ## Streaming and non-streaming modes
 
 `stream` is required.

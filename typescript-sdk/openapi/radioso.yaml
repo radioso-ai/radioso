@@ -2493,7 +2493,7 @@ components:
         - retrievalInfo
         - retrievalTrace
         - route
-    AssistantChatResponse:
+    ChatBootstrapResponse:
       type: object
       properties:
         conversationId:
@@ -2548,13 +2548,17 @@ components:
         route:
           $ref: "#/components/schemas/AssistantRoute"
       required:
-        - conversationId
         - answer
         - conversationMode
         - conversationModeMetadata
         - retrievalInfo
         - retrievalTrace
         - route
+      description: Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn.
+    AssistantChatResponse:
+      anyOf:
+        - $ref: "#/components/schemas/ChatResponse"
+        - $ref: "#/components/schemas/ChatBootstrapResponse"
     AssistantChatRequest:
       anyOf:
         - type: object
@@ -5418,7 +5422,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ChatResponse"
+                $ref: "#/components/schemas/AssistantChatResponse"
             text/event-stream:
               schema:
                 $ref: "#/components/schemas/PublicChatSseStream"

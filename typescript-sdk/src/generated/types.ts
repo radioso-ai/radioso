@@ -1797,9 +1797,10 @@ export interface components {
             retrievalTrace: components["schemas"]["RetrievalTrace"];
             route: components["schemas"]["AssistantRoute"];
         };
-        AssistantChatResponse: {
+        /** @description Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn. */
+        ChatBootstrapResponse: {
             /** Format: uuid */
-            conversationId: string;
+            conversationId?: string;
             answer: string;
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
@@ -1820,6 +1821,7 @@ export interface components {
             retrievalTrace: components["schemas"]["RetrievalTrace"];
             route: components["schemas"]["AssistantRoute"];
         };
+        AssistantChatResponse: components["schemas"]["ChatResponse"] | components["schemas"]["ChatBootstrapResponse"];
         AssistantChatRequest: {
             /** Format: uuid */
             conversationId?: string;
@@ -4604,7 +4606,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChatResponse"];
+                    "application/json": components["schemas"]["AssistantChatResponse"];
                     "text/event-stream": components["schemas"]["PublicChatSseStream"];
                 };
             };

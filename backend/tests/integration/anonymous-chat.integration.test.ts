@@ -23,7 +23,7 @@ describe("anonymous chat bootstrap integration", () => {
     resetRateLimiterState();
   });
 
-  it("creates one assistant-first public conversation and reuses it for follow-up turns", async () => {
+  it("returns an ephemeral public greeting and starts persistence on the first follow-up turn", async () => {
     const bootstrapGateway: ChatGateway = {
       async answer(input) {
         if (input.query.length === 0) {
@@ -35,7 +35,7 @@ describe("anonymous chat bootstrap integration", () => {
         yield "unused";
       },
     };
-    const { app } = createTestApp({ chatGateway: bootstrapGateway });
+    const { app, repositories } = createTestApp({ chatGateway: bootstrapGateway });
     const session = await issueTestSession(app, "anon-chat-bootstrap-integration@example.com");
     const headers = adminSessionHeaders(session);
 
@@ -58,6 +58,8 @@ describe("anonymous chat bootstrap integration", () => {
       .send({ startConversation: true, stream: false, userExpectedLocale: "en-US" });
 
     expect(bootstrap.status).toBe(200);
+    expect(bootstrap.body).not.toHaveProperty("conversationId");
+    expect(repositories.conversationRepository.items.size).toBe(0);
     const anonCookie = findAnonymousCookie(bootstrap.headers["set-cookie"]);
     expect(anonCookie).toBeDefined();
 
@@ -66,29 +68,24 @@ describe("anonymous chat bootstrap integration", () => {
       .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!)
       .send({
-        conversationId: bootstrap.body.conversationId,
         message: "Can you help me?",
         stream: false,
       });
 
     expect(followUp.status).toBe(200);
-    expect(followUp.body.conversationId).toBe(bootstrap.body.conversationId);
+    expect(followUp.body.conversationId).toEqual(expect.any(String));
 
     const history = await request(app)
-      .get(`/api/v1/public/chat/${chatToken}/history/${bootstrap.body.conversationId}`)
+      .get(`/api/v1/public/chat/${chatToken}/history/${followUp.body.conversationId}`)
       .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!);
 
     expect(history.status).toBe(200);
-    expect(history.body.messageCount).toBe(3);
+    expect(history.body.messageCount).toBe(2);
     expect(history.body.userMessageCount).toBe(1);
-    expect(history.body.assistantMessageCount).toBe(2);
+    expect(history.body.assistantMessageCount).toBe(1);
     expect(history.body.messages).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          role: "assistant",
-          content: expect.any(String),
-        }),
         expect.objectContaining({
           role: "user",
           content: "Can you help me?",
@@ -96,13 +93,13 @@ describe("anonymous chat bootstrap integration", () => {
       ]),
     );
     const assistantMessages = history.body.messages.filter((message: { role: string }) => message.role === "assistant");
-    expect(assistantMessages).toHaveLength(2);
+    expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages.every((message: { content: string }) => typeof message.content === "string" && message.content.length > 0)).toBe(
       true,
     );
     expect(history.body.messages[0]).toMatchObject({
-      role: "assistant",
-      content: expect.any(String),
+      role: "user",
+      content: "Can you help me?",
     });
   });
 

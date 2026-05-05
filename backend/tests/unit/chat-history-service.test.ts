@@ -523,8 +523,8 @@ describe("chat history service", () => {
       message: "Please contact me about billing.",
     });
     expect(detail.conversation.messages.map((message) => message.content)).toEqual([
-      "Can I speak with a person?",
       "I can collect that request.",
+      "Can I speak with a person?",
     ]);
   });
 });

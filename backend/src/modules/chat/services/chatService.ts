@@ -47,6 +47,7 @@ import {
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
+import { NoopChatActionProvider, type ChatActionProviderPort } from "./chatActionProvider.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -265,6 +266,7 @@ export class ChatService {
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
+    private readonly chatActionProvider: ChatActionProviderPort = new NoopChatActionProvider(),
   ) {
     this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, history, prompt }) =>
       this.chatGateway.answer({
@@ -505,6 +507,18 @@ export class ChatService {
         content: presentation.answer,
       });
       assistantMessageId = assistantMessage.id;
+      const suggestions = await this.applySuggestionActions({
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        conversationId: session.conversation.id,
+        assistantMessageId,
+        query: input.query,
+        answer: presentation.answer,
+        answerOutcome: presentation.answerOutcome,
+        sourceChannel: input.sourceChannel,
+        sourceOrigin: input.sourceOrigin,
+        suggestions: presentation.suggestions,
+      });
       await this.finalizeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -516,7 +530,7 @@ export class ChatService {
         segmentResults: presentation.segmentResults,
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
-        suggestions: presentation.suggestions,
+        suggestions,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
         priorRewriteContinuityState: session.priorRewriteContinuityState,
@@ -533,7 +547,7 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
-        suggestions: presentation.suggestions,
+        suggestions,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
         retrievalInfo,
@@ -704,6 +718,18 @@ export class ChatService {
         content: presentation.answer,
       });
       assistantMessageId = assistantMessage.id;
+      const actionSuggestions = await this.applySuggestionActions({
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        conversationId: session.conversation.id,
+        assistantMessageId,
+        query: input.query,
+        answer: presentation.answer,
+        answerOutcome: presentation.answerOutcome,
+        sourceChannel: input.sourceChannel,
+        sourceOrigin: input.sourceOrigin,
+        suggestions: presentation.suggestions,
+      });
       await this.finalizeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -715,7 +741,7 @@ export class ChatService {
         segmentResults: presentation.segmentResults,
         citations: presentation.citations ?? [],
         answerSegments: presentation.answerSegments,
-        suggestions: presentation.suggestions,
+        suggestions: actionSuggestions,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
         priorRewriteContinuityState: session.priorRewriteContinuityState,
@@ -734,7 +760,7 @@ export class ChatService {
         answer: presentation.answer,
         citations: presentation.citations,
         answerSegments: presentation.answerSegments,
-        suggestions: undefined,
+        suggestions: actionSuggestions,
         conversationMode: presentation.conversationModeMetadata.conversationMode,
         conversationModeMetadata: presentation.conversationModeMetadata,
         retrievalInfo,
@@ -753,12 +779,24 @@ export class ChatService {
     try {
       const lazySuggestions = await lazySuggestionsPromise;
       if (lazySuggestions.suggestions && lazySuggestions.suggestions.length > 0) {
+        const suggestions = (await this.applySuggestionActions({
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          conversationId: session.conversation.id,
+          assistantMessageId: assistantMessageId!,
+          query: input.query,
+          answer: "",
+          answerOutcome: ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS,
+          sourceChannel: input.sourceChannel,
+          sourceOrigin: input.sourceOrigin,
+          suggestions: lazySuggestions.suggestions,
+        })) ?? [];
         if (assistantMessageId) {
           await this.auditService.updateChatAnswerSuggestions({
             workspaceId: input.workspaceId,
             conversationId: session.conversation.id,
             assistantMessageId,
-            suggestions: lazySuggestions.suggestions,
+            suggestions,
             conversationModeMetadata: lazySuggestions.conversationModeMetadata,
           });
         }
@@ -766,7 +804,7 @@ export class ChatService {
         yield {
           type: "suggestions",
           conversationId: session.conversation.id,
-          suggestions: lazySuggestions.suggestions,
+          suggestions,
           conversationModeMetadata: lazySuggestions.conversationModeMetadata,
         };
       }
@@ -1174,6 +1212,29 @@ export class ChatService {
     } catch {
       // Analytics fan-out must not change successful chat behavior.
     }
+  }
+
+  private async applySuggestionActions(input: {
+    workspaceId: string;
+    accountId?: string;
+    conversationId: string;
+    assistantMessageId: string;
+    query: string;
+    answer: string;
+    answerOutcome: AssistantTurnOutcome;
+    sourceChannel?: string | null;
+    sourceOrigin?: string | null;
+    suggestions?: ChatSuggestion[];
+  }): Promise<ChatSuggestion[] | undefined> {
+    const action = await this.chatActionProvider.evaluate(input);
+    if (!action) {
+      return input.suggestions;
+    }
+    const suggestions = input.suggestions ?? [];
+    if (suggestions.some((suggestion) => suggestion.action?.kind === action.action?.kind || suggestion.kind === action.kind)) {
+      return suggestions;
+    }
+    return [...suggestions, action];
   }
 
   private async applyConversationMode(

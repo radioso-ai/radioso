@@ -9,6 +9,8 @@ import {
   type ChatConversationDetail,
   type ChatConversationSummary,
   type ChatConversationTurn,
+  type ContactHistoryDetailResponse,
+  type ContactHistorySummary,
   type DocumentDetails,
   type DocumentSearchHistoryEntry,
   type DocumentSearchResponse,
@@ -52,11 +54,17 @@ export function useHistoryListState({
   const [searches, setSearches] = useState<DocumentSearchHistoryEntry[]>([])
   const [searchTotal, setSearchTotal] = useState(0)
   const [hasSearchNextPage, setHasSearchNextPage] = useState(false)
+  const [contacts, setContacts] = useState<ContactHistorySummary[]>([])
+  const [contactTotal, setContactTotal] = useState(0)
+  const [hasContactNextPage, setHasContactNextPage] = useState(false)
   const [searchPage, setSearchPage] = useState(
     routeState.historyFilter === 'search' ? (routeState.historyPage ?? 1) : 1,
   )
   const [allPage, setAllPage] = useState(
     routeState.historyFilter === 'all' || !routeState.historyFilter ? (routeState.historyPage ?? 1) : 1,
+  )
+  const [contactPage, setContactPage] = useState(
+    routeState.historyFilter === 'contact' ? (routeState.historyPage ?? 1) : 1,
   )
   const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(
     routeState.historyItemKind && routeState.historyItemId
@@ -77,8 +85,10 @@ export function useHistoryListState({
       setAllPage(nextPage)
     } else if (nextFilter === 'chat') {
       setConversationPage(nextPage)
-    } else {
+    } else if (nextFilter === 'search') {
       setSearchPage(nextPage)
+    } else {
+      setContactPage(nextPage)
     }
 
     if (routeState.historyItemKind && routeState.historyItemId) {
@@ -101,7 +111,9 @@ export function useHistoryListState({
         ? allPage
         : nextFilter === 'chat'
           ? conversationPage
-          : searchPage
+          : nextFilter === 'search'
+            ? searchPage
+            : contactPage
     )
     const nextSelectedItem = next.selectedItem === undefined ? selectedItem : next.selectedItem
 
@@ -116,6 +128,7 @@ export function useHistoryListState({
   }, [
     accountId,
     allPage,
+    contactPage,
     conversationPage,
     filter,
     routeState,
@@ -127,7 +140,7 @@ export function useHistoryListState({
   const loadHistory = useCallback(async () => {
     setIsListLoading(true)
     setListError(null)
-    const page = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : searchPage
+    const page = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : filter === 'search' ? searchPage : contactPage
     const loadKey = buildHistoryLoadKey(routeState.workspaceId, filter, page)
 
     try {
@@ -155,6 +168,18 @@ export function useHistoryListState({
         return
       }
 
+      if (filter === 'contact') {
+        const response = await chatApi.listContactHistory({
+          limit: HISTORY_PAGE_SIZE,
+          offset: (contactPage - 1) * HISTORY_PAGE_SIZE,
+        })
+        setContacts(response.contacts)
+        setContactTotal(response.total)
+        setHasContactNextPage(response.hasMore)
+        setLoadedHistoryKey(loadKey)
+        return
+      }
+
       const response = await chatApi.listSearchHistory({
         limit: HISTORY_PAGE_SIZE,
         offset: (searchPage - 1) * HISTORY_PAGE_SIZE,
@@ -172,10 +197,14 @@ export function useHistoryListState({
         setConversations([])
         setConversationTotal(0)
         setHasConversationNextPage(false)
-      } else {
+      } else if (filter === 'search') {
         setSearches([])
         setSearchTotal(0)
         setHasSearchNextPage(false)
+      } else {
+        setContacts([])
+        setContactTotal(0)
+        setHasContactNextPage(false)
       }
 
       setListError(
@@ -185,13 +214,15 @@ export function useHistoryListState({
             ? 'Failed to load search activity.'
             : filter === 'chat'
               ? 'Failed to load chat activity.'
+              : filter === 'contact'
+                ? 'Failed to load contact activity.'
               : 'Failed to load activity.',
         ),
       )
     } finally {
       setIsListLoading(false)
     }
-  }, [allPage, conversationPage, filter, routeState.workspaceId, searchPage])
+  }, [allPage, contactPage, conversationPage, filter, routeState.workspaceId, searchPage])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- History view fetches the current page after route/filter changes.
@@ -200,18 +231,21 @@ export function useHistoryListState({
 
   const conversationTotalPages = Math.max(1, Math.ceil(conversationTotal / HISTORY_PAGE_SIZE))
   const searchTotalPages = Math.max(1, Math.ceil(searchTotal / HISTORY_PAGE_SIZE))
+  const contactTotalPages = Math.max(1, Math.ceil(contactTotal / HISTORY_PAGE_SIZE))
   const allTotal = historyItemsTotal
   const allTotalPages = Math.max(1, Math.ceil(allTotal / HISTORY_PAGE_SIZE))
   const allHasNextPage = hasHistoryItemsNextPage
 
   useEffect(() => {
-    const activePage = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : searchPage
+    const activePage = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : filter === 'search' ? searchPage : contactPage
     const activeLoadKey = buildHistoryLoadKey(routeState.workspaceId, filter, activePage)
     const activeTotalPages = filter === 'all'
       ? allTotalPages
       : filter === 'chat'
         ? conversationTotalPages
-        : searchTotalPages
+        : filter === 'search'
+          ? searchTotalPages
+          : contactTotalPages
 
     if (loadedHistoryKey !== activeLoadKey) {
       return
@@ -227,8 +261,10 @@ export function useHistoryListState({
       setAllPage(nextPage)
     } else if (filter === 'chat') {
       setConversationPage(nextPage)
-    } else {
+    } else if (filter === 'search') {
       setSearchPage(nextPage)
+    } else {
+      setContactPage(nextPage)
     }
 
     router.replace(buildDashboardHref(accountId, {
@@ -243,6 +279,8 @@ export function useHistoryListState({
     accountId,
     allPage,
     allTotalPages,
+    contactPage,
+    contactTotalPages,
     conversationPage,
     conversationTotalPages,
     filter,
@@ -260,7 +298,9 @@ export function useHistoryListState({
       ? historyItemsTotal > 0
       : filter === 'chat'
         ? conversationTotal > 0
-        : searchTotal > 0
+        : filter === 'search'
+          ? searchTotal > 0
+          : contactTotal > 0
 
   const allHistoryItems: HistoryListItem[] = historyItems
 
@@ -277,6 +317,10 @@ export function useHistoryListState({
     searchTotal,
     searchPage,
     searchTotalPages,
+    contacts,
+    contactTotal,
+    contactPage,
+    contactTotalPages,
     allHistoryItems,
     allTotal,
     allPage,
@@ -289,6 +333,7 @@ export function useHistoryListState({
       if (nextFilter === 'all') setAllPage(1)
       if (nextFilter === 'chat') setConversationPage(1)
       if (nextFilter === 'search') setSearchPage(1)
+      if (nextFilter === 'contact') setContactPage(1)
       pushHistoryRoute({ filter: nextFilter, page: 1, selectedItem: null })
     },
     onSelectItem: (item: SelectedHistoryItem) => {
@@ -308,6 +353,13 @@ export function useHistoryListState({
       }
       setSearchPage(page)
       pushHistoryRoute({ filter: 'search', page })
+    },
+    onContactPageChange: (page: number) => {
+      if (page > contactPage && !hasContactNextPage) {
+        return
+      }
+      setContactPage(page)
+      pushHistoryRoute({ filter: 'contact', page })
     },
     onAllPageChange: (page: number) => {
       if (page > allPage && !allHasNextPage) {
@@ -340,6 +392,7 @@ export function useHistoryDetailState({
 }) {
   const [conversationDetail, setConversationDetail] = useState<ChatConversationDetail | null>(null)
   const [searchDetail, setSearchDetail] = useState<DocumentSearchResponse | null>(null)
+  const [contactDetail, setContactDetail] = useState<ContactHistoryDetailResponse | null>(null)
   const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [selectedThreadMessageId, setSelectedThreadMessageId] = useState<string | null>(null)
@@ -352,6 +405,7 @@ export function useHistoryDetailState({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Closing the drawer clears its detail state.
       setConversationDetail(null)
       setSearchDetail(null)
+      setContactDetail(null)
       setDetailError(null)
       setSelectedThreadMessageId(null)
       setSelectedAssistantMessageId(null)
@@ -367,6 +421,7 @@ export function useHistoryDetailState({
       setDetailError(null)
       setConversationDetail(null)
       setSearchDetail(null)
+      setContactDetail(null)
 
       try {
         if (selectedItem.kind === 'chat') {
@@ -388,6 +443,26 @@ export function useHistoryDetailState({
           return
         }
 
+        if (selectedItem.kind === 'contact') {
+          const detail = await chatApi.getContactHistory(selectedItem.id, {
+            limit: MESSAGE_WINDOW_SIZE,
+          })
+          if (!isActive) {
+            return
+          }
+          setContactDetail(detail)
+          setConversationDetail(detail.conversation)
+          const selectedAssistant =
+            detail.contact.assistantMessageId
+              ? detail.conversation.messages.find((message) => message.id === detail.contact.assistantMessageId) ?? null
+              : [...detail.conversation.messages].reverse().find((message) => message.role === 'assistant') ?? null
+          setSelectedThreadMessageId(selectedAssistant?.id ?? null)
+          setSelectedAssistantMessageId(selectedAssistant?.role === 'assistant' ? selectedAssistant.id : null)
+          setSelectedStageId(selectedAssistant?.role === 'assistant' ? selectedAssistant.debug?.retrievalTrace?.stages[0]?.stageId : undefined)
+          setShowGraph(false)
+          return
+        }
+
         const detail = await chatApi.getSearchHistory(selectedItem.id)
         if (!isActive) {
           return
@@ -404,6 +479,8 @@ export function useHistoryDetailState({
             error,
             selectedItem.kind === 'chat'
               ? 'Failed to load conversation details.'
+              : selectedItem.kind === 'contact'
+                ? 'Failed to load contact request details.'
               : 'Failed to load search details.',
           ),
         )
@@ -467,7 +544,7 @@ export function useHistoryDetailState({
   const selectedDiagnosticsDebug =
     selectedDiagnosticsAssistantMessage?.role === 'assistant' ? selectedDiagnosticsAssistantMessage.debug : undefined
   const selectedDiagnosticsTrace = selectedDiagnosticsDebug?.retrievalTrace
-  const activeTrace = selectedItem?.kind === 'chat' ? selectedDiagnosticsTrace : searchDetail?.retrievalTrace
+  const activeTrace = selectedItem?.kind === 'chat' || selectedItem?.kind === 'contact' ? selectedDiagnosticsTrace : searchDetail?.retrievalTrace
   const activeTraceId = activeTrace?.traceId
   const activeInitialStageId = activeTrace?.stages[0]?.stageId
 
@@ -510,7 +587,7 @@ export function useHistoryDetailState({
   const loadOlderMessages = useCallback(async () => {
     if (
       !selectedItem ||
-      selectedItem.kind !== 'chat' ||
+      (selectedItem.kind !== 'chat' && selectedItem.kind !== 'contact') ||
       !conversationDetail ||
       !conversationDetail.hasOlderMessages ||
       !conversationDetail.nextCursor
@@ -522,10 +599,15 @@ export function useHistoryDetailState({
     setDetailError(null)
 
     try {
-      const older = await chatApi.getHistoryConversation(selectedItem.id, {
-        limit: MESSAGE_WINDOW_SIZE,
-        ...(conversationDetail.nextCursor ? { cursor: conversationDetail.nextCursor } : {}),
-      })
+      const older = selectedItem.kind === 'contact'
+        ? (await chatApi.getContactHistory(selectedItem.id, {
+            limit: MESSAGE_WINDOW_SIZE,
+            ...(conversationDetail.nextCursor ? { cursor: conversationDetail.nextCursor } : {}),
+          })).conversation
+        : await chatApi.getHistoryConversation(selectedItem.id, {
+            limit: MESSAGE_WINDOW_SIZE,
+            ...(conversationDetail.nextCursor ? { cursor: conversationDetail.nextCursor } : {}),
+          })
       setConversationDetail((current) => {
         if (!current) {
           return older
@@ -545,6 +627,7 @@ export function useHistoryDetailState({
   return {
     conversationDetail,
     searchDetail,
+    contactDetail,
     isDetailLoading,
     detailError,
     selectedThreadMessage,

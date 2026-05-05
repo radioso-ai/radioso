@@ -15,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
-import type { ChatConversationSummary, DocumentSearchHistoryEntry } from '@/lib/api'
+import type { ChatConversationSummary, ContactHistorySummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
@@ -24,14 +24,16 @@ const formatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'medium',
 })
 
-export type HistoryFilter = 'all' | 'chat' | 'search'
+export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type SelectedHistoryItem =
   | { kind: 'chat'; id: string }
   | { kind: 'search'; id: string }
+  | { kind: 'contact'; id: string }
   | null
 export type HistoryListItem =
   | { kind: 'chat'; id: string; sortAt: string; conversation: ChatConversationSummary }
   | { kind: 'search'; id: string; sortAt: string; search: DocumentSearchHistoryEntry }
+  | { kind: 'contact'; id: string; sortAt: string; contact: ContactHistorySummary }
 
 const formatTimestamp = (value: string) => formatter.format(new Date(value))
 
@@ -63,7 +65,7 @@ const getConversationAuthLabel = (sourceChannel: string | null) => {
   return 'Authenticated'
 }
 
-const getConversationSourceLabel = (conversation: ChatConversationSummary) => {
+const getConversationSourceLabel = (conversation: Pick<ChatConversationSummary, 'sourceChannel' | 'sourceOrigin'>) => {
   const host = formatHost(conversation.sourceOrigin)
   if (host) {
     return host
@@ -251,6 +253,43 @@ function SearchRow({
   )
 }
 
+function ContactRow({
+  contact,
+  onSelect,
+}: {
+  contact: ContactHistorySummary
+  onSelect: (item: SelectedHistoryItem) => void
+}) {
+  return (
+    <DashboardTableRow>
+      <DashboardTableCell className="w-36">
+        <div className="flex flex-wrap gap-1.5">
+          <HistoryBadge>Human</HistoryBadge>
+        </div>
+      </DashboardTableCell>
+      <DashboardTableCell>
+        <button
+          type="button"
+          onClick={() => onSelect({ kind: 'contact', id: contact.id })}
+          className="block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <span className="block truncate">{contact.messagePreview || 'Talk to a human request'}</span>
+        </button>
+        <p className="mt-1 truncate text-xs text-muted-foreground">{contact.messagePreview}</p>
+      </DashboardTableCell>
+      <DashboardTableCell className="w-44 text-sm text-muted-foreground">
+        <span className="block truncate">{getConversationSourceLabel(contact)}</span>
+      </DashboardTableCell>
+      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+        <span className="block truncate">{contact.userEmail} - {contact.status}</span>
+      </DashboardTableCell>
+      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+        {formatTimestamp(contact.createdAt)}
+      </DashboardTableCell>
+    </DashboardTableRow>
+  )
+}
+
 function HistoryTable({
   items,
   emptyMessage,
@@ -285,8 +324,10 @@ function HistoryTable({
               conversation={item.conversation}
               onSelect={onSelect}
             />
-          ) : (
+          ) : item.kind === 'search' ? (
             <SearchRow key={item.id} search={item.search} onSelect={onSelect} />
+          ) : (
+            <ContactRow key={item.id} contact={item.contact} onSelect={onSelect} />
           ),
         )}
       </DashboardTableBody>
@@ -312,6 +353,10 @@ export function HistoryList({
   searchTotal,
   searchPage,
   searchTotalPages,
+  contacts,
+  contactTotal,
+  contactPage,
+  contactTotalPages,
   allHistoryItems,
   allTotal,
   allPage,
@@ -320,6 +365,7 @@ export function HistoryList({
   onSelectItem,
   onConversationPageChange,
   onSearchPageChange,
+  onContactPageChange,
   onAllPageChange,
   onNavigate,
 }: {
@@ -340,6 +386,10 @@ export function HistoryList({
   searchTotal: number
   searchPage: number
   searchTotalPages: number
+  contacts: ContactHistorySummary[]
+  contactTotal: number
+  contactPage: number
+  contactTotalPages: number
   allHistoryItems: HistoryListItem[]
   allTotal: number
   allPage: number
@@ -348,19 +398,21 @@ export function HistoryList({
   onSelectItem: (item: SelectedHistoryItem) => void
   onConversationPageChange: (page: number) => void
   onSearchPageChange: (page: number) => void
+  onContactPageChange: (page: number) => void
   onAllPageChange: (page: number) => void
   onNavigate: (href: string) => void
 }) {
   return (
     <DashboardPage
       title="Activity"
-      description="Review past chats and searches. Retrieval diagnostics live here."
+      description="Review past chats, searches, and Talk to a human requests. Retrieval diagnostics live here."
       actions={
         <div className="bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]">
               {([
                 { value: 'all', label: 'All' },
                 { value: 'chat', label: 'Chats' },
                 { value: 'search', label: 'Searches' },
+                { value: 'contact', label: 'Human' },
               ] as const).map((option) => (
                 <button
                   key={option.value}
@@ -404,6 +456,8 @@ export function HistoryList({
                     : 'Load content first, then ask one question. Conversation activity will appear here after that.'
                   : filter === 'search'
                     ? 'Document searches will appear here after someone runs a search.'
+                    : filter === 'contact'
+                      ? 'Talk to a human requests will appear here after someone asks for follow-up.'
                     : onboarding.hasReadyDocuments
                       ? 'Your workspace is ready. Ask the first question or run a document search to start building activity.'
                       : 'Load content first, then ask one question or run a document search. Activity will appear here after that.'}
@@ -573,6 +627,52 @@ export function HistoryList({
                   totalItems={searchTotal}
                   onPrevious={() => onSearchPageChange(Math.max(1, searchPage - 1))}
                   onNext={() => onSearchPageChange(Math.min(searchTotalPages, searchPage + 1))}
+                />
+              </section>
+            ) : null}
+            {filter === 'contact' ? (
+              <section className="space-y-3">
+                <HistoryPagination
+                  accountId={accountId}
+                  workspaceId={workspaceId}
+                  routeState={routeState}
+                  filter="contact"
+                  currentPage={contactPage}
+                  totalPages={contactTotalPages}
+                  pageSize={pageSize}
+                  pageItemCount={isLoading ? pageSize : contacts.length}
+                  totalItems={contactTotal}
+                  onPrevious={() => onContactPageChange(Math.max(1, contactPage - 1))}
+                  onNext={() => onContactPageChange(Math.min(contactTotalPages, contactPage + 1))}
+                />
+                {isLoading ? (
+                  <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border">
+                    <LogoSpinner imageClassName="h-7 w-7" />
+                  </div>
+                ) : (
+                  <HistoryTable
+                    items={contacts.map((contact) => ({
+                      kind: 'contact',
+                      id: contact.id,
+                      sortAt: contact.sortAt,
+                      contact,
+                    }))}
+                    emptyMessage="No saved Talk to a human requests on this page."
+                    onSelect={onSelectItem}
+                  />
+                )}
+                <HistoryPagination
+                  accountId={accountId}
+                  workspaceId={workspaceId}
+                  routeState={routeState}
+                  filter="contact"
+                  currentPage={contactPage}
+                  totalPages={contactTotalPages}
+                  pageSize={pageSize}
+                  pageItemCount={isLoading ? pageSize : contacts.length}
+                  totalItems={contactTotal}
+                  onPrevious={() => onContactPageChange(Math.max(1, contactPage - 1))}
+                  onNext={() => onContactPageChange(Math.min(contactTotalPages, contactPage + 1))}
                 />
               </section>
             ) : null}

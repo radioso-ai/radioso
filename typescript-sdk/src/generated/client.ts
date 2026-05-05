@@ -177,7 +177,7 @@ export class GeneratedRadiosoClient {
     });
   }
 
-  createChatResponse(body: ChatCreateRequest): Promise<AssistantChatResponse> {
+  createChatResponse(body: ChatCreateRequest): Promise<ChatResponse> {
     return requestJson(this.config, {
       method: "POST",
       path: "/api/v1/assistant/chat",

@@ -17,11 +17,26 @@ export class AssistantHistoryService {
     return this.chatHistoryService.listItems(workspaceId, input);
   }
 
+  listContacts(
+    workspaceId: string,
+    input: { limit: number; offset?: number },
+  ) {
+    return this.chatHistoryService.listContacts(workspaceId, input);
+  }
+
   getConversation(
     workspaceId: string,
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ) {
     return this.chatHistoryService.getConversation(workspaceId, conversationId, input);
+  }
+
+  getContactRequest(
+    workspaceId: string,
+    requestId: string,
+    input: { limit: number; offset?: number; cursor?: string },
+  ) {
+    return this.chatHistoryService.getContactRequest(workspaceId, requestId, input);
   }
 }

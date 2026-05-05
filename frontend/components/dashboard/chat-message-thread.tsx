@@ -5,7 +5,7 @@ import type { CSSProperties, KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, UserRound } from 'lucide-react'
 import type { WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
 import type {
@@ -53,7 +53,7 @@ export function ChatMessageThread({
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
-  onSuggestionSelect?: (text: string, messageId: string) => void
+  onSuggestionSelect?: (suggestion: ChatSuggestion, messageId: string) => void
   onMessageSelect?: (messageId: string) => void
   selectedMessageId?: string
   assistantAvatarUrl?: string | null
@@ -232,8 +232,9 @@ export function ChatMessageThread({
                           <div className="flex w-full flex-col gap-2">
                             {message.suggestions
                               .filter((suggestion) => suggestion.text.trim())
-                              .map((suggestion, suggestionIndex) =>
-                                onSuggestionSelect ? (
+                              .map((suggestion, suggestionIndex) => {
+                                const isContactAction = suggestion.action?.kind === 'contact_human'
+                                return onSuggestionSelect ? (
                                   <Button
                                     key={`${message.id}-suggestion-${suggestionIndex}`}
                                     type="button"
@@ -247,9 +248,10 @@ export function ChatMessageThread({
                                     style={themedSuggestionButtons ? suggestionThemeVars : undefined}
                                     onClick={(event) => {
                                       event.stopPropagation()
-                                      onSuggestionSelect(suggestion.text, message.id)
+                                      onSuggestionSelect(suggestion, message.id)
                                     }}
                                   >
+                                    {isContactAction ? <UserRound className="mr-2 h-4 w-4 shrink-0" /> : null}
                                     {suggestion.text}
                                   </Button>
                                 ) : (
@@ -268,8 +270,8 @@ export function ChatMessageThread({
                                   >
                                     {suggestion.text}
                                   </div>
-                                ),
-                              )}
+                                )
+                              })}
                           </div>
                         </div>
                       ) : null}

@@ -6,6 +6,7 @@ import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.j
 import {
   collectionPageQuerySchema,
   conversationParamsSchema,
+  historyContactParamsSchema,
   conversationWindowQuerySchema,
   historySearchParamsSchema,
   historyItemsPageQuerySchema,
@@ -55,6 +56,45 @@ export const createHistoryRoutes = (dependencies: AppDependencies): Router => {
       }
       const page = await dependencies.documentSearchHistoryService.listHistory(workspaceId, parsedQuery.data);
       res.status(200).json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/contact", workspaceSession, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedQuery = historyItemsPageQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const page = await dependencies.assistantHistoryService.listContacts(workspaceId, parsedQuery.data);
+      res.status(200).json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/contact/:requestId", workspaceSession, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedParams = historyContactParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      const parsedQuery = conversationWindowQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const contact = await dependencies.assistantHistoryService.getContactRequest(
+        workspaceId,
+        parsedParams.data.requestId,
+        parsedQuery.data,
+      );
+      res.status(200).json(contact);
     } catch (error) {
       next(error);
     }

@@ -1535,6 +1535,9 @@ components:
           type: string
         assistantBootstrapActive:
           type: boolean
+        actions:
+          type: object
+          additionalProperties: {}
         expiresAt:
           type: string
           format: date-time
@@ -2373,11 +2376,18 @@ components:
           type: string
         kind:
           type: string
-          enum:
-            - deeper
-            - broader
         citation:
           $ref: "#/components/schemas/Citation"
+        action:
+          type: object
+          properties:
+            kind:
+              type: string
+            payload:
+              type: object
+              additionalProperties: {}
+          required:
+            - kind
       required:
         - text
         - kind

@@ -81,6 +81,8 @@ import {
 } from "../composition/index.js";
 import type { AppDependencies } from "./types.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import { NoopChatActionProvider } from "../../modules/chat/services/chatActionProvider.js";
+import { NoopContactHistoryProvider } from "../../modules/chat/services/contactHistoryProvider.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -254,7 +256,31 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditEventRepository,
     documentRepository,
   );
+  const abuseControlService = new AbuseControlService(new AbuseControlRepository(database));
+  const emailService = createEmailService(env);
   const chatGateway = llmRegistry.createChatGateway();
+  const chatActionProvider = !composition.chatActionProviderRegistration
+    ? new NoopChatActionProvider()
+    : typeof composition.chatActionProviderRegistration === "function"
+      ? composition.chatActionProviderRegistration({
+          database,
+          chatGateway,
+          logger,
+          conversationRepository,
+          messageRepository,
+          auditService,
+          abuseControlService,
+          emailService,
+      })
+      : composition.chatActionProviderRegistration;
+  const contactHistoryProvider = !composition.contactHistoryProviderRegistration
+    ? new NoopContactHistoryProvider()
+    : typeof composition.contactHistoryProviderRegistration === "function"
+      ? composition.contactHistoryProviderRegistration({
+          database,
+          logger,
+        })
+      : composition.contactHistoryProviderRegistration;
   const groundedMissResponseComposer = llmRegistry.createGroundedMissResponseComposer();
   const chatService = new ChatService(
     conversationRepository,
@@ -266,6 +292,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     productAnalyticsService,
     workspaceRepository,
     usageLimitPolicy,
+    chatActionProvider,
   );
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -281,6 +308,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     messageRepository,
     auditEventRepository,
     new HistoryItemsRepository(database),
+    contactHistoryProvider,
   );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
@@ -300,7 +328,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
   const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository);
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
-  const abuseControlService = new AbuseControlService(new AbuseControlRepository(database));
   const connectorRegistry = createDefaultConnectorRegistry(composition.connectors);
   if (env.CONNECTOR_ENCRYPTION_KEY) {
     connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY);
@@ -312,7 +339,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       "Connector secret encryption is not configured; secret-field writes will be rejected until this is fixed",
     );
   }
-  const emailService = createEmailService(env);
   const emailVerificationService = new EmailVerificationService({
     env,
     auditService,
@@ -353,6 +379,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     productAnalyticsService,
     capabilityPolicy: composition.capabilityPolicy,
     usageLimitPolicy,
+    chatActionProvider,
+    contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     authService: verificationAwareAuthService,
@@ -385,6 +413,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalAnswerService,
     platformSettingsService,
     accountRepository,
+    userRepository,
     workspaceRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,

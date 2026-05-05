@@ -2340,6 +2340,10 @@
           "assistantBootstrapActive": {
             "type": "boolean"
           },
+          "actions": {
+            "type": "object",
+            "additionalProperties": {}
+          },
           "expiresAt": {
             "type": "string",
             "format": "date-time"
@@ -3556,14 +3560,25 @@
             "type": "string"
           },
           "kind": {
-            "type": "string",
-            "enum": [
-              "deeper",
-              "broader"
-            ]
+            "type": "string"
           },
           "citation": {
             "$ref": "#/components/schemas/Citation"
+          },
+          "action": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "kind"
+            ]
           }
         },
         "required": [

@@ -4,6 +4,7 @@ import { type ReactNode } from 'react'
 
 import {
   type ChatConversationTurn,
+  type ContactHistoryDetail,
   type DocumentSearchResponse,
 } from '@/lib/api'
 import {
@@ -43,6 +44,65 @@ const HIDDEN_SUPPORT_LABELS = {
 
 const formatDiagnosticLabel = (value: string) => value.replaceAll('_', ' ')
 
+const contactStatusLabels: Record<ContactHistoryDetail['status'], string> = {
+  pending: 'Pending',
+  delivering: 'Delivering',
+  delivered: 'Delivered',
+  failed: 'Failed',
+}
+
+function ContactRequestPanel({
+  contact,
+  className,
+}: {
+  contact: ContactHistoryDetail
+  className?: string
+}) {
+  return (
+    <div className={className}>
+      <div className="rounded-lg border border-border/70 bg-background/70 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">Talk to a human request</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {contactStatusLabels[contact.status]} - {contact.triggerSource.replaceAll('_', ' ')}
+            </p>
+          </div>
+          <CopyValueField
+            label="Email:"
+            value={contact.userEmail}
+            copyValue={contact.userEmail}
+            ariaLabel="Copy contact email"
+            compact
+            fitContent
+            inlineLabel
+          />
+        </div>
+        <div className="mt-4">
+          <p className="text-xs font-medium uppercase tracking-normal text-muted-foreground">Message</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{contact.message}</p>
+        </div>
+        {contact.triggerReason || contact.finalDeliveryError ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {contact.triggerReason ? (
+              <div>
+                <p className="text-xs font-medium uppercase tracking-normal text-muted-foreground">Trigger reason</p>
+                <p className="mt-1 text-sm text-muted-foreground">{contact.triggerReason}</p>
+              </div>
+            ) : null}
+            {contact.finalDeliveryError ? (
+              <div>
+                <p className="text-xs font-medium uppercase tracking-normal text-muted-foreground">Delivery error</p>
+                <p className="mt-1 text-sm text-destructive">{contact.finalDeliveryError}</p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export function ChatHistoryView({
   accountId,
   onboarding,
@@ -65,6 +125,10 @@ export function ChatHistoryView({
     searchTotal,
     searchPage,
     searchTotalPages,
+    contacts: contactPageItems,
+    contactTotal,
+    contactPage,
+    contactTotalPages,
     allHistoryItems,
     allTotal,
     allPage,
@@ -76,6 +140,7 @@ export function ChatHistoryView({
     onSelectItem,
     onConversationPageChange,
     onSearchPageChange,
+    onContactPageChange,
     onAllPageChange,
     onNavigate,
   } = useHistoryListState({ accountId, routeState })
@@ -83,6 +148,7 @@ export function ChatHistoryView({
   const {
     conversationDetail,
     searchDetail,
+    contactDetail,
     isDetailLoading,
     detailError,
     selectedThreadMessage,
@@ -127,6 +193,10 @@ export function ChatHistoryView({
         searchTotal={searchTotal}
         searchPage={searchPage}
         searchTotalPages={searchTotalPages}
+        contacts={contactPageItems}
+        contactTotal={contactTotal}
+        contactPage={contactPage}
+        contactTotalPages={contactTotalPages}
         allHistoryItems={allHistoryItems}
         allTotal={allTotal}
         allPage={allPage}
@@ -135,6 +205,7 @@ export function ChatHistoryView({
         onSelectItem={onSelectItem}
         onConversationPageChange={onConversationPageChange}
         onSearchPageChange={onSearchPageChange}
+        onContactPageChange={onContactPageChange}
         onAllPageChange={onAllPageChange}
         onNavigate={onNavigate}
       />
@@ -162,21 +233,33 @@ export function ChatHistoryView({
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <DrawerTitle className="sr-only">
-                  {selectedItem?.kind === 'chat' ? 'Conversation details' : 'Search details'}
+                  {selectedItem?.kind === 'chat'
+                    ? 'Conversation details'
+                    : selectedItem?.kind === 'contact'
+                      ? 'Talk to a human request details'
+                      : 'Search details'}
                 </DrawerTitle>
                 {selectedItem ? (
                   <div className="space-y-1">
                     <CopyValueField
-                      label={selectedItem.kind === 'chat' ? 'Conversation ID:' : 'Search ID:'}
+                      label={selectedItem.kind === 'chat'
+                        ? 'Conversation ID:'
+                        : selectedItem.kind === 'contact'
+                          ? 'Talk to a human request ID:'
+                          : 'Search ID:'}
                       value={selectedItem.id}
                       copyValue={selectedItem.id}
-                      ariaLabel={selectedItem.kind === 'chat' ? 'Copy conversation ID' : 'Copy search ID'}
+                      ariaLabel={selectedItem.kind === 'chat'
+                        ? 'Copy conversation ID'
+                        : selectedItem.kind === 'contact'
+                          ? 'Copy Talk to a human request ID'
+                          : 'Copy search ID'}
                       compact
                       wrap
                       fitContent
                       inlineLabel
                     />
-                    {selectedItem.kind === 'chat' && conversationDetail ? (
+                    {(selectedItem.kind === 'chat' || selectedItem.kind === 'contact') && conversationDetail ? (
                       <p className="text-xs text-muted-foreground">
                         {formatConversationSource(conversationDetail.sourceChannel, conversationDetail.sourceOrigin) ?? 'Direct chat'}
                       </p>
@@ -200,9 +283,12 @@ export function ChatHistoryView({
               <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
                 {detailError}
               </div>
-            ) : selectedItem?.kind === 'chat' && conversationDetail ? (
+            ) : (selectedItem?.kind === 'chat' || selectedItem?.kind === 'contact') && conversationDetail ? (
               <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(640px,1.1fr)]">
                 <div className="min-h-0 overflow-y-auto pr-1">
+                  {selectedItem.kind === 'contact' && contactDetail ? (
+                    <ContactRequestPanel contact={contactDetail.contact} className="mb-4" />
+                  ) : null}
                   {conversationDetail.hasOlderMessages ? (
                     <div className="mb-3 flex justify-center">
                       <Button

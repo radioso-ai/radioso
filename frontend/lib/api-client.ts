@@ -17,6 +17,7 @@ export interface StoredEmbedBootstrapSession {
   publicChatToken: string
   publicSessionId: string
   publicSessionToken: string
+  actions?: Record<string, unknown>
   expiresAt: string
 }
 
@@ -263,11 +264,23 @@ export const readStoredEmbedBootstrapSession = (token: string): StoredEmbedBoots
       return null
     }
 
+    const actions =
+      parsed.actions && typeof parsed.actions === 'object' && !Array.isArray(parsed.actions)
+        ? parsed.actions
+        : null
+
+    if (!actions) {
+      window.sessionStorage.removeItem(getEmbedBootstrapStorageKey(token))
+      storePublicSessionToken(parsed.publicChatToken, null)
+      return null
+    }
+
     return {
       workspaceName: typeof parsed.workspaceName === 'string' ? parsed.workspaceName : undefined,
       publicChatToken: parsed.publicChatToken,
       publicSessionId: parsed.publicSessionId,
       publicSessionToken: parsed.publicSessionToken,
+      actions,
       expiresAt: parsed.expiresAt,
     }
   } catch {

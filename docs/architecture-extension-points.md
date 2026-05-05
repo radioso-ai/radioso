@@ -24,6 +24,7 @@ Default composition must build and run without optional modules or deployment-sp
 | Document storage | Documents module | Storage adapter selection helper | Local or configured GCS storage follows existing environment behavior | Do not make storage-specific code part of document business logic |
 | Worker dispatch | Documents module | Job dispatcher and consumer adapter selection helpers | No-op polling, configured Cloud Tasks dispatch, or configured AMQP dispatch follows environment behavior | Do not make queue-provider logic part of ingestion orchestration |
 | Retrieval construction | Retrieval module | Stage and strategy construction helpers | Existing vector, lexical, rewrite, rerank, and prompt assembly behavior remains the default | Do not add retrieval ranking behavior to HTTP routes |
+| Chat suggestion actions | Chat module | Generic chat action provider registration through application composition | Default provider is a no-op and emits no action suggestions | Do not add Enterprise-specific action kinds, persistence, or route contracts to OSS chat services |
 
 ## Capability Policy
 

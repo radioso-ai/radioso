@@ -16,6 +16,13 @@ import type { AssistantTurnOutcome, HiddenSupportEvidence, ValidationDisposition
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import type { ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
+import {
+  NoopContactHistoryProvider,
+  type ContactHistoryDetail,
+  type ContactHistoryPage,
+  type ContactHistoryProviderPort,
+  type ContactHistorySummary,
+} from "./contactHistoryProvider.js";
 
 export interface ChatConversationSummary {
   id: string;
@@ -116,6 +123,12 @@ export type HistoryItem =
       id: string;
       sortAt: string;
       search: DocumentSearchHistoryEntry;
+    }
+  | {
+      kind: "contact";
+      id: string;
+      sortAt: string;
+      contact: ContactHistorySummary;
     };
 
 export interface HistoryItemsPage {
@@ -123,6 +136,11 @@ export interface HistoryItemsPage {
   total: number;
   nextCursor: null;
   hasMore: boolean;
+}
+
+export interface ContactHistoryDetailResponse {
+  contact: ContactHistoryDetail;
+  conversation: ChatConversationDetail;
 }
 
 export interface PublicConversationSummary {
@@ -297,6 +315,7 @@ export class ChatHistoryService {
     private readonly messageRepository: MessageRepositoryPort,
     private readonly auditEventRepository: AuditEventRepositoryPort,
     private readonly historyItemsRepository: HistoryItemsRepositoryPort,
+    private readonly contactHistoryProvider: ContactHistoryProviderPort = new NoopContactHistoryProvider(),
   ) {}
 
   async listConversations(
@@ -324,18 +343,74 @@ export class ChatHistoryService {
     workspaceId: string,
     input: { limit: number; offset?: number } = { limit: 50, offset: 0 },
   ): Promise<HistoryItemsPage> {
-    const { items, total, hasMore } = await this.historyItemsRepository.listPageByWorkspaceId(workspaceId, input);
+    const offset = input.offset ?? 0;
+    const sourceLimit = offset + input.limit;
+    const [basePage, contactPage] = await Promise.all([
+      this.historyItemsRepository.listPageByWorkspaceId(workspaceId, { limit: sourceLimit, offset: 0 }),
+      this.contactHistoryProvider.listPageByWorkspaceId(workspaceId, { limit: sourceLimit, offset: 0 }),
+    ]);
+    const baseItems = basePage.items;
+    const contactItems = contactPage.contacts.map((contact): HistoryItem => ({
+      kind: "contact",
+      id: contact.id,
+      sortAt: contact.sortAt,
+      contact,
+    }));
+    const mergedItems = [
+      ...baseItems.map((item): HistoryItem => buildHistoryItem(item)),
+      ...contactItems,
+    ].sort((left, right) => {
+      const timeDiff = new Date(right.sortAt).getTime() - new Date(left.sortAt).getTime();
+      return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
+    });
+    const items = mergedItems.slice(offset, offset + input.limit);
     const conversationIds = items.flatMap((item) => item.kind === "chat" ? [item.conversation.id] : []);
     const messageSummaries = await this.messageRepository.summarizeByConversationIds(workspaceId, conversationIds);
+    const total = basePage.total + contactPage.total;
 
     return {
-      items: items.map((item): HistoryItem => buildHistoryItem(
-        item,
-        item.kind === "chat" ? messageSummaries.get(item.conversation.id) : undefined,
-      )),
+      items: items.map((item): HistoryItem => {
+        if (item.kind !== "chat") {
+          return item;
+        }
+
+        return {
+          ...item,
+          conversation: {
+            ...item.conversation,
+            messageCount: messageSummaries.get(item.conversation.id)?.messageCount ?? 0,
+            userMessageCount: messageSummaries.get(item.conversation.id)?.userMessageCount ?? 0,
+            assistantMessageCount: messageSummaries.get(item.conversation.id)?.assistantMessageCount ?? 0,
+            preview: messageSummaries.get(item.conversation.id)?.preview ?? null,
+          },
+        };
+      }),
       total,
       nextCursor: null,
-      hasMore,
+      hasMore: offset + items.length < total,
+    };
+  }
+
+  async listContacts(
+    workspaceId: string,
+    input: { limit: number; offset?: number } = { limit: 50, offset: 0 },
+  ): Promise<ContactHistoryPage> {
+    return this.contactHistoryProvider.listPageByWorkspaceId(workspaceId, input);
+  }
+
+  async getContactRequest(
+    workspaceId: string,
+    requestId: string,
+    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
+  ): Promise<ContactHistoryDetailResponse> {
+    const contact = await this.contactHistoryProvider.getById(workspaceId, requestId);
+    if (!contact) {
+      throw notFound("Contact request not found");
+    }
+
+    return {
+      contact,
+      conversation: await this.getConversation(workspaceId, contact.conversationId, input),
     };
   }
 

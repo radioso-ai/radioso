@@ -1,16 +1,27 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 
-import { Send, Sparkles, X } from 'lucide-react'
+import { MoreHorizontal, RotateCcw, Send, Sparkles, UserRound, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
+import { ChatMessageThread, type ChatThreadMessage } from '@/components/dashboard/chat-message-thread'
+import {
+  HumanContactInlineComposer,
+  type HumanContactInlineRequest,
+} from '@/components/chat/human-contact-inline-composer'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
-import type { WebsiteEmbedPageContext } from '@/lib/api'
+import { type ChatSuggestion, type HumanContactTriggerSource, type WebsiteEmbedPageContext } from '@/lib/api'
+import { HUMAN_CONTACT_REQUEST_TRIGGER_REASON, isHumanContactRequest } from '@/lib/human-contact-intent'
 import {
   buildWebsiteEmbedSurfaceCssVars,
   formatWebsiteEmbedDisclaimer,
@@ -229,6 +240,65 @@ function RateLimitBanner({
   )
 }
 
+function PublicChatActionsMenu({
+  copy,
+  theme,
+  contactAvailable,
+  contactDisabled,
+  clearDisabled,
+  onContact,
+  onClear,
+  className = 'h-8 w-8 hover:opacity-90',
+}: {
+  copy: ReturnType<typeof getWebsiteEmbedCopy>
+  theme: ReturnType<typeof getWebsiteEmbedTheme>
+  contactAvailable: boolean
+  contactDisabled: boolean
+  clearDisabled: boolean
+  onContact: () => void
+  onClear: () => void
+  className?: string
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className={className}
+          style={{ color: theme.mutedForeground }}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+          <span className="sr-only">Chat options</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuItem
+          disabled={clearDisabled}
+          onSelect={() => {
+            onClear()
+          }}
+        >
+          <RotateCcw className="mr-2 h-4 w-4" />
+          {copy.publicChatNewChatLabel}
+        </DropdownMenuItem>
+        {contactAvailable ? (
+          <DropdownMenuItem
+            disabled={contactDisabled}
+            onSelect={() => {
+              onContact()
+            }}
+          >
+            <UserRound className="mr-2 h-4 w-4" />
+            Talk to a human
+          </DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 function PublicChatContent({
   initialWorkspaceName,
   localeOverride,
@@ -238,6 +308,7 @@ function PublicChatContent({
   copyOverrides,
   themeOverrides,
   surface,
+  publicChatToken,
 }: {
   initialWorkspaceName?: string | null
   localeOverride?: string | null
@@ -247,14 +318,19 @@ function PublicChatContent({
   copyOverrides?: WebsiteEmbedCopyOverrides | null
   themeOverrides?: WebsiteEmbedThemeOverrides | null
   surface: PublicChatSurface
+  publicChatToken: string
 }) {
   const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
   const theme = getWebsiteEmbedTheme(themeOverrides)
   const [input, setInput] = useState('')
+  const [contactRequest, setContactRequest] = useState<HumanContactInlineRequest | null>(null)
+  const [contactConfirmation, setContactConfirmation] = useState<ChatThreadMessage | null>(null)
   const { isCompactKeyboardLayout, isNarrowLayout } = useWebsiteEmbedViewportLayout(surface === 'embed')
   const {
+    conversationId,
     messages,
     workspaceName,
+    publicSessionActions,
     isLoading,
     isHydrating,
     isLoadingOlderMessages,
@@ -270,6 +346,16 @@ function PublicChatContent({
   const messagesScrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const resolvedWorkspaceName = workspaceName ?? initialWorkspaceName ?? copy.embeddedChatTitle
+  const contactAction = publicSessionActions.contact
+  const contactAvailable =
+    Boolean(contactAction) &&
+    typeof contactAction === 'object' &&
+    !Array.isArray(contactAction) &&
+    (contactAction as { configured?: unknown }).configured === true
+  const latestAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant')
+  const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages || !latestAssistantMessage
+  const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages
+  const visibleMessages = contactConfirmation ? [...messages, contactConfirmation] : messages
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     if (messagesScrollRef.current) {
@@ -285,7 +371,7 @@ function PublicChatContent({
 
   useEffect(() => {
     scrollToBottom()
-  }, [isLoading, messages])
+  }, [contactConfirmation, isLoading, messages])
 
   useEffect(() => {
     if (!isCompactKeyboardLayout) {
@@ -310,17 +396,28 @@ function PublicChatContent({
     document.title = workspaceName
   }, [workspaceName])
 
-  const handleSubmit = async (event: React.FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
 
     if (!input.trim() || isLoading) return
 
     const nextInput = input.trim()
+    if (contactAvailable && latestAssistantMessage && isHumanContactRequest(nextInput)) {
+      setInput('')
+      openContactComposer({
+        assistantMessageId: latestAssistantMessage.id,
+        triggerSource: 'explicit_user_request',
+        triggerReason: HUMAN_CONTACT_REQUEST_TRIGGER_REASON,
+      })
+      return
+    }
+
     setInput('')
+    setContactConfirmation(null)
     await sendMessage(nextInput, { method: 'typed' })
   }
 
-  const handleKeyDown = (event: React.KeyboardEvent) => {
+  const handleKeyDown = (event: ReactKeyboardEvent) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       handleSubmit(event)
@@ -367,9 +464,51 @@ function PublicChatContent({
     return () => window.removeEventListener('keydown', handleTypingShortcut)
   }, [input.length, isHydrating, isUnavailable, surface])
 
-  const handleSuggestionSelect = (text: string, messageId: string) => {
+  const openContactComposer = (input: {
+    assistantMessageId?: string
+    triggerSource: HumanContactTriggerSource
+    triggerReason?: string
+  }) => {
+    if (!conversationId || !latestAssistantMessage) {
+      return
+    }
+
+    setContactConfirmation(null)
+    setContactRequest({
+      conversationId,
+      assistantMessageId: input.assistantMessageId ?? latestAssistantMessage.id,
+      triggerSource: input.triggerSource,
+      triggerReason: input.triggerReason,
+    })
+  }
+
+  const handleManualContact = () => {
+    if (!latestAssistantMessage) {
+      return
+    }
+    openContactComposer({
+      assistantMessageId: latestAssistantMessage.id,
+      triggerSource: 'manual',
+    })
+  }
+
+  const handleSuggestionSelect = (suggestion: ChatSuggestion, messageId: string) => {
     if (isLoading) return
-    void sendMessage(text, {
+
+    if (suggestion.action?.kind === 'contact_human') {
+      const payload = suggestion.action.payload ?? {}
+      const triggerSource = typeof payload.triggerSource === 'string'
+        ? payload.triggerSource as HumanContactTriggerSource
+        : 'assistant_suggestion'
+      const assistantMessageId = typeof payload.assistantMessageId === 'string'
+        ? payload.assistantMessageId
+        : messageId
+      const triggerReason = typeof payload.triggerReason === 'string' ? payload.triggerReason : undefined
+      openContactComposer({ assistantMessageId, triggerSource, triggerReason })
+      return
+    }
+
+    void sendMessage(suggestion.text, {
       method: 'suggestion_click',
       suggestionSourceMessageId: messageId,
     })
@@ -378,11 +517,26 @@ function PublicChatContent({
   const handleStartNewChat = async () => {
     setInput('')
     if (onStartNewChat) {
+      setContactRequest(null)
+      setContactConfirmation(null)
       await onStartNewChat()
       return
     }
 
+    setContactRequest(null)
+    setContactConfirmation(null)
     await startNewChat()
+  }
+
+  const handleContactSubmitted = (content: string) => {
+    setContactRequest(null)
+    setContactConfirmation({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content,
+      createdAt: new Date().toISOString(),
+      status: 'complete',
+    })
   }
 
   if (isHydrating) {
@@ -413,17 +567,28 @@ function PublicChatContent({
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden" style={{ color: theme.panelForeground }}>
       {isCompactKeyboardLayout && onRequestCollapse ? (
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          onClick={onRequestCollapse}
-          className="absolute right-2 top-2 z-10 h-8 w-8 hover:opacity-90"
-          style={{ color: theme.mutedForeground }}
-        >
-          <X className="h-4 w-4" />
-          <span className="sr-only">{copy.publicChatCollapseLabel}</span>
-        </Button>
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
+          <PublicChatActionsMenu
+            copy={copy}
+            theme={theme}
+            contactAvailable={contactAvailable}
+            contactDisabled={contactDisabled}
+            clearDisabled={clearDisabled}
+            onContact={handleManualContact}
+            onClear={() => void handleStartNewChat()}
+          />
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={onRequestCollapse}
+            className="h-8 w-8 hover:opacity-90"
+            style={{ color: theme.mutedForeground }}
+          >
+            <X className="h-4 w-4" />
+            <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+          </Button>
+        </div>
       ) : null}
 
       {!isCompactKeyboardLayout ? (
@@ -447,17 +612,15 @@ function PublicChatContent({
               </div>
             </div>
             <div className="mt-1 flex items-center gap-1">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => void handleStartNewChat()}
-                disabled={isLoading || isHydrating || isLoadingOlderMessages}
-                className="h-8 px-2 text-xs hover:opacity-90"
-                style={{ color: theme.mutedForeground }}
-              >
-                {copy.publicChatNewChatLabel}
-              </Button>
+              <PublicChatActionsMenu
+                copy={copy}
+                theme={theme}
+                contactAvailable={contactAvailable}
+                contactDisabled={contactDisabled}
+                clearDisabled={clearDisabled}
+                onContact={handleManualContact}
+                onClear={() => void handleStartNewChat()}
+              />
               {onRequestCollapse ? (
                 <Button
                   type="button"
@@ -483,7 +646,7 @@ function PublicChatContent({
         }`}
         style={{ background: theme.panelBackground }}
       >
-        {messages.length === 0 ? (
+        {visibleMessages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <div className="mb-4">
               <AssistantAvatar avatarUrl={avatarUrl} label={copy.publicChatEmptyTitle} themeOverrides={themeOverrides} className="size-12" />
@@ -516,7 +679,7 @@ function PublicChatContent({
               </div>
             ) : null}
             <ChatMessageThread
-              messages={messages}
+              messages={visibleMessages}
               onOpenDocument={async () => 'unavailable'}
               onSuggestionSelect={handleSuggestionSelect}
               assistantAvatarUrl={avatarUrl}
@@ -556,34 +719,45 @@ function PublicChatContent({
             </p>
           </div>
         ) : null}
-        <form onSubmit={handleSubmit} className={`mx-auto flex max-w-3xl items-end ${isCompactKeyboardLayout ? 'gap-2' : 'gap-3'}`}>
-          <Textarea
-            ref={inputRef}
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={copy.startPrompt}
-            className={`${isCompactKeyboardLayout ? 'min-h-10 max-h-24' : 'min-h-[44px] max-h-32'} resize-none placeholder:text-[var(--radioso-input-placeholder)]`}
-            style={{
-              background: theme.inputBackground,
-              borderColor: theme.inputBorder,
-              color: theme.inputForeground,
-            }}
+        {contactRequest ? (
+          <HumanContactInlineComposer
+            request={contactRequest}
+            publicChatToken={publicChatToken}
+            onCancel={() => setContactRequest(null)}
+            onSubmitted={handleContactSubmitted}
+            theme={theme}
+            compact={isCompactKeyboardLayout}
           />
-          <Button
-            type="submit"
-            size="icon"
-            className={`${isCompactKeyboardLayout ? 'h-10 w-10' : 'h-[44px] w-[44px]'} shrink-0 hover:opacity-90`}
-            disabled={isLoading || !input.trim()}
-            style={{
-              background: theme.accent,
-              color: theme.accentForeground,
-            }}
-          >
-            <Send className="h-4 w-4" />
-            <span className="sr-only">{copy.publicChatSendMessageLabel}</span>
-          </Button>
-        </form>
+        ) : (
+          <form onSubmit={handleSubmit} className={`mx-auto flex max-w-3xl items-end ${isCompactKeyboardLayout ? 'gap-2' : 'gap-3'}`}>
+            <Textarea
+              ref={inputRef}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={copy.startPrompt}
+              className={`${isCompactKeyboardLayout ? 'min-h-10 max-h-24' : 'min-h-[44px] max-h-32'} resize-none placeholder:text-[var(--radioso-input-placeholder)]`}
+              style={{
+                background: theme.inputBackground,
+                borderColor: theme.inputBorder,
+                color: theme.inputForeground,
+              }}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              className={`${isCompactKeyboardLayout ? 'h-10 w-10' : 'h-[44px] w-[44px]'} shrink-0 hover:opacity-90`}
+              disabled={isLoading || !input.trim()}
+              style={{
+                background: theme.accent,
+                color: theme.accentForeground,
+              }}
+            >
+              <Send className="h-4 w-4" />
+              <span className="sr-only">{copy.publicChatSendMessageLabel}</span>
+            </Button>
+          </form>
+        )}
       </div>
     </div>
   )
@@ -600,6 +774,7 @@ export function PublicChatShell({
   themeOverrides,
   surface = 'public',
   pageContext,
+  initialActions,
 }: {
   token: string
   initialWorkspaceName?: string | null
@@ -611,6 +786,7 @@ export function PublicChatShell({
   themeOverrides?: WebsiteEmbedThemeOverrides | null
   surface?: PublicChatSurface
   pageContext?: WebsiteEmbedPageContext | null
+  initialActions?: Record<string, unknown> | null
 }) {
   const theme = getWebsiteEmbedTheme(themeOverrides)
 
@@ -618,6 +794,7 @@ export function PublicChatShell({
     <AnonymousChatProvider
       token={token}
       sessionChannel={surface === 'public' ? 'anonymous_link' : null}
+      initialActions={initialActions}
       localeOverride={localeOverride}
       pageContext={pageContext}
     >
@@ -638,6 +815,7 @@ export function PublicChatShell({
           copyOverrides={copyOverrides}
           themeOverrides={themeOverrides}
           surface={surface}
+          publicChatToken={token}
         />
       </div>
     </AnonymousChatProvider>

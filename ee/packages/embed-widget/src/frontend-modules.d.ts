@@ -12,6 +12,7 @@ declare module '@/components/chat/public-chat-shell' {
     themeOverrides?: import('@/lib/embed-widget').WebsiteEmbedThemeOverrides | null
     surface?: 'public' | 'embed'
     pageContext?: import('@/lib/api').WebsiteEmbedPageContext | null
+    initialActions?: Record<string, unknown> | null
   }>
 }
 
@@ -35,6 +36,7 @@ declare module '@/lib/api' {
     publicSessionId: string
     publicSessionToken: string
     workspaceName?: string | null
+    actions?: Record<string, unknown>
     expiresAt: string
   }
 

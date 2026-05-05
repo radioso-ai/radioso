@@ -4,7 +4,6 @@ import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootst
 import { defaultRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
 import {
   InMemoryBootstrapGreetingCacheRepository,
-  InMemoryConversationRepository,
   InMemoryWorkspaceRepository,
   createAuditService,
 } from "../support/fakes.js";
@@ -16,8 +15,12 @@ const createRetrievalSettingsService = (customInstruction = "") => ({
   })),
 });
 
+const createProductAnalyticsService = () => ({
+  track: vi.fn(async () => null),
+});
+
 describe("chat bootstrap service", () => {
-  it("creates a first assistant turn using request locale override", async () => {
+  it("returns an ephemeral first assistant turn and records chat started analytics", async () => {
     const workspaceRepository = new InMemoryWorkspaceRepository();
     const workspace = await workspaceRepository.create("account-1", "Workspace");
     await workspaceRepository.updateAssistantBootstrapSettings(workspace.id, {
@@ -27,7 +30,6 @@ describe("chat bootstrap service", () => {
       proactiveGreetingEnabled: true,
     });
 
-    const conversationRepository = new InMemoryConversationRepository();
     const bootstrapGreetingCacheRepository = new InMemoryBootstrapGreetingCacheRepository();
     const chatGateway = {
       answer: vi.fn(async () => "Ciao! Sono Marta, la tua guida del museo."),
@@ -35,13 +37,15 @@ describe("chat bootstrap service", () => {
     };
     const auditService = createAuditService();
     const retrievalSettingsService = createRetrievalSettingsService();
+    const productAnalyticsService = createProductAnalyticsService();
     const service = new ChatBootstrapService(
       workspaceRepository,
       bootstrapGreetingCacheRepository,
-      conversationRepository,
       chatGateway as never,
       auditService,
       retrievalSettingsService,
+      undefined,
+      productAnalyticsService,
     );
 
     const result = await service.startConversation({
@@ -51,12 +55,29 @@ describe("chat bootstrap service", () => {
     });
 
     expect(result).toMatchObject({
-      conversationId: expect.any(String),
       answer: expect.any(String),
       citations: [],
     });
+    expect(result).not.toHaveProperty("conversationId");
     expect(auditService.events[0]?.metadata?.workflow).toBe("chat.bootstrap");
     expect(auditService.events[0]?.metadata?.executionClass).toBe("interactive_synchronous");
+    expect(auditService.events[0]?.metadata).not.toHaveProperty("conversationId");
+    expect(productAnalyticsService.track).toHaveBeenCalledWith(expect.objectContaining({
+      eventName: "chat.started",
+      workspaceId: workspace.id,
+      accountId: "account-1",
+      actorType: "authenticated_user",
+      subjectType: "workspace",
+      subjectId: workspace.id,
+      properties: expect.objectContaining({
+        sourceChannel: null,
+        sourceOrigin: null,
+        localeUsed: "it-IT",
+        cacheHit: false,
+        proactiveGreetingEnabled: true,
+      }),
+      source: "backend",
+    }));
   });
 
   it("reuses a cached greeting until the locale changes", async () => {
@@ -77,13 +98,15 @@ describe("chat bootstrap service", () => {
       streamAnswer: vi.fn(),
     };
     const retrievalSettingsService = createRetrievalSettingsService();
+    const productAnalyticsService = createProductAnalyticsService();
     const service = new ChatBootstrapService(
       workspaceRepository,
       new InMemoryBootstrapGreetingCacheRepository(),
-      new InMemoryConversationRepository(),
       chatGateway as never,
       createAuditService(),
       retrievalSettingsService,
+      undefined,
+      productAnalyticsService,
     );
 
     const firstItalian = await service.startConversation({
@@ -104,6 +127,12 @@ describe("chat bootstrap service", () => {
     expect(english?.answer).toBeDefined();
     expect(english?.answer).not.toBe(firstItalian?.answer);
     expect(chatGateway.answer).toHaveBeenCalledTimes(2);
+    expect(productAnalyticsService.track).toHaveBeenCalledTimes(3);
+    expect(productAnalyticsService.track).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      properties: expect.objectContaining({
+        cacheHit: true,
+      }),
+    }));
   });
 
   it("returns null when bootstrap is inactive", async () => {
@@ -112,7 +141,6 @@ describe("chat bootstrap service", () => {
     const service = new ChatBootstrapService(
       workspaceRepository,
       new InMemoryBootstrapGreetingCacheRepository(),
-      new InMemoryConversationRepository(),
       {
         answer: vi.fn(),
         streamAnswer: vi.fn(),
@@ -145,7 +173,6 @@ describe("chat bootstrap service", () => {
     const service = new ChatBootstrapService(
       workspaceRepository,
       new InMemoryBootstrapGreetingCacheRepository(),
-      new InMemoryConversationRepository(),
       chatGateway as never,
       createAuditService(),
       retrievalSettingsService,

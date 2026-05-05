@@ -71,6 +71,8 @@ import type { AppDependencies } from "../../src/app/server/types.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
+import { NoopChatActionProvider } from "../../src/modules/chat/services/chatActionProvider.js";
+import { NoopContactHistoryProvider } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { ApplicationRouteMount } from "../../src/app/composition/applicationModule.js";
 import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import {
@@ -765,6 +767,8 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     capabilityPolicy: new DefaultAllowCapabilityPolicy(),
     usageLimitPolicy,
+    chatActionProvider: new NoopChatActionProvider(),
+    contactHistoryProvider: new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
     applicationModules: new ApplicationModuleCoordinator({
       logger,
@@ -820,6 +824,7 @@ export const createTestDependencies = (overrides: {
     retrievalAnswerService,
     platformSettingsService,
     accountRepository,
+    userRepository,
     workspaceRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,

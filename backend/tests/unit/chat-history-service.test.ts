@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
+import type {
+  ContactHistoryDetail,
+  ContactHistoryProviderPort,
+  ContactHistorySummary,
+} from "../../src/modules/chat/services/contactHistoryProvider.js";
 import {
   InMemoryAuditEventRepository,
   InMemoryConversationRepository,
@@ -20,6 +25,38 @@ const createService = () => {
     service: new ChatHistoryService(conversationRepository, messageRepository, auditRepository, historyItemsRepository),
   };
 };
+
+class InMemoryContactHistoryProvider implements ContactHistoryProviderPort {
+  readonly contacts: ContactHistoryDetail[] = [];
+
+  async listPageByWorkspaceId(
+    workspaceId: string,
+    input: { limit: number; offset?: number },
+  ) {
+    const offset = input.offset ?? 0;
+    const page = this.contacts
+      .filter((contact) => contact.workspaceId === workspaceId)
+      .sort((left, right) => {
+        const timeDiff = new Date(right.sortAt).getTime() - new Date(left.sortAt).getTime();
+        return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
+      });
+    const contacts: ContactHistorySummary[] = page.slice(offset, offset + input.limit).map((contact) => ({
+      ...contact,
+      messagePreview: contact.messagePreview,
+    }));
+
+    return {
+      contacts,
+      total: page.length,
+      nextCursor: null,
+      hasMore: offset + contacts.length < page.length,
+    };
+  }
+
+  async getById(workspaceId: string, requestId: string) {
+    return this.contacts.find((contact) => contact.workspaceId === workspaceId && contact.id === requestId) ?? null;
+  }
+}
 
 describe("chat history service", () => {
   it("replays retrieval trace metadata for assistant turns", async () => {
@@ -416,5 +453,78 @@ describe("chat history service", () => {
       kind: "search",
       id: "44444444-4444-4444-8444-444444444444",
     });
+  });
+
+  it("includes human contact requests in mixed activity and returns linked conversation detail", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditRepository = new InMemoryAuditEventRepository();
+    const historyItemsRepository = new InMemoryHistoryItemsRepository(conversationRepository, auditRepository);
+    const contactHistoryProvider = new InMemoryContactHistoryProvider();
+    const service = new ChatHistoryService(
+      conversationRepository,
+      messageRepository,
+      auditRepository,
+      historyItemsRepository,
+      contactHistoryProvider,
+    );
+
+    const conversation = await conversationRepository.create("workspace-1");
+    conversation.updatedAt = new Date("2026-04-21T10:00:00.000Z");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Can I speak with a person?",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "I can collect that request.",
+    });
+
+    contactHistoryProvider.contacts.push({
+      id: "55555555-5555-4555-8555-555555555555",
+      sortAt: "2026-04-22T10:00:00.000Z",
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      assistantMessageId: assistant.id,
+      sourceChannel: "website_embed",
+      sourceOrigin: "https://example.com/help",
+      userEmail: "customer@example.com",
+      messagePreview: "Please contact me about billing.",
+      message: "Please contact me about billing.",
+      triggerSource: "manual",
+      triggerReason: null,
+      status: "pending",
+      attempts: 0,
+      finalDeliveryError: null,
+      createdAt: "2026-04-22T10:00:00.000Z",
+      updatedAt: "2026-04-22T10:00:00.000Z",
+    });
+
+    const itemsPage = await service.listItems("workspace-1", { limit: 10, offset: 0 });
+
+    expect(itemsPage.total).toBe(2);
+    expect(itemsPage.items[0]).toMatchObject({
+      kind: "contact",
+      id: "55555555-5555-4555-8555-555555555555",
+      contact: {
+        userEmail: "customer@example.com",
+        messagePreview: "Please contact me about billing.",
+      },
+    });
+
+    const detail = await service.getContactRequest("workspace-1", "55555555-5555-4555-8555-555555555555");
+
+    expect(detail.contact).toMatchObject({
+      userEmail: "customer@example.com",
+      message: "Please contact me about billing.",
+    });
+    expect(detail.conversation.messages.map((message) => message.content)).toEqual([
+      "Can I speak with a person?",
+      "I can collect that request.",
+    ]);
   });
 });

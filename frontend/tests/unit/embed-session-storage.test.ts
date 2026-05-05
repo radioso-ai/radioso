@@ -39,6 +39,7 @@ describe('embed session storage helpers', () => {
       publicChatToken: 'public-token',
       publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
       publicSessionToken: 'grant-token',
+      actions: { contact: { enabled: true, configured: true } },
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     })
 
@@ -47,6 +48,7 @@ describe('embed session storage helpers', () => {
       publicChatToken: 'public-token',
       publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
       publicSessionToken: 'grant-token',
+      actions: { contact: { enabled: true, configured: true } },
       expiresAt: expect.any(String),
     })
     expect(readStoredPublicSessionToken('public-token')).toBe('grant-token')
@@ -64,6 +66,22 @@ describe('embed session storage helpers', () => {
       publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
       publicSessionToken: 'grant-token',
       expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    })
+
+    expect(readStoredEmbedBootstrapSession('embed-token')).toBeNull()
+    expect(readStoredPublicSessionToken('public-token')).toBeNull()
+  })
+
+  it('drops legacy embed bootstrap sessions without action metadata', () => {
+    // @ts-expect-error test-only window stub
+    global.window = { sessionStorage: createSessionStorage() }
+
+    storeEmbedBootstrapSession('embed-token', {
+      workspaceName: 'Support concierge',
+      publicChatToken: 'public-token',
+      publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
+      publicSessionToken: 'grant-token',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
     })
 
     expect(readStoredEmbedBootstrapSession('embed-token')).toBeNull()

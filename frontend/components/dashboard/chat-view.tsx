@@ -1,20 +1,31 @@
 'use client'
 
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { FileText, RotateCcw, Send } from 'lucide-react'
+import { FileText, MoreHorizontal, RotateCcw, Send, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { type CitationOpenResult } from './chat-citations'
-import { documentsApi } from '@/lib/api'
+import { documentsApi, humanContactApi, type ChatSuggestion, type HumanContactTriggerSource } from '@/lib/api'
 import { useChatSession } from '@/lib/chat-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
+import { HUMAN_CONTACT_REQUEST_TRIGGER_REASON, isHumanContactRequest } from '@/lib/human-contact-intent'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useWorkspace } from '@/lib/workspace-context'
-import { ChatMessageThread } from './chat-message-thread'
+import {
+  HumanContactInlineComposer,
+  type HumanContactInlineRequest,
+} from '@/components/chat/human-contact-inline-composer'
+import { ChatMessageThread, type ChatThreadMessage } from './chat-message-thread'
 
 interface ChatViewProps {
   accountId: string
@@ -27,9 +38,13 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
   const router = useRouter()
   const [input, setInput] = useState('')
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
-  const { messages, isLoading, isInitialized, isBootstrapping, initializeSession, sendMessage, startNewChat } = useChatSession(activeWorkspaceId ?? accountId)
+  const { conversationId, messages, isLoading, isInitialized, isBootstrapping, initializeSession, sendMessage, startNewChat } = useChatSession(activeWorkspaceId ?? accountId)
+  const [contactAvailable, setContactAvailable] = useState(false)
+  const [contactRequest, setContactRequest] = useState<HumanContactInlineRequest | null>(null)
+  const [contactConfirmation, setContactConfirmation] = useState<ChatThreadMessage | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isInitializingView = (onboarding.isLoading || isBootstrapping || !isInitialized) && messages.length === 0
+  const visibleMessages = contactConfirmation ? [...messages, contactConfirmation] : messages
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -37,7 +52,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
 
   useEffect(() => {
     scrollToBottom()
-  }, [isLoading, messages])
+  }, [contactConfirmation, isLoading, messages])
 
   useEffect(() => {
     const userExpectedLocale =
@@ -46,16 +61,54 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
     void initializeSession(userExpectedLocale)
   }, [initializeSession])
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  useEffect(() => {
+    let active = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Workspace changes must clear stale Enterprise-only contact availability before probing the current workspace.
+    setContactAvailable(false)
+
+    const loadContactAvailability = async () => {
+      try {
+        const settings = await humanContactApi.getSettings()
+        if (active) {
+          setContactAvailable(settings.configured)
+        }
+      } catch {
+        if (active) {
+          setContactAvailable(false)
+        }
+      }
+    }
+
+    if (activeWorkspaceId) {
+      void loadContactAvailability()
+    }
+
+    return () => {
+      active = false
+    }
+  }, [activeWorkspaceId])
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading || isBootstrapping) return
 
     const nextInput = input.trim()
+    if (contactAvailable && latestAssistantMessage && isHumanContactRequest(nextInput)) {
+      setInput('')
+      openContactComposer({
+        assistantMessageId: latestAssistantMessage.id,
+        triggerSource: 'explicit_user_request',
+        triggerReason: HUMAN_CONTACT_REQUEST_TRIGGER_REASON,
+      })
+      return
+    }
+
     setInput('')
+    setContactConfirmation(null)
     await sendMessage(nextInput, { method: 'typed' })
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSubmit(e)
@@ -67,6 +120,8 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
       typeof navigator !== 'undefined' ? navigator.languages?.[0] ?? navigator.language : undefined
 
     setInput('')
+    setContactRequest(null)
+    setContactConfirmation(null)
     await startNewChat(userExpectedLocale)
   }
 
@@ -92,14 +147,68 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
     }
   }
 
-  const handleSuggestionSelect = (text: string, messageId: string) => {
+  const latestAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant')
+
+  const openContactComposer = (input: {
+    assistantMessageId?: string
+    triggerSource: HumanContactTriggerSource
+    triggerReason?: string
+  }) => {
+    if (!conversationId || !latestAssistantMessage) {
+      return
+    }
+
+    setContactConfirmation(null)
+    setContactRequest({
+      conversationId,
+      assistantMessageId: input.assistantMessageId ?? latestAssistantMessage.id,
+      triggerSource: input.triggerSource,
+      triggerReason: input.triggerReason,
+    })
+  }
+
+  const handleManualContact = () => {
+    if (!latestAssistantMessage) {
+      return
+    }
+    openContactComposer({
+      assistantMessageId: latestAssistantMessage.id,
+      triggerSource: 'manual',
+    })
+  }
+
+  const handleSuggestionSelect = (suggestion: ChatSuggestion, messageId: string) => {
     if (isLoading || isBootstrapping) {
       return
     }
 
-    void sendMessage(text, {
+    if (suggestion.action?.kind === 'contact_human') {
+      const payload = suggestion.action.payload ?? {}
+      const triggerSource = typeof payload.triggerSource === 'string'
+        ? payload.triggerSource as HumanContactTriggerSource
+        : 'assistant_suggestion'
+      const assistantMessageId = typeof payload.assistantMessageId === 'string'
+        ? payload.assistantMessageId
+        : messageId
+      const triggerReason = typeof payload.triggerReason === 'string' ? payload.triggerReason : undefined
+      openContactComposer({ assistantMessageId, triggerSource, triggerReason })
+      return
+    }
+
+    void sendMessage(suggestion.text, {
       method: 'suggestion_click',
       suggestionSourceMessageId: messageId,
+    })
+  }
+
+  const handleContactSubmitted = (content: string) => {
+    setContactRequest(null)
+    setContactConfirmation({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content,
+      createdAt: new Date().toISOString(),
+      status: 'complete',
     })
   }
 
@@ -157,20 +266,41 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
       description="Ask questions about your documents"
       actions={navigation}
       headerContent={
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => void handleStartNewChat()}
-            disabled={isLoading || isBootstrapping || isInitializingView}
-          >
-            <RotateCcw className="mr-2 h-4 w-4" />
-            New chat
-          </Button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" size="icon" variant="outline" aria-label="Chat options">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem
+              disabled={isLoading || isBootstrapping || isInitializingView}
+              onSelect={() => {
+                void handleStartNewChat()
+              }}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Clear chat
+            </DropdownMenuItem>
+            {contactAvailable ? (
+              <DropdownMenuItem
+                disabled={isLoading || isBootstrapping || isInitializingView || !latestAssistantMessage}
+                onSelect={handleManualContact}
+              >
+                <UserRound className="mr-2 h-4 w-4" />
+                Talk to a human
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
       }
-      footer={isInitializingView ? null : (
+      footer={isInitializingView ? null : contactRequest ? (
+        <HumanContactInlineComposer
+          request={contactRequest}
+          onCancel={() => setContactRequest(null)}
+          onSubmitted={handleContactSubmitted}
+        />
+      ) : (
         <form onSubmit={handleSubmit} className="mx-auto flex max-w-3xl items-end gap-3">
           <Textarea
             value={input}
@@ -190,7 +320,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
           <div className="flex h-full items-center justify-center">
             <LogoSpinner imageClassName="h-7 w-7" />
           </div>
-        ) : messages.length === 0 ? (
+        ) : visibleMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
               <Send className="w-5 h-5 text-primary" />
@@ -206,7 +336,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
         ) : (
           <div>
             <ChatMessageThread
-              messages={messages}
+              messages={visibleMessages}
               onOpenDocument={handleOpenCitation}
               onSuggestionSelect={handleSuggestionSelect}
             />

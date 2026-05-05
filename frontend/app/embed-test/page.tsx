@@ -110,13 +110,12 @@ const buildSnippet = (config: EmbedTestConfig) =>
   ].filter(Boolean).join('\n')
 
 export default function EmbedTestPage() {
-  const [config, setConfig] = useState<EmbedTestConfig>(() =>
-    typeof window === 'undefined' ? DEFAULT_CONFIG : resolveInitialConfig(),
-  )
+  const [isClientReady, setIsClientReady] = useState(false)
+  const [config, setConfig] = useState<EmbedTestConfig>(DEFAULT_CONFIG)
   const [loadedScriptKey, setLoadedScriptKey] = useState<string | null>(null)
   const [failedScriptKey, setFailedScriptKey] = useState<string | null>(null)
   const scriptKey = useMemo(() => JSON.stringify(config), [config])
-  const status = !config.token.trim()
+  const status = !isClientReady || !config.token.trim()
     ? 'Paste a token to mount'
     : failedScriptKey === scriptKey
       ? 'Failed to load launcher script'
@@ -125,11 +124,17 @@ export default function EmbedTestPage() {
         : 'Loading launcher'
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Browser URL/localStorage config must load after hydration so SSR and first client render match.
+    setConfig(resolveInitialConfig())
+    setIsClientReady(true)
+  }, [])
+
+  useEffect(() => {
     const existing = document.querySelector('[data-radioso-test-script="true"]')
     existing?.remove()
     delete (window as typeof window & { __radiosoEmbedMounted?: boolean }).__radiosoEmbedMounted
 
-    if (!config.token.trim()) {
+    if (!isClientReady || !config.token.trim()) {
       return
     }
 
@@ -157,14 +162,14 @@ export default function EmbedTestPage() {
     return () => {
       script.remove()
     }
-  }, [config, scriptKey])
+  }, [config, isClientReady, scriptKey])
 
   const snippet = useMemo(() => {
-    if (typeof window === 'undefined') {
+    if (!isClientReady) {
       return ''
     }
     return config.token ? buildSnippet(config) : ''
-  }, [config])
+  }, [config, isClientReady])
 
   const updateConfig = <K extends keyof EmbedTestConfig>(key: K, value: EmbedTestConfig[K]) => {
     setConfig((current) => ({ ...current, [key]: value }))
@@ -291,11 +296,11 @@ export default function EmbedTestPage() {
             <dl className="space-y-3 text-sm">
               <div>
                 <dt className="text-muted-foreground">Current page origin</dt>
-                <dd className="break-all font-mono">{typeof window === 'undefined' ? '' : window.location.origin}</dd>
+                <dd className="break-all font-mono">{isClientReady ? window.location.origin : ''}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Expected allowlist entry</dt>
-                <dd className="break-all font-mono">{typeof window === 'undefined' ? '' : window.location.origin}</dd>
+                <dd className="break-all font-mono">{isClientReady ? window.location.origin : ''}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Launcher script</dt>

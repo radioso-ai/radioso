@@ -44,7 +44,9 @@ export interface ChatMessage {
 
 interface AnonymousChatContextValue {
   messages: ChatMessage[]
+  conversationId?: string
   workspaceName: string | null
+  publicSessionActions: Record<string, unknown>
   isLoading: boolean
   isHydrating: boolean
   isLoadingOlderMessages: boolean
@@ -191,18 +193,23 @@ export const resolveAnonymousChatBootstrapLocale = ({
 export function AnonymousChatProvider({
   token,
   sessionChannel,
+  initialActions,
   localeOverride,
   pageContext,
   children,
 }: {
   token: string
   sessionChannel?: 'anonymous_link' | null
+  initialActions?: Record<string, unknown> | null
   localeOverride?: string | null
   pageContext?: WebsiteEmbedPageContext | null
   children: ReactNode
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
+  const [publicSessionActions, setPublicSessionActions] = useState<Record<string, unknown>>(
+    initialActions && typeof initialActions === 'object' && !Array.isArray(initialActions) ? initialActions : {},
+  )
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
   const [isHydrating, setIsHydrating] = useState(true)
@@ -219,11 +226,13 @@ export function AnonymousChatProvider({
         return null
       }
 
-      return publicChatApi.createSession(token, {
+      const session = await publicChatApi.createSession(token, {
         channel: sessionChannel,
         anonymousSessionId: input?.resetSession ? null : readStoredAnonymousSessionId(token),
         pageContext,
       })
+      setPublicSessionActions(session.actions ?? {})
+      return session
     },
     [pageContext, sessionChannel, token],
   )
@@ -260,6 +269,9 @@ export function AnonymousChatProvider({
     setIsUnavailable(false)
     setMessages([])
     setWorkspaceName(null)
+    setPublicSessionActions(
+      initialActions && typeof initialActions === 'object' && !Array.isArray(initialActions) ? initialActions : {},
+    )
     setConversationId(undefined)
     setHasOlderMessages(false)
     setNextMessageCursor(null)
@@ -328,7 +340,7 @@ export function AnonymousChatProvider({
     } finally {
       setIsHydrating(false)
     }
-  }, [createPublicLaunchSession, localeOverride, pageContext, token, withPublicSessionRetry])
+  }, [createPublicLaunchSession, initialActions, localeOverride, pageContext, token, withPublicSessionRetry])
 
   useEffect(() => {
     let cancelled = false
@@ -594,7 +606,9 @@ export function AnonymousChatProvider({
   const value = useMemo<AnonymousChatContextValue>(
     () => ({
       messages,
+      conversationId,
       workspaceName,
+      publicSessionActions,
       isLoading,
       isHydrating,
       isLoadingOlderMessages,
@@ -608,7 +622,9 @@ export function AnonymousChatProvider({
     }),
     [
       messages,
+      conversationId,
       workspaceName,
+      publicSessionActions,
       isLoading,
       isHydrating,
       isLoadingOlderMessages,

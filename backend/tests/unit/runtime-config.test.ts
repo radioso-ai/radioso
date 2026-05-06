@@ -163,18 +163,21 @@ describe("runtime configuration", () => {
   });
 
   it("documents AMQP worker dispatch settings in the example environment", async () => {
-    const example = await readFile(new URL("../../.env.example", import.meta.url), "utf8");
+    const example = await readFile(new URL("../../../.env.example", import.meta.url), "utf8");
 
     expect(example).toContain("WORKER_DISPATCH_DRIVER=noop");
     expect(example).toContain("WORKER_AMQP_URL=");
     expect(example).toContain("WORKER_AMQP_QUEUE_NAME=");
     expect(example).toContain("WORKER_AMQP_PREFETCH=1");
+    expect(example).not.toContain("MAIL_DRIVER=");
+    expect(example).not.toContain("RESEND_MAIL_API_KEY=");
   });
 
   it("pins environment-aware observability identity and cloud runtime URLs for the Cloud Run API and worker services", async () => {
     const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
     const githubActionsTf = await readFile(new URL("../../../infra/terraform/github_actions.tf", import.meta.url), "utf8");
     const terraformMain = await readFile(new URL("../../../infra/terraform/main.tf", import.meta.url), "utf8");
+    const terraformVariables = await readFile(new URL("../../../infra/terraform/variables.tf", import.meta.url), "utf8");
     const stagingEnv = await readFile(new URL("../../../infra/terraform/environments/staging/main.tf", import.meta.url), "utf8");
     const liveEnv = await readFile(new URL("../../../infra/terraform/environments/live/main.tf", import.meta.url), "utf8");
 
@@ -183,11 +186,17 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('name  = "OBSERVABILITY_SERVICE_NAME"');
     expect(computeTf).toContain('value = "radioso-api"');
     expect(computeTf).toContain('value = "radioso-worker"');
-    expect(computeTf).toContain('name  = "APP_BASE_URL"');
     expect(computeTf).toContain('name  = "PUBLIC_CHAT_BASE_URL"');
     expect(computeTf).toContain('name  = "WORKER_TASKS_SERVICE_URL"');
-    expect(computeTf).toContain('name  = "MAIL_DRIVER"');
-    expect(computeTf).toContain('name  = "AUTH_SKIP_EMAIL_VERIFICATION"');
+    expect(computeTf).not.toContain('name  = "MAIL_DRIVER"');
+    expect(computeTf).toContain('for_each = var.radioso_edition == "enterprise" ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []');
+    expect(computeTf).toContain('name = "RESEND_MAIL_API_KEY"');
+    expect((computeTf.match(/name = "RESEND_MAIL_API_KEY"/g) ?? [])).toHaveLength(2);
+    expect(computeTf).toContain('name  = "EE_MAIL_FROM_EMAIL"');
+    expect((computeTf.match(/name  = "EE_MAIL_FROM_EMAIL"/g) ?? [])).toHaveLength(2);
+    expect(computeTf).toContain('name  = "EE_MAIL_FROM_NAME"');
+    expect((computeTf.match(/name  = "EE_MAIL_FROM_NAME"/g) ?? [])).toHaveLength(2);
+    expect(computeTf).not.toContain('name  = "AUTH_SKIP_EMAIL_VERIFICATION"');
     expect(computeTf).toContain('ignore_changes = [');
     expect(computeTf).toContain('client_version,');
     expect(computeTf).toContain('template[0].containers[0].image,');
@@ -196,9 +205,18 @@ describe("runtime configuration", () => {
     expect(githubActionsTf).toContain('https://token.actions.githubusercontent.com');
     expect(terraformMain).toContain('worker_tasks_service_url = coalesce(var.worker_tasks_service_url_override, "https://example.invalid")');
     expect(terraformMain).toContain('resource_name_prefix         = "${local.service_name}-${var.environment}"');
+    expect(terraformMain).toContain('app_base_url = coalesce(var.app_base_url_override, "https://example.invalid")');
+    expect(terraformVariables).toContain('app_base_url_override must be set when radioso_edition is enterprise.');
+    expect(terraformVariables).toContain('ee_mail_from_email must be set to a verified sender address when radioso_edition is enterprise.');
     expect(githubActionsTf).toContain("assertion.ref == 'refs/heads/main'");
-    expect(stagingEnv).toContain("mail_driver                           = var.mail_driver");
-    expect(liveEnv).toContain("mail_driver                           = var.mail_driver");
+    expect(stagingEnv).not.toContain("mail_driver");
+    expect(stagingEnv).toContain("resend_mail_api_key");
+    expect(stagingEnv).toContain("ee_mail_from_email");
+    expect(stagingEnv).toContain("ee_mail_from_name");
+    expect(liveEnv).not.toContain("mail_driver");
+    expect(liveEnv).toContain("resend_mail_api_key");
+    expect(liveEnv).toContain("ee_mail_from_email");
+    expect(liveEnv).toContain("ee_mail_from_name");
     expect(stagingEnv).toMatch(/environment\s+= "staging"/);
     expect(liveEnv).toMatch(/environment\s+= "live"/);
   });

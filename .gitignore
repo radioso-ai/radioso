@@ -25,6 +25,8 @@ yarn-error.log*
 frontend/app/api/embed/
 frontend/app/embed/
 frontend/app/radioso-embed.js/
+frontend/app/reset-password/
+frontend/app/verify-email/
 
 # Editor and OS files
 .idea/

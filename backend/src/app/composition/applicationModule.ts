@@ -19,7 +19,6 @@ import type { AuditService } from "../../modules/audit/services/auditService.js"
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ContactHistoryProviderPort } from "../../modules/chat/services/contactHistoryProvider.js";
-import type { EmailService } from "../../modules/email/services/emailService.js";
 
 export interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
@@ -52,7 +51,6 @@ export type ApplicationChatActionProviderRegistration =
       messageRepository: MessageRepositoryPort;
       auditService: AuditService;
       abuseControlService: AbuseControlService;
-      emailService: EmailService;
     }) => ChatActionProviderPort);
 
 export type ApplicationContactHistoryProviderRegistration =

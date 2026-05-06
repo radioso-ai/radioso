@@ -21,7 +21,6 @@ describe('backend proxy route', () => {
           workspaceId: 'workspace-1',
           workspaceName: 'Default',
           workspacePublicRouteKey: 'default-abc123',
-          requiresEmailVerification: false,
         }),
         {
           status: 201,
@@ -79,7 +78,6 @@ describe('backend proxy route', () => {
       workspaceId: 'workspace-1',
       workspaceName: 'Default',
       workspacePublicRouteKey: 'default-abc123',
-      requiresEmailVerification: false,
     })
   })
 

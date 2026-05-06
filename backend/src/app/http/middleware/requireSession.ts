@@ -3,8 +3,10 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { unauthorized } from "../../../shared/domain/errors.js";
 import type { AppDependencies } from "../../server/types.js";
 
+export type SessionDependencies = Pick<AppDependencies, "env" | "authService" | "accountAccessService">;
+
 export const requireSession = (
-  dependencies: AppDependencies,
+  dependencies: SessionDependencies,
   options: { requireActiveMembership?: boolean } = {},
 ): RequestHandler => {
   const requireActiveMembership = options.requireActiveMembership ?? true;

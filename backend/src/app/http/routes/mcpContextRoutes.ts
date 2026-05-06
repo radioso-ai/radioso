@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { forbidden } from "../../../shared/domain/errors.js";
-import { requireApiToken } from "../middleware/requireApiToken.js";
+import { requireApiToken, type ApiTokenDependencies } from "../middleware/requireApiToken.js";
 
 export const supportedMcpTools = [
   "answer_grounded",
@@ -27,7 +27,9 @@ export const workspaceMcpContextSchema = z.object({
   workspaceName: z.string().min(1),
 });
 
-export const createMcpContextRoutes = (dependencies: AppDependencies): Router => {
+type McpContextRouteDependencies = ApiTokenDependencies & Pick<AppDependencies, "workspaceRepository">;
+
+export const createMcpContextRoutes = (dependencies: McpContextRouteDependencies): Router => {
   const router = Router();
 
   router.get("/context", requireApiToken(dependencies), async (_req, res, next) => {

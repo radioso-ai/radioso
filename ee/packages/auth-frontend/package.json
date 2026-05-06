@@ -1,0 +1,37 @@
+{
+  "name": "@radioso/enterprise-auth-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/src/reset-password-page.js",
+  "types": "./dist/src/reset-password-page.d.ts",
+  "exports": {
+    "./reset-password-page": {
+      "types": "./dist/src/reset-password-page.d.ts",
+      "default": "./dist/src/reset-password-page.js"
+    },
+    "./verify-email-page": {
+      "types": "./dist/src/verify-email-page.d.ts",
+      "default": "./dist/src/verify-email-page.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "next": "16.2.4",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "peerDependencies": {
+    "next": ">=16",
+    "react": ">=19",
+    "react-dom": ">=19"
+  }
+}

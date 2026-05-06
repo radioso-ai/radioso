@@ -30,7 +30,7 @@ test("buildEnvValues preserves existing values unless overridden", () => {
   assert.equal(values.PUBLIC_CHAT_SESSION_SECRET, "public-session-secret");
 });
 
-test("env contract defaults local bootstrap to skip email verification", () => {
+test("env contract does not include OSS mail settings", () => {
   const values = buildEnvValues(
     { OPENAI_API_KEY: "existing", LLM_PROVIDER: "openai" },
     {
@@ -41,7 +41,8 @@ test("env contract defaults local bootstrap to skip email verification", () => {
     },
   );
 
-  assert.equal(values.AUTH_SKIP_EMAIL_VERIFICATION, "true");
+  assert.equal(values.AUTH_SKIP_EMAIL_VERIFICATION, undefined);
+  assert.equal(values.MAIL_DRIVER, undefined);
 });
 
 test("writeEnvFileAtomic writes rendered env content", async () => {

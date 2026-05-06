@@ -3,7 +3,7 @@ title: API first success
 description: Reach first success with plain HTTP by registering, getting a token, uploading content, and asking a grounded question.
 ---
 
-import { Callout, Steps } from 'nextra/components'
+import { Steps } from 'nextra/components'
 
 # API first success
 
@@ -26,7 +26,7 @@ Register a new user or log in with an existing one.
 
 ### Establish a session
 
-If email verification is required, verify first and then log in to receive the session cookie.
+Registration and login both return a session cookie.
 
 ### Reveal the workspace token
 
@@ -60,9 +60,9 @@ curl -sS \
   http://localhost:8080/api/v1/auth/register
 ```
 
-In a normal verified-email deployment, registration returns bootstrap data such as `workspaceId` and `requiresEmailVerification`. It does not automatically establish a usable session cookie.
+Registration returns bootstrap data such as `workspaceId` and establishes a usable session cookie.
 
-If the user already exists, or once verification is complete, log in and save the session cookie:
+If the user already exists, log in and save the session cookie:
 
 ```bash
 curl -sS -c cookies.txt \
@@ -70,10 +70,6 @@ curl -sS -c cookies.txt \
   -d '{"email":"you@example.com","password":"verysecurepassword"}' \
   http://localhost:8080/api/v1/auth/login
 ```
-
-<Callout type="info" emoji="i">
-  Local `./run-dev.sh` setups usually write `AUTH_SKIP_EMAIL_VERIFICATION=true` into `.env`, so local registration can be more permissive than production.
-</Callout>
 
 ## Reveal the workspace token
 
@@ -141,7 +137,7 @@ If upload works but chat does not, one of these is usually true:
 
 - document processing is still running
 - the backend does not have a valid provider key
-- registration completed but no session cookie was established because email verification was still required
+- the session cookie was not saved by the client
 
 ## What to do next
 

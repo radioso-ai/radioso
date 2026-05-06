@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
 describe("auth contract", () => {
-  it("registers a user, returns workspace bootstrap data, and requires email verification", async () => {
-    const { app, dependencies } = createTestApp();
+  it("registers a user, returns workspace bootstrap data, and sets a session cookie", async () => {
+    const { app } = createTestApp();
 
     const response = await request(app).post("/api/v1/auth/register").send({
       email: "alice@example.com",
@@ -26,9 +26,8 @@ describe("auth contract", () => {
     expect(response.body.workspaceName).toBe("Default");
     expect(response.body.workspacePublicRouteKey).toMatch(/^\d{10}$/);
     expect(response.body.token).toBeUndefined();
-    expect(response.body.requiresEmailVerification).toBe(true);
-    expect(response.headers["set-cookie"]).toBeUndefined();
-    expect(dependencies.emailService.sentMessages.at(-1)?.metadata?.kind).toBe("email_verification");
+    expect(response.body.requiresEmailVerification).toBeUndefined();
+    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
 
   it("logs in an existing user, returns workspace bootstrap data, and sets a session cookie", async () => {
@@ -49,108 +48,6 @@ describe("auth contract", () => {
     expect(response.body.workspaceName).toBe("Default");
     expect(response.body.workspacePublicRouteKey).toMatch(/^\d{10}$/);
     expect(response.body.token).toBeUndefined();
-    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
-  });
-
-  it("rejects login for an unverified user until the verification link is used", async () => {
-    const { app, dependencies } = createTestApp();
-
-    const registration = await request(app).post("/api/v1/auth/register").send({
-      email: "pending@example.com",
-      password: "verysecurepassword",
-    });
-
-    expect(registration.status).toBe(201);
-
-    const loginBeforeVerification = await request(app).post("/api/v1/auth/login").send({
-      email: "pending@example.com",
-      password: "verysecurepassword",
-    });
-
-    expect(loginBeforeVerification.status).toBe(403);
-    expect(loginBeforeVerification.body.error.code).toBe("email_verification_required");
-
-    const verificationUrl = dependencies.emailService.sentMessages.at(-1)?.metadata?.verificationUrl;
-    const token = verificationUrl ? new URL(verificationUrl).searchParams.get("token") : null;
-    const verify = await request(app).post("/api/v1/auth/email-verification/verify").send({ token });
-
-    expect(verify.status).toBe(200);
-    expect(verify.body).toEqual({ verified: true });
-
-    const loginAfterVerification = await request(app).post("/api/v1/auth/login").send({
-      email: "pending@example.com",
-      password: "verysecurepassword",
-    });
-
-    expect(loginAfterVerification.status).toBe(200);
-    expect(loginAfterVerification.headers["set-cookie"]?.[0]).toContain("radioso_session=");
-  });
-
-  it("accepts explicit verification resends for unverified users", async () => {
-    const { app, dependencies } = createTestApp();
-
-    await request(app).post("/api/v1/auth/register").send({
-      email: "resend@example.com",
-      password: "verysecurepassword",
-    });
-
-    const initialEmailCount = dependencies.emailService.sentMessages.length;
-    const response = await request(app).post("/api/v1/auth/email-verification/resend").send({
-      email: "resend@example.com",
-    });
-
-    expect(response.status).toBe(202);
-    expect(response.body).toEqual({ accepted: true });
-    expect(dependencies.emailService.sentMessages).toHaveLength(initialEmailCount + 1);
-    expect(dependencies.emailService.sentMessages.at(-1)?.metadata?.kind).toBe("email_verification");
-  });
-
-  it("invalidates older verification links after resend delivers a newer one", async () => {
-    const { app, dependencies } = createTestApp();
-
-    await request(app).post("/api/v1/auth/register").send({
-      email: "resend-replaced@example.com",
-      password: "verysecurepassword",
-    });
-
-    const firstVerificationUrl = dependencies.emailService.sentMessages.at(-1)?.metadata?.verificationUrl;
-    const firstToken = firstVerificationUrl ? new URL(firstVerificationUrl).searchParams.get("token") : null;
-
-    const resend = await request(app).post("/api/v1/auth/email-verification/resend").send({
-      email: "resend-replaced@example.com",
-    });
-    expect(resend.status).toBe(202);
-
-    const secondVerificationUrl = dependencies.emailService.sentMessages.at(-1)?.metadata?.verificationUrl;
-    const secondToken = secondVerificationUrl ? new URL(secondVerificationUrl).searchParams.get("token") : null;
-
-    const staleVerify = await request(app).post("/api/v1/auth/email-verification/verify").send({
-      token: firstToken,
-    });
-    expect(staleVerify.status).toBe(401);
-    expect(staleVerify.body.error.code).toBe("unauthorized");
-
-    const freshVerify = await request(app).post("/api/v1/auth/email-verification/verify").send({
-      token: secondToken,
-    });
-    expect(freshVerify.status).toBe(200);
-    expect(freshVerify.body).toEqual({ verified: true });
-  });
-
-  it("can skip email verification in local-dev mode and establish a session on registration", async () => {
-    const { app } = createTestApp({
-      envOverrides: {
-        AUTH_SKIP_EMAIL_VERIFICATION: true,
-      },
-    });
-
-    const response = await request(app).post("/api/v1/auth/register").send({
-      email: "local-dev@example.com",
-      password: "verysecurepassword",
-    });
-
-    expect(response.status).toBe(201);
-    expect(response.body.requiresEmailVerification).toBe(false);
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
 

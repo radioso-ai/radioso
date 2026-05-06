@@ -68,24 +68,6 @@ const envSchema = z.object({
   PUBLIC_CHAT_SESSION_SECRET: emptyStringToUndefined(z.string().min(16)),
   RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(16)),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
-  AUTH_SKIP_EMAIL_VERIFICATION: z
-    .union([z.boolean(), z.enum(["true", "false"])])
-    .transform((value) => value === true || value === "true")
-    .default(false),
-  APP_BASE_URL: z.string().url().default("http://localhost:3000"),
-  PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(30),
-  PASSWORD_RESET_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
-  MAIL_DRIVER: z.enum(["noop", "log", "smtp"]).default("log"),
-  MAIL_FROM_EMAIL: z.string().email().default("noreply@example.com"),
-  MAIL_FROM_NAME: z.string().min(1).default("Radioso"),
-  MAIL_SMTP_HOST: emptyStringToUndefined(z.string().min(1)),
-  MAIL_SMTP_PORT: z.coerce.number().int().positive().default(587),
-  MAIL_SMTP_SECURE: z
-    .union([z.boolean(), z.enum(["true", "false"])])
-    .transform((value) => value === true || value === "true")
-    .default(false),
-  MAIL_SMTP_USERNAME: emptyStringToUndefined(z.string().min(1)),
-  MAIL_SMTP_PASSWORD: emptyStringToUndefined(z.string().min(1)),
   CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(z.string().min(1)),
   CONNECTOR_PUBLIC_BASE_URL: emptyStringToUndefined(z.string().url()),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
@@ -203,21 +185,6 @@ const envSchema = z.object({
     }
   }
 
-  if (value.MAIL_DRIVER === "smtp") {
-    for (const [field, message] of [
-      ["MAIL_SMTP_HOST", "MAIL_SMTP_HOST is required when MAIL_DRIVER is smtp"],
-      ["MAIL_SMTP_USERNAME", "MAIL_SMTP_USERNAME is required when MAIL_DRIVER is smtp"],
-      ["MAIL_SMTP_PASSWORD", "MAIL_SMTP_PASSWORD is required when MAIL_DRIVER is smtp"],
-    ] as const) {
-      if (!value[field]) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [field],
-          message,
-        });
-      }
-    }
-  }
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;

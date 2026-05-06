@@ -471,18 +471,20 @@ describe("chat history service", () => {
 
     const conversation = await conversationRepository.create("workspace-1");
     conversation.updatedAt = new Date("2026-04-21T10:00:00.000Z");
-    await messageRepository.create({
+    const user = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       role: "user",
       content: "Can I speak with a person?",
     });
+    user.createdAt = new Date("2026-04-21T10:01:00.000Z");
     const assistant = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       role: "assistant",
       content: "I can collect that request.",
     });
+    assistant.createdAt = new Date("2026-04-21T10:02:00.000Z");
 
     contactHistoryProvider.contacts.push({
       id: "55555555-5555-4555-8555-555555555555",
@@ -523,8 +525,8 @@ describe("chat history service", () => {
       message: "Please contact me about billing.",
     });
     expect(detail.conversation.messages.map((message) => message.content)).toEqual([
-      "I can collect that request.",
       "Can I speak with a person?",
+      "I can collect that request.",
     ]);
   });
 });

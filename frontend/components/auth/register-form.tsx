@@ -62,13 +62,13 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       })
       if (response.requiresEmailVerification) {
         setPendingEmail(email)
-      } else {
-        seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-        if (!auth) {
-          throw new Error('Registration is unavailable outside the auth shell')
-        }
-        await auth.login(email, response.userId, response.accountId)
+        return
       }
+      seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
+      if (!auth) {
+        throw new Error('Registration is unavailable outside the auth shell')
+      }
+      await auth.login(email, response.userId, response.accountId)
     } catch (error) {
       setError(getErrorMessage(error))
     } finally {

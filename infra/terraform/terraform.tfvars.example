@@ -8,6 +8,9 @@ project_id = "your-gcp-project-id"
 # workspace_token_secret   = ""
 # public_chat_session_secret     = ""
 # connector_encryption_key = ""
+# resend_mail_api_key      = ""
+# ee_mail_from_email       = "noreply@your-verified-domain.example"
+# ee_mail_from_name        = "Radioso"
 # metrics_auth_token       = ""
 
 # Optional overrides (defaults shown)
@@ -38,11 +41,3 @@ project_id = "your-gcp-project-id"
 # connector_public_base_url = "https://your-backend-url"
 # app_base_url_override   = "https://your-frontend-url.a.run.app"
 # public_chat_base_url_override = "https://your-frontend-url.a.run.app/chat"
-# mail_driver             = "log"
-# mail_from_email         = "noreply@example.com"
-# mail_from_name          = "Radioso"
-# mail_smtp_host          = "smtp.example.com"
-# mail_smtp_port          = 587
-# mail_smtp_secure        = false
-# mail_smtp_username      = ""
-# mail_smtp_password      = ""

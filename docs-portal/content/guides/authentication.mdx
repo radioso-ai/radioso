@@ -3,7 +3,7 @@ title: Authentication
 description: Session, API token, and embed-facing access patterns in Radioso.
 ---
 
-import { Callout, Steps } from 'nextra/components'
+import { Steps } from 'nextra/components'
 
 # Authentication
 
@@ -24,10 +24,8 @@ The main auth routes are:
 - register
 - login
 - invitation accept
-- email verification resend and verify
-- password reset request and confirm
 
-The backend sets the session cookie on successful login, invitation acceptance, and password reset confirmation. New registrations can require email verification before the first real session is issued, unless local development explicitly enables `AUTH_SKIP_EMAIL_VERIFICATION=true`.
+The backend sets the session cookie on successful registration, login, and invitation acceptance. Open-source Radioso does not include transactional email, email verification, or password reset endpoints.
 
 ## Workspace API tokens
 
@@ -54,14 +52,6 @@ Workspace tokens are high-value credentials. If one leaks, rotate it from worksp
 Public website chat does not use a normal operator session. Instead, it relies on workspace-controlled public settings, public chat tokens, or embed session flows that are scoped to the workspace configuration.
 
 This is the right model for customer-facing support widgets, not for operator automation.
-
-## Local development behavior
-
-The default `./run-dev.sh` bootstrap flow writes `AUTH_SKIP_EMAIL_VERIFICATION=true` into `.env` for faster local iteration. It also defaults `MAIL_DRIVER=log`, which means verification and password reset links are written to backend logs unless SMTP is configured.
-
-<Callout type="warning" emoji="!">
-  That local shortcut is a development convenience. It is not the production contract.
-</Callout>
 
 ## Choose the right mode
 

@@ -3,21 +3,17 @@ title: Auth and sessions
 description: Register, log in, inspect invitations, and accept account invites with the session-authenticated API.
 ---
 
-import { Callout, Steps } from 'nextra/components'
+import { Steps } from 'nextra/components'
 
 # Auth and sessions
 
-These routes are the entry point for account creation, session establishment, invitation acceptance, email verification, and password reset.
+These routes are the entry point for account creation, session establishment, invitation inspection, and invitation acceptance.
 
 ## Relevant endpoints
 
 ```text
 POST /api/v1/auth/register
 POST /api/v1/auth/login
-POST /api/v1/auth/email-verification/resend
-POST /api/v1/auth/email-verification/verify
-POST /api/v1/auth/password-reset/request
-POST /api/v1/auth/password-reset/confirm
 GET  /api/v1/auth/invitations/{invitationToken}
 POST /api/v1/auth/invitations/{invitationToken}/accept
 ```
@@ -29,13 +25,9 @@ POST /api/v1/auth/invitations/{invitationToken}/accept
 
 Registration creates the account and default workspace bootstrap data. Invitation inspection lets a user confirm the target account before joining it.
 
-### Verify or recover access if needed
-
-Normal deployments can require email verification before login succeeds. Password reset uses the same shared mail pipeline.
-
 ### Establish the session
 
-Login, invitation acceptance, and successful password reset confirmation return a session cookie.
+Registration, login, and invitation acceptance return a session cookie.
 
 ### Use the session for account and workspace routes
 
@@ -57,7 +49,7 @@ curl -sS \
 
 `organizationName` is optional. The required fields are `email` and `password`.
 
-Registration returns account and default workspace bootstrap data. In the normal verified-email flow it does **not** automatically create a usable session cookie. Instead, the response includes `requiresEmailVerification: true`.
+Registration returns account and default workspace bootstrap data and sets a session cookie. The open-source API does not include transactional email or password reset.
 
 ## Log in
 
@@ -72,18 +64,6 @@ curl -sS -c cookies.txt \
 
 The login request can also include `preferredWorkspaceId` or `preferredAccountId` when you want to restore a known context.
 
-## Email verification and password reset
-
-Use `POST /api/v1/auth/email-verification/resend` to resend the verification email.
-
-Use `POST /api/v1/auth/email-verification/verify` to consume the verification token.
-
-Use `POST /api/v1/auth/password-reset/request` to request a reset link.
-
-Use `POST /api/v1/auth/password-reset/confirm` to complete the reset. A successful reset confirmation also establishes a session cookie.
-
-In local development, the default bootstrap flow writes `MAIL_DRIVER=log`, so verification and reset links are recorded in backend logs unless SMTP is configured.
-
 ## Invitation flow
 
 In practice, the invitation flow has two steps:
@@ -92,10 +72,6 @@ In practice, the invitation flow has two steps:
 2. Accept it with `POST /api/v1/auth/invitations/{invitationToken}/accept`.
 
 The accept request establishes a session for the joined account.
-
-<Callout type="info" emoji="i">
-  Local development can bypass normal verification by setting `AUTH_SKIP_EMAIL_VERIFICATION=true`. That is a local shortcut, not the production contract.
-</Callout>
 
 ## Common failure modes
 

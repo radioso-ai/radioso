@@ -42,12 +42,22 @@ const generatedFiles = [
       "",
     ].join("\n"),
   },
+  {
+    relativePath: "app/reset-password/page.tsx",
+    content: "export { default } from '@radioso/enterprise-auth-frontend/reset-password-page'\n",
+  },
+  {
+    relativePath: "app/verify-email/page.tsx",
+    content: "export { default } from '@radioso/enterprise-auth-frontend/verify-email-page'\n",
+  },
 ];
 
 const generatedDirectories = [
   "app/embed",
   "app/api/embed",
   "app/radioso-embed.js",
+  "app/reset-password",
+  "app/verify-email",
 ];
 
 const writeIfChanged = async (filePath, content) => {

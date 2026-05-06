@@ -1,96 +1,83 @@
-'use client'
+'use client';
 
-import Link from 'next/link'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import type { FormEvent } from "react";
 
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
-import { authApi, seedWorkspaceSession } from '@/lib/api'
-import { useAuth } from '@/lib/auth-context'
-import { buildDashboardHref } from '@/lib/dashboard-routes'
-
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'error' in error &&
-    error.error &&
-    typeof error.error === 'object' &&
-    'message' in error.error &&
-    typeof error.error.message === 'string'
-  ) {
-    return error.error.message
-  }
-
-  return fallback
-}
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { seedWorkspaceSession } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { buildDashboardHref } from "@/lib/dashboard-routes";
+import { enterpriseAuthApi } from "./api.js";
+import { getErrorMessage } from "./errors.js";
 
 export function ResetPasswordScreen({ token }: { token?: string }) {
-  const router = useRouter()
-  const { login } = useAuth()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [requestAccepted, setRequestAccepted] = useState(false)
-  const [error, setError] = useState('')
+  const router = useRouter();
+  const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [requestAccepted, setRequestAccepted] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleRequestSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setIsLoading(true)
-    setError('')
+  const handleRequestSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setIsLoading(true);
+    setError("");
 
     try {
-      await authApi.requestPasswordReset({ email })
-      setRequestAccepted(true)
+      await enterpriseAuthApi.requestPasswordReset({ email });
+      setRequestAccepted(true);
     } catch (error) {
-      setError(getErrorMessage(error, 'Password reset request failed. Please try again.'))
+      setError(getErrorMessage(error, "Password reset request failed. Please try again."));
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
-  const handleConfirmSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setError('')
+  const handleConfirmSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
     if (password !== confirmPassword) {
-      setError('Passwords do not match')
-      return
+      setError("Passwords do not match");
+      return;
     }
 
-    setIsLoading(true)
+    setIsLoading(true);
 
     try {
-      const response = await authApi.confirmPasswordReset({ token: token ?? '', password })
-      seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-      await login(response.email, response.userId, response.accountId)
+      const response = await enterpriseAuthApi.confirmPasswordReset({ token: token ?? "", password });
+      seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey);
+      await login(response.email, response.userId, response.accountId);
       router.replace(buildDashboardHref(response.accountId, {
-        section: 'agents',
+        section: "agents",
         workspaceId: response.workspaceId,
         workspacePublicRouteKey: response.workspacePublicRouteKey,
-      }))
+      }));
     } catch (error) {
-      setError(getErrorMessage(error, 'Password reset failed. Please request a new link.'))
+      setError(getErrorMessage(error, "Password reset failed. Please request a new link."));
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
-  const isConfirmMode = Boolean(token)
+  const isConfirmMode = Boolean(token);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-sm">
         <h1 className="mb-2 text-xl font-semibold text-card-foreground">
-          {isConfirmMode ? 'Choose a new password' : 'Reset your password'}
+          {isConfirmMode ? "Choose a new password" : "Reset your password"}
         </h1>
         <p className="mb-6 text-sm text-muted-foreground">
           {isConfirmMode
-            ? 'Enter your new password to restore access.'
-            : 'Enter your email and we will send a reset link if the account exists.'}
+            ? "Enter your new password to restore access."
+            : "Enter your email and we will send a reset link if the account exists."}
         </p>
 
         {isConfirmMode ? (
@@ -163,5 +150,5 @@ export function ResetPasswordScreen({ token }: { token?: string }) {
         </div>
       </div>
     </div>
-  )
+  );
 }

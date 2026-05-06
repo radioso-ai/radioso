@@ -187,6 +187,47 @@ variable "connector_encryption_key" {
   sensitive   = true
 }
 
+variable "resend_mail_api_key" {
+  description = "Resend API key used by Enterprise Edition transactional auth mail."
+  type        = string
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition = (
+      var.radioso_edition != "enterprise" ||
+      (
+        var.resend_mail_api_key != null &&
+        length(trimspace(nonsensitive(var.resend_mail_api_key))) > 0
+      )
+    )
+    error_message = "resend_mail_api_key must be set when radioso_edition is enterprise."
+  }
+}
+
+variable "ee_mail_from_email" {
+  description = "Verified sender email address for Enterprise Edition transactional auth mail."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      var.radioso_edition != "enterprise" ||
+      (
+        var.ee_mail_from_email != null &&
+        length(trimspace(var.ee_mail_from_email)) > 0
+      )
+    )
+    error_message = "ee_mail_from_email must be set to a verified sender address when radioso_edition is enterprise."
+  }
+}
+
+variable "ee_mail_from_name" {
+  description = "Sender display name for Enterprise Edition transactional auth mail."
+  type        = string
+  default     = "Radioso"
+}
+
 variable "metrics_auth_token" {
   description = "Optional bearer token required to read the Prometheus metrics endpoint when enabled."
   type        = string
@@ -225,12 +266,6 @@ variable "session_ttl_hours" {
   default     = 168
 }
 
-variable "auth_skip_email_verification" {
-  description = "Whether the deployment should skip email verification before first login."
-  type        = bool
-  default     = false
-}
-
 variable "metrics_enabled" {
   description = "Whether to expose the Prometheus metrics endpoint on the backend service."
   type        = bool
@@ -244,9 +279,20 @@ variable "connector_public_base_url" {
 }
 
 variable "app_base_url_override" {
-  description = "Optional override for the main public Radioso app URL. Set this after the first deploy if backend-generated links should use the frontend Cloud Run URL."
+  description = "Optional override for the main public Radioso app URL. Required for Enterprise so backend-generated auth links use a real frontend URL."
   type        = string
   default     = null
+
+  validation {
+    condition = (
+      var.radioso_edition != "enterprise" ||
+      (
+        var.app_base_url_override != null &&
+        length(trimspace(var.app_base_url_override)) > 0
+      )
+    )
+    error_message = "app_base_url_override must be set when radioso_edition is enterprise."
+  }
 }
 
 variable "public_chat_base_url_override" {
@@ -259,70 +305,6 @@ variable "worker_tasks_service_url_override" {
   description = "Optional override for the worker Cloud Run public URL. Set this after the first deploy so retry dispatches target the worker run.app URL."
   type        = string
   default     = null
-}
-
-variable "mail_driver" {
-  description = "Mail delivery driver to expose to the cloud runtimes. Use log until SMTP is configured."
-  type        = string
-  default     = "log"
-
-  validation {
-    condition     = contains(["noop", "log", "smtp"], var.mail_driver)
-    error_message = "mail_driver must be one of noop, log, or smtp."
-  }
-}
-
-variable "mail_from_email" {
-  description = "Default from-address for verification and password reset email."
-  type        = string
-  default     = "noreply@example.com"
-}
-
-variable "mail_from_name" {
-  description = "Default from-name for verification and password reset email."
-  type        = string
-  default     = "Radioso"
-}
-
-variable "mail_smtp_host" {
-  description = "Optional SMTP host for future cloud email delivery."
-  type        = string
-  default     = null
-}
-
-variable "mail_smtp_port" {
-  description = "Optional SMTP port for future cloud email delivery."
-  type        = number
-  default     = 587
-}
-
-variable "mail_smtp_secure" {
-  description = "Whether future SMTP delivery should use implicit TLS."
-  type        = bool
-  default     = false
-}
-
-variable "mail_smtp_username" {
-  description = "Optional SMTP username stored in Secret Manager when email delivery is enabled."
-  type        = string
-  sensitive   = true
-  default     = null
-}
-
-variable "mail_smtp_password" {
-  description = "Optional SMTP password stored in Secret Manager when email delivery is enabled."
-  type        = string
-  sensitive   = true
-  default     = null
-
-  validation {
-    condition = var.mail_driver != "smtp" || (
-      var.mail_smtp_host != null &&
-      var.mail_smtp_username != null &&
-      var.mail_smtp_password != null
-    )
-    error_message = "mail_smtp_host, mail_smtp_username, and mail_smtp_password must be set when mail_driver is smtp."
-  }
 }
 
 variable "github_repository_owner" {

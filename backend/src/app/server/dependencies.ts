@@ -21,15 +21,10 @@ import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import { IngestionSettingsRepository } from "../../db/repositories/ingestionSettingsRepository.js";
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
-import { PasswordResetTokenRepository } from "../../db/repositories/passwordResetTokenRepository.js";
-import { EmailVerificationTokenRepository } from "../../db/repositories/emailVerificationTokenRepository.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
-import { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
-import { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import { AuditService } from "../../modules/audit/services/auditService.js";
-import { createEmailService } from "../../modules/email/services/emailService.js";
 import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
@@ -264,7 +259,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentRepository,
   );
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(database));
-  const emailService = createEmailService(env);
   const chatGateway = llmRegistry.createChatGateway();
   const chatActionProvider = !composition.chatActionProviderRegistration
     ? new NoopChatActionProvider()
@@ -277,7 +271,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
           messageRepository,
           auditService,
           abuseControlService,
-          emailService,
       })
       : composition.chatActionProviderRegistration;
   const contactHistoryProvider = !composition.contactHistoryProviderRegistration
@@ -346,14 +339,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       "Connector secret encryption is not configured; secret-field writes will be rejected until this is fixed",
     );
   }
-  const emailVerificationService = new EmailVerificationService({
-    env,
-    auditService,
-    emailService,
-    tokenRepository: new EmailVerificationTokenRepository(database),
-    userRepository,
-  });
-  const verificationAwareAuthService = new AuthService({
+  const authService = new AuthService({
     env,
     accountRepository,
     userRepository,
@@ -362,20 +348,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceService,
     accountAccessService,
     accountInvitationService,
-    emailVerificationService,
     onAccountCreated,
     auditService,
-  });
-  const passwordResetService = new PasswordResetService({
-    env,
-    auditService,
-    accountRepository,
-    accountAccessService,
-    emailService,
-    passwordResetTokenRepository: new PasswordResetTokenRepository(database),
-    sessionRepository,
-    userRepository,
-    workspaceService,
   });
 
   return {
@@ -391,10 +365,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
-    authService: verificationAwareAuthService,
-    passwordResetService,
-    emailVerificationService,
-    emailService,
+    authService,
     accountAccessService,
     accountInvitationService,
     workspaceSessionService,

@@ -7,6 +7,32 @@ open-source license that may apply to the rest of this repository.
 Enterprise Edition packages live under `ee/packages` so they can keep package
 boundaries without requiring a second repository.
 
+## Architecture boundaries
+
+Enterprise backend features register through focused application modules. The
+top-level `@radioso/enterprise-backend-module` export aggregates those modules;
+feature-specific routes, migrators, hooks, providers, and lifecycle behavior
+belong beside the feature implementation.
+
+Feature manifests describe ownership metadata such as feature id, edition,
+backend module id, API namespace, frontend route stubs, and docs. The frontend
+route sync script reads Enterprise frontend manifests from:
+
+```text
+ee/packages/auth-frontend/feature-manifest.mjs
+ee/packages/embed-widget/feature-manifest.mjs
+```
+
+Run boundary validation from the repository root with:
+
+```bash
+node scripts/validate-architecture-boundaries.mjs
+```
+
+The validation protects the OSS code path from direct Enterprise imports and
+keeps public backend contract surfaces explicit. Generated frontend route files
+remain temporary local artifacts and are not the source of truth.
+
 ## Local development
 
 From the repository root:

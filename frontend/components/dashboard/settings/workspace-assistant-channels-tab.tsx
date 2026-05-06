@@ -1240,7 +1240,7 @@ export function WorkspaceAssistantChannelsTab({
                   ) : null}
                 </div>
                 {apiToken ? (
-                  <CopyValueField value={apiToken} ariaLabel="Copy API token" wrap className="w-full" />
+                  <CopyValueField value={apiToken} ariaLabel="Copy API token" className="w-full" />
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     Reveal the token only when you need to copy it into another client.
@@ -1671,7 +1671,7 @@ export function WorkspaceAssistantChannelsTab({
                                       </Button>
                                     </div>
                                     {humanContactSigningSecret ? (
-                                      <CopyValueField value={humanContactSigningSecret} ariaLabel="Copy signing token" wrap className="w-full" />
+                                      <CopyValueField value={humanContactSigningSecret} ariaLabel="Copy signing token" className="w-full" />
                                     ) : (
                                       <p className="text-xs text-muted-foreground">
                                         {humanContactSettings.signingSecretConfigured

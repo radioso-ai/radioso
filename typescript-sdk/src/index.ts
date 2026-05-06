@@ -1,5 +1,11 @@
 import { createClientConfig, type RadiosoClientOptions } from "./core/config.js";
-import { GeneratedRadiosoClient, type ChatCreateRequest, type ChatStreamRequest } from "./generated/client.js";
+import { requestJson } from "./core/http.js";
+import {
+  GeneratedRadiosoClient,
+  type ChatCreateRequest,
+  type ChatStreamRequest,
+  type DocumentOperationResponse,
+} from "./generated/client.js";
 import { streamChat, type RadiosoChatStreamEvent } from "./streaming/chatStream.js";
 
 export { RadiosoError } from "./core/errors.js";
@@ -36,6 +42,43 @@ export type {
 export type { RadiosoClientOptions } from "./core/config.js";
 export type { RadiosoChatStreamEvent } from "./streaming/chatStream.js";
 
+export interface DocumentImportFileRequest {
+  file: Blob | Uint8Array | ArrayBuffer;
+  filename?: string;
+  title?: string;
+  mimeType?: string;
+}
+
+const createUploadBlob = ({ file, mimeType }: DocumentImportFileRequest): Blob => {
+  if (file instanceof Blob) {
+    if (!mimeType || file.type === mimeType) {
+      return file;
+    }
+
+    return new Blob([file], { type: mimeType });
+  }
+
+  if (file instanceof ArrayBuffer) {
+    return new Blob([file], mimeType ? { type: mimeType } : undefined);
+  }
+
+  const copy = new ArrayBuffer(file.byteLength);
+  new Uint8Array(copy).set(new Uint8Array(file.buffer, file.byteOffset, file.byteLength));
+  return new Blob([copy], mimeType ? { type: mimeType } : undefined);
+};
+
+const resolveUploadFilename = ({ file, filename }: DocumentImportFileRequest): string => {
+  if (filename) {
+    return filename;
+  }
+
+  if (typeof File !== "undefined" && file instanceof File) {
+    return file.name;
+  }
+
+  return "document";
+};
+
 export const createRadiosoClient = (options: RadiosoClientOptions) => {
   const config = createClientConfig(options);
   const generated = new GeneratedRadiosoClient(config);
@@ -59,6 +102,19 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
     documents: {
       list: (query?: Parameters<GeneratedRadiosoClient["listDocuments"]>[0]) => generated.listDocuments(query),
       create: (body: Parameters<GeneratedRadiosoClient["createDocument"]>[0]) => generated.createDocument(body),
+      importFile: (input: DocumentImportFileRequest) => {
+        const formData = new FormData();
+        formData.set("file", createUploadBlob(input), resolveUploadFilename(input));
+        if (input.title) {
+          formData.set("title", input.title);
+        }
+
+        return requestJson<DocumentOperationResponse>(config, {
+          method: "POST",
+          path: "/api/v1/document/import",
+          body: formData,
+        });
+      },
       get: (documentId: string) => generated.getDocument(documentId),
       update: (documentId: string, body: Parameters<GeneratedRadiosoClient["updateDocument"]>[1]) =>
         generated.updateDocument(documentId, body),

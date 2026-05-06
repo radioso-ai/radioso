@@ -177,6 +177,7 @@ The SDK chat facade is for assistant chat. Use the REST retrieval endpoints abov
 
 ```ts
 import { createRadiosoClient } from "@radioso/typescript-sdk";
+import { readFile } from "node:fs/promises";
 
 const client = createRadiosoClient({
   baseUrl: "http://localhost:8080",
@@ -184,6 +185,14 @@ const client = createRadiosoClient({
 });
 
 await client.documents.create({ title: "Support FAQ", content: "..." });
+
+const file = await readFile("./handbook.pdf");
+await client.documents.importFile({
+  file,
+  filename: "handbook.pdf",
+  title: "Support handbook",
+  mimeType: "application/pdf",
+});
 
 const response = await client.chat.create({
   message: "What does the FAQ say about refunds?",

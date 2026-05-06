@@ -504,6 +504,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import a source file for background processing */
+        post: operations["importDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/document/{documentId}": {
         parameters: {
             query?: never;
@@ -1367,6 +1384,15 @@ export interface components {
                 [key: string]: string | number | boolean | null;
             };
             externalDocumentId?: string;
+        };
+        DocumentImportRequest: {
+            /**
+             * Format: binary
+             * @description Source file to import.
+             */
+            file: string;
+            /** @description Optional title to use instead of the source filename. */
+            title?: string;
         };
         DocumentStatus: string;
         DocumentOperationResponse: {
@@ -3521,6 +3547,66 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    importDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["DocumentImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Document accepted for processing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentOperationResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Uploaded file exceeds the configured size limit */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Upload rate limit exceeded */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

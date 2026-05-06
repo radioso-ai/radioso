@@ -68,6 +68,27 @@ curl -sS -X POST http://localhost:8080/api/v1/document/import \
   -F "title=Support handbook"
 ```
 
+The TypeScript SDK wraps the same multipart route:
+
+```ts
+import { readFile } from 'node:fs/promises'
+import { createRadiosoClient } from '@radioso/typescript-sdk'
+
+const client = createRadiosoClient({
+  baseUrl: 'http://localhost:8080',
+  apiToken: process.env.RADIOSO_API_TOKEN!,
+})
+
+const file = await readFile('./handbook.pdf')
+
+await client.documents.importFile({
+  file,
+  filename: 'handbook.pdf',
+  title: 'Support handbook',
+  mimeType: 'application/pdf',
+})
+```
+
 The backend enforces a maximum upload size with `DOCUMENT_UPLOAD_MAX_BYTES`. The upload path is also rate-limited separately from normal auth flows.
 
 ## Update or reprocess a document

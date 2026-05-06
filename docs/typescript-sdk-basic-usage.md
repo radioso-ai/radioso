@@ -34,6 +34,21 @@ const queued = await client.documents.create({
 });
 ```
 
+Import a file:
+
+```ts
+import { readFile } from "node:fs/promises";
+
+const file = await readFile("./handbook.pdf");
+
+const imported = await client.documents.importFile({
+  file,
+  filename: "handbook.pdf",
+  title: "Support handbook",
+  mimeType: "application/pdf",
+});
+```
+
 Fetch a document:
 
 ```ts
@@ -135,6 +150,8 @@ const response = await client.chat.create({
   message: "What does the FAQ say about uploaded content?",
   stream: false,
 });
+
+console.log(response.answer);
 ```
 
 ## Streaming Chat
@@ -173,6 +190,18 @@ Fetch one historical conversation:
 
 ```ts
 const conversation = await client.chat.getHistoryConversation("conversation-id", { limit: 50 });
+```
+
+Read the latest conversation after listing history:
+
+```ts
+const recent = await client.chat.listHistory({ limit: 10 });
+const latest = recent.conversations[0];
+
+if (latest) {
+  const detail = await client.chat.getHistoryConversation(latest.id);
+  console.log(detail.messages);
+}
 ```
 
 ## Error Handling

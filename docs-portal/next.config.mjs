@@ -1,5 +1,9 @@
 import nextra from 'nextra'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import remarkGfm from 'remark-gfm'
+
+const docsPortalRoot = path.dirname(fileURLToPath(import.meta.url))
 
 const withNextra = nextra({
   contentDirBasePath: '/',
@@ -11,6 +15,7 @@ const withNextra = nextra({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingRoot: docsPortalRoot,
   turbopack: {
     resolveAlias: {
       'next-mdx-import-source-file': './mdx-components.tsx',

@@ -116,4 +116,41 @@ describe("sdk client integration", () => {
     expect(chatHistory.conversations).toEqual([]);
     expect(chat.answer).toBe("hello");
   });
+
+  it("imports a source file through the SDK document facade", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        documentId: "doc-1",
+        status: "accepted",
+      }), {
+        status: 202,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const client = createRadiosoClient({
+      baseUrl: "https://api.example.com",
+      apiToken: "token-123",
+      fetch: fetchMock as typeof fetch,
+    });
+
+    const result = await client.documents.importFile({
+      file: new Blob(["Policy content"], { type: "text/plain" }),
+      filename: "policy.txt",
+      title: "Policy",
+    });
+
+    expect(result.documentId).toBe("doc-1");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(url).toBe("https://api.example.com/api/v1/document/import");
+    expect(init.method).toBe("POST");
+    expect(headers.get("Authorization")).toBe("Bearer token-123");
+    expect(headers.get("Content-Type")).toBeNull();
+    expect(init.body).toBeInstanceOf(FormData);
+    const formData = init.body as FormData;
+    expect(formData.get("title")).toBe("Policy");
+    expect(formData.get("file")).toBeInstanceOf(File);
+    expect((formData.get("file") as File).name).toBe("policy.txt");
+  });
 });

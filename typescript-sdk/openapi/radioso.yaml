@@ -1568,6 +1568,18 @@ components:
       required:
         - title
         - content
+    DocumentImportRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          description: Source file to import.
+          format: binary
+        title:
+          type: string
+          description: Optional title to use instead of the source filename.
+      required:
+        - file
     DocumentStatus:
       type: string
     DocumentOperationResponse:
@@ -4496,6 +4508,51 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/import:
+    post:
+      tags:
+        - Documents
+      summary: Import a source file for background processing
+      operationId: importDocument
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DocumentImportRequest"
+      responses:
+        "202":
+          description: Document accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentOperationResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Uploaded file exceeds the configured size limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Upload rate limit exceeded
           content:
             application/json:
               schema:

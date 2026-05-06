@@ -3,7 +3,9 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { unauthorized } from "../../../shared/domain/errors.js";
 import type { AppDependencies } from "../../server/types.js";
 
-export const requireApiToken = (dependencies: AppDependencies): RequestHandler => {
+export type ApiTokenDependencies = Pick<AppDependencies, "authService">;
+
+export const requireApiToken = (dependencies: ApiTokenDependencies): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const authorization = req.header("authorization");

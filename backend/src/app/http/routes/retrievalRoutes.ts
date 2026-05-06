@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 import type { RetrievalExecutionSurface } from "../../../modules/retrieval/domain/retrievalPipelineTypes.js";
 
@@ -30,7 +30,12 @@ export const retrievalAnswerSchema = z.object({
 const resolveCapabilitySurface = (header: unknown): Extract<RetrievalExecutionSurface, "retrieval" | "mcp_capability"> =>
   header === "mcp" ? "mcp_capability" : "retrieval";
 
-export const createRetrievalRoutes = (dependencies: AppDependencies): Router => {
+type RetrievalRouteDependencies = WorkspaceSessionDependencies & Pick<
+  AppDependencies,
+  "retrievalAnswerService" | "retrievalSearchService"
+>;
+
+export const createRetrievalRoutes = (dependencies: RetrievalRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
 

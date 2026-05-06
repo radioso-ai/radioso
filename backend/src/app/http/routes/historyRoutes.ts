@@ -2,7 +2,7 @@ import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
 import { badRequest } from "../../../shared/domain/errors.js";
-import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import {
   collectionPageQuerySchema,
   conversationParamsSchema,
@@ -12,7 +12,12 @@ import {
   historyItemsPageQuerySchema,
 } from "./conversationRouteSchemas.js";
 
-export const createHistoryRoutes = (dependencies: AppDependencies): Router => {
+type HistoryRouteDependencies = WorkspaceSessionDependencies & Pick<
+  AppDependencies,
+  "assistantHistoryService" | "documentSearchHistoryService"
+>;
+
+export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
 

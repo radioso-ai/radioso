@@ -1,9 +1,7 @@
-import { notFound } from "../../../shared/domain/errors.js";
-import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import type { AuditService } from "../../audit/services/auditService.js";
-import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
+import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
@@ -40,7 +38,7 @@ import type { ChatResponse, ChatRoute, ChatSuggestion, ConversationModeMetadata 
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
-import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
+import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
 import { buildNonRetrievalAnswerPrompt } from "./nonRetrievalAnswerPromptBuilder.js";
 import {
   NoopProductAnalyticsService,
@@ -48,6 +46,8 @@ import {
 } from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopChatActionProvider, type ChatActionProviderPort } from "./chatActionProvider.js";
+import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
+import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
 
 export interface ChatGateway {
   answer(input: {
@@ -100,8 +100,6 @@ const buildSkippedValidationSummary = (): AnswerValidationSummary => ({
   nonSubstantiveSegmentCount: 0,
 });
 
-type ChatIntentCapableRetrievalPipeline = Pick<RetrievalPipelineService, "run" | "interpret" | "runInterpreted" | "runWithoutRetrieval">;
-
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
@@ -125,16 +123,6 @@ export type ChatStreamEvent =
       route: ChatRoute;
     };
 
-interface PreparedSession {
-  conversation: ConversationRecord;
-  history: MessageRecord[];
-  retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
-  turnRoute: ChatTurnRoute;
-  userMessage: MessageRecord;
-  pageContext?: AssistantPageContext | null;
-  priorRewriteContinuityState?: RewriteContinuityState;
-}
-
 const isAnswerSupportValidationEnabled = (session: PreparedSession): boolean =>
   session.retrieval.responseSettings?.answerSupportValidationEnabled !== false;
 
@@ -153,24 +141,6 @@ const hasGroundedSuggestionSupport = (input: {
 
   return input.validation.supportedSegmentCount > 0;
 };
-
-interface ChatAnswerAuditMetadata {
-  workflow?: string;
-  executionClass?: string;
-  answerOutcome?: AssistantTurnOutcome;
-  conversationMode?: ConversationMode;
-  conversationModeMetadata?: ConversationModeMetadata;
-  validation?: AnswerValidationSummary & {
-    segmentResults?: Array<
-      Pick<AnswerSegmentValidationResult, "originalText" | "text" | "disposition" | "replacementApplied" | "reason" | "citationIndices">
-    >;
-  };
-  rewriteContinuityState?: RewriteContinuityState;
-  citations?: ChatCitation[];
-  answerSegments?: AnswerSegment[];
-  suggestions?: ChatSuggestion[];
-  retrievalTrace?: RetrievalTrace;
-}
 
 interface PresentedAnswer {
   answer: string;
@@ -254,44 +224,33 @@ export class ChatService {
   private readonly retrievalInfoPresenter = new RetrievalInfoPresenter();
   private readonly retrievalTracePresenter = new RetrievalTracePresenter();
   private readonly assistantInstructionBuilder = new AssistantInstructionBuilder();
-  private readonly chatTurnIntentService = new ChatTurnIntentService();
   private readonly conversationModeExpansionService: ConversationModeExpansionService;
+  private readonly chatSessionPreparer: ChatSessionPreparer;
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
-    private readonly retrievalPipeline: RetrievalPipelineService,
+    retrievalPipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
     private readonly auditService: AuditService,
     private readonly groundedMissResponseComposer: GroundedMissResponseComposer = new MissingGroundedMissResponseComposer(),
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
-    private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
+    workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
     private readonly chatActionProvider: ChatActionProviderPort = new NoopChatActionProvider(),
   ) {
+    this.chatSessionPreparer = new ChatSessionPreparer(
+      conversationRepository,
+      messageRepository,
+      retrievalPipeline,
+      auditService,
+      workspaceRepository,
+    );
     this.conversationModeExpansionService = new ConversationModeExpansionService(async ({ query, history, prompt }) =>
       this.chatGateway.answer({
         query,
         history,
         prompt,
       }));
-  }
-
-  private async resolveResponseIdentity(workspaceId: string): Promise<ResponseIdentity | null> {
-    if (!this.workspaceRepository) {
-      return null;
-    }
-
-    const workspace = await this.workspaceRepository.findById(workspaceId);
-    if (!workspace) {
-      return null;
-    }
-
-    const name = workspace.assistantName.trim();
-    return name
-      ? {
-          name,
-        }
-      : null;
   }
 
   private getConversationMode(session: PreparedSession): ConversationMode {
@@ -475,7 +434,7 @@ export class ChatService {
     });
 
     try {
-      session = await this.prepareSession(input);
+      session = await this.chatSessionPreparer.prepare(input);
       const answerStartedAt = Date.now();
       const presentation = await this.generateAnswerPresentation(session, input.query, input.userExpectedLocale);
       const route = this.getRoute(session);
@@ -597,7 +556,7 @@ export class ChatService {
     };
 
     try {
-      session = await this.prepareSession(input);
+      session = await this.chatSessionPreparer.prepare(input);
 
       yield {
         type: "conversation",
@@ -811,78 +770,6 @@ export class ChatService {
     } catch {
       // Lazy follow-up suggestions are best effort after the answer is already complete.
     }
-  }
-
-  private async prepareSession(input: {
-    workspaceId: string;
-    accountId?: string;
-    conversationId?: string;
-    query: string;
-    inputMetadata?: UserMessageInputMetadata;
-    metadataFilter?: Record<string, unknown>;
-    pageContext?: AssistantPageContext | null;
-    sourceChannel?: string | null;
-    anonymousSessionId?: string | null;
-    sourceOrigin?: string | null;
-  }): Promise<PreparedSession> {
-    const conversation = input.conversationId
-      ? await this.ensureConversation(input.conversationId, input.workspaceId, input.anonymousSessionId)
-      : null;
-    const history = conversation
-      ? await this.messageRepository.listRecentByConversationId(
-          input.workspaceId,
-          conversation.id,
-          RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
-        )
-      : [];
-    const rewriteContinuityState = conversation
-      ? await this.loadRewriteContinuityState(input.workspaceId, conversation.id)
-      : undefined;
-    const responseIdentity = await this.resolveResponseIdentity(input.workspaceId);
-    const pipelineInput = {
-      workspaceId: input.workspaceId,
-      query: input.query,
-      history,
-      responseIdentity,
-      responseBehaviorEnabled: true,
-      metadataFilter: input.metadataFilter,
-    };
-    let retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
-    let turnRoute: ChatTurnRoute = CHAT_TURN_ROUTE.RETRIEVAL;
-
-    const retrievalPipeline = this.retrievalPipeline as ChatIntentCapableRetrievalPipeline;
-    const interpretation = await retrievalPipeline.interpret(pipelineInput);
-    turnRoute = this.chatTurnIntentService.resolve({
-      responseIntent: interpretation.interpretation.result.responseIntent,
-    });
-    retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
-      ? await retrievalPipeline.runInterpreted(interpretation)
-      : await retrievalPipeline.runWithoutRetrieval(interpretation);
-    const persistedConversation =
-      conversation ?? await this.conversationRepository.create(
-        input.workspaceId,
-        input.sourceChannel ?? null,
-        input.anonymousSessionId ?? null,
-        input.sourceOrigin ?? null,
-      );
-
-    const userMessage = await this.messageRepository.create({
-      conversationId: persistedConversation.id,
-      workspaceId: input.workspaceId,
-      role: "user",
-      content: input.query,
-      inputMetadata: input.inputMetadata,
-    });
-
-    return {
-      conversation: persistedConversation,
-      history,
-      retrieval,
-      turnRoute,
-      userMessage,
-      pageContext: input.pageContext ?? null,
-      priorRewriteContinuityState: rewriteContinuityState,
-    };
   }
 
   private async generateAnswerPresentation(
@@ -1184,7 +1071,7 @@ export class ChatService {
         citations: input.citations,
         answerSegments: input.answerSegments,
         suggestions: input.suggestions,
-        rewriteContinuityState: this.buildRewriteContinuityState({
+        rewriteContinuityState: buildRewriteContinuityState({
           previousState: input.priorRewriteContinuityState,
           diagnostics: input.diagnostics,
           citations: input.citations,
@@ -1374,141 +1261,6 @@ export class ChatService {
     }
   }
 
-  private async ensureConversation(conversationId: string, workspaceId: string, anonymousSessionId?: string | null) {
-    // When an anonymous session is provided, verify the conversation belongs to that session
-    if (anonymousSessionId) {
-      const conversation = await this.conversationRepository.findByIdAndAnonymousSession(
-        conversationId,
-        workspaceId,
-        anonymousSessionId,
-      );
-      if (!conversation) {
-        throw notFound("Conversation not found");
-      }
-      return conversation;
-    }
-
-    const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
-
-    if (!conversation) {
-      throw notFound("Conversation not found");
-    }
-
-    return conversation;
-  }
-
-  private async loadRewriteContinuityState(
-    workspaceId: string,
-    conversationId: string,
-  ): Promise<RewriteContinuityState | undefined> {
-    const metadata = await this.auditService.getLatestSuccessfulChatAnswerMetadata({
-      workspaceId,
-      conversationId,
-    }) as ChatAnswerAuditMetadata | null;
-
-    return this.normalizeRewriteContinuityState(metadata?.rewriteContinuityState);
-  }
-
-  private buildRewriteContinuityState(input: {
-    previousState?: RewriteContinuityState;
-    diagnostics: PreparedSession["retrieval"]["diagnostics"];
-    citations: ChatCitation[];
-  }): RewriteContinuityState | undefined {
-    const groundedTitles = this.collectContinuityValues([
-      ...(input.previousState?.groundedTitles ?? []),
-      ...input.citations.map((citation) => citation.title),
-    ]);
-    const activeSubject = this.resolveContinuityActiveSubject(
-      this.normalizeContinuityValue(input.diagnostics.rewriteProposal?.proposedActiveSubject)
-        ?? input.previousState?.activeSubject,
-      groundedTitles,
-    );
-    const relatedEntities: string[] = [];
-
-    if (!activeSubject && relatedEntities.length === 0 && groundedTitles.length === 0) {
-      return undefined;
-    }
-
-    return {
-      activeSubject,
-      relatedEntities,
-      groundedTitles,
-    };
-  }
-
-  private normalizeRewriteContinuityState(state: unknown): RewriteContinuityState | undefined {
-    if (!state || typeof state !== "object") {
-      return undefined;
-    }
-
-    const candidate = state as Partial<Record<keyof RewriteContinuityState, unknown>>;
-    const groundedTitles = this.collectContinuityValues(
-      Array.isArray(candidate.groundedTitles)
-        ? candidate.groundedTitles.map((value) => (typeof value === "string" ? value : undefined))
-        : [],
-    );
-    const activeSubject = this.resolveContinuityActiveSubject(
-      typeof candidate.activeSubject === "string" ? candidate.activeSubject : undefined,
-      groundedTitles,
-    );
-    const relatedEntities: string[] = [];
-
-    if (!activeSubject && relatedEntities.length === 0 && groundedTitles.length === 0) {
-      return undefined;
-    }
-
-    return {
-      activeSubject,
-      relatedEntities,
-      groundedTitles,
-    };
-  }
-
-  private resolveContinuityActiveSubject(candidate: string | undefined, groundedTitles: string[]): string | undefined {
-    const normalizedCandidate = this.normalizeContinuityValue(candidate);
-    if (normalizedCandidate) {
-      return normalizedCandidate;
-    }
-
-    return groundedTitles.length === 1 ? groundedTitles[0] : undefined;
-  }
-
-  private collectContinuityValues(values: Array<string | undefined>): string[] {
-    const unique: string[] = [];
-    for (const value of values) {
-      const normalized = this.normalizeContinuityValue(value);
-      if (!normalized || unique.includes(normalized)) {
-        continue;
-      }
-      unique.push(normalized);
-      if (unique.length >= CHAT_BEHAVIOR.carryForward.maxLiterals) {
-        break;
-      }
-    }
-    return unique;
-  }
-
-  private normalizeContinuityValue(value?: string): string | undefined {
-    if (typeof value !== "string") {
-      return undefined;
-    }
-
-    const normalized = value.trim();
-    if (normalized.length === 0 || normalized.length > CHAT_BEHAVIOR.carryForward.maxLiteralLength) {
-      return undefined;
-    }
-
-    try {
-      const url = new URL(normalized);
-      if (url.protocol) {
-        return undefined;
-      }
-    } catch {
-      // Keep non-URL values.
-    }
-
-    return normalized;
-  }
 }
 
 const buildHiddenSupportEvidence = (

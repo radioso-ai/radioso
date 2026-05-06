@@ -1689,6 +1689,8 @@ export interface components {
         ChatResponse: {
             /** Format: uuid */
             conversationId: string;
+            /** Format: uuid */
+            assistantMessageId: string;
             answer: string;
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];

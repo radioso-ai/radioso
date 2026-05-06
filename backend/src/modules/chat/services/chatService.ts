@@ -112,6 +112,7 @@ export type ChatStreamEvent =
   | {
       type: "done";
       conversationId: string;
+      assistantMessageId: string;
       answer: string;
       citations?: ChatCitation[];
       answerSegments?: AnswerSegment[];
@@ -502,6 +503,7 @@ export class ChatService {
 
       return {
         conversationId: session.conversation.id,
+        assistantMessageId,
         route,
         answer: presentation.answer,
         citations: presentation.citations,
@@ -715,6 +717,7 @@ export class ChatService {
       yield {
         type: "done",
         conversationId: session.conversation.id,
+        assistantMessageId,
         route,
         answer: presentation.answer,
         citations: presentation.citations,

@@ -51,6 +51,7 @@ export const streamChatEvents = async (
   let citations: Citation[] | undefined
   let answerSegments: AnswerSegment[] | undefined
   let suggestions: ChatSuggestion[] | undefined
+  let assistantMessageId: string | undefined
   let conversationMode: ChatResponse['conversationMode'] | undefined
   let conversationModeMetadata: ChatResponse['conversationModeMetadata'] | undefined
   let retrievalInfo: RetrievalInfo | undefined
@@ -96,6 +97,7 @@ export const streamChatEvents = async (
     if (normalizedEventName === 'done') {
       const completionPayload = payload as ChatStreamCompletion
       conversationId = completionPayload.conversationId ?? conversationId
+      assistantMessageId = completionPayload.assistantMessageId ?? assistantMessageId
       answer = completionPayload.answer ?? answer
       citations = completionPayload.citations
       answerSegments = completionPayload.answerSegments
@@ -107,6 +109,7 @@ export const streamChatEvents = async (
       route = completionPayload.route
       handlers.onDone?.({
         conversationId,
+        assistantMessageId,
         route,
         answer,
         citations,
@@ -156,6 +159,7 @@ export const streamChatEvents = async (
 
   return {
     conversationId,
+    assistantMessageId,
     route,
     answer,
     citations,

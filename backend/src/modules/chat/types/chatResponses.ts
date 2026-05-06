@@ -31,6 +31,7 @@ export interface ChatRoute {
 
 export interface ChatResponse {
   conversationId: string;
+  assistantMessageId: string;
   route: ChatRoute;
   answer: string;
   citations?: ChatCitation[];
@@ -42,6 +43,7 @@ export interface ChatResponse {
   retrievalTrace: RetrievalTrace;
 }
 
-export type ChatBootstrapResponse = Omit<ChatResponse, "conversationId"> & {
+export type ChatBootstrapResponse = Omit<ChatResponse, "conversationId" | "assistantMessageId"> & {
   conversationId?: string;
+  assistantMessageId?: string;
 };

@@ -37,11 +37,17 @@ class FakeHumanContactDatabase implements UsageLimitDatabasePort {
     updated_at: Date;
   }>();
   readonly requests = new Map<string, RequestRow>();
+  readonly assistantMessages = new Set<string>();
 
   async query<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {
     if (text.includes("FROM ee_contact_settings") && text.includes("SELECT")) {
       const row = this.settings.get(String(params[0]));
       return (row ? [row] : []) as T[];
+    }
+
+    if (text.includes("FROM messages") && text.includes("role = 'assistant'")) {
+      const id = String(params[0]);
+      return (this.assistantMessages.has(id) ? [{ id }] : []) as T[];
     }
 
     if (text.includes("INSERT INTO ee_contact_settings")) {
@@ -348,6 +354,31 @@ describe("enterprise human contact service", () => {
     expect(database.requests.get(result.requestId)).toMatchObject({
       message: "Please contact me.",
       generated_summary: "",
+    });
+  });
+
+  it("ignores client-only assistant message IDs when storing submitted messages", async () => {
+    const { service, database } = createService();
+    await service.updateSettings({
+      workspaceId: "workspace-1",
+      enabled: true,
+      emailEnabled: true,
+      defaultEmail: "support@example.com",
+    });
+
+    const result = await service.submit({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      assistantMessageId: "11111111-1111-4111-8111-111111111111",
+      email: "user@example.com",
+      message: "Please contact me.",
+      triggerSource: "manual",
+    });
+
+    expect(database.requests.get(result.requestId)).toMatchObject({
+      assistant_message_id: null,
+      message: "Please contact me.",
     });
   });
 

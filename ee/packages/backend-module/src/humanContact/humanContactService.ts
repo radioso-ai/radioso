@@ -497,6 +497,11 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
 
     const requestId = randomUUID();
     const summary = "";
+    const assistantMessageId = await this.resolveAssistantMessageId({
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+      assistantMessageId: input.assistantMessageId,
+    });
 
     await queryRows(
       this.input.database,
@@ -522,7 +527,7 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
         input.accountId ?? null,
         input.workspaceId,
         input.conversationId,
-        input.assistantMessageId ?? null,
+        assistantMessageId,
         input.sourceChannel ?? null,
         input.sourceOrigin ?? null,
         input.email,
@@ -669,6 +674,30 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
         message: "Conversation not found",
       };
     }
+  }
+
+  private async resolveAssistantMessageId(input: {
+    workspaceId: string;
+    conversationId: string;
+    assistantMessageId?: string | null;
+  }): Promise<string | null> {
+    if (!input.assistantMessageId) {
+      return null;
+    }
+
+    const [row] = await queryRows<{ id: string }>(
+      this.input.database,
+      `SELECT id
+       FROM messages
+       WHERE id = $1
+         AND workspace_id = $2
+         AND conversation_id = $3
+         AND role = 'assistant'
+       LIMIT 1`,
+      [input.assistantMessageId, input.workspaceId, input.conversationId],
+    );
+
+    return row?.id ?? null;
   }
 
   private buildFallbackDraft(

@@ -503,6 +503,7 @@ export interface RetrievalTrace {
 
 export interface ChatResponse {
   conversationId?: string
+  assistantMessageId?: string
   route?: {
     type: 'direct' | 'retrieval'
     reason: 'assistant_identity' | 'conversation_start' | 'evidence_required' | 'social_only'
@@ -540,6 +541,7 @@ export interface ChatStreamSuggestions {
 
 export interface ChatStreamCompletion {
   conversationId?: string
+  assistantMessageId?: string
   route?: ChatResponse['route']
   answer?: string
   citations?: Citation[]
@@ -1152,6 +1154,7 @@ export const chatApi = {
       }
       handlers.onDone?.({
         conversationId: payload.conversationId,
+        assistantMessageId: payload.assistantMessageId,
         route: payload.route,
         answer: payload.answer,
         citations: payload.citations,
@@ -1605,6 +1608,7 @@ export const publicChatApi = {
       }
       handlers.onDone?.({
         conversationId: payload.conversationId,
+        assistantMessageId: payload.assistantMessageId,
         route: payload.route,
         answer: payload.answer,
         citations: payload.citations,

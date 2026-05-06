@@ -45,6 +45,7 @@ describe("chat presenter", () => {
       {
         type: "done",
         conversationId: "conversation-1",
+        assistantMessageId: "assistant-message-1",
         route: {
           type: "retrieval",
           reason: "evidence_required",
@@ -97,6 +98,7 @@ describe("chat presenter", () => {
     })());
 
     const donePayload = writes.find((entry) => entry.startsWith("data: {") && entry.includes("\"answer\":\"Answer\""));
+    expect(donePayload).toContain("\"assistantMessageId\":\"assistant-message-1\"");
     expect(donePayload).toContain("\"conversationMode\":\"guided\"");
     expect(donePayload).toContain("\"conversationModeMetadata\":");
     expect(donePayload).toContain("\"expansionKind\":\"focused\"");

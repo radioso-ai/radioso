@@ -7,6 +7,7 @@ import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Sparkles, UserRound } from 'lucide-react'
 import type { WebsiteEmbedTheme } from '@/lib/embed-widget'
+import { editionController } from '@/lib/edition-controller'
 import { AssistantMessageContent, type CitationOpenResult, linkifyText } from './chat-citations'
 import type {
   AnswerSegment,
@@ -227,12 +228,14 @@ export function ChatMessageThread({
                           </div>
                         )}
                       </div>
-                      {message.suggestions && message.suggestions.length > 0 ? (
-                        <div className="w-full">
-                          <div className="flex w-full flex-col gap-2">
-                            {message.suggestions
-                              .filter((suggestion) => suggestion.text.trim())
-                              .map((suggestion, suggestionIndex) => {
+                      {(() => {
+                        const visibleSuggestions = editionController.filterChatSuggestions(message.suggestions)
+                        return visibleSuggestions.length > 0 ? (
+                          <div className="w-full">
+                            <div className="flex w-full flex-col gap-2">
+                              {visibleSuggestions
+                                .filter((suggestion) => suggestion.text.trim())
+                                .map((suggestion, suggestionIndex) => {
                                 const isContactAction = suggestion.action?.kind === 'contact_human'
                                 return onSuggestionSelect ? (
                                   <Button
@@ -272,9 +275,10 @@ export function ChatMessageThread({
                                   </div>
                                 )
                               })}
+                            </div>
                           </div>
-                        </div>
-                      ) : null}
+                        ) : null
+                      })()}
                       <p
                         className="px-1 text-xs text-muted-foreground"
                         style={theme ? { color: theme.mutedForeground } : undefined}

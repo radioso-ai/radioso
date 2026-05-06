@@ -22,6 +22,53 @@ declare module '@/components/ui/spinner' {
   export const LogoSpinner: ComponentType<{ className?: string; imageClassName?: string }>
 }
 
+declare module '@/components/ui/button' {
+  import type { ComponentType, ReactNode } from 'react'
+
+  export const Button: ComponentType<{
+    children?: ReactNode
+    className?: string
+    disabled?: boolean
+    onClick?: () => void
+    variant?: 'default' | 'outline' | 'ghost' | 'destructive'
+  }>
+}
+
+declare module '@/components/ui/input' {
+  import type { ChangeEventHandler, ComponentType } from 'react'
+
+  export const Input: ComponentType<{
+    autoComplete?: string
+    className?: string
+    id?: string
+    maxLength?: number
+    onChange?: ChangeEventHandler<HTMLInputElement>
+    placeholder?: string
+    value?: string
+  }>
+}
+
+declare module '@/components/ui/label' {
+  import type { ComponentType, ReactNode } from 'react'
+
+  export const Label: ComponentType<{
+    children?: ReactNode
+    htmlFor?: string
+  }>
+}
+
+declare module '@/components/ui/textarea' {
+  import type { ChangeEventHandler, ComponentType } from 'react'
+
+  export const Textarea: ComponentType<{
+    className?: string
+    id?: string
+    onChange?: ChangeEventHandler<HTMLTextAreaElement>
+    placeholder?: string
+    value?: string
+  }>
+}
+
 declare module '@/lib/api' {
   export interface WebsiteEmbedPageContext {
     pageUrl?: string | null

@@ -11,6 +11,7 @@ import {
 } from 'react'
 
 import { normalizeWebsiteEmbedLocale } from '@/lib/embed-widget'
+import { createClientId } from '@/lib/client-id'
 import {
   clearStoredAnonymousSession,
   publicChatApi,
@@ -308,7 +309,7 @@ export function AnonymousChatProvider({
             }
             setMessages([
               {
-                id: crypto.randomUUID(),
+                id: createClientId('public-chat-assistant'),
                 role: 'assistant',
                 content: bootstrap.answer,
                 createdAt: new Date().toISOString(),
@@ -432,7 +433,7 @@ export function AnonymousChatProvider({
       setRetryAfterSeconds(null)
 
       const userMessage: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: createClientId('public-chat-user'),
         role: 'user',
         content: query,
         createdAt: new Date().toISOString(),
@@ -440,7 +441,7 @@ export function AnonymousChatProvider({
         status: 'complete',
       }
 
-      const assistantMessageId = crypto.randomUUID()
+      const assistantMessageId = createClientId('public-chat-assistant')
       const assistantCreatedAt = new Date().toISOString()
 
       setIsLoading(true)

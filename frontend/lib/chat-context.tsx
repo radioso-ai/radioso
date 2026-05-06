@@ -20,6 +20,7 @@ import {
   type RetrievalInfo,
   type RetrievalTrace,
 } from '@/lib/api'
+import { createClientId } from '@/lib/client-id'
 
 export interface ChatMessage {
   id: string
@@ -182,7 +183,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
 
       const userMessage: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: createClientId('chat-user'),
         role: 'user',
         content: query,
         createdAt: new Date().toISOString(),
@@ -190,7 +191,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         status: 'complete',
       }
 
-      const assistantMessageId = crypto.randomUUID()
+      const assistantMessageId = createClientId('chat-assistant')
       const assistantCreatedAt = new Date().toISOString()
 
       updateSession(accountId, (session) => ({
@@ -360,7 +361,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 ...(bootstrap.conversationId ? { conversationId: bootstrap.conversationId } : {}),
                 messages: [
                   {
-                    id: crypto.randomUUID(),
+                    id: createClientId('chat-assistant'),
                     role: 'assistant',
                     content: bootstrap.answer,
                     createdAt: new Date().toISOString(),
@@ -431,7 +432,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           ...(bootstrap.conversationId ? { conversationId: bootstrap.conversationId } : {}),
           messages: [
             {
-              id: crypto.randomUUID(),
+              id: createClientId('chat-assistant'),
               role: 'assistant',
               content: bootstrap.answer,
               createdAt: new Date().toISOString(),

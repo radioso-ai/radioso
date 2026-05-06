@@ -74,14 +74,7 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
         />
       </div>
       <div className="space-y-2">
-        <div className="flex items-center justify-between gap-3">
-          <Label htmlFor="password">Password</Label>
-          {AUTH_RECOVERY_ENABLED ? (
-            <Link href="/reset-password" className="text-sm font-medium text-primary hover:underline">
-              Forgot password?
-            </Link>
-          ) : null}
-        </div>
+        <Label htmlFor="password">Password</Label>
         <Input
           id="password"
           type="password"
@@ -109,6 +102,13 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
           Register
         </button>
       </p>
+      {AUTH_RECOVERY_ENABLED ? (
+        <p className="text-center text-sm">
+          <Link href="/reset-password" className="font-medium text-primary hover:underline">
+            Forgot password?
+          </Link>
+        </p>
+      ) : null}
     </form>
   )
 }

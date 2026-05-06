@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
+import { editionController } from '@/lib/edition-controller'
 import type { ChatConversationSummary, ContactHistorySummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
@@ -402,29 +403,30 @@ export function HistoryList({
   onAllPageChange: (page: number) => void
   onNavigate: (href: string) => void
 }) {
+  const activeFilter = editionController.normalizeHistoryFilter(filter)
+  const filterOptions = editionController.getActivityFilterOptions()
+  const visibleAllHistoryItems = editionController.filterActivityItems(allHistoryItems)
+
   return (
     <DashboardPage
       title="Activity"
-      description="Review past chats, searches, and Talk to a human requests. Retrieval diagnostics live here."
+      description={
+        editionController.getActivityDescription()
+      }
       actions={
         <div className="bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]">
-              {([
-                { value: 'all', label: 'All' },
-                { value: 'chat', label: 'Chats' },
-                { value: 'search', label: 'Searches' },
-                { value: 'contact', label: 'Human' },
-              ] as const).map((option) => (
+              {filterOptions.map((option) => (
                 <button
                   key={option.value}
                   type="button"
                   onClick={() => onFilterChange(option.value)}
                   className={cn(
                     'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-foreground transition-[color,box-shadow,background-color] hover:text-primary focus-visible:ring-[3px] focus-visible:outline-1 dark:hover:text-secondary',
-                    filter === option.value
+                    activeFilter === option.value
                       ? 'bg-background text-foreground shadow-sm dark:border-input dark:bg-input/30 dark:text-foreground'
                       : 'dark:text-muted-foreground',
                   )}
-                  aria-pressed={filter === option.value}
+                  aria-pressed={activeFilter === option.value}
                 >
                   {option.label}
                 </button>
@@ -450,13 +452,13 @@ export function HistoryList({
               </div>
               <h2 className="text-lg font-medium text-foreground">No activity yet</h2>
               <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                {filter === 'chat'
+                {activeFilter === 'chat'
                   ? onboarding.hasReadyDocuments
                     ? 'Your workspace is ready. Ask the first question and it will appear here.'
                     : 'Load content first, then ask one question. Conversation activity will appear here after that.'
-                  : filter === 'search'
+                  : activeFilter === 'search'
                     ? 'Document searches will appear here after someone runs a search.'
-                    : filter === 'contact'
+                    : editionController.canUseHumanContact() && activeFilter === 'contact'
                       ? 'Talk to a human requests will appear here after someone asks for follow-up.'
                     : onboarding.hasReadyDocuments
                       ? 'Your workspace is ready. Ask the first question or run a document search to start building activity.'
@@ -464,7 +466,7 @@ export function HistoryList({
               </p>
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              {filter !== 'search' && onboarding.hasReadyDocuments ? (
+              {activeFilter !== 'search' && onboarding.hasReadyDocuments ? (
                 <Button
                   size="sm"
                   onClick={() => onNavigate(buildDashboardHref(accountId, {
@@ -476,7 +478,7 @@ export function HistoryList({
                   Ask first question
                 </Button>
               ) : null}
-              {(filter === 'chat' || filter === 'all') && !onboarding.hasReadyDocuments ? (
+              {(activeFilter === 'chat' || activeFilter === 'all') && !onboarding.hasReadyDocuments ? (
                 <Button
                   size="sm"
                   onClick={() => onNavigate(buildDashboardHref(accountId, {
@@ -497,7 +499,7 @@ export function HistoryList({
                 {listError}
               </div>
             ) : null}
-            {filter === 'all' ? (
+            {activeFilter === 'all' ? (
               <>
                 <HistoryPagination
                   accountId={accountId}
@@ -507,7 +509,7 @@ export function HistoryList({
                   currentPage={allPage}
                   totalPages={allTotalPages}
                   pageSize={pageSize}
-                  pageItemCount={isLoading ? pageSize : allHistoryItems.length}
+                  pageItemCount={isLoading ? pageSize : visibleAllHistoryItems.length}
                   totalItems={allTotal}
                   onPrevious={() => onAllPageChange(Math.max(1, allPage - 1))}
                   onNext={() => onAllPageChange(Math.min(allTotalPages, allPage + 1))}
@@ -518,7 +520,7 @@ export function HistoryList({
                   </div>
                 ) : (
                   <HistoryTable
-                    items={allHistoryItems}
+                    items={visibleAllHistoryItems}
                     emptyMessage="No saved activity on this page."
                     onSelect={onSelectItem}
                   />
@@ -531,14 +533,14 @@ export function HistoryList({
                   currentPage={allPage}
                   totalPages={allTotalPages}
                   pageSize={pageSize}
-                  pageItemCount={isLoading ? pageSize : allHistoryItems.length}
+                  pageItemCount={isLoading ? pageSize : visibleAllHistoryItems.length}
                   totalItems={allTotal}
                   onPrevious={() => onAllPageChange(Math.max(1, allPage - 1))}
                   onNext={() => onAllPageChange(Math.min(allTotalPages, allPage + 1))}
                 />
               </>
             ) : null}
-            {filter === 'chat' ? (
+            {activeFilter === 'chat' ? (
               <section className="space-y-3">
                 <HistoryPagination
                   accountId={accountId}
@@ -584,7 +586,7 @@ export function HistoryList({
                 />
               </section>
             ) : null}
-            {filter === 'search' ? (
+            {activeFilter === 'search' ? (
               <section className="space-y-3">
                 <HistoryPagination
                   accountId={accountId}
@@ -630,7 +632,7 @@ export function HistoryList({
                 />
               </section>
             ) : null}
-            {filter === 'contact' ? (
+            {editionController.canUseHumanContact() && activeFilter === 'contact' ? (
               <section className="space-y-3">
                 <HistoryPagination
                   accountId={accountId}

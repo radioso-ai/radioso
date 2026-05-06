@@ -1,4 +1,5 @@
 import type { GeneralSettings } from '@/lib/api'
+import { normalizeLocaleTag } from '@/lib/locale'
 
 export type WebsiteEmbedLauncherPosition = 'bottom-right' | 'bottom-left'
 export type WebsiteEmbedLauncherIcon = 'chat' | 'sparkles' | 'message'
@@ -119,8 +120,6 @@ export const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
   userBubbleForeground: '#f8fafc',
 }
 
-const LOCALE_PATTERN = /^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$/
-
 const COPY_OVERRIDE_KEYS = [
   'launcherDefaultLabel',
   'embeddedChatTitle',
@@ -230,18 +229,7 @@ export const parseWebsiteEmbedOrigins = (value: string) =>
 
 export const formatWebsiteEmbedOrigins = (origins: string[]) => origins.join('\n')
 
-export const normalizeWebsiteEmbedLocale = (value: string | null | undefined): string | null => {
-  if (!value) {
-    return null
-  }
-
-  const trimmed = value.trim()
-  if (!trimmed || trimmed.length > 35 || !LOCALE_PATTERN.test(trimmed)) {
-    return null
-  }
-
-  return trimmed
-}
+export const normalizeWebsiteEmbedLocale = normalizeLocaleTag
 
 export const normalizeWebsiteEmbedInitialState = (value: string | null | undefined): WebsiteEmbedInitialState | null => {
   if (!value) {

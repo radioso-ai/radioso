@@ -14,6 +14,10 @@
       "types": "./dist/src/embed-layout.d.ts",
       "default": "./dist/src/embed-layout.js"
     },
+    "./embed-test-page": {
+      "types": "./dist/src/embed-test-page.d.ts",
+      "default": "./dist/src/embed-test-page.js"
+    },
     "./routes/embed-session": {
       "types": "./dist/src/routes/embed-session.d.ts",
       "default": "./dist/src/routes/embed-session.js"

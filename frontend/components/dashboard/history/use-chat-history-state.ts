@@ -18,6 +18,7 @@ import {
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { editionController } from '@/lib/edition-controller'
 import type { CitationOpenResult } from '@/components/dashboard/chat-citations'
 import type { HistoryFilter, HistoryListItem, SelectedHistoryItem } from './history-list'
 
@@ -41,7 +42,7 @@ export function useHistoryListState({
   routeState: DashboardRouteState
 }) {
   const router = useRouter()
-  const [filter, setFilter] = useState<HistoryFilter>(routeState.historyFilter ?? 'all')
+  const [filter, setFilter] = useState<HistoryFilter>(editionController.normalizeHistoryFilter(routeState.historyFilter ?? 'all'))
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
   const [historyItemsTotal, setHistoryItemsTotal] = useState(0)
   const [hasHistoryItemsNextPage, setHasHistoryItemsNextPage] = useState(false)
@@ -67,16 +68,18 @@ export function useHistoryListState({
     routeState.historyFilter === 'contact' ? (routeState.historyPage ?? 1) : 1,
   )
   const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(
-    routeState.historyItemKind && routeState.historyItemId
-      ? { kind: routeState.historyItemKind, id: routeState.historyItemId }
-      : null,
+    editionController.normalizeHistorySelection(
+      routeState.historyItemKind && routeState.historyItemId
+        ? { kind: routeState.historyItemKind, id: routeState.historyItemId }
+        : null,
+    ),
   )
   const [isListLoading, setIsListLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
   const [loadedHistoryKey, setLoadedHistoryKey] = useState<string | null>(null)
 
   useEffect(() => {
-    const nextFilter = routeState.historyFilter ?? 'all'
+    const nextFilter = editionController.normalizeHistoryFilter(routeState.historyFilter ?? 'all')
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Syncs local history controls from the current URL route.
     setFilter(nextFilter)
 
@@ -92,7 +95,7 @@ export function useHistoryListState({
     }
 
     if (routeState.historyItemKind && routeState.historyItemId) {
-      setSelectedItem({ kind: routeState.historyItemKind, id: routeState.historyItemId })
+      setSelectedItem(editionController.normalizeHistorySelection({ kind: routeState.historyItemKind, id: routeState.historyItemId }))
       return
     }
 
@@ -105,7 +108,7 @@ export function useHistoryListState({
   ])
 
   const pushHistoryRoute = useCallback<PushHistoryRoute>((next) => {
-    const nextFilter = next.filter ?? filter
+    const nextFilter = editionController.normalizeHistoryFilter(next.filter ?? filter)
     const nextPage = next.page ?? (
       nextFilter === 'all'
         ? allPage
@@ -115,7 +118,9 @@ export function useHistoryListState({
             ? searchPage
             : contactPage
     )
-    const nextSelectedItem = next.selectedItem === undefined ? selectedItem : next.selectedItem
+    const nextSelectedItem = editionController.normalizeHistorySelection(
+      next.selectedItem === undefined ? selectedItem : next.selectedItem,
+    )
 
     router.push(buildDashboardHref(accountId, {
       ...routeState,
@@ -329,16 +334,18 @@ export function useHistoryListState({
     setSelectedItem,
     pushHistoryRoute,
     onFilterChange: (nextFilter: HistoryFilter) => {
-      setFilter(nextFilter)
-      if (nextFilter === 'all') setAllPage(1)
-      if (nextFilter === 'chat') setConversationPage(1)
-      if (nextFilter === 'search') setSearchPage(1)
-      if (nextFilter === 'contact') setContactPage(1)
-      pushHistoryRoute({ filter: nextFilter, page: 1, selectedItem: null })
+      const enabledFilter = editionController.normalizeHistoryFilter(nextFilter)
+      setFilter(enabledFilter)
+      if (enabledFilter === 'all') setAllPage(1)
+      if (enabledFilter === 'chat') setConversationPage(1)
+      if (enabledFilter === 'search') setSearchPage(1)
+      if (enabledFilter === 'contact') setContactPage(1)
+      pushHistoryRoute({ filter: enabledFilter, page: 1, selectedItem: null })
     },
     onSelectItem: (item: SelectedHistoryItem) => {
-      setSelectedItem(item)
-      pushHistoryRoute({ selectedItem: item })
+      const enabledItem = editionController.normalizeHistorySelection(item)
+      setSelectedItem(enabledItem)
+      pushHistoryRoute({ selectedItem: enabledItem })
     },
     onConversationPageChange: (page: number) => {
       if (page > conversationPage && !hasConversationNextPage) {

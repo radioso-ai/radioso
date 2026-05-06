@@ -21,6 +21,8 @@ import {
 } from '@/components/chat/human-contact-inline-composer'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 import { type ChatSuggestion, type HumanContactTriggerSource, type WebsiteEmbedPageContext } from '@/lib/api'
+import { createClientId } from '@/lib/client-id'
+import { editionController } from '@/lib/edition-controller'
 import { HUMAN_CONTACT_REQUEST_TRIGGER_REASON, isHumanContactRequest } from '@/lib/human-contact-intent'
 import {
   buildWebsiteEmbedSurfaceCssVars,
@@ -348,6 +350,7 @@ function PublicChatContent({
   const resolvedWorkspaceName = workspaceName ?? initialWorkspaceName ?? copy.embeddedChatTitle
   const contactAction = publicSessionActions.contact
   const contactAvailable =
+    editionController.canUseHumanContact() &&
     Boolean(contactAction) &&
     typeof contactAction === 'object' &&
     !Array.isArray(contactAction) &&
@@ -402,7 +405,7 @@ function PublicChatContent({
     if (!input.trim() || isLoading) return
 
     const nextInput = input.trim()
-    if (contactAvailable && latestAssistantMessage && isHumanContactRequest(nextInput)) {
+    if (editionController.canUseHumanContact() && contactAvailable && latestAssistantMessage && isHumanContactRequest(nextInput)) {
       setInput('')
       openContactComposer({
         assistantMessageId: latestAssistantMessage.id,
@@ -495,7 +498,7 @@ function PublicChatContent({
   const handleSuggestionSelect = (suggestion: ChatSuggestion, messageId: string) => {
     if (isLoading) return
 
-    if (suggestion.action?.kind === 'contact_human') {
+    if (editionController.isHumanContactSuggestion(suggestion)) {
       const payload = suggestion.action.payload ?? {}
       const triggerSource = typeof payload.triggerSource === 'string'
         ? payload.triggerSource as HumanContactTriggerSource
@@ -531,7 +534,7 @@ function PublicChatContent({
   const handleContactSubmitted = (content: string) => {
     setContactRequest(null)
     setContactConfirmation({
-      id: crypto.randomUUID(),
+      id: createClientId('contact-confirmation'),
       role: 'assistant',
       content,
       createdAt: new Date().toISOString(),
@@ -719,7 +722,7 @@ function PublicChatContent({
             </p>
           </div>
         ) : null}
-        {contactRequest ? (
+        {editionController.canUseHumanContact() && contactRequest ? (
           <HumanContactInlineComposer
             request={contactRequest}
             publicChatToken={publicChatToken}

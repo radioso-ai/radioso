@@ -8,6 +8,8 @@ import { humanContactMigrator } from "./humanContact/humanContactMigrator.js";
 import { EnterpriseHumanContactService } from "./humanContact/humanContactService.js";
 import { createHumanContactRoutes } from "./humanContact/humanContactRoutes.js";
 
+const STARTER_PROFILE_KEY = "starter_100";
+let usageLimitService: EnterpriseUsageLimitService | null = null;
 let humanContactService: EnterpriseHumanContactService | null = null;
 
 export const applicationModule: ApplicationModule = {
@@ -16,7 +18,17 @@ export const applicationModule: ApplicationModule = {
   register(context) {
     context.registerDatabaseMigrator(usageLimitMigrator);
     context.registerDatabaseMigrator(humanContactMigrator);
-    context.registerUsageLimitPolicy(({ database }) => new EnterpriseUsageLimitService(database));
+    context.registerUsageLimitPolicy(({ database }) => {
+      usageLimitService = new EnterpriseUsageLimitService(database);
+      return usageLimitService;
+    });
+    context.registerAccountCreatedHandler(async ({ accountId, database }) => {
+      const resolvedService = usageLimitService ?? new EnterpriseUsageLimitService(database);
+      if (usageLimitService === null) {
+        usageLimitService = resolvedService;
+      }
+      await resolvedService.assignProfile(accountId, STARTER_PROFILE_KEY);
+    });
     context.registerChatActionProvider((dependencies) => {
       humanContactService?.stop();
       humanContactService = new EnterpriseHumanContactService(dependencies);
@@ -31,7 +43,7 @@ export const applicationModule: ApplicationModule = {
     context.registerRouteMount({
       path: "/api/v1/ee/usage-limits",
       createRouter(dependencies) {
-        return createUsageLimitRoutes(dependencies.connectorDb);
+        return createUsageLimitRoutes(dependencies);
       },
     });
     context.registerRouteMount({

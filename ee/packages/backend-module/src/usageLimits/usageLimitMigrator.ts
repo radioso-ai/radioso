@@ -59,7 +59,9 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
         monthly_answer_limit,
         stored_document_limit
       )
-      VALUES ('starter_250', 'Starter 250', 250, 250)
+      VALUES
+        ('starter_100', 'Starter 100', 100, 100),
+        ('starter_250', 'Starter 250', 250, 250)
       ON CONFLICT (key) DO NOTHING
     `);
   },

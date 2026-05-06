@@ -37,6 +37,7 @@ import {
   ChevronUp,
   User,
   Users,
+  Gauge,
 } from 'lucide-react'
 import {
   buildDashboardHref,
@@ -231,6 +232,18 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
                   >
                     <Users className="w-4 h-4 mr-2" />
                     Users
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link
+                    href={buildDashboardHref(accountId, {
+                      section: 'usage',
+                      workspaceId: activeWorkspaceId ?? undefined,
+                      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                    })}
+                  >
+                    <Gauge className="w-4 h-4 mr-2" />
+                    Usage
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />

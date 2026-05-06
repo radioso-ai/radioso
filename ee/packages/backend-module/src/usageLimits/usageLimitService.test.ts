@@ -22,6 +22,10 @@ class FakeUsageLimitDatabase implements UsageLimitDatabasePort {
     externalDocumentId: string | null;
     sourceKind: string;
   }> = [];
+  readonly assistantMessages: Array<{
+    workspaceId: string;
+    createdAt: Date;
+  }> = [];
   readonly reservations = new Map<string, { accountId: string; workspaceId: string; expiresAt: Date }>();
 
   async query<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {
@@ -69,6 +73,18 @@ class FakeUsageLimitDatabase implements UsageLimitDatabasePort {
     if (text.includes("FROM ee_usage_limit_answer_counters")) {
       const key = answerCounterKey(String(params[0]), String(params[1]));
       return [{ used_count: this.answerCounters.get(key) ?? 0 }] as T[];
+    }
+
+    if (text.includes("FROM messages m")) {
+      const accountId = String(params[0]);
+      const periodStart = new Date(String(params[1]));
+      const resetAt = new Date(String(params[2]));
+      const count = this.assistantMessages.filter((message) =>
+        this.workspaceAccounts.get(message.workspaceId) === accountId &&
+        message.createdAt >= periodStart &&
+        message.createdAt < resetAt
+      ).length;
+      return [{ count: String(count) }] as T[];
     }
 
     if (text.includes("FROM documents d")) {
@@ -158,6 +174,23 @@ describe("enterprise usage limit service", () => {
     await reservation.commit();
 
     expect(database.answerCounters.size).toBe(0);
+  });
+
+  it("reports persisted assistant messages for uncapped account usage", async () => {
+    const database = new FakeUsageLimitDatabase();
+    database.workspaceAccounts.set("workspace-1", "account-1");
+    database.assistantMessages.push(
+      { workspaceId: "workspace-1", createdAt: new Date("2026-05-05T12:00:00.000Z") },
+      { workspaceId: "workspace-1", createdAt: new Date("2026-05-06T12:00:00.000Z") },
+      { workspaceId: "workspace-1", createdAt: new Date("2026-04-30T12:00:00.000Z") },
+    );
+    const service = new EnterpriseUsageLimitService(database);
+
+    const usage = await service.getAccountUsage("account-1", "2026-05-01");
+
+    expect(usage.profile).toBeNull();
+    expect(usage.monthlyAnswers.used).toBe(2);
+    expect(usage.monthlyAnswers.limit).toBeNull();
   });
 
   it("reserves monthly answer usage and releases failed attempts", async () => {

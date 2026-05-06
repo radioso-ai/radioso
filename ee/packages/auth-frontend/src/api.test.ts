@@ -23,4 +23,21 @@ describe("enterprise auth frontend api", () => {
       method: "POST",
     }));
   });
+
+  it("requests email verification resend through the Enterprise auth namespace", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ accepted: true }), {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      status: 202,
+    }));
+
+    await enterpriseAuthApi.resendEmailVerification({ email: "ada@example.com" });
+
+    expect(fetchMock).toHaveBeenCalledWith("/backend/api/v1/ee/auth/email-verification/resend", expect.objectContaining({
+      body: JSON.stringify({ email: "ada@example.com" }),
+      credentials: "include",
+      method: "POST",
+    }));
+  });
 });

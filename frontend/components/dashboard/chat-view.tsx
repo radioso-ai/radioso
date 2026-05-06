@@ -95,10 +95,10 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
     if (!input.trim() || isLoading || isBootstrapping) return
 
     const nextInput = input.trim()
-    if (editionController.canUseHumanContact() && contactAvailable && latestAssistantMessage && isHumanContactRequest(nextInput)) {
+    if (editionController.canUseHumanContact() && contactAvailable && conversationId && latestAssistantMessage && isHumanContactRequest(nextInput)) {
       setInput('')
       openContactComposer({
-        assistantMessageId: latestAssistantMessage.id,
+        assistantMessageId: latestAssistantMessage.persistedAssistantMessageId ?? latestAssistantMessage.id,
         triggerSource: 'explicit_user_request',
         triggerReason: HUMAN_CONTACT_REQUEST_TRIGGER_REASON,
       })
@@ -174,7 +174,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
       return
     }
     openContactComposer({
-      assistantMessageId: latestAssistantMessage.id,
+      assistantMessageId: latestAssistantMessage.persistedAssistantMessageId ?? latestAssistantMessage.id,
       triggerSource: 'manual',
     })
   }
@@ -286,7 +286,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
             </DropdownMenuItem>
             {editionController.canUseHumanContact() && contactAvailable ? (
               <DropdownMenuItem
-                disabled={isLoading || isBootstrapping || isInitializingView || !latestAssistantMessage}
+                disabled={isLoading || isBootstrapping || isInitializingView || !conversationId || !latestAssistantMessage}
                 onSelect={handleManualContact}
               >
                 <UserRound className="mr-2 h-4 w-4" />

@@ -11,6 +11,7 @@ export const sendChatJson = (
   res: Response,
   payload: {
     conversationId?: string;
+    assistantMessageId?: string;
     route: ChatRoute;
     answer: string;
     citations?: ChatCitation[];
@@ -73,6 +74,7 @@ export const sendChatSse = (
     res.write("event: done\n");
     res.write(`data: ${JSON.stringify({
       conversationId: event.conversationId,
+      assistantMessageId: event.assistantMessageId,
       route: event.route,
       answer: event.answer,
       citations: event.citations,

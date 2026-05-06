@@ -356,7 +356,7 @@ function PublicChatContent({
     !Array.isArray(contactAction) &&
     (contactAction as { configured?: unknown }).configured === true
   const latestAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant')
-  const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages || !latestAssistantMessage
+  const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages || !conversationId || !latestAssistantMessage
   const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const visibleMessages = contactConfirmation ? [...messages, contactConfirmation] : messages
 
@@ -405,10 +405,10 @@ function PublicChatContent({
     if (!input.trim() || isLoading) return
 
     const nextInput = input.trim()
-    if (editionController.canUseHumanContact() && contactAvailable && latestAssistantMessage && isHumanContactRequest(nextInput)) {
+    if (editionController.canUseHumanContact() && contactAvailable && conversationId && latestAssistantMessage && isHumanContactRequest(nextInput)) {
       setInput('')
       openContactComposer({
-        assistantMessageId: latestAssistantMessage.id,
+        assistantMessageId: latestAssistantMessage.persistedAssistantMessageId ?? latestAssistantMessage.id,
         triggerSource: 'explicit_user_request',
         triggerReason: HUMAN_CONTACT_REQUEST_TRIGGER_REASON,
       })
@@ -490,7 +490,7 @@ function PublicChatContent({
       return
     }
     openContactComposer({
-      assistantMessageId: latestAssistantMessage.id,
+      assistantMessageId: latestAssistantMessage.persistedAssistantMessageId ?? latestAssistantMessage.id,
       triggerSource: 'manual',
     })
   }

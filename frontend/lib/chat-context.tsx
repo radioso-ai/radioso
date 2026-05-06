@@ -33,6 +33,7 @@ export interface ChatMessage {
   suggestions?: ChatSuggestion[]
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
+  persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
 }
 
@@ -152,6 +153,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           message.id === assistantMessageId
             ? {
                 ...message,
+                persistedAssistantMessageId: completion.assistantMessageId ?? message.persistedAssistantMessageId,
                 content: completion.answer ?? message.content,
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
@@ -370,6 +372,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     suggestions: bootstrap.suggestions,
                     retrievalInfo: bootstrap.retrievalInfo,
                     retrievalTrace: bootstrap.retrievalTrace,
+                    persistedAssistantMessageId: bootstrap.assistantMessageId,
                     status: 'complete' as const,
                   },
                 ],
@@ -440,6 +443,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               answerSegments: bootstrap.answerSegments,
               retrievalInfo: bootstrap.retrievalInfo,
               retrievalTrace: bootstrap.retrievalTrace,
+              persistedAssistantMessageId: bootstrap.assistantMessageId,
               status: 'complete',
             },
           ],

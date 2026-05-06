@@ -2377,6 +2377,9 @@ components:
         conversationId:
           type: string
           format: uuid
+        assistantMessageId:
+          type: string
+          format: uuid
         answer:
           type: string
         citations:
@@ -2430,6 +2433,7 @@ components:
           $ref: "#/components/schemas/AssistantRoute"
       required:
         - conversationId
+        - assistantMessageId
         - answer
         - conversationMode
         - conversationModeMetadata
@@ -5355,4 +5359,3 @@ paths:
 
         The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
 webhooks: {}
-

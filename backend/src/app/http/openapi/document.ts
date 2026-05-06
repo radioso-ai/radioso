@@ -943,6 +943,7 @@ const ChatResponseSchema = registry.register(
   "ChatResponse",
   z.object({
     conversationId: z.string().uuid(),
+    assistantMessageId: z.string().uuid(),
     ...chatResponseCoreShape,
     route: AssistantRouteSchema,
   }),

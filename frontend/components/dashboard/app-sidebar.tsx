@@ -46,6 +46,7 @@ import {
 import { WorkspaceSwitcher } from './workspace-switcher'
 import { useWorkspace } from '@/lib/workspace-context'
 import { generalSettingsApi } from '@/lib/api'
+import { ENTERPRISE_USAGE_LIMITS_ENABLED } from '@/lib/enterprise-features'
 
 interface AppSidebarProps {
   accountId: string
@@ -234,18 +235,20 @@ export function AppSidebar({ accountId, currentView }: AppSidebarProps) {
                     Users
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link
-                    href={buildDashboardHref(accountId, {
-                      section: 'usage',
-                      workspaceId: activeWorkspaceId ?? undefined,
-                      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                    })}
-                  >
-                    <Gauge className="w-4 h-4 mr-2" />
-                    Usage
-                  </Link>
-                </DropdownMenuItem>
+                {ENTERPRISE_USAGE_LIMITS_ENABLED ? (
+                  <DropdownMenuItem asChild>
+                    <Link
+                      href={buildDashboardHref(accountId, {
+                        section: 'usage',
+                        workspaceId: activeWorkspaceId ?? undefined,
+                        workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                      })}
+                    >
+                      <Gauge className="w-4 h-4 mr-2" />
+                      Usage
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
                   <LogOut className="w-4 h-4 mr-2" />

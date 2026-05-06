@@ -9,7 +9,6 @@ import { EnterpriseHumanContactService } from "./humanContact/humanContactServic
 import { createHumanContactRoutes } from "./humanContact/humanContactRoutes.js";
 
 const STARTER_PROFILE_KEY = "starter_100";
-let usageLimitService: EnterpriseUsageLimitService | null = null;
 let humanContactService: EnterpriseHumanContactService | null = null;
 
 export const applicationModule: ApplicationModule = {
@@ -19,14 +18,10 @@ export const applicationModule: ApplicationModule = {
     context.registerDatabaseMigrator(usageLimitMigrator);
     context.registerDatabaseMigrator(humanContactMigrator);
     context.registerUsageLimitPolicy(({ database }) => {
-      usageLimitService = new EnterpriseUsageLimitService(database);
-      return usageLimitService;
+      return new EnterpriseUsageLimitService(database);
     });
     context.registerAccountCreatedHandler(async ({ accountId, database }) => {
-      const resolvedService = usageLimitService ?? new EnterpriseUsageLimitService(database);
-      if (usageLimitService === null) {
-        usageLimitService = resolvedService;
-      }
+      const resolvedService = new EnterpriseUsageLimitService(database);
       await resolvedService.assignProfile(accountId, STARTER_PROFILE_KEY);
     });
     context.registerChatActionProvider((dependencies) => {

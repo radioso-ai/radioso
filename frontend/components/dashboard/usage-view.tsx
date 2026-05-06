@@ -112,6 +112,25 @@ export function UsageView() {
     }
   }, [])
 
+  if (!ENTERPRISE_USAGE_LIMITS_ENABLED) {
+    return (
+      <DashboardPage
+        title="Usage"
+        description="Account limits and current consumption."
+        contentClassName="p-6"
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle>Usage limits unavailable</CardTitle>
+            <CardDescription>
+              Usage limits are only available in the enterprise edition.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </DashboardPage>
+    )
+  }
+
   return (
     <DashboardPage
       title="Usage"
@@ -129,7 +148,7 @@ export function UsageView() {
             <CardDescription>{error}</CardDescription>
           </CardHeader>
         </Card>
-      ) : usage || !ENTERPRISE_USAGE_LIMITS_ENABLED ? (
+      ) : usage ? (
         <div className="space-y-6">
           {usage?.profile ? (
             <Card>
@@ -169,7 +188,14 @@ export function UsageView() {
             />
           </div>
         </div>
-      ) : null}
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Usage unavailable</CardTitle>
+            <CardDescription>No usage data is available.</CardDescription>
+          </CardHeader>
+        </Card>
+      )}
     </DashboardPage>
   )
 }

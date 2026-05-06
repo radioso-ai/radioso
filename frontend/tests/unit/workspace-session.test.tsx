@@ -44,8 +44,8 @@ describe('workspace session bootstrap', () => {
 
   it('removes the active workspace id and clears cached workspace tokens', () => {
     const localStorage = createLocalStorage({
-      'radioso.apiToken': 'sk_proj_legacy',
-      'radioso.workspaceTokens': JSON.stringify({ 'workspace-a': 'sk_proj_workspace' }),
+      'radioso.apiToken': 'radioso_legacy',
+      'radioso.workspaceTokens': JSON.stringify({ 'workspace-a': 'radioso_workspace' }),
       'radioso.activeWorkspaceId': 'workspace-a',
     })
     vi.stubGlobal('window', { localStorage })

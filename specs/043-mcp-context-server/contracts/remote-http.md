@@ -18,7 +18,7 @@ The remote MCP package owns these HTTP endpoints. They are package-local contrac
 
 ```json
 {
-  "radiosoApiToken": "sk_proj_example",
+  "radiosoApiToken": "radioso_example",
   "clientName": "cursor-local",
   "requestedTools": ["search_documents", "answer_grounded", "create_document"]
 }

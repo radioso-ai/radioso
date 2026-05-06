@@ -27,12 +27,12 @@ describe("auth primitives", () => {
   });
 
   it("generates api tokens with the expected prefix", () => {
-    expect(generateApiToken()).toMatch(/^sk_proj_[a-f0-9]+$/);
+    expect(generateApiToken()).toMatch(/^radioso_[a-f0-9]+$/);
   });
 
   it("encrypts and decrypts stored tokens", () => {
-    const encrypted = encryptSecret("sk_proj_secret", "0123456789abcdef0123456789abcdef");
+    const encrypted = encryptSecret("radioso_secret", "0123456789abcdef0123456789abcdef");
 
-    expect(decryptSecret(encrypted, "0123456789abcdef0123456789abcdef")).toEqual("sk_proj_secret");
+    expect(decryptSecret(encrypted, "0123456789abcdef0123456789abcdef")).toEqual("radioso_secret");
   });
 });

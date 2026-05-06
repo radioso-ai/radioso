@@ -93,7 +93,7 @@ ACCESS_TOKEN=$(
   curl -s http://127.0.0.1:8787/v1/auth/exchange \
     -H 'content-type: application/json' \
     -d '{
-      "radiosoApiToken": "sk_proj_example",
+      "radiosoApiToken": "radioso_example",
       "clientName": "operator-shell",
       "requestedTools": ["describe_capabilities","list_documents","answer_grounded","create_document"]
     }' \
@@ -105,7 +105,7 @@ For Cursor or other local clients that read bearer tokens from the environment, 
 
 ```bash
 source <(
-  RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
+  RADIOSO_WORKSPACE_TOKEN=radioso_example \
   npm run -s token:exchange
 )
 ```
@@ -113,7 +113,7 @@ source <(
 On macOS, if you launch Cursor from the Dock or Spotlight instead of from Terminal, install the token into the GUI app environment first:
 
 ```bash
-RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
+RADIOSO_WORKSPACE_TOKEN=radioso_example \
 npm run -s cursor:prepare -- --open
 ```
 
@@ -217,7 +217,7 @@ The package still supports a local stdio path for existing workflows:
 
 ```bash
 RADIOSO_BASE_URL=http://localhost:8080 \
-RADIOSO_API_TOKEN=sk_proj_example \
+RADIOSO_API_TOKEN=radioso_example \
 node dist/src/cli/stdio.js
 ```
 

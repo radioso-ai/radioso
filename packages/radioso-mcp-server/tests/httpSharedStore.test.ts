@@ -110,7 +110,7 @@ describe("remote MCP shared-store flow", () => {
 
     const exchangeResponse = await actualFetch(`${runtimeA.baseUrl}/v1/auth/exchange`, {
       body: JSON.stringify({
-        radiosoApiToken: "sk_proj_test",
+        radiosoApiToken: "radioso_test",
         requestedTools: ["create_document"],
       }),
       headers: {
@@ -172,7 +172,7 @@ describe("remote MCP shared-store flow", () => {
       "http://radioso.test/api/v1/document",
       expect.objectContaining({
         headers: expect.objectContaining({
-          authorization: "Bearer sk_proj_test",
+          authorization: "Bearer radioso_test",
         }),
       }),
     );

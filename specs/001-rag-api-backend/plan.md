@@ -135,7 +135,7 @@ development and verification.
 
 - Session model: opaque server-managed session IDs in `HttpOnly` secure cookies
   backed by Postgres session rows
-- API token model: one active `sk_proj_*` token per account, stored hashed in
+- API token model: one active `radioso_*` token per account, stored hashed in
   Postgres and returned only to an authenticated session holder
 - Streaming model: Server-Sent Events for streamed chat responses
 - Validation model: runtime schema validation at the transport boundary with

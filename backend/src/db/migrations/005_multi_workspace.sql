@@ -15,14 +15,41 @@ CREATE TABLE IF NOT EXISTS workspaces (
 CREATE INDEX IF NOT EXISTS idx_workspaces_account_id ON workspaces (account_id);
 
 -- Phase 2: Create default workspace for each existing account
-INSERT INTO workspaces (id, account_id, name)
-SELECT gen_random_uuid(), a.id, 'Default'
-FROM accounts a
-WHERE NOT EXISTS (
-  SELECT 1
-  FROM workspaces w
-  WHERE w.account_id = a.id
-);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'workspaces'
+      AND column_name = 'public_route_key'
+  ) THEN
+    WITH default_workspaces AS (
+      SELECT gen_random_uuid() AS id, a.id AS account_id
+      FROM accounts a
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM workspaces w
+        WHERE w.account_id = a.id
+      )
+    )
+    INSERT INTO workspaces (id, account_id, name, public_route_key)
+    SELECT
+      id,
+      account_id,
+      'Default',
+      CONCAT('default-', REPLACE(id::text, '-', ''))
+    FROM default_workspaces;
+  ELSE
+    INSERT INTO workspaces (id, account_id, name)
+    SELECT gen_random_uuid(), a.id, 'Default'
+    FROM accounts a
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM workspaces w
+      WHERE w.account_id = a.id
+    );
+  END IF;
+END $$;
 
 -- Phase 3: Create workspace_tokens table (replaces account_tokens)
 CREATE TABLE IF NOT EXISTS workspace_tokens (
@@ -44,7 +71,9 @@ BEGIN
   -- Skip if migration was already applied (account_id no longer exists on documents)
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'documents' AND column_name = 'account_id'
+    WHERE table_schema = current_schema()
+      AND table_name = 'documents'
+      AND column_name = 'account_id'
   ) THEN
     RAISE NOTICE 'Migration 005 already applied, skipping phases 4-8';
     RETURN;
@@ -53,7 +82,8 @@ BEGIN
   -- Migrate existing account_tokens to workspace_tokens (if account_tokens still exists)
   IF EXISTS (
     SELECT 1 FROM information_schema.tables
-    WHERE table_name = 'account_tokens'
+    WHERE table_schema = current_schema()
+      AND table_name = 'account_tokens'
   ) THEN
     INSERT INTO workspace_tokens (id, workspace_id, account_id, token_prefix, token_hash, encrypted_token, created_at, last_used_at)
     SELECT gen_random_uuid(), w.id, at.account_id, at.token_prefix, at.token_hash, at.encrypted_token, at.created_at, at.last_used_at

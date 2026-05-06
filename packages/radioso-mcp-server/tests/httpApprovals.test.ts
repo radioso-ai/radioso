@@ -109,7 +109,7 @@ describe("remote MCP approvals", () => {
 
     const exchangeResponse = await actualFetch(`${runtime.baseUrl}/v1/auth/exchange`, {
       body: JSON.stringify({
-        radiosoApiToken: "sk_proj_test",
+        radiosoApiToken: "radioso_test",
         requestedTools: ["create_document"],
       }),
       headers: {
@@ -191,7 +191,7 @@ describe("remote MCP approvals", () => {
           title: "Remote doc",
         }),
         headers: expect.objectContaining({
-          authorization: "Bearer sk_proj_test",
+          authorization: "Bearer radioso_test",
         }),
         method: "POST",
       }),
@@ -220,7 +220,7 @@ describe("remote MCP approvals", () => {
 
     const exchangeResponse = await actualFetch(`${runtime.baseUrl}/v1/auth/exchange`, {
       body: JSON.stringify({
-        radiosoApiToken: "sk_proj_test",
+        radiosoApiToken: "radioso_test",
         requestedTools: ["create_document"],
       }),
       headers: {
@@ -306,7 +306,7 @@ describe("remote MCP approvals", () => {
 
     const exchangeResponse = await actualFetch(`${runtime.baseUrl}/v1/auth/exchange`, {
       body: JSON.stringify({
-        radiosoApiToken: "sk_proj_test",
+        radiosoApiToken: "radioso_test",
         requestedTools: ["create_document"],
       }),
       headers: {

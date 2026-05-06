@@ -32,13 +32,13 @@ describe("auth foundations", () => {
       grantedTools: ["search_documents"],
       issuedAt: new Date("2026-04-21T12:00:00.000Z"),
       sessionId: "sess_01",
-      upstreamApiToken: "sk_proj_test",
+      upstreamApiToken: "radioso_test",
     });
 
     await expect(store.getByAccessToken("mcp_sess_test", now)).resolves.toMatchObject({
       grantedTools: ["search_documents"],
       sessionId: "sess_01",
-      upstreamApiToken: "sk_proj_test",
+      upstreamApiToken: "radioso_test",
     });
     await expect(store.getByAccessToken("wrong-token", now)).resolves.toBeNull();
   });
@@ -83,11 +83,11 @@ describe("auth foundations", () => {
     });
 
     const sessionA = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "sk_proj_a",
+      radiosoApiToken: "radioso_a",
       requestedTools: ["create_document"],
     });
     const sessionB = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "sk_proj_b",
+      radiosoApiToken: "radioso_b",
       requestedTools: ["create_document"],
     });
     const approval = await auth.issueApproval({
@@ -131,7 +131,7 @@ describe("auth foundations", () => {
     });
 
     const session = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "sk_proj_multi",
+      radiosoApiToken: "radioso_multi",
       requestedTools: ["create_document", "update_document"],
     });
     const approval = await auth.issueApproval({
@@ -188,7 +188,7 @@ describe("auth foundations", () => {
 
     const exchange = await auth.exchangeWorkspaceToken({
       clientName: "cursor-local",
-      radiosoApiToken: "sk_proj_test",
+      radiosoApiToken: "radioso_test",
       requestedTools: ["search_documents", "create_document"],
     });
 
@@ -197,7 +197,7 @@ describe("auth foundations", () => {
       grantedTools: ["search_documents", "create_document"],
       tokenType: "Bearer",
     });
-    expect(validateWorkspaceToken).toHaveBeenCalledWith("sk_proj_test");
+    expect(validateWorkspaceToken).toHaveBeenCalledWith("radioso_test");
     await expect(
       sessionStore.getByAccessToken(exchange.accessToken, new Date("2026-04-21T12:05:00.000Z")),
     ).resolves.toMatchObject({
@@ -207,7 +207,7 @@ describe("auth foundations", () => {
 
     await expect(
       auth.exchangeWorkspaceToken({
-        radiosoApiToken: "sk_proj_test",
+        radiosoApiToken: "radioso_test",
         requestedTools: ["delete_document"],
       }),
     ).rejects.toMatchObject({
@@ -233,7 +233,7 @@ describe("auth foundations", () => {
 
     await expect(
       auth.exchangeWorkspaceToken({
-        radiosoApiToken: "sk_proj_test",
+        radiosoApiToken: "radioso_test",
         requestedTools: ["delete_document"],
       }),
     ).rejects.toMatchObject({
@@ -301,7 +301,7 @@ describe("auth foundations", () => {
     });
 
     const exchange = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "sk_proj_test",
+      radiosoApiToken: "radioso_test",
       requestedTools: ["describe_capabilities", "search_documents", "create_document"],
     });
 
@@ -330,7 +330,7 @@ describe("auth foundations", () => {
     });
 
     const exchange = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "sk_proj_test",
+      radiosoApiToken: "radioso_test",
       requestedTools: ["create_document"],
     });
 

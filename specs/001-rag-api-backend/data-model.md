@@ -45,7 +45,7 @@
   - `last_used_at` nullable
 - **Validation**:
   - exactly one row per account
-  - prefix must match emitted token family such as `sk_proj_`
+  - prefix must match emitted token family such as `radioso_`
 
 ## RetrievalSettings
 

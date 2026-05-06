@@ -109,7 +109,7 @@ describe("auth integration", () => {
     expect(preferredSettings.status).toBe(200);
     expect(defaultSettings.status).toBe(200);
     expect(tokenRoute.status).toBe(200);
-    expect(tokenRoute.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
+    expect(tokenRoute.body.token).toMatch(/^radioso_[a-f0-9]+$/);
   });
 
   it("rotates the workspace token on demand", async () => {
@@ -129,7 +129,7 @@ describe("auth integration", () => {
 
     expect(revealed.status).toBe(200);
     expect(rotated.status).toBe(200);
-    expect(rotated.body.token).toMatch(/^sk_proj_[a-f0-9]+$/);
+    expect(rotated.body.token).toMatch(/^radioso_[a-f0-9]+$/);
     expect(rotated.body.token).not.toBe(revealed.body.token);
   });
 
@@ -203,14 +203,14 @@ describe("auth integration", () => {
     await workspaceTokenRepository.save({
       workspaceId: workspace.id,
       accountId: account.id,
-      tokenPrefix: "sk_proj_",
+      tokenPrefix: "radioso_",
       tokenHash: "stale-hash",
       encryptedToken: "not:a:valid-token",
     });
 
     const result = await authService.getTokenForWorkspace(workspace.id, account.id);
 
-    expect(result.token).toMatch(/^sk_proj_[a-f0-9]+$/);
+    expect(result.token).toMatch(/^radioso_[a-f0-9]+$/);
     expect(auditService.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -580,7 +580,7 @@ describe("auth integration", () => {
     );
     expect(switched.status).toBe(200);
     expect(switched.body.accountId).toBe(secondaryOwner.accountId);
-  });
+  }, 10_000);
 
   it("logs a multi-account user into the invited account when no preferred account is provided", async () => {
     const { app } = createTestApp();

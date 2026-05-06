@@ -68,7 +68,7 @@ describe("remote auth exchange", () => {
     const response = await fetch(`${runtime.baseUrl}/v1/auth/exchange`, {
       body: JSON.stringify({
         clientName: "remote-test",
-        radiosoApiToken: "sk_proj_test",
+        radiosoApiToken: "radioso_test",
         requestedTools: ["describe_capabilities", "list_documents"],
       }),
       headers: {

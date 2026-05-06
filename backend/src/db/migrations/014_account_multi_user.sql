@@ -41,11 +41,13 @@ WHERE NOT EXISTS (
   SELECT 1
   FROM users u
   WHERE u.id = a.id
-);
+)
+ON CONFLICT DO NOTHING;
 
 INSERT INTO account_memberships (id, account_id, user_id, role, status, created_at, updated_at)
 SELECT gen_random_uuid(), a.id, a.id, 'owner', 'active', a.created_at, a.updated_at
 FROM accounts a
+JOIN users u ON u.id = a.id
 WHERE NOT EXISTS (
   SELECT 1
   FROM account_memberships m

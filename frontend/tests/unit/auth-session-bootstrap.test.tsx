@@ -58,8 +58,8 @@ describe('auth session bootstrap', () => {
     const localStorage = createLocalStorage({
       'radioso.authUser': '{not-json',
       'radioso.lastAccountId': 'account-stale',
-      'radioso.apiToken': 'sk_proj_legacy_token',
-      'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'sk_proj_workspace_token' }),
+      'radioso.apiToken': 'radioso_legacy_token',
+      'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'radioso_workspace_token' }),
       'radioso.activeWorkspaceId': 'workspace-1',
     })
     vi.stubGlobal('window', { localStorage })

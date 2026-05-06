@@ -112,6 +112,25 @@ variable "connector_encryption_key" {
   sensitive   = true
 }
 
+variable "resend_mail_api_key" {
+  description = "Resend API key for Enterprise auth mail in staging."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "ee_mail_from_email" {
+  description = "Verified sender email address for Enterprise auth mail in staging."
+  type        = string
+  default     = null
+}
+
+variable "ee_mail_from_name" {
+  description = "Sender display name for Enterprise auth mail in staging."
+  type        = string
+  default     = "Radioso"
+}
+
 variable "metrics_auth_token" {
   description = "Optional metrics auth token for staging."
   type        = string
@@ -170,55 +189,5 @@ variable "public_chat_base_url_override" {
 variable "worker_tasks_service_url_override" {
   description = "Optional override for the worker service public URL."
   type        = string
-  default     = null
-}
-
-variable "mail_driver" {
-  description = "Mail delivery driver for staging."
-  type        = string
-  default     = "log"
-}
-
-variable "mail_from_email" {
-  description = "Default from-address for future cloud email delivery."
-  type        = string
-  default     = "noreply@example.com"
-}
-
-variable "mail_from_name" {
-  description = "Default from-name for future cloud email delivery."
-  type        = string
-  default     = "Radioso"
-}
-
-variable "mail_smtp_host" {
-  description = "Optional SMTP host for future staging email delivery."
-  type        = string
-  default     = null
-}
-
-variable "mail_smtp_port" {
-  description = "Optional SMTP port for future staging email delivery."
-  type        = number
-  default     = 587
-}
-
-variable "mail_smtp_secure" {
-  description = "Whether future staging SMTP uses implicit TLS."
-  type        = bool
-  default     = false
-}
-
-variable "mail_smtp_username" {
-  description = "Optional SMTP username for staging."
-  type        = string
-  sensitive   = true
-  default     = null
-}
-
-variable "mail_smtp_password" {
-  description = "Optional SMTP password for staging."
-  type        = string
-  sensitive   = true
   default     = null
 }

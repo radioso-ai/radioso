@@ -82,7 +82,7 @@ One script tag. Paste it on any page of an approved origin. The launcher opens a
 5. Wait for document processing to finish.
 6. Ask one of the suggested questions in chat.
 
-New accounts must verify their email before the first sign-in completes, except in the default `./run-dev.sh` local setup where `AUTH_SKIP_EMAIL_VERIFICATION=true` is written into `.env` for faster local iteration. Local runs also default to `MAIL_DRIVER=log`, so verification and password reset links are written to backend logs unless you point the app at a real SMTP server.
+Open-source Radioso does not include transactional email. Registration creates a session immediately, and password reset is not exposed in the OSS auth API. Mail-backed account recovery belongs to Enterprise Edition modules.
 
 Authenticated dashboard URLs are workspace-first. After sign-in, the app navigates under `/w/<workspace-public-route-key>/...`. Older `/account/<account-id>/...` dashboard links still work, but they redirect to the canonical workspace URL after the app restores the correct organization and workspace context.
 
@@ -114,7 +114,7 @@ curl -sS \
   http://localhost:8080/api/v1/auth/register
 ```
 
-That response includes `workspaceId`, `workspacePublicRouteKey`, and `requiresEmailVerification`. Verify the email first when required, then log in to save the session cookie:
+That response includes `workspaceId`, `workspacePublicRouteKey`, and a session cookie. You can also log in later to save a fresh session cookie:
 
 ```bash
 curl -sS -c cookies.txt \

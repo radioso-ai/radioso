@@ -69,8 +69,8 @@ describe("auth integration", () => {
     expect(response.body.workspacePublicRouteKey).toMatch(/^\d{10}$/);
     expect(response.body.workspaceId).toBeDefined();
     expect(response.body.token).toBeUndefined();
-    expect(response.body.requiresEmailVerification).toBe(true);
-    expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(response.body.requiresEmailVerification).toBeUndefined();
+    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
 
   it("supports multi-workspace session flows and explicit token reveal", async () => {

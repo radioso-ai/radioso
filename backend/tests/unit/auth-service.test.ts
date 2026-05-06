@@ -17,7 +17,6 @@ import {
   type AccountRepositoryPort,
   type SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
-import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { sha256 } from "../../src/modules/auth/domain/authPrimitives.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 
@@ -122,19 +121,12 @@ class WorkingSessionRepository implements SessionRepositoryPort {
   }
 }
 
-class FailingEmailVerificationService implements Pick<EmailVerificationService, "issueVerification"> {
-  async issueVerification(): Promise<never> {
-    throw new Error("verification delivery failed");
-  }
-}
-
 const createAuthService = (options: {
   accountRepository?: AccountRepositoryPort;
   userRepository?: InMemoryUserRepository;
   sessionRepository?: SessionRepositoryPort;
   workspaceService?: WorkspaceService;
   accountInvitationRepository?: InMemoryAccountInvitationRepository;
-  emailVerificationService?: Pick<EmailVerificationService, "issueVerification">;
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
 }) => {
   const env = createTestEnv();
@@ -164,7 +156,6 @@ const createAuthService = (options: {
       workspaceService,
       accountAccessService,
       accountInvitationService,
-      emailVerificationService: options.emailVerificationService,
       onAccountCreated: options.onAccountCreated,
     }),
     accountRepository,
@@ -175,13 +166,12 @@ const createAuthService = (options: {
 };
 
 describe("AuthService rollback", () => {
-  it("deletes the newly created account and user if registration fails after provisioning starts", async () => {
+  it("deletes the newly created account and user if session creation fails after provisioning starts", async () => {
     const accountRepository = new TrackingAccountRepository();
     const userRepository = new InMemoryUserRepository();
     const { authService } = createAuthService({
       accountRepository,
       userRepository,
-      emailVerificationService: new FailingEmailVerificationService(),
     });
 
     await expect(
@@ -189,7 +179,7 @@ describe("AuthService rollback", () => {
         email: "rollback-register@example.com",
         password: "verysecurepassword",
       }),
-    ).rejects.toThrow("verification delivery failed");
+    ).rejects.toThrow("session create failed");
 
     expect(accountRepository.deletedIds).toEqual(["account-1"]);
     expect(await accountRepository.findById("account-1")).toBeNull();
@@ -293,6 +283,7 @@ describe("AuthService rollback", () => {
   it("calls the account-created hook when registering a new account", async () => {
     const accountIds: string[] = [];
     const { authService } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
       onAccountCreated: async ({ accountId }) => {
         accountIds.push(accountId);
       },

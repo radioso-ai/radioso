@@ -43,18 +43,6 @@ const createEnv = (port: number): Env => ({
   WORKSPACE_TOKEN_SECRET: "fedcba9876543210fedcba9876543210",
   PUBLIC_CHAT_SESSION_SECRET: "00112233445566778899aabbccddeeff",
   SESSION_TTL_HOURS: 168,
-  AUTH_SKIP_EMAIL_VERIFICATION: true,
-  APP_BASE_URL: "http://localhost:3000",
-  PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
-  PASSWORD_RESET_RATE_LIMIT_MAX_ATTEMPTS: 5,
-  MAIL_DRIVER: "noop",
-  MAIL_FROM_EMAIL: "noreply@example.com",
-  MAIL_FROM_NAME: "Radioso",
-  MAIL_SMTP_HOST: undefined,
-  MAIL_SMTP_PORT: 587,
-  MAIL_SMTP_SECURE: false,
-  MAIL_SMTP_USERNAME: undefined,
-  MAIL_SMTP_PASSWORD: undefined,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
@@ -168,7 +156,6 @@ describe("runtime entrypoints", () => {
   it("serves session-authenticated admin routes after login bootstrap", async () => {
     const { dependencies } = createTestDependencies({
       envOverrides: {
-        AUTH_SKIP_EMAIL_VERIFICATION: true,
       },
     });
 
@@ -201,7 +188,6 @@ describe("runtime entrypoints", () => {
   it("reports unhandled request failures through the incident reporting seam", async () => {
     const { dependencies } = createTestDependencies({
       envOverrides: {
-        AUTH_SKIP_EMAIL_VERIFICATION: true,
       },
     });
     const reportIncidentSpy = vi.spyOn(dependencies.incidentReportingService, "reportUnhandledRequestError");

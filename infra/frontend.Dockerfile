@@ -4,10 +4,13 @@ WORKDIR /app/ee
 
 COPY ee/package*.json ./
 COPY ee/packages/embed-widget/package*.json ./packages/embed-widget/
+COPY ee/packages/auth-frontend/package*.json ./packages/auth-frontend/
 RUN npm install --package-lock=false --no-audit --no-fund
 
 COPY ee/packages/embed-widget ./packages/embed-widget
+COPY ee/packages/auth-frontend ./packages/auth-frontend
 RUN npm run build --workspace @radioso/enterprise-embed-widget
+RUN npm run build --workspace @radioso/enterprise-auth-frontend
 
 FROM node:22-bookworm-slim AS deps
 
@@ -16,9 +19,10 @@ ARG RADIOSO_EDITION=oss
 
 COPY frontend/package*.json ./
 COPY --from=ee-frontend-build /app/ee/packages/embed-widget ../ee/packages/embed-widget
+COPY --from=ee-frontend-build /app/ee/packages/auth-frontend ../ee/packages/auth-frontend
 RUN npm ci && \
     if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
-      npm install --install-links=true --no-save --package-lock=false --no-audit --no-fund ../ee/packages/embed-widget; \
+      npm install --install-links=true --no-save --package-lock=false --no-audit --no-fund ../ee/packages/embed-widget ../ee/packages/auth-frontend; \
     fi
 
 FROM node:22-bookworm-slim AS builder

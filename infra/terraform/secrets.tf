@@ -8,12 +8,9 @@ locals {
       "public-chat-session-secret" = var.public_chat_session_secret
       "connector-encryption-key"   = var.connector_encryption_key
     },
-    nonsensitive(var.mail_smtp_username) == null ? {} : {
-      "mail-smtp-username" = var.mail_smtp_username
-    },
-    nonsensitive(var.mail_smtp_password) == null ? {} : {
-      "mail-smtp-password" = var.mail_smtp_password
-    },
+    var.radioso_edition == "enterprise" ? {
+      "resend-mail-api-key" = var.resend_mail_api_key
+    } : {},
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = var.metrics_auth_token
     },
@@ -28,12 +25,9 @@ locals {
       "public-chat-session-secret" = true
       "connector-encryption-key"   = true
     },
-    nonsensitive(var.mail_smtp_username) == null ? {} : {
-      "mail-smtp-username" = true
-    },
-    nonsensitive(var.mail_smtp_password) == null ? {} : {
-      "mail-smtp-password" = true
-    },
+    var.radioso_edition == "enterprise" ? {
+      "resend-mail-api-key" = true
+    } : {},
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = true
     },

@@ -1,13 +1,14 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { authApi, getStoredActiveWorkspaceId, seedWorkspaceSession } from '@/lib/api'
 import { getStoredLastAccountId, useOptionalAuth } from '@/lib/auth-context'
+import { AUTH_RECOVERY_ENABLED } from '@/lib/enterprise-features'
 
 interface LoginFormProps {
   onSwitchToRegister: () => void
@@ -35,13 +36,10 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const [verificationNotice, setVerificationNotice] = useState('')
-  const [isResendingVerification, setIsResendingVerification] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    setVerificationNotice('')
     setIsLoading(true)
 
     try {
@@ -55,39 +53,9 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
       }
       await auth.login(email, response.userId, response.accountId)
     } catch (error) {
-      if (
-        error &&
-        typeof error === 'object' &&
-        'error' in error &&
-        error.error &&
-        typeof error.error === 'object' &&
-        'code' in error.error &&
-        error.error.code === 'email_verification_required'
-      ) {
-        setVerificationNotice('Verify your email before signing in. You can resend the verification email below.')
-      }
       setError(getErrorMessage(error))
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const handleResendVerification = async () => {
-    if (!email) {
-      setError('Enter your email address first.')
-      return
-    }
-
-    setIsResendingVerification(true)
-    setError('')
-
-    try {
-      await authApi.resendVerificationEmail({ email })
-      setVerificationNotice(`Verification email sent to ${email}.`)
-    } catch (error) {
-      setError(getErrorMessage(error))
-    } finally {
-      setIsResendingVerification(false)
     }
   }
 
@@ -108,9 +76,11 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="password">Password</Label>
-          <Link href="/reset-password" className="text-sm font-medium text-primary hover:underline">
-            Forgot password?
-          </Link>
+          {AUTH_RECOVERY_ENABLED ? (
+            <Link href="/reset-password" className="text-sm font-medium text-primary hover:underline">
+              Forgot password?
+            </Link>
+          ) : null}
         </div>
         <Input
           id="password"
@@ -125,21 +95,6 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
       {error && (
         <p className="text-sm text-destructive">{error}</p>
       )}
-      {verificationNotice ? (
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">{verificationNotice}</p>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            disabled={isLoading || isResendingVerification}
-            onClick={handleResendVerification}
-          >
-            {isResendingVerification ? <Spinner className="mr-2" /> : null}
-            Resend Verification Email
-          </Button>
-        </div>
-      ) : null}
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? <Spinner className="mr-2" /> : null}
         Sign In

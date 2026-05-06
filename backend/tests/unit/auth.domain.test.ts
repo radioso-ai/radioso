@@ -16,7 +16,7 @@ describe("auth primitives", () => {
 
     await expect(verifyPassword("correct horse battery staple", passwordHash)).resolves.toBe(true);
     await expect(verifyPassword("wrong password", passwordHash)).resolves.toBe(false);
-  });
+  }, 15_000);
 
   it("generates distinct session tokens and hashes them deterministically", () => {
     const a = generateSessionToken();

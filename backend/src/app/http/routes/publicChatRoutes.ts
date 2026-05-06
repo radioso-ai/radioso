@@ -6,7 +6,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { sendChatSse } from "../presenters/chatPresenter.js";
 import { badRequest, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
-import { anonymousRateLimiter } from "../middleware/anonymousRateLimiter.js";
+import { anonymousRateLimiter, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/domain/websiteEmbedSettings.js";
@@ -71,7 +71,18 @@ const publicChatSessionSchema = z.object({
   pageContext: pageContextSchema,
 });
 
-export const createPublicChatRoutes = (dependencies: AppDependencies): Router => {
+type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
+  AppDependencies,
+  | "env"
+  | "assistantChatService"
+  | "auditService"
+  | "chatActionProvider"
+  | "chatHistoryService"
+  | "conversationRepository"
+  | "workspaceRepository"
+>;
+
+export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies): Router => {
   const router = Router();
   const sessionMiddleware = resolveAnonymousSession(
     dependencies.workspaceRepository,

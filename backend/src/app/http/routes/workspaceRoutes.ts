@@ -3,8 +3,8 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
-import { requireSession } from "../middleware/requireSession.js";
-import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
+import { requireSession, type SessionDependencies } from "../middleware/requireSession.js";
+import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 
 export const createWorkspaceSchema = z.object({
@@ -23,7 +23,12 @@ export const workspaceKeyParamsSchema = z.object({
   workspaceKey: z.string().trim().min(3).max(64).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
 });
 
-export const createWorkspaceRoutes = (dependencies: AppDependencies): Router => {
+type WorkspaceRouteDependencies = SessionDependencies & WorkspaceSessionDependencies & Pick<
+  AppDependencies,
+  "abuseControlService" | "auditService" | "workspaceService" | "workspaceSummaryService" | "accountRepository"
+>;
+
+export const createWorkspaceRoutes = (dependencies: WorkspaceRouteDependencies): Router => {
   const router = Router();
   const authenticatedUserSession = requireSession(dependencies, { requireActiveMembership: false });
   const workspaceSession = requireWorkspaceSession(dependencies);

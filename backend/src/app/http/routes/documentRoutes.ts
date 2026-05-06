@@ -3,7 +3,7 @@ import multer from "multer";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
@@ -39,7 +39,20 @@ export const documentListQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
 });
 
-export const createDocumentRoutes = (dependencies: AppDependencies): Router => {
+type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
+  AppDependencies,
+  | "env"
+  | "abuseControlService"
+  | "auditService"
+  | "documentDeletionService"
+  | "documentImportService"
+  | "documentIngestionService"
+  | "documentSearchHistoryService"
+  | "documentSearchService"
+  | "usageLimitPolicy"
+>;
+
+export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
   const uploadRateLimit = createRateLimitMiddleware({

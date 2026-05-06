@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { requireSession } from "../middleware/requireSession.js";
+import { requireSession, type SessionDependencies } from "../middleware/requireSession.js";
 import { validateBody } from "../middleware/validate.js";
 
 export const createAccountInvitationSchema = z.object({
@@ -26,7 +26,9 @@ export const renameAccountSchema = z.object({
   organizationName: z.string().trim().min(1).max(80),
 });
 
-export const createAccountUserRoutes = (dependencies: AppDependencies): Router => {
+type AccountUserRouteDependencies = SessionDependencies & Pick<AppDependencies, "accountInvitationService">;
+
+export const createAccountUserRoutes = (dependencies: AccountUserRouteDependencies): Router => {
   const router = Router();
   const authenticatedSession = requireSession(dependencies);
   const authenticatedUserSession = requireSession(dependencies, { requireActiveMembership: false });

@@ -10,7 +10,9 @@ const documentProcessingTaskSchema = z.object({
   revision: z.number().int().positive().optional(),
 });
 
-export const createWorkerTaskRoutes = (dependencies: AppDependencies): Router => {
+type WorkerTaskRouteDependencies = Pick<AppDependencies, "documentProcessingWorker">;
+
+export const createWorkerTaskRoutes = (dependencies: WorkerTaskRouteDependencies): Router => {
   const router = Router();
 
   router.get("/health", (_req, res) => {

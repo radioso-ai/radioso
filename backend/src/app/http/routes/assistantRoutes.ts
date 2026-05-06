@@ -2,12 +2,14 @@ import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
 import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
-import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { assistantChatSchema } from "../schemas/assistantChatSchemas.js";
 
-export const createAssistantRoutes = (dependencies: AppDependencies): Router => {
+type AssistantRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "assistantChatService">;
+
+export const createAssistantRoutes = (dependencies: AssistantRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
 

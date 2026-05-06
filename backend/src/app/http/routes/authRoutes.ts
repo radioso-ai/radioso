@@ -29,7 +29,9 @@ export const invitationAcceptSchema = z.object({
   password: z.string().min(8),
 });
 
-export const createAuthRoutes = (dependencies: AppDependencies): Router => {
+type AuthRouteDependencies = Pick<AppDependencies, "env" | "authService" | "abuseControlService" | "auditService">;
+
+export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router => {
   const router = Router();
   const authWindowMs = dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS;
   const authLimit = dependencies.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS;

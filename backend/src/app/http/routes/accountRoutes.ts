@@ -3,10 +3,12 @@ import { Router } from "express";
 import type { AppDependencies } from "../../server/types.js";
 import { workspaceParamsSchema } from "./workspaceRoutes.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
-import { requireSession } from "../middleware/requireSession.js";
+import { requireSession, type SessionDependencies } from "../middleware/requireSession.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 
-export const createAccountRoutes = (dependencies: AppDependencies): Router => {
+type AccountRouteDependencies = SessionDependencies & Pick<AppDependencies, "abuseControlService" | "auditService">;
+
+export const createAccountRoutes = (dependencies: AccountRouteDependencies): Router => {
   const router = Router();
   const requireAuthenticatedSession = requireSession(dependencies);
   const workspaceTokenReadRateLimit = createRateLimitMiddleware({

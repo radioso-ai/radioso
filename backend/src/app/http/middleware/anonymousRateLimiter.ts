@@ -3,7 +3,9 @@ import type { RequestHandler } from "express";
 import type { AppDependencies } from "../../server/types.js";
 import { createRateLimitMiddleware } from "./rateLimit.js";
 
-export const anonymousRateLimiter = (dependencies: AppDependencies): RequestHandler =>
+export type AnonymousRateLimiterDependencies = Pick<AppDependencies, "env" | "abuseControlService" | "auditService">;
+
+export const anonymousRateLimiter = (dependencies: AnonymousRateLimiterDependencies): RequestHandler =>
   createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,

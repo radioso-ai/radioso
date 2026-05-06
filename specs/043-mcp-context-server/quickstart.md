@@ -36,7 +36,7 @@ ACCESS_TOKEN=$(
   curl -s http://127.0.0.1:8787/v1/auth/exchange \
     -H 'content-type: application/json' \
     -d '{
-      "radiosoApiToken": "sk_proj_example",
+      "radiosoApiToken": "radioso_example",
       "clientName": "quickstart",
       "requestedTools": ["describe_capabilities","search_documents","answer_grounded","create_document"]
     }' \

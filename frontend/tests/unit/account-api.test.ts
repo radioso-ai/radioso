@@ -14,14 +14,14 @@ describe('accountApi.getWorkspaceToken', () => {
       headers: {
         get: () => 'application/json',
       },
-      json: async () => ({ token: 'sk_proj_test_token' }),
+      json: async () => ({ token: 'radioso_test_token' }),
     })
 
     vi.stubGlobal('fetch', fetchMock)
 
     const response = await accountApi.getWorkspaceToken('workspace-123')
 
-    expect(response).toEqual({ token: 'sk_proj_test_token' })
+    expect(response).toEqual({ token: 'radioso_test_token' })
     expect(fetchMock).toHaveBeenCalledWith(
       '/backend/api/v1/account/workspaces/workspace-123/token',
       expect.objectContaining({
@@ -70,14 +70,14 @@ describe('accountApi.getWorkspaceToken', () => {
       headers: {
         get: () => 'application/json',
       },
-      json: async () => ({ token: 'sk_proj_rotated_token' }),
+      json: async () => ({ token: 'radioso_rotated_token' }),
     })
 
     vi.stubGlobal('fetch', fetchMock)
 
     const response = await accountApi.rotateWorkspaceToken('workspace-123')
 
-    expect(response).toEqual({ token: 'sk_proj_rotated_token' })
+    expect(response).toEqual({ token: 'radioso_rotated_token' })
     expect(fetchMock).toHaveBeenCalledWith(
       '/backend/api/v1/account/workspaces/workspace-123/token/rotate',
       expect.objectContaining({

@@ -111,7 +111,22 @@ await client.documents.create({
 })
 ```
 
-You can also use the raw HTTP document routes directly, including the multipart `POST /api/v1/document/import` path when the source of truth is a file.
+When the source of truth is a file, import it instead:
+
+```ts
+import { readFile } from 'node:fs/promises'
+
+const file = await readFile('./refund-policy.pdf')
+
+await client.documents.importFile({
+  file,
+  filename: 'refund-policy.pdf',
+  title: 'Refund policy',
+  mimeType: 'application/pdf',
+})
+```
+
+You can also use the raw HTTP document routes directly, including the multipart `POST /api/v1/document/import` path.
 
 ## Ask one question that should have an obvious answer
 

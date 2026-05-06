@@ -26,8 +26,8 @@ const themeBootstrapScript = `
 `
 
 export const metadata: Metadata = {
-  title: 'radioso - Modular RAG Platform',
-  description: 'A modular retrieval-augmented generation platform for intelligent document Q&A',
+  title: 'radioso - Knowledge Agents Platform',
+  description: 'A knowledge agents platform for grounded document Q&A',
   icons: {
     icon: '/radioso-logo.png',
     apple: '/radioso-logo.png',

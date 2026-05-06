@@ -19,6 +19,8 @@ import { documentsApi, humanContactApi, type ChatSuggestion, type HumanContactTr
 import { useChatSession } from '@/lib/chat-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { HUMAN_CONTACT_REQUEST_TRIGGER_REASON, isHumanContactRequest } from '@/lib/human-contact-intent'
+import { createClientId } from '@/lib/client-id'
+import { editionController } from '@/lib/edition-controller'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
@@ -79,7 +81,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
       }
     }
 
-    if (activeWorkspaceId) {
+    if (editionController.canUseHumanContact() && activeWorkspaceId) {
       void loadContactAvailability()
     }
 
@@ -93,7 +95,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
     if (!input.trim() || isLoading || isBootstrapping) return
 
     const nextInput = input.trim()
-    if (contactAvailable && latestAssistantMessage && isHumanContactRequest(nextInput)) {
+    if (editionController.canUseHumanContact() && contactAvailable && latestAssistantMessage && isHumanContactRequest(nextInput)) {
       setInput('')
       openContactComposer({
         assistantMessageId: latestAssistantMessage.id,
@@ -182,7 +184,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
       return
     }
 
-    if (suggestion.action?.kind === 'contact_human') {
+    if (editionController.isHumanContactSuggestion(suggestion)) {
       const payload = suggestion.action.payload ?? {}
       const triggerSource = typeof payload.triggerSource === 'string'
         ? payload.triggerSource as HumanContactTriggerSource
@@ -204,7 +206,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
   const handleContactSubmitted = (content: string) => {
     setContactRequest(null)
     setContactConfirmation({
-      id: crypto.randomUUID(),
+      id: createClientId('contact-confirmation'),
       role: 'assistant',
       content,
       createdAt: new Date().toISOString(),
@@ -282,7 +284,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
               <RotateCcw className="mr-2 h-4 w-4" />
               Clear chat
             </DropdownMenuItem>
-            {contactAvailable ? (
+            {editionController.canUseHumanContact() && contactAvailable ? (
               <DropdownMenuItem
                 disabled={isLoading || isBootstrapping || isInitializingView || !latestAssistantMessage}
                 onSelect={handleManualContact}
@@ -294,7 +296,7 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
           </DropdownMenuContent>
         </DropdownMenu>
       }
-      footer={isInitializingView ? null : contactRequest ? (
+      footer={isInitializingView ? null : editionController.canUseHumanContact() && contactRequest ? (
         <HumanContactInlineComposer
           request={contactRequest}
           onCancel={() => setContactRequest(null)}

@@ -18,6 +18,10 @@ const generatedFiles = [
     content: "export { default, metadata } from '@radioso/enterprise-embed-widget/embed-layout'\n",
   },
   {
+    relativePath: "app/embed-test/page.tsx",
+    content: "export { default } from '@radioso/enterprise-embed-widget/embed-test-page'\n",
+  },
+  {
     relativePath: "app/api/embed/session/[token]/route.ts",
     content: [
       "export const runtime = 'nodejs'",
@@ -54,6 +58,7 @@ const generatedFiles = [
 
 const generatedDirectories = [
   "app/embed",
+  "app/embed-test",
   "app/api/embed",
   "app/radioso-embed.js",
   "app/reset-password",

@@ -51,25 +51,36 @@ export const validateFeatureManifests = (
 
     if (manifest.edition === "enterprise") {
       for (const route of manifest.frontendRoutes ?? []) {
-        if (!route.packageName.startsWith("@radioso/enterprise-")) {
-          errors.push(`Enterprise feature "${manifest.id}" route "${route.relativePath}" must use an Enterprise package`);
+        const routeLabel = routeLabelFor(route.relativePath);
+        if (typeof route.packageName !== "string" || route.packageName.length === 0) {
+          errors.push(`Enterprise feature "${manifest.id}" route "${routeLabel}" must declare packageName`);
+        } else if (!route.packageName.startsWith("@radioso/enterprise-")) {
+          errors.push(`Enterprise feature "${manifest.id}" route "${routeLabel}" must use an Enterprise package`);
         }
       }
     }
 
     for (const route of manifest.frontendRoutes ?? []) {
-      if (!routePathPattern.test(route.relativePath)) {
-        errors.push(`Feature "${manifest.id}" route "${route.relativePath}" must be a generated app route file`);
+      const routeLabel = routeLabelFor(route.relativePath);
+      if (typeof route.relativePath !== "string" || route.relativePath.length === 0 || !routePathPattern.test(route.relativePath)) {
+        errors.push(`Feature "${manifest.id}" route "${routeLabel}" must be a generated app route file`);
       }
-      if (route.exports.length === 0) {
-        errors.push(`Feature "${manifest.id}" route "${route.relativePath}" must declare at least one export`);
+      if (typeof route.exportPath !== "string" || route.exportPath.length === 0) {
+        errors.push(`Feature "${manifest.id}" route "${routeLabel}" must declare exportPath`);
+      }
+      if (!Array.isArray(route.exports) || route.exports.length === 0) {
+        errors.push(`Feature "${manifest.id}" route "${routeLabel}" must declare at least one export`);
       }
 
-      const previousOwner = frontendRoutes.get(route.relativePath);
+      const previousOwner = typeof route.relativePath === "string"
+        ? frontendRoutes.get(route.relativePath)
+        : undefined;
       if (previousOwner && previousOwner !== manifest.id) {
         errors.push(`Frontend route "${route.relativePath}" is owned by multiple features`);
       }
-      frontendRoutes.set(route.relativePath, manifest.id);
+      if (typeof route.relativePath === "string") {
+        frontendRoutes.set(route.relativePath, manifest.id);
+      }
     }
 
     if (options.existingDocs) {
@@ -91,3 +102,6 @@ export const collectFrontendRouteContributions = (
   manifests: FeatureManifest[],
 ): FrontendRouteContribution[] =>
   manifests.flatMap((manifest) => manifest.frontendRoutes ?? []);
+
+const routeLabelFor = (relativePath: unknown): string =>
+  typeof relativePath === "string" && relativePath.length > 0 ? relativePath : "<missing>";

@@ -78,6 +78,35 @@ describe("feature manifests", () => {
     );
   });
 
+  it("rejects frontend routes missing required package or export fields", () => {
+    const result = validateFeatureManifests([
+      baseManifest({
+        frontendRoutes: [
+          {
+            relativePath: "app/reset-password/page.tsx",
+            exportPath: "reset-password-page",
+            exports: ["default"],
+          } as any,
+          {
+            relativePath: "app/verify-email/page.tsx",
+            packageName: "@radioso/enterprise-auth-frontend",
+            exports: ["default"],
+          } as any,
+        ],
+      }),
+    ], {
+      existingDocs: new Set(["ee/readme.md"]),
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      'Enterprise feature "enterprise-auth" route "app/reset-password/page.tsx" must declare packageName',
+    );
+    expect(result.errors).toContain(
+      'Feature "enterprise-auth" route "app/verify-email/page.tsx" must declare exportPath',
+    );
+  });
+
   it("rejects missing referenced documentation", () => {
     const result = validateFeatureManifests([
       baseManifest({ docs: ["ee/missing.md"] }),

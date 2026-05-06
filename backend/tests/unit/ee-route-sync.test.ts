@@ -143,6 +143,36 @@ describe("Enterprise frontend route sync", () => {
     ]);
   });
 
+  it("rejects route contributions missing packageName or exportPath", async () => {
+    const result = await validateFeatureManifests([
+      {
+        id: "auth-pages",
+        docs: [],
+        frontendRoutes: [
+          {
+            relativePath: "app/reset-password/page.tsx",
+            exportPath: "reset-password-page",
+            exports: ["default"],
+          },
+          {
+            relativePath: "app/verify-email/page.tsx",
+            packageName: "@radioso/enterprise-auth-frontend",
+            exports: ["default"],
+          },
+        ],
+      },
+    ], {
+      existingDocs: new Set(),
+      packageExports: new Map(),
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual([
+      expect.stringContaining('route "app/reset-password/page.tsx" must declare packageName'),
+      expect.stringContaining('route "app/verify-email/page.tsx" must declare exportPath'),
+    ]);
+  });
+
   it("keeps Docker frontend build inputs in sync with route manifest dependencies", async () => {
     const repoRoot = path.resolve(new URL("../../..", import.meta.url).pathname);
     const dockerfile = await fs.readFile(path.join(repoRoot, "infra/frontend.Dockerfile"), "utf8");

@@ -57,23 +57,39 @@ export const validateFeatureManifests = async (manifests, options = {}) => {
     }
 
     for (const route of manifest.frontendRoutes ?? []) {
-      if (!route.relativePath.startsWith("app/") || !/\.(ts|tsx)$/.test(route.relativePath)) {
-        errors.push(`Feature "${manifest.id}" route "${route.relativePath}" must be a generated app route file`);
+      const relativePath = route?.relativePath;
+      const routeLabel = typeof relativePath === "string" && relativePath.length > 0
+        ? relativePath
+        : "<missing>";
+      const packageName = route?.packageName;
+      const exportPath = route?.exportPath;
+
+      if (typeof relativePath !== "string" || relativePath.length === 0 || !relativePath.startsWith("app/") || !/\.(ts|tsx)$/.test(relativePath)) {
+        errors.push(`Feature "${manifest.id}" route "${routeLabel}" must be a generated app route file`);
       }
-      if (!route.packageName?.startsWith("@radioso/enterprise-")) {
-        errors.push(`Feature "${manifest.id}" route "${route.relativePath}" must use an Enterprise package`);
+      if (typeof packageName !== "string" || packageName.length === 0) {
+        errors.push(`Feature "${manifest.id}" route "${routeLabel}" must declare packageName`);
+      } else if (!packageName.startsWith("@radioso/enterprise-")) {
+        errors.push(`Feature "${manifest.id}" route "${routeLabel}" must use an Enterprise package`);
+      }
+      if (typeof exportPath !== "string" || exportPath.length === 0) {
+        errors.push(`Feature "${manifest.id}" route "${routeLabel}" must declare exportPath`);
       }
       if (!Array.isArray(route.exports) || route.exports.length === 0) {
-        errors.push(`Feature "${manifest.id}" route "${route.relativePath}" must declare at least one export`);
+        errors.push(`Feature "${manifest.id}" route "${routeLabel}" must declare at least one export`);
       }
-      const exportedPaths = packageExports.get(route.packageName);
-      if (exportedPaths && !exportedPaths.has(`./${route.exportPath}`)) {
-        errors.push(`Feature "${manifest.id}" route "${route.relativePath}" references missing package export "${route.packageName}/${route.exportPath}"`);
+      const exportedPaths = typeof packageName === "string" && typeof exportPath === "string"
+        ? packageExports.get(packageName)
+        : undefined;
+      if (exportedPaths && !exportedPaths.has(`./${exportPath}`)) {
+        errors.push(`Feature "${manifest.id}" route "${routeLabel}" references missing package export "${packageName}/${exportPath}"`);
       }
-      if (routes.has(route.relativePath)) {
-        errors.push(`Frontend route "${route.relativePath}" is owned by multiple features`);
+      if (typeof relativePath === "string" && routes.has(relativePath)) {
+        errors.push(`Frontend route "${relativePath}" is owned by multiple features`);
       }
-      routes.set(route.relativePath, manifest.id);
+      if (typeof relativePath === "string") {
+        routes.set(relativePath, manifest.id);
+      }
     }
   }
 

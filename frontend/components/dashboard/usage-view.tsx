@@ -5,9 +5,9 @@ import { useEffect, useState } from 'react'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LogoSpinner } from '@/components/ui/spinner'
-import { enterpriseUsageApi, type AccountUsageSummary } from '@/lib/api'
+import { enterpriseUsageApi, workspaceApi, type AccountUsageSummary, type WorkspaceSummaryResponse } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { ENTERPRISE_USAGE_LIMITS_ENABLED } from '@/lib/enterprise-features'
+import { editionController } from '@/lib/edition-controller'
 
 const numberFormatter = new Intl.NumberFormat()
 
@@ -78,24 +78,31 @@ function UsageMeter({
 }
 
 export function UsageView() {
+  const usageLimitsEnabled = editionController.canUseEnterpriseUsageLimits()
   const [usage, setUsage] = useState<AccountUsageSummary | null>(null)
-  const [isLoading, setIsLoading] = useState(ENTERPRISE_USAGE_LIMITS_ENABLED)
+  const [workspaceSummary, setWorkspaceSummary] = useState<WorkspaceSummaryResponse | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!ENTERPRISE_USAGE_LIMITS_ENABLED) {
-      return
-    }
-
     let active = true
 
     const loadUsage = async () => {
       setIsLoading(true)
       setError(null)
       try {
-        const response = await enterpriseUsageApi.getAccountUsage()
+        if (usageLimitsEnabled) {
+          const response = await enterpriseUsageApi.getAccountUsage()
+          if (!active) return
+          setUsage(response)
+          setWorkspaceSummary(null)
+          return
+        }
+
+        const response = await workspaceApi.getSummary()
         if (!active) return
-        setUsage(response)
+        setWorkspaceSummary(response)
+        setUsage(null)
       } catch (nextError) {
         if (!active) return
         setError(getApiErrorMessage(nextError, 'Failed to load usage.'))
@@ -110,31 +117,12 @@ export function UsageView() {
     return () => {
       active = false
     }
-  }, [])
-
-  if (!ENTERPRISE_USAGE_LIMITS_ENABLED) {
-    return (
-      <DashboardPage
-        title="Usage"
-        description="Account limits and current consumption."
-        contentClassName="p-6"
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle>Usage limits unavailable</CardTitle>
-            <CardDescription>
-              Usage limits are only available in the enterprise edition.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </DashboardPage>
-    )
-  }
+  }, [usageLimitsEnabled])
 
   return (
     <DashboardPage
       title="Usage"
-      description="Account limits and current consumption."
+      description={usageLimitsEnabled ? 'Account limits and current consumption.' : 'Current workspace usage.'}
       contentClassName="p-6"
     >
       {isLoading ? (
@@ -148,7 +136,7 @@ export function UsageView() {
             <CardDescription>{error}</CardDescription>
           </CardHeader>
         </Card>
-      ) : usage ? (
+      ) : usageLimitsEnabled && usage ? (
         <div className="space-y-6">
           {usage?.profile ? (
             <Card>
@@ -187,6 +175,33 @@ export function UsageView() {
               caption="Documents currently stored across the account."
             />
           </div>
+        </div>
+      ) : workspaceSummary ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <UsageMeter
+            label="Conversations"
+            used={workspaceSummary.conversationCount}
+            limit={null}
+            caption="Saved conversations in this workspace."
+          />
+          <UsageMeter
+            label="Stored documents"
+            used={workspaceSummary.documentCount}
+            limit={null}
+            caption="Documents currently stored in this workspace."
+          />
+          <UsageMeter
+            label="Ready documents"
+            used={workspaceSummary.readyDocumentCount}
+            limit={null}
+            caption="Documents available for retrieval."
+          />
+          <UsageMeter
+            label="Pending documents"
+            used={workspaceSummary.pendingDocumentCount}
+            limit={null}
+            caption="Documents waiting for processing."
+          />
         </div>
       ) : (
         <Card>

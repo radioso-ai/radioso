@@ -117,9 +117,6 @@ export function ResetPasswordScreen({ token }: { token?: string }) {
             <p className="text-sm text-muted-foreground">
               If that email exists, a reset link is on its way.
             </p>
-            <Button asChild className="w-full">
-              <Link href="/">Back to sign in</Link>
-            </Button>
           </div>
         ) : (
           <form onSubmit={handleRequestSubmit} className="space-y-4">

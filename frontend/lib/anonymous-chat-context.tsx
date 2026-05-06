@@ -40,6 +40,7 @@ export interface ChatMessage {
   suggestions?: ChatSuggestion[]
   retrievalInfo?: RetrievalInfo
   retrievalTrace?: RetrievalTrace
+  persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
 }
 
@@ -119,6 +120,7 @@ const toChatMessages = (detail: ChatConversationDetail): ChatMessage[] =>
       suggestions: message.suggestions,
       retrievalInfo: message.debug?.retrievalInfo,
       retrievalTrace: message.debug?.retrievalTrace,
+      persistedAssistantMessageId: message.role === 'assistant' ? message.id : undefined,
       status: 'complete' as const,
     }))
 
@@ -317,6 +319,7 @@ export function AnonymousChatProvider({
                 answerSegments: bootstrap.answerSegments,
                 retrievalInfo: bootstrap.retrievalInfo,
                 retrievalTrace: bootstrap.retrievalTrace,
+                persistedAssistantMessageId: bootstrap.assistantMessageId,
                 status: 'complete',
               },
             ])
@@ -369,6 +372,7 @@ export function AnonymousChatProvider({
           message.id === assistantMessageId
             ? {
                 ...message,
+                persistedAssistantMessageId: completion.assistantMessageId ?? message.persistedAssistantMessageId,
                 content: completion.answer ?? message.content,
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
@@ -412,6 +416,7 @@ export function AnonymousChatProvider({
                 suggestions: assistantMessage.suggestions,
                 retrievalInfo: assistantMessage.retrievalInfo,
                 retrievalTrace: assistantMessage.retrievalTrace,
+                persistedAssistantMessageId: assistantMessage.persistedAssistantMessageId ?? assistantMessage.id,
                 status: 'complete' as const,
               }
             : message,

@@ -118,7 +118,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       : composition.usageLimitPolicyRegistration;
   const onAccountCreated = composition.accountCreatedHooks.length === 0
     ? undefined
-    : async ({ accountId }) => {
+    : async ({ accountId }: { accountId: string }) => {
       for (const hook of composition.accountCreatedHooks) {
         await hook({ accountId, database, logger });
       }

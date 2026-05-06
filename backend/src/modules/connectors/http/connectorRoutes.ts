@@ -2,7 +2,10 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../../app/server/types.js";
-import { requireWorkspaceSession } from "../../../app/http/middleware/requireWorkspaceSession.js";
+import {
+  requireWorkspaceSession,
+  type WorkspaceSessionDependencies,
+} from "../../../app/http/middleware/requireWorkspaceSession.js";
 import type { ConnectorDetail, ConnectorSummary, ConnectorValidationIssue } from "@radioso/connector-api";
 
 const configUpdateSchema = z.object({
@@ -57,7 +60,9 @@ const validationError = (issues: ConnectorValidationIssue[]) => ({
  * REST endpoints for connector management (admin-facing, auth required).
  * Mounted at /api/v1/connectors.
  */
-export const createConnectorRoutes = (dependencies: AppDependencies): Router => {
+type ConnectorRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "connectorDb" | "connectorRegistry" | "env">;
+
+export const createConnectorRoutes = (dependencies: ConnectorRouteDependencies): Router => {
   const router = Router();
   const registry = dependencies.connectorRegistry;
   const db = dependencies.connectorDb;

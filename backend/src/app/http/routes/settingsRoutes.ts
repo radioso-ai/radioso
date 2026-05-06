@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
 import {
@@ -130,7 +130,15 @@ export const updateIngestionSettingsSchema = z.object({
     .max(RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMax),
 });
 
-export const createSettingsRoutes = (dependencies: AppDependencies): Router => {
+type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
+  AppDependencies,
+  | "ingestionSettingsService"
+  | "platformSettingsService"
+  | "retrievalSettingsService"
+  | "workspaceIngestionReprocessService"
+>;
+
+export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
 

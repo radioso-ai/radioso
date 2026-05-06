@@ -6,7 +6,12 @@ import type { AppDependencies } from "../../server/types.js";
 const WORKSPACE_HEADER = "x-workspace-id";
 const BEARER_PREFIX = "Bearer ";
 
-export const requireWorkspaceSession = (dependencies: AppDependencies): RequestHandler => {
+export type WorkspaceSessionDependencies = Pick<
+  AppDependencies,
+  "env" | "authService" | "accountAccessService" | "workspaceSessionService"
+>;
+
+export const requireWorkspaceSession = (dependencies: WorkspaceSessionDependencies): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const sessionToken = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];

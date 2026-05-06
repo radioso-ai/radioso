@@ -14,7 +14,7 @@ describe("audit logger", () => {
         approvalToken: "mcp_appr_secret",
         clientName: "cursor-local",
         nested: {
-          upstreamApiToken: "sk_proj_secret",
+          upstreamApiToken: "radioso_secret",
         },
       },
       outcome: "success",

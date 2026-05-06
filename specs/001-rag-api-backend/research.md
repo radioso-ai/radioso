@@ -30,7 +30,7 @@
 
 ## Decision 3: Store one active API token per account
 
-- **Decision**: Generate one active `sk_proj_*` bearer token per account and
+- **Decision**: Generate one active `radioso_*` bearer token per account and
   store only a hash of the token in Postgres.
 - **Rationale**: Matches the clarified scope, reduces token-management surface
   area, and preserves the ability to verify tokens without storing them in

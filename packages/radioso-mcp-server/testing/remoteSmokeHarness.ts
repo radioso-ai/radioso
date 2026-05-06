@@ -352,7 +352,7 @@ export const runSingleNodeSmoke = async (logger: SmokeLogger): Promise<SmokeSumm
     assert.ok(answer.structuredContent.citations.length > 0);
 
     logger.step("verifying MCP grounded answers do not create assistant chat history");
-    const historyResponse = await fetch(`${backend.baseUrl}/api/v1/history`, {
+    const historyResponse = await fetch(`${backend.baseUrl}/api/v1/history/chat`, {
       headers: {
         authorization: `Bearer ${issued.token}`,
       },

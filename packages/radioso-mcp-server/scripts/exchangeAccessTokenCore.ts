@@ -36,7 +36,7 @@ export interface ExchangeResult {
 }
 
 export const usage = `Usage:
-  RADIOSO_WORKSPACE_TOKEN=sk_proj_... npm --prefix packages/radioso-mcp-server run -s token:exchange
+  RADIOSO_WORKSPACE_TOKEN=radioso_... npm --prefix packages/radioso-mcp-server run -s token:exchange
 
 Environment:
   RADIOSO_WORKSPACE_TOKEN   Required. Workspace token from Radioso Settings -> Developer API.
@@ -53,8 +53,8 @@ Flags:
   --help
 
 Examples:
-  source <(RADIOSO_WORKSPACE_TOKEN=sk_proj_... npm --prefix packages/radioso-mcp-server run -s token:exchange)
-  RADIOSO_WORKSPACE_TOKEN=sk_proj_... npm --prefix packages/radioso-mcp-server run -s token:exchange -- --format json
+  source <(RADIOSO_WORKSPACE_TOKEN=radioso_... npm --prefix packages/radioso-mcp-server run -s token:exchange)
+  RADIOSO_WORKSPACE_TOKEN=radioso_... npm --prefix packages/radioso-mcp-server run -s token:exchange -- --format json
 `;
 
 export const shellEscape = (value: string): string => value.replace(/'/g, "'\\''");

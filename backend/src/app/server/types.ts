@@ -40,6 +40,9 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
+import type { ChatActionProviderPort } from "../../modules/chat/services/chatActionProvider.js";
+import type { ContactHistoryProviderPort } from "../../modules/chat/services/contactHistoryProvider.js";
+import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 
 export interface AppDependencies {
   env: Env;
@@ -50,6 +53,8 @@ export interface AppDependencies {
   productAnalyticsService: ProductAnalyticsPort;
   capabilityPolicy: CapabilityPolicy;
   usageLimitPolicy: UsageLimitPolicy;
+  chatActionProvider: ChatActionProviderPort;
+  contactHistoryProvider: ContactHistoryProviderPort;
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
   authService: AuthService;
@@ -79,6 +84,7 @@ export interface AppDependencies {
   retrievalAnswerService: RetrievalAnswerService;
   platformSettingsService: PlatformSettingsService;
   workspaceRepository: WorkspaceRepositoryPort;
+  userRepository: UserRepositoryPort;
   accountRepository: AccountRepositoryPort;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort;
   conversationRepository: ConversationRepositoryPort;

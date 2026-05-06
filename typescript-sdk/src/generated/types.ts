@@ -1333,6 +1333,9 @@ export interface components {
             publicSessionId: string;
             publicSessionToken: string;
             assistantBootstrapActive: boolean;
+            actions?: {
+                [key: string]: unknown;
+            };
             /** Format: date-time */
             expiresAt: string;
         };
@@ -1650,9 +1653,14 @@ export interface components {
         RetrievalAnswerResponse: components["schemas"]["RetrievalAnswerSuccess"] | components["schemas"]["RetrievalAnswerUnsupported"];
         ChatSuggestion: {
             text: string;
-            /** @enum {string} */
-            kind: "deeper" | "broader";
+            kind: string;
             citation?: components["schemas"]["Citation"];
+            action?: {
+                kind: string;
+                payload?: {
+                    [key: string]: unknown;
+                };
+            };
         };
         AssistantRoute: {
             /** @enum {string} */

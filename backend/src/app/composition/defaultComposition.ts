@@ -41,6 +41,8 @@ export interface ApplicationComposition {
   documentJobConsumer?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobConsumer"];
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
+  chatActionProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["chatActionProviderRegistration"];
+  contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   lifecycle: ApplicationModuleCoordinator;
   modules: ApplicationModule[];
 }
@@ -68,6 +70,8 @@ export const createDefaultApplicationComposition = (options: {
     documentJobConsumer: registry.documentJobConsumer,
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
+    chatActionProviderRegistration: registry.chatActionProviderRegistration,
+    contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
     lifecycle: coordinator,
     modules: coordinator.registeredModules,
   };

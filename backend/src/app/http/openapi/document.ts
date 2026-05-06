@@ -537,6 +537,7 @@ const PublicChatSessionResponseSchema = registry.register(
     publicSessionId: z.string().uuid(),
     publicSessionToken: z.string(),
     assistantBootstrapActive: z.boolean(),
+    actions: z.record(z.unknown()).optional(),
     expiresAt: z.string().datetime(),
   }),
 );
@@ -887,8 +888,12 @@ const ChatSuggestionSchema = registry.register(
   "ChatSuggestion",
   z.object({
     text: z.string(),
-    kind: z.enum(["deeper", "broader"]),
+    kind: z.string(),
     citation: CitationSchema.optional(),
+    action: z.object({
+      kind: z.string(),
+      payload: z.record(z.unknown()).optional(),
+    }).optional(),
   }),
 );
 

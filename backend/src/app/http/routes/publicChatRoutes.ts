@@ -90,6 +90,10 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
       return null;
     }
   };
+  const resolvePublicSessionActions = async (workspaceId: string) => {
+    const actions = await dependencies.chatActionProvider.getPublicSessionActions?.({ workspaceId });
+    return actions && Object.keys(actions).length > 0 ? actions : undefined;
+  };
 
   // POST /api/v1/public/chat/:token/sessions — exchange a public launch token for a chat session
   router.post("/:token/sessions", validateBody(publicChatSessionSchema), async (req, res, next) => {
@@ -134,6 +138,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
           publicSessionId: session.publicSessionId,
           publicSessionToken: session.token,
           assistantBootstrapActive: isAssistantBootstrapActive(workspace),
+          actions: await resolvePublicSessionActions(workspace.id),
           expiresAt: session.expiresAt,
         });
         return;
@@ -224,6 +229,7 @@ export const createPublicChatRoutes = (dependencies: AppDependencies): Router =>
         publicSessionId: session.publicSessionId,
         publicSessionToken: session.token,
         assistantBootstrapActive: isAssistantBootstrapActive(workspace),
+        actions: await resolvePublicSessionActions(workspace.id),
         expiresAt: session.expiresAt,
       });
     } catch (error) {

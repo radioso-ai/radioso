@@ -50,7 +50,7 @@ describe("createRadiosoMcpServer", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const resolver = createStaticExecutionContextResolver({
-      apiToken: "sk_proj_stdio",
+      apiToken: "radioso_stdio",
       baseUrl: "http://localhost:8080",
       requestTimeoutMs: 30_000,
       serverName: "radioso-test",
@@ -70,7 +70,7 @@ describe("createRadiosoMcpServer", () => {
         body: JSON.stringify({ query: "hello" }),
         method: "POST",
         headers: expect.objectContaining({
-          authorization: "Bearer sk_proj_stdio",
+          authorization: "Bearer radioso_stdio",
           "content-type": "application/json",
           "x-radioso-capability-client": "mcp",
         }),

@@ -120,7 +120,7 @@ describe('backend proxy route', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer sk_proj_workspace_token',
+        Authorization: 'Bearer radioso_workspace_token',
       },
       body: JSON.stringify({
         query: 'Hello',
@@ -140,7 +140,7 @@ describe('backend proxy route', () => {
     )
 
     const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
-    expect(upstreamInit.headers.Authorization).toBe('Bearer sk_proj_workspace_token')
+    expect(upstreamInit.headers.Authorization).toBe('Bearer radioso_workspace_token')
     expect(JSON.parse(upstreamInit.body as string)).toMatchObject({
       message: 'Hello',
       stream: true,
@@ -172,7 +172,7 @@ describe('backend proxy route', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer sk_proj_workspace_token',
+        Authorization: 'Bearer radioso_workspace_token',
       },
       body: JSON.stringify({
         conversationId: '5a657822-fc30-4693-8c7c-a4e7e9368afd',
@@ -187,7 +187,7 @@ describe('backend proxy route', () => {
     const response = await POST(request)
 
     const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
-    expect(upstreamInit.headers.Authorization).toBe('Bearer sk_proj_workspace_token')
+    expect(upstreamInit.headers.Authorization).toBe('Bearer radioso_workspace_token')
     expect(JSON.parse(upstreamInit.body as string)).toEqual({
       conversationId: '5a657822-fc30-4693-8c7c-a4e7e9368afd',
       message: 'hi',
@@ -221,7 +221,7 @@ describe('backend proxy route', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer sk_proj_workspace_token',
+        Authorization: 'Bearer radioso_workspace_token',
       },
       body: JSON.stringify({
         query: 'Neil Armstrong',
@@ -240,7 +240,7 @@ describe('backend proxy route', () => {
     )
 
     const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
-    expect(upstreamInit.headers.Authorization).toBe('Bearer sk_proj_workspace_token')
+    expect(upstreamInit.headers.Authorization).toBe('Bearer radioso_workspace_token')
     expect(upstreamInit.body).toBe(JSON.stringify({ query: 'Neil Armstrong' }))
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe('application/json')

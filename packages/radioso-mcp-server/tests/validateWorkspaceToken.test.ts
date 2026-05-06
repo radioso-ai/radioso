@@ -26,7 +26,7 @@ describe("validateWorkspaceToken", () => {
           requestTimeoutMs: 30_000,
           serverName: "radioso-test",
         },
-        "sk_proj_test",
+        "radioso_test",
         fetchMock,
       ),
     ).resolves.toMatchObject({
@@ -51,7 +51,7 @@ describe("validateWorkspaceToken", () => {
           requestTimeoutMs: 30_000,
           serverName: "radioso-test",
         },
-        "sk_proj_test",
+        "radioso_test",
         fetchMock,
       ),
     ).rejects.toMatchObject({
@@ -82,7 +82,7 @@ describe("validateWorkspaceToken", () => {
           requestTimeoutMs: 30_000,
           serverName: "radioso-test",
         },
-        "sk_proj_test",
+        "radioso_test",
         fetchMock,
       ),
     ).rejects.toMatchObject({

@@ -81,7 +81,7 @@ describe("loadConfig", () => {
       RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: " ",
       RADIOSO_MCP_AUDIT_LOG_PATH: "",
       RADIOSO_MCP_SIGNING_SECRET: "  ",
-      RADIOSO_API_TOKEN: "sk_proj_test",
+      RADIOSO_API_TOKEN: "radioso_test",
     });
 
     expect(config.allowedReadTools).toEqual(DEFAULT_ALLOWED_READ_TOOLS);

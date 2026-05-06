@@ -5,7 +5,7 @@ import { serialize } from "cookie";
 
 import type { Env } from "../../../app/config/env.js";
 
-const TOKEN_PREFIX = "sk_proj_";
+const TOKEN_PREFIX = "radioso_";
 
 const deriveKey = (secret: string): Buffer => scryptSync(secret, "radioso-auth", 32);
 

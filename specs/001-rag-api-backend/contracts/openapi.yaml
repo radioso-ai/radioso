@@ -288,7 +288,7 @@ components:
       properties:
         token:
           type: string
-          pattern: '^sk_proj_[A-Za-z0-9]+$'
+          pattern: '^radioso_[A-Za-z0-9]+$'
     RetrievalSettings:
       type: object
       required:

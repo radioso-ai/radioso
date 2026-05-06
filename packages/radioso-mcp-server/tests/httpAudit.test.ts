@@ -132,7 +132,7 @@ describe("remote MCP audit logging", () => {
 
     const exchangeResponse = await actualFetch(`${runtime.baseUrl}/v1/auth/exchange`, {
       body: JSON.stringify({
-        radiosoApiToken: "sk_proj_test",
+        radiosoApiToken: "radioso_test",
         requestedTools: ["create_document"],
       }),
       headers: {
@@ -195,7 +195,7 @@ describe("remote MCP audit logging", () => {
 
     const exchangeResponse = await actualFetch(`${runtime.baseUrl}/v1/auth/exchange`, {
       body: JSON.stringify({
-        radiosoApiToken: "sk_proj_test",
+        radiosoApiToken: "radioso_test",
         requestedTools: ["get_retrieval_settings"],
       }),
       headers: {

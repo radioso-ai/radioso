@@ -17,7 +17,7 @@ describe("createRadiosoApiAdapter", () => {
 
     const adapter = createRadiosoApiAdapter(
       {
-        apiToken: "sk_proj_test",
+        apiToken: "radioso_test",
         baseUrl: "http://localhost:8080",
         serverName: "radioso-test",
       },
@@ -31,7 +31,7 @@ describe("createRadiosoApiAdapter", () => {
       expect.objectContaining({
         body: JSON.stringify({ query: "faq" }),
         headers: expect.objectContaining({
-          authorization: "Bearer sk_proj_test",
+          authorization: "Bearer radioso_test",
           "content-type": "application/json",
         }),
         method: "POST",
@@ -69,7 +69,7 @@ describe("createRadiosoApiAdapter", () => {
 
     const adapter = createRadiosoApiAdapter(
       {
-        apiToken: "sk_proj_test",
+        apiToken: "radioso_test",
         baseUrl: "http://localhost:8080",
         requestTimeoutMs: 30000,
         serverName: "radioso-test",
@@ -93,7 +93,7 @@ describe("createRadiosoApiAdapter", () => {
 
     const adapter = createRadiosoApiAdapter(
       {
-        apiToken: "sk_proj_test",
+        apiToken: "radioso_test",
         baseUrl: "http://localhost:8080",
         requestTimeoutMs: 30_000,
         serverName: "radioso-test",
@@ -117,7 +117,7 @@ describe("createRadiosoApiAdapter", () => {
 
     const adapter = createRadiosoApiAdapter(
       {
-        apiToken: "sk_proj_test",
+        apiToken: "radioso_test",
         baseUrl: "http://localhost:8080",
         requestTimeoutMs: 10,
         serverName: "radioso-test",
@@ -147,7 +147,7 @@ describe("createRadiosoApiAdapter", () => {
 
     const adapter = createRadiosoApiAdapter(
       {
-        apiToken: "sk_proj_test",
+        apiToken: "radioso_test",
         baseUrl: "http://localhost:8080",
         requestTimeoutMs: 30_000,
         serverName: "radioso-test",
@@ -162,7 +162,7 @@ describe("createRadiosoApiAdapter", () => {
       "http://localhost:8080/api/v1/workspace/mcp/context",
       expect.objectContaining({
         headers: expect.objectContaining({
-          authorization: "Bearer sk_proj_test",
+          authorization: "Bearer radioso_test",
         }),
       }),
     );
@@ -178,7 +178,7 @@ describe("createRadiosoApiAdapter", () => {
 
     const adapter = createRadiosoApiAdapter(
       {
-        apiToken: "sk_proj_test",
+        apiToken: "radioso_test",
         baseUrl: "http://localhost:8080",
         requestTimeoutMs: 30_000,
         serverName: "radioso-test",
@@ -194,7 +194,7 @@ describe("createRadiosoApiAdapter", () => {
         body: JSON.stringify({ query: "hello" }),
         method: "POST",
         headers: expect.objectContaining({
-          authorization: "Bearer sk_proj_test",
+          authorization: "Bearer radioso_test",
           "content-type": "application/json",
           "x-radioso-capability-client": "mcp",
         }),

@@ -12,7 +12,7 @@ Cursor can connect to Radioso in two ways:
 
 ```bash
 source <(
-  RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
+  RADIOSO_WORKSPACE_TOKEN=radioso_example \
   npm --prefix packages/radioso-mcp-server run -s token:exchange
 )
 ```
@@ -41,7 +41,7 @@ For debugging, MCP grounded-answer calls are marked in retrieval diagnostics as 
 If you normally open Cursor from the Dock, Spotlight, Raycast, or a desktop launcher, use the macOS helper instead:
 
 ```bash
-RADIOSO_WORKSPACE_TOKEN=sk_proj_example \
+RADIOSO_WORKSPACE_TOKEN=radioso_example \
 npm --prefix packages/radioso-mcp-server run -s cursor:prepare -- --open
 ```
 
@@ -54,7 +54,7 @@ If Cursor is already open, fully quit it first so the relaunched app picks up th
 If you prefer Cursor to spawn the MCP server directly:
 
 - Set `RADIOSO_BASE_URL` (for example `http://localhost:8080`)
-- Set `RADIOSO_API_TOKEN` (your workspace token, `sk_proj_...`)
+- Set `RADIOSO_API_TOKEN` (your workspace token, `radioso_...`)
 - Ensure `npm install` has been run in `packages/radioso-mcp-server/` so the `cursor:mcp-stdio` entrypoint can run.
 
 ## Claude And Claude Desktop Remote Connectors

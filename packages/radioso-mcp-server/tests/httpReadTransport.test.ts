@@ -103,7 +103,7 @@ describe("remote MCP read transport", () => {
 
     const exchangeResponse = await actualFetch(`${runtime.baseUrl}/v1/auth/exchange`, {
       body: JSON.stringify({
-        radiosoApiToken: "sk_proj_test",
+        radiosoApiToken: "radioso_test",
         requestedTools: ["describe_capabilities", "list_documents"],
       }),
       headers: {
@@ -160,7 +160,7 @@ describe("remote MCP read transport", () => {
       "http://radioso.test/api/v1/document",
       expect.objectContaining({
         headers: expect.objectContaining({
-          authorization: "Bearer sk_proj_test",
+          authorization: "Bearer radioso_test",
         }),
       }),
     );

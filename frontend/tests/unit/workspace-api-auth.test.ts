@@ -76,7 +76,7 @@ describe('workspace API auth', () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage({
         'radioso.activeWorkspaceId': 'workspace-1',
-        'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'sk_proj_cached_token' }),
+        'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'radioso_cached_token' }),
       }),
     })
 
@@ -91,14 +91,14 @@ describe('workspace API auth', () => {
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(requestUrl).toBe('/backend/api/v1/settings')
     expect(requestInit.credentials).toBe('omit')
-    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer sk_proj_cached_token')
+    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer radioso_cached_token')
   })
 
   it('requests workspace summary with bearer workspace auth', async () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage({
         'radioso.activeWorkspaceId': 'workspace-1',
-        'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'sk_proj_cached_token' }),
+        'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'radioso_cached_token' }),
       }),
     })
 
@@ -125,7 +125,7 @@ describe('workspace API auth', () => {
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(requestUrl).toBe('/backend/api/v1/workspace/summary')
     expect(requestInit.credentials).toBe('omit')
-    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer sk_proj_cached_token')
+    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer radioso_cached_token')
   })
 
   it('bootstraps a workspace token with the session and then uses bearer auth', async () => {
@@ -136,7 +136,7 @@ describe('workspace API auth', () => {
 
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(createJsonResponse({ token: 'sk_proj_fetched_token' }))
+      .mockResolvedValueOnce(createJsonResponse({ token: 'radioso_fetched_token' }))
       .mockResolvedValueOnce(
         createJsonResponse(platformSettingsPayload),
       )
@@ -154,14 +154,14 @@ describe('workspace API auth', () => {
     const [requestUrl, requestInit] = fetchMock.mock.calls[1] as [string, RequestInit]
     expect(requestUrl).toBe('/backend/api/v1/settings')
     expect(requestInit.credentials).toBe('omit')
-    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer sk_proj_fetched_token')
+    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer radioso_fetched_token')
     expect(localStorage.getItem('radioso.workspaceTokens')).toContain('workspace-1')
   })
 
   it('refreshes a stale cached workspace token after a bearer 401', async () => {
     const localStorage = createLocalStorage({
       'radioso.activeWorkspaceId': 'workspace-1',
-      'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'sk_proj_stale_token' }),
+      'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'radioso_stale_token' }),
     })
     vi.stubGlobal('window', { localStorage })
 
@@ -173,7 +173,7 @@ describe('workspace API auth', () => {
           message: 'Invalid workspace token.',
         },
       }))
-      .mockResolvedValueOnce(createJsonResponse({ token: 'sk_proj_fresh_token' }))
+      .mockResolvedValueOnce(createJsonResponse({ token: 'radioso_fresh_token' }))
       .mockResolvedValueOnce(
         createJsonResponse(platformSettingsPayload),
       )
@@ -183,7 +183,7 @@ describe('workspace API auth', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/backend/api/v1/account/workspaces/workspace-1/token')
-    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get('Authorization')).toBe('Bearer sk_proj_fresh_token')
-    expect(localStorage.getItem('radioso.workspaceTokens')).toContain('sk_proj_fresh_token')
+    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get('Authorization')).toBe('Bearer radioso_fresh_token')
+    expect(localStorage.getItem('radioso.workspaceTokens')).toContain('radioso_fresh_token')
   })
 })

@@ -21,7 +21,7 @@ export function AuthPage() {
             priority
           />
           <h1 className="text-2xl font-semibold text-foreground">radioso</h1>
-          <p className="text-muted-foreground mt-1">Modular RAG Platform</p>
+          <p className="text-muted-foreground mt-1">Knowledge Agents Platform</p>
         </div>
         <div className="bg-card border border-border rounded-lg p-6 shadow-sm">
           <h2 className="text-lg font-medium text-card-foreground mb-4">

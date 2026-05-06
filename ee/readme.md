@@ -68,6 +68,16 @@ node scripts/sync-ee-frontend-routes.mjs enable
 
 That adds `/reset-password` and `/verify-email` to the frontend build.
 
+Unverified users can request a fresh verification message without signing in:
+
+```text
+POST /api/v1/ee/auth/email-verification/resend
+```
+
+The request body is `{ "email": "user@example.com" }`. The response is always
+`202 Accepted` with `{ "accepted": true }`, including for unknown or already
+verified email addresses.
+
 Signed-in Enterprise users can view their assigned profile and current account
 usage from the dashboard user menu under Usage. The dashboard reads the
 session-scoped endpoint:

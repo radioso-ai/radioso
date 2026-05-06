@@ -1,19 +1,11 @@
 import type { ApplicationModule } from "./radiosoModuleTypes.js";
 
-import { HostedWebsiteEmbedIntegrationProvider } from "./websiteEmbedIntegration.js";
-import { createEnterpriseEmailService } from "./mail/emailService.js";
-import { createEnterpriseAuthRoutes } from "./mail/enterpriseAuthRoutes.js";
-import { mailTokenMigrator } from "./mail/mailTokenMigrator.js";
-import { usageLimitMigrator } from "./usageLimits/usageLimitMigrator.js";
-import { createUsageLimitRoutes } from "./usageLimits/usageLimitRoutes.js";
-import { EnterpriseUsageLimitService } from "./usageLimits/usageLimitService.js";
-import { humanContactMigrator } from "./humanContact/humanContactMigrator.js";
-import { EnterpriseHumanContactService } from "./humanContact/humanContactService.js";
-import { createHumanContactRoutes } from "./humanContact/humanContactRoutes.js";
-import { createWebsiteCrawlerRoutes } from "./websiteCrawler/routes.js";
+import { createHumanContactApplicationModule } from "./humanContact/applicationModule.js";
+import { createEnterpriseAuthApplicationModule } from "./mail/applicationModule.js";
+import { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
+import { createWebsiteCrawlerApplicationModule } from "./websiteCrawler/applicationModule.js";
 import type { WebsiteCrawlerProvider } from "./websiteCrawler/provider.js";
-
-const STARTER_PROFILE_KEY = "starter_100";
+import { createWebsiteEmbedApplicationModule } from "./websiteEmbedApplicationModule.js";
 
 export interface EnterpriseBackendModuleOptions {
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
@@ -42,77 +34,43 @@ export {
   WebsiteCrawlerProviderError,
   WebsiteCrawlerUnavailableError,
 } from "./websiteCrawler/errors.js";
+export {
+  collectFrontendRouteContributions,
+  validateFeatureManifests,
+  type FeatureManifest,
+  type FrontendRouteContribution,
+} from "./featureManifest.js";
+export { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
+export { createEnterpriseAuthApplicationModule } from "./mail/applicationModule.js";
+export { createHumanContactApplicationModule } from "./humanContact/applicationModule.js";
+export { createWebsiteCrawlerApplicationModule } from "./websiteCrawler/applicationModule.js";
+export { createWebsiteEmbedApplicationModule } from "./websiteEmbedApplicationModule.js";
 
 export const createEnterpriseBackendModule = (
   options: EnterpriseBackendModuleOptions = {},
 ): ApplicationModule => {
-  let humanContactService: EnterpriseHumanContactService | null = null;
+  const featureModules = [
+    createUsageLimitsApplicationModule(),
+    createEnterpriseAuthApplicationModule(),
+    createHumanContactApplicationModule(),
+    createWebsiteCrawlerApplicationModule({
+      websiteCrawlerProvider: options.websiteCrawlerProvider,
+    }),
+    createWebsiteEmbedApplicationModule(),
+  ];
 
   return {
     id: "radioso-enterprise-backend",
     name: "Radioso Enterprise Backend",
     register(context) {
-      context.registerDatabaseMigrator(usageLimitMigrator);
-      context.registerDatabaseMigrator(mailTokenMigrator);
-      context.registerDatabaseMigrator(humanContactMigrator);
-      context.registerUsageLimitPolicy(({ database }) => {
-        return new EnterpriseUsageLimitService(database);
-      });
-      context.registerAccountCreatedHandler(async ({ accountId, database }) => {
-        const resolvedService = new EnterpriseUsageLimitService(database);
-        await resolvedService.assignProfile(accountId, STARTER_PROFILE_KEY);
-      });
-      context.registerChatActionProvider((dependencies) => {
-        humanContactService?.stop();
-        humanContactService = new EnterpriseHumanContactService({
-          ...dependencies,
-          emailService: createEnterpriseEmailService(),
-        });
-        return humanContactService;
-      });
-      context.registerContactHistoryProvider(() => {
-        if (humanContactService) {
-          return humanContactService;
-        }
-        throw new Error("Enterprise contact service is not initialized");
-      });
-      context.registerRouteMount({
-        path: "/api/v1/ee/usage-limits",
-        createRouter(dependencies) {
-          return createUsageLimitRoutes(dependencies);
-        },
-      });
-      context.registerRouteMount({
-        path: "/api/v1/ee/auth",
-        createRouter(dependencies) {
-          return createEnterpriseAuthRoutes(dependencies);
-        },
-      });
-      context.registerRouteMount({
-        path: "/api/v1/ee/contact",
-        createRouter(dependencies) {
-          if (!humanContactService) {
-            throw new Error("Enterprise contact service is not initialized");
-          }
-          return createHumanContactRoutes(dependencies, humanContactService);
-        },
-      });
-      context.registerRouteMount({
-        path: "/api/v1/ee/website-crawler",
-        createRouter(dependencies) {
-          return createWebsiteCrawlerRoutes(dependencies, {
-            provider: options.websiteCrawlerProvider,
-          });
-        },
-      });
-      context.registerWebsiteEmbedIntegration(new HostedWebsiteEmbedIntegrationProvider({
-        widgetOrigin: process.env.RADIOSO_ENTERPRISE_WIDGET_ORIGIN,
-        scriptPath: process.env.RADIOSO_ENTERPRISE_WIDGET_SCRIPT_PATH,
-      }));
+      for (const module of featureModules) {
+        module.register?.(context);
+      }
     },
     async shutdown() {
-      humanContactService?.stop();
-      humanContactService = null;
+      for (const module of [...featureModules].reverse()) {
+        await module.shutdown?.();
+      }
     },
   };
 };

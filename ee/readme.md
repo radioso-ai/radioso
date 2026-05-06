@@ -136,3 +136,47 @@ x-radioso-signature: sha256=<hex hmac>
 The HMAC is computed over the raw JSON body with the workspace signing token.
 Failed email or webhook delivery retries with exponential backoff for up to 8
 attempts, then the request is marked failed with the final delivery error.
+
+## Website crawler provider port
+
+The Enterprise backend module owns website crawling as an Enterprise-only provider port.
+
+Supply a provider when composing the Enterprise backend module:
+
+```ts
+import {
+  createEnterpriseBackendModule,
+  type WebsiteCrawlerProvider,
+} from "@radioso/enterprise-backend-module";
+
+const websiteCrawlerProvider: WebsiteCrawlerProvider = {
+  name: "custom-crawler",
+  async crawl(request) {
+    // Call your crawler service and return normalized pages.
+    return { provider: "custom-crawler", pages: [] };
+  },
+};
+
+export default createEnterpriseBackendModule({ websiteCrawlerProvider });
+```
+
+The route is unavailable until a provider is supplied. Generic crawl limits are
+configured with:
+
+```bash
+EE_WEBSITE_CRAWLER_DEFAULT_LIMIT=10
+EE_WEBSITE_CRAWLER_MAX_LIMIT=100
+```
+
+The route is mounted by the Enterprise backend module:
+
+```text
+POST /api/v1/ee/website-crawler/crawl
+```
+
+Cookie-session requests select the workspace with `x-workspace-id`; bearer-token
+requests use the workspace already bound to the API token.
+Accepted pages are published through the existing Radioso document ingestion
+pipeline with stable external document IDs and website source metadata. Document
+chunking, embeddings, retrieval, and citations remain owned by the standard
+document worker.

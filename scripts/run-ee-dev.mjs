@@ -266,6 +266,9 @@ const main = async () => {
     PUBLIC_CHAT_BASE_URL: `${appOrigin}/chat`,
     APP_BASE_URL: appOrigin,
   };
+  if (process.env.RADIOSO_APPLICATION_MODULES) {
+    enterpriseBackendEnv.RADIOSO_APPLICATION_MODULES = process.env.RADIOSO_APPLICATION_MODULES;
+  }
 
   const services = [
     spawnService("backend", "npm", ["run", "dev"], {

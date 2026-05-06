@@ -30,6 +30,7 @@ npm run build
 - `client.settings.updateGeneral(...)`
 - `client.documents.list(...)`
 - `client.documents.create(...)`
+- `client.documents.importFile(...)`
 - `client.documents.get(...)`
 - `client.documents.update(...)`
 - `client.documents.delete(...)`

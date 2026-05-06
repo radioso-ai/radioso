@@ -5,6 +5,7 @@ const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingRoot: frontendRoot,
   env: {
     NEXT_PUBLIC_RADIOSO_EDITION:
       process.env.NEXT_PUBLIC_RADIOSO_EDITION ??

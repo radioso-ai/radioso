@@ -566,6 +566,19 @@ const WorkspaceIngestionReprocessResponseSchema = registry.register(
 const DocumentStatusSchema = z.string().openapi("DocumentStatus");
 const RagStatusSchema = z.string().openapi("RagStatus");
 const DocumentCreateRequestSchema = registry.register("DocumentCreateRequest", documentSchema);
+const DocumentImportRequestSchema = registry.register(
+  "DocumentImportRequest",
+  z.object({
+    file: z.string().openapi({
+      type: "string",
+      format: "binary",
+      description: "Source file to import.",
+    }),
+    title: z.string().optional().openapi({
+      description: "Optional title to use instead of the source filename.",
+    }),
+  }),
+);
 
 const DocumentOperationResponseSchema = registry.register(
   "DocumentOperationResponse",
@@ -2761,6 +2774,67 @@ registry.registerPath({
     },
     401: {
       description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/document/import",
+  tags: ["Documents"],
+  summary: "Import a source file for background processing",
+  operationId: "importDocument",
+  security: [{ [bearerAuthScheme.name]: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        "multipart/form-data": {
+          schema: DocumentImportRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    202: {
+      description: "Document accepted for processing",
+      content: {
+        "application/json": {
+          schema: DocumentOperationResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Request validation failed",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    413: {
+      description: "Uploaded file exceeds the configured size limit",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    429: {
+      description: "Upload rate limit exceeded",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

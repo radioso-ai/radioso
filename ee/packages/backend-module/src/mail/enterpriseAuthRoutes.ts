@@ -89,6 +89,10 @@ const emailVerificationVerifySchema = z.object({
   token: z.string().min(1),
 });
 
+const emailVerificationResendSchema = z.object({
+  email: z.string().email(),
+});
+
 const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 const generateToken = (): string => randomBytes(32).toString("base64url");
@@ -132,6 +136,12 @@ const unauthorized = (message: string) => ({
   statusCode: 401,
   code: "unauthorized",
   message,
+});
+
+const emailVerificationRequired = () => ({
+  statusCode: 403,
+  code: "email_verification_required",
+  message: "Verify your email before signing in",
 });
 
 const isAppErrorStatus = (error: unknown, statusCode: number): boolean =>
@@ -504,6 +514,13 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
       return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
     },
   });
+  const emailVerificationResendRateLimit = createEnterpriseRateLimitMiddleware(dependencies, {
+    scope: "ee.auth.email_verification.resend",
+    resolveSubjectKey: (req) => {
+      const email = typeof req.body?.email === "string" ? req.body.email : null;
+      return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
+    },
+  });
   const tokenRateLimit = (scope: string): RequestHandler => createEnterpriseRateLimitMiddleware(dependencies, {
     scope,
     resolveSubjectKey: (req) => {
@@ -586,7 +603,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
       }
 
       if (!user.email_verified_at) {
-        throw unauthorized("Verify your email before signing in");
+        throw emailVerificationRequired();
       }
 
       const context = await resolveLoginContext(database, user.id, {
@@ -756,6 +773,31 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
       await markAllActiveTokensUsed(database, "ee_email_verification_tokens", record.user_id, now);
 
       res.status(200).json({ verified: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/email-verification/resend", emailVerificationResendRateLimit, async (req, res, next) => {
+    try {
+      const body = parseBody(emailVerificationResendSchema, req.body);
+      const email = normalizeEmail(body.email);
+      const user = await findUserByEmail(database, email);
+
+      if (!user || user.email_verified_at) {
+        res.status(202).json({ accepted: true });
+        return;
+      }
+
+      await issueVerificationEmail(database, {
+        userId: user.id,
+        email,
+        requestIp: req.ip ?? null,
+        requestUserAgent: req.get("user-agent") ?? null,
+        emailService,
+      });
+
+      res.status(202).json({ accepted: true });
     } catch (error) {
       next(error);
     }

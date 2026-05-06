@@ -29,6 +29,10 @@ export interface EnterpriseEmailVerificationVerifyResponse {
   verified: true;
 }
 
+export interface EnterpriseEmailVerificationResendRequest {
+  email: string;
+}
+
 const readErrorBody = async (response: Response): Promise<unknown> => {
   try {
     return await response.json();
@@ -82,6 +86,13 @@ export const enterpriseAuthApi = {
     input: EnterpriseEmailVerificationVerifyRequest,
   ): Promise<EnterpriseEmailVerificationVerifyResponse> {
     return request("/email-verification/verify", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  resendEmailVerification(input: EnterpriseEmailVerificationResendRequest): Promise<EnterpriseAcceptedResponse> {
+    return request("/email-verification/resend", {
       method: "POST",
       body: JSON.stringify(input),
     });

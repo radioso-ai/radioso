@@ -5,9 +5,18 @@ export interface ApplicationModuleRegistrationContext {
   registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  registerAccountCreatedHandler(handler: ApplicationAccountCreatedHandler): void;
   registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
 }
+
+export type ApplicationAccountCreatedHandler = (context: {
+  accountId: string;
+  database: ApplicationDatabasePort;
+  logger: {
+    error(entry: unknown, message?: string): void;
+  };
+}) => Promise<void>;
 
 export interface ApplicationModule {
   id: string;

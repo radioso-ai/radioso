@@ -9,6 +9,7 @@ import { AgentView } from './agent-view'
 import { ChatHistoryView } from './chat-history-view'
 import { KnowledgeView } from './knowledge-view'
 import { SettingsView } from './settings-view'
+import { UsageView } from './usage-view'
 import { FirstRunExperience } from './first-run-experience'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
@@ -174,6 +175,9 @@ export function DashboardShell({
           )}
           {currentView === 'settings' && (
             <SettingsView accountId={accountId} routeState={routeState} />
+          )}
+          {currentView === 'usage' && (
+            <UsageView />
           )}
         </div>
       </SidebarInset>

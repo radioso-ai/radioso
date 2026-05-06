@@ -157,6 +157,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
        WHERE account_id = $1 AND period_start = $2::date`,
       [accountId, periodStart],
     );
+    const persistedAnswerCount = await this.countPersistedAssistantAnswers(accountId, periodStart);
     const storedDocumentCount = await this.countStoredDocuments(accountId, this.database, false);
 
     return {
@@ -165,7 +166,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       monthlyAnswers: {
         periodStart,
         resetAt: nextPeriodStart(periodStart),
-        used: answerCounter?.used_count ?? 0,
+        used: Math.max(answerCounter?.used_count ?? 0, persistedAnswerCount),
         limit: profile?.monthlyAnswerLimit ?? null,
       },
       storedDocuments: {
@@ -363,6 +364,22 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     );
 
     return row ? mapProfile(row) : null;
+  }
+
+  private async countPersistedAssistantAnswers(accountId: string, periodStart: string): Promise<number> {
+    const [answers] = await queryRows<{ count: string }>(
+      this.database,
+      `SELECT COUNT(*)::text AS count
+       FROM messages m
+       JOIN workspaces w ON w.id = m.workspace_id
+       WHERE w.account_id = $1
+         AND m.role = 'assistant'
+         AND m.created_at >= $2::date
+         AND m.created_at < $3::timestamptz`,
+      [accountId, periodStart, nextPeriodStart(periodStart)],
+    );
+
+    return Number(answers?.count ?? "0");
   }
 
   private async countStoredDocuments(

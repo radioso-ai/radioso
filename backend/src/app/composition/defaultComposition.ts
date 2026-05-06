@@ -36,6 +36,7 @@ export interface ApplicationComposition {
   productAnalyticsSinks: ReturnType<typeof createApplicationExtensionRegistry>["productAnalyticsSinks"];
   incidentSinks: ReturnType<typeof createApplicationExtensionRegistry>["incidentSinks"];
   routeMounts: ReturnType<typeof createApplicationExtensionRegistry>["routeMounts"];
+  accountCreatedHooks: ReturnType<typeof createApplicationExtensionRegistry>["accountCreatedHooks"];
   documentStorage?: ReturnType<typeof createApplicationExtensionRegistry>["documentStorage"];
   documentJobDispatcher?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobDispatcher"];
   documentJobConsumer?: ReturnType<typeof createApplicationExtensionRegistry>["documentJobConsumer"];
@@ -66,6 +67,7 @@ export const createDefaultApplicationComposition = (options: {
     incidentSinks: registry.incidentSinks,
     routeMounts: registry.routeMounts,
     documentStorage: registry.documentStorage,
+    accountCreatedHooks: registry.accountCreatedHooks,
     documentJobDispatcher: registry.documentJobDispatcher,
     documentJobConsumer: registry.documentJobConsumer,
     websiteEmbedIntegration: registry.websiteEmbedIntegration,

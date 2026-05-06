@@ -87,6 +87,7 @@ interface AuthServiceDependencies {
   workspaceService: WorkspaceService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
+  onAccountCreated?: (input: { accountId: string }) => Promise<void>;
   emailVerificationService?: {
     issueVerification(input: {
       userId: string;
@@ -172,6 +173,7 @@ export class AuthService {
         role: "owner",
       });
       const workspace = await this.dependencies.workspaceService.createDefault(account.id);
+      await this.dependencies.onAccountCreated?.({ accountId: account.id });
       let sessionCookie: string | undefined;
       if (this.dependencies.env.AUTH_SKIP_EMAIL_VERIFICATION) {
         sessionCookie = await this.createSessionCookie(user.id, account.id);
@@ -237,6 +239,7 @@ export class AuthService {
         role: "owner",
       });
       const workspace = await this.dependencies.workspaceService.createDefault(account.id);
+      await this.dependencies.onAccountCreated?.({ accountId: account.id });
       const sessionCookie = await this.createSessionCookie(user.id, account.id);
 
       await this.dependencies.auditService.record({

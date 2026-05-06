@@ -179,6 +179,35 @@ describe("enterprise auth routes", () => {
     expect(database.queries.some(({ text }) => text.includes("INSERT INTO ee_password_reset_tokens"))).toBe(true);
   });
 
+  it("keeps verified Enterprise users able to log in after an unused password reset request", async () => {
+    process.env.EE_MAIL_DRIVER = "noop";
+    process.env.SESSION_COOKIE_NAME = "radioso_session";
+    const database = new FakeEnterpriseAuthDatabase();
+    const app = createApp(database);
+
+    const resetResponse = await request(app)
+      .post("/api/v1/ee/auth/password-reset/request")
+      .send({ email: "Ada@Example.com" });
+
+    const loginResponse = await request(app)
+      .post("/api/v1/ee/auth/login")
+      .send({ email: "ada@example.com", password: "correct-password" });
+
+    expect(resetResponse.status).toBe(202);
+    expect(loginResponse.status).toBe(200);
+    expect(loginResponse.headers["set-cookie"]?.[0]).toContain("radioso_session=");
+    expect(loginResponse.body).toMatchObject({
+      userId: database.userId,
+      accountId: database.accountId,
+      workspaceId: database.workspaceId,
+    });
+    expect(database.queries.some(({ text }) => text.includes("INSERT INTO ee_password_reset_tokens"))).toBe(true);
+    expect(database.queries.some(({ text }) =>
+      text.includes("UPDATE users") &&
+      text.includes("email_verified_at")
+    )).toBe(false);
+  });
+
   it("registers Enterprise users without a session and issues verification mail", async () => {
     process.env.EE_MAIL_DRIVER = "noop";
     const database = new FakeEnterpriseAuthDatabase();
@@ -197,6 +226,41 @@ describe("enterprise auth routes", () => {
     });
     expect(database.queries.some(({ text }) => text.includes("INSERT INTO ee_email_verification_tokens"))).toBe(true);
     expect(database.queries.some(({ text }) => text.includes("INSERT INTO sessions"))).toBe(false);
+  });
+
+  it("resends verification mail for unverified Enterprise users", async () => {
+    process.env.EE_MAIL_DRIVER = "noop";
+    const database = new FakeEnterpriseAuthDatabase();
+    database.emailVerifiedAt = null;
+
+    const response = await request(createApp(database))
+      .post("/api/v1/ee/auth/email-verification/resend")
+      .send({ email: "Ada@Example.com" });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toEqual({ accepted: true });
+    expect(database.queries.some(({ text }) => text.includes("INSERT INTO ee_email_verification_tokens"))).toBe(true);
+    expect(database.queries.some(({ text }) =>
+      text.includes("UPDATE users") &&
+      text.includes("email_verified_at")
+    )).toBe(false);
+  });
+
+  it("accepts verification resend for verified Enterprise users without reopening verification", async () => {
+    process.env.EE_MAIL_DRIVER = "noop";
+    const database = new FakeEnterpriseAuthDatabase();
+
+    const response = await request(createApp(database))
+      .post("/api/v1/ee/auth/email-verification/resend")
+      .send({ email: "Ada@Example.com" });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toEqual({ accepted: true });
+    expect(database.queries.some(({ text }) => text.includes("INSERT INTO ee_email_verification_tokens"))).toBe(false);
+    expect(database.queries.some(({ text }) =>
+      text.includes("UPDATE users") &&
+      text.includes("email_verified_at")
+    )).toBe(false);
   });
 
   it("cleans up the user and account when Enterprise verification mail delivery fails", async () => {
@@ -284,7 +348,8 @@ describe("enterprise auth routes", () => {
       .post("/api/v1/ee/auth/login")
       .send({ email: "ada@example.com", password: "correct-password" });
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe("email_verification_required");
     expect(response.headers["set-cookie"]).toBeUndefined();
     expect(database.queries.some(({ text }) => text.includes("INSERT INTO sessions"))).toBe(false);
   });

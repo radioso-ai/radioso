@@ -1,5 +1,4 @@
-import type { RetrievalExecutionDiagnostics } from "../../retrieval/domain/retrievalPipelineTypes.js";
-import type { RewriteContinuityState } from "../../retrieval/domain/retrievalPipelineTypes.js";
+import type { RetrievalExecutionDiagnostics, RewriteContinuityState } from "../../retrieval/public.js";
 import type { AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type { ProductAnalyticsEvent } from "../../../shared/analytics/productAnalyticsTypes.js";
 import type { IncidentEvent } from "../../../shared/incidents/incidentTypes.js";

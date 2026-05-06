@@ -8,10 +8,12 @@ import { LocalDocumentStorage } from "../../modules/documents/infra/localDocumen
 import type { DocumentJobConsumerPort } from "../../modules/documents/services/documentJobConsumer.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "../../modules/documents/services/documentJobDispatcher.js";
 import type { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
-import { ChunkingStrategyRegistry } from "../../modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
-import { FixedWindowChunkingStrategy } from "../../modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
-import { StructuredSemanticChunkingStrategy } from "../../modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
-import type { EmbeddingService } from "../../modules/retrieval/services/embeddingService.js";
+import {
+  ChunkingStrategyRegistry,
+  FixedWindowChunkingStrategy,
+  StructuredSemanticChunkingStrategy,
+  type EmbeddingService,
+} from "../../modules/retrieval/public.js";
 import { buildAnalyticsSinks } from "../../shared/analytics/buildAnalyticsSinks.js";
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
 import { buildIncidentSinks } from "../../shared/incidents/buildIncidentSinks.js";

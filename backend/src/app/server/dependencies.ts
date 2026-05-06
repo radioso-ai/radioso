@@ -37,19 +37,21 @@ import { DocumentProcessingService } from "../../modules/documents/services/docu
 import { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
 import { DocumentSourceContentService } from "../../modules/documents/services/documentSourceContentService.js";
 import { WorkspaceIngestionReprocessService } from "../../modules/documents/services/workspaceIngestionReprocessService.js";
-import { PgLexicalSearch } from "../../modules/retrieval/infra/lexicalSearch.js";
-import { PgVectorSearch } from "../../modules/retrieval/infra/vectorSearch.js";
-import { CandidatePreparationService } from "../../modules/retrieval/services/candidatePreparationService.js";
-import { ConversationContextService } from "../../modules/retrieval/services/conversationContextService.js";
-import { PromptBuilder } from "../../modules/retrieval/services/promptBuilder.js";
-import { PromptContextSelectorService } from "../../modules/retrieval/services/promptContextSelectorService.js";
-import { QueryRewriteService } from "../../modules/retrieval/services/queryRewriteService.js";
-import { RerankService } from "../../modules/retrieval/services/rerankService.js";
-import { RetrievalPipelineService } from "../../modules/retrieval/services/retrievalPipelineService.js";
-import { RetrievalExecutionTelemetryService } from "../../modules/retrieval/services/retrievalExecutionTelemetryService.js";
-import { RetrievalAnswerService } from "../../modules/retrieval/services/retrievalAnswerService.js";
-import { RetrievalSearchService } from "../../modules/retrieval/services/retrievalSearchService.js";
-import { EmbeddingService } from "../../modules/retrieval/services/embeddingService.js";
+import {
+  CandidatePreparationService,
+  ConversationContextService,
+  EmbeddingService,
+  PgLexicalSearch,
+  PgVectorSearch,
+  PromptBuilder,
+  PromptContextSelectorService,
+  QueryRewriteService,
+  RerankService,
+  RetrievalAnswerService,
+  RetrievalExecutionTelemetryService,
+  RetrievalPipelineService,
+  RetrievalSearchService,
+} from "../../modules/retrieval/public.js";
 import { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../modules/settings/services/platformSettingsService.js";
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";

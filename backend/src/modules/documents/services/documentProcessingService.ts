@@ -2,9 +2,16 @@ import { randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { DocumentProcessingJobRecord } from "../../../db/repositories/documentProcessingJobRepository.js";
-import { normalizeMarkdown, type ChunkingStrategy } from "../../retrieval/domain/chunking/chunkingStrategy.js";
-import { renderMetadataSearchText, renderSearchText } from "../../retrieval/services/searchTextRenderer.js";
-import { deriveChunkSection, deriveDocumentSubject } from "../../retrieval/services/subjectIdentityService.js";
+import {
+  deriveChunkSection,
+  deriveDocumentSubject,
+  normalizeMarkdown,
+  renderMetadataSearchText,
+  renderSearchText,
+  type ChunkingStrategy,
+  type ChunkingStrategyId,
+  type EmbeddingService,
+} from "../../retrieval/public.js";
 import type { IngestionSettingsRecord } from "../../settings/domain/ingestionSettings.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type {
@@ -12,8 +19,6 @@ import type {
   ChunkRepositoryPort,
   DocumentRepositoryPort,
 } from "./documentIngestionService.js";
-import { type EmbeddingService } from "../../retrieval/services/embeddingService.js";
-import type { ChunkingStrategyId } from "../../retrieval/domain/chunking/chunkingStrategy.js";
 import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
 
 export interface IngestionSettingsReaderPort {

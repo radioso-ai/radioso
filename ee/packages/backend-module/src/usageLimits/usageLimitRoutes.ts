@@ -1,8 +1,10 @@
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
-import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import type { ApplicationRouteMount, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { EnterpriseUsageLimitService, normalizePeriodStart } from "./usageLimitService.js";
+
+type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
 
 const profileKeySchema = z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$/);
 const accountIdSchema = z.string().uuid();
@@ -66,9 +68,50 @@ const requireAdminToken = (): RequestHandler => (req, res, next) => {
   next();
 };
 
-export const createUsageLimitRoutes = (database: UsageLimitDatabasePort): Router => {
+const isRouteDependencies = (
+  input: RouteDependencies | UsageLimitDatabasePort,
+): input is RouteDependencies =>
+  "connectorDb" in input && "authService" in input && "accountAccessService" in input;
+
+const requireAccountSession = (dependencies: RouteDependencies): RequestHandler => async (req, res, next) => {
+  try {
+    const sessionToken = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];
+    if (typeof sessionToken !== "string" || !sessionToken) {
+      throw {
+        statusCode: 401,
+        code: "unauthorized",
+        message: "Unauthorized",
+      };
+    }
+
+    const session = await dependencies.authService.authenticateSession(sessionToken);
+    await dependencies.accountAccessService.requireActiveMembership(session.accountId, session.userId);
+    res.locals.accountId = session.accountId;
+    res.locals.userId = session.userId;
+    res.locals.sessionId = session.sessionId;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitDatabasePort): Router => {
   const router = Router();
+  const database = isRouteDependencies(input) ? input.connectorDb : input;
   const service = new EnterpriseUsageLimitService(database);
+
+  if (isRouteDependencies(input)) {
+    router.get("/me", requireAccountSession(input), async (req, res, next) => {
+      try {
+        const query = parseRequest(usageQuerySchema, req.query, "Invalid usage query");
+        const { accountId } = res.locals as { accountId: string };
+        const usage = await service.getAccountUsage(accountId, normalizePeriodStart(query.period));
+        res.status(200).json(usage);
+      } catch (error) {
+        next(error);
+      }
+    });
+  }
 
   router.use(requireAdminToken());
 

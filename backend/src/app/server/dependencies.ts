@@ -116,6 +116,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     : typeof composition.usageLimitPolicyRegistration === "function"
       ? composition.usageLimitPolicyRegistration({ database, logger })
       : composition.usageLimitPolicyRegistration;
+  const onAccountCreated = composition.accountCreatedHooks.length === 0
+    ? undefined
+    : async ({ accountId }) => {
+      for (const hook of composition.accountCreatedHooks) {
+        await hook({ accountId, database, logger });
+      }
+    };
   const auditEventRepository = new AuditEventRepository(database);
   const auditService = new AuditService(logger, auditEventRepository);
   const productAnalyticsService = new ProductAnalyticsService({
@@ -356,6 +363,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     accountAccessService,
     accountInvitationService,
     emailVerificationService,
+    onAccountCreated,
     auditService,
   });
   const passwordResetService = new PasswordResetService({

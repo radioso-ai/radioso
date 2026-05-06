@@ -38,6 +38,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/frontend/node_modules ./frontend/node_modules
 COPY frontend ./frontend
 COPY scripts/sync-ee-frontend-routes.mjs ./scripts/sync-ee-frontend-routes.mjs
+COPY scripts/enterprise-feature-manifests.mjs ./scripts/enterprise-feature-manifests.mjs
+COPY --from=ee-frontend-build /app/ee/packages/embed-widget/feature-manifest.mjs ./ee/packages/embed-widget/feature-manifest.mjs
+COPY --from=ee-frontend-build /app/ee/packages/auth-frontend/feature-manifest.mjs ./ee/packages/auth-frontend/feature-manifest.mjs
+COPY --from=ee-frontend-build /app/ee/packages/embed-widget/package.json ./ee/packages/embed-widget/package.json
+COPY --from=ee-frontend-build /app/ee/packages/auth-frontend/package.json ./ee/packages/auth-frontend/package.json
 
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
       node scripts/sync-ee-frontend-routes.mjs enable; \

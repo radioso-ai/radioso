@@ -23,7 +23,7 @@ For Enterprise Edition embed development, run:
 ./run-ee-dev.sh
 ```
 
-This starts Postgres in Docker, builds and installs the commercial packages from `ee/packages` locally without saving them to the OSS package manifests, generates the local Enterprise Edition frontend routes, updates `.env` with Enterprise Edition embed settings, and runs the backend, worker, frontend, and embed harness on the host. The normal `./run-dev.sh` path removes those generated routes before starting the OSS stack.
+This starts Postgres in Docker, builds and installs the commercial packages from `ee/packages` locally without saving them to the OSS package manifests, generates the local Enterprise Edition frontend routes from Enterprise feature manifests, updates `.env` with Enterprise Edition embed settings, and runs the backend, worker, frontend, and embed harness on the host. The normal `./run-dev.sh` path removes those generated routes before starting the OSS stack.
 
 | Surface | URL |
 |---|---|

@@ -60,6 +60,12 @@ export type ApplicationContactHistoryProviderRegistration =
       logger: AppLogger;
     }) => ContactHistoryProviderPort);
 
+export type ApplicationAccountCreatedHook = (context: {
+  accountId: string;
+  database: ApplicationDatabasePort;
+  logger: AppLogger;
+}) => Promise<void>;
+
 export interface ApplicationExtensionRegistry {
   connectors: ConnectorPlugin[];
   telemetrySinks: TelemetrySink[];
@@ -67,6 +73,7 @@ export interface ApplicationExtensionRegistry {
   incidentSinks: IncidentSink[];
   databaseMigrators: ApplicationDatabaseMigrator[];
   routeMounts: ApplicationRouteMount[];
+  accountCreatedHooks: ApplicationAccountCreatedHook[];
   capabilityPolicy?: CapabilityPolicy;
   usageLimitPolicyRegistration?: ApplicationUsageLimitPolicyRegistration;
   documentStorage?: DocumentStoragePort;
@@ -84,6 +91,7 @@ export interface ApplicationModuleRegistrationContext {
   registerIncidentSink(sink: IncidentSink): void;
   registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
   registerRouteMount(mount: ApplicationRouteMount): void;
+  registerAccountCreatedHandler(handler: ApplicationAccountCreatedHook): void;
   registerCapabilityPolicy(policy: CapabilityPolicy): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
   registerDocumentStorage(storage: DocumentStoragePort): void;
@@ -109,6 +117,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   incidentSinks: [],
   databaseMigrators: [],
   routeMounts: [],
+  accountCreatedHooks: [],
 });
 
 const createRegistrationContext = (registry: ApplicationExtensionRegistry): ApplicationModuleRegistrationContext => ({
@@ -129,6 +138,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerRouteMount(mount) {
     registry.routeMounts.push(mount);
+  },
+  registerAccountCreatedHandler(handler) {
+    registry.accountCreatedHooks.push(handler);
   },
   registerCapabilityPolicy(policy) {
     registry.capabilityPolicy = policy;

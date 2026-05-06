@@ -1,4 +1,4 @@
-export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'settings'
+export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'settings' | 'usage'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'ingestion' | 'retrieval'
 export type SettingsTab = 'workspace' | 'users'
@@ -170,6 +170,7 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.anchor) {
       normalized.anchor = state.anchor
     }
+    return normalized
   }
 
   return normalized
@@ -423,6 +424,16 @@ export const parseDashboardRoute = (
     return normalizeState({
       workspaceId,
       ...parseLegacySettingsRoute(searchParams),
+    })
+  }
+
+  if (sectionCandidate === 'usage') {
+    if (secondSegment || thirdSegment || rest.length > 0) {
+      return null
+    }
+    return normalizeState({
+      section: 'usage',
+      workspaceId,
     })
   }
 

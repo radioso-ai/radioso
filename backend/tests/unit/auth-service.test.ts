@@ -82,12 +82,52 @@ class FailingSessionRepository implements SessionRepositoryPort {
   }
 }
 
+class WorkingSessionRepository implements SessionRepositoryPort {
+  async create(_params: {
+    userId: string;
+    accountId: string;
+    sessionTokenHash: string;
+    expiresAt: Date;
+  }): Promise<{
+    id: string;
+    userId: string;
+    accountId: string;
+    sessionTokenHash: string;
+    createdAt: Date;
+    expiresAt: Date;
+    lastSeenAt: Date;
+    revokedAt: Date | null;
+  }> {
+    return {
+      id: `${_params.accountId}-session`,
+      userId: _params.userId,
+      accountId: _params.accountId,
+      sessionTokenHash: _params.sessionTokenHash,
+      createdAt: new Date(),
+      expiresAt: _params.expiresAt,
+      lastSeenAt: new Date(),
+      revokedAt: null,
+    };
+  }
+
+  async findActiveByTokenHash(): Promise<null> {
+    return null;
+  }
+
+  async touch(_sessionId: string, _lastSeenAt: Date): Promise<void> {}
+
+  async revokeAllForUser(_userId: string, _revokedAt: Date): Promise<number> {
+    return 0;
+  }
+}
+
 const createAuthService = (options: {
   accountRepository?: AccountRepositoryPort;
   userRepository?: InMemoryUserRepository;
   sessionRepository?: SessionRepositoryPort;
   workspaceService?: WorkspaceService;
   accountInvitationRepository?: InMemoryAccountInvitationRepository;
+  onAccountCreated?: (input: { accountId: string }) => Promise<void>;
 }) => {
   const env = createTestEnv();
   const auditService = createAuditService();
@@ -116,6 +156,7 @@ const createAuthService = (options: {
       workspaceService,
       accountAccessService,
       accountInvitationService,
+      onAccountCreated: options.onAccountCreated,
     }),
     accountRepository,
     userRepository,
@@ -213,5 +254,46 @@ describe("AuthService rollback", () => {
         ? await accountMembershipRepository.findActiveByAccountAndUser(account.id, createdUser.id)
         : null,
     ).toBeNull();
+  });
+
+  it("calls the account-created hook when creating a new organization account", async () => {
+    const accountIds: string[] = [];
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({
+      id: "user-1",
+      email: "create-org@example.com",
+      passwordHash: "hash",
+    });
+    const { authService: orgAuthService } = createAuthService({
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+      onAccountCreated: async ({ accountId }) => {
+        accountIds.push(accountId);
+      },
+    });
+
+    const { accountId } = await orgAuthService.createOrganization({
+      userId: "user-1",
+      organizationName: "Hook Org",
+    });
+
+    expect(accountIds).toEqual([accountId]);
+  });
+
+  it("calls the account-created hook when registering a new account", async () => {
+    const accountIds: string[] = [];
+    const { authService } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+      onAccountCreated: async ({ accountId }) => {
+        accountIds.push(accountId);
+      },
+    });
+
+    const { accountId } = await authService.register({
+      email: "hooked@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(accountIds).toEqual([accountId]);
   });
 });

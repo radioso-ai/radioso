@@ -87,6 +87,7 @@ interface AuthServiceDependencies {
   workspaceService: WorkspaceService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
+  onAccountCreated?: (input: { accountId: string }) => Promise<void>;
   auditService: AuditService;
 }
 
@@ -163,6 +164,7 @@ export class AuthService {
         role: "owner",
       });
       const workspace = await this.dependencies.workspaceService.createDefault(account.id);
+      await this.dependencies.onAccountCreated?.({ accountId: account.id });
       const sessionCookie = await this.createSessionCookie(user.id, account.id);
 
       await this.dependencies.auditService.record({
@@ -217,6 +219,7 @@ export class AuthService {
         role: "owner",
       });
       const workspace = await this.dependencies.workspaceService.createDefault(account.id);
+      await this.dependencies.onAccountCreated?.({ accountId: account.id });
       const sessionCookie = await this.createSessionCookie(user.id, account.id);
 
       await this.dependencies.auditService.record({

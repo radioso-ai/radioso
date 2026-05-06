@@ -1513,6 +1513,30 @@ export interface RenameOrganizationResponse {
   organizationName: string
 }
 
+export interface UsageLimitProfile {
+  key: string
+  displayName: string
+  monthlyAnswerLimit: number | null
+  storedDocumentLimit: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AccountUsageSummary {
+  accountId: string
+  profile: UsageLimitProfile | null
+  monthlyAnswers: {
+    periodStart: string
+    resetAt: string
+    used: number
+    limit: number | null
+  }
+  storedDocuments: {
+    used: number
+    limit: number | null
+  }
+}
+
 // General Settings API
 export const generalSettingsApi = {
   async getGeneralSettings(): Promise<GeneralSettings> {
@@ -1563,6 +1587,19 @@ export const generalSettingsApi = {
       }),
     }, { withApiToken: true })
     return toGeneralSettings(settings)
+  },
+}
+
+export const enterpriseUsageApi = {
+  async getAccountUsage(input?: { period?: string }): Promise<AccountUsageSummary> {
+    const searchParams = new URLSearchParams()
+    if (input?.period) {
+      searchParams.set('period', input.period)
+    }
+    const query = searchParams.toString()
+    return request<AccountUsageSummary>(`/ee/usage-limits/me${query ? `?${query}` : ''}`, {
+      method: 'GET',
+    }, { withSession: true })
   },
 }
 

@@ -176,6 +176,7 @@ describe("runtime configuration", () => {
   it("pins environment-aware observability identity and cloud runtime URLs for the Cloud Run API and worker services", async () => {
     const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
     const githubActionsTf = await readFile(new URL("../../../infra/terraform/github_actions.tf", import.meta.url), "utf8");
+    const terraformWorkflow = await readFile(new URL("../../../.github/workflows/terraform.yml", import.meta.url), "utf8");
     const terraformMain = await readFile(new URL("../../../infra/terraform/main.tf", import.meta.url), "utf8");
     const terraformVariables = await readFile(new URL("../../../infra/terraform/variables.tf", import.meta.url), "utf8");
     const stagingEnv = await readFile(new URL("../../../infra/terraform/environments/staging/main.tf", import.meta.url), "utf8");
@@ -208,6 +209,10 @@ describe("runtime configuration", () => {
     expect(terraformMain).toContain('app_base_url = coalesce(var.app_base_url_override, "https://example.invalid")');
     expect(terraformVariables).toContain('app_base_url_override must be set when radioso_edition is enterprise.');
     expect(terraformVariables).toContain('ee_mail_from_email must be set to a verified sender address when radioso_edition is enterprise.');
+    expect(terraformWorkflow).toContain("TF_VAR_resend_mail_api_key: ${{ secrets.RESEND_MAIL_API_KEY }}");
+    expect(terraformWorkflow).toContain("TF_VAR_ee_mail_from_email: ${{ vars.EE_MAIL_FROM_EMAIL }}");
+    expect(terraformWorkflow).toContain("TF_VAR_ee_mail_from_name");
+    expect(terraformWorkflow).not.toContain("MAIL_SMTP");
     expect(githubActionsTf).toContain("assertion.ref == 'refs/heads/main'");
     expect(stagingEnv).not.toContain("mail_driver");
     expect(stagingEnv).toContain("resend_mail_api_key");

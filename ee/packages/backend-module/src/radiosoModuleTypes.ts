@@ -57,6 +57,26 @@ export interface ApplicationRouteMount {
     env: {
       SESSION_COOKIE_NAME: string;
       PUBLIC_CHAT_SESSION_SECRET?: string;
+      AUTH_RATE_LIMIT_WINDOW_MS?: number;
+      AUTH_RATE_LIMIT_MAX_ATTEMPTS?: number;
+    };
+    abuseControlService: {
+      enforce(input: {
+        scope: string;
+        subjectKey: string;
+        limit: number;
+        windowMs: number;
+        blockMs?: number;
+      }): Promise<unknown>;
+    };
+    auditService: {
+      record(input: {
+        accountId?: string | null;
+        workspaceId?: string | null;
+        eventType: string;
+        eventStatus: "success" | "failure";
+        metadata?: Record<string, unknown>;
+      }): Promise<void>;
     };
     authService: {
       authenticateSession(token: string): Promise<{ accountId: string; userId: string; sessionId: string }>;

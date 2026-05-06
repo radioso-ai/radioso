@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import bcrypt from "bcryptjs";
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
@@ -9,6 +9,28 @@ import { createEnterpriseEmailService } from "./emailService.js";
 
 interface EnterpriseAuthRouteDependencies {
   connectorDb: UsageLimitDatabasePort;
+  env: {
+    AUTH_RATE_LIMIT_WINDOW_MS?: number;
+    AUTH_RATE_LIMIT_MAX_ATTEMPTS?: number;
+  };
+  abuseControlService: {
+    enforce(input: {
+      scope: string;
+      subjectKey: string;
+      limit: number;
+      windowMs: number;
+      blockMs?: number;
+    }): Promise<unknown>;
+  };
+  auditService: {
+    record(input: {
+      accountId?: string | null;
+      workspaceId?: string | null;
+      eventType: string;
+      eventStatus: "success" | "failure";
+      metadata?: Record<string, unknown>;
+    }): Promise<void>;
+  };
 }
 
 interface UserRow {
@@ -48,6 +70,8 @@ const passwordResetRequestSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  preferredWorkspaceId: z.string().uuid().optional(),
+  preferredAccountId: z.string().uuid().optional(),
 });
 
 const registerSchema = z.object({
@@ -109,6 +133,60 @@ const unauthorized = (message: string) => ({
   code: "unauthorized",
   message,
 });
+
+const isAppErrorStatus = (error: unknown, statusCode: number): boolean =>
+  Boolean(error && typeof error === "object" && "statusCode" in error && error.statusCode === statusCode);
+
+const createEnterpriseRateLimitMiddleware = (
+  dependencies: EnterpriseAuthRouteDependencies,
+  input: {
+    scope: string;
+    resolveSubjectKey(req: Parameters<RequestHandler>[0]): string | null | undefined;
+  },
+): RequestHandler => {
+  const limit = dependencies.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS ?? 10;
+  const windowMs = dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS ?? 60_000;
+
+  return async (req, _res, next) => {
+    const subjectKey = input.resolveSubjectKey(req);
+    if (!subjectKey) {
+      next();
+      return;
+    }
+
+    try {
+      await dependencies.abuseControlService.enforce({
+        scope: input.scope,
+        subjectKey,
+        limit,
+        windowMs,
+      });
+      next();
+    } catch (error) {
+      if (isAppErrorStatus(error, 429)) {
+        void dependencies.auditService.record({
+          eventType: "security.rate_limit_enforced",
+          eventStatus: "success",
+          metadata: {
+            scope: input.scope,
+            subjectKey,
+          },
+        }).catch(() => undefined);
+      }
+      if (isAppErrorStatus(error, 503)) {
+        void dependencies.auditService.record({
+          eventType: "security.rate_limit_unavailable",
+          eventStatus: "failure",
+          metadata: {
+            scope: input.scope,
+            subjectKey,
+          },
+        }).catch(() => undefined);
+      }
+      next(error);
+    }
+  };
+};
 
 const getAppBaseUrl = (): string =>
   process.env.APP_BASE_URL ??
@@ -318,9 +396,24 @@ const markAllActiveTokensUsed = async (
   );
 };
 
+const deleteProvisionedRegistration = async (
+  database: UsageLimitDatabasePort,
+  input: {
+    accountId: string;
+    userId: string;
+  },
+): Promise<void> => {
+  await database.query("DELETE FROM accounts WHERE id = $1", [input.accountId]);
+  await database.query("DELETE FROM users WHERE id = $1", [input.userId]);
+};
+
 const resolveLoginContext = async (
   database: UsageLimitDatabasePort,
   userId: string,
+  input: {
+    preferredAccountId?: string | null;
+    preferredWorkspaceId?: string | null;
+  } = {},
 ): Promise<{
   accountId: string;
   organizationName: string;
@@ -328,30 +421,42 @@ const resolveLoginContext = async (
   workspaceName: string;
   workspacePublicRouteKey: string;
 }> => {
-  const [membership] = await queryRows<MembershipRow>(
-    database,
-    `SELECT account_id
-     FROM account_memberships
-     WHERE user_id = $1
-       AND status = 'active'
-     ORDER BY created_at ASC
-     LIMIT 1`,
-    [userId],
-  );
+  const resolveMembership = async (preferredAccountId?: string | null): Promise<MembershipRow | null> => {
+    const [record] = await queryRows<MembershipRow>(
+      database,
+      `SELECT account_id
+       FROM account_memberships
+       WHERE user_id = $1
+         AND status = 'active'
+         AND ($2::uuid IS NULL OR account_id = $2::uuid)
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId, preferredAccountId ?? null],
+    );
+    return record ?? null;
+  };
+  const membership = await resolveMembership(input.preferredAccountId ?? null) ?? await resolveMembership(null);
 
   if (!membership) {
     throw unauthorized("Password reset link is invalid or expired");
   }
 
-  const [workspace] = await queryRows<WorkspaceRow>(
-    database,
-    `SELECT id, name, public_route_key
-     FROM workspaces
-     WHERE account_id = $1
-     ORDER BY created_at ASC
-     LIMIT 1`,
-    [membership.account_id],
-  );
+  const resolveWorkspace = async (preferredWorkspaceId?: string | null): Promise<WorkspaceRow | null> => {
+    const [record] = await queryRows<WorkspaceRow>(
+      database,
+      `SELECT id, name, public_route_key
+       FROM workspaces
+       WHERE account_id = $1
+         AND ($2::uuid IS NULL OR id = $2::uuid)
+       ORDER BY
+         CASE WHEN name = 'Default' THEN 0 ELSE 1 END,
+         created_at DESC
+       LIMIT 1`,
+      [membership.account_id, preferredWorkspaceId ?? null],
+    );
+    return record ?? null;
+  };
+  const workspace = await resolveWorkspace(input.preferredWorkspaceId ?? null) ?? await resolveWorkspace(null);
 
   if (!workspace) {
     throw unauthorized("Password reset link is invalid or expired");
@@ -378,8 +483,35 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
   const router = Router();
   const database = dependencies.connectorDb;
   const emailService = createEnterpriseEmailService();
+  const registerRateLimit = createEnterpriseRateLimitMiddleware(dependencies, {
+    scope: "ee.auth.register",
+    resolveSubjectKey: (req) => {
+      const email = typeof req.body?.email === "string" ? req.body.email : null;
+      return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
+    },
+  });
+  const loginRateLimit = createEnterpriseRateLimitMiddleware(dependencies, {
+    scope: "ee.auth.login",
+    resolveSubjectKey: (req) => {
+      const email = typeof req.body?.email === "string" ? req.body.email : null;
+      return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
+    },
+  });
+  const passwordResetRequestRateLimit = createEnterpriseRateLimitMiddleware(dependencies, {
+    scope: "ee.auth.password_reset.request",
+    resolveSubjectKey: (req) => {
+      const email = typeof req.body?.email === "string" ? req.body.email : null;
+      return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
+    },
+  });
+  const tokenRateLimit = (scope: string): RequestHandler => createEnterpriseRateLimitMiddleware(dependencies, {
+    scope,
+    resolveSubjectKey: (req) => {
+      return String(req.ip ?? "unknown");
+    },
+  });
 
-  router.post("/register", async (req, res, next) => {
+  router.post("/register", registerRateLimit, async (req, res, next) => {
     try {
       const body = parseBody(registerSchema, req.body);
       const email = normalizeEmail(body.email);
@@ -435,7 +567,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
           requiresEmailVerification: true,
         });
       } catch (error) {
-        await database.query("DELETE FROM accounts WHERE id = $1", [accountId]);
+        await deleteProvisionedRegistration(database, { accountId, userId });
         throw error;
       }
     } catch (error) {
@@ -443,7 +575,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
     }
   });
 
-  router.post("/login", async (req, res, next) => {
+  router.post("/login", loginRateLimit, async (req, res, next) => {
     try {
       const body = parseBody(loginSchema, req.body);
       const email = normalizeEmail(body.email);
@@ -457,7 +589,10 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
         throw unauthorized("Verify your email before signing in");
       }
 
-      const context = await resolveLoginContext(database, user.id);
+      const context = await resolveLoginContext(database, user.id, {
+        preferredAccountId: body.preferredAccountId ?? null,
+        preferredWorkspaceId: body.preferredWorkspaceId ?? null,
+      });
       const sessionCookie = await createSessionCookie(database, {
         userId: user.id,
         accountId: context.accountId,
@@ -477,7 +612,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
     }
   });
 
-  router.post("/password-reset/request", async (req, res, next) => {
+  router.post("/password-reset/request", passwordResetRequestRateLimit, async (req, res, next) => {
     try {
       const body = parseBody(passwordResetRequestSchema, req.body);
       const email = normalizeEmail(body.email);
@@ -524,7 +659,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
     }
   });
 
-  router.post("/password-reset/confirm", async (req, res, next) => {
+  router.post("/password-reset/confirm", tokenRateLimit("ee.auth.password_reset.confirm"), async (req, res, next) => {
     try {
       const body = parseBody(passwordResetConfirmSchema, req.body);
       const now = new Date();
@@ -545,12 +680,25 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
         throw unauthorized("Password reset link is invalid or expired");
       }
 
+      const passwordHash = await hashPassword(body.password);
       await database.query(
         `UPDATE users
          SET password_hash = $2,
+             email_verified_at = COALESCE(email_verified_at, $3),
              updated_at = NOW()
          WHERE id = $1`,
-        [user.id, await hashPassword(body.password)],
+        [user.id, passwordHash, now],
+      );
+      await database.query(
+        `UPDATE accounts
+         SET password_hash = $2,
+             updated_at = NOW()
+         WHERE id IN (
+           SELECT account_id
+           FROM account_memberships
+           WHERE user_id = $1
+         )`,
+        [user.id, passwordHash],
       );
       await markAllActiveTokensUsed(database, "ee_password_reset_tokens", user.id, now);
       await database.query(
@@ -582,7 +730,7 @@ export const createEnterpriseAuthRoutes = (dependencies: EnterpriseAuthRouteDepe
     }
   });
 
-  router.post("/email-verification/verify", async (req, res, next) => {
+  router.post("/email-verification/verify", tokenRateLimit("ee.auth.email_verification.verify"), async (req, res, next) => {
     try {
       const body = parseBody(emailVerificationVerifySchema, req.body);
       const now = new Date();

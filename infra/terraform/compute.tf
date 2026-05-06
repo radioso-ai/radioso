@@ -166,6 +166,32 @@ resource "google_cloud_run_v2_service" "backend" {
           }
         }
       }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
+        content {
+          name = "RESEND_MAIL_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_email] : []
+        content {
+          name  = "EE_MAIL_FROM_EMAIL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_name] : []
+        content {
+          name  = "EE_MAIL_FROM_NAME"
+          value = env.value
+        }
+      }
 
       # Secrets from Secret Manager
       env {
@@ -427,6 +453,32 @@ resource "google_cloud_run_v2_service" "document_worker" {
         for_each = local.public_chat_base_url == null ? [] : [local.public_chat_base_url]
         content {
           name  = "PUBLIC_CHAT_BASE_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
+        content {
+          name = "RESEND_MAIL_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_email] : []
+        content {
+          name  = "EE_MAIL_FROM_EMAIL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [var.ee_mail_from_name] : []
+        content {
+          name  = "EE_MAIL_FROM_NAME"
           value = env.value
         }
       }

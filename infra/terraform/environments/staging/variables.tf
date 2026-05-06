@@ -112,6 +112,25 @@ variable "connector_encryption_key" {
   sensitive   = true
 }
 
+variable "resend_mail_api_key" {
+  description = "Resend API key for Enterprise auth mail in staging."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "ee_mail_from_email" {
+  description = "Verified sender email address for Enterprise auth mail in staging."
+  type        = string
+  default     = null
+}
+
+variable "ee_mail_from_name" {
+  description = "Sender display name for Enterprise auth mail in staging."
+  type        = string
+  default     = "Radioso"
+}
+
 variable "metrics_auth_token" {
   description = "Optional metrics auth token for staging."
   type        = string

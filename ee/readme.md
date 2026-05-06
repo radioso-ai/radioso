@@ -52,10 +52,10 @@ inspect an account's current usage for a UTC month.
 
 The Enterprise backend module owns transactional auth mail. Set
 `RESEND_MAIL_API_KEY` to send through Resend, or set `EE_MAIL_DRIVER=log` for
-local development. Optional sender defaults:
+local development. Deployed Resend environments should set a verified sender:
 
 ```bash
-EE_MAIL_FROM_EMAIL=noreply@example.com
+EE_MAIL_FROM_EMAIL=noreply@your-verified-domain.example
 EE_MAIL_FROM_NAME=Radioso
 ```
 

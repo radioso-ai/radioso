@@ -8,6 +8,9 @@ locals {
       "public-chat-session-secret" = var.public_chat_session_secret
       "connector-encryption-key"   = var.connector_encryption_key
     },
+    var.radioso_edition == "enterprise" ? {
+      "resend-mail-api-key" = var.resend_mail_api_key
+    } : {},
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = var.metrics_auth_token
     },
@@ -22,6 +25,9 @@ locals {
       "public-chat-session-secret" = true
       "connector-encryption-key"   = true
     },
+    var.radioso_edition == "enterprise" ? {
+      "resend-mail-api-key" = true
+    } : {},
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = true
     },

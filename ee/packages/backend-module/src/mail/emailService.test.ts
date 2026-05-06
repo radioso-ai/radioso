@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   EmailService,
@@ -17,6 +17,10 @@ class RecordingEmailDriver implements EmailDriver {
 }
 
 describe("enterprise email service", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("applies default sender details when sending mail", async () => {
     const driver = new RecordingEmailDriver();
     const service = new EmailService(driver, {
@@ -40,7 +44,6 @@ describe("enterprise email service", () => {
       subject: "Welcome",
       text: "Hello",
     });
-    expect(service.sentMessages).toEqual(driver.messages);
   });
 
   it("composes password reset mail for the configured driver", async () => {
@@ -84,5 +87,32 @@ describe("enterprise email service", () => {
     expect(() => createEnterpriseEmailService({
       EE_MAIL_DRIVER: "resend",
     })).toThrow("RESEND_MAIL_API_KEY is required");
+  });
+
+  it("rejects blank Resend API keys when the Enterprise Resend driver is selected", () => {
+    expect(() => createEnterpriseEmailService({
+      EE_MAIL_DRIVER: "resend",
+      RESEND_MAIL_API_KEY: "   ",
+    })).toThrow("RESEND_MAIL_API_KEY is required");
+  });
+
+  it("logs plaintext mail body for local Enterprise auth link testing", async () => {
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const service = createEnterpriseEmailService({
+      EE_MAIL_DRIVER: "log",
+    });
+
+    await service.sendEmailVerificationEmail({
+      to: "grace@example.com",
+      verificationUrl: "https://app.example.com/verify-email?token=secret",
+    });
+
+    expect(log).toHaveBeenCalledWith("email.send", expect.objectContaining({
+      text: expect.stringContaining("https://app.example.com/verify-email?token=secret"),
+      metadata: {
+        kind: "email_verification",
+        verificationUrl: "[redacted]",
+      },
+    }));
   });
 });

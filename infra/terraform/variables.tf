@@ -187,6 +187,47 @@ variable "connector_encryption_key" {
   sensitive   = true
 }
 
+variable "resend_mail_api_key" {
+  description = "Resend API key used by Enterprise Edition transactional auth mail."
+  type        = string
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition = (
+      var.radioso_edition != "enterprise" ||
+      (
+        var.resend_mail_api_key != null &&
+        length(trimspace(nonsensitive(var.resend_mail_api_key))) > 0
+      )
+    )
+    error_message = "resend_mail_api_key must be set when radioso_edition is enterprise."
+  }
+}
+
+variable "ee_mail_from_email" {
+  description = "Verified sender email address for Enterprise Edition transactional auth mail."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      var.radioso_edition != "enterprise" ||
+      (
+        var.ee_mail_from_email != null &&
+        length(trimspace(var.ee_mail_from_email)) > 0
+      )
+    )
+    error_message = "ee_mail_from_email must be set to a verified sender address when radioso_edition is enterprise."
+  }
+}
+
+variable "ee_mail_from_name" {
+  description = "Sender display name for Enterprise Edition transactional auth mail."
+  type        = string
+  default     = "Radioso"
+}
+
 variable "metrics_auth_token" {
   description = "Optional bearer token required to read the Prometheus metrics endpoint when enabled."
   type        = string
@@ -238,9 +279,20 @@ variable "connector_public_base_url" {
 }
 
 variable "app_base_url_override" {
-  description = "Optional override for the main public Radioso app URL. Set this after the first deploy if backend-generated links should use the frontend Cloud Run URL."
+  description = "Optional override for the main public Radioso app URL. Required for Enterprise so backend-generated auth links use a real frontend URL."
   type        = string
   default     = null
+
+  validation {
+    condition = (
+      var.radioso_edition != "enterprise" ||
+      (
+        var.app_base_url_override != null &&
+        length(trimspace(var.app_base_url_override)) > 0
+      )
+    )
+    error_message = "app_base_url_override must be set when radioso_edition is enterprise."
+  }
 }
 
 variable "public_chat_base_url_override" {

@@ -25,8 +25,6 @@ export interface EmailVerificationInput {
 }
 
 export class EmailService {
-  readonly sentMessages: EmailMessage[] = [];
-
   constructor(
     private readonly driver: EmailDriver,
     private readonly defaults: {
@@ -43,7 +41,6 @@ export class EmailService {
         name: this.defaults.fromName ?? null,
       },
     };
-    this.sentMessages.push(normalized);
     await this.driver.send(normalized);
   }
 
@@ -118,6 +115,7 @@ export class LogEmailDriver implements EmailDriver {
     console.info("email.send", {
       to: message.to,
       subject: message.subject,
+      text: message.text,
       metadata: redactSensitiveEmailMetadata(message.metadata),
     });
   }
@@ -159,16 +157,17 @@ export interface EnterpriseEmailEnv {
 export const createEnterpriseEmailService = (
   source: EnterpriseEmailEnv = process.env,
 ): EmailService => {
-  const driverName = source.EE_MAIL_DRIVER ?? (source.RESEND_MAIL_API_KEY ? "resend" : "log");
+  const resendApiKey = source.RESEND_MAIL_API_KEY?.trim();
+  const driverName = source.EE_MAIL_DRIVER ?? (resendApiKey ? "resend" : "log");
   const fromEmail = source.EE_MAIL_FROM_EMAIL ?? "noreply@example.com";
   const fromName = source.EE_MAIL_FROM_NAME ?? "Radioso";
 
   if (driverName === "resend") {
-    if (!source.RESEND_MAIL_API_KEY) {
+    if (!resendApiKey) {
       throw new Error("RESEND_MAIL_API_KEY is required when EE_MAIL_DRIVER is resend");
     }
 
-    return new EmailService(new ResendEmailDriver(source.RESEND_MAIL_API_KEY), {
+    return new EmailService(new ResendEmailDriver(resendApiKey), {
       fromEmail,
       fromName,
     });

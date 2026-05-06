@@ -7,6 +7,9 @@ frontend_image = "us-central1-docker.pkg.dev/radioso-staging/radioso-staging/fro
 # workspace_token_secret   = ""
 # public_chat_session_secret     = ""
 # connector_encryption_key = ""
+# resend_mail_api_key      = ""
+# ee_mail_from_email       = "noreply@your-verified-domain.example"
+# ee_mail_from_name        = "Radioso"
 
 # Optional overrides
 # region                      = "us-central1"

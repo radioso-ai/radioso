@@ -179,11 +179,12 @@ const main = async () => {
   const backendDir = path.join(repoRoot, "backend");
   const frontendDir = path.join(repoRoot, "frontend");
   const envPath = path.join(repoRoot, ".env");
+  const enterpriseAuthFrontendPackage = path.join(eeRoot, "packages/auth-frontend");
   const enterpriseBackendPackage = path.join(eeRoot, "packages/backend-module");
   const enterpriseWidgetPackage = path.join(eeRoot, "packages/embed-widget");
   const appOrigin = process.env.RADIOSO_EE_APP_ORIGIN ?? "http://localhost:3000";
 
-  for (const requiredPath of [eeRoot, enterpriseBackendPackage, enterpriseWidgetPackage]) {
+  for (const requiredPath of [eeRoot, enterpriseAuthFrontendPackage, enterpriseBackendPackage, enterpriseWidgetPackage]) {
     if (!(await pathExists(requiredPath))) {
       throw new Error(`Missing Enterprise Edition path: ${requiredPath}`);
     }
@@ -243,6 +244,7 @@ const main = async () => {
     "--no-audit",
     "--no-fund",
     enterpriseWidgetPackage,
+    enterpriseAuthFrontendPackage,
   ], { cwd: frontendDir });
 
   console.log("Generating Enterprise Edition frontend routes...");

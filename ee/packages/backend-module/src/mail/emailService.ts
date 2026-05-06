@@ -1,7 +1,3 @@
-import nodemailer from "nodemailer";
-
-import type { Env } from "../../../app/config/env.js";
-
 export interface EmailMessage {
   to: string;
   from: {
@@ -127,60 +123,70 @@ export class LogEmailDriver implements EmailDriver {
   }
 }
 
-export class SmtpEmailDriver implements EmailDriver {
-  private readonly transporter;
-
-  constructor(input: {
-    host: string;
-    port: number;
-    secure: boolean;
-    username: string;
-    password: string;
-  }) {
-    this.transporter = nodemailer.createTransport({
-      host: input.host,
-      port: input.port,
-      secure: input.secure,
-      auth: {
-        user: input.username,
-        pass: input.password,
-      },
-    });
-  }
+export class ResendEmailDriver implements EmailDriver {
+  constructor(private readonly apiKey: string) {}
 
   async send(message: EmailMessage): Promise<void> {
-    await this.transporter.sendMail({
-      to: message.to,
-      from: message.from.name ? `${message.from.name} <${message.from.email}>` : message.from.email,
-      subject: message.subject,
-      text: message.text,
-      html: message.html,
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: message.from.name ? `${message.from.name} <${message.from.email}>` : message.from.email,
+        to: message.to,
+        subject: message.subject,
+        text: message.text,
+        html: message.html,
+      }),
     });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`Resend email delivery failed with status ${response.status}: ${detail}`);
+    }
   }
 }
 
-export const createEmailService = (env: Env): EmailService => {
-  const defaults = {
-    fromEmail: env.MAIL_FROM_EMAIL,
-    fromName: env.MAIL_FROM_NAME,
-  };
+export interface EnterpriseEmailEnv {
+  EE_MAIL_DRIVER?: string;
+  EE_MAIL_FROM_EMAIL?: string;
+  EE_MAIL_FROM_NAME?: string;
+  RESEND_MAIL_API_KEY?: string;
+}
 
-  switch (env.MAIL_DRIVER) {
-    case "noop":
-      return new EmailService(new NoopEmailDriver(), defaults);
-    case "smtp":
-      return new EmailService(
-        new SmtpEmailDriver({
-          host: env.MAIL_SMTP_HOST!,
-          port: env.MAIL_SMTP_PORT,
-          secure: env.MAIL_SMTP_SECURE,
-          username: env.MAIL_SMTP_USERNAME!,
-          password: env.MAIL_SMTP_PASSWORD!,
-        }),
-        defaults,
-      );
-    case "log":
-    default:
-      return new EmailService(new LogEmailDriver(), defaults);
+export const createEnterpriseEmailService = (
+  source: EnterpriseEmailEnv = process.env,
+): EmailService => {
+  const driverName = source.EE_MAIL_DRIVER ?? (source.RESEND_MAIL_API_KEY ? "resend" : "log");
+  const fromEmail = source.EE_MAIL_FROM_EMAIL ?? "noreply@example.com";
+  const fromName = source.EE_MAIL_FROM_NAME ?? "Radioso";
+
+  if (driverName === "resend") {
+    if (!source.RESEND_MAIL_API_KEY) {
+      throw new Error("RESEND_MAIL_API_KEY is required when EE_MAIL_DRIVER is resend");
+    }
+
+    return new EmailService(new ResendEmailDriver(source.RESEND_MAIL_API_KEY), {
+      fromEmail,
+      fromName,
+    });
   }
+
+  if (driverName === "noop") {
+    return new EmailService(new NoopEmailDriver(), {
+      fromEmail,
+      fromName,
+    });
+  }
+
+  if (driverName === "log") {
+    return new EmailService(new LogEmailDriver(), {
+      fromEmail,
+      fromName,
+    });
+  }
+
+  throw new Error(`Unsupported EE_MAIL_DRIVER "${driverName}"`);
 };

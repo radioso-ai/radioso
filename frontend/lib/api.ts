@@ -13,6 +13,7 @@ import {
   storePublicSessionToken,
   storeWorkspaceToken,
 } from './api-client'
+import { AUTH_RECOVERY_ENABLED } from './enterprise-features'
 
 export {
   activateWorkspaceToken,
@@ -46,7 +47,7 @@ export interface RegisterResponse {
   workspaceId: string
   workspaceName: string
   workspacePublicRouteKey: string
-  requiresEmailVerification: boolean
+  requiresEmailVerification?: boolean
 }
 
 export interface LoginRequest {
@@ -63,22 +64,6 @@ export interface LoginResponse {
   workspaceId: string
   workspaceName: string
   workspacePublicRouteKey: string
-}
-
-export interface EmailVerificationVerifyRequest {
-  token: string
-}
-
-export interface EmailVerificationVerifyResponse {
-  verified: true
-}
-
-export interface EmailVerificationResendRequest {
-  email: string
-}
-
-export interface EmailVerificationResendResponse {
-  accepted: true
 }
 
 export interface RetrievalSettings {
@@ -905,23 +890,6 @@ export interface InvitationDetailsResponse {
   expiresAt: string
 }
 
-export interface PasswordResetRequest {
-  email: string
-}
-
-export interface PasswordResetRequestResponse {
-  accepted: true
-}
-
-export interface PasswordResetConfirmRequest {
-  token: string
-  password: string
-}
-
-export interface PasswordResetConfirmResponse extends LoginResponse {
-  email: string
-}
-
 export interface WorkspaceRouteResolutionResponse {
   workspaceKey: string
   workspaceId: string
@@ -989,14 +957,14 @@ export const workspaceApi = {
 // Auth API
 export const authApi = {
   async register(data: RegisterRequest): Promise<RegisterResponse> {
-    return request<RegisterResponse>("/auth/register", {
+    return request<RegisterResponse>(AUTH_RECOVERY_ENABLED ? "/ee/auth/register" : "/auth/register", {
       method: "POST",
       body: JSON.stringify(data),
     }, { withSession: true })
   },
 
   async login(data: LoginRequest): Promise<LoginResponse> {
-    return request<LoginResponse>("/auth/login", {
+    return request<LoginResponse>(AUTH_RECOVERY_ENABLED ? "/ee/auth/login" : "/auth/login", {
       method: "POST",
       body: JSON.stringify(data),
     }, { withSession: true })
@@ -1010,34 +978,6 @@ export const authApi = {
 
   async acceptInvitation(invitationToken: string, data: RegisterRequest): Promise<LoginResponse> {
     return request<LoginResponse>(`/auth/invitations/${invitationToken}/accept`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }, { withSession: true })
-  },
-
-  async requestPasswordReset(data: PasswordResetRequest): Promise<PasswordResetRequestResponse> {
-    return request<PasswordResetRequestResponse>('/auth/password-reset/request', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }, { withSession: true })
-  },
-
-  async confirmPasswordReset(data: PasswordResetConfirmRequest): Promise<PasswordResetConfirmResponse> {
-    return request<PasswordResetConfirmResponse>('/auth/password-reset/confirm', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }, { withSession: true })
-  },
-
-  async verifyEmail(data: EmailVerificationVerifyRequest): Promise<EmailVerificationVerifyResponse> {
-    return request<EmailVerificationVerifyResponse>('/auth/email-verification/verify', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }, { withSession: true })
-  },
-
-  async resendVerificationEmail(data: EmailVerificationResendRequest): Promise<EmailVerificationResendResponse> {
-    return request<EmailVerificationResendResponse>('/auth/email-verification/resend', {
       method: 'POST',
       body: JSON.stringify(data),
     }, { withSession: true })

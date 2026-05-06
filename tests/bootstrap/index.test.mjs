@@ -88,7 +88,7 @@ test("main auto-completes a partial env file during non-interactive startup", as
     assert.match(writes[0].source, /DOCUMENT_STORAGE_LOCAL_PATH=\.\.\/\.context\/document-storage/);
     assert.match(writes[0].source, /WORKER_DISPATCH_DRIVER=noop/);
     assert.match(writes[0].source, /DOCUMENT_PROCESSING_JOB_LEASE_MS=300000/);
-    assert.match(writes[0].source, /AUTH_SKIP_EMAIL_VERIFICATION=true/);
+    assert.doesNotMatch(writes[0].source, /AUTH_SKIP_EMAIL_VERIFICATION=/);
     assert.match(writes[0].source, /PUBLIC_CHAT_SESSION_SECRET=existing-embed-secret/);
     assert.doesNotMatch(writes[0].source, /WEBSITE_EMBED_SECRET=/);
     assert.match(stdoutChunks.join(""), /Auto-completed \.env for non-interactive startup/);

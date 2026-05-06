@@ -105,10 +105,6 @@ resource "google_cloud_run_v2_service" "backend" {
         value = tostring(var.session_ttl_hours)
       }
       env {
-        name  = "AUTH_SKIP_EMAIL_VERIFICATION"
-        value = tostring(var.auth_skip_email_verification)
-      }
-      env {
         name  = "DOCUMENT_STORAGE_DRIVER"
         value = "gcs"
       }
@@ -143,37 +139,6 @@ resource "google_cloud_run_v2_service" "backend" {
       env {
         name  = "DOCUMENT_PROCESSING_JOB_LEASE_MS"
         value = tostring(var.document_processing_job_lease_ms)
-      }
-      env {
-        name  = "APP_BASE_URL"
-        value = local.app_base_url
-      }
-      env {
-        name  = "MAIL_DRIVER"
-        value = var.mail_driver
-      }
-      env {
-        name  = "MAIL_FROM_EMAIL"
-        value = var.mail_from_email
-      }
-      env {
-        name  = "MAIL_FROM_NAME"
-        value = var.mail_from_name
-      }
-      dynamic "env" {
-        for_each = var.mail_smtp_host == null ? [] : [var.mail_smtp_host]
-        content {
-          name  = "MAIL_SMTP_HOST"
-          value = env.value
-        }
-      }
-      env {
-        name  = "MAIL_SMTP_PORT"
-        value = tostring(var.mail_smtp_port)
-      }
-      env {
-        name  = "MAIL_SMTP_SECURE"
-        value = tostring(var.mail_smtp_secure)
       }
       dynamic "env" {
         for_each = var.connector_public_base_url == null ? [] : [var.connector_public_base_url]
@@ -245,30 +210,6 @@ resource "google_cloud_run_v2_service" "backend" {
           secret_key_ref {
             secret  = google_secret_manager_secret.secrets["connector-encryption-key"].secret_id
             version = "latest"
-          }
-        }
-      }
-      dynamic "env" {
-        for_each = var.mail_smtp_username == null ? [] : [var.mail_smtp_username]
-        content {
-          name = "MAIL_SMTP_USERNAME"
-          value_source {
-            secret_key_ref {
-              secret  = google_secret_manager_secret.secrets["mail-smtp-username"].secret_id
-              version = "latest"
-            }
-          }
-        }
-      }
-      dynamic "env" {
-        for_each = var.mail_smtp_password == null ? [] : [var.mail_smtp_password]
-        content {
-          name = "MAIL_SMTP_PASSWORD"
-          value_source {
-            secret_key_ref {
-              secret  = google_secret_manager_secret.secrets["mail-smtp-password"].secret_id
-              version = "latest"
-            }
           }
         }
       }
@@ -440,10 +381,6 @@ resource "google_cloud_run_v2_service" "document_worker" {
         value = tostring(var.session_ttl_hours)
       }
       env {
-        name  = "AUTH_SKIP_EMAIL_VERIFICATION"
-        value = tostring(var.auth_skip_email_verification)
-      }
-      env {
         name  = "DOCUMENT_STORAGE_DRIVER"
         value = "gcs"
       }
@@ -478,37 +415,6 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "DOCUMENT_PROCESSING_JOB_LEASE_MS"
         value = tostring(var.document_processing_job_lease_ms)
-      }
-      env {
-        name  = "APP_BASE_URL"
-        value = local.app_base_url
-      }
-      env {
-        name  = "MAIL_DRIVER"
-        value = var.mail_driver
-      }
-      env {
-        name  = "MAIL_FROM_EMAIL"
-        value = var.mail_from_email
-      }
-      env {
-        name  = "MAIL_FROM_NAME"
-        value = var.mail_from_name
-      }
-      dynamic "env" {
-        for_each = var.mail_smtp_host == null ? [] : [var.mail_smtp_host]
-        content {
-          name  = "MAIL_SMTP_HOST"
-          value = env.value
-        }
-      }
-      env {
-        name  = "MAIL_SMTP_PORT"
-        value = tostring(var.mail_smtp_port)
-      }
-      env {
-        name  = "MAIL_SMTP_SECURE"
-        value = tostring(var.mail_smtp_secure)
       }
       dynamic "env" {
         for_each = var.connector_public_base_url == null ? [] : [var.connector_public_base_url]
@@ -562,30 +468,6 @@ resource "google_cloud_run_v2_service" "document_worker" {
           secret_key_ref {
             secret  = google_secret_manager_secret.secrets["connector-encryption-key"].secret_id
             version = "latest"
-          }
-        }
-      }
-      dynamic "env" {
-        for_each = var.mail_smtp_username == null ? [] : [var.mail_smtp_username]
-        content {
-          name = "MAIL_SMTP_USERNAME"
-          value_source {
-            secret_key_ref {
-              secret  = google_secret_manager_secret.secrets["mail-smtp-username"].secret_id
-              version = "latest"
-            }
-          }
-        }
-      }
-      dynamic "env" {
-        for_each = var.mail_smtp_password == null ? [] : [var.mail_smtp_password]
-        content {
-          name = "MAIL_SMTP_PASSWORD"
-          value_source {
-            secret_key_ref {
-              secret  = google_secret_manager_secret.secrets["mail-smtp-password"].secret_id
-              version = "latest"
-            }
           }
         }
       }

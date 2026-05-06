@@ -17,12 +17,9 @@ import type { RetrievalSettingsService } from "../../modules/settings/services/r
 import type { RetrievalAnswerService } from "../../modules/retrieval/services/retrievalAnswerService.js";
 import type { RetrievalSearchService } from "../../modules/retrieval/services/retrievalSearchService.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
-import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
-import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import type { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import type { AuditService } from "../../modules/audit/services/auditService.js";
-import type { EmailService } from "../../modules/email/services/emailService.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import type { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
@@ -56,9 +53,6 @@ export interface AppDependencies {
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
   authService: AuthService;
-  passwordResetService: PasswordResetService;
-  emailVerificationService: EmailVerificationService;
-  emailService: EmailService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
   workspaceSessionService: WorkspaceSessionService;

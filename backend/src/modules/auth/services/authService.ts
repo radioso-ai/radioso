@@ -1,5 +1,5 @@
 import type { Env } from "../../../app/config/env.js";
-import { conflict, emailVerificationRequired, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
+import { conflict, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService } from "../../account/services/accountAccessService.js";
 import type { AccountInvitationService } from "../../account/services/accountInvitationService.js";
 import type { AuditService } from "../../audit/services/auditService.js";
@@ -87,14 +87,6 @@ interface AuthServiceDependencies {
   workspaceService: WorkspaceService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
-  emailVerificationService?: {
-    issueVerification(input: {
-      userId: string;
-      email: string;
-      requestIp?: string | null;
-      requestUserAgent?: string | null;
-    }): Promise<void>;
-  };
   auditService: AuditService;
 }
 
@@ -140,7 +132,6 @@ export class AuthService {
     workspaceId: string;
     workspaceName: string;
     workspacePublicRouteKey: string;
-    requiresEmailVerification: boolean;
     sessionCookie?: string;
   }> {
     const email = normalizeEmail(input.email);
@@ -164,7 +155,7 @@ export class AuthService {
         id: account.id,
         email,
         passwordHash,
-        emailVerifiedAt: this.dependencies.env.AUTH_SKIP_EMAIL_VERIFICATION ? new Date() : null,
+        emailVerifiedAt: new Date(),
       });
       await this.dependencies.accountAccessService.ensureMembership({
         accountId: account.id,
@@ -172,17 +163,7 @@ export class AuthService {
         role: "owner",
       });
       const workspace = await this.dependencies.workspaceService.createDefault(account.id);
-      let sessionCookie: string | undefined;
-      if (this.dependencies.env.AUTH_SKIP_EMAIL_VERIFICATION) {
-        sessionCookie = await this.createSessionCookie(user.id, account.id);
-      } else {
-        await this.dependencies.emailVerificationService?.issueVerification({
-          userId: user.id,
-          email,
-          requestIp: input.requestIp,
-          requestUserAgent: input.requestUserAgent,
-        });
-      }
+      const sessionCookie = await this.createSessionCookie(user.id, account.id);
 
       await this.dependencies.auditService.record({
         accountId: account.id,
@@ -198,7 +179,6 @@ export class AuthService {
         workspaceId: workspace.id,
         workspaceName: workspace.name,
         workspacePublicRouteKey: workspace.publicRouteKey,
-        requiresEmailVerification: !this.dependencies.env.AUTH_SKIP_EMAIL_VERIFICATION,
         sessionCookie,
       };
     } catch (error) {
@@ -288,15 +268,6 @@ export class AuthService {
         metadata: { email },
       });
       throw unauthorized("Invalid email or password");
-    }
-
-    if (!this.dependencies.env.AUTH_SKIP_EMAIL_VERIFICATION && !user.emailVerifiedAt) {
-      await this.dependencies.auditService.record({
-        eventType: "auth.login",
-        eventStatus: "failure",
-        metadata: { email, reason: "email_verification_required" },
-      });
-      throw emailVerificationRequired();
     }
 
     const membership = await this.dependencies.accountAccessService.resolveLoginAccount(user.id, input.preferredAccountId);

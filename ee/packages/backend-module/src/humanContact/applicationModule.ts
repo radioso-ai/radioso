@@ -17,7 +17,7 @@ export const createHumanContactApplicationModule = (
   name: "Radioso Enterprise Human Contact",
   register(context) {
     context.registerDatabaseMigrator(humanContactMigrator);
-    context.registerSkillDefinition(humanContactRequestSkillDefinition);
+    context.registerSkillDefinition?.(humanContactRequestSkillDefinition);
     context.registerChatActionProvider((dependencies) => {
       state.service?.stop();
       state.service = new EnterpriseHumanContactService({

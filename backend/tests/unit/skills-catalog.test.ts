@@ -46,6 +46,7 @@ describe("skills catalog", () => {
       diagnostics: {
         defined: true,
         shapeAware: true,
+        strategyAware: true,
       },
       steps: expect.arrayContaining([
         expect.objectContaining({ name: "context_selection", kind: "context_selection" }),

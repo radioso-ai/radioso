@@ -1781,6 +1781,7 @@ export interface components {
         SkillDiagnosticsSummary: {
             defined: boolean;
             shapeAware: boolean;
+            strategyAware?: boolean;
             supportedFields?: string[];
         };
         SkillDiagnosticEvidence: {

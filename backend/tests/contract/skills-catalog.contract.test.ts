@@ -38,6 +38,7 @@ describe("skills catalog contract", () => {
         diagnostics: expect.objectContaining({
           defined: true,
           shapeAware: true,
+          strategyAware: true,
         }),
         steps: expect.arrayContaining([
           expect.objectContaining({
@@ -77,6 +78,7 @@ describe("skills catalog contract", () => {
       diagnostics: {
         defined: true,
         shapeAware: true,
+        strategyAware: true,
       },
     });
   });

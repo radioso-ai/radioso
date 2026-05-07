@@ -8,7 +8,7 @@ export interface ApplicationModuleRegistrationContext {
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHandler): void;
   registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
-  registerSkillDefinition(definition: SkillDefinition): void;
+  registerSkillDefinition?(definition: SkillDefinition): void;
 }
 
 export type ApplicationAccountCreatedHandler = (context: {

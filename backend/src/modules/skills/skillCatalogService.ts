@@ -73,6 +73,10 @@ export class SkillCatalogService {
     const { availabilityCheck: _availabilityCheck, ...catalogEntry } = entry;
     return {
       ...catalogEntry,
+      diagnostics: {
+        ...entry.diagnostics,
+        strategyAware: entry.diagnostics.shapeAware,
+      },
       steps: entry.steps?.map((step) => ({
         name: step.name,
         kind: step.kind,

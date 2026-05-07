@@ -3716,6 +3716,9 @@
           "shapeAware": {
             "type": "boolean"
           },
+          "strategyAware": {
+            "type": "boolean"
+          },
           "supportedFields": {
             "type": "array",
             "items": {

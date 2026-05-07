@@ -1,34 +1,12 @@
 import { findCitationAnchorGroups, stripResidualCitationSyntax } from "./citationAnchorParser.js";
 import { hasUnsupportedNoticeMarker, stripUnsupportedNoticeMarker } from "./unsupportedNoticeMarker.js";
-
-export interface ChatCitation {
-  documentId: string;
-  chunkId: string;
-  title: string;
-}
-
-export interface CitationEvidence extends ChatCitation {
-  content: string;
-  sourceUrl?: string;
-}
-
-export interface AnswerSegment {
-  text: string;
-  citationIndices?: number[];
-}
-
-export interface PresentedAnswer {
-  answer: string;
-  citations?: ChatCitation[];
-  answerSegments?: AnswerSegment[];
-}
-
-export interface NormalizedPresentedAnswer {
-  answer: string;
-  citationEvidence: CitationEvidence[];
-  answerSegments: AnswerSegment[];
-  unsupportedNoticeMarked: boolean;
-}
+import type {
+  AnswerSegment,
+  ChatCitation,
+  CitationEvidence,
+  NormalizedPresentedAnswer,
+  PresentedAnswer,
+} from "../contracts/answerTypes.js";
 
 export const remapAnswerSegmentsToCitationEvidence = (
   answerSegments: AnswerSegment[],

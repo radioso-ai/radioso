@@ -1,7 +1,7 @@
 import { parseDocument, type ParsedDocument } from "@radioso/document-parser";
 
 import type { DocumentRecord } from "./documentIngestionService.js";
-import type { DocumentStoragePort } from "../infra/gcsDocumentStorage.js";
+import type { DocumentStoragePort } from "../contracts/storage.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 
 export interface MaterializedDocumentContent {

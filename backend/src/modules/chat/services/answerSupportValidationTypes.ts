@@ -1,4 +1,4 @@
-import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
+import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 
 export const VALIDATION_DISPOSITION = {
   SUPPORTED: "supported",

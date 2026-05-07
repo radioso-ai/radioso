@@ -9,7 +9,7 @@ import type {
   DocumentProcessingQueueSnapshot,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
-import type { DocumentStoragePort } from "../infra/gcsDocumentStorage.js";
+import type { DocumentStoragePort } from "../contracts/storage.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import {
   NoopUsageLimitPolicy,

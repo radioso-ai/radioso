@@ -1,9 +1,13 @@
 import { getEnv, type Env } from "../config/env.js";
-import { ChatService } from "../../modules/chat/services/chatService.js";
-import { ChatBootstrapService } from "../../modules/chat/services/chatBootstrapService.js";
-import { ChatHistoryService } from "../../modules/chat/services/chatHistoryService.js";
-import { AssistantChatService } from "../../modules/chat/services/assistantChatService.js";
-import { AssistantHistoryService } from "../../modules/chat/services/assistantHistoryService.js";
+import {
+  AssistantChatService,
+  AssistantHistoryService,
+  ChatBootstrapService,
+  ChatHistoryService,
+  ChatService,
+  NoopChatActionProvider,
+  NoopContactHistoryProvider,
+} from "../../modules/chat/composition.js";
 import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
 import { AccountInvitationRepository } from "../../db/repositories/accountInvitationRepository.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
@@ -28,15 +32,17 @@ import { AuditService } from "../../modules/audit/services/auditService.js";
 import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
-import { DocumentDeletionService } from "../../modules/documents/services/documentDeletionService.js";
-import { DocumentIngestionService } from "../../modules/documents/services/documentIngestionService.js";
-import { DocumentImportService } from "../../modules/documents/services/documentImportService.js";
-import { DocumentSearchHistoryService } from "../../modules/documents/services/documentSearchHistoryService.js";
-import { DocumentSearchService } from "../../modules/documents/services/documentSearchService.js";
-import { DocumentProcessingService } from "../../modules/documents/services/documentProcessingService.js";
-import { DocumentProcessingWorker } from "../../modules/documents/services/documentProcessingWorker.js";
-import { DocumentSourceContentService } from "../../modules/documents/services/documentSourceContentService.js";
-import { WorkspaceIngestionReprocessService } from "../../modules/documents/services/workspaceIngestionReprocessService.js";
+import {
+  DocumentDeletionService,
+  DocumentImportService,
+  DocumentIngestionService,
+  DocumentProcessingService,
+  DocumentProcessingWorker,
+  DocumentSearchHistoryService,
+  DocumentSearchService,
+  DocumentSourceContentService,
+  WorkspaceIngestionReprocessService,
+} from "../../modules/documents/composition.js";
 import {
   CandidatePreparationService,
   ConversationContextService,
@@ -78,8 +84,6 @@ import {
 } from "../composition/index.js";
 import type { AppDependencies } from "./types.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
-import { NoopChatActionProvider } from "../../modules/chat/services/chatActionProvider.js";
-import { NoopContactHistoryProvider } from "../../modules/chat/services/contactHistoryProvider.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];

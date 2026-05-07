@@ -7,7 +7,7 @@ import type {
   DocumentStorageReadInput,
   DocumentStorageUploadInput,
   StoredDocumentObject,
-} from "./gcsDocumentStorage.js";
+} from "../contracts/storage.js";
 import { sanitizePathSegment } from "./gcsDocumentStorage.js";
 
 const LOCAL_STORAGE_BUCKET = "local";

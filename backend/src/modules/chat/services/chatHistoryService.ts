@@ -8,8 +8,8 @@ import type {
   MessageRepositoryPort,
 } from "../../../db/repositories/messageRepository.js";
 import type { HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
-import type { DocumentSearchHistoryEntry } from "../../documents/services/documentSearchHistoryService.js";
-import type { AnswerSegment, ChatCitation } from "./answerPresentationService.js";
+import type { DocumentSearchHistoryEntry } from "../../documents/contracts/index.js";
+import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import {
   RetrievalInfoPresenter,
   type RetrievalExecutionDiagnostics,

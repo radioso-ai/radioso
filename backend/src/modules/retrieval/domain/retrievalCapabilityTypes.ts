@@ -1,4 +1,4 @@
-import type { ChatCitation } from "../../chat/services/answerPresentationService.js";
+import type { ChatCitation } from "../../chat/contracts/answerTypes.js";
 import type { RetrievalInfo } from "../services/retrievalInfoPresenter.js";
 import type { RetrievalExecutionSurface, RetrievalTrace, ResponseIntent } from "./retrievalPipelineTypes.js";
 

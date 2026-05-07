@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import { AnswerPresentationService, remapAnswerSegmentsToCitationEvidence } from "../../chat/services/answerPresentationService.js";
-import { AnswerSupportValidator } from "../../chat/services/answerSupportValidator.js";
-import type { ChatGateway } from "../../chat/services/chatService.js";
-import { MissingGroundedMissResponseComposer } from "../../chat/services/groundedMissResponseComposer.js";
+import {
+  AnswerPresentationService,
+  AnswerSupportValidator,
+  MissingGroundedMissResponseComposer,
+  remapAnswerSegmentsToCitationEvidence,
+  type ChatGateway,
+} from "../../chat/retrievalSupport.js";
 import type { RetrievalPipelineService } from "./retrievalPipelineService.js";
 import { RetrievalInfoPresenter } from "./retrievalInfoPresenter.js";
 import { RetrievalTracePresenter } from "./retrievalTracePresenter.js";

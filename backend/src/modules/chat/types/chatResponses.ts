@@ -1,4 +1,4 @@
-import type { AnswerSegment, ChatCitation } from "../services/answerPresentationService.js";
+import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import type { RetrievalInfo, RetrievalTrace } from "../../retrieval/public.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 

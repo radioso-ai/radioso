@@ -9,7 +9,7 @@ import type {
   DocumentSummaryRecord,
   DocumentUpdateInput,
   DocumentWorkspaceSummaryRecord,
-} from "../../modules/documents/services/documentIngestionService.js";
+} from "../../modules/documents/contracts/index.js";
 import type { MetadataFieldSuggestion, MetadataValueType } from "../../modules/settings/domain/retrievalSettings.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { Database } from "../../shared/infra/database.js";

@@ -5,7 +5,7 @@ import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspace
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { RetrievalSettingsService } from "../../settings/services/retrievalSettingsService.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { ChatGateway } from "./chatService.js";
+import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatBootstrapResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import {

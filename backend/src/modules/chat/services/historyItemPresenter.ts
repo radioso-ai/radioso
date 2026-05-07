@@ -4,7 +4,7 @@ import type { ConversationMessageSummary } from "../../../db/repositories/messag
 import {
   toDocumentSearchHistoryEntry,
   type DocumentSearchHistoryEntry,
-} from "../../documents/services/documentSearchHistoryService.js";
+} from "../../documents/historySupport.js";
 import type { ChatConversationSummary, HistoryItem } from "./chatHistoryService.js";
 
 const toIsoString = (value: Date): string => value.toISOString();

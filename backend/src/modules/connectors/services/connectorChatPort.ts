@@ -1,7 +1,7 @@
-import type { ChatService } from "../../chat/services/chatService.js";
+import type { ChatAnswerPort } from "../../chat/contracts/index.js";
 import type { ConnectorChatPort } from "@radioso/connector-api";
 
-export const createConnectorChatPort = (chatService: ChatService): ConnectorChatPort => ({
+export const createConnectorChatPort = (chatService: ChatAnswerPort): ConnectorChatPort => ({
   answer: async (input) => {
     const response = await chatService.answer({
       workspaceId: input.workspaceId,

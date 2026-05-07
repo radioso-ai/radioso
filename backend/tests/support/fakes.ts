@@ -80,7 +80,7 @@ import type {
   DocumentStoragePort,
   DocumentStorageReadInput,
   DocumentStorageUploadInput,
-} from "../../src/modules/documents/infra/gcsDocumentStorage.js";
+} from "../../src/modules/documents/contracts/storage.js";
 import { createWorkspacePublicRouteKey } from "../../src/modules/workspace/domain/publicRouteKey.js";
 import { conflict, notFound } from "../../src/shared/domain/errors.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";

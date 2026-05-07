@@ -28,6 +28,7 @@ describe("human contact application module", () => {
         diagnostics: {
           defined: true,
           shapeAware: true,
+          strategyAware: false,
         },
         steps: expect.arrayContaining([
           expect.objectContaining({ name: "availability_check" }),

@@ -14,6 +14,7 @@ const createSkill = (): SkillDefinition => ({
   diagnostics: {
     defined: true,
     shapeAware: true,
+    strategyAware: false,
   },
   steps: [
     {

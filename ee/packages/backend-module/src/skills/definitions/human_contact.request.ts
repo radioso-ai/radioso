@@ -40,6 +40,7 @@ export const humanContactRequestSkillDefinition: SkillDefinition = {
   diagnostics: {
     defined: true,
     shapeAware: true,
+    strategyAware: false,
     supportedFields: supportedDiagnosticFields,
   },
   steps: [
@@ -58,10 +59,10 @@ export const humanContactRequestSkillDefinition: SkillDefinition = {
       displayName: "Trigger evaluation",
       clauses: {
         deterministicSources: [
-          "explicit_user_request",
           "no_context_refusal",
           "grounded_degraded_unsupported_segments",
         ],
+        explicitActionSource: "explicit_user_request",
         classifier: "bounded",
       },
     },

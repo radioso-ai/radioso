@@ -44,6 +44,7 @@ export interface SkillDefinition {
   diagnostics: {
     defined: boolean;
     shapeAware: boolean;
+    strategyAware: boolean;
     supportedFields?: string[];
   };
   steps: Array<{

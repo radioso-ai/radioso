@@ -3734,7 +3734,8 @@
         },
         "required": [
           "defined",
-          "shapeAware"
+          "shapeAware",
+          "strategyAware"
         ]
       },
       "SkillDiagnosticEvidence": {

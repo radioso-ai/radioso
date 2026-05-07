@@ -35,7 +35,7 @@ export type SkillContractReference = z.infer<typeof skillContractReferenceSchema
 export const skillDiagnosticsSummarySchema = z.object({
   defined: z.boolean(),
   shapeAware: z.boolean(),
-  strategyAware: z.boolean().optional(),
+  strategyAware: z.boolean(),
   supportedFields: z.array(z.string()).optional(),
 });
 export type SkillDiagnosticsSummary = z.infer<typeof skillDiagnosticsSummarySchema>;

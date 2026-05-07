@@ -88,6 +88,7 @@ describe("default application composition", () => {
               diagnostics: {
                 defined: true,
                 shapeAware: false,
+                strategyAware: false,
               },
             });
           },
@@ -120,6 +121,7 @@ describe("default application composition", () => {
               diagnostics: {
                 defined: true,
                 shapeAware: true,
+                strategyAware: false,
               },
               steps: [
                 {

@@ -2509,6 +2509,7 @@ components:
       required:
         - defined
         - shapeAware
+        - strategyAware
     SkillDiagnosticEvidence:
       type: object
       properties:

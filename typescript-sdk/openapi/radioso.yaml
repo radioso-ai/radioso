@@ -2036,6 +2036,8 @@ components:
               type: string
             shapeName:
               type: string
+            strategy:
+              type: string
             selectionMode:
               type: string
               enum: &a12
@@ -2107,6 +2109,8 @@ components:
                 queryShape:
                   type: string
                 retrievalShape:
+                  type: string
+                retrievalStrategy:
                   type: string
                 candidateSourceSummary:
                   type: object
@@ -2512,6 +2516,8 @@ components:
           type: string
         retrievalShape:
           type: string
+        retrievalStrategy:
+          type: string
         candidateSourceSummary:
           type: object
           additionalProperties: {}
@@ -2537,6 +2543,8 @@ components:
         skillName:
           type: string
         shapeName:
+          type: string
+        strategy:
           type: string
         selectionMode:
           type: string
@@ -2596,6 +2604,8 @@ components:
             queryShape:
               type: string
             retrievalShape:
+              type: string
+            retrievalStrategy:
               type: string
             candidateSourceSummary:
               type: object

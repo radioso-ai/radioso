@@ -126,6 +126,7 @@ describe("skills catalog", () => {
     expect(skillDiagnosticFieldNames).toEqual(expect.arrayContaining([
       "skillName",
       "shapeName",
+      "strategy",
       "selectionMode",
       "capabilityChecks",
       "fallback",
@@ -144,6 +145,7 @@ describe("skills catalog", () => {
     expect(validateSkillDiagnostic({
       skillName: "retrieval.answer",
       shapeName: "definition_lookup",
+      strategy: "definition_lookup",
       selectionMode: "probabilistic",
       selectionReason: "query_shape_definition",
       selectionConfidence: 0.86,
@@ -154,6 +156,7 @@ describe("skills catalog", () => {
       evidence: {
         queryShape: "definition_lookup",
         retrievalShape: "definition_lookup",
+        retrievalStrategy: "definition_lookup",
         evidenceStatus: "found",
         supportStatus: "supported",
         groundingOutcome: "grounded_success",

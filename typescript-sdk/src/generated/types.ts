@@ -1594,6 +1594,7 @@ export interface components {
             skillDiagnostic?: {
                 skillName: string;
                 shapeName?: string;
+                strategy?: string;
                 /** @enum {string} */
                 selectionMode: "deterministic" | "probabilistic";
                 selectionReason?: string;
@@ -1622,6 +1623,7 @@ export interface components {
                 evidence?: {
                     queryShape?: string;
                     retrievalShape?: string;
+                    retrievalStrategy?: string;
                     candidateSourceSummary?: {
                         [key: string]: unknown;
                     };
@@ -1787,6 +1789,7 @@ export interface components {
         SkillDiagnosticEvidence: {
             queryShape?: string;
             retrievalShape?: string;
+            retrievalStrategy?: string;
             candidateSourceSummary?: {
                 [key: string]: unknown;
             };
@@ -1805,6 +1808,7 @@ export interface components {
         SkillDiagnosticDefinition: {
             skillName: string;
             shapeName?: string;
+            strategy?: string;
             /** @enum {string} */
             selectionMode: "deterministic" | "probabilistic";
             selectionReason?: string;
@@ -1833,6 +1837,7 @@ export interface components {
             evidence?: {
                 queryShape?: string;
                 retrievalShape?: string;
+                retrievalStrategy?: string;
                 candidateSourceSummary?: {
                     [key: string]: unknown;
                 };

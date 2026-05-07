@@ -96,6 +96,7 @@ export const skillCapabilityCheckSchema = z.object({
 export const skillDiagnosticEvidenceSchema = z.object({
   queryShape: z.string().optional(),
   retrievalShape: z.string().optional(),
+  retrievalStrategy: z.string().optional(),
   candidateSourceSummary: z.record(z.unknown()).optional(),
   ranking: z.record(z.unknown()).optional(),
   resolvedSteps: z.array(z.record(z.unknown())).optional(),
@@ -107,6 +108,7 @@ export const skillDiagnosticEvidenceSchema = z.object({
 export const skillDiagnosticSchema = z.object({
   skillName: z.string(),
   shapeName: z.string().optional(),
+  strategy: z.string().optional(),
   selectionMode: z.enum(["deterministic", "probabilistic"]),
   selectionReason: z.string().optional(),
   selectionConfidence: z.number().min(0).max(1).optional(),
@@ -178,6 +180,7 @@ export interface ResolvedSkillRun {
 export const skillDiagnosticFieldNames = [
   "skillName",
   "shapeName",
+  "strategy",
   "selectionMode",
   "selectionReason",
   "selectionConfidence",

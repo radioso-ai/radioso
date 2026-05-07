@@ -459,6 +459,7 @@ export interface RetrievalInfo {
 export interface SkillDiagnostic {
   skillName: string
   shapeName?: string
+  strategy?: string
   selectionMode: 'deterministic' | 'probabilistic'
   selectionReason?: string
   selectionConfidence?: number
@@ -482,6 +483,7 @@ export interface SkillDiagnostic {
   evidence?: {
     queryShape?: string
     retrievalShape?: string
+    retrievalStrategy?: string
     candidateSourceSummary?: Record<string, unknown>
     ranking?: Record<string, unknown>
     resolvedSteps?: Array<Record<string, unknown>>

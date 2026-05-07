@@ -131,6 +131,7 @@ export const buildRetrievalAnswerSkillDiagnostic = (
 ): SkillDiagnostic => ({
   skillName: capabilityNames.retrieval.answer,
   shapeName: selection.shapeName,
+  strategy: selection.shapeName,
   selectionMode: selection.selectionMode,
   selectionReason: selection.selectionReason,
   selectionConfidence: selection.selectionConfidence,
@@ -157,6 +158,7 @@ export const buildRetrievalAnswerSkillDiagnostic = (
   evidence: {
     queryShape: selection.queryShape,
     retrievalShape: selection.shapeName,
+    retrievalStrategy: selection.shapeName,
     candidateSourceSummary: input.candidateCounts,
     ranking: {
       rerankStatus: input.rerankStatus,

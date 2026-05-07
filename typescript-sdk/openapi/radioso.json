@@ -3064,6 +3064,9 @@
               "shapeName": {
                 "type": "string"
               },
+              "strategy": {
+                "type": "string"
+              },
               "selectionMode": {
                 "type": "string",
                 "enum": [
@@ -3163,6 +3166,9 @@
                     "type": "string"
                   },
                   "retrievalShape": {
+                    "type": "string"
+                  },
+                  "retrievalStrategy": {
                     "type": "string"
                   },
                   "candidateSourceSummary": {
@@ -3740,6 +3746,9 @@
           "retrievalShape": {
             "type": "string"
           },
+          "retrievalStrategy": {
+            "type": "string"
+          },
           "candidateSourceSummary": {
             "type": "object",
             "additionalProperties": {}
@@ -3785,6 +3794,9 @@
             "type": "string"
           },
           "shapeName": {
+            "type": "string"
+          },
+          "strategy": {
             "type": "string"
           },
           "selectionMode": {
@@ -3886,6 +3898,9 @@
                 "type": "string"
               },
               "retrievalShape": {
+                "type": "string"
+              },
+              "retrievalStrategy": {
                 "type": "string"
               },
               "candidateSourceSummary": {

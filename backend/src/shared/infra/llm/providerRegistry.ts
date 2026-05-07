@@ -1,5 +1,4 @@
-import { ModelChatGateway } from "../../../modules/chat/services/chatService.js";
-import { ModelGroundedMissResponseComposer } from "../../../modules/chat/services/groundedMissResponseComposer.js";
+import { ModelChatGateway, ModelGroundedMissResponseComposer } from "../../../modules/chat/llmAdapters.js";
 import {
   ModelEmbeddingGateway,
   ModelQueryRewriteGateway,

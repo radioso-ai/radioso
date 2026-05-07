@@ -5,7 +5,7 @@ import {
   ASSISTANT_TURN_OUTCOME,
   AssistantTurnOutcomeClassifier,
 } from "../../src/modules/chat/services/assistantTurnOutcomeClassifier.js";
-import type { CitationEvidence } from "../../src/modules/chat/services/answerPresentationService.js";
+import type { CitationEvidence } from "../../src/modules/chat/contracts/answerTypes.js";
 import type { GroundedMissResponseComposer } from "../../src/modules/chat/services/groundedMissResponseComposer.js";
 
 const citations: CitationEvidence[] = [

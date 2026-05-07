@@ -1,4 +1,4 @@
-import type { AnswerSegment, CitationEvidence } from "./answerPresentationService.js";
+import type { AnswerSegment, CitationEvidence } from "../contracts/answerTypes.js";
 import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
 import {
   type HiddenSupportEvidence,

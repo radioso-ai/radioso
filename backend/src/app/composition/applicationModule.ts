@@ -6,19 +6,23 @@ import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyti
 import type { IncidentSink } from "../../shared/incidents/incidentSink.js";
 import type { TelemetrySink } from "../../shared/observability/telemetry/telemetrySink.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
-import type { DocumentStoragePort } from "../../modules/documents/infra/gcsDocumentStorage.js";
-import type { DocumentJobConsumerPort } from "../../modules/documents/services/documentJobConsumer.js";
-import type { DocumentJobDispatcherPort } from "../../modules/documents/services/documentJobDispatcher.js";
+import type {
+  DocumentJobConsumerPort,
+  DocumentJobDispatcherPort,
+  DocumentStoragePort,
+} from "../../modules/documents/contracts/index.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/domain/websiteEmbedIntegration.js";
-import type { ChatActionProviderPort } from "../../modules/chat/services/chatActionProvider.js";
+import type {
+  ChatActionProviderPort,
+  ContactHistoryProviderPort,
+} from "../../modules/chat/contracts/index.js";
 import type { AppDependencies } from "../server/types.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { AuditService } from "../../modules/audit/services/auditService.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
-import type { ContactHistoryProviderPort } from "../../modules/chat/services/contactHistoryProvider.js";
 
 export interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;

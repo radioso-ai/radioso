@@ -3570,6 +3570,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "assistantMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "answer": {
             "type": "string"
           },
@@ -3653,6 +3657,7 @@
         },
         "required": [
           "conversationId",
+          "assistantMessageId",
           "answer",
           "conversationMode",
           "conversationModeMetadata",

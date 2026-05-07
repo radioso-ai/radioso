@@ -18,9 +18,10 @@ import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
 import {
   AnswerPresentationService,
   remapAnswerSegmentsToCitationEvidence,
-  type AnswerSegment,
-  type ChatCitation,
 } from "./answerPresentationService.js";
+import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
+import type { ChatGateway } from "../contracts/chatGateway.js";
+import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import { AnswerSupportValidator } from "./answerSupportValidator.js";
 import {
   ASSISTANT_TURN_OUTCOME,
@@ -53,20 +54,8 @@ import { NoopChatActionProvider, type ChatActionProviderPort } from "./chatActio
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
 
-export interface ChatGateway {
-  answer(input: {
-    query: string;
-    history: MessageRecord[];
-    prompt: string;
-    systemPrompt?: string;
-  }): Promise<string>;
-  streamAnswer(input: {
-    query: string;
-    history: MessageRecord[];
-    prompt: string;
-    systemPrompt?: string;
-  }): AsyncIterable<string>;
-}
+export type { ChatGateway } from "../contracts/chatGateway.js";
+export type { ChatStreamEvent } from "../contracts/streamEvents.js";
 
 export class BlankChatAnswerError extends Error {
   constructor() {
@@ -103,30 +92,6 @@ const buildSkippedValidationSummary = (): AnswerValidationSummary => ({
   supportedSegmentCount: 0,
   nonSubstantiveSegmentCount: 0,
 });
-
-export type ChatStreamEvent =
-  | { type: "conversation"; conversationId: string }
-  | { type: "chunk"; text: string }
-  | {
-      type: "suggestions";
-      conversationId: string;
-      suggestions: ChatSuggestion[];
-      conversationModeMetadata: ConversationModeMetadata;
-    }
-  | {
-      type: "done";
-      conversationId: string;
-      assistantMessageId: string;
-      answer: string;
-      citations?: ChatCitation[];
-      answerSegments?: AnswerSegment[];
-      suggestions?: ChatSuggestion[];
-      conversationMode: ConversationMode;
-      conversationModeMetadata: ConversationModeMetadata;
-      retrievalInfo: RetrievalInfo;
-      retrievalTrace: RetrievalTrace;
-      route: ChatRoute;
-    };
 
 const isAnswerSupportValidationEnabled = (session: PreparedSession): boolean =>
   session.retrieval.responseSettings?.answerSupportValidationEnabled !== false;

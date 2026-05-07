@@ -1,4 +1,4 @@
-import type { ChatStreamEvent } from "../services/chatService.js";
+import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import type { ChatBootstrapResponse, ChatResponse } from "./chatResponses.js";
 
 export type AssistantRouteType = "direct" | "retrieval";

@@ -7,6 +7,7 @@ import { getNormalizedMetadataConditions } from "../../settings/contracts/retrie
 import type {
   ConversationContextWindow,
   ResponseIntent,
+  RetrievalQueryShape,
   RetrievalSubquery,
   RewrittenRetrievalQuery,
   ResponseLanguagePolicy,
@@ -527,6 +528,7 @@ export class QueryRewriteService {
         inScopeRequest: this.normalizeScopeRequest(result.inScopeRequest),
         outsideScopeRequest: this.normalizeScopeRequest(result.outsideScopeRequest),
         responseLanguagePolicy,
+        queryShape: this.normalizeQueryShape(result.queryShape),
         retrievalSubqueries: this.normalizeRetrievalSubqueries(result.retrievalSubqueries),
         turnKind: this.normalizeTurnKind(result.turnKind),
         proposedActiveSubject: result.proposedActiveSubject?.trim() || undefined,
@@ -545,6 +547,7 @@ export class QueryRewriteService {
       inScopeRequest: undefined,
       outsideScopeRequest: undefined,
       responseLanguagePolicy: DEFAULT_RESPONSE_LANGUAGE_POLICY,
+      queryShape: undefined,
       retrievalSubqueries: undefined,
       turnKind: REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP,
       proposedActiveSubject: undefined,
@@ -565,6 +568,21 @@ export class QueryRewriteService {
         return turnKind;
       default:
         return REWRITE_TURN_KIND.AMBIGUOUS;
+    }
+  }
+
+  private normalizeQueryShape(queryShape?: string): RetrievalQueryShape | undefined {
+    switch (queryShape) {
+      case "definition_lookup":
+      case "event_date_lookup":
+      case "policy_answer":
+      case "exploratory_summary":
+      case "follow_up_grounding":
+      case "default_hybrid":
+      case "general_grounding":
+        return queryShape;
+      default:
+        return undefined;
     }
   }
 
@@ -815,6 +833,19 @@ const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
       typeof parsed.responseLanguagePolicy === "string" && parsed.responseLanguagePolicy === "match_user_question"
         ? parsed.responseLanguagePolicy
         : DEFAULT_RESPONSE_LANGUAGE_POLICY,
+    queryShape:
+      typeof parsed.queryShape === "string" &&
+      (
+        parsed.queryShape === "definition_lookup" ||
+        parsed.queryShape === "event_date_lookup" ||
+        parsed.queryShape === "policy_answer" ||
+        parsed.queryShape === "exploratory_summary" ||
+        parsed.queryShape === "follow_up_grounding" ||
+        parsed.queryShape === "default_hybrid" ||
+        parsed.queryShape === "general_grounding"
+      )
+        ? parsed.queryShape
+        : undefined,
     retrievalSubqueries: parsedSubqueries,
     turnKind:
       typeof parsed.turnKind === "string" ? (parsed.turnKind as RewriteTurnKind) : REWRITE_TURN_KIND.AMBIGUOUS,

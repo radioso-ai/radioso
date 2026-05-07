@@ -1584,6 +1584,62 @@ export interface components {
             rewrite?: components["schemas"]["RewriteInfo"];
             triggerAnalysis?: components["schemas"]["TriggerAnalysis"];
             triggerBackoff?: components["schemas"]["TriggerBackoff"];
+            /** @enum {string} */
+            shapeName?: "definition_lookup" | "event_date_lookup" | "policy_answer" | "exploratory_summary" | "follow_up_grounding" | "default_hybrid";
+            /** @enum {string} */
+            queryShape?: "definition_lookup" | "event_date_lookup" | "policy_answer" | "exploratory_summary" | "follow_up_grounding" | "default_hybrid" | "general_grounding";
+            resolvedSteps?: {
+                [key: string]: unknown;
+            }[];
+            skillDiagnostic?: {
+                skillName: string;
+                shapeName?: string;
+                strategy?: string;
+                /** @enum {string} */
+                selectionMode: "deterministic" | "probabilistic";
+                selectionReason?: string;
+                selectionConfidence?: number;
+                /** @enum {string} */
+                callerSurface: "assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed";
+                capabilityChecks: {
+                    capability: string;
+                    allowed: boolean;
+                    reason?: string;
+                }[];
+                parameters?: {
+                    [key: string]: unknown;
+                };
+                fallback?: {
+                    used: boolean;
+                    reason?: string;
+                    path?: string;
+                };
+                /** @enum {string} */
+                outcome: "success" | "unsupported" | "forbidden" | "failed" | "skipped";
+                error?: {
+                    code: string;
+                    message?: string;
+                };
+                evidence?: {
+                    queryShape?: string;
+                    retrievalShape?: string;
+                    retrievalStrategy?: string;
+                    candidateSourceSummary?: {
+                        [key: string]: unknown;
+                    };
+                    ranking?: {
+                        [key: string]: unknown;
+                    };
+                    resolvedSteps?: {
+                        [key: string]: unknown;
+                    }[];
+                    /** @enum {string} */
+                    evidenceStatus?: "found" | "missing" | "partial" | "not_applicable";
+                    /** @enum {string} */
+                    supportStatus?: "supported" | "unsupported" | "not_checked" | "not_applicable";
+                    groundingOutcome?: string;
+                };
+            };
         };
         RetrievalTraceStage: {
             stageId: string;
@@ -1726,11 +1782,13 @@ export interface components {
         };
         SkillDiagnosticsSummary: {
             defined: boolean;
+            shapeAware: boolean;
             strategyAware: boolean;
             supportedFields?: string[];
         };
         SkillDiagnosticEvidence: {
             queryShape?: string;
+            retrievalShape?: string;
             retrievalStrategy?: string;
             candidateSourceSummary?: {
                 [key: string]: unknown;
@@ -1738,6 +1796,9 @@ export interface components {
             ranking?: {
                 [key: string]: unknown;
             };
+            resolvedSteps?: {
+                [key: string]: unknown;
+            }[];
             /** @enum {string} */
             evidenceStatus?: "found" | "missing" | "partial" | "not_applicable";
             /** @enum {string} */
@@ -1746,6 +1807,7 @@ export interface components {
         };
         SkillDiagnosticDefinition: {
             skillName: string;
+            shapeName?: string;
             strategy?: string;
             /** @enum {string} */
             selectionMode: "deterministic" | "probabilistic";
@@ -1774,6 +1836,7 @@ export interface components {
             };
             evidence?: {
                 queryShape?: string;
+                retrievalShape?: string;
                 retrievalStrategy?: string;
                 candidateSourceSummary?: {
                     [key: string]: unknown;
@@ -1781,6 +1844,9 @@ export interface components {
                 ranking?: {
                     [key: string]: unknown;
                 };
+                resolvedSteps?: {
+                    [key: string]: unknown;
+                }[];
                 /** @enum {string} */
                 evidenceStatus?: "found" | "missing" | "partial" | "not_applicable";
                 /** @enum {string} */
@@ -1793,7 +1859,7 @@ export interface components {
             displayName: string;
             description: string;
             /** @enum {string} */
-            owner: "assistant" | "retrieval" | "documents" | "mcp" | "platform" | "auth";
+            owner: "assistant" | "retrieval" | "documents" | "mcp" | "platform" | "auth" | "contact";
             /** @enum {string} */
             executionClass: "interactive" | "deferred" | "administrative";
             availability: components["schemas"]["SkillAvailability"];
@@ -1801,6 +1867,15 @@ export interface components {
             requiredCapabilities: string[];
             contractReferences: components["schemas"]["SkillContractReference"][];
             diagnostics: components["schemas"]["SkillDiagnosticsSummary"];
+            steps?: {
+                name: string;
+                kind: string;
+            }[];
+            shapes?: {
+                name: string;
+                displayName?: string;
+                description?: string;
+            }[];
         };
         SkillCatalogResponse: {
             skills: components["schemas"]["SkillCatalogEntry"][];

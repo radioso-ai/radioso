@@ -11,6 +11,9 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
 
   async execute(input: CandidatePreparationStageResult) {
     const finalContextTopK = RETRIEVAL_BEHAVIOR.finalContextTopK;
+    const rerankEnabled = input.strategySelection?.strategy === "definition_lookup"
+      ? false
+      : input.settings.rerankEnabled;
     const rerankCandidateCount = Math.min(
       Math.max(input.settings.rerankTopK, finalContextTopK),
       RETRIEVAL_BEHAVIOR.rerank.candidateLimit,
@@ -19,7 +22,7 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
     const reranked = await this.rerankService.rerank({
       query: input.activeParsedQuery.semanticQuery || input.activeQuery,
       contexts: rerankCandidates,
-      enabled: input.settings.rerankEnabled,
+      enabled: rerankEnabled,
       topK: rerankCandidateCount,
     });
     const contexts = this.promptContextSelectorService.select({

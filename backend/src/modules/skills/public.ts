@@ -15,6 +15,7 @@ export {
   type SkillCatalogEntry,
   type SkillCatalogEntryDefinition,
   type SkillCatalogResponse,
+  type SkillCallerSurface,
   type SkillDiagnostic,
 } from "./domain.js";
 export { builtInSkillCatalogEntries, createDefaultSkillCatalogRegistry } from "./defaultCatalog.js";

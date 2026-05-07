@@ -7,6 +7,8 @@ import type {
   RetrievalSubquery,
   ResponseLanguagePolicy,
   RewrittenRetrievalQuery,
+  RetrievalAnswerStrategySelection,
+  RetrievalExecutionMetadata,
   TriggerAnalysisResult,
   TriggerBackoffDecision,
 } from "../domain/retrievalPipelineTypes.js";
@@ -22,6 +24,7 @@ export interface RetrievalPipelineRequest {
   responseBehaviorEnabled?: boolean;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   metadataFilter?: Record<string, unknown>;
+  execution?: RetrievalExecutionMetadata;
 }
 
 export interface RetrievalContextStageResult {
@@ -42,6 +45,7 @@ export interface QueryInterpretationStageResult extends RetrievalContextStageRes
   triggerAnalysis: TriggerAnalysisResult;
   promptHistory: MessageRecord[];
   continuityDecision: "unchanged" | "updated" | "unresolved" | "rejected";
+  strategySelection?: RetrievalAnswerStrategySelection;
 }
 
 export interface RetrievalBranchResult {

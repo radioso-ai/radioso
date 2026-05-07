@@ -46,6 +46,34 @@ export function ChatRetrievalInfo({
         </section>
       ) : null}
 
+      {retrievalInfo?.strategy || retrievalInfo?.skillDiagnostic ? (
+        <section className="rounded-lg border border-border/70 bg-background/60 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-foreground">Retrieval strategy</p>
+            {retrievalInfo.strategy ? (
+              <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {formatExecutionLabel(retrievalInfo.strategy)}
+              </span>
+            ) : null}
+            {retrievalInfo.queryShape ? (
+              <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                {formatExecutionLabel(retrievalInfo.queryShape)}
+              </span>
+            ) : null}
+          </div>
+          {retrievalInfo.skillDiagnostic?.selectionReason ? (
+            <p className="mt-2 text-sm text-muted-foreground">{retrievalInfo.skillDiagnostic.selectionReason}</p>
+          ) : null}
+          {retrievalInfo.skillDiagnostic ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {retrievalInfo.skillDiagnostic.skillName} •{' '}
+              {formatExecutionLabel(retrievalInfo.skillDiagnostic.selectionMode)} •{' '}
+              {formatExecutionLabel(retrievalInfo.skillDiagnostic.callerSurface)}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       {retrievalInfo?.triggerAnalysis ? (
         <section className="rounded-lg border border-border/70 bg-background/60 p-3">
           <p className="text-sm font-medium text-foreground">Trigger analysis</p>

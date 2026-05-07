@@ -22,6 +22,7 @@ import { RetrievalContextStageService } from "./retrievalContextStage.js";
 import { RetrievalDiagnosticsStageService } from "./retrievalDiagnosticsStage.js";
 import { RetrievalPipelineTraceBuilder } from "./retrievalPipelineTraceBuilder.js";
 import { MetadataRuleScoringService } from "./metadataRuleScoringService.js";
+import { selectRetrievalAnswerStrategy } from "./retrievalStrategySelector.js";
 import type {
   QueryInterpretationStageResult,
   CandidatePreparationStage,
@@ -132,7 +133,23 @@ export class RetrievalPipelineService {
   }
 
   async runInterpreted(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult> {
-    const retrieval = await this.measure(() => this.candidateRetrievalStage.execute(input.interpretation.result));
+    const strategySelection = this.shouldSelectRetrievalAnswerStrategy(input.request)
+      ? await this.measure(() => selectRetrievalAnswerStrategy({
+          query: input.request.query,
+          rewrittenQuery: input.interpretation.result.rewrittenQuery,
+          continuityDecision: input.interpretation.result.continuityDecision,
+          historyMessageCount: input.context.result.contextWindow.selectedMessages.length,
+        }))
+      : undefined;
+    const interpretation = {
+      ...input.interpretation,
+      result: {
+        ...input.interpretation.result,
+        request: input.request,
+        strategySelection: strategySelection?.result,
+      },
+    };
+    const retrieval = await this.measure(() => this.candidateRetrievalStage.execute(interpretation.result));
     const prepared = await this.measure(() => this.candidatePreparationStage.execute(retrieval.result));
     const selection = await this.measure(() => this.contextSelectionStage.execute(prepared.result));
     const prompt = await this.measure(() => this.promptAssemblyStage.execute(selection.result));
@@ -140,7 +157,8 @@ export class RetrievalPipelineService {
     const trace = this.retrievalTraceBuilder.buildRetrievalTrace({
       traceStartedAtMs: input.traceStartedAtMs,
       context: input.context,
-      interpretation: input.interpretation,
+      interpretation,
+      strategySelection,
       retrieval,
       prepared,
       selection,
@@ -172,6 +190,7 @@ export class RetrievalPipelineService {
       responseLanguagePolicy: input.interpretation.result.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
     };
     const diagnostics: RetrievalExecutionDiagnostics = {
+      execution: input.request.execution,
       rewriteStatus: input.interpretation.result.rewrittenQuery.status,
       rerankStatus: "skipped",
       originalCandidateCount: 0,
@@ -228,6 +247,12 @@ export class RetrievalPipelineService {
       ...input,
       responseIdentity: input.responseIdentity ?? null,
     };
+  }
+
+  private shouldSelectRetrievalAnswerStrategy(input: RetrievalPipelineRequest): boolean {
+    return input.execution?.path === "retrieval_answer" ||
+      input.execution?.path === "mcp_grounded_answer" ||
+      input.execution?.path === "assistant_retrieval";
   }
 
   private async measure<T>(runStage: () => Promise<T> | T): Promise<MeasuredStage<T>> {

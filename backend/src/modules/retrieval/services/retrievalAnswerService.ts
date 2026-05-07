@@ -36,12 +36,19 @@ export class RetrievalAnswerService {
 
   async answer(input: RetrievalAnswerRequest): Promise<RetrievalAnswerResult> {
     const history = this.buildContextMessages(input);
+    const executionSurface = input.executionSurface ?? "retrieval";
+    const execution = {
+      surface: executionSurface,
+      path: executionSurface === "mcp_capability" ? "mcp_grounded_answer" : "retrieval_answer",
+      retrievalInvoked: true,
+    } as const;
     const interpretation = await this.dependencies.retrievalPipeline.interpret({
       workspaceId: input.workspaceId,
       query: input.query,
       history,
       responseIdentity: null,
       metadataFilter: input.metadataFilter,
+      execution,
     });
     const responseIntent = interpretation.interpretation.result.responseIntent;
     if (responseIntent && responseIntent !== RESPONSE_INTENT.RETRIEVAL) {
@@ -54,13 +61,8 @@ export class RetrievalAnswerService {
     }
 
     const retrieval = await this.dependencies.retrievalPipeline.runInterpreted(interpretation);
-    const executionSurface = input.executionSurface ?? "retrieval";
     const retrievalInfo = this.retrievalInfoPresenter.present(retrieval.diagnostics, {
-      execution: {
-        surface: executionSurface,
-        path: executionSurface === "mcp_capability" ? "mcp_grounded_answer" : "retrieval_answer",
-        retrievalInvoked: true,
-      },
+      execution,
     });
     const answerStartedAt = Date.now();
     const usageReservation = await (this.dependencies.usageLimitPolicy ?? new NoopUsageLimitPolicy()).reserveAnswer({
@@ -133,6 +135,7 @@ export class RetrievalAnswerService {
           validation: validated.validation,
         },
       });
+      const resolvedRetrievalInfo = retrievalTrace.summary ?? retrievalInfo;
 
       await usageReservation.commit();
       return {
@@ -153,7 +156,7 @@ export class RetrievalAnswerService {
               : "unsupported"
             : "not_checked",
         },
-        retrievalInfo,
+        retrievalInfo: resolvedRetrievalInfo,
         retrievalTrace,
       };
     } catch (error) {

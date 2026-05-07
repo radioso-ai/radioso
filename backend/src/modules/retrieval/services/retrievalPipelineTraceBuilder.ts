@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   RetrievalExecutionDiagnostics,
+  RetrievalAnswerStrategySelection,
   RetrievalTrace,
   RetrievalTraceStageStatus,
 } from "../domain/retrievalPipelineTypes.js";
@@ -23,6 +24,7 @@ export interface RetrievalTraceSourceStages {
   traceStartedAtMs: number;
   context: MeasuredStage<RetrievalContextStageResult>;
   interpretation: MeasuredStage<QueryInterpretationStageResult>;
+  strategySelection?: MeasuredStage<RetrievalAnswerStrategySelection>;
   retrieval: MeasuredStage<unknown>;
   prepared: MeasuredStage<unknown>;
   selection: MeasuredStage<unknown>;
@@ -70,6 +72,12 @@ export class RetrievalPipelineTraceBuilder {
           startedAt: toIso(stages.interpretation.startedAt),
           durationMs: stages.interpretation.durationMs,
         },
+        strategySelection: stages.strategySelection
+          ? {
+              startedAt: toIso(stages.strategySelection.startedAt),
+              durationMs: stages.strategySelection.durationMs,
+            }
+          : undefined,
         semanticRetrieval: {
           startedAt: toIso(stages.retrieval.startedAt),
           durationMs: semanticDurationMs,

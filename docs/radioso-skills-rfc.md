@@ -95,13 +95,15 @@ Example strategies for `retrieval.answer`:
 
 | Strategy | Best for | Likely behavior |
 |---|---|---|
-| `definition_lookup` | "What is X?" or acronym and policy term questions | lexical-heavy search, semantic assist, minimal or no reranking unless ambiguous |
-| `event_date_lookup` | "When is the next concert in my city?" | keyword and entity boosting, date signal extraction, reranking, stricter evidence checks |
-| `policy_answer` | procedural, compliance, or support questions | hybrid search, support validation, citations, conservative answer synthesis |
-| `exploratory_summary` | broad overview or comparison requests | broader candidate pool, diversity, synthesis across sources |
+| `definition_lookup` | entity, term, acronym, or concept identification | lexical-heavy search, semantic assist, minimal or no reranking unless ambiguous |
+| `event_date_lookup` | event, schedule, deadline, or date/time answers | keyword and entity boosting, date signal extraction, reranking, stricter evidence checks |
+| `policy_answer` | procedural, compliance, or support answers | hybrid search, support validation, citations, conservative answer synthesis |
+| `exploratory_summary` | broad synthesis, overview, or comparison answers | broader candidate pool, diversity, synthesis across sources |
 | `follow_up_grounding` | conversational follow-ups | context-aware rewrite before search, then strategy selection |
 
 These strategies should not become user-facing promises until the contracts and diagnostics are ready. They are an internal execution model first.
+
+In the first strategy-aware slice, `retrieval.answer` selects one of these strategies from language-neutral structured query interpretation metadata and existing continuity metadata. The selected strategy is exposed through the existing `retrievalTrace` response and the activity/debug graph. There is no new generic skill execution endpoint and no separate trace store.
 
 ## Skill Diagnostics
 
@@ -120,6 +122,8 @@ At minimum, diagnostics should include:
 - caller surface, such as assistant, retrieval API, SDK, or MCP
 
 Diagnostics are part of the product value. They keep expansion from becoming opaque.
+
+For retrieval answer, the operator-facing diagnostic surface is the existing retrieval trace graph. New runs include a `strategy_selection` stage and summary fields such as `strategy`, `queryShape`, and `skillDiagnostic`. The same trace is stored in the existing audit-backed chat or search history metadata when those surfaces already persist retrieval debug data.
 
 ## Skill Catalog
 
@@ -192,7 +196,7 @@ Core fields include:
 
 Retrieval-specific evidence metadata can include query shape, retrieval strategy, candidate source summary, ranking choices, evidence status, support status, and grounding outcome.
 
-The catalog exposes whether diagnostics are defined and whether a skill is strategy-aware. Later execution features can emit concrete diagnostic records without changing the vocabulary again.
+The catalog exposes whether diagnostics are defined and whether a skill is strategy-aware. Retrieval answer now emits concrete diagnostic records through its existing trace contract. Later execution features can reuse the vocabulary without changing the trace surface again.
 
 ## Generic Execution
 
@@ -240,6 +244,8 @@ Second, inventory existing proto-skills and identify which stable endpoint or mo
 Third, add a read-only skill catalog that describes current supported skills without changing execution.
 
 Fourth, make retrieval answer the first strategy-aware skill. Add strategy selection and diagnostics behind the existing retrieval answer contract where possible. This should be the first visible product slice, not only an internal refactor.
+
+This fourth step is intentionally narrow. It adds strategy selection for `retrieval.answer`, emits strategy tags in `retrieval.pipeline.completed` telemetry, and adds strategy metadata to the existing trace graph. It does not make strategies a caller-selected API parameter.
 
 Fifth, let assistant chat and MCP surface skill metadata without forcing all execution through one generic path.
 

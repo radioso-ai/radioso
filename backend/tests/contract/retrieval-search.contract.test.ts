@@ -61,6 +61,14 @@ describe("retrieval search contract", () => {
         }),
       }),
     });
+    expect(response.body.retrievalTrace.summary).not.toHaveProperty("skillDiagnostic");
+    expect(response.body.retrievalTrace.stages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stageId: "strategy_selection",
+        }),
+      ]),
+    );
     expect(response.body).not.toHaveProperty("conversationId");
     expect(response.body).not.toHaveProperty("route");
   });

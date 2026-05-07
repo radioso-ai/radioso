@@ -7,6 +7,8 @@ export class RetrievalDiagnosticsStageService implements RetrievalDiagnosticsSta
   async execute(input: PromptAssemblyStageResult) {
     return this.retrievalExecutionTelemetryService.create({
       workspaceId: input.request.workspaceId,
+      execution: input.request.execution,
+      strategySelection: input.strategySelection,
       rewriteStatus: input.rewrittenQuery.status,
       rerankStatus: input.rerankStatus,
       originalCandidateCount: input.originalContexts.length,

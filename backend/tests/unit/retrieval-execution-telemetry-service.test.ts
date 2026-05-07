@@ -114,4 +114,58 @@ describe("retrieval execution telemetry service", () => {
     expect(metrics).toContain('execution_surface="retrieval"');
     expect(metrics).toContain('execution_path="retrieval_answer"');
   });
+
+  it("emits retrieval strategy tags without raw query or document content", async () => {
+    const emitted: unknown[] = [];
+    const telemetryService = {
+      async emit(event: unknown) {
+        emitted.push(event);
+        return event;
+      },
+    };
+    const service = new RetrievalExecutionTelemetryService(telemetryService as never);
+
+    await service.create({
+      workspaceId: "workspace-1",
+      execution: {
+        surface: "retrieval",
+        path: "retrieval_answer",
+        retrievalInvoked: true,
+      },
+      rewriteStatus: "applied",
+      rerankStatus: "skipped",
+      originalCandidateCount: 1,
+      rewrittenCandidateCount: 0,
+      lexicalCandidateCount: 2,
+      normalizedCandidateCount: 2,
+      finalContextCount: 1,
+      candidateFallbackApplied: false,
+      strategySelection: {
+        strategy: "definition_lookup",
+        queryShape: "definition_lookup",
+        selectionMode: "deterministic",
+        selectionReason: "Definition-style question.",
+      },
+    });
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      eventType: "retrieval.pipeline.completed",
+      metadata: {
+        skillName: "retrieval.answer",
+        strategy: "definition_lookup",
+        queryShape: "definition_lookup",
+        selectionMode: "deterministic",
+        selectionReason: "Definition-style question.",
+      },
+      tags: {
+        skill_name: "retrieval.answer",
+        strategy: "definition_lookup",
+        query_shape: "definition_lookup",
+        selection_mode: "deterministic",
+      },
+    });
+    expect(JSON.stringify(emitted[0])).not.toContain("What is BM25");
+    expect(JSON.stringify(emitted[0])).not.toContain("sourceContent");
+  });
 });

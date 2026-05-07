@@ -1584,6 +1584,54 @@ export interface components {
             rewrite?: components["schemas"]["RewriteInfo"];
             triggerAnalysis?: components["schemas"]["TriggerAnalysis"];
             triggerBackoff?: components["schemas"]["TriggerBackoff"];
+            /** @enum {string} */
+            strategy?: "definition_lookup" | "event_date_lookup" | "policy_answer" | "exploratory_summary" | "follow_up_grounding" | "default_hybrid";
+            /** @enum {string} */
+            queryShape?: "definition_lookup" | "event_date_lookup" | "policy_answer" | "exploratory_summary" | "follow_up_grounding" | "default_hybrid" | "general_grounding";
+            skillDiagnostic?: {
+                skillName: string;
+                strategy?: string;
+                /** @enum {string} */
+                selectionMode: "deterministic" | "probabilistic";
+                selectionReason?: string;
+                selectionConfidence?: number;
+                /** @enum {string} */
+                callerSurface: "assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed";
+                capabilityChecks: {
+                    capability: string;
+                    allowed: boolean;
+                    reason?: string;
+                }[];
+                parameters?: {
+                    [key: string]: unknown;
+                };
+                fallback?: {
+                    used: boolean;
+                    reason?: string;
+                    path?: string;
+                };
+                /** @enum {string} */
+                outcome: "success" | "unsupported" | "forbidden" | "failed" | "skipped";
+                error?: {
+                    code: string;
+                    message?: string;
+                };
+                evidence?: {
+                    queryShape?: string;
+                    retrievalStrategy?: string;
+                    candidateSourceSummary?: {
+                        [key: string]: unknown;
+                    };
+                    ranking?: {
+                        [key: string]: unknown;
+                    };
+                    /** @enum {string} */
+                    evidenceStatus?: "found" | "missing" | "partial" | "not_applicable";
+                    /** @enum {string} */
+                    supportStatus?: "supported" | "unsupported" | "not_checked" | "not_applicable";
+                    groundingOutcome?: string;
+                };
+            };
         };
         RetrievalTraceStage: {
             stageId: string;

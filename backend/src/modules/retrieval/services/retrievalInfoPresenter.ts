@@ -63,6 +63,9 @@ export class RetrievalInfoPresenter {
       },
       triggerAnalysis: input.triggerAnalysis,
       triggerBackoff: input.triggerBackoff,
+      strategy: input.strategySelection?.strategy,
+      queryShape: input.strategySelection?.queryShape,
+      skillDiagnostic: input.skillDiagnostic,
     };
   }
 }

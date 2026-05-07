@@ -62,9 +62,33 @@ describe("retrieval answer contract", () => {
             path: "retrieval_answer",
             retrievalInvoked: true,
           },
+          strategy: expect.any(String),
+          queryShape: expect.any(String),
+          skillDiagnostic: expect.objectContaining({
+            skillName: "retrieval.answer",
+            strategy: expect.any(String),
+            selectionMode: "deterministic",
+            callerSurface: "retrieval_api",
+            evidence: expect.objectContaining({
+              supportStatus: "supported",
+            }),
+          }),
         }),
       }),
     });
+    expect(response.body.retrievalTrace.stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stageId: "strategy_selection",
+          kind: "strategy_selection",
+          status: "applied",
+          outputs: expect.objectContaining({
+            strategy: expect.any(String),
+            queryShape: expect.any(String),
+          }),
+        }),
+      ]),
+    );
     expect(response.body).not.toHaveProperty("conversationId");
   });
 

@@ -892,6 +892,9 @@ describe("chat retrieval domain", () => {
     expect(createInput?.messages[0]?.content).toContain('"inScopeRequest":"string|null"');
     expect(createInput?.messages[0]?.content).toContain('"outsideScopeRequest":"string|null"');
     expect(createInput?.messages[0]?.content).toContain(
+      '"queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding"',
+    );
+    expect(createInput?.messages[0]?.content).toContain(
       'Do not output vague placeholder rewrites such as "continue the current topic", "the previous topic", or "go ahead with that".',
     );
     expect(createInput?.messages[0]?.content).toContain(
@@ -1427,6 +1430,55 @@ describe("chat retrieval domain", () => {
 
     expect(rerankCandidateCount).toBe(15);
     expect(result.contexts).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
+  });
+
+  it("skips semantic reranking for definition lookup strategy", async () => {
+    let rerankCalled = false;
+    const stage = new ContextSelectionStageService(
+      new RerankService({
+        async rerank(input) {
+          rerankCalled = true;
+          return input.contexts.map((context, index) => ({
+            chunkId: context.chunkId,
+            relevanceScore: 1 - index / 100,
+          }));
+        },
+      }),
+      new PromptContextSelectorService(10_000),
+    );
+
+    const scoredCandidates: RetrievedCandidate[] = Array.from({ length: 3 }, (_, index) => ({
+      chunkId: `definition-${index + 1}`,
+      documentId: `definition-doc-${index + 1}`,
+      title: `Definition ${index + 1}`,
+      content: `Definition content ${index + 1}.`,
+      similarity: 1 - index / 100,
+      retrievalSources: ["lexical"],
+      retrievalText: `Definition ${index + 1} Definition content ${index + 1}.`,
+      semanticScore: 0,
+      lexicalScore: 1 - index / 100,
+    }));
+
+    const result = await stage.execute({
+      settings: {
+        rerankEnabled: true,
+        rerankTopK: 5,
+      },
+      activeParsedQuery: {
+        semanticQuery: "what is bm25",
+      },
+      activeQuery: "what is bm25",
+      strategySelection: {
+        strategy: "definition_lookup",
+        queryShape: "definition_lookup",
+        selectionMode: "deterministic",
+        selectionReason: "Definition-style query.",
+      },
+      scoredCandidates,
+    } as never);
+
+    expect(rerankCalled).toBe(false);
+    expect(result.rerankStatus).toBe("skipped");
   });
 
   it("does not let a low rerank top K shrink the final prompt context cap", async () => {

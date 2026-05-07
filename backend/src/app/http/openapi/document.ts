@@ -783,6 +783,24 @@ const RetrievalInfoSchema = registry.register(
     rewrite: RewriteInfoSchema.optional(),
     triggerAnalysis: TriggerAnalysisSchema.optional(),
     triggerBackoff: TriggerBackoffSchema.optional(),
+    strategy: z.enum([
+      "definition_lookup",
+      "event_date_lookup",
+      "policy_answer",
+      "exploratory_summary",
+      "follow_up_grounding",
+      "default_hybrid",
+    ]).optional(),
+    queryShape: z.enum([
+      "definition_lookup",
+      "event_date_lookup",
+      "policy_answer",
+      "exploratory_summary",
+      "follow_up_grounding",
+      "default_hybrid",
+      "general_grounding",
+    ]).optional(),
+    skillDiagnostic: skillDiagnosticSchema.optional(),
   }),
 );
 

@@ -23,6 +23,7 @@ export interface RetrievalTraceAssemblerInput {
     totalDurationMs: number;
     retrievalContext: StageTiming;
     queryInterpretation: StageTiming;
+    strategySelection?: StageTiming;
     semanticRetrieval: StageTiming;
     lexicalRetrieval: StageTiming;
     candidatePreparation: StageTiming;
@@ -206,6 +207,29 @@ export class RetrievalTraceAssembler {
           reason: prompt.triggerAnalysis.failureReason,
         },
       ),
+      ...(diagnostics.strategySelection
+        ? [
+            buildStage(
+              "strategy_selection",
+              "strategy_selection",
+              "Strategy selection",
+              "applied",
+              timings.strategySelection ?? timings.queryInterpretation,
+              {
+                outputs: {
+                  skillName: diagnostics.skillDiagnostic?.skillName ?? "retrieval.answer",
+                  strategy: diagnostics.strategySelection.strategy,
+                  queryShape: diagnostics.strategySelection.queryShape,
+                  selectionMode: diagnostics.strategySelection.selectionMode,
+                },
+                metrics: {
+                  selectionConfidence: diagnostics.strategySelection.selectionConfidence ?? 1,
+                },
+                reason: diagnostics.strategySelection.selectionReason,
+              },
+            ),
+          ]
+        : []),
       ...semanticBranches.map((branch) =>
         buildStage(branch.stageId, branch.kind, branch.label, prompt.vectorFallbackApplied ? "fallback" : "applied", semanticTiming, {
           settings: {
@@ -260,6 +284,12 @@ export class RetrievalTraceAssembler {
       buildStage("selection", "context_selection", "Context selection", toStatus(prompt.rerankStatus), timings.contextSelection, {
         settings: {
           rerankEnabled: prompt.settings.rerankEnabled,
+          effectiveRerankEnabled: prompt.strategySelection?.strategy === "definition_lookup"
+            ? false
+            : prompt.settings.rerankEnabled,
+          strategyRerankOverride: prompt.strategySelection?.strategy === "definition_lookup"
+            ? "definition_lookup_skips_rerank"
+            : undefined,
           rerankTopK: prompt.settings.rerankTopK,
         },
         outputs: {
@@ -309,8 +339,19 @@ export class RetrievalTraceAssembler {
     const links: RetrievalTraceLink[] = [
       { fromStageId: "context", toStageId: "interpretation", kind: "sequence" },
       { fromStageId: "interpretation", toStageId: "trigger_analysis", kind: "sequence" },
-      ...semanticBranches.map((branch) => ({ fromStageId: "trigger_analysis", toStageId: branch.stageId, kind: "branch" as const })),
-      ...lexicalBranches.map((branch) => ({ fromStageId: "trigger_analysis", toStageId: branch.stageId, kind: "branch" as const })),
+      ...(diagnostics.strategySelection
+        ? [{ fromStageId: "trigger_analysis", toStageId: "strategy_selection", kind: "sequence" as const }]
+        : []),
+      ...semanticBranches.map((branch) => ({
+        fromStageId: diagnostics.strategySelection ? "strategy_selection" : "trigger_analysis",
+        toStageId: branch.stageId,
+        kind: "branch" as const,
+      })),
+      ...lexicalBranches.map((branch) => ({
+        fromStageId: diagnostics.strategySelection ? "strategy_selection" : "trigger_analysis",
+        toStageId: branch.stageId,
+        kind: "branch" as const,
+      })),
       ...semanticBranches.map((branch) => ({ fromStageId: branch.stageId, toStageId: "preparation", kind: "converge" as const })),
       ...lexicalBranches.map((branch) => ({ fromStageId: branch.stageId, toStageId: "preparation", kind: "converge" as const })),
       { fromStageId: "preparation", toStageId: "selection", kind: "sequence" },
@@ -367,6 +408,9 @@ export class RetrievalTraceAssembler {
         },
         triggerAnalysis: diagnostics.triggerAnalysis,
         triggerBackoff: diagnostics.triggerBackoff,
+        strategy: diagnostics.strategySelection?.strategy,
+        queryShape: diagnostics.strategySelection?.queryShape,
+        skillDiagnostic: diagnostics.skillDiagnostic,
       },
     };
   }

@@ -16,7 +16,17 @@ const getStage = (trace: RetrievalTrace, stageId: string) =>
   trace.stages.find((stage) => stage.stageId === stageId)
 
 const getSequentialStages = (trace: RetrievalTrace) =>
-  ['context', 'interpretation', 'trigger_analysis', 'preparation', 'selection', 'prompt', 'diagnostics', 'answer']
+  [
+    'context',
+    'interpretation',
+    'trigger_analysis',
+    'strategy_selection',
+    'preparation',
+    'selection',
+    'prompt',
+    'diagnostics',
+    'answer',
+  ]
     .map((stageId) => getStage(trace, stageId))
     .filter((stage): stage is RetrievalTraceStage => Boolean(stage))
 
@@ -67,6 +77,16 @@ const summaryLine = (stage: RetrievalTraceStage) => {
     return typeof consideredRuleCount === 'number'
       ? `${consideredRuleCount} considered rule${consideredRuleCount === 1 ? '' : 's'}`
       : 'Trigger matching'
+  }
+
+  if (stage.stageId === 'strategy_selection') {
+    const outputs = stage.outputs as { strategy?: string; queryShape?: string } | undefined
+    const strategy = outputs?.strategy?.replaceAll('_', ' ')
+    const queryShape = outputs?.queryShape?.replaceAll('_', ' ')
+    if (strategy && queryShape && strategy !== queryShape) {
+      return `${strategy} • ${queryShape}`
+    }
+    return strategy ?? queryShape ?? 'Retrieval strategy'
   }
 
   if (stage.stageId === 'prompt') {

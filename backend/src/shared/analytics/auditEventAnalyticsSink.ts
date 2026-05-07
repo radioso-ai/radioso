@@ -1,4 +1,4 @@
-import type { AuditService } from "../../modules/audit/services/auditService.js";
+import type { AuditService } from "../../modules/audit/contracts/index.js";
 import type { ProductAnalyticsSink } from "./productAnalyticsSink.js";
 import type { ProductAnalyticsEvent } from "./productAnalyticsTypes.js";
 

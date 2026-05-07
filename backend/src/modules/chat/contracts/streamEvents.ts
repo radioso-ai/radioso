@@ -1,4 +1,4 @@
-import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import type { RetrievalInfo, RetrievalTrace } from "../../retrieval/public.js";
 import type { AnswerSegment, ChatCitation } from "./answerTypes.js";
 import type { ChatRoute, ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";

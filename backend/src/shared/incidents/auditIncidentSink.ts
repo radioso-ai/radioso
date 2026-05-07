@@ -1,4 +1,4 @@
-import type { AuditService } from "../../modules/audit/services/auditService.js";
+import type { AuditService } from "../../modules/audit/contracts/index.js";
 import type { IncidentSink } from "./incidentSink.js";
 import type { IncidentEvent } from "./incidentTypes.js";
 

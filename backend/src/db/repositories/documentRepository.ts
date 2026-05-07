@@ -10,7 +10,7 @@ import type {
   DocumentUpdateInput,
   DocumentWorkspaceSummaryRecord,
 } from "../../modules/documents/contracts/index.js";
-import type { MetadataFieldSuggestion, MetadataValueType } from "../../modules/settings/domain/retrievalSettings.js";
+import type { MetadataFieldSuggestion, MetadataValueType } from "../../modules/settings/contracts/retrieval.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { Database } from "../../shared/infra/database.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";

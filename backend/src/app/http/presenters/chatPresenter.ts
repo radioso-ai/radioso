@@ -8,7 +8,7 @@ import type {
   ChatSuggestion,
   ConversationModeMetadata,
 } from "../../../modules/chat/contracts/index.js";
-import type { ConversationMode } from "../../../modules/settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../../modules/settings/contracts/retrieval.js";
 import type { RetrievalInfo, RetrievalTrace } from "../../../modules/retrieval/public.js";
 
 export const sendChatJson = (

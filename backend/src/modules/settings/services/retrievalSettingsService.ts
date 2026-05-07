@@ -6,20 +6,12 @@ import {
   type RetrievalSettingsInput,
   validateRetrievalSettings,
 } from "../domain/retrievalSettings.js";
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
-
-export interface RetrievalSettingsRepositoryPort {
-  findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null>;
-  upsert(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord>;
-}
-
-export interface RetrievalMetadataFieldSourcePort {
-  listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]>;
-}
+import type { RetrievalMetadataFieldSourcePort, RetrievalSettingsRepositoryPort } from "../contracts/services.js";
 
 export class RetrievalSettingsService {
   constructor(

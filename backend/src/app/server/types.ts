@@ -15,14 +15,14 @@ import type {
   DocumentSearchService,
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
-import type { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
-import type { PlatformSettingsService } from "../../modules/settings/services/platformSettingsService.js";
-import type { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
+import type { IngestionSettingsService } from "../../modules/settings/composition.js";
+import type { PlatformSettingsService } from "../../modules/settings/composition.js";
+import type { RetrievalSettingsService } from "../../modules/settings/composition.js";
 import type { RetrievalAnswerService, RetrievalSearchService } from "../../modules/retrieval/composition.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import type { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
-import type { AuditService } from "../../modules/audit/services/auditService.js";
+import type { AuditService } from "../../modules/audit/composition.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import type { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";

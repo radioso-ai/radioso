@@ -125,6 +125,7 @@ export interface WorkspaceRepositoryPort {
       websiteEmbedLauncherLabel: string;
       websiteEmbedLauncherIcon: WebsiteEmbedLauncherIcon;
       websiteEmbedLauncherPosition: WebsiteEmbedLauncherPosition;
+      mcpAssistantAccessEnabled: boolean;
     },
   ): Promise<WorkspaceRecord>;
   updateAssistantBootstrapSettings(

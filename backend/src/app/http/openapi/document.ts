@@ -39,7 +39,7 @@ import {
   publicConversationParamsSchema,
 } from "../routes/publicChatRoutes.js";
 import { websiteEmbedLauncherIcons, websiteEmbedLauncherPositions } from "../../../modules/settings/domain/websiteEmbedSettings.js";
-import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
+import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
 import {
   MAX_SUGGESTED_QUESTIONS_COUNT,
   MIN_SUGGESTED_QUESTIONS_COUNT,

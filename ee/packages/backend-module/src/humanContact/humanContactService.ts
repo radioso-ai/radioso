@@ -193,21 +193,12 @@ const mapSettings = (row: HumanContactSettingsRow | undefined | null) => {
   };
 };
 
-const explicitHumanRequestPatterns = [
-  /\b(human|person|agent|representative|support|someone)\b/i,
-  /\b(talk|speak|chat|contact|connect|reach)\s+(to|with)?\s*(a|an)?\s*(human|person|agent|representative|support|someone)\b/i,
-  /\bcan i (talk|speak) to\b/i,
-];
-
-const isExplicitHumanRequest = (query: string): boolean =>
-  explicitHumanRequestPatterns.some((pattern) => pattern.test(query));
-
 const parseClassifierDecision = (value: string): boolean => {
   try {
     const parsed = JSON.parse(value) as { shouldSuggest?: unknown };
     return parsed.shouldSuggest === true;
   } catch {
-    return /\btrue\b/i.test(value);
+    return false;
   }
 };
 
@@ -413,7 +404,7 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
       return null;
     }
 
-    const deterministic = this.resolveDeterministicTrigger(input.query, input.answerOutcome);
+    const deterministic = this.resolveDeterministicTrigger(input.answerOutcome);
     const trigger = deterministic ?? await this.classifyEscalation(input.query, input.answer);
     if (!trigger) {
       return null;
@@ -617,15 +608,12 @@ export class EnterpriseHumanContactService implements ChatActionProvider {
     return row;
   }
 
-  private resolveDeterministicTrigger(query: string, answerOutcome: string): { source: string; reason: string } | null {
+  private resolveDeterministicTrigger(answerOutcome: string): { source: string; reason: string } | null {
     if (answerOutcome === "no_context_refusal") {
       return { source: "no_context_refusal", reason: "The assistant could not find enough grounded context." };
     }
     if (answerOutcome === "grounded_degraded_unsupported_segments") {
       return { source: "grounded_degraded_unsupported_segments", reason: "The assistant answer contained unsupported grounded segments." };
-    }
-    if (isExplicitHumanRequest(query)) {
-      return { source: "explicit_user_request", reason: "The user asked to contact a person." };
     }
     return null;
   }

@@ -87,6 +87,7 @@ describe("default application composition", () => {
               ],
               diagnostics: {
                 defined: true,
+                shapeAware: false,
                 strategyAware: false,
               },
             });
@@ -98,6 +99,65 @@ describe("default application composition", () => {
     expect(composition.skillCatalogRegistry.get("custom.workflow")).toMatchObject({
       name: "custom.workflow",
       owner: "platform",
+    });
+  });
+
+  it("applies optional skill definitions through module registration", () => {
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+      modules: [
+        {
+          id: "skill-definition-module",
+          register(context) {
+            context.registerSkillDefinition({
+              name: "custom.defined_workflow",
+              displayName: "Custom defined workflow",
+              description: "Run a custom workflow supplied by an optional module.",
+              owner: "platform",
+              executionClass: "interactive",
+              supportedCallers: ["sdk"],
+              requiredCapabilities: [],
+              contractReferences: [],
+              diagnostics: {
+                defined: true,
+                shapeAware: true,
+                strategyAware: false,
+              },
+              steps: [
+                {
+                  name: "step_one",
+                  kind: "step_one",
+                  clauses: {
+                    enabled: true,
+                  },
+                },
+              ],
+              shapes: [
+                {
+                  name: "default",
+                  stepOverrides: {},
+                },
+              ],
+            });
+          },
+        },
+      ],
+    });
+
+    expect(composition.skillCatalogRegistry.get("custom.defined_workflow")).toMatchObject({
+      name: "custom.defined_workflow",
+      owner: "platform",
+      steps: [
+        {
+          name: "step_one",
+          kind: "step_one",
+        },
+      ],
+      shapes: [
+        {
+          name: "default",
+        },
+      ],
     });
   });
 

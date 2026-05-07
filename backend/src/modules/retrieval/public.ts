@@ -131,6 +131,7 @@ export interface RetrievalPipelineResult {
 }
 
 export interface RetrievalPipelineInterpretationResult {
+  request: RetrievalPipelineRequest;
   interpretation: {
     result: {
       responseIntent?: ResponseIntent;

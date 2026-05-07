@@ -86,7 +86,10 @@ export const createDefaultApplicationComposition = (options: {
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
     chatActionProviderRegistration: registry.chatActionProviderRegistration,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
-    skillCatalogRegistry: createDefaultSkillCatalogRegistry(registry.skillCatalogEntries),
+    skillCatalogRegistry: createDefaultSkillCatalogRegistry([
+      ...registry.skillCatalogEntries,
+      ...registry.skillDefinitions,
+    ]),
     lifecycle: coordinator,
     modules: coordinator.registeredModules,
   };

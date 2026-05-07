@@ -6,7 +6,8 @@ import type {
   CandidatePreparationStageResult,
   CandidateRetrievalStageResult,
 } from "./retrievalPipelineStages.js";
-import type { TriggerBackoffDecision } from "../domain/retrievalPipelineTypes.js";
+import type { RetrievedCandidate, TriggerBackoffDecision } from "../domain/retrievalPipelineTypes.js";
+import { getContextSelectionClauses } from "./retrievalShapeResolver.js";
 
 export class CandidatePreparationStageService implements CandidatePreparationStageContract {
   constructor(
@@ -111,7 +112,8 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
     const relaxedConstraints = matchedTriggeredRules
       .filter((rule) => relaxedRuleIdSet.has(rule.id))
       .map((rule) => buildAppliedConstraintForRule(rule, "relaxed"));
-    const mergedCandidates = selectedCandidates.candidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
+    const orderedCandidates = this.applyResolvedCandidateOrdering(input, selectedCandidates.candidates);
+    const mergedCandidates = orderedCandidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
     const triggerBackoffApplied = relaxedRuleIds.length > 0;
 
     return {
@@ -130,5 +132,27 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
         restoredCandidateCount: triggerBackoffApplied ? selectedCandidates.candidates.length : undefined,
       },
     };
+  }
+
+  private applyResolvedCandidateOrdering(
+    input: CandidateRetrievalStageResult,
+    candidates: RetrievedCandidate[],
+  ): RetrievedCandidate[] {
+    const clauses = getContextSelectionClauses(input.shapeSelection?.resolvedRun);
+    if (clauses.ranking.lexicalBias !== "preferred") {
+      return candidates;
+    }
+
+    return [...candidates].sort((left, right) => {
+      const leftHasLexical = left.lexicalScore > 0 ? 1 : 0;
+      const rightHasLexical = right.lexicalScore > 0 ? 1 : 0;
+      if (leftHasLexical !== rightHasLexical) {
+        return rightHasLexical - leftHasLexical;
+      }
+      if (left.lexicalScore !== right.lexicalScore) {
+        return right.lexicalScore - left.lexicalScore;
+      }
+      return right.similarity - left.similarity;
+    });
   }
 }

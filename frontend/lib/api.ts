@@ -437,6 +437,60 @@ export interface RetrievalInfo {
     relaxedRuleIds: string[]
     restoredCandidateCount?: number
   }
+  shapeName?:
+    | 'definition_lookup'
+    | 'event_date_lookup'
+    | 'policy_answer'
+    | 'exploratory_summary'
+    | 'follow_up_grounding'
+    | 'default_hybrid'
+  queryShape?:
+    | 'definition_lookup'
+    | 'event_date_lookup'
+    | 'policy_answer'
+    | 'exploratory_summary'
+    | 'follow_up_grounding'
+    | 'default_hybrid'
+    | 'general_grounding'
+  skillDiagnostic?: SkillDiagnostic
+  resolvedSteps?: Array<Record<string, unknown>>
+}
+
+export interface SkillDiagnostic {
+  skillName: string
+  shapeName?: string
+  strategy?: string
+  selectionMode: 'deterministic' | 'probabilistic'
+  selectionReason?: string
+  selectionConfidence?: number
+  callerSurface: 'assistant' | 'retrieval_api' | 'sdk' | 'mcp' | 'dashboard' | 'public_embed'
+  capabilityChecks: Array<{
+    capability: string
+    allowed: boolean
+    reason?: string
+  }>
+  parameters?: Record<string, unknown>
+  fallback?: {
+    used: boolean
+    reason?: string
+    path?: string
+  }
+  outcome: 'success' | 'unsupported' | 'forbidden' | 'failed' | 'skipped'
+  error?: {
+    code: string
+    message?: string
+  }
+  evidence?: {
+    queryShape?: string
+    retrievalShape?: string
+    retrievalStrategy?: string
+    candidateSourceSummary?: Record<string, unknown>
+    ranking?: Record<string, unknown>
+    resolvedSteps?: Array<Record<string, unknown>>
+    evidenceStatus?: 'found' | 'missing' | 'partial' | 'not_applicable'
+    supportStatus?: 'supported' | 'unsupported' | 'not_checked' | 'not_applicable'
+    groundingOutcome?: string
+  }
 }
 
 export interface ParsedQueryInfo {

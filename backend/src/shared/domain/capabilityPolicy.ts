@@ -16,6 +16,9 @@ export const capabilityNames = {
   mcp: {
     describeCapabilities: "mcp.describe_capabilities",
   },
+  humanContact: {
+    request: "human_contact.request",
+  },
 } as const;
 
 type CapabilityGroupValue<T> = T extends Record<string, infer Value> ? Value : never;

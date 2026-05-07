@@ -1,4 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { ResolvedSkillRun, SkillDiagnostic } from "../../skills/public.js";
 import type { RetrievedChunk } from "../infra/vectorSearch.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "./queryConstraintTypes.js";
 
@@ -44,6 +45,18 @@ export type ResponseIntent = (typeof RESPONSE_INTENT)[keyof typeof RESPONSE_INTE
 
 export type ResponseLanguagePolicy = "match_user_question";
 
+export type RetrievalAnswerShapeName =
+  | "definition_lookup"
+  | "event_date_lookup"
+  | "policy_answer"
+  | "exploratory_summary"
+  | "follow_up_grounding"
+  | "default_hybrid";
+
+export type RetrievalQueryShape =
+  | RetrievalAnswerShapeName
+  | "general_grounding";
+
 export interface StructuredRewriteResult {
   rewrittenQuery: string;
   semanticQuery?: string;
@@ -53,6 +66,7 @@ export interface StructuredRewriteResult {
   inScopeRequest?: string;
   outsideScopeRequest?: string;
   responseLanguagePolicy?: ResponseLanguagePolicy;
+  queryShape?: RetrievalQueryShape;
   retrievalSubqueries?: RetrievalSubquery[];
   turnKind: RewriteTurnKind;
   proposedActiveSubject?: string;
@@ -172,6 +186,15 @@ export interface RetrievalExecutionMetadata {
   retrievalInvoked: boolean;
 }
 
+export interface RetrievalAnswerShapeSelection {
+  shapeName: RetrievalAnswerShapeName;
+  queryShape: RetrievalQueryShape;
+  selectionMode: "deterministic" | "probabilistic";
+  selectionReason: string;
+  selectionConfidence?: number;
+  resolvedRun: ResolvedSkillRun;
+}
+
 export interface RetrievalTraceSummary {
   execution?: RetrievalExecutionMetadata;
   parsedQuery?: {
@@ -213,6 +236,10 @@ export interface RetrievalTraceSummary {
   };
   triggerAnalysis?: TriggerAnalysisResult;
   triggerBackoff?: TriggerBackoffDecision;
+  shapeName?: RetrievalAnswerShapeName;
+  queryShape?: RetrievalQueryShape;
+  resolvedSteps?: Array<Record<string, unknown>>;
+  skillDiagnostic?: SkillDiagnostic;
 }
 
 export interface RetrievalTraceStage {
@@ -274,4 +301,6 @@ export interface RetrievalExecutionDiagnostics {
   fallbackReason?: string;
   triggerAnalysis?: TriggerAnalysisResult;
   triggerBackoff?: TriggerBackoffDecision;
+  shapeSelection?: RetrievalAnswerShapeSelection;
+  skillDiagnostic?: SkillDiagnostic;
 }

@@ -160,6 +160,8 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 const asStringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
 
+const formatLabel = (value: unknown) => (typeof value === 'string' ? value.replaceAll('_', ' ') : undefined)
+
 const asChunkList = (value: unknown): ChunkRef[] =>
   Array.isArray(value)
     ? value.filter(
@@ -286,6 +288,27 @@ function StageOverview({ stage }: { stage: RetrievalTraceStage }) {
         ) : null}
         <RawBlock label="Backoff decision" value={backoffDecision} />
       </>
+    )
+  }
+
+  if (stage.stageId === 'shape_selection') {
+    return (
+      <Section title="Shape selection">
+        <KeyValueList
+          rows={[
+            { label: 'Skill', value: outputs.skillName as string | undefined },
+            { label: 'Shape', value: formatLabel(outputs.shapeName) },
+            { label: 'Query shape', value: formatLabel(outputs.queryShape) },
+            { label: 'Selection mode', value: formatLabel(outputs.selectionMode) },
+            { label: 'Selection reason', value: stage.reason },
+            {
+              label: 'Selection confidence',
+              value: typeof metrics.selectionConfidence === 'number' ? metrics.selectionConfidence : undefined,
+            },
+          ]}
+        />
+        <RawBlock label="Resolved steps" value={outputs.resolvedSteps} />
+      </Section>
     )
   }
 

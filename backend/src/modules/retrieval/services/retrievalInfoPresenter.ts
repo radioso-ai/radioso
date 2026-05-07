@@ -5,6 +5,7 @@ import type {
   RetrievalTraceSummary,
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint } from "../domain/queryConstraintTypes.js";
+import { summarizeResolvedSteps } from "./retrievalShapeResolver.js";
 
 export interface RetrievalInfo extends RetrievalTraceSummary {
   rerankStatus: RerankStatus;
@@ -63,6 +64,10 @@ export class RetrievalInfoPresenter {
       },
       triggerAnalysis: input.triggerAnalysis,
       triggerBackoff: input.triggerBackoff,
+      shapeName: input.shapeSelection?.shapeName,
+      queryShape: input.shapeSelection?.queryShape,
+      resolvedSteps: summarizeResolvedSteps(input.shapeSelection?.resolvedRun),
+      skillDiagnostic: input.skillDiagnostic,
     };
   }
 }

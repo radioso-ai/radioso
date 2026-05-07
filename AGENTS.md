@@ -132,6 +132,7 @@ npm test
 - Keep route handlers and high-level services readable top-to-bottom. Validation, mapping, trace formatting, audit metadata, and persistence details should live in named helpers.
 - Use explicit types at module boundaries. Avoid `any` in production code; use `unknown`, narrow it, or define a local type for third-party payloads.
 - Prefer pure helper modules for mapping, normalization, formatting, and trace or audit payload construction.
+- Do not encode product meaning, routing, retrieval strategy, intent classification, or user-facing behavior with English regexes or hard-coded keyword lists in code. Radioso is multilingual; use structured metadata, typed configuration, settings-owned rules, or prompt-returned enum fields instead. Structural regexes for format parsing, identifiers, or protocol syntax are acceptable when they do not encode English product vocabulary.
 - Keep comments for non-obvious constraints, safety decisions, or business rules. Do not narrate straightforward code.
 - Preserve behavior during refactors. Make extraction-only changes separately from behavior changes when practical, and verify with focused tests.
 

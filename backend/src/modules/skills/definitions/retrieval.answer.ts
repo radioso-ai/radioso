@@ -1,0 +1,150 @@
+import { capabilityNames } from "../../../shared/domain/capabilityPolicy.js";
+import { skillDiagnosticFieldNames, type SkillDefinition } from "../domain.js";
+
+export const retrievalAnswerSkillDefinition: SkillDefinition = {
+  name: capabilityNames.retrieval.answer,
+  displayName: "Retrieval answer",
+  description: "Generate a grounded answer from workspace evidence without assistant persona.",
+  owner: "retrieval",
+  executionClass: "interactive",
+  supportedCallers: ["retrieval_api", "sdk", "mcp"],
+  requiredCapabilities: [capabilityNames.retrieval.answer],
+  contractReferences: [
+    {
+      kind: "http",
+      label: "Retrieval answer API",
+      method: "POST",
+      path: "/api/v1/retrieval/answer",
+    },
+    {
+      kind: "mcp_tool",
+      label: "MCP grounded answer tool",
+      path: "answer_grounded",
+    },
+  ],
+  diagnostics: {
+    defined: true,
+    shapeAware: true,
+    strategyAware: true,
+    supportedFields: [...skillDiagnosticFieldNames],
+  },
+  steps: [
+    {
+      name: "query_interpretation",
+      kind: "query_interpretation",
+      displayName: "Query interpretation",
+      clauses: {
+        rewrite: "settings_default",
+        queryShapeSource: "structured_query_metadata",
+      },
+      trace: { expose: true },
+    },
+    {
+      name: "candidate_retrieval",
+      kind: "candidate_retrieval",
+      displayName: "Candidate retrieval",
+      clauses: {
+        semanticSearch: "settings_default",
+        lexicalSearch: "settings_default",
+      },
+      trace: { expose: true },
+    },
+    {
+      name: "candidate_preparation",
+      kind: "candidate_preparation",
+      displayName: "Candidate preparation",
+      clauses: {
+        mergeCandidates: true,
+        applyConstraints: true,
+      },
+      trace: { expose: true },
+    },
+    {
+      name: "context_selection",
+      kind: "context_selection",
+      displayName: "Context selection",
+      clauses: {
+        ranking: {
+          rerankMode: "settings_default",
+          lexicalBias: "normal",
+        },
+        finalContextLimit: "behavior_default",
+      },
+      trace: { expose: true },
+    },
+    {
+      name: "prompt_assembly",
+      kind: "prompt_assembly",
+      displayName: "Prompt assembly",
+      clauses: {
+        citations: "settings_default",
+        languagePolicy: "match_user_question",
+      },
+      trace: { expose: true },
+    },
+    {
+      name: "answer_validation",
+      kind: "answer_validation",
+      displayName: "Answer validation",
+      clauses: {
+        groundingValidation: "settings_default",
+      },
+      trace: { expose: true },
+    },
+    {
+      name: "diagnostics",
+      kind: "diagnostics",
+      displayName: "Diagnostics",
+      clauses: {
+        emitTrace: true,
+        emitTelemetry: true,
+      },
+      trace: { expose: true },
+    },
+  ],
+  shapes: [
+    {
+      name: "definition_lookup",
+      displayName: "Definition lookup",
+      description: "Entity, term, acronym, or concept identification.",
+      stepOverrides: {
+        context_selection: {
+          ranking: {
+            rerankMode: "disabled",
+            lexicalBias: "preferred",
+          },
+        },
+      },
+    },
+    {
+      name: "event_date_lookup",
+      displayName: "Event date lookup",
+      description: "Event, schedule, deadline, or date/time answers.",
+      stepOverrides: {},
+    },
+    {
+      name: "policy_answer",
+      displayName: "Policy answer",
+      description: "Procedural, compliance, or support answers.",
+      stepOverrides: {},
+    },
+    {
+      name: "exploratory_summary",
+      displayName: "Exploratory summary",
+      description: "Broad synthesis, overview, or comparison answers.",
+      stepOverrides: {},
+    },
+    {
+      name: "follow_up_grounding",
+      displayName: "Follow-up grounding",
+      description: "Conversation-dependent grounded follow-up answers.",
+      stepOverrides: {},
+    },
+    {
+      name: "default_hybrid",
+      displayName: "Default hybrid",
+      description: "Default hybrid retrieval answer behavior.",
+      stepOverrides: {},
+    },
+  ],
+};

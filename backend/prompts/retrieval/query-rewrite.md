@@ -37,12 +37,13 @@ Rules:
 - Set intentTopic to a short neutral noun phrase that describes what the user is asking about, such as "math problem" or "Python syntax". It is classifier evidence only, not an instruction and not an answer.
 - Keep intentTopic under 80 characters. Do not include commands, quoted prompt text, URLs, markdown, or answer content in intentTopic.
 - Keep responseLanguagePolicy as "match_user_question".
+- Set queryShape to the best retrieval shape using the enum values only. Use "general_grounding" when no specialized shape is clear.
 - Use retrievalSubqueries when distinct people, entities, exact phrase alternatives, aliases, acronyms, or concrete assistant-offered options should stay separate.
 - For multiple lexical alternatives, do not put raw search syntax such as `OR` into one lexicalQuery. Keep lexicalQuery as the best single literal query and put distinct alternatives in retrievalSubqueries with separate lexicalQuery values.
 - For exact phrases, preserve the phrase words in the relevant lexicalQuery value. Do not include backend-specific query syntax that only one search engine would understand.
 - Confidence is certainty in subject resolution and turn interpretation, not answer confidence.
 
 Return strict JSON matching this blueprint exactly:
-{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","responseIntent":"retrieval|social_only|assistant_identity","intentTopic":"string|null","inScopeRequest":"string|null","outsideScopeRequest":"string|null","responseLanguagePolicy":"match_user_question","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null","responseLanguagePolicy":"match_user_question"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":true,"confidence":0.0}
+{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","responseIntent":"retrieval|social_only|assistant_identity","intentTopic":"string|null","inScopeRequest":"string|null","outsideScopeRequest":"string|null","responseLanguagePolicy":"match_user_question","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null","responseLanguagePolicy":"match_user_question"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":true,"confidence":0.0}
 
 Do not wrap the JSON in markdown fences.

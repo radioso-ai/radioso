@@ -1074,6 +1074,17 @@ describe("chat integration", () => {
           path: "assistant_retrieval",
           retrievalInvoked: true,
         },
+        shapeName: expect.any(String),
+        queryShape: expect.any(String),
+        resolvedSteps: expect.any(Array),
+        skillDiagnostic: expect.objectContaining({
+          skillName: "retrieval.answer",
+          callerSurface: "assistant",
+          selectionMode: "deterministic",
+          evidence: expect.objectContaining({
+            supportStatus: "supported",
+          }),
+        }),
       },
       stages: expect.any(Array),
     });
@@ -1114,6 +1125,14 @@ describe("chat integration", () => {
       surface: "assistant",
       path: "assistant_retrieval",
       retrievalInvoked: true,
+    });
+    expect(assistantTurn?.debug?.retrievalTrace?.summary).toMatchObject({
+      shapeName: response.body.retrievalTrace.summary.shapeName,
+      queryShape: response.body.retrievalTrace.summary.queryShape,
+      skillDiagnostic: expect.objectContaining({
+        skillName: "retrieval.answer",
+        callerSurface: "assistant",
+      }),
     });
   });
 

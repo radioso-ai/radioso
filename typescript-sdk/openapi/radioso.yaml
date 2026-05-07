@@ -2005,6 +2005,146 @@ components:
           $ref: "#/components/schemas/TriggerAnalysis"
         triggerBackoff:
           $ref: "#/components/schemas/TriggerBackoff"
+        shapeName:
+          type: string
+          enum:
+            - definition_lookup
+            - event_date_lookup
+            - policy_answer
+            - exploratory_summary
+            - follow_up_grounding
+            - default_hybrid
+        queryShape:
+          type: string
+          enum:
+            - definition_lookup
+            - event_date_lookup
+            - policy_answer
+            - exploratory_summary
+            - follow_up_grounding
+            - default_hybrid
+            - general_grounding
+        resolvedSteps:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        skillDiagnostic:
+          type: object
+          properties:
+            skillName:
+              type: string
+            shapeName:
+              type: string
+            strategy:
+              type: string
+            selectionMode:
+              type: string
+              enum: &a12
+                - deterministic
+                - probabilistic
+            selectionReason:
+              type: string
+            selectionConfidence:
+              type: number
+              minimum: 0
+              maximum: 1
+            callerSurface:
+              type: string
+              enum: &a13
+                - assistant
+                - retrieval_api
+                - sdk
+                - mcp
+                - dashboard
+                - public_embed
+            capabilityChecks:
+              type: array
+              items:
+                type: object
+                properties:
+                  capability:
+                    type: string
+                  allowed:
+                    type: boolean
+                  reason:
+                    type: string
+                required:
+                  - capability
+                  - allowed
+            parameters:
+              type: object
+              additionalProperties: {}
+            fallback:
+              type: object
+              properties:
+                used:
+                  type: boolean
+                reason:
+                  type: string
+                path:
+                  type: string
+              required:
+                - used
+            outcome:
+              type: string
+              enum: &a14
+                - success
+                - unsupported
+                - forbidden
+                - failed
+                - skipped
+            error:
+              type: object
+              properties:
+                code:
+                  type: string
+                message:
+                  type: string
+              required:
+                - code
+            evidence:
+              type: object
+              properties:
+                queryShape:
+                  type: string
+                retrievalShape:
+                  type: string
+                retrievalStrategy:
+                  type: string
+                candidateSourceSummary:
+                  type: object
+                  additionalProperties: {}
+                ranking:
+                  type: object
+                  additionalProperties: {}
+                resolvedSteps:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: {}
+                evidenceStatus:
+                  type: string
+                  enum: &a10
+                    - found
+                    - missing
+                    - partial
+                    - not_applicable
+                supportStatus:
+                  type: string
+                  enum: &a11
+                    - supported
+                    - unsupported
+                    - not_checked
+                    - not_applicable
+                groundingOutcome:
+                  type: string
+          required:
+            - skillName
+            - selectionMode
+            - callerSurface
+            - capabilityChecks
+            - outcome
       required:
         - candidateCounts
         - fallbackApplied
@@ -2358,6 +2498,8 @@ components:
       properties:
         defined:
           type: boolean
+        shapeAware:
+          type: boolean
         strategyAware:
           type: boolean
         supportedFields:
@@ -2366,11 +2508,14 @@ components:
             type: string
       required:
         - defined
+        - shapeAware
         - strategyAware
     SkillDiagnosticEvidence:
       type: object
       properties:
         queryShape:
+          type: string
+        retrievalShape:
           type: string
         retrievalStrategy:
           type: string
@@ -2380,20 +2525,17 @@ components:
         ranking:
           type: object
           additionalProperties: {}
+        resolvedSteps:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: &a10
-            - found
-            - missing
-            - partial
-            - not_applicable
+          enum: *a10
         supportStatus:
           type: string
-          enum: &a11
-            - supported
-            - unsupported
-            - not_checked
-            - not_applicable
+          enum: *a11
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -2401,13 +2543,13 @@ components:
       properties:
         skillName:
           type: string
+        shapeName:
+          type: string
         strategy:
           type: string
         selectionMode:
           type: string
-          enum:
-            - deterministic
-            - probabilistic
+          enum: *a12
         selectionReason:
           type: string
         selectionConfidence:
@@ -2416,13 +2558,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: &a12
-            - assistant
-            - retrieval_api
-            - sdk
-            - mcp
-            - dashboard
-            - public_embed
+          enum: *a13
         capabilityChecks:
           type: array
           items:
@@ -2453,12 +2589,7 @@ components:
             - used
         outcome:
           type: string
-          enum:
-            - success
-            - unsupported
-            - forbidden
-            - failed
-            - skipped
+          enum: *a14
         error:
           type: object
           properties:
@@ -2473,6 +2604,8 @@ components:
           properties:
             queryShape:
               type: string
+            retrievalShape:
+              type: string
             retrievalStrategy:
               type: string
             candidateSourceSummary:
@@ -2481,6 +2614,11 @@ components:
             ranking:
               type: object
               additionalProperties: {}
+            resolvedSteps:
+              type: array
+              items:
+                type: object
+                additionalProperties: {}
             evidenceStatus:
               type: string
               enum: *a10
@@ -2513,6 +2651,7 @@ components:
             - mcp
             - platform
             - auth
+            - contact
         executionClass:
           type: string
           enum:
@@ -2525,7 +2664,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a12
+            enum: *a13
         requiredCapabilities:
           type: array
           items:
@@ -2536,6 +2675,31 @@ components:
             $ref: "#/components/schemas/SkillContractReference"
         diagnostics:
           $ref: "#/components/schemas/SkillDiagnosticsSummary"
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              kind:
+                type: string
+            required:
+              - name
+              - kind
+        shapes:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              displayName:
+                type: string
+              description:
+                type: string
+            required:
+              - name
       required:
         - name
         - displayName
@@ -2671,7 +2835,7 @@ components:
               type: boolean
             expansionKind:
               type: string
-              enum: &a13
+              enum: &a15
                 - none
                 - focused
                 - expansive
@@ -2737,7 +2901,7 @@ components:
               type: boolean
             expansionKind:
               type: string
-              enum: *a13
+              enum: *a15
             suggestionCount:
               type: integer
               minimum: 0
@@ -4560,7 +4724,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - &a14
+        - &a16
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -4584,7 +4748,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a14
+        - *a16
       parameters:
         - schema:
             type: string

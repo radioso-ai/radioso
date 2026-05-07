@@ -8,6 +8,7 @@ export interface ApplicationModuleRegistrationContext {
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHandler): void;
   registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
+  registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
 }
 
 export type ApplicationAccountCreatedHandler = (context: {
@@ -255,6 +256,35 @@ export type ApplicationContactHistoryProviderRegistration =
         error(entry: unknown, message?: string): void;
       };
     }) => ContactHistoryProvider);
+
+export interface AnswerFeedbackHistoryEntry {
+  id: string;
+  value: "up" | "down";
+  comment: string | null;
+  actorType: "authenticated_user" | "api_token" | "anonymous_user";
+  actorId: string;
+  accountId: string | null;
+  userId: string | null;
+  anonymousSessionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AnswerFeedbackHistoryProvider {
+  listByAssistantMessageIds(
+    workspaceId: string,
+    assistantMessageIds: string[],
+  ): Promise<Map<string, AnswerFeedbackHistoryEntry[]>>;
+}
+
+export type ApplicationAnswerFeedbackHistoryProviderRegistration =
+  | AnswerFeedbackHistoryProvider
+  | ((context: {
+      database: UsageLimitDatabasePort;
+      logger: {
+        error(entry: unknown, message?: string): void;
+      };
+    }) => AnswerFeedbackHistoryProvider);
 
 export interface WebsiteEmbedIntegrationWorkspace {
   name: string;

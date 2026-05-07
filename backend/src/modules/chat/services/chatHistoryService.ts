@@ -27,6 +27,11 @@ import {
   type ContactHistoryProviderPort,
   type ContactHistorySummary,
 } from "./contactHistoryProvider.js";
+import {
+  NoopAnswerFeedbackHistoryProvider,
+  type AnswerFeedbackHistoryProviderPort,
+  type ChatAnswerFeedbackEntry,
+} from "./answerFeedbackHistoryProvider.js";
 
 export interface ChatConversationSummary {
   id: string;
@@ -87,6 +92,7 @@ export interface ChatConversationTurn {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
+  answerFeedbackEntries?: ChatAnswerFeedbackEntry[];
   debug?: ChatConversationTurnDebug;
 }
 
@@ -320,6 +326,8 @@ export class ChatHistoryService {
     private readonly auditEventRepository: AuditEventRepositoryPort,
     private readonly historyItemsRepository: HistoryItemsRepositoryPort,
     private readonly contactHistoryProvider: ContactHistoryProviderPort = new NoopContactHistoryProvider(),
+    private readonly answerFeedbackHistoryProvider: AnswerFeedbackHistoryProviderPort =
+      new NoopAnswerFeedbackHistoryProvider(),
   ) {}
 
   async listConversations(
@@ -414,7 +422,7 @@ export class ChatHistoryService {
 
     return {
       contact,
-      conversation: await this.getConversation(workspaceId, contact.conversationId, input),
+      conversation: await this.getConversation(workspaceId, contact.conversationId, input, { includeAnswerFeedback: true }),
     };
   }
 
@@ -456,6 +464,7 @@ export class ChatHistoryService {
     workspaceId: string,
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
+    options: { includeAnswerFeedback?: boolean } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -475,6 +484,9 @@ export class ChatHistoryService {
       conversation.id,
       assistantMessageIds,
     );
+    const feedbackByAssistantMessageId = options.includeAnswerFeedback
+      ? await this.answerFeedbackHistoryProvider.listByAssistantMessageIds(workspaceId, assistantMessageIds)
+      : new Map<string, ChatAnswerFeedbackEntry[]>();
 
     const artifactsByAssistantMessageId = this.buildArtifactsIndex(auditEvents);
     const debugByAssistantMessageId = this.buildDebugIndex(auditEvents);
@@ -504,6 +516,7 @@ export class ChatHistoryService {
         citations: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.citations : undefined,
         answerSegments: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.answerSegments : undefined,
         suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,
+        answerFeedbackEntries: message.role === "assistant" ? feedbackByAssistantMessageId.get(message.id) : undefined,
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
       })),
     };

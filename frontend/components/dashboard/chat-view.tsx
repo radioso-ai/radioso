@@ -15,7 +15,15 @@ import {
 import { LogoSpinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { type CitationOpenResult } from './chat-citations'
-import { documentsApi, humanContactApi, type ChatSuggestion, type HumanContactTriggerSource } from '@/lib/api'
+import {
+  answerFeedbackApi,
+  documentsApi,
+  humanContactApi,
+  type AnswerFeedbackState,
+  type AnswerFeedbackValue,
+  type ChatSuggestion,
+  type HumanContactTriggerSource,
+} from '@/lib/api'
 import { useChatSession } from '@/lib/chat-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { HUMAN_CONTACT_REQUEST_TRIGGER_REASON, isHumanContactRequest } from '@/lib/human-contact-intent'
@@ -214,6 +222,19 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
     })
   }
 
+  const handleAnswerFeedback = async (input: {
+    assistantMessageId: string
+    value: AnswerFeedbackValue
+    comment?: string | null
+  }): Promise<AnswerFeedbackState> => {
+    const feedback = await answerFeedbackApi.submit(input)
+    return { value: feedback.value, comment: feedback.comment }
+  }
+
+  const handleClearAnswerFeedback = async (assistantMessageId: string) => {
+    await answerFeedbackApi.clear(assistantMessageId)
+  }
+
   const emptyState = onboarding.hasPendingDocuments
     ? {
         title: 'Documents are still processing',
@@ -341,6 +362,8 @@ export function ChatView({ accountId, onOpenDocument, onboarding, navigation }: 
               messages={visibleMessages}
               onOpenDocument={handleOpenCitation}
               onSuggestionSelect={handleSuggestionSelect}
+              onAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleAnswerFeedback : undefined}
+              onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
             />
             <div ref={messagesEndRef} />
           </div>

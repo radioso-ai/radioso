@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 
-import type { ChunkRecord, ChunkRepositoryPort } from "../../modules/documents/services/documentIngestionService.js";
+import type { ChunkRecord, ChunkRepositoryPort } from "../../modules/documents/contracts/index.js";
 import type { Database } from "../../shared/infra/database.js";
 
 export const insertChunks = async (client: PoolClient, chunks: ChunkRecord[]): Promise<void> => {

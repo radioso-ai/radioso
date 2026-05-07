@@ -1,5 +1,5 @@
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
-import type { DocumentRepositoryPort } from "../../documents/services/documentIngestionService.js";
+import type { DocumentRepositoryPort } from "../../documents/contracts/index.js";
 
 export interface WorkspaceSummary {
   documentCount: number;

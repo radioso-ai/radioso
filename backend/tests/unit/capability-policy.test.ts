@@ -20,6 +20,15 @@ describe("capability policy", () => {
     });
   });
 
+  it("recognizes skill-facing capabilities used by the catalog", () => {
+    expect(() => assertKnownCapabilityName(capabilityNames.assistant.chat)).not.toThrow();
+    expect(() => assertKnownCapabilityName(capabilityNames.retrieval.search)).not.toThrow();
+    expect(() => assertKnownCapabilityName(capabilityNames.retrieval.answer)).not.toThrow();
+    expect(() => assertKnownCapabilityName(capabilityNames.documents.ingest)).not.toThrow();
+    expect(() => assertKnownCapabilityName(capabilityNames.documents.search)).not.toThrow();
+    expect(() => assertKnownCapabilityName(capabilityNames.mcp.describeCapabilities)).not.toThrow();
+  });
+
   it("can deny a named capability through a stricter policy", async () => {
     const policy = new StrictCapabilityPolicy({
       deniedCapabilities: [capabilityNames.documents.delete],

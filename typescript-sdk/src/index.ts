@@ -32,6 +32,8 @@ export type {
   IngestionSettings,
   PaginationQuery,
   RetrievalSettings,
+  SkillCatalogEntry,
+  SkillCatalogResponse,
   UpdateDocumentRequest,
   UpdateGeneralSettingsRequest,
   UpdateIngestionSettingsRequest,
@@ -98,6 +100,10 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
     },
     workspace: {
       getSummary: () => generated.getWorkspaceSummary(),
+    },
+    skills: {
+      list: () => generated.listSkills(),
+      get: (skillName: string) => generated.getSkill(skillName),
     },
     documents: {
       list: (query?: Parameters<GeneratedRadiosoClient["listDocuments"]>[0]) => generated.listDocuments(query),

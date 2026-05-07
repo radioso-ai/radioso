@@ -1,0 +1,128 @@
+import { z } from "zod";
+
+import type { CapabilityName } from "../../shared/domain/capabilityPolicy.js";
+
+export const skillOwnerSchema = z.enum(["assistant", "retrieval", "documents", "mcp", "platform", "auth"]);
+export type SkillOwner = z.infer<typeof skillOwnerSchema>;
+
+export const skillExecutionClassSchema = z.enum(["interactive", "deferred", "administrative"]);
+export type SkillExecutionClass = z.infer<typeof skillExecutionClassSchema>;
+
+export const skillCallerSurfaceSchema = z.enum([
+  "assistant",
+  "retrieval_api",
+  "sdk",
+  "mcp",
+  "dashboard",
+  "public_embed",
+]);
+export type SkillCallerSurface = z.infer<typeof skillCallerSurfaceSchema>;
+
+export const skillAvailabilitySchema = z.object({
+  state: z.enum(["available", "forbidden", "unavailable"]),
+  reason: z.string().optional(),
+});
+export type SkillAvailability = z.infer<typeof skillAvailabilitySchema>;
+
+export const skillContractReferenceSchema = z.object({
+  kind: z.enum(["http", "sdk", "mcp_tool", "documentation"]),
+  label: z.string(),
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
+  path: z.string(),
+});
+export type SkillContractReference = z.infer<typeof skillContractReferenceSchema>;
+
+export const skillDiagnosticsSummarySchema = z.object({
+  defined: z.boolean(),
+  strategyAware: z.boolean(),
+  supportedFields: z.array(z.string()).optional(),
+});
+export type SkillDiagnosticsSummary = z.infer<typeof skillDiagnosticsSummarySchema>;
+
+export const skillCatalogEntrySchema = z.object({
+  name: z.string(),
+  displayName: z.string(),
+  description: z.string(),
+  owner: skillOwnerSchema,
+  executionClass: skillExecutionClassSchema,
+  availability: skillAvailabilitySchema,
+  supportedCallers: z.array(skillCallerSurfaceSchema),
+  requiredCapabilities: z.array(z.string()),
+  contractReferences: z.array(skillContractReferenceSchema),
+  diagnostics: skillDiagnosticsSummarySchema,
+});
+export type SkillCatalogEntry = Omit<z.infer<typeof skillCatalogEntrySchema>, "requiredCapabilities"> & {
+  requiredCapabilities: CapabilityName[];
+};
+
+export type SkillCatalogEntryDefinition = Omit<SkillCatalogEntry, "availability"> & {
+  availability?: SkillAvailability;
+  availabilityCheck?: "static" | "capability_policy";
+};
+
+export const skillCatalogResponseSchema = z.object({
+  skills: z.array(skillCatalogEntrySchema),
+});
+export type SkillCatalogResponse = {
+  skills: SkillCatalogEntry[];
+};
+
+export const skillParamsSchema = z.object({
+  skillName: z.string().min(1),
+});
+
+export const skillCapabilityCheckSchema = z.object({
+  capability: z.string(),
+  allowed: z.boolean(),
+  reason: z.string().optional(),
+});
+
+export const skillDiagnosticEvidenceSchema = z.object({
+  queryShape: z.string().optional(),
+  retrievalStrategy: z.string().optional(),
+  candidateSourceSummary: z.record(z.unknown()).optional(),
+  ranking: z.record(z.unknown()).optional(),
+  evidenceStatus: z.enum(["found", "missing", "partial", "not_applicable"]).optional(),
+  supportStatus: z.enum(["supported", "unsupported", "not_checked", "not_applicable"]).optional(),
+  groundingOutcome: z.string().optional(),
+});
+
+export const skillDiagnosticSchema = z.object({
+  skillName: z.string(),
+  strategy: z.string().optional(),
+  selectionMode: z.enum(["deterministic", "probabilistic"]),
+  selectionReason: z.string().optional(),
+  selectionConfidence: z.number().min(0).max(1).optional(),
+  callerSurface: skillCallerSurfaceSchema,
+  capabilityChecks: z.array(skillCapabilityCheckSchema),
+  parameters: z.record(z.unknown()).optional(),
+  fallback: z.object({
+    used: z.boolean(),
+    reason: z.string().optional(),
+    path: z.string().optional(),
+  }).optional(),
+  outcome: z.enum(["success", "unsupported", "forbidden", "failed", "skipped"]),
+  error: z.object({
+    code: z.string(),
+    message: z.string().optional(),
+  }).optional(),
+  evidence: skillDiagnosticEvidenceSchema.optional(),
+});
+export type SkillDiagnostic = z.infer<typeof skillDiagnosticSchema>;
+
+export const skillDiagnosticFieldNames = [
+  "skillName",
+  "strategy",
+  "selectionMode",
+  "selectionReason",
+  "selectionConfidence",
+  "callerSurface",
+  "capabilityChecks",
+  "parameters",
+  "fallback",
+  "outcome",
+  "error",
+  "evidence",
+] as const;
+
+export const validateSkillDiagnostic = (input: unknown) => skillDiagnosticSchema.safeParse(input);

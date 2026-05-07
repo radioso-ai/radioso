@@ -2314,6 +2314,256 @@ components:
       anyOf:
         - $ref: "#/components/schemas/RetrievalAnswerSuccess"
         - $ref: "#/components/schemas/RetrievalAnswerUnsupported"
+    SkillAvailability:
+      type: object
+      properties:
+        state:
+          type: string
+          enum:
+            - available
+            - forbidden
+            - unavailable
+        reason:
+          type: string
+      required:
+        - state
+    SkillContractReference:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - http
+            - sdk
+            - mcp_tool
+            - documentation
+        label:
+          type: string
+        method:
+          type: string
+          enum:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+        path:
+          type: string
+      required:
+        - kind
+        - label
+        - path
+    SkillDiagnosticsSummary:
+      type: object
+      properties:
+        defined:
+          type: boolean
+        strategyAware:
+          type: boolean
+        supportedFields:
+          type: array
+          items:
+            type: string
+      required:
+        - defined
+        - strategyAware
+    SkillDiagnosticEvidence:
+      type: object
+      properties:
+        queryShape:
+          type: string
+        retrievalStrategy:
+          type: string
+        candidateSourceSummary:
+          type: object
+          additionalProperties: {}
+        ranking:
+          type: object
+          additionalProperties: {}
+        evidenceStatus:
+          type: string
+          enum: &a10
+            - found
+            - missing
+            - partial
+            - not_applicable
+        supportStatus:
+          type: string
+          enum: &a11
+            - supported
+            - unsupported
+            - not_checked
+            - not_applicable
+        groundingOutcome:
+          type: string
+    SkillDiagnosticDefinition:
+      type: object
+      properties:
+        skillName:
+          type: string
+        strategy:
+          type: string
+        selectionMode:
+          type: string
+          enum:
+            - deterministic
+            - probabilistic
+        selectionReason:
+          type: string
+        selectionConfidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        callerSurface:
+          type: string
+          enum: &a12
+            - assistant
+            - retrieval_api
+            - sdk
+            - mcp
+            - dashboard
+            - public_embed
+        capabilityChecks:
+          type: array
+          items:
+            type: object
+            properties:
+              capability:
+                type: string
+              allowed:
+                type: boolean
+              reason:
+                type: string
+            required:
+              - capability
+              - allowed
+        parameters:
+          type: object
+          additionalProperties: {}
+        fallback:
+          type: object
+          properties:
+            used:
+              type: boolean
+            reason:
+              type: string
+            path:
+              type: string
+          required:
+            - used
+        outcome:
+          type: string
+          enum:
+            - success
+            - unsupported
+            - forbidden
+            - failed
+            - skipped
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+          required:
+            - code
+        evidence:
+          type: object
+          properties:
+            queryShape:
+              type: string
+            retrievalStrategy:
+              type: string
+            candidateSourceSummary:
+              type: object
+              additionalProperties: {}
+            ranking:
+              type: object
+              additionalProperties: {}
+            evidenceStatus:
+              type: string
+              enum: *a10
+            supportStatus:
+              type: string
+              enum: *a11
+            groundingOutcome:
+              type: string
+      required:
+        - skillName
+        - selectionMode
+        - callerSurface
+        - capabilityChecks
+        - outcome
+    SkillCatalogEntry:
+      type: object
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        owner:
+          type: string
+          enum:
+            - assistant
+            - retrieval
+            - documents
+            - mcp
+            - platform
+            - auth
+        executionClass:
+          type: string
+          enum:
+            - interactive
+            - deferred
+            - administrative
+        availability:
+          $ref: "#/components/schemas/SkillAvailability"
+        supportedCallers:
+          type: array
+          items:
+            type: string
+            enum: *a12
+        requiredCapabilities:
+          type: array
+          items:
+            type: string
+        contractReferences:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillContractReference"
+        diagnostics:
+          $ref: "#/components/schemas/SkillDiagnosticsSummary"
+      required:
+        - name
+        - displayName
+        - description
+        - owner
+        - executionClass
+        - availability
+        - supportedCallers
+        - requiredCapabilities
+        - contractReferences
+        - diagnostics
+    SkillCatalogResponse:
+      type: object
+      properties:
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillCatalogEntry"
+      required:
+        - skills
+    SkillParams:
+      type: object
+      properties:
+        skillName:
+          type: string
+          minLength: 1
+      required:
+        - skillName
     ChatSuggestion:
       type: object
       properties:
@@ -2421,7 +2671,7 @@ components:
               type: boolean
             expansionKind:
               type: string
-              enum: &a10
+              enum: &a13
                 - none
                 - focused
                 - expansive
@@ -2487,7 +2737,7 @@ components:
               type: boolean
             expansionKind:
               type: string
-              enum: *a10
+              enum: *a13
             suggestionCount:
               type: integer
               minimum: 0
@@ -4298,6 +4548,65 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/skills:
+    get:
+      tags:
+        - Skills
+      summary: List available Radioso skills
+      operationId: listSkills
+      security:
+        - bearerAuth: []
+        - &a14
+          sessionCookie: []
+          workspaceSelection: []
+      responses:
+        "200":
+          description: Skills catalog returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillCatalogResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/skills/{skillName}:
+    get:
+      tags:
+        - Skills
+      summary: Get one Radioso skill catalog entry
+      operationId: getSkill
+      security:
+        - bearerAuth: []
+        - *a14
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: skillName
+          in: path
+      responses:
+        "200":
+          description: Skill catalog entry returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillCatalogEntry"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Skill not found
           content:
             application/json:
               schema:

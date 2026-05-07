@@ -45,6 +45,7 @@ import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
 import type { ChatActionProviderPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
+import type { SkillCatalogService } from "../../modules/skills/public.js";
 
 export interface AppDependencies {
   env: Env;
@@ -85,6 +86,7 @@ export interface AppDependencies {
   retrievalSearchService: RetrievalSearchService;
   retrievalAnswerService: RetrievalAnswerService;
   platformSettingsService: PlatformSettingsService;
+  skillCatalogService: SkillCatalogService;
   workspaceRepository: WorkspaceRepositoryPort;
   userRepository: UserRepositoryPort;
   accountRepository: AccountRepositoryPort;

@@ -4,12 +4,8 @@ import {
   type IngestionSettingsRecord,
   validateIngestionSettings,
 } from "../domain/ingestionSettings.js";
-import type { AuditService } from "../../audit/services/auditService.js";
-
-export interface IngestionSettingsRepositoryPort {
-  findByWorkspaceId(workspaceId: string): Promise<IngestionSettingsRecord | null>;
-  upsert(workspaceId: string, input: IngestionSettingsInput): Promise<IngestionSettingsRecord>;
-}
+import type { AuditService } from "../../audit/contracts/index.js";
+import type { IngestionSettingsRepositoryPort } from "../contracts/services.js";
 
 export class IngestionSettingsService {
   constructor(

@@ -3,14 +3,14 @@ import type {
   ConversationMode,
   RetrievalSettingsInput,
   RetrievalSettingsRecord,
-} from "../../modules/settings/domain/retrievalSettings.js";
+} from "../../modules/settings/contracts/retrieval.js";
 import {
   DEFAULT_CONVERSATION_MODE,
   DEFAULT_SUGGESTED_QUESTIONS_COUNT,
   DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
   normalizeMetadataRules,
-} from "../../modules/settings/domain/retrievalSettings.js";
-import type { RetrievalSettingsRepositoryPort } from "../../modules/settings/services/retrievalSettingsService.js";
+} from "../../modules/settings/contracts/retrieval.js";
+import type { RetrievalSettingsRepositoryPort } from "../../modules/settings/contracts/services.js";
 
 interface RetrievalSettingsPayload {
   metadataRules?: unknown;

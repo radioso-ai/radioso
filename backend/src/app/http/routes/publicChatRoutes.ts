@@ -9,12 +9,12 @@ import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.j
 import { anonymousRateLimiter, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
-import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/domain/websiteEmbedSettings.js";
+import { isAllowedWebsiteEmbedOrigin } from "../../../modules/settings/contracts/websiteEmbed.js";
 import {
   isAssistantBootstrapActive,
   resolveAssistantDisplayName,
-} from "../../../modules/settings/domain/assistantBootstrapSettings.js";
-import { issuePublicChatSession } from "../../../modules/settings/domain/publicChatSession.js";
+} from "../../../modules/settings/contracts/assistantBootstrap.js";
+import { issuePublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
 
 const localeHintSchema = z.string().trim().max(35);
 const pageContextSchema = z.object({

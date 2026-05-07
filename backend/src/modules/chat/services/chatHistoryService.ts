@@ -17,7 +17,7 @@ import {
   type RetrievalTrace,
 } from "../../retrieval/public.js";
 import type { AssistantTurnOutcome, HiddenSupportEvidence, ValidationDisposition } from "./answerSupportValidationTypes.js";
-import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import type { ChatSuggestion, ConversationModeMetadata } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
 import {

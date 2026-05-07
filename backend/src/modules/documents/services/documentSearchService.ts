@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRepositoryPort, DocumentSummaryRecord } from "./documentIngestionService.js";
 import type { RetrievalPipelineService, RetrievalTrace } from "../../retrieval/public.js";
 

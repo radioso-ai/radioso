@@ -1,6 +1,6 @@
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import type { RetrievalInfo, RetrievalTrace } from "../../retrieval/public.js";
-import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 
 export type ChatSuggestionKind = string;
 

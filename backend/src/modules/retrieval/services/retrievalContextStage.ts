@@ -1,4 +1,4 @@
-import type { RetrievalSettingsService } from "../../settings/services/retrievalSettingsService.js";
+import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
 import { ConversationContextService } from "./conversationContextService.js";
 import type { RetrievalContextStage as RetrievalContextStageContract, RetrievalPipelineRequest } from "./retrievalPipelineStages.js";
 

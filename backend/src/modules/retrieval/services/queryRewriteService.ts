@@ -2,8 +2,8 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { TextGenerationClient } from "../../../shared/infra/llm/providerTypes.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { RetrievalMetadataRule } from "../../settings/domain/retrievalSettings.js";
-import { getNormalizedMetadataConditions } from "../../settings/domain/retrievalSettings.js";
+import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
+import { getNormalizedMetadataConditions } from "../../settings/contracts/retrieval.js";
 import type {
   ConversationContextWindow,
   ResponseIntent,

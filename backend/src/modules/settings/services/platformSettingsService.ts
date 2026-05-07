@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { buildAssistantSettingsSection } from "../domain/assistantSettings.js";
 import {
@@ -20,7 +20,7 @@ import type {
   PlatformSettingsPatch,
   PlatformSettingsResource,
 } from "../domain/platformSettings.js";
-import type { RetrievalSettingsService } from "./retrievalSettingsService.js";
+import type { RetrievalSettingsService } from "../contracts/services.js";
 
 export interface PlatformSettingsServiceDependencies {
   workspaceRepository: Pick<WorkspaceRepositoryPort, "findById" | "updateGeneralSettings">;

@@ -1,4 +1,4 @@
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRecord } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../contracts/storage.js";
 import { capabilityNames, DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";

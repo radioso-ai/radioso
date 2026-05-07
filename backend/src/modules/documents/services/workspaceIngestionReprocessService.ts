@@ -1,4 +1,4 @@
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentProcessingJobRepositoryPort } from "../../../db/repositories/documentProcessingJobRepository.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";

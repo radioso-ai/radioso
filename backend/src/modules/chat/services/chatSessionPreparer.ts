@@ -3,7 +3,7 @@ import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort, UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { RetrievalPipelineService, RewriteContinuityState } from "../../retrieval/public.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";

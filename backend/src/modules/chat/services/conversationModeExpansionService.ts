@@ -1,7 +1,7 @@
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ChatSuggestion, ChatSuggestionKind } from "../types/chatResponses.js";
-import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import type { ConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import { formatConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 

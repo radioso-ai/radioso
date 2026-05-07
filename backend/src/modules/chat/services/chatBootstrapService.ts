@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
-import type { RetrievalSettingsService } from "../../settings/services/retrievalSettingsService.js";
+import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatBootstrapResponse } from "../types/chatResponses.js";
@@ -11,8 +11,8 @@ import type { AssistantPageContext } from "../types/assistantApi.js";
 import {
   buildPublicAssistantIdentityLines,
   isAssistantBootstrapActive,
-} from "../../settings/domain/assistantBootstrapSettings.js";
-import { DEFAULT_CONVERSATION_MODE } from "../../settings/domain/retrievalSettings.js";
+} from "../../settings/contracts/assistantBootstrap.js";
+import { DEFAULT_CONVERSATION_MODE } from "../../settings/contracts/retrieval.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { isValidLocaleHint, resolveChatLocale } from "./chatLocale.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";

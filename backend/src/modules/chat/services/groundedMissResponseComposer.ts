@@ -2,7 +2,7 @@ import type { TextGenerationClient } from "../../../shared/infra/llm/providerTyp
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import { resolveChatLocale } from "./chatLocale.js";
 
 export interface GroundedMissContextSummary {

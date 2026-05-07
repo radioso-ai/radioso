@@ -1,7 +1,7 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
-import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";

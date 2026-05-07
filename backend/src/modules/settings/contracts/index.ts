@@ -1,1 +1,1 @@
-export type { WebsiteEmbedIntegrationProvider } from "../domain/websiteEmbedIntegration.js";
+export type { WebsiteEmbedIntegrationProvider } from "./websiteEmbedIntegration.js";

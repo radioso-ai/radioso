@@ -14,11 +14,11 @@ import {
   metadataRuleOperators,
   metadataRuleTriggerModes,
   metadataValueTypes,
-} from "../../../modules/settings/domain/retrievalSettings.js";
+} from "../../../modules/settings/contracts/retrieval.js";
 import {
   websiteEmbedLauncherIcons,
   websiteEmbedLauncherPositions,
-} from "../../../modules/settings/domain/websiteEmbedSettings.js";
+} from "../../../modules/settings/contracts/websiteEmbed.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
 export const updateSettingsSchema = z.object({

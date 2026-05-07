@@ -1,7 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import type { AbuseControlService } from "../../../modules/security/services/abuseControlService.js";
-import type { AuditService } from "../../../modules/audit/services/auditService.js";
+import type { AuditService } from "../../../modules/audit/contracts/index.js";
 
 interface CreateRateLimitMiddlewareInput {
   service: AbuseControlService;

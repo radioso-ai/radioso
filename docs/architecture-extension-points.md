@@ -56,9 +56,11 @@ Retrieval is the first backend pilot for this pattern. Production code outside `
 
 Documents and chat follow the same rule with their own entry points. Shared document records, repository ports, storage ports, queue ports, and history DTOs live behind `backend/src/modules/documents/contracts/`; application wiring uses `backend/src/modules/documents/composition.ts`, and chat history presentation uses `backend/src/modules/documents/historySupport.ts`. Shared chat response types, stream events, citations, and extension provider ports live behind `backend/src/modules/chat/contracts/`; application wiring uses `backend/src/modules/chat/composition.ts`, LLM provider registration uses `backend/src/modules/chat/llmAdapters.ts`, and retrieval answer assembly uses `backend/src/modules/chat/retrievalSupport.ts`.
 
+Settings and audit now use the same structure. Settings DTOs, validation helpers, public chat session helpers, and provider ports live behind focused files in `backend/src/modules/settings/contracts/`; application wiring uses `backend/src/modules/settings/composition.ts`. Audit event DTOs and the audit recording port live behind `backend/src/modules/audit/contracts/`; application wiring uses `backend/src/modules/audit/composition.ts`.
+
 Backend tests are excluded from these boundary checks. Focused unit tests may still import internals while each production boundary is proven.
 
-Settings is a likely follow-up candidate. Future pilots should add one module public surface at a time, document the contract, and keep the enforcement rule narrow enough that contributors can understand the failure.
+Future pilots should add one module public surface at a time, document the contract, and keep the enforcement rule narrow enough that contributors can understand the failure.
 
 ## Adding A New Extension
 

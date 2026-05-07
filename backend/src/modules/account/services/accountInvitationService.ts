@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import { conflict, notFound } from "../../../shared/domain/errors.js";
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
 import type {
   AccountInvitationRecord,

@@ -23,7 +23,7 @@ import { buildAnalyticsSinks } from "../../shared/analytics/buildAnalyticsSinks.
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
 import { buildIncidentSinks } from "../../shared/incidents/buildIncidentSinks.js";
 import type { IncidentSink } from "../../shared/incidents/incidentSink.js";
-import type { AuditService } from "../../modules/audit/services/auditService.js";
+import type { AuditService } from "../../modules/audit/contracts/index.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { buildTelemetrySinks, type TelemetrySinkBundle } from "../../shared/observability/telemetry/buildTelemetrySinks.js";

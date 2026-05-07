@@ -1,6 +1,6 @@
 import type { Env } from "../../app/config/env.js";
 import { PosthogAnalyticsSink } from "../../integrations/posthog/posthogAnalyticsSink.js";
-import type { AuditService } from "../../modules/audit/services/auditService.js";
+import type { AuditService } from "../../modules/audit/contracts/index.js";
 import { MetricsRegistry } from "../observability/metrics/metricsRegistry.js";
 import { hasConfiguredSink } from "../observability/configuredSinks.js";
 import { AuditEventAnalyticsSink } from "./auditEventAnalyticsSink.js";

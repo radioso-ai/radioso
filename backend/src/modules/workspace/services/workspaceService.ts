@@ -1,6 +1,6 @@
 import type { AccountMembershipRepositoryPort } from "../../../db/repositories/accountMembershipRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { createWorkspacePublicRouteKey } from "../domain/publicRouteKey.js";
 

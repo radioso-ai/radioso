@@ -55,7 +55,7 @@ import type {
   HistoryItemsRepositoryPort,
   HistoryItemsSourceRecord,
 } from "../../src/db/repositories/historyItemsRepository.js";
-import type { AuditEventInput } from "../../src/modules/audit/services/auditService.js";
+import type { AuditEventInput } from "../../src/modules/audit/contracts/index.js";
 import type {
   ConversationMessageSummary,
   MessageRecord,
@@ -64,16 +64,18 @@ import type {
 import type {
   IngestionSettingsInput,
   IngestionSettingsRecord,
-} from "../../src/modules/settings/domain/ingestionSettings.js";
+} from "../../src/modules/settings/contracts/ingestion.js";
 import {
   inferMetadataValueType,
   type MetadataFieldSuggestion,
   type MetadataValueType,
   type RetrievalSettingsInput,
   type RetrievalSettingsRecord,
-} from "../../src/modules/settings/domain/retrievalSettings.js";
-import type { IngestionSettingsRepositoryPort } from "../../src/modules/settings/services/ingestionSettingsService.js";
-import type { RetrievalSettingsRepositoryPort } from "../../src/modules/settings/services/retrievalSettingsService.js";
+} from "../../src/modules/settings/contracts/retrieval.js";
+import type {
+  IngestionSettingsRepositoryPort,
+  RetrievalSettingsRepositoryPort,
+} from "../../src/modules/settings/contracts/services.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import type {
   DocumentStorageDeleteInput,

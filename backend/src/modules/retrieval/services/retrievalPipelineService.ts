@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { RetrievalSettingsService } from "../../settings/services/retrievalSettingsService.js";
+import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { EmbeddingService } from "./embeddingService.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
@@ -45,7 +45,7 @@ export interface RetrievalPipelineResult {
   responseSettings: {
     citationDisplayEnabled: boolean;
     answerSupportValidationEnabled?: boolean;
-    conversationMode: import("../../settings/domain/retrievalSettings.js").ConversationMode;
+    conversationMode: import("../../settings/contracts/retrieval.js").ConversationMode;
     suggestedQuestionsEnabled: boolean;
     suggestedQuestionsCount: number;
     customInstruction?: string;

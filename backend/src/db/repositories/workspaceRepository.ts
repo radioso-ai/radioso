@@ -3,14 +3,14 @@ import {
   validateAssistantBootstrapSettings,
   type AssistantBootstrapSettingsInput,
   type AssistantBootstrapSettingsRecord,
-} from "../../modules/settings/domain/assistantBootstrapSettings.js";
+} from "../../modules/settings/contracts/assistantBootstrap.js";
 import {
   defaultWebsiteEmbedSettings,
   validateWebsiteEmbedSettings,
   type WebsiteEmbedLauncherIcon,
   type WebsiteEmbedLauncherPosition,
   type WebsiteEmbedSettingsRecord,
-} from "../../modules/settings/domain/websiteEmbedSettings.js";
+} from "../../modules/settings/contracts/websiteEmbed.js";
 import { createWorkspacePublicRouteKey } from "../../modules/workspace/domain/publicRouteKey.js";
 import { randomUUID } from "node:crypto";
 

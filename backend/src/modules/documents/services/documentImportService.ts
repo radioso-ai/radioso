@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { detectDocumentType, DocumentParserError } from "@radioso/document-parser";
 
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   DocumentProcessingJobRecord,
   DocumentProcessingJobRepositoryPort,

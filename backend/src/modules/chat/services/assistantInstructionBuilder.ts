@@ -4,7 +4,7 @@ import {
 } from "../../../shared/domain/responseIdentity.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { ConversationModeInstructionBuilder, type ResponseLanguagePolicy } from "../../retrieval/public.js";
-import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 
 export interface AssistantInstructionInput {
   responseIdentity?: ResponseIdentity | null;

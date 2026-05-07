@@ -1,6 +1,6 @@
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import type {
   DocumentProcessingJobRecord,

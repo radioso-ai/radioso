@@ -2,8 +2,8 @@ import type { Database } from "../../shared/infra/database.js";
 import type {
   IngestionSettingsInput,
   IngestionSettingsRecord,
-} from "../../modules/settings/domain/ingestionSettings.js";
-import type { IngestionSettingsRepositoryPort } from "../../modules/settings/services/ingestionSettingsService.js";
+} from "../../modules/settings/contracts/ingestion.js";
+import type { IngestionSettingsRepositoryPort } from "../../modules/settings/contracts/services.js";
 
 interface IngestionSettingsRow {
   workspace_id: string;

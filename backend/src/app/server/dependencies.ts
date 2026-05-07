@@ -28,7 +28,7 @@ import { SessionRepository } from "../../db/repositories/sessionRepository.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
 import { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
-import { AuditService } from "../../modules/audit/services/auditService.js";
+import { AuditService } from "../../modules/audit/composition.js";
 import { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
@@ -58,9 +58,9 @@ import {
   RetrievalPipelineService,
   RetrievalSearchService,
 } from "../../modules/retrieval/composition.js";
-import { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
-import { PlatformSettingsService } from "../../modules/settings/services/platformSettingsService.js";
-import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
+import { IngestionSettingsService } from "../../modules/settings/composition.js";
+import { PlatformSettingsService } from "../../modules/settings/composition.js";
+import { RetrievalSettingsService } from "../../modules/settings/composition.js";
 import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
 import { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import { Database } from "../../shared/infra/database.js";

@@ -213,6 +213,104 @@ module.exports = {
         path: "^src/modules/chat/retrievalSupport\\.ts$",
       },
     },
+    {
+      name: "no-external-settings-internals",
+      severity: "error",
+      comment:
+        "Production code outside settings must import settings-owned symbols through settings contracts or composition entrypoints.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/modules/settings/",
+        ],
+      },
+      to: {
+        path: "^src/modules/settings/(domain|services)/",
+      },
+    },
+    {
+      name: "no-unapproved-settings-root-entrypoints",
+      severity: "error",
+      comment:
+        "Production code outside settings may only import approved settings root entrypoints.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/modules/settings/",
+        ],
+      },
+      to: {
+        path: "^src/modules/settings/[^/]+\\.ts$",
+        pathNot: [
+          "^src/modules/settings/composition\\.ts$",
+        ],
+      },
+    },
+    {
+      name: "no-settings-composition-outside-app-wiring",
+      severity: "error",
+      comment:
+        "The settings composition entrypoint is for application wiring only; other modules should use settings contracts.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/modules/settings/",
+          "^src/app/server/(dependencies|types)\\.ts$",
+        ],
+      },
+      to: {
+        path: "^src/modules/settings/composition\\.ts$",
+      },
+    },
+    {
+      name: "no-external-audit-internals",
+      severity: "error",
+      comment:
+        "Production code outside audit must import audit-owned symbols through audit contracts or composition entrypoints.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/modules/audit/",
+        ],
+      },
+      to: {
+        path: "^src/modules/audit/services/",
+      },
+    },
+    {
+      name: "no-unapproved-audit-root-entrypoints",
+      severity: "error",
+      comment:
+        "Production code outside audit may only import approved audit root entrypoints.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/modules/audit/",
+        ],
+      },
+      to: {
+        path: "^src/modules/audit/[^/]+\\.ts$",
+        pathNot: [
+          "^src/modules/audit/composition\\.ts$",
+        ],
+      },
+    },
+    {
+      name: "no-audit-composition-outside-app-wiring",
+      severity: "error",
+      comment:
+        "The audit composition entrypoint is for application wiring only; other modules should use audit contracts.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/modules/audit/",
+          "^src/app/server/(dependencies|types)\\.ts$",
+        ],
+      },
+      to: {
+        path: "^src/modules/audit/composition\\.ts$",
+      },
+    },
   ],
   options: {
     doNotFollow: {

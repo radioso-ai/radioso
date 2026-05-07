@@ -1,8 +1,12 @@
 import { ModelChatGateway } from "../../../modules/chat/services/chatService.js";
 import { ModelGroundedMissResponseComposer } from "../../../modules/chat/services/groundedMissResponseComposer.js";
-import { ModelEmbeddingGateway } from "../../../modules/retrieval/services/embeddingService.js";
-import { ModelQueryRewriteGateway, ModelTriggerAnalysisGateway } from "../../../modules/retrieval/services/queryRewriteService.js";
-import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../../modules/retrieval/services/rerankService.js";
+import {
+  ModelEmbeddingGateway,
+  ModelQueryRewriteGateway,
+  ModelRerankGateway,
+  ModelTriggerAnalysisGateway,
+  OpenAISemanticRerankGateway,
+} from "../../../modules/retrieval/llmAdapters.js";
 import { ClaudeTextGenerationClient } from "./claudeProvider.js";
 import { GeminiTextGenerationClient } from "./geminiProvider.js";
 import { createOpenAIClient, OpenAIEmbeddingClient, OpenAITextGenerationClient } from "./openaiProvider.js";

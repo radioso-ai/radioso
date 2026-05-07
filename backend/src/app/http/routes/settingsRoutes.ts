@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
-import { chunkingStrategyIds } from "../../../modules/retrieval/domain/chunking/chunkingStrategy.js";
+import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
 import {
   MAX_SUGGESTED_QUESTIONS_COUNT,
   MIN_SUGGESTED_QUESTIONS_COUNT,

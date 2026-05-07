@@ -85,6 +85,10 @@ module_is_ready() {
   node -e "require.resolve(process.argv[1])" "$1" >/dev/null 2>&1
 }
 
+module_can_load() {
+  node -e "require(process.argv[1])" "$1" >/dev/null 2>&1
+}
+
 frontend_modules_ready() {
   if [ ! -d node_modules ]; then
     return 1
@@ -95,15 +99,15 @@ frontend_modules_ready() {
   fi
 
   if [ -n "$EXPECTED_SWC_PACKAGE" ]; then
-    module_is_ready "${EXPECTED_SWC_PACKAGE}/package.json" || return 1
+    module_can_load "$EXPECTED_SWC_PACKAGE" || return 1
   fi
 
   if [ -n "$EXPECTED_LIGHTNINGCSS_PACKAGE" ]; then
-    module_is_ready "${EXPECTED_LIGHTNINGCSS_PACKAGE}/package.json" || return 1
+    module_can_load "lightningcss" || return 1
   fi
 
   if [ -n "$EXPECTED_TAILWIND_OXIDE_PACKAGE" ]; then
-    module_is_ready "${EXPECTED_TAILWIND_OXIDE_PACKAGE}/package.json" || return 1
+    module_can_load "$EXPECTED_TAILWIND_OXIDE_PACKAGE" || return 1
   fi
 
   for required_module in \

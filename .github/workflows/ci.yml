@@ -31,6 +31,10 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      - name: Lint backend module boundaries
+        working-directory: backend
+        run: npm run lint:boundaries
+
       - name: Build backend default composition
         working-directory: backend
         run: npm run build

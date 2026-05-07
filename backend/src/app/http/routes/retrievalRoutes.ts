@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
-import type { RetrievalExecutionSurface } from "../../../modules/retrieval/domain/retrievalPipelineTypes.js";
+import type { RetrievalExecutionSurface } from "../../../modules/retrieval/public.js";
 
 const metadataFilterSchema = z.record(z.unknown()).optional().refine(
   (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= 16384,

@@ -4,7 +4,7 @@ import type {
   DocumentProcessingJobRepositoryPort,
   DocumentProcessingQueueSnapshot,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
-import { normalizeMarkdown } from "../../retrieval/domain/chunking/chunkingStrategy.js";
+import { normalizeMarkdown } from "../../retrieval/public.js";
 import { conflict, notFound } from "../../../shared/domain/errors.js";
 import {
   NoopProductAnalyticsService,

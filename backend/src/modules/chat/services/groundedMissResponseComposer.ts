@@ -87,11 +87,16 @@ const formatContextsForPrompt = (contexts: GroundedMissContextSummary[]): string
     .join("\n\n");
 };
 
-const GROUNDED_MISS_TEMPLATE = loadPromptTemplate("chat/grounded-miss.md");
+let groundedMissTemplate: string | undefined;
+
+const getGroundedMissTemplate = (): string => {
+  groundedMissTemplate ??= loadPromptTemplate("chat/grounded-miss.md");
+  return groundedMissTemplate;
+};
 
 const getGroundedMissPromptSection = (sectionName: string): string => {
   const sectionPattern = new RegExp(`--- ${sectionName} ---\\n([\\s\\S]*?)(?=\\n--- [a-z_]+ ---|$)`);
-  const match = GROUNDED_MISS_TEMPLATE.match(sectionPattern);
+  const match = getGroundedMissTemplate().match(sectionPattern);
   if (!match?.[1]?.trim()) {
     throw new Error(`Missing grounded miss prompt section "${sectionName}"`);
   }

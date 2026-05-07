@@ -1,7 +1,7 @@
 import {
   RESPONSE_INTENT,
   type ResponseIntent,
-} from "../../retrieval/domain/retrievalPipelineTypes.js";
+} from "../../retrieval/public.js";
 
 export const CHAT_TURN_ROUTE = {
   RETRIEVAL: "retrieval",

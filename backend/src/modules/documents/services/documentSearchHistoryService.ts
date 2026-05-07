@@ -8,7 +8,7 @@ interface DocumentSearchAuditMetadata extends Record<string, unknown> {
   query: string;
   resultCount: number;
   results: DocumentSearchResult[];
-  retrievalTrace?: import("../../retrieval/domain/retrievalPipelineTypes.js").RetrievalTrace;
+  retrievalTrace?: import("../../retrieval/public.js").RetrievalTrace;
 }
 
 export interface DocumentSearchHistoryEntry {

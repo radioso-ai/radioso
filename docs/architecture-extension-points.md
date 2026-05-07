@@ -46,6 +46,18 @@ Persistence and integration adapters talk to databases, queues, object storage, 
 
 Worker dispatch has two parts. The dispatcher publishes a wake-up notification after a durable document processing job exists. The optional consumer listens for broker deliveries in worker runtimes and delegates back to the worker's job-by-id processing path. The PostgreSQL job table remains authoritative for status, retries, leases, and recovery. AMQP dispatch intentionally keeps the worker polling loop active; broker messages improve wake-up latency, while polling preserves recovery and scheduled retry behavior through `available_at`.
 
+## Module Public Surfaces
+
+Some modules expose a public entry point for production code outside the module. The public entry point is named `public.ts` and lists the symbols the module intentionally shares.
+
+In practice, production cross-module imports should go through that public surface. Internal folders such as `domain/`, `services/`, and `infra/` stay private unless the owning module promotes a symbol intentionally.
+
+Retrieval is the first backend pilot for this pattern. Production code outside `backend/src/modules/retrieval/` must import retrieval-owned contracts and chat-safe helpers through `backend/src/modules/retrieval/public.ts`. Composition-only services that depend back on other modules use narrower root-level entry points such as `backend/src/modules/retrieval/composition.ts`, while provider registration uses `backend/src/modules/retrieval/llmAdapters.ts`. These narrower entry points are restricted to their intended consumers so the general public surface does not create import cycles. Direct production imports from retrieval internals are blocked by the backend boundary lint check.
+
+Backend tests are excluded from the first retrieval boundary pass. Focused unit tests may still import internals while the production boundary is proven.
+
+Documents, chat, and settings are likely follow-up candidates. Future pilots should add one module public surface at a time, document the contract, and keep the enforcement rule narrow enough that contributors can understand the failure.
+
 ## Adding A New Extension
 
 First, identify the existing extension category. If one exists, implement that contract and register the module through composition.

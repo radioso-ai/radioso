@@ -5,8 +5,7 @@ import type { MessageRecord, MessageRepositoryPort, UserMessageInputMetadata } f
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AuditService } from "../../audit/services/auditService.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
-import type { RetrievalPipelineService } from "../../retrieval/services/retrievalPipelineService.js";
-import type { RewriteContinuityState } from "../../retrieval/domain/retrievalPipelineTypes.js";
+import type { RetrievalPipelineService, RewriteContinuityState } from "../../retrieval/public.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";

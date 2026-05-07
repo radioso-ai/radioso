@@ -3,6 +3,7 @@ import { PromptContextSelectorService } from "./promptContextSelectorService.js"
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { CandidatePreparationStageResult, ContextSelectionStage as ContextSelectionStageContract } from "./retrievalPipelineStages.js";
 import { getContextSelectionClauses } from "./retrievalShapeResolver.js";
+import type { RerankedCandidate, RetrievedCandidate } from "../domain/retrievalPipelineTypes.js";
 
 export class ContextSelectionStageService implements ContextSelectionStageContract {
   constructor(
@@ -21,12 +22,17 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
       RETRIEVAL_BEHAVIOR.rerank.candidateLimit,
     );
     const rerankCandidates = input.scoredCandidates.slice(0, rerankCandidateCount);
-    const reranked = await this.rerankService.rerank({
-      query: input.activeParsedQuery.semanticQuery || input.activeQuery,
-      contexts: rerankCandidates,
-      enabled: rerankEnabled,
-      topK: rerankCandidateCount,
-    });
+    const reranked = !rerankEnabled && clauses.ranking.lexicalBias === "preferred"
+      ? {
+          contexts: this.keepPreparedOrder(rerankCandidates, rerankCandidateCount),
+          status: "skipped" as const,
+        }
+      : await this.rerankService.rerank({
+          query: input.activeParsedQuery.semanticQuery || input.activeQuery,
+          contexts: rerankCandidates,
+          enabled: rerankEnabled,
+          topK: rerankCandidateCount,
+        });
     const contexts = this.promptContextSelectorService.select({
       contexts: reranked.contexts,
       topK: finalContextTopK,
@@ -38,5 +44,13 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
       rerankStatus: reranked.status,
       contexts,
     };
+  }
+
+  private keepPreparedOrder(contexts: RetrievedCandidate[], topK: number): RerankedCandidate[] {
+    return contexts.slice(0, topK).map((context, index) => ({
+      ...context,
+      relevanceScore: context.similarity,
+      rerankPosition: index,
+    }));
   }
 }

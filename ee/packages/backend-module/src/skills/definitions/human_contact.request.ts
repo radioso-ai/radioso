@@ -58,7 +58,7 @@ export const humanContactRequestSkillDefinition: SkillDefinition = {
       displayName: "Trigger evaluation",
       clauses: {
         deterministicSources: [
-          "explicit_ui_action",
+          "explicit_user_request",
           "no_context_refusal",
           "grounded_degraded_unsupported_segments",
         ],

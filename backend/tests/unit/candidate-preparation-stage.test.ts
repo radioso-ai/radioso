@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CandidatePreparationStageService } from "../../src/modules/retrieval/services/candidatePreparationStage.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { MetadataRuleScoringService } from "../../src/modules/retrieval/services/metadataRuleScoringService.js";
+import { selectRetrievalAnswerShape } from "../../src/modules/retrieval/services/retrievalShapeResolver.js";
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import type { CandidateRetrievalStageResult } from "../../src/modules/retrieval/services/retrievalPipelineStages.js";
 import type { RetrievedChunk } from "../../src/modules/retrieval/infra/vectorSearch.js";
@@ -172,6 +173,60 @@ describe("candidate preparation stage", () => {
       outcome: "applied",
       summary: "dateFrom > 2026-01-01",
     });
+  });
+
+  it("applies lexical-preferred resolved shape clauses before capping candidates", async () => {
+    const stage = new CandidatePreparationStageService(
+      new CandidatePreparationService(),
+      new MetadataRuleScoringService(),
+    );
+    const candidateCount = RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap + 1;
+    const rewrittenContexts = Array.from({ length: candidateCount }, (_, index) =>
+      semanticChunk(index, {
+        similarity: 0.99 - index / 1000,
+      }),
+    );
+    const lexicalCandidate = semanticChunk(999, {
+      chunkId: "lexical-definition",
+      documentId: "lexical-definition-doc",
+      title: "BM25",
+      content: "BM25 definition content",
+      searchText: "BM25 definition content",
+      similarity: 0.2,
+    });
+
+    const result = await stage.execute({
+      ...buildInput(rewrittenContexts),
+      rewrittenQuery: {
+        ...buildInput([]).rewrittenQuery,
+        structuredResult: {
+          rewrittenQuery: "BM25",
+          queryShape: "definition_lookup",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        },
+      },
+      shapeSelection: selectRetrievalAnswerShape({
+        query: "BM25",
+        rewrittenQuery: {
+          ...buildInput([]).rewrittenQuery,
+          structuredResult: {
+            rewrittenQuery: "BM25",
+            queryShape: "definition_lookup",
+            turnKind: "fresh_subject",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.9,
+          },
+        },
+      }),
+      lexicalContexts: [lexicalCandidate],
+    });
+
+    expect(result.scoredCandidates[0]?.chunkId).toBe("lexical-definition");
+    expect(result.scoredCandidates.some((candidate) => candidate.chunkId === "lexical-definition")).toBe(true);
   });
 
   it("enacts only matched trigger rules and records backoff for empty hard filters", async () => {

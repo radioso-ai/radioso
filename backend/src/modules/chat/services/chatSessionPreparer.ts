@@ -78,9 +78,20 @@ export class ChatSessionPreparer {
     const turnRoute = this.chatTurnIntentService.resolve({
       responseIntent: interpretation.interpretation.result.responseIntent,
     });
+    const interpretedWithExecution = {
+      ...interpretation,
+      request: {
+        ...interpretation.request,
+        execution: {
+          surface: "assistant" as const,
+          path: turnRoute === CHAT_TURN_ROUTE.RETRIEVAL ? "assistant_retrieval" as const : "assistant_direct" as const,
+          retrievalInvoked: turnRoute === CHAT_TURN_ROUTE.RETRIEVAL,
+        },
+      },
+    };
     const retrieval = turnRoute === CHAT_TURN_ROUTE.RETRIEVAL
-      ? await retrievalPipeline.runInterpreted(interpretation)
-      : await retrievalPipeline.runWithoutRetrieval(interpretation);
+      ? await retrievalPipeline.runInterpreted(interpretedWithExecution)
+      : await retrievalPipeline.runWithoutRetrieval(interpretedWithExecution);
     const persistedConversation =
       conversation ?? await this.conversationRepository.create(
         input.workspaceId,

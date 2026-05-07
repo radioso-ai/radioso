@@ -4,6 +4,7 @@ import { createEnterpriseEmailService } from "../mail/emailService.js";
 import { humanContactMigrator } from "./humanContactMigrator.js";
 import { createHumanContactRoutes } from "./humanContactRoutes.js";
 import { EnterpriseHumanContactService } from "./humanContactService.js";
+import { humanContactRequestSkillDefinition } from "../skills/definitions/human_contact.request.js";
 
 export interface HumanContactModuleState {
   service: EnterpriseHumanContactService | null;
@@ -16,6 +17,7 @@ export const createHumanContactApplicationModule = (
   name: "Radioso Enterprise Human Contact",
   register(context) {
     context.registerDatabaseMigrator(humanContactMigrator);
+    context.registerSkillDefinition?.(humanContactRequestSkillDefinition);
     context.registerChatActionProvider((dependencies) => {
       state.service?.stop();
       state.service = new EnterpriseHumanContactService({

@@ -7,8 +7,8 @@ import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspace
 import {
   isAssistantBootstrapActive,
   resolveAssistantDisplayName,
-} from "../../../modules/settings/domain/assistantBootstrapSettings.js";
-import { verifyPublicChatSession } from "../../../modules/settings/domain/publicChatSession.js";
+} from "../../../modules/settings/contracts/assistantBootstrap.js";
+import { verifyPublicChatSession } from "../../../modules/settings/contracts/publicChatSession.js";
 
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 export const ANONYMOUS_SESSION_HEADER = "x-radioso-anonymous-session";

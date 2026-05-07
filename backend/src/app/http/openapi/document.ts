@@ -38,7 +38,7 @@ import {
   anonymousChatSchema,
   publicConversationParamsSchema,
 } from "../routes/publicChatRoutes.js";
-import { websiteEmbedLauncherIcons, websiteEmbedLauncherPositions } from "../../../modules/settings/domain/websiteEmbedSettings.js";
+import { websiteEmbedLauncherIcons, websiteEmbedLauncherPositions } from "../../../modules/settings/contracts/websiteEmbed.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
 import {
   MAX_SUGGESTED_QUESTIONS_COUNT,
@@ -48,7 +48,7 @@ import {
   metadataRuleOperators,
   metadataRuleTriggerModes,
   metadataValueTypes,
-} from "../../../modules/settings/domain/retrievalSettings.js";
+} from "../../../modules/settings/contracts/retrieval.js";
 
 extendZodWithOpenApi(z);
 

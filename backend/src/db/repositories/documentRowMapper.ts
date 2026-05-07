@@ -5,7 +5,7 @@ import type {
 import {
   inferMetadataValueType,
   type MetadataValueType,
-} from "../../modules/settings/domain/retrievalSettings.js";
+} from "../../modules/settings/contracts/retrieval.js";
 
 export interface DocumentRow {
   id: string;

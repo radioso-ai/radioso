@@ -1,32 +1,11 @@
-import type { RetrievalExecutionDiagnostics, RewriteContinuityState } from "../../retrieval/public.js";
 import type { AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
-import type { ProductAnalyticsEvent } from "../../../shared/analytics/productAnalyticsTypes.js";
-import type { IncidentEvent } from "../../../shared/incidents/incidentTypes.js";
 import {
   extractIncidentLogFields,
   extractProductAnalyticsLogFields,
   extractRetrievalLogFields,
   type AppLogger,
 } from "../../../shared/observability/logger.js";
-
-export interface AuditEventMetadata extends Record<string, unknown> {
-  retrieval?: RetrievalExecutionDiagnostics;
-  analytics?: ProductAnalyticsEvent;
-  incident?: IncidentEvent;
-}
-
-interface ChatAnswerAuditMetadata extends AuditEventMetadata {
-  conversationId?: string;
-  rewriteContinuityState?: RewriteContinuityState;
-}
-
-export interface AuditEventInput {
-  accountId?: string | null;
-  workspaceId?: string | null;
-  eventType: string;
-  eventStatus: "success" | "failure";
-  metadata?: AuditEventMetadata;
-}
+import type { AuditEventInput, ChatAnswerAuditMetadata } from "../contracts/index.js";
 
 export class AuditService {
   constructor(

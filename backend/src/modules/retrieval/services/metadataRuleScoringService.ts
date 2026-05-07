@@ -5,9 +5,9 @@ import type {
   MetadataRuleOperator,
   MetadataValueType,
   RetrievalMetadataRule,
-} from "../../settings/domain/retrievalSettings.js";
-import { getNormalizedMetadataConditions } from "../../settings/domain/retrievalSettings.js";
-import { isDynamicDateToken, resolveDynamicDateTokenToEpochMs } from "../../settings/domain/dynamicDateToken.js";
+} from "../../settings/contracts/retrieval.js";
+import { getNormalizedMetadataConditions } from "../../settings/contracts/retrieval.js";
+import { isDynamicDateToken, resolveDynamicDateTokenToEpochMs } from "../../settings/contracts/dynamicDateToken.js";
 
 export class MetadataRuleScoringService {
   apply(input: {

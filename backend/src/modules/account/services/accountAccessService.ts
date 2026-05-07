@@ -5,7 +5,7 @@ import type {
   AccountMembershipRole,
   AccountMembershipUserRecord,
 } from "../../../db/repositories/accountMembershipRepository.js";
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 
 export class AccountAccessService {
   constructor(

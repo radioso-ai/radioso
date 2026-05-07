@@ -1,5 +1,5 @@
 import type { AnswerSegment, CitationEvidence } from "../contracts/answerTypes.js";
-import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import {
   type HiddenSupportEvidence,
   type ValidatedAnswer,

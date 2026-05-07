@@ -2,7 +2,7 @@ import {
   buildResponseIdentityLines,
   type ResponseIdentity,
 } from "../../../shared/domain/responseIdentity.js";
-import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 import type { ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { ConversationModeInstructionBuilder } from "./conversationModeInstructionBuilder.js";
 

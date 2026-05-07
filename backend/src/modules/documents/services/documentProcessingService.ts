@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { AuditService } from "../../audit/services/auditService.js";
+import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentProcessingJobRecord } from "../../../db/repositories/documentProcessingJobRepository.js";
 import {
   deriveChunkSection,
@@ -12,7 +12,7 @@ import {
   type ChunkingStrategyId,
   type EmbeddingService,
 } from "../../retrieval/public.js";
-import type { IngestionSettingsRecord } from "../../settings/domain/ingestionSettings.js";
+import type { IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type {
   ChunkRecord,

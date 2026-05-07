@@ -1,4 +1,4 @@
-import type { ConversationMode } from "../../settings/domain/retrievalSettings.js";
+import type { ConversationMode } from "../../settings/contracts/retrieval.js";
 
 export interface ConversationModeInstructionInput {
   conversationMode: ConversationMode;

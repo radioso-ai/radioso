@@ -38,6 +38,9 @@ describe("default application composition", () => {
       capability: "documents.delete",
       workspaceId: "workspace-1",
     })).resolves.toEqual({ allowed: true });
+    expect(composition.skillCatalogRegistry.get("retrieval.answer")).toMatchObject({
+      name: "retrieval.answer",
+    });
     expect(composition.connectors).toEqual([]);
     expect(composition.modules).toEqual([]);
   });
@@ -58,6 +61,44 @@ describe("default application composition", () => {
 
     expect(composition.connectors).toEqual([connector]);
     expect(composition.modules.map((module) => module.id)).toEqual(["connector-module"]);
+  });
+
+  it("applies optional skill catalog entries through module registration", () => {
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+      modules: [
+        {
+          id: "skill-module",
+          register(context) {
+            context.registerSkillCatalogEntry({
+              name: "custom.workflow",
+              displayName: "Custom workflow",
+              description: "Run a custom workflow supplied by an optional module.",
+              owner: "platform",
+              executionClass: "interactive",
+              supportedCallers: ["sdk"],
+              requiredCapabilities: [],
+              contractReferences: [
+                {
+                  kind: "documentation",
+                  label: "Custom workflow documentation",
+                  path: "docs/custom-workflow.md",
+                },
+              ],
+              diagnostics: {
+                defined: true,
+                strategyAware: false,
+              },
+            });
+          },
+        },
+      ],
+    });
+
+    expect(composition.skillCatalogRegistry.get("custom.workflow")).toMatchObject({
+      name: "custom.workflow",
+      owner: "platform",
+    });
   });
 
   it("collects optional sink and adapter contributions through module registration", () => {

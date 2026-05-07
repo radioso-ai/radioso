@@ -418,6 +418,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List available Radioso skills */
+        get: operations["listSkills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skillName}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one Radioso skill catalog entry */
+        get: operations["getSkill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/retrieval/answer": {
         parameters: {
             query?: never;
@@ -1677,6 +1711,103 @@ export interface components {
             message: "This request is outside retrieval scope.";
         };
         RetrievalAnswerResponse: components["schemas"]["RetrievalAnswerSuccess"] | components["schemas"]["RetrievalAnswerUnsupported"];
+        SkillAvailability: {
+            /** @enum {string} */
+            state: "available" | "forbidden" | "unavailable";
+            reason?: string;
+        };
+        SkillContractReference: {
+            /** @enum {string} */
+            kind: "http" | "sdk" | "mcp_tool" | "documentation";
+            label: string;
+            /** @enum {string} */
+            method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+            path: string;
+        };
+        SkillDiagnosticsSummary: {
+            defined: boolean;
+            strategyAware: boolean;
+            supportedFields?: string[];
+        };
+        SkillDiagnosticEvidence: {
+            queryShape?: string;
+            retrievalStrategy?: string;
+            candidateSourceSummary?: {
+                [key: string]: unknown;
+            };
+            ranking?: {
+                [key: string]: unknown;
+            };
+            /** @enum {string} */
+            evidenceStatus?: "found" | "missing" | "partial" | "not_applicable";
+            /** @enum {string} */
+            supportStatus?: "supported" | "unsupported" | "not_checked" | "not_applicable";
+            groundingOutcome?: string;
+        };
+        SkillDiagnosticDefinition: {
+            skillName: string;
+            strategy?: string;
+            /** @enum {string} */
+            selectionMode: "deterministic" | "probabilistic";
+            selectionReason?: string;
+            selectionConfidence?: number;
+            /** @enum {string} */
+            callerSurface: "assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed";
+            capabilityChecks: {
+                capability: string;
+                allowed: boolean;
+                reason?: string;
+            }[];
+            parameters?: {
+                [key: string]: unknown;
+            };
+            fallback?: {
+                used: boolean;
+                reason?: string;
+                path?: string;
+            };
+            /** @enum {string} */
+            outcome: "success" | "unsupported" | "forbidden" | "failed" | "skipped";
+            error?: {
+                code: string;
+                message?: string;
+            };
+            evidence?: {
+                queryShape?: string;
+                retrievalStrategy?: string;
+                candidateSourceSummary?: {
+                    [key: string]: unknown;
+                };
+                ranking?: {
+                    [key: string]: unknown;
+                };
+                /** @enum {string} */
+                evidenceStatus?: "found" | "missing" | "partial" | "not_applicable";
+                /** @enum {string} */
+                supportStatus?: "supported" | "unsupported" | "not_checked" | "not_applicable";
+                groundingOutcome?: string;
+            };
+        };
+        SkillCatalogEntry: {
+            name: string;
+            displayName: string;
+            description: string;
+            /** @enum {string} */
+            owner: "assistant" | "retrieval" | "documents" | "mcp" | "platform" | "auth";
+            /** @enum {string} */
+            executionClass: "interactive" | "deferred" | "administrative";
+            availability: components["schemas"]["SkillAvailability"];
+            supportedCallers: ("assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed")[];
+            requiredCapabilities: string[];
+            contractReferences: components["schemas"]["SkillContractReference"][];
+            diagnostics: components["schemas"]["SkillDiagnosticsSummary"];
+        };
+        SkillCatalogResponse: {
+            skills: components["schemas"]["SkillCatalogEntry"][];
+        };
+        SkillParams: {
+            skillName: string;
+        };
         ChatSuggestion: {
             text: string;
             kind: string;
@@ -3317,6 +3448,75 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skills catalog returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCatalogResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skillName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skill catalog entry returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCatalogEntry"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Skill not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

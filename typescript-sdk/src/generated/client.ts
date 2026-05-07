@@ -10,6 +10,8 @@ export type GeneralSettingsResponse = components["schemas"]["GeneralSettingsResp
 export type UpdateGeneralSettingsRequest = components["schemas"]["UpdateGeneralSettingsRequest"];
 export type WorkspaceSummaryResponse = components["schemas"]["WorkspaceSummaryResponse"];
 export type WorkspaceIngestionReprocessResponse = components["schemas"]["WorkspaceIngestionReprocessResponse"];
+export type SkillCatalogEntry = components["schemas"]["SkillCatalogEntry"];
+export type SkillCatalogResponse = components["schemas"]["SkillCatalogResponse"];
 export type DocumentCreateRequest = components["schemas"]["DocumentCreateRequest"];
 export type DocumentOperationResponse = components["schemas"]["DocumentOperationResponse"];
 export type DocumentListResponse = components["schemas"]["DocumentListResponse"];
@@ -106,6 +108,20 @@ export class GeneratedRadiosoClient {
     return requestJson(this.config, {
       method: "GET",
       path: "/api/v1/workspace/summary",
+    });
+  }
+
+  listSkills(): Promise<SkillCatalogResponse> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: "/api/v1/skills",
+    });
+  }
+
+  getSkill(skillName: string): Promise<SkillCatalogEntry> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: `/api/v1/skills/${encodeURIComponent(skillName)}`,
     });
   }
 

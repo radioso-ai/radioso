@@ -1,11 +1,26 @@
 export const capabilityNames = {
+  assistant: {
+    chat: "assistant.chat",
+  },
+  retrieval: {
+    // Raw evidence retrieval surfaces: `/api/v1/retrieval/search` and `/api/v1/retrieval/answer`.
+    search: "retrieval.search",
+    answer: "retrieval.answer",
+  },
   documents: {
+    ingest: "documents.ingest",
+    // Document management search surfaces, including document search history.
+    search: "documents.search",
     delete: "documents.delete",
+  },
+  mcp: {
+    describeCapabilities: "mcp.describe_capabilities",
   },
 } as const;
 
-export type CapabilityName =
-  (typeof capabilityNames)[keyof typeof capabilityNames][keyof (typeof capabilityNames)[keyof typeof capabilityNames]];
+type CapabilityGroupValue<T> = T extends Record<string, infer Value> ? Value : never;
+
+export type CapabilityName = CapabilityGroupValue<(typeof capabilityNames)[keyof typeof capabilityNames]>;
 
 const knownCapabilityNames = new Set<string>(
   Object.values(capabilityNames).flatMap((group) => Object.values(group)),

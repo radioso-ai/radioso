@@ -11,4 +11,4 @@ const openApiDocument = createOpenApiDocument();
 
 await mkdir(rootDir, { recursive: true });
 await writeFile(jsonPath, JSON.stringify(openApiDocument, null, 2) + "\n", "utf8");
-await writeFile(yamlPath, stringify(openApiDocument, { lineWidth: 0 }) + "\n", "utf8");
+await writeFile(yamlPath, stringify(openApiDocument, { lineWidth: 0 }).replace(/\n*$/, "\n"), "utf8");

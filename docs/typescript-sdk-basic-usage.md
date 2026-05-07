@@ -141,6 +141,23 @@ await client.settings.updateGeneral({
 });
 ```
 
+## Skills
+
+Skills describe the product-facing work a Radioso workspace can do. The catalog is read-only. It points to the current stable contracts instead of adding generic skill execution.
+
+List skills:
+
+```ts
+const catalog = await client.skills.list();
+```
+
+Read one skill:
+
+```ts
+const retrievalAnswer = await client.skills.get("retrieval.answer");
+console.log(retrievalAnswer.contractReferences);
+```
+
 ## Non-Streaming Chat
 
 SDK chat methods target the assistant chat surface. Use them for human-facing assistant conversations that should keep history and may answer directly or with retrieval-backed evidence.
@@ -227,6 +244,7 @@ try {
 - `baseUrl` should be the Radioso server origin, without a trailing slash.
 - The SDK sends the API token as `Authorization: Bearer <token>`.
 - Streaming chat is layered on top of the assistant chat contract, `POST /api/v1/assistant/chat`, with `stream: true`.
+- Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.
 - Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history.
 - Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
 - Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.

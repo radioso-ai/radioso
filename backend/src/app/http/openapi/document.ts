@@ -35,6 +35,16 @@ import { assistantChatSchema } from "../schemas/assistantChatSchemas.js";
 import { conversationParamsSchema } from "../routes/conversationRouteSchemas.js";
 import { retrievalAnswerSchema, retrievalSearchSchema } from "../routes/retrievalRoutes.js";
 import {
+  skillAvailabilitySchema,
+  skillCatalogEntrySchema,
+  skillCatalogResponseSchema,
+  skillContractReferenceSchema,
+  skillDiagnosticEvidenceSchema,
+  skillDiagnosticSchema,
+  skillDiagnosticsSummarySchema,
+  skillParamsSchema,
+} from "../../../modules/skills/public.js";
+import {
   anonymousChatSchema,
   publicConversationParamsSchema,
 } from "../routes/publicChatRoutes.js";
@@ -896,6 +906,23 @@ const RetrievalAnswerResponseSchema = registry.register(
   "RetrievalAnswerResponse",
   z.union([RetrievalAnswerSuccessSchema, RetrievalAnswerUnsupportedSchema]),
 );
+
+const SkillAvailabilitySchema = registry.register("SkillAvailability", skillAvailabilitySchema);
+const SkillContractReferenceSchema = registry.register("SkillContractReference", skillContractReferenceSchema);
+const SkillDiagnosticsSummarySchema = registry.register("SkillDiagnosticsSummary", skillDiagnosticsSummarySchema);
+const SkillDiagnosticEvidenceSchema = registry.register("SkillDiagnosticEvidence", skillDiagnosticEvidenceSchema);
+const SkillDiagnosticDefinitionSchema = registry.register("SkillDiagnosticDefinition", skillDiagnosticSchema);
+const SkillCatalogEntrySchema = registry.register("SkillCatalogEntry", skillCatalogEntrySchema.extend({
+  availability: SkillAvailabilitySchema,
+  contractReferences: z.array(SkillContractReferenceSchema),
+  diagnostics: SkillDiagnosticsSummarySchema,
+}));
+const SkillCatalogResponseSchema = registry.register("SkillCatalogResponse", skillCatalogResponseSchema.extend({
+  skills: z.array(SkillCatalogEntrySchema),
+}));
+const SkillParamsSchema = registry.register("SkillParams", skillParamsSchema);
+void SkillDiagnosticEvidenceSchema;
+void SkillDiagnosticDefinitionSchema;
 
 const ChatSuggestionSchema = registry.register(
   "ChatSuggestion",
@@ -2531,6 +2558,71 @@ registry.registerPath({
     },
     401: {
       description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/skills",
+  tags: ["Skills"],
+  summary: "List available Radioso skills",
+  operationId: "listSkills",
+  security: [{ [bearerAuthScheme.name]: [] }, ...workspaceAdminSecurity],
+  responses: {
+    200: {
+      description: "Skills catalog returned",
+      content: {
+        "application/json": {
+          schema: SkillCatalogResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/skills/{skillName}",
+  tags: ["Skills"],
+  summary: "Get one Radioso skill catalog entry",
+  operationId: "getSkill",
+  security: [{ [bearerAuthScheme.name]: [] }, ...workspaceAdminSecurity],
+  request: {
+    params: SkillParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Skill catalog entry returned",
+      content: {
+        "application/json": {
+          schema: SkillCatalogEntrySchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Skill not found",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,

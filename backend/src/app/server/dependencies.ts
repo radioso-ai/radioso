@@ -84,6 +84,7 @@ import {
 } from "../composition/index.js";
 import type { AppDependencies } from "./types.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import { SkillCatalogService } from "../../modules/skills/public.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -331,6 +332,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
     websiteEmbedIntegration: composition.websiteEmbedIntegration,
   });
+  const skillCatalogService = new SkillCatalogService({
+    capabilityPolicy: composition.capabilityPolicy,
+    registry: composition.skillCatalogRegistry,
+  });
   const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
   const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository);
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
@@ -397,6 +402,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalSearchService,
     retrievalAnswerService,
     platformSettingsService,
+    skillCatalogService,
     accountRepository,
     userRepository,
     workspaceRepository,

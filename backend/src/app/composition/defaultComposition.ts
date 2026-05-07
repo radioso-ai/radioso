@@ -35,6 +35,10 @@ import {
   createApplicationExtensionRegistry,
   type ApplicationModule,
 } from "./applicationModule.js";
+import {
+  createDefaultSkillCatalogRegistry,
+  type SkillCatalogRegistry,
+} from "../../modules/skills/public.js";
 
 export interface ApplicationComposition {
   capabilityPolicy: CapabilityPolicy;
@@ -51,6 +55,7 @@ export interface ApplicationComposition {
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
   chatActionProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["chatActionProviderRegistration"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
+  skillCatalogRegistry: SkillCatalogRegistry;
   lifecycle: ApplicationModuleCoordinator;
   modules: ApplicationModule[];
 }
@@ -81,6 +86,7 @@ export const createDefaultApplicationComposition = (options: {
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
     chatActionProviderRegistration: registry.chatActionProviderRegistration,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
+    skillCatalogRegistry: createDefaultSkillCatalogRegistry(registry.skillCatalogEntries),
     lifecycle: coordinator,
     modules: coordinator.registeredModules,
   };

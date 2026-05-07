@@ -23,6 +23,7 @@ import type { AbuseControlService } from "../../modules/security/services/abuseC
 import type { AuditService } from "../../modules/audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
+import type { SkillCatalogEntryDefinition } from "../../modules/skills/public.js";
 
 export interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
@@ -86,6 +87,7 @@ export interface ApplicationExtensionRegistry {
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
   chatActionProviderRegistration?: ApplicationChatActionProviderRegistration;
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
+  skillCatalogEntries: SkillCatalogEntryDefinition[];
 }
 
 export interface ApplicationModuleRegistrationContext {
@@ -104,6 +106,7 @@ export interface ApplicationModuleRegistrationContext {
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
   registerChatActionProvider(provider: ApplicationChatActionProviderRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
+  registerSkillCatalogEntry(entry: SkillCatalogEntryDefinition): void;
 }
 
 export interface ApplicationModule {
@@ -122,6 +125,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   databaseMigrators: [],
   routeMounts: [],
   accountCreatedHooks: [],
+  skillCatalogEntries: [],
 });
 
 const createRegistrationContext = (registry: ApplicationExtensionRegistry): ApplicationModuleRegistrationContext => ({
@@ -169,6 +173,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerContactHistoryProvider(provider) {
     registry.contactHistoryProviderRegistration = provider;
+  },
+  registerSkillCatalogEntry(entry) {
+    registry.skillCatalogEntries.push(entry);
   },
 });
 

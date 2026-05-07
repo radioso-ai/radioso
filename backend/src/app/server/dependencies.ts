@@ -51,7 +51,7 @@ import {
   RetrievalExecutionTelemetryService,
   RetrievalPipelineService,
   RetrievalSearchService,
-} from "../../modules/retrieval/public.js";
+} from "../../modules/retrieval/composition.js";
 import { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../modules/settings/services/platformSettingsService.js";
 import { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";

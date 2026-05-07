@@ -14,7 +14,7 @@ import type { WorkspaceIngestionReprocessService } from "../../modules/documents
 import type { IngestionSettingsService } from "../../modules/settings/services/ingestionSettingsService.js";
 import type { PlatformSettingsService } from "../../modules/settings/services/platformSettingsService.js";
 import type { RetrievalSettingsService } from "../../modules/settings/services/retrievalSettingsService.js";
-import type { RetrievalAnswerService, RetrievalSearchService } from "../../modules/retrieval/public.js";
+import type { RetrievalAnswerService, RetrievalSearchService } from "../../modules/retrieval/composition.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import type { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";

@@ -53,7 +53,7 @@ This feature does not add persistent data, database tables, API payloads, queue 
 
 **Validation rules**:
 
-- Must import retrieval-owned symbols from the retrieval public surface.
+- Must import retrieval-owned symbols from approved retrieval root entry points.
 - Must not import retrieval domain, service, or infrastructure internals directly.
 
 ## Boundary Rule
@@ -64,17 +64,17 @@ This feature does not add persistent data, database tables, API payloads, queue 
 
 - Source scope: backend production source outside retrieval
 - Forbidden targets: retrieval domain, service, and infrastructure internals
-- Allowed target: retrieval public surface
+- Allowed targets: approved retrieval root entry points
 - Exclusions: backend tests, built output, generated OpenAPI output
 
 **Validation rules**:
 
 - Must fail on a representative direct production import from retrieval internals.
-- Must pass after production imports use the public surface.
+- Must pass after production imports use approved retrieval root entry points.
 
 ## State Transitions
 
 1. **Current state**: Production consumers import retrieval internals directly.
 2. **Red validation state**: Boundary lint exists and fails on current direct production imports.
-3. **Migrated state**: Public surface exists and production imports use it.
+3. **Migrated state**: Approved root entry points exist and production imports use them.
 4. **Enforced state**: Boundary lint passes locally and in CI, and future direct imports fail.

@@ -7,18 +7,18 @@
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Depend On Retrieval Through One Public Surface (Priority: P1)
+### User Story 1 - Depend On Retrieval Through Approved Root Entry Points (Priority: P1)
 
-As a Radioso maintainer, I want production code outside retrieval to depend on one retrieval public surface so retrieval internals can evolve without silent cross-module coupling.
+As a Radioso maintainer, I want production code outside retrieval to depend on approved retrieval root entry points so retrieval internals can evolve without silent cross-module coupling.
 
-**Why this priority**: This is the core value of the pilot. Without a single public surface, the project cannot distinguish intentional retrieval contracts from incidental imports of internal services, domain helpers, or infrastructure details.
+**Why this priority**: This is the core value of the pilot. Without approved public entry points, the project cannot distinguish intentional retrieval contracts from incidental imports of internal services, domain helpers, or infrastructure details.
 
-**Independent Test**: Can be tested by reviewing production cross-module retrieval usage and confirming every non-retrieval production consumer imports retrieval-owned symbols through the retrieval public surface while existing retrieval behavior remains unchanged.
+**Independent Test**: Can be tested by reviewing production cross-module retrieval usage and confirming every non-retrieval production consumer imports retrieval-owned symbols through an approved retrieval root entry point while existing retrieval behavior remains unchanged.
 
 **Acceptance Scenarios**:
 
-1. **Given** a production file outside the retrieval module needs a retrieval request type, result type, diagnostic type, service, helper, or adapter that retrieval intends to expose, **When** the file imports that symbol, **Then** the import goes through the retrieval public surface rather than a retrieval internal path.
-2. **Given** a retrieval-internal symbol is not part of the public surface, **When** production code outside retrieval attempts to import it directly, **Then** the boundary check reports the violation before merge.
+1. **Given** a production file outside the retrieval module needs a retrieval request type, result type, diagnostic type, service, helper, or adapter that retrieval intends to expose, **When** the file imports that symbol, **Then** the import goes through an approved retrieval root entry point rather than a retrieval internal path.
+2. **Given** a retrieval-internal symbol is not part of an approved entry point, **When** production code outside retrieval attempts to import it directly, **Then** the boundary check reports the violation before merge.
 3. **Given** retrieval module internals continue to import their own domain, service, and infrastructure files, **When** the boundary check runs, **Then** retrieval-internal imports remain allowed.
 
 ---
@@ -33,7 +33,7 @@ As a product maintainer, I want this boundary pilot to be an import-surface refa
 
 **Acceptance Scenarios**:
 
-1. **Given** existing retrieval-backed chat, document processing, settings, audit, database, provider, and app-composition flows, **When** imports are migrated to the retrieval public surface, **Then** the flows compile and behave as before.
+1. **Given** existing retrieval-backed chat, document processing, settings, audit, database, provider, and app-composition flows, **When** imports are migrated to approved retrieval entry points, **Then** the flows compile and behave as before.
 2. **Given** public API, SDK, MCP, database schema, frontend routes, and OpenAPI contracts before this feature, **When** the feature ships, **Then** those contracts remain unchanged.
 3. **Given** tests that import retrieval internals for focused coverage, **When** this pilot ships, **Then** those tests may continue to import internals unless a later approved spec expands enforcement to tests.
 
@@ -50,7 +50,7 @@ As a reviewer, I want continuous integration to fail on direct production import
 **Acceptance Scenarios**:
 
 1. **Given** a production file outside retrieval imports from retrieval domain, service, or infrastructure internals, **When** boundary lint runs, **Then** the check fails and identifies the direct internal import.
-2. **Given** a production file outside retrieval imports the same needed symbol through the retrieval public surface, **When** boundary lint runs, **Then** the check passes.
+2. **Given** a production file outside retrieval imports the same needed symbol through an approved retrieval root entry point, **When** boundary lint runs, **Then** the check passes.
 3. **Given** generated output, distribution output, or backend tests import retrieval internals, **When** boundary lint runs, **Then** those paths are excluded from the first enforcement pass.
 4. **Given** backend CI runs for a pull request, **When** backend dependencies are installed, **Then** the retrieval boundary check runs as part of CI before the pull request can merge.
 
@@ -66,14 +66,14 @@ As a future contributor, I want documentation that explains module public surfac
 
 **Acceptance Scenarios**:
 
-1. **Given** a contributor needs retrieval behavior from outside retrieval, **When** they read the architecture documentation, **Then** they can identify that production imports must use the retrieval public surface.
-2. **Given** a contributor wants to expose a new retrieval symbol, **When** they read the documentation, **Then** they understand that promoting the symbol to the public surface is an intentional contract decision.
+1. **Given** a contributor needs retrieval behavior from outside retrieval, **When** they read the architecture documentation, **Then** they can identify that production imports must use an approved retrieval root entry point.
+2. **Given** a contributor wants to expose a new retrieval symbol, **When** they read the documentation, **Then** they understand that promoting the symbol to an entry point is an intentional contract decision.
 3. **Given** a maintainer plans the next module-boundary iteration, **When** they read the documentation, **Then** they can identify documents, chat, and settings as likely follow-up candidates rather than widening this pilot.
 
 ### Edge Cases
 
-- What happens when a needed retrieval symbol is used outside retrieval but is not exported from the public surface yet? The implementation must either promote it intentionally through the public surface or refactor the consumer so it no longer depends on retrieval internals.
-- What happens when two public exports with similar names obscure ownership? The public surface must keep export names clear enough for maintainers to distinguish request/result contracts, diagnostics, services, helpers, and adapters.
+- What happens when a needed retrieval symbol is used outside retrieval but is not exported from an approved entry point yet? The implementation must either promote it intentionally through the right entry point or refactor the consumer so it no longer depends on retrieval internals.
+- What happens when two public exports with similar names obscure ownership? Retrieval entry points must keep export names clear enough for maintainers to distinguish request/result contracts, diagnostics, services, helpers, and adapters.
 - What happens when a test imports retrieval internals directly? Tests remain excluded in this pilot so focused unit coverage does not become harder before the production boundary is proven.
 - What happens when generated or built output contains retrieval-internal paths? Generated and distribution output are excluded from the boundary rule to avoid enforcing against artifacts instead of source.
 - What happens when import migration touches app-wide wiring? The plan must evaluate application composition ownership and keep default runtime assembly in the composition layer rather than moving product rules there.
@@ -101,23 +101,23 @@ As a future contributor, I want documentation that explains module public surfac
 
 ## Architecture Constraints *(mandatory)*
 
-- **Boundary Rule**: The retrieval module owns grounded search, retrieval answer support, retrieval request/result contracts, retrieval diagnostics, retrieval-specific helper contracts, and retrieval infrastructure adapters. Production code outside retrieval may consume only symbols intentionally exposed by the retrieval public surface. Application composition owns default app-wide wiring when migrated imports touch replaceable runtime adapters or registries. Chat, documents, audit, settings, database, provider registry, and shared infrastructure modules remain consumers, not owners, of retrieval internals.
-- **Encapsulation Rule**: Retrieval domain, service, and infrastructure files must remain internal to retrieval unless a symbol is deliberately promoted through the public surface. Production consumers in app composition, chat, documents, audit, settings, database, and shared LLM infrastructure must not import retrieval internals directly. Tests may keep direct internal imports in this first pass. The dependency-boundary configuration must remain focused on boundary enforcement rather than becoming a catch-all lint system.
-- **New Seams Required**: A retrieval public entrypoint that re-exports only the retrieval contracts and services intentionally used outside retrieval; a backend boundary lint target that enforces the entrypoint for production source; and CI wiring that runs the boundary lint target for backend pull requests.
+- **Boundary Rule**: The retrieval module owns grounded search, retrieval answer support, retrieval request/result contracts, retrieval diagnostics, retrieval-specific helper contracts, and retrieval infrastructure adapters. Production code outside retrieval may consume only symbols intentionally exposed by approved retrieval root entry points. Application composition owns default app-wide wiring when migrated imports touch replaceable runtime adapters or registries. Chat, documents, audit, settings, database, provider registry, and shared infrastructure modules remain consumers, not owners, of retrieval internals.
+- **Encapsulation Rule**: Retrieval domain, service, and infrastructure files must remain internal to retrieval unless a symbol is deliberately promoted through an approved root entry point. Production consumers in app composition, chat, documents, audit, settings, database, and shared LLM infrastructure must not import retrieval internals directly. Tests may keep direct internal imports in this first pass. The dependency-boundary configuration must remain focused on boundary enforcement rather than becoming a catch-all lint system.
+- **New Seams Required**: Retrieval root entry points that re-export only the retrieval contracts, services, and adapters intentionally used outside retrieval; a backend boundary lint target that enforces approved entry points for production source; and CI wiring that runs the boundary lint target for backend pull requests.
 - **Anti-Goals**: Do not change runtime retrieval behavior, ranking, prompt behavior, chunking behavior, chat behavior, document processing behavior, settings behavior, API contracts, SDK contracts, MCP contracts, database schema, worker payloads, or frontend routes. Do not migrate unit tests in the first enforcement pass. Do not create public surfaces for documents, chat, or settings in this feature. Do not introduce intent-based dev profiles or frontend feature manifests in this feature.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: The system MUST provide a retrieval public surface that exposes only retrieval-owned symbols intentionally used by production code outside retrieval.
-- **FR-002**: The retrieval public surface MUST include the retrieval request and result contracts, trace and diagnostic contracts, public retrieval services, chunking contracts, search-text helpers, subject helpers, and LLM gateway adapters that existing production consumers legitimately need.
-- **FR-003**: Production source files outside retrieval MUST import retrieval-owned symbols through the retrieval public surface rather than direct retrieval domain, service, or infrastructure paths.
+- **FR-001**: The system MUST provide approved retrieval root entry points that expose only retrieval-owned symbols intentionally used by production code outside retrieval.
+- **FR-002**: Approved retrieval entry points MUST include the retrieval request and result contracts, trace and diagnostic contracts, public retrieval services, chunking contracts, search-text helpers, subject helpers, and LLM gateway adapters that existing production consumers legitimately need.
+- **FR-003**: Production source files outside retrieval MUST import retrieval-owned symbols through approved retrieval root entry points rather than direct retrieval domain, service, or infrastructure paths.
 - **FR-004**: Production source files inside retrieval MUST remain free to import retrieval domain, service, and infrastructure internals directly.
 - **FR-005**: Backend tests MUST be excluded from the first boundary enforcement pass so focused tests can continue to exercise retrieval internals.
 - **FR-006**: Generated output and distribution output MUST be excluded from the boundary enforcement rule.
 - **FR-007**: The system MUST include an automated boundary check that fails when production source outside retrieval directly imports retrieval domain, service, or infrastructure internals.
-- **FR-008**: The automated boundary check MUST pass when production source outside retrieval imports retrieval-owned symbols through the retrieval public surface.
+- **FR-008**: The automated boundary check MUST pass when production source outside retrieval imports retrieval-owned symbols through approved retrieval root entry points.
 - **FR-009**: The backend command set MUST include a named boundary lint target that maintainers can run locally.
 - **FR-010**: The backend command set MUST include or preserve a general lint target that runs the boundary lint target, without implying broader lint coverage that does not exist yet.
 - **FR-011**: Backend CI MUST run the boundary lint target after backend dependencies are available so direct retrieval-internal production imports are blocked before merge.
@@ -133,7 +133,8 @@ As a future contributor, I want documentation that explains module public surfac
 
 ### Key Entities *(include if feature involves data)*
 
-- **Retrieval Public Surface**: The intentional entrypoint for production code outside retrieval to consume retrieval-owned contracts, services, helpers, and adapters.
+- **Retrieval Public Surface**: The intentional entrypoint for production code outside retrieval to consume chat-safe retrieval-owned contracts and helpers.
+- **Retrieval Root Entry Point**: An approved root-level retrieval file such as `public.ts`, `composition.ts`, or `llmAdapters.ts` that exposes a narrower production import surface for a specific consumer class.
 - **Retrieval Internal Module**: Retrieval-owned domain, service, or infrastructure code that may be used freely inside retrieval but is private to external production consumers unless re-exported through the public surface.
 - **Production Consumer**: Backend production source outside retrieval, including app composition, chat, documents, audit, settings, database integration, and shared provider infrastructure.
 - **Boundary Rule**: Automated validation that distinguishes allowed public-surface imports from forbidden direct internal imports.
@@ -153,7 +154,7 @@ As a future contributor, I want documentation that explains module public surfac
 
 ### Measurable Outcomes
 
-- **SC-001**: 100% of production imports from outside retrieval to retrieval-owned symbols go through the retrieval public surface after migration.
+- **SC-001**: 100% of production imports from outside retrieval to retrieval-owned symbols go through approved retrieval root entry points after migration.
 - **SC-002**: A representative forbidden direct production import from retrieval internals fails the boundary lint target with an actionable violation.
 - **SC-003**: Backend CI includes the retrieval boundary lint target and blocks pull requests with direct production imports from retrieval internals.
 - **SC-004**: Backend build and focused composition validation pass after the import migration.

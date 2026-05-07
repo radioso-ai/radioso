@@ -9,7 +9,7 @@ cd backend
 npm run lint:boundaries
 ```
 
-Expected result: the command passes after production imports outside retrieval use `backend/src/modules/retrieval/public.ts`.
+Expected result: the command passes after production imports outside retrieval use approved retrieval root entry points such as `backend/src/modules/retrieval/public.ts`, `backend/src/modules/retrieval/composition.ts`, or `backend/src/modules/retrieval/llmAdapters.ts`.
 
 To validate the failure mode during development, temporarily add a direct production import from a file outside retrieval to a retrieval domain, service, or infrastructure file. `npm run lint:boundaries` must fail with a boundary violation. Remove the temporary import before committing.
 

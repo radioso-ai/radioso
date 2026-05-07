@@ -29,9 +29,9 @@
 
 ---
 
-## Phase 3: User Story 1 - Depend On Retrieval Through One Public Surface (Priority: P1) MVP
+## Phase 3: User Story 1 - Depend On Retrieval Through Approved Root Entry Points (Priority: P1) MVP
 
-**Goal**: Production consumers outside retrieval import retrieval-owned symbols through `backend/src/modules/retrieval/public.ts`.
+**Goal**: Production consumers outside retrieval import retrieval-owned symbols through approved retrieval root entry points.
 
 **Independent Test**: `cd backend && npm run lint:boundaries` passes once imports are migrated.
 
@@ -96,7 +96,7 @@
 
 **Goal**: Maintainers can repeat the public-surface pattern after the retrieval pilot.
 
-**Independent Test**: Documentation states production imports go through `public.ts`, retrieval is the pilot, tests are excluded in the first pass, and documents/chat/settings are future candidates.
+**Independent Test**: Documentation states production imports go through approved retrieval root entry points, retrieval is the pilot, tests are excluded in the first pass, and documents/chat/settings are future candidates.
 
 ### Tests for User Story 4
 

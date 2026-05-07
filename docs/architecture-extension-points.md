@@ -52,7 +52,7 @@ Some modules expose a public entry point for production code outside the module.
 
 In practice, production cross-module imports should go through that public surface. Internal folders such as `domain/`, `services/`, and `infra/` stay private unless the owning module promotes a symbol intentionally.
 
-Retrieval is the first backend pilot for this pattern. Production code outside `backend/src/modules/retrieval/` must import retrieval-owned contracts, services, helpers, and adapters through `backend/src/modules/retrieval/public.ts`. Direct production imports from retrieval internals are blocked by the backend boundary lint check.
+Retrieval is the first backend pilot for this pattern. Production code outside `backend/src/modules/retrieval/` must import retrieval-owned contracts and chat-safe helpers through `backend/src/modules/retrieval/public.ts`. Composition-only services that depend back on other modules use narrower root-level entry points such as `backend/src/modules/retrieval/composition.ts`, while provider registration uses `backend/src/modules/retrieval/llmAdapters.ts`. These narrower entry points are restricted to their intended consumers so the general public surface does not create import cycles. Direct production imports from retrieval internals are blocked by the backend boundary lint check.
 
 Backend tests are excluded from the first retrieval boundary pass. Focused unit tests may still import internals while the production boundary is proven.
 

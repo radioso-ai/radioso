@@ -13,7 +13,7 @@ import {
   FixedWindowChunkingStrategy,
   StructuredSemanticChunkingStrategy,
   type EmbeddingService,
-} from "../../modules/retrieval/public.js";
+} from "../../modules/retrieval/composition.js";
 import { buildAnalyticsSinks } from "../../shared/analytics/buildAnalyticsSinks.js";
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
 import { buildIncidentSinks } from "../../shared/incidents/buildIncidentSinks.js";

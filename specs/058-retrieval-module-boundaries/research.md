@@ -2,7 +2,7 @@
 
 ## Decision: Use dependency-cruiser for backend source boundary enforcement
 
-**Rationale**: The feature needs a focused import-boundary check, not a broad style linter. dependency-cruiser can parse TypeScript import graphs, match source and target paths, exclude tests and generated output, and run as an npm script in CI. This fits the requirement to fail on production imports from retrieval internals while allowing imports from `backend/src/modules/retrieval/public.ts`.
+**Rationale**: The feature needs a focused import-boundary check, not a broad style linter. dependency-cruiser can parse TypeScript import graphs, match source and target paths, exclude tests and generated output, and run as an npm script in CI. This fits the requirement to fail on production imports from retrieval internals while allowing imports from approved retrieval root entry points such as `backend/src/modules/retrieval/public.ts`.
 
 **Alternatives considered**:
 
@@ -19,9 +19,9 @@
 - Enforce tests immediately: stronger encapsulation, but it risks weakening focused unit-test ergonomics before the production boundary pattern is proven.
 - Enforce only CI and not local scripts: easier to add, but maintainers need a fast local command before pushing.
 
-## Decision: Make `public.ts` a curated re-export surface
+## Decision: Make retrieval root entry points curated re-export surfaces
 
-**Rationale**: A public entrypoint should declare what retrieval intentionally exposes without creating new runtime behavior. Re-exports preserve existing implementations and keep ownership in retrieval domain, service, and infrastructure files.
+**Rationale**: A public entrypoint should declare what retrieval intentionally exposes without creating new runtime behavior. Re-exports preserve existing implementations and keep ownership in retrieval domain, service, and infrastructure files. Separate root entry points keep chat-safe contracts, app composition wiring, and provider adapters from collapsing into one runtime barrel.
 
 **Alternatives considered**:
 

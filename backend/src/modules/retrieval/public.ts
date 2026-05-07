@@ -1,3 +1,13 @@
+import type { MessageRecord } from "../../db/repositories/messageRepository.js";
+import type { ResponseIdentity } from "../../shared/domain/responseIdentity.js";
+import type {
+  FinalPromptContext,
+  ResponseIntent,
+  ResponseLanguagePolicy,
+  RetrievalExecutionDiagnostics,
+  RetrievalTrace,
+} from "./domain/retrievalPipelineTypes.js";
+
 export {
   chunkingStrategyIds,
   normalizeMarkdown,
@@ -6,15 +16,7 @@ export {
   type ChunkingStrategyId,
   type ChunkOutput,
 } from "./domain/chunking/chunkingStrategy.js";
-export { ChunkingStrategyRegistry } from "./domain/chunking/chunkingStrategyRegistry.js";
-export {
-  chunkFixedWindowMarkdown,
-  FixedWindowChunkingStrategy,
-} from "./domain/chunking/fixedWindowChunkingStrategy.js";
-export {
-  StructuredSemanticChunkingStrategy,
-  type ChunkingSimilarityPort,
-} from "./domain/chunking/structuredSemanticChunkingStrategy.js";
+export type { ChunkingSimilarityPort } from "./domain/chunking/structuredSemanticChunkingStrategy.js";
 export type {
   ConversationContextWindow,
   ContinuityDecision,
@@ -61,65 +63,28 @@ export type {
   RetrievalSearchRequest,
   RetrievalSearchResult,
 } from "./domain/retrievalCapabilityTypes.js";
-export {
-  PgLexicalSearch,
-  type LexicalSearchPort,
-} from "./infra/lexicalSearch.js";
-export {
-  hasNonEmptyFilter,
-  PgVectorSearch,
-  type RetrievedChunk,
-  type VectorSearchPort,
+export type { LexicalSearchPort } from "./infra/lexicalSearch.js";
+export type {
+  RetrievedChunk,
+  VectorSearchPort,
 } from "./infra/vectorSearch.js";
-export { CandidatePreparationService } from "./services/candidatePreparationService.js";
-export { ConversationContextService } from "./services/conversationContextService.js";
 export { ConversationModeInstructionBuilder } from "./services/conversationModeInstructionBuilder.js";
 export { resolveContextSourceUrl } from "./services/contextSourceUrl.js";
-export {
-  buildRetrievalText,
-  EmbeddingService,
-  ModelEmbeddingGateway,
-  OpenAIEmbeddingGateway,
-  type EmbeddingGateway,
-} from "./services/embeddingService.js";
-export {
-  PromptBuilder,
-  type PromptBuildResult,
-} from "./services/promptBuilder.js";
-export { PromptContextSelectorService } from "./services/promptContextSelectorService.js";
-export {
-  ModelQueryRewriteGateway,
-  ModelTriggerAnalysisGateway,
-  OpenAIQueryRewriteGateway,
-  QueryRewriteService,
-  type QueryRewriteGateway,
-  type QueryRewriteGatewayFallbackResult,
-  type QueryRewriteGatewayResult,
-  type TriggerAnalysisGateway,
-  type TriggerAnalysisGatewayInput,
+export type { EmbeddingGateway, EmbeddingService } from "./services/embeddingService.js";
+export type { PromptBuildResult } from "./services/promptBuilder.js";
+export type {
+  QueryRewriteGateway,
+  QueryRewriteGatewayFallbackResult,
+  QueryRewriteGatewayResult,
+  TriggerAnalysisGateway,
+  TriggerAnalysisGatewayInput,
 } from "./services/queryRewriteService.js";
-export {
-  ModelRerankGateway,
-  OpenAISemanticRerankGateway,
-  RerankService,
-  type RerankGateway,
-} from "./services/rerankService.js";
-export {
-  RetrievalAnswerService,
-  type RetrievalAnswerServiceDependencies,
-} from "./services/retrievalAnswerService.js";
-export { RetrievalExecutionTelemetryService } from "./services/retrievalExecutionTelemetryService.js";
+export type { RerankGateway } from "./services/rerankService.js";
 export {
   RetrievalInfoPresenter,
   type RetrievalInfo,
   type RetrievalInfoPresenterOptions,
 } from "./services/retrievalInfoPresenter.js";
-export {
-  RetrievalPipelineService,
-  type RetrievalPipelineInterpretationResult,
-  type RetrievalPipelineResult,
-} from "./services/retrievalPipelineService.js";
-export { RetrievalSearchService } from "./services/retrievalSearchService.js";
 export {
   RetrievalTracePresenter,
   type AnswerOutcomeInput,
@@ -132,3 +97,50 @@ export {
   deriveChunkSection,
   deriveDocumentSubject,
 } from "./services/subjectIdentityService.js";
+
+type RetrievalConversationMode = "factual" | "exploratory" | "guided";
+
+export interface RetrievalPipelineRequest {
+  workspaceId: string;
+  query: string;
+  history: MessageRecord[];
+  responseIdentity?: ResponseIdentity | null;
+  responseBehaviorEnabled?: boolean;
+  responseLanguagePolicy?: ResponseLanguagePolicy;
+  metadataFilter?: Record<string, unknown>;
+}
+
+export interface RetrievalPipelineResult {
+  rewrittenQuery: string;
+  contexts: FinalPromptContext[];
+  systemPrompt: string;
+  prompt: string;
+  citations: unknown[];
+  responseIdentity: ResponseIdentity | null;
+  responseSettings: {
+    citationDisplayEnabled: boolean;
+    answerSupportValidationEnabled?: boolean;
+    conversationMode: RetrievalConversationMode;
+    suggestedQuestionsEnabled: boolean;
+    suggestedQuestionsCount: number;
+    customInstruction?: string;
+    responseLanguagePolicy?: ResponseLanguagePolicy;
+  };
+  diagnostics: RetrievalExecutionDiagnostics;
+  trace: RetrievalTrace;
+}
+
+export interface RetrievalPipelineInterpretationResult {
+  interpretation: {
+    result: {
+      responseIntent?: ResponseIntent;
+    };
+  };
+}
+
+export interface RetrievalPipelineService {
+  run(input: RetrievalPipelineRequest): Promise<RetrievalPipelineResult>;
+  interpret(input: RetrievalPipelineRequest): Promise<RetrievalPipelineInterpretationResult>;
+  runInterpreted(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult>;
+  runWithoutRetrieval(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult>;
+}

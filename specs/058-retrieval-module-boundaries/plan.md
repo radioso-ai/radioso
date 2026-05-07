@@ -9,14 +9,14 @@ Introduce a retrieval module public surface and enforce it as the only productio
 
 ## Technical Context
 
-**Language/Version**: TypeScript on Node.js 22  
-**Primary Dependencies**: Express backend, Vitest/Supertest, TypeScript compiler, dependency-cruiser for source boundary validation  
-**Storage**: PostgreSQL with `pgvector` remains unchanged; no schema or persistence change  
-**Testing**: Vitest unit/composition tests, `npm run build`, dependency-cruiser boundary lint  
-**Target Platform**: Backend Node.js server and worker runtimes in local, self-hosted, and CI environments  
-**Project Type**: Web application with backend-focused architecture refactor  
-**Performance Goals**: No runtime performance change; boundary lint should complete within normal backend CI budget  
-**Constraints**: No REST API, OpenAPI, SDK, MCP, database schema, worker queue, prompt asset, or frontend route changes; tests excluded from first-pass boundary enforcement  
+**Language/Version**: TypeScript on Node.js 22
+**Primary Dependencies**: Express backend, Vitest/Supertest, TypeScript compiler, dependency-cruiser for source boundary validation
+**Storage**: PostgreSQL with `pgvector` remains unchanged; no schema or persistence change
+**Testing**: Vitest unit/composition tests, `npm run build`, dependency-cruiser boundary lint
+**Target Platform**: Backend Node.js server and worker runtimes in local, self-hosted, and CI environments
+**Project Type**: Web application with backend-focused architecture refactor
+**Performance Goals**: No runtime performance change; boundary lint should complete within normal backend CI budget
+**Constraints**: No REST API, OpenAPI, SDK, MCP, database schema, worker queue, prompt asset, or frontend route changes; tests excluded from first-pass boundary enforcement
 **Scale/Scope**: Retrieval pilot only; production imports from app composition, chat, documents, audit, settings, database, and shared LLM infrastructure are in scope
 
 ## Constitution Check
@@ -92,17 +92,17 @@ docs/
 └── ci.yml
 ```
 
-**Structure Decision**: Backend-only import-boundary feature. The retrieval module owns `backend/src/modules/retrieval/public.ts` as its production public surface. Existing production consumers keep their current behavior but route imports through that surface. Boundary enforcement belongs to backend tooling and CI. Documentation updates stay in `docs/architecture-extension-points.md`.
+**Structure Decision**: Backend-only import-boundary feature. The retrieval module owns explicit root-level production entry points: `public.ts` for chat-safe contracts/helpers, `composition.ts` for app wiring, and `llmAdapters.ts` for provider registration. Existing production consumers keep their current behavior but route imports through an approved entry point. Boundary enforcement belongs to backend tooling and CI. Documentation updates stay in `docs/architecture-extension-points.md`.
 
 ## Module Ownership & Seams
 
 - **Transport Layer**: `backend/src/app/http/**` may import retrieval contracts for schemas, presenters, and route adaptation only through the retrieval public surface.
 - **Orchestration Layer**: Chat, document, audit, settings, and app server services may coordinate with retrieval services only through intentionally exported retrieval contracts.
-- **Domain Layer**: `backend/src/modules/retrieval/domain/**` remains retrieval-owned and private to production consumers outside retrieval unless symbols are promoted through `public.ts`.
-- **Persistence/Integration Layer**: `backend/src/modules/retrieval/infra/**` and retrieval LLM gateway adapters remain retrieval-owned. External production consumers may use only explicitly exported adapters or ports through `public.ts`.
-- **Application Composition**: `backend/src/app/composition/defaultComposition.ts` should import retrieval chunking strategy construction through `public.ts`. No new app-wide adapter, registry, lifecycle hook, capability policy, storage implementation, or dispatcher is introduced.
+- **Domain Layer**: `backend/src/modules/retrieval/domain/**` remains retrieval-owned and private to production consumers outside retrieval unless symbols are promoted through an approved retrieval root entry point.
+- **Persistence/Integration Layer**: `backend/src/modules/retrieval/infra/**` and retrieval LLM gateway adapters remain retrieval-owned. External production consumers may use only explicitly exported adapters or ports through approved retrieval root entry points.
+- **Application Composition**: `backend/src/app/composition/defaultComposition.ts` should import retrieval chunking strategy construction through `composition.ts`. No new app-wide adapter, registry, lifecycle hook, capability policy, storage implementation, or dispatcher is introduced.
 - **Files Kept Small**: `backend/src/modules/retrieval/public.ts` must remain a curated export list, not a behavior module. `backend/dependency-cruiser.config.cjs` must remain focused on retrieval boundary enforcement. HTTP routes and presenters must not become retrieval policy owners. Composition must remain default wiring only.
-- **Planned Extractions**: New retrieval public entrypoint and new backend dependency-cruiser config.
+- **Planned Extractions**: New retrieval root entry points and new backend dependency-cruiser config.
 - **Required Refactor Stories**: None. The existing structure has clear retrieval domain/service/infra folders and enough production consumers to justify a public entrypoint directly.
 
 ## Message-Queue Impact Review

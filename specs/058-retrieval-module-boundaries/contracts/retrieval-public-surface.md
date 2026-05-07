@@ -4,10 +4,22 @@
 
 The retrieval public surface is an internal architecture contract. It is not a REST API, SDK surface, MCP contract, queue payload, database schema, or frontend route.
 
-Production code outside `backend/src/modules/retrieval/**` must import retrieval-owned symbols through:
+Production code outside `backend/src/modules/retrieval/**` must import retrieval-owned contracts and chat-safe helpers through:
 
 ```text
 backend/src/modules/retrieval/public.ts
+```
+
+Composition-only retrieval services that depend back on other modules must use narrower root-level entry points:
+
+```text
+backend/src/modules/retrieval/composition.ts
+```
+
+LLM provider registration must use the provider-specific root-level entry point:
+
+```text
+backend/src/modules/retrieval/llmAdapters.ts
 ```
 
 ## Allowed Consumers
@@ -32,8 +44,9 @@ The public surface may export:
 - Chunking contracts and strategy constructors used by ingestion or settings
 - Search-text helpers used by document processing
 - Subject helpers used by document processing
-- LLM gateway adapters used by provider registration
 - Retrieval search/vector infrastructure adapters used by app dependency wiring
+
+The public surface must not re-export retrieval services that import chat-owned runtime services or provider-registration-only adapters. Those symbols belong behind narrower root-level entry points to avoid cross-module evaluation cycles and keep consumer intent explicit.
 
 ## Private Retrieval Areas
 
@@ -51,7 +64,7 @@ Backend tests are excluded from this pilot boundary rule.
 
 When a production consumer needs a retrieval-owned symbol that is not exported publicly, the implementer must choose one of these outcomes:
 
-1. Promote the symbol through `public.ts` because it is an intentional cross-module contract.
+1. Promote the symbol through `public.ts` because it is an intentional cross-module contract or through a narrower root-level entry point because it is composition-only.
 2. Refactor the consumer so it no longer needs retrieval internals.
 3. Keep the usage retrieval-internal by moving ownership back into retrieval.
 
